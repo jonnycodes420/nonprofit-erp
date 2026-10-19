@@ -3108,7 +3108,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No materials uploaded yet</div>:(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {materials.map(m=>(
-                  <div key={m.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+                  <div key={m.id} data-testid={m.kind==="check_image"?"dp-file-check":"dp-file"} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
                     <div style={{fontSize:22,flexShrink:0}}>
                       ▤
                     </div>
@@ -3119,7 +3119,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     </div>
                     <div style={{display:"flex",gap:6,flexShrink:0}}>
                       {(m.file_data||m.file_url)&&<button onClick={()=>viewMaterial(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>View</button>}
-                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid "+T.terracotta+"30",borderRadius:7,padding:"5px 10px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Delete</button>
+                      {m.kind!=="check_image"&&<button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid "+T.terracotta+"30",borderRadius:7,padding:"5px 10px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Delete</button>}
                     </div>
                   </div>
                 ))}

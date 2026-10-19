@@ -1314,96 +1314,6 @@ async function recordGift(o) {
       .catch(e => console.error("[thank-you] draft:", e.message));
   }
 
-  // ── BUILD-94 Part 3 — THE TRIGGERS FIRE HERE, AND NOWHERE ELSE ───────────
-  // FIRST GIFT EVER is a fact about the rollup that just happened: gift_count
-  // reached 1. Reading it here, from the row the rollup wrote, is the only
-  // place it is unambiguous — a route that checks "is this their first gift"
-  // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
-  // is what that means mechanically: the only way in is the event itself.
-  if (!oldHistory && !thankedElsewhere) try {
-    const [after] = await query(
-      `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
-    if (after && Number(after.gift_count) === 1) {
-      const ctx = { amount, recurring: !!o.recurring || !!after.stripe_subscription_status,
-                    fund: o.fundName || null, source: o.source || null };
-      if (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_gift")) await enrollInSequences(orgId, o.donorId, "first_gift", ctx);
-    }
-    if (o.recurring === true && after) {
-      const [priorRec] = await query(
-        `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ?
-           AND (notes ILIKE '%recurring%' OR type = 'recurring')`, [orgId, o.donorId, giftId]);
-      if ((!priorRec || priorRec.n === 0) && (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_recurring"))) {
-        await enrollInSequences(orgId, o.donorId, "first_recurring",
-          { amount, recurring: true, fund: o.fundName || null, source: o.source || null });
-      }
-    }
-  } catch (e) { console.error("[seq] gift trigger:", e.message); }
-
-  // ── THREAD-2a · THE JOURNEY TRIGGERS A GIFT CAN FIRE ────────────────────
-  // Three of the six live here, for the same reason the sequence triggers do:
-  // this is the one place where "is this their first gift" is unambiguous,
-  // because the rollup has already happened and `gift_count` is the answer.
-  //
-  //   first_gift     — gift_count reached 1
-  //   gift_over      — this gift clears the amount the ORG set
-  //   lapsed_return  — they were marked lapsed and have just given
-  //
-  // A journey that does not exist, is not armed, or loses on priority is a
-  // no-op that says why. This never throws into the gift path: a gift is
-  // written whether or not a journey starts, and the reverse would mean a
-  // broken journey could refuse somebody's donation.
-  try {
-    const [d] = await query(
-      `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
-    if (d && !oldHistory && !thankedElsewhere) {
-      const cents = Math.round(amount * 100);
-      // ORDER MATTERS, and it is the priority order, not this list's order:
-      // each call independently asks the engine, and the engine replaces a
-      // lower-priority journey with a higher one. So a $25,000 first gift
-      // starts the first-gift journey and is then correctly replaced by the
-      // major-donor one, with the reason written down — which is the
-      // behaviour the brief asks for, arrived at without a special case.
-      // PARITY-1 Part D — every gift trigger carries the gift: its id (the
-      // event it is held to, once and only once), its fund and its campaign
-      // (what a journey may be narrowed to).
-      const gopts = { amountCents: cents, giftId, fundId: fundId || null, campaignId: o.campaignId || null, importId: o.importId || null,
-                      armed: o.armed && o.armed.journeys ? o.armed.journeys : null };
-      if (amount > 0) {
-        if (Number(d.gift_count) === 1) {
-          await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", gopts);
-        }
-        await maybeStartJourneyFromServer(orgId, o.donorId, "gift_over", gopts);
-        // A LAPSED DONOR WHO GIVES AGAIN. `status`/`stage` still said lapsed at
-        // the moment this gift landed, which is exactly the fact that makes it
-        // a return rather than an ordinary gift.
-        if (Number(d.gift_count) > 1 && (d.status === "lapsed" || d.stage === "lapsed")) {
-          await maybeStartJourneyFromServer(orgId, o.donorId, "lapsed_return", gopts);
-        }
-        // PARITY-1 Part D — the next gift: any gift after the first.
-        if (Number(d.gift_count) > 1) {
-          await maybeStartJourneyFromServer(orgId, o.donorId, "next_gift", gopts);
-        }
-        // The first successful payment of their first recurring gift.
-        if (o.recurring === true || o.recurringSubscriptionId) {
-          const [prior] = await query(
-            `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0
-               AND (recurring_subscription_id IS NOT NULL OR type = 'recurring')`, [orgId, o.donorId, giftId]);
-          if (!prior || prior.n === 0) {
-            await maybeStartJourneyFromServer(orgId, o.donorId, "first_recurring", gopts);
-          }
-        }
-        // A gift that paid for a membership (a renewal applied just above).
-        if (appliedMembership) {
-          await maybeStartJourneyFromServer(orgId, o.donorId, "membership_payment", gopts);
-        }
-      }
-    }
-    // PARITY-1 Part D — a gift can move somebody into a group by rule (Mid
-    // and Major donors, say). A "joins a group" journey watching one hears
-    // about it here, the moment the gift lands, rather than next morning.
-  } catch (e) { console.error("[journey] gift trigger:", e.message); }
-
-
   // BUILD-98 Part 1 — soft credits, a tribute, an expected match. Checked by
   // the caller BEFORE the gift was written (checkGiftExtras); written here so
   // every door that passes them lands them the same way.
@@ -1436,19 +1346,120 @@ async function recordGift(o) {
     } catch (e) { console.error("[p2p] soft credit:", e.message); }
   }
 
-  // LIVE-1 · THE ONE AFTER-CHANGE STEP. Totals, rhythm, Drift, groups by
-  // rule (a "joins a group" journey hears about it here, the moment the gift
-  // lands) and the engagement recompute, for this person. A caller writing
-  // many gifts at once passes `afterChange: false` and calls the step once
-  // for everybody it touched. The totals were just written above, so the
-  // step does not recompute them. An old history gift starts no journey here
-  // either (FIX-36).
-  if (o.afterChange !== false) {
-    await AFTER.afterChange(orgId, [o.donorId], { door: o.door || "gift_form", history: o.history === true,
-      recalc: false,
-      fire: oldHistory ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
-  }
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
+  // FIX-45 · WHAT FOLLOWS THE GIFT. The sequences, the journeys and the
+  // after-change step below are consequences of the gift, not the gift. A
+  // caller a person is waiting on (To confirm) passes `deferTriggers` and they
+  // run straight after the response, in this order, exactly as they would
+  // have: `later` settles when they are done. Everyone else waits as before.
+  const triggers = async () => {
+    // ── BUILD-94 Part 3 — THE TRIGGERS FIRE HERE, AND NOWHERE ELSE ───────────
+    // FIRST GIFT EVER is a fact about the rollup that just happened: gift_count
+    // reached 1. Reading it here, from the row the rollup wrote, is the only
+    // place it is unambiguous — a route that checks "is this their first gift"
+    // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
+    // is what that means mechanically: the only way in is the event itself.
+    if (!oldHistory && !thankedElsewhere) try {
+      const [after] = await query(
+        `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
+      if (after && Number(after.gift_count) === 1) {
+        const ctx = { amount, recurring: !!o.recurring || !!after.stripe_subscription_status,
+                      fund: o.fundName || null, source: o.source || null };
+        if (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_gift")) await enrollInSequences(orgId, o.donorId, "first_gift", ctx);
+      }
+      if (o.recurring === true && after) {
+        const [priorRec] = await query(
+          `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ?
+             AND (notes ILIKE '%recurring%' OR type = 'recurring')`, [orgId, o.donorId, giftId]);
+        if ((!priorRec || priorRec.n === 0) && (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_recurring"))) {
+          await enrollInSequences(orgId, o.donorId, "first_recurring",
+            { amount, recurring: true, fund: o.fundName || null, source: o.source || null });
+        }
+      }
+    } catch (e) { console.error("[seq] gift trigger:", e.message); }
+
+    // ── THREAD-2a · THE JOURNEY TRIGGERS A GIFT CAN FIRE ────────────────────
+    // Three of the six live here, for the same reason the sequence triggers do:
+    // this is the one place where "is this their first gift" is unambiguous,
+    // because the rollup has already happened and `gift_count` is the answer.
+    //
+    //   first_gift     — gift_count reached 1
+    //   gift_over      — this gift clears the amount the ORG set
+    //   lapsed_return  — they were marked lapsed and have just given
+    //
+    // A journey that does not exist, is not armed, or loses on priority is a
+    // no-op that says why. This never throws into the gift path: a gift is
+    // written whether or not a journey starts, and the reverse would mean a
+    // broken journey could refuse somebody's donation.
+    try {
+      const [d] = await query(
+        `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
+      if (d && !oldHistory && !thankedElsewhere) {
+        const cents = Math.round(amount * 100);
+        // ORDER MATTERS, and it is the priority order, not this list's order:
+        // each call independently asks the engine, and the engine replaces a
+        // lower-priority journey with a higher one. So a $25,000 first gift
+        // starts the first-gift journey and is then correctly replaced by the
+        // major-donor one, with the reason written down — which is the
+        // behaviour the brief asks for, arrived at without a special case.
+        // PARITY-1 Part D — every gift trigger carries the gift: its id (the
+        // event it is held to, once and only once), its fund and its campaign
+        // (what a journey may be narrowed to).
+        const gopts = { amountCents: cents, giftId, fundId: fundId || null, campaignId: o.campaignId || null, importId: o.importId || null,
+                        armed: o.armed && o.armed.journeys ? o.armed.journeys : null };
+        if (amount > 0) {
+          if (Number(d.gift_count) === 1) {
+            await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", gopts);
+          }
+          await maybeStartJourneyFromServer(orgId, o.donorId, "gift_over", gopts);
+          // A LAPSED DONOR WHO GIVES AGAIN. `status`/`stage` still said lapsed at
+          // the moment this gift landed, which is exactly the fact that makes it
+          // a return rather than an ordinary gift.
+          if (Number(d.gift_count) > 1 && (d.status === "lapsed" || d.stage === "lapsed")) {
+            await maybeStartJourneyFromServer(orgId, o.donorId, "lapsed_return", gopts);
+          }
+          // PARITY-1 Part D — the next gift: any gift after the first.
+          if (Number(d.gift_count) > 1) {
+            await maybeStartJourneyFromServer(orgId, o.donorId, "next_gift", gopts);
+          }
+          // The first successful payment of their first recurring gift.
+          if (o.recurring === true || o.recurringSubscriptionId) {
+            const [prior] = await query(
+              `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0
+                 AND (recurring_subscription_id IS NOT NULL OR type = 'recurring')`, [orgId, o.donorId, giftId]);
+            if (!prior || prior.n === 0) {
+              await maybeStartJourneyFromServer(orgId, o.donorId, "first_recurring", gopts);
+            }
+          }
+          // A gift that paid for a membership (a renewal applied just above).
+          if (appliedMembership) {
+            await maybeStartJourneyFromServer(orgId, o.donorId, "membership_payment", gopts);
+          }
+        }
+      }
+      // PARITY-1 Part D — a gift can move somebody into a group by rule (Mid
+      // and Major donors, say). A "joins a group" journey watching one hears
+      // about it here, the moment the gift lands, rather than next morning.
+    } catch (e) { console.error("[journey] gift trigger:", e.message); }
+
+    // LIVE-1 · THE ONE AFTER-CHANGE STEP. Totals, rhythm, Drift, groups by
+    // rule (a "joins a group" journey hears about it here, the moment the gift
+    // lands) and the engagement recompute, for this person. A caller writing
+    // many gifts at once passes `afterChange: false` and calls the step once
+    // for everybody it touched. The totals were just written above, so the
+    // step does not recompute them. An old history gift starts no journey here
+    // either (FIX-36).
+    if (o.afterChange !== false) {
+      await AFTER.afterChange(orgId, [o.donorId], { door: o.door || "gift_form", history: o.history === true,
+        recalc: false,
+        fire: oldHistory ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
+    }
+  };
+  let later = null;
+  if (o.deferTriggers === true) {
+    later = new Promise(r => setImmediate(r)).then(triggers)
+      .catch(e => console.error("[gift] after the response:", e.message));
+  } else await triggers();
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras, later };
 }
 
 // ── ENGAGE-1 — THE TWO SCORES ──────────────────────────────────────────────
@@ -2741,10 +2752,21 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   if (d.kind === "anonymous") return null;
   if (!force && /pledge payment/i.test(String(type)) && (cents || 0) < THANK_YOU_PLEDGE_FLOOR_CENTS) return null;
 
-  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  // FIX-45: the reads below do not depend on each other, so they go together:
+  // a person is often waiting on this draft (To confirm shows it at once).
+  const [[org], fundRows, [hist], thisGiftRows] = await Promise.all([
+    query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]),
+    fundId ? query("SELECT name, public_name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [],
+    query(
+      `SELECT COUNT(*)::int AS before,
+              MAX(date) FILTER (WHERE date IS NOT NULL) AS last_date
+         FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0`,
+      [orgId, donorId, giftId || ""]),
+    giftId ? query("SELECT date, recurring_subscription_id, campaign FROM gifts WHERE id=? AND org_id=?", [giftId, orgId]) : [],
+  ]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
-  const [fund] = fundId ? await query("SELECT name, public_name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  const [fund] = fundRows;
   // POLISH-2: a donor reads the fund's public name, or "where it's needed
   // most" for the org's general fund. Never the bookkeeping name of that one.
   const fundPublic = fund && String(fund.public_name || "").trim() || null;
@@ -2762,16 +2784,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // whole difference between three identical thank-yous and three that sound
   // like somebody looked at the record, and it needs no AI at all.
   //
-  // `giftId` is EXCLUDED from the history so the gift being thanked for is not
-  // counted as one that came before it.
-  const [hist] = await query(
-    `SELECT COUNT(*)::int AS before,
-            MAX(date) FILTER (WHERE date IS NOT NULL) AS last_date
-       FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0`,
-    [orgId, donorId, giftId || ""]);
-  const [thisGift] = giftId
-    ? await query("SELECT date, recurring_subscription_id, campaign FROM gifts WHERE id=? AND org_id=?", [giftId, orgId])
-    : [];
+  // `giftId` is EXCLUDED from the history (read above) so the gift being
+  // thanked for is not counted as one that came before it.
+  const [thisGift] = thisGiftRows;
   const monthsSince = hist && hist.last_date && thisGift && thisGift.date
     ? Math.max(0, Math.round((new Date(thisGift.date) - new Date(hist.last_date)) / (1000 * 60 * 60 * 24 * 30.44)))
     : null;

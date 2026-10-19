@@ -9934,7 +9934,21 @@ app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const mg = await require("../prospect").canSee(req.user.userId);
   const rows = await query(`SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at,major_gifts_only FROM donor_materials
       WHERE donor_id=? AND org_id=?${mg ? "" : " AND COALESCE(major_gifts_only,false) = false"} ORDER BY uploaded_at DESC`, [req.params.id, req.user.orgId]);
-  res.json(rows);
+  // FIX-45: the photograph of a check is this person's file too. It lives on
+  // the gift (gifts.cheque_asset_id, written by To confirm and by "attach the
+  // check"), so it is listed here beside the uploads, read-only: it is the
+  // gift's evidence and is removed with the gift, never from this list.
+  const checks = await query(`SELECT id, amount, date, cheque_asset_id, created_by_name, created_at FROM gifts
+      WHERE donor_id=? AND org_id=? AND cheque_asset_id IS NOT NULL`, [req.params.id, req.user.orgId]);
+  const day = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : ""; };
+  const files = rows.concat(checks.map(g => ({
+    id: "check:" + g.id, kind: "check_image", gift_id: g.id, donor_id: req.params.id,
+    file_name: `Check for the $${Number(g.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} gift on ${day(g.date)}`,
+    file_type: "image/webp", file_url: donorPhotoUrl(req.user.orgId, g.cheque_asset_id),
+    notes: "Attached to the gift.", uploaded_by: g.created_by_name || null, uploaded_at: g.created_at,
+  })));
+  files.sort((x, y) => new Date(y.uploaded_at) - new Date(x.uploaded_at));
+  res.json(files);
 }));
 
 // Server-side backstop for donor material uploads. The client only checks

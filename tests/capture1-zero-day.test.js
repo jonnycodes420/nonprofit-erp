@@ -58,6 +58,19 @@ globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url))
 const LOGS = [];
 for (const k of ["log", "error", "warn"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
+// FIX-45 §9: prod's database is a round trip away and this one is not. While
+// PG_DELAY is on, every statement waits that long first, which is how a
+// confirm that is quick here took over 30 seconds on Harborlight.
+let PG_DELAY = 0, PG_COUNT = 0;
+{ const pg = require("pg"); const real = pg.Client.prototype.query;
+  pg.Client.prototype.query = function (...a) {
+    if (!PG_DELAY) return real.apply(this, a);
+    PG_COUNT++;
+    // The pool calls with a callback; a direct client call wants a promise.
+    if (typeof a[a.length - 1] === "function") { setTimeout(() => real.apply(this, a), PG_DELAY); return undefined; }
+    return new Promise(r => setTimeout(r, PG_DELAY)).then(() => real.apply(this, a));
+  }; }
+
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { FAKE_ROUTING, FAKE_ACCOUNT, FIXTURES } = require("../scripts/capture1-make-fixtures.js");
 const FX = path.join(__dirname, "fixtures", "capture1");
@@ -113,7 +126,7 @@ const checkItem = f => ({ ...blank, kind: "check", payer: f.payer, amountDigits:
   memo: `${f.memo} ⑆${FAKE_ROUTING}⑆ ${FAKE_ACCOUNT}⑈ ${f.number}`, date: "2026-10-12", chequeNumber: f.number,
   sentence: `A check from ${f.payer}, routing ${FAKE_ROUTING}, account ${FAKE_ACCOUNT}.`, routingNumber: FAKE_ROUTING });
 
-const TABLES = ["capture_items", "capture_batches", "capture_fund_words", "thank_you_drafts", "gift_soft_credits", "threads", "interactions",
+const TABLES = ["group_sweep_seen", "group_crossings", "audiences", "donor_rhythm", "capture_items", "capture_batches", "capture_fund_words", "thank_you_drafts", "gift_soft_credits", "threads", "interactions",
   "fin_transactions", "gifts", "pledges", "mailbox_connections", "inbound_email_drops", "portal_assets", "tasks", "donors",
   "user_sessions", "users", "fin_funds", "accounts", "budgets", "ai_usage"];
 async function reset() {
@@ -173,6 +186,12 @@ async function reset() {
   const [cardRow] = await q(`SELECT asset_id, status, gift_id FROM capture_items WHERE id=$1`, [card.id]);
   ok("§2 the image is attached to the gift and kept as evidence", !!gifts[0] && gifts[0].cheque_asset_id === cardRow.asset_id && cardRow.status === "confirmed"
     && cardRow.gift_id === gifts[0].id, { gift: gifts[0], cardRow });
+  // FIX-45: Muse confirmed a check and found the profile's Files empty. The
+  // image was on the gift; the Files read never looked there.
+  const files = await api("GET", `/donors/${card.donor.selectedId}/materials`, tok);
+  const chk = (Array.isArray(files.body) ? files.body : []).find(f => f.kind === "check_image" && f.gift_id === gifts[0].id);
+  ok("§2 the check image is in the donor's Files, with a signed link and the gift it belongs to",
+    files.status === 200 && !!chk && /\/person-photos\/pa_[a-f0-9]+\?e=\d+&s=/.test(chk.file_url || "") && /\$250\.00 gift on Oct 12, 2026/.test(chk.file_name), files.body);
   const drafts = await q(`SELECT id, gift_id, sent_at FROM thank_you_drafts WHERE org_id=$1`, [ORG]);
   ok("§2 a thank-you draft exists for the gift, not sent", drafts.length === 1 && drafts[0].gift_id === gifts[0].id && !drafts[0].sent_at
     && conf.body.thankYouDraftId === drafts[0].id, drafts);
@@ -297,6 +316,32 @@ async function reset() {
   const [wm] = await q(`SELECT COUNT(*)::int AS n FROM capture_items WHERE org_id=$1 AND status='waiting' AND stakes='money'`, [ORG]);
   ok("§8 Home's tile counts the money cards waiting to be confirmed", clock3.body.waiting === wm.n && wm.n === 1, { waiting: clock3.body.waiting, wm });
 
+  // ── §9 confirm answers when the gift is written, not when everything after it is
+  // Planted defects that turned this red: main's one-insert-per-member group
+  // baseline (7,960ms: the answer waited on about 300 statements), and,
+  // with the baseline fixed, recordGift called without deferTriggers in the
+  // confirm route (92 statements against 56: the journeys and the after-change step).
+  console.log("\n§9 confirm answers quickly");
+  await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name)
+           SELECT 'd_cap1_many_' || i, $1, 'Person ' || i, 'active', ${sys} FROM generate_series(1,300) i`, [ORG]);
+  await q(`INSERT INTO audiences (id,org_id,name,segment,kind,rules,created_by,created_by_name)
+           VALUES ('aud_cap1_all',$1,'Everyone in the file','{}'::jsonb,'dynamic','{}'::jsonb,${sys})`, [ORG]);
+  const [members] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
+  PG_DELAY = 20; PG_COUNT = 0;
+  const t9 = Date.now();
+  const fast = await api("POST", `/capture/${oc.id}/confirm`, tok, { amountCents: 150000, date: "2026-10-13", donorId: "d_cap1_james", fundId: "f_cap1_gen", kind: "check" });
+  const ms9 = Date.now() - t9, n9 = PG_COUNT;
+  PG_DELAY = 0;
+  ok(`§9 confirm answers in under 2 seconds with 20ms per statement (took ${ms9}ms)`, fast.status === 200 && ms9 < 2000
+    && fast.body.card && fast.body.card.status === "confirmed" && !!fast.body.thankYouDraft, { ms9, status: fast.status });
+  ok(`§9 the answer waits on the gift, its draft and the card only: at most 70 statements (${n9})`, n9 <= 70, n9);
+  await api("GET", `/capture/${oc.id}/settled`, tok);
+  const [seen] = await q(`SELECT COUNT(*)::int AS n FROM group_sweep_seen WHERE group_id='aud_cap1_all' AND donor_id <> '__baseline__'`);
+  const [thr] = await q(`SELECT next_step_label FROM threads WHERE org_id=$1 AND donor_id='d_cap1_james' AND closed_at IS NULL`, [ORG]);
+  ok("§9 what follows the gift still happens after the answer: the group's starting line and the call on the Thread",
+    seen.n === members.n && !!thr && /Call to thank for the \$1,500\.00 gift/.test(thr.next_step_label), { seen: seen.n, members: members.n, thr });
+
+  for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
   mock.close();
   await reset();
   await closeDb();
