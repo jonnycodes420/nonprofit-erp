@@ -500,7 +500,7 @@ async function agentLeg(H) {
   ];
   const wc = GFD.donorsFromUnmatchedGifts(rows13.filter(g => g.confidence === "unmatched"));
   ok("J13 one person from two rows, both gifts carry the method", wc.donors.length === 1 && wc.gifts.map(g => g.paymentMethod).join() === "Check,Venmo", wc);
-  const run13 = "imp_golden13_" + Date.now().toString(36);
+  const run13 = runId + "_13";
   const imp13 = await api("POST", "/donors/import-combined", dana, { donors: wc.donors, gifts: wc.gifts, importId: run13 });
   await importWorkSettled(ORG);
   const pm13 = await q(`SELECT g.payment_method, ROUND(g.amount*100)::int c FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id=$1 AND LOWER(d.email)='pell@golden.test' ORDER BY g.date`, [ORG]);
