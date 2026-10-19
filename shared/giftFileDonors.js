@@ -24,10 +24,13 @@ export function normalizeNameForDonorMatch(name) {
 }
 
 // unmatched: [{ rawName, rawEmail, amount, date, type, campaign, notes, externalId, ... }]
-// `keep` names extra gift fields a caller's rows carry and wants kept (setup
-// keeps the fund and payment method its file mapped); the Import screen
-// passes none, so its gifts are exactly what they were.
+// `keep` names extra gift fields a caller's rows carry and wants kept. A
+// mapped payment method is always kept (FIX-44: the Import screen passed
+// nothing, so a file with no people file lost the column setup kept); setup
+// also keeps the fund its file mapped.
+export const ALWAYS_KEEP = ["paymentMethod"];
 export function donorsFromUnmatchedGifts(unmatched, { keep = [] } = {}) {
+  keep = [...new Set([...ALWAYS_KEEP, ...keep])];
   const byKey = new Map();
   const donors = [];
   const gifts = [];
@@ -65,4 +68,4 @@ export function donorsFromUnmatchedGifts(unmatched, { keep = [] } = {}) {
   };
 }
 
-export default { normalizeNameForDonorMatch, donorsFromUnmatchedGifts };
+export default { normalizeNameForDonorMatch, donorsFromUnmatchedGifts, ALWAYS_KEEP };

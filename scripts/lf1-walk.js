@@ -77,7 +77,7 @@ const ok = (n, c, x) => { if (c) { pass++; console.log("  PASS  " + n); }
 
     await page.goto(`${APP}/lost-and-found?ref=walk-${width}`, { waitUntil: "networkidle" });
     const hero = await page.locator("[data-testid='lf-hero']").innerText().catch(() => "");
-    ok(`${width}: the hero is the brief's headline`, /A \$1,500 donor audit\. Free\./.test(hero), hero);
+    ok(`${width}: the hero is the page's headline`, /A paid-caliber donor audit\. Free\./.test(hero), hero);
     const why = await page.locator("[data-testid='lf-why-free']").innerText().catch(() => "");
     ok(`${width}: the why-free block says the whole thing, including "No catch."`,
        /We sell a CRM/.test(why) && /free, forever/.test(why) && /No catch\./.test(why), why.slice(0, 120));
@@ -100,13 +100,14 @@ const ok = (n, c, x) => { if (c) { pass++; console.log("  PASS  " + n); }
     ok(`${width}: it says how much of the file it read, and what it skipped`,
        /gifts read from .* rows/.test(fileLine), fileLine);
 
-    for (const k of ["lapsed", "quiet", "drifting", "stopped", "atRisk"]) {
-      ok(`${width}: the ${k} section is there`, await page.locator(`[data-testid='lf-section-${k}']`).count() === 1);
+    // AUDIT-2: the rescue plan's three groups (shared/lostAndFoundRescue.js).
+    for (const k of ["week", "month", "gone"]) {
+      ok(`${width}: the ${k} group is there`, await page.locator(`[data-testid='lf-group-${k}']`).count() === 1);
     }
     await shot(page, `lf-results-${width}`);
 
     // ── A NUMBER OPENS ───────────────────────────────────────────────────
-    await page.locator("[data-testid='lf-section-lapsed']").click();
+    await page.locator("[data-testid='lf-group-gone']").click();
     await page.waitForSelector("[data-testid='lf-rows']", { timeout: 8000 }).catch(() => {});
     const rows = await page.locator("[data-testid='lf-rows']").innerText().catch(() => "");
     ok(`${width}: a number opens the donors behind it, on the page`,

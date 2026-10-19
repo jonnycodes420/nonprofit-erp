@@ -485,6 +485,26 @@ async function agentLeg(H) {
   ok("J12 nobody found says which filter found nobody", none12.answered === true && none12.count === 0 && (none12.people || []).length === 0
     && /Nowhereville/.test(none12.sentence || ""), none12.sentence);
 
+
+  // ── J13 a gift file with no people file keeps its payment method ────────
+  // FIX-44: the Import screen's "create them and import their gifts" groups
+  // the rows with shared/giftFileDonors.js and passed no `keep`, so a mapped
+  // payment method column never reached the gift (setup kept it). The rows go
+  // in the shape DonorImport.jsx builds, through the same call it makes, to
+  // the same /donors/import-combined. Red on main: payment_method read NULL.
+  console.log("\nJ13 a gift file with no people file keeps its payment method");
+  const GFD = await import("../shared/giftFileDonors.js");
+  const rows13 = [
+    { rawName: "Pell Harrow", rawEmail: "pell@golden.test", amount: 60, date: civilPlusDays(-90), type: "cash", campaign: "", notes: "", paymentMethod: "Check", confidence: "unmatched" },
+    { rawName: "Pell Harrow", rawEmail: "PELL@golden.test", amount: 25.5, date: civilPlusDays(-3), type: "cash", campaign: "", notes: "", paymentMethod: "Venmo", confidence: "unmatched" },
+  ];
+  const wc = GFD.donorsFromUnmatchedGifts(rows13.filter(g => g.confidence === "unmatched"));
+  ok("J13 one person from two rows, both gifts carry the method", wc.donors.length === 1 && wc.gifts.map(g => g.paymentMethod).join() === "Check,Venmo", wc);
+  const run13 = "imp_golden13_" + Date.now().toString(36);
+  const imp13 = await api("POST", "/donors/import-combined", dana, { donors: wc.donors, gifts: wc.gifts, importId: run13 });
+  await importWorkSettled(ORG);
+  const pm13 = await q(`SELECT g.payment_method, ROUND(g.amount*100)::int c FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id=$1 AND LOWER(d.email)='pell@golden.test' ORDER BY g.date`, [ORG]);
+  ok("J13 the import kept the method on both gifts, old and recent", imp13.status === 200 && pm13.map(r => `${r.payment_method}:${r.c}`).join() === "Check:6000,Venmo:2550", { status: imp13.status, pm13 });
   await wipe();
 
   // ── J11 sign up through Checkout, land signed in on onboarding ──────────

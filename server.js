@@ -11465,6 +11465,13 @@ app.use((err, req, res, next) => {
   // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
   // so scripts/error-digest.js can group a day of these by type and route.
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
+  // FIX-44: a body parser's own refusal (a body too large, JSON that does not
+  // parse, a charset it cannot read) is the sender's mistake, answered with its
+  // own 4xx, never a 500.
+  if (err && typeof err.type === "string" && Number(err.status) >= 400 && Number(err.status) < 500) {
+    console.warn(`[4xx] ${req.method} ${route} ${err.status} ${err.type}`);
+    return res.status(Number(err.status)).json({ error: err.status === 413 ? "That request body is too large." : "That request body could not be read." });
+  }
   console.error(`[500] ${req.method} ${route}`, err);
   res.status(500).json({ error: "Internal server error" });
 });
