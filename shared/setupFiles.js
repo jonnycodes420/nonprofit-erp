@@ -24,6 +24,7 @@ import {
 } from "./importShape.js";
 import { detectNpsp, npspGiftDecision, NPSP_CONTACT_COLUMNS, NPSP_OPPORTUNITY_COLUMNS, NPSP_OBJECT_OPPORTUNITY } from "./npspPreset.js";
 import { detectMigrationPreset, MIGRATION_PRESETS } from "./migrationPresets.js";
+import { donorsFromUnmatchedGifts } from "./giftFileDonors.js";
 
 const norm = h => normalizeHeader(String(h || ""));
 
@@ -120,23 +121,48 @@ export function readSetupFiles(files = [], { anchorDate, currentYear } = {}) {
     perFile.push({ name: s.sheet.name, system: s.system, role: r.role || null, evidence: r.evidence || "",
       rows: s.sheet.rowCount + setAside.filter(x => x.file === s.sheet.name).length });
   }
-  const giftCents = sub.gifts.reduce((n, g) => n + Math.round(Number(g.amount || 0) * 100), 0);
+  // FIX-43 Part 4 · A GIFTS-ONLY FILE. One gift per row with the donor's name
+  // on each row and no people file: the people come from the rows, grouped
+  // exactly as the Import screen groups them (shared/giftFileDonors.js), and
+  // go to the same combined import. On a fresh org every row is "unmatched",
+  // which is the Import screen's create-and-import path.
+  const hasDonorSheet = roled.some(r => r.role === "donors");
+  const aloneItems = !hasDonorSheet && sub.gifts.length === 0 ? (sub.giftAloneItems || []) : [];
+  const fromRows = aloneItems.length
+    ? donorsFromUnmatchedGifts(aloneItems.map(i => ({ rawName: i.name || "", rawEmail: i.email || "", ...i.gift })), { keep: ["fund", "paymentMethod"] })
+    : null;
+  const donors = fromRows ? fromRows.donors : sub.donors;
+  const gifts = fromRows ? fromRows.gifts : sub.gifts;
+  const giftCents = gifts.reduce((n, g) => n + Math.round(Number(g.amount || 0) * 100), 0);
   // Funds the gifts name, ordered by dollars, computed here once.
   const fundCents = new Map();
-  for (const g of sub.gifts) { const k = String(g.fund || "").trim(); if (k) fundCents.set(k, (fundCents.get(k) || 0) + Math.round(Number(g.amount) * 100)); }
+  for (const g of gifts) { const k = String(g.fund || "").trim(); if (k) fundCents.set(k, (fundCents.get(k) || 0) + Math.round(Number(g.amount) * 100)); }
   const funds = [...fundCents.entries()].sort((a, b) => b[1] - a[1]).map(([name, cents]) => ({ name, cents }));
-  const campaigns = [...new Set(sub.gifts.map(g => String(g.campaign || "").trim()).filter(Boolean))];
-  const methods = [...new Set(sub.gifts.map(g => String(g.paymentMethod || "").trim()).filter(Boolean))];
+  const campaigns = [...new Set(gifts.map(g => String(g.campaign || "").trim()).filter(Boolean))];
+  const methods = [...new Set(gifts.map(g => String(g.paymentMethod || "").trim()).filter(Boolean))];
   const systems = [...new Set(perFile.filter(p => p.system).map(p => p.system.label))];
-  const hasDonorSheet = roled.some(r => r.role === "donors");
   return {
     perFile, systems, setAside, funds, campaigns, methods,
-    donors: sub.donors, gifts: sub.gifts, merges: sub.merges, pledges: sub.pledges,
+    donors, gifts, merges: sub.merges, pledges: sub.pledges,
     refusals: sub.refusals, reconciliation: sub.reconciliation, totals: sub.totals,
-    giftCents, giftAlone: !hasDonorSheet && sub.gifts.length === 0 && (sub.giftAloneItems || []).length > 0,
-    giftAloneCount: (sub.giftAloneItems || []).length,
+    giftCents,
+    // A gifts-only file whose rows name nobody (no name, no email) is still
+    // the old answer: Import links it to records by hand.
+    giftAlone: !hasDonorSheet && sub.gifts.length === 0 && aloneItems.length > 0 && !(fromRows && fromRows.donors.length),
+    giftAloneCount: aloneItems.length,
+    fromGiftFile: !!(fromRows && fromRows.donors.length), namelessGifts: fromRows ? fromRows.nameless : 0,
     headers: [...new Set(sheets.flatMap(s => s.sheet.headers || []))],
   };
+}
+
+// What the import would read one file as on its own: "donors", "gifts" or
+// something else (FIX-43: an old report is set aside before the import).
+export function fileRole(f) {
+  const records = f.records || parseCsvRecords(String(f.text || ""));
+  if (!records.length) return null;
+  const a = analyzeWorkbookSheet(records);
+  const [r] = classifyWorkbookSheets([{ name: f.name, ...a, rowCount: a.records }]);
+  return (r && r.role) || null;
 }
 
 // The payment tools a file's own payment-method column names, as connection keys.
@@ -153,4 +179,4 @@ export function toolsFromMethods(methods = []) {
   return [...out];
 }
 
-export default { readSetupFiles, detectSourceSystem, toolsFromMethods };
+export default { readSetupFiles, detectSourceSystem, toolsFromMethods, fileRole };

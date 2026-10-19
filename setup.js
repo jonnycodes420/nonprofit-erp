@@ -32,6 +32,7 @@
 const { query, run, uuid } = require("./db");
 const AC = require("./agentCall");
 const site = require("./setupSite");
+const SF = require("./safeFetch");
 
 const ACTOR = { id: "system:setup", name: "Steward (setup)" };
 const STEP_KEYS = ["read_site", "profile", "import", "funds", "groups", "templates", "journeys", "invites", "connections", "finish"];
@@ -115,7 +116,41 @@ async function readFilesFor(orgId, runId, today) {
     const b = j(f.body);
     return b && b.records ? { name: f.name, records: b.records } : { name: f.name, text: b && b.text != null ? b.text : String(f.body) };
   });
-  return F.readSetupFiles(parsed, { anchorDate: today, currentYear: Number(String(today).slice(0, 4)) });
+  // FIX-43 Part 3: an old report (a giving summary, a LYBUNT list, a by-fund
+  // table) is not gifts. It stays out of the import and is checked against
+  // what the import brought in, by RECONCILE-1's own check.
+  const reports = [], rest = [];
+  for (const p of parsed) { const rep = oldReportIn(F, p); if (rep) reports.push(rep); else rest.push(p); }
+  const read = F.readSetupFiles(rest, { anchorDate: today, currentYear: Number(String(today).slice(0, 4)) });
+  read.oldReports = reports;
+  for (const rep of reports) read.perFile.push({ name: rep.name, system: null, role: "old_report", evidence: rep.why, rows: rep.rows.length });
+  return read;
+}
+
+// Is this file an old report, and if so its table and REPORTS-5's guess.
+// A file the import reads as people or gifts stays an import file unless its
+// own name or columns say it is a list about people (a LYBUNT, retention, top
+// donors or board report), whose amounts are not gifts.
+const LIST_KINDS = ["lybunt", "retention", "top_donors", "board_report", "grant_report"];
+function oldReportIn(F, p) {
+  const O = require("./oldReports");
+  const text = p.text != null ? String(p.text) : csvFromRecords(p.records || []);
+  const t = O.parseCsv(text);
+  if (!t.headers.length || !t.rows.length) return null;
+  const g = O.guessReport({ fileName: p.name, headers: t.headers, rows: t.rows });
+  if (g.kind === "other") return null;
+  const role = F.fileRole(p);
+  if ((role === "donors" || role === "gifts") && !LIST_KINDS.includes(g.kind)) return null;
+  const wide = t.headers.filter(h => /^(fy\s*)?(19|20)\d{2}$/i.test(String(h).trim())).length >= 1
+    && !t.headers.some(h => /^(amount|total|gift total|revenue)$/i.test(String(h).trim()));
+  return { name: p.name, text, headers: t.headers, rows: t.rows, kind: g.kind, system: g.system, period: g.period, why: g.why,
+    mapping: wide ? { wide: true, amountRow: 0 } : O.guessMapping(t.headers) };
+}
+const csvCell = v => { const s = String(v ?? ""); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+function csvFromRecords(records) {
+  if (!records.length) return "";
+  const hs = Object.keys(records[0]);
+  return [hs, ...records.map(r => hs.map(h => r[h]))].map(r => r.map(csvCell).join(",")).join("\n");
 }
 
 // The questions a computer can't answer, each with a default already picked.
@@ -157,6 +192,8 @@ function planSentences({ siteRead, filesRead, tools, fileTools, staff }) {
     if (filesRead.setAside.length) auto.push({ step: "import", sentence: `Leave out ${plural(filesRead.setAside.length, "row that was", "rows that were")} not money received, each listed with its reason.` });
     if (filesRead.funds.length) auto.push({ step: "funds", sentence: `Create ${plural(filesRead.funds.length, "fund", "funds")}, ordered by dollars: ${filesRead.funds.map(f => f.name).join(", ")}.` });
   }
+  for (const rep of (filesRead && filesRead.oldReports) || [])
+    auto.push({ step: "finish", sentence: `Check ${rep.name}, your old report, against what Steward has${rep.period ? ` for ${rep.period.label}` : ""}, and say where they agree.` });
   auto.push({ step: "groups", sentence: "Add the starter groups: first gift this year, gave last year but not yet this year, monthly givers and the top tenth by lifetime giving." });
   auto.push({ step: "templates", sentence: "Write a thank-you email and two variations in your words, as drafts for you to read." });
   auto.push({ step: "journeys", sentence: "Build three journeys, all paused: a new-donor welcome, a gone-quiet note and a card-failed note for monthly donors." });
@@ -317,7 +354,10 @@ const STEPS = {
     const mode = (ctx.run.answers || {}).thanks === "all" ? "all" : "none";
     const t0 = Date.now();
     const before = await idsOf(ctx.orgId);
-    const res = await AC.call(ctx.call, "POST", "/donors/import-combined", { donors, gifts, identityResolved: true, importId,
+    // A gifts-only file's people were grouped the Import screen's way, and go
+    // in the way that screen sends them (no identityResolved: the combined
+    // import's own email match against people already on file applies).
+    const res = await AC.call(ctx.call, "POST", "/donors/import-combined", { donors, gifts, identityResolved: !F.fromGiftFile, importId,
       thanks: { mode }, headers: F.headers });
     if (res.status >= 400) throw new Error("the import was refused: " + ((res.body && (res.body.message || res.body.error)) || res.status));
     const sem = await AC.call(ctx.call, "POST", "/donors/import-semantics", {
@@ -491,7 +531,25 @@ const STEPS = {
         calls.push({ donorId: m.id, name: m.name, reason: `Gave ${dollars(Number(m.cents))} in all, last on ${String(m.last).slice(0, 10)}, and nothing yet this year.` });
       }
     }
-    return { sentence: `${plural(calls.length, "person", "people")} to call tomorrow.`, calls };
+    // FIX-43 Part 3: an old report in the files is checked by RECONCILE-1,
+    // through the old-reports route a person's own upload takes, so it is
+    // stored, checked and undone exactly as that one is.
+    const reports = [];
+    for (const rep of ctx.filesRead.oldReports || []) {
+      const b = await AC.call(ctx.call, "POST", "/old-reports/batches", {});
+      if (b.status >= 400 || !b.body || !b.body.id) continue;
+      await ledger(ctx, { tool: "setup_old_report", table: "old_report_batches", entityId: b.body.id, before: null, after: { id: b.body.id } });
+      const fileName = /\.csv$/i.test(rep.name) ? rep.name : rep.name.replace(/\.[^.]+$/, "") + ".csv";
+      const r = await AC.call(ctx.call, "POST", `/old-reports/batches/${b.body.id}/files`, {
+        file: "data:text/csv;base64," + Buffer.from(rep.text, "utf8").toString("base64"), fileName,
+        kind: rep.kind, system: rep.system, periodFrom: rep.period ? rep.period.from : undefined, periodTo: rep.period ? rep.period.to : undefined,
+        pull: true, mapping: rep.mapping, why: rep.why });
+      if (r.status >= 400 || !r.body) { reports.push({ name: rep.name, sheetId: null, sentence: `${rep.name} was kept out of the import, and could not be checked: ${(r.body && r.body.sentence) || "the old report was refused"}.` }); continue; }
+      const c = r.body.check;
+      reports.push({ name: rep.name, sheetId: r.body.sheetId, status: c ? c.status : "not_checked",
+        sentence: c && c.sentence ? `${rep.name}: ${c.sentence}` : `${rep.name} is kept under Reports; Steward could not check it.` });
+    }
+    return { sentence: `${plural(calls.length, "person", "people")} to call tomorrow.`, calls, reports };
   },
 };
 
@@ -517,14 +575,12 @@ async function fetchLogo(url) {
     const n = site.normaliseSiteUrl(url);
     if (!n.ok) return null;
     // The logo address comes from THEIR page, so it gets the same wall as the
-    // page itself: never a private, loopback or link-local host.
-    if (!(await site.hostIsSafe(n.url))) return null;
-    const r = await fetch(n.url.href, { redirect: "manual", signal: AbortSignal.timeout(8000) });
+    // page itself, through the one safe fetch (FIX-43).
+    const r = await SF.safeFetch(n.url.href, { headers: { accept: "image/*" }, maxBytes: 400 * 1024, timeoutMs: 8000, allowLocal: site.allowLocal() });
     if (!r.ok) return null;
     const type = String(r.headers.get("content-type") || "").split(";")[0].trim();
     if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(type)) return null;
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > 400 * 1024) return null;
+    const buf = r.body;
     return `data:${type};base64,${buf.toString("base64")}`;
   } catch { return null; }
 }
@@ -627,6 +683,8 @@ async function finishReadout(orgId, r, call, today) {
   push("groups", res("groups").sentence, { kind: "tab", tab: "groups" });
   push("templates", res("templates").sentence, { kind: "tab", tab: "templates" });
   push("journeys", res("journeys").sentence, { kind: "settings", section: "journeys" });
+  // FIX-43 Part 3: the old report's check, in one line, opening the full check.
+  for (const rep of res("finish").reports || []) push("old_report", rep.sentence, rep.sheetId ? { kind: "old_report_check", id: rep.sheetId } : null);
   const waiting = [];
   const inv = await query(`SELECT id, name, title, email FROM setup_invites WHERE org_id=? AND status='prepared' ORDER BY created_at`, [orgId]);
   for (const i of inv) waiting.push({ kind: "invite", id: i.id, sentence: `Send ${i.name}'s invitation${i.title ? ` (${i.title})` : ""}.` });
@@ -691,6 +749,10 @@ async function undoAll(orgId, runId, call) {
           await run(`DELETE FROM import_merges WHERE org_id=? AND import_id=?`, [orgId, w.entity_id]).catch(() => {});
           await run(`DELETE FROM donors d WHERE d.org_id=? AND d.created_import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)`, [orgId, w.entity_id]).catch(e => kept.push({ table: "donors", id: w.entity_id, why: e.code || e.message }));
         }
+      } else if (t === "old_report_batches") {
+        const x = await AC.call(call, "POST", `/old-reports/batches/${w.entity_id}/undo`, {});
+        ok = x.status < 400;
+        if (!ok) kept.push({ table: t, id: w.entity_id, why: (x.body && (x.body.sentence || x.body.error)) || String(x.status) });
       } else if (t === "orgs") {
         const before = j(w.before_row) || {};
         const cols = Object.keys(before).filter(c => ORG_COLS.includes(c));

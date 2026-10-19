@@ -15,16 +15,17 @@
 // it is not sure is the brand's) is a QUESTION, never a value. AI is not used
 // here at all: these are facts, and AI writes sentences, never facts.
 //
-// THE FETCH IS CAREFUL. http(s) only; no private, loopback or link-local
-// address (an address the person types must not become a way to read
+// THE FETCH IS CAREFUL. Every request goes through safeFetch.js (FIX-43):
+// http(s) on 80/443 only; no private, loopback, link-local or reserved
+// address, checked on the address the socket actually connects to, on every
+// redirect hop (an address the person types must not become a way to read
 // Steward's own network); four pages at most; 600KB a page; eight seconds a
 // page; robots.txt Disallow honoured for our user agent and for *. The test
 // seam SETUP_SITE_ALLOW_LOCAL=1 lets a suite serve a saved page on localhost;
 // it is refused in production.
 "use strict";
 
-const dns = require("dns").promises;
-const net = require("net");
+const SF = require("./safeFetch");
 
 const UA = "StewardSetup/1.0 (+https://www.stewardapp.dev)";
 const MAX_PAGES = 4;
@@ -34,17 +35,6 @@ const FOLLOW_WORDS = /\b(about|who we are|our story|team|staff|leadership|people
 
 function allowLocal() {
   return process.env.SETUP_SITE_ALLOW_LOCAL === "1" && process.env.NODE_ENV !== "production";
-}
-
-function isPrivateIp(ip) {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31)
-      || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-  }
-  const v = ip.toLowerCase();
-  return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe80") || v.startsWith("::ffff:127.")
-    || v.startsWith("::ffff:10.") || v.startsWith("::ffff:192.168.");
 }
 
 // The address she typed, as a URL we are willing to fetch, or a reason.
@@ -60,35 +50,15 @@ function normaliseSiteUrl(raw) {
   return { ok: true, url: u };
 }
 
-async function hostIsSafe(u) {
-  if (allowLocal()) return true;
-  const host = u.hostname.replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
-  if (net.isIP(host)) return !isPrivateIp(host);
-  try {
-    const addrs = await dns.lookup(host, { all: true });
-    return addrs.length > 0 && addrs.every(a => !isPrivateIp(a.address));
-  } catch { return false; }
-}
-
-async function fetchText(u, fetchImpl) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
-  try {
-    // redirect: manual, so a redirect cannot carry the fetch to a host we did
-    // not check. One same-host redirect is followed by hand.
-    let r = await fetchImpl(u.href, { headers: { "user-agent": UA, accept: "text/html,text/plain" }, redirect: "manual", signal: ctl.signal });
-    if (r.status >= 300 && r.status < 400 && r.headers.get("location")) {
-      const next = new URL(r.headers.get("location"), u);
-      if (next.hostname !== u.hostname || !(await hostIsSafe(next))) return { ok: false, status: r.status, reason: "it redirects to another site" };
-      r = await fetchImpl(next.href, { headers: { "user-agent": UA }, redirect: "manual", signal: ctl.signal });
-    }
-    if (!r.ok) return { ok: false, status: r.status, reason: `the page answered ${r.status}` };
-    const buf = Buffer.from(await r.arrayBuffer());
-    return { ok: true, text: buf.slice(0, MAX_BYTES).toString("utf8"), contentType: r.headers.get("content-type") || "" };
-  } catch (e) {
-    return { ok: false, reason: e && e.name === "AbortError" ? "the page took too long" : "the page could not be reached" };
-  } finally { clearTimeout(t); }
+// Every page goes through the one safe fetch (safeFetch.js): the name is
+// resolved once, every answer must be public, the socket goes to that address,
+// and each of up to three redirects is checked the same way. `fetchImpl` is
+// gone on purpose: a seam that swaps the fetch is a seam that skips the wall.
+async function fetchText(u) {
+  const r = await SF.safeFetch(u.href, { headers: { "user-agent": UA, accept: "text/html,text/plain" },
+    maxBytes: MAX_BYTES, overflow: "truncate", timeoutMs: TIMEOUT_MS, allowLocal: allowLocal() });
+  if (!r.ok) return { ok: false, status: r.status, reason: r.status ? `the page answered ${r.status}` : r.reason };
+  return { ok: true, text: r.text(), contentType: r.headers.get("content-type") || "", url: r.url };
 }
 
 // robots.txt: the Disallow lines that apply to us or to everybody.
@@ -291,33 +261,35 @@ function mergeSite(pages, siteUrl) {
   return { siteUrl, pagesRead: pages.map(p => p.url), facts, questions };
 }
 
-// Fetch and read. `fetchImpl` is injectable; the default is the global fetch.
-async function readSite(rawUrl, { fetchImpl = globalThis.fetch } = {}) {
+// Fetch and read.
+async function readSite(rawUrl) {
   const n = normaliseSiteUrl(rawUrl);
   if (!n.ok) return { ok: false, reason: n.reason, pagesRead: [], facts: {}, questions: [] };
   const start = n.url;
-  if (!(await hostIsSafe(start))) return { ok: false, reason: "that address is not a public website", pagesRead: [], facts: {}, questions: [] };
-  const robots = await fetchText(new URL("/robots.txt", start), fetchImpl);
+  const robots = await fetchText(new URL("/robots.txt", start));
   const dis = robots.ok ? robotsDisallows(robots.text) : [];
   if (!robotsAllows(dis, start.pathname)) return { ok: false, reason: "your site's robots.txt asks us not to read that page", pagesRead: [], facts: {}, questions: [] };
-  const first = await fetchText(start, fetchImpl);
+  const first = await fetchText(start);
   if (!first.ok) return { ok: false, reason: first.reason, pagesRead: [], facts: {}, questions: [] };
-  const pages = [readPage({ url: start.href, html: first.text })];
+  // A site that redirects (example.org to www.example.org) is read where it
+  // landed, and its own links are followed on that host.
+  const landed = new URL(first.url || start.href);
+  const pages = [readPage({ url: landed.href, html: first.text })];
   const skipped = [];
   const next = [];
   for (const l of pages[0].links) {
     let u; try { u = new URL(l.href); } catch { continue; }
-    if (u.hostname !== start.hostname || u.href === start.href || next.some(x => x.href === u.href)) continue;
+    if (u.hostname !== landed.hostname || u.href === landed.href || next.some(x => x.href === u.href)) continue;
     if (FOLLOW_WORDS.test(l.words + " " + u.pathname)) next.push(u);
   }
   for (const u of next) {
     if (pages.length >= MAX_PAGES) break;
     if (!robotsAllows(dis, u.pathname)) { skipped.push({ url: u.href, reason: "robots.txt" }); continue; }
-    const r = await fetchText(u, fetchImpl);
+    const r = await fetchText(u);
     if (r.ok) pages.push(readPage({ url: u.href, html: r.text }));
     else skipped.push({ url: u.href, reason: r.reason });
   }
   return { ok: true, ...mergeSite(pages, start.href), skipped };
 }
 
-module.exports = { readSite, readPage, mergeSite, normaliseSiteUrl, robotsDisallows, isPrivateIp, hostIsSafe, MAX_PAGES };
+module.exports = { readSite, readPage, mergeSite, normaliseSiteUrl, robotsDisallows, allowLocal, MAX_PAGES };

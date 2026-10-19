@@ -49,6 +49,8 @@ delete process.env.ANTHROPIC_API_KEY;   // AI off: the template words must carry
 const OUTBOUND = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url)); return realFetch(url, opts); };
+// Setup reads the site through safeFetch.js (FIX-43), not the global fetch.
+require("../safeFetch").observers.add(r => OUTBOUND.push(r.url));
 
 const { ok, summary, login, api, q, closeDb, waitFor, importWorkSettled } = require("./helpers");
 const FX = path.join(__dirname, "fixtures", "onboard1");
@@ -72,7 +74,7 @@ const sink = http.createServer((req, res) => {
   req.on("end", () => { try { mail.push(JSON.parse(b)); } catch { mail.push({ raw: b }); } res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"id":"sunk"}'); });
 });
 
-const TABLES = ["setup_invites", "setup_files", "setup_runs", "agent_writes", "agent_runs", "agent_instructions", "readout_events", "readouts",
+const TABLES = ["old_report_checks", "historical_totals", "stored_sheets", "old_report_batches", "group_sweep_seen", "setup_invites", "setup_files", "setup_runs", "agent_writes", "agent_runs", "agent_instructions", "readout_events", "readouts",
   "import_recent_jobs", "import_merges", "imports", "thank_you_drafts", "fin_transactions", "interactions", "gifts", "cultivation_plans",
   "cultivation_templates", "group_members", "audiences", "email_templates", "invites", "threads", "tasks", "donors", "fin_funds",
   "data_health_runs", "ai_fallbacks", "user_sessions", "users"];
@@ -203,6 +205,38 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   ok("§7 Send makes one invitation and emails it once; a second press sends nothing", s1.status === 200 && s2.status === 409
     && (await n(`SELECT COUNT(*)::int n FROM invites WHERE org_id=$1`)) === 1 && mail.length === mail0 + 1, { s1: s1.status, s2: s2.status, mail: mail.length - mail0 });
 
+  // ── §7b FIX-43 Part 2: the gone-quiet journey fires on its group by rule ─
+  // Planted defect that turned this red: setup building the journey with no
+  // triggerFilters.groupId (the sweep watches only journeys that name a group).
+  console.log("\n§7b gone quiet fires");
+  {
+    const [gq] = await q(`SELECT id, trigger_key, trigger_filters FROM cultivation_templates WHERE org_id=$1 AND name LIKE 'Gone quiet%' AND archived_at IS NULL`, [ORG]);
+    const [grp] = gq ? await q(`SELECT kind, rules FROM audiences WHERE org_id=$1 AND id=$2`, [ORG, (gq.trigger_filters || {}).groupId]) : [];
+    ok("§7b the gone-quiet journey watches the gave-last-year-not-this-year group by rule", !!gq && gq.trigger_key === "joined_group" && !!grp && /lybunt/.test(JSON.stringify(grp.rules)), { gq, grp });
+    // Today minus a year is always inside the prior fiscal year, whatever month it starts.
+    const lastYear = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    const lapse = async name => {
+      const d = await api("POST", "/donors", tok, { name: `${name} Lapsed` });
+      await api("POST", `/donors/${d.body.id}/gifts`, tok, { amount: 75, date: lastYear });
+      await api("POST", "/journeys/run-sweep", tok, {});
+      return d.body.id;
+    };
+    const plans = id => n(`SELECT COUNT(*)::int n FROM cultivation_plans WHERE org_id=$1 AND template_id='${gq && gq.id}' AND donor_id='${id}'`);
+    const paused1 = await lapse("Pia");
+    const on = await api("PATCH", `/journeys/${gq && gq.id}`, tok, { enabled: true });
+    const joined = await lapse("Quentin");
+    await api("POST", "/journeys/run-sweep", tok, {});
+    ok("§7b a person who enters the group after it is turned on starts the journey, once", on.status === 200 && (await plans(joined)) === 1, { on: on.status, plans: await plans(joined) });
+    ok("§7b somebody already in the group when it was turned on is not started (the starting line)", (await plans(paused1)) === 0);
+    await api("PATCH", `/journeys/${gq && gq.id}`, tok, { enabled: false });
+    const paused2 = await lapse("Rhea");
+    ok("§7b a paused journey starts nobody", (await plans(paused2)) === 0 && (await plans(paused1)) === 0);
+    // Back the way §8 expects it: no plans, none of these three people.
+    const ids = [paused1, joined, paused2].map(x => `'${x}'`).join(",");
+    for (const t of ["cultivation_plans", "tasks", "interactions", "fin_transactions", "gifts", "group_sweep_seen"]) await q(`DELETE FROM ${t} WHERE org_id=$1 AND donor_id IN (${ids})`, [ORG]).catch(() => {});
+    await q(`DELETE FROM donors WHERE org_id=$1 AND id IN (${ids})`, [ORG]).catch(e => console.log("cleanup:", e.message));
+  }
+
   // ── §8 undo all of setup ────────────────────────────────────────────────
   console.log("\n§8 Undo all of setup");
   const u = await api("POST", `/setup/runs/${R.id}/undo`, tok, {});
@@ -219,6 +253,50 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   ok("§8 and none of the templates or groups setup made", left.templates === 0 && left.groups === 0, left);
   const [after] = await q(`SELECT ein, legal_name, mission, logo_data, setup_started_at FROM orgs WHERE id=$1`, [ORG]);
   ok("§8 the profile is back as it was", !after.ein && !after.legal_name && !after.mission && !after.logo_data && !after.setup_started_at, after);
+
+  // ── §9 FIX-43 Parts 3 and 4: a gifts-only file, and an old report ───────
+  // One gift per row with the donor's name on each row (no people file)
+  // imports the Import screen's way; a giving summary among the files is kept
+  // out of the import and checked by RECONCILE-1, its one line in the readout.
+  // Planted defects that turned this red: setupFiles back to `giftAlone`
+  // with no people from the rows ("gifts-only file imports"); readFilesFor
+  // passing the report to the import ("the report is not gifts"); the finish
+  // step skipping the check ("one line in the readout").
+  console.log("\n§9 a gifts-only file and an old report");
+  {
+    const giftsCsv = ["Donor Name,Email,Gift Date,Amount,Fund",
+      "Ada Lovelace,ada@example.org,2025-03-02,500.50,General Operating",
+      "Ada Lovelace,ADA@example.org,2025-06-01,250.00,General Operating",
+      "\"Babbage, Charles\",,2025-11-30,750.00,Building Fund",
+      "Grace Hopper,grace@example.org,2026-01-15,33.33,"].join("\n");
+    const reportCsv = "Year,Total Raised,Gifts,Donors\n2025,1500.50,3,2\n";
+    const made2 = await api("POST", "/setup/runs", tok, { files: [{ name: "gift-history.csv", text: giftsCsv }, { name: "giving-summary-2025.csv", text: reportCsv }], tools: [] });
+    const R2 = made2.body || {};
+    ok("§9 the plan counts the gifts-only file as 3 people and 4 gifts, $1,533.83", made2.status === 201 && R2.plan && R2.plan.counts.donors === 3
+      && R2.plan.counts.gifts === 4 && R2.plan.counts.giftCents === 153383 && !R2.plan.giftAlone, { status: made2.status, counts: R2.plan && R2.plan.counts, giftAlone: R2.plan && R2.plan.giftAlone, err: made2.body && made2.body.error });
+    ok("§9 the giving summary is an old report, not gifts", !!R2.plan && R2.plan.files.some(f => f.name === "giving-summary-2025.csv" && f.role === "old_report")
+      && R2.plan.auto.some(a => /giving-summary-2025\.csv/.test(a.sentence)), R2.plan && R2.plan.files);
+    await api("POST", `/setup/runs/${R2.id}/start`, tok, {});
+    let c2 = null;
+    await waitFor(async () => { c2 = (await api("GET", "/setup/current", tok)).body.run; return c2 && c2.id === R2.id && ["done", "failed"].includes(c2.status); }, { timeout: 90000, interval: 300 });
+    ok("§9 setup finished", c2 && c2.status === "done", c2 && { status: c2.status, steps: c2.steps.map(x => `${x.key}:${x.status}${x.error ? " " + x.error : ""}`) });
+    const g2 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
+    const people = (await q(`SELECT name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name`, [ORG]));
+    ok("§9 the gifts-only file imported: 4 gifts, $1,533.83 to the cent, and the report's line is not a gift", g2.n === 4 && Number(g2.c) === 153383, g2);
+    ok("§9 one person per identity, as the Import screen groups them (Ada's two rows are one person)", people.length === 3 && people.filter(x => x.email === "ada@example.org").length === 1, people);
+    const [imp2] = await q(`SELECT shape FROM imports WHERE org_id=$1 AND reversed_at IS NULL ORDER BY created_at DESC LIMIT 1`, [ORG]);
+    ok("§9 recorded as one import that undoes as one", imp2 && imp2.shape === "gift_file_with_donors", imp2);
+    const [sheet] = await q(`SELECT id, report_kind FROM stored_sheets WHERE org_id=$1 AND kind='old_report' AND removed_at IS NULL`, [ORG]);
+    const [chk] = sheet ? await q(`SELECT result FROM old_report_checks WHERE org_id=$1 AND sheet_id=$2`, [ORG, sheet.id]) : [];
+    ok("§9 the old report is kept under Reports and RECONCILE-1 checked it: it matches to the cent", !!sheet && sheet.report_kind === "giving_summary" && chk && chk.result.status === "matches", { sheet, chk: chk && { s: chk.result.status, t: chk.result.sentence } });
+    const line = c2 && c2.readout && c2.readout.did.find(d => d.step === "old_report");
+    ok("§9 \"Steward is ready\" carries the check in one line, linking to the full check", !!line && /giving-summary-2025\.csv: Matches Steward to the cent\./.test(line.sentence)
+      && line.open && line.open.kind === "old_report_check" && sheet && line.open.id === sheet.id, line);
+    const u2 = await api("POST", `/setup/runs/${R2.id}/undo`, tok, {});
+    const left2 = { gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`), donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
+      sheets: await n(`SELECT COUNT(*)::int n FROM stored_sheets WHERE org_id=$1 AND removed_at IS NULL`), totals: await n(`SELECT COUNT(*)::int n FROM historical_totals WHERE org_id=$1`) };
+    ok("§9 undo takes the import AND the old report back out", u2.status === 200 && Object.values(left2).every(v => v === 0), { u: u2.body, left2 });
+  }
 
   await reset();
   await closeDb();

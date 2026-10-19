@@ -183,6 +183,7 @@ const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
 // BUILD-94 Part 1 — the signed, expiring front door for a donor photograph
 // (a person's face is not theme imagery; see personPhoto.js's header).
 const personPhoto = require("./personPhoto");
+const { safeFetch } = require("./safeFetch");
 const { computeGuardsOk, guardFailures } = require("./guards");
 // BUILD-96 Part 2 — the ONE definition of what sample data is. The guard, the
 // counts and the delete all read from it; three lists would disagree, and the
@@ -944,7 +945,10 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
       }
       const funds = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false LIMIT 1", [orgId]);
       if (!funds.length) {
-        await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,false)",
+        // FIX-43: five values for five columns. `VALUES (?,?,?,?,false)` with a
+        // fifth bound value threw on every org with accounts and no
+        // unrestricted fund, which is where "Undo all of setup" leaves one.
+        await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,?)",
           ["ff_" + uuid().slice(0, 8), orgId, "General Operating", "General unrestricted operating fund", false]);
       }
     }
@@ -6095,30 +6099,24 @@ const PHOTO_FETCH_CONCURRENCY = 4;
 async function fetchRemoteImage(rawUrl) {
   const check = personPhoto.checkRemoteImageUrl(rawUrl);
   if (!check.ok) return { error: check.reason };
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), personPhoto.PHOTO_FETCH_TIMEOUT_MS);
-  try {
-    const r = await fetch(check.url, { redirect: "follow", signal: ac.signal, headers: { accept: "image/*" } });
-    if (!r.ok) return { error: `http ${r.status}` };
-    // A redirect can land somewhere the string check could not see. `r.url` is
-    // the FINAL URL after following, so re-running the guard on it closes the
-    // "https://example.org/x → http://169.254.169.254/" hop.
-    const after = personPhoto.checkRemoteImageUrl(r.url || check.url);
-    if (!after.ok) return { error: `redirected to ${after.reason}` };
-    const len = Number(r.headers.get("content-length") || 0);
-    if (len > personPhoto.PHOTO_MAX_BYTES) return { error: "larger than 10 MB" };
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (!buf.length) return { error: "empty response" };
-    if (buf.length > personPhoto.PHOTO_MAX_BYTES) return { error: "larger than 10 MB" };
-    // Type by CONTENT, never by the header or the extension — the same rule
-    // the upload route follows.
-    const ct = ["image/png", "image/jpeg", "image/gif", "image/webp"]
-      .find(m => imageBytesMatchMime(m, buf));
-    if (!ct) return { error: "not an image" };
-    return { buffer: buf, contentType: ct };
-  } catch (e) {
-    return { error: e && e.name === "AbortError" ? "timed out after 10s" : (e.message || "fetch failed") };
-  } finally { clearTimeout(timer); }
+  // The string check above is the cheap first answer; the wall is
+  // safeFetch.js (FIX-43): resolved once, connected to that checked address,
+  // every redirect hop re-checked. The old `r.url` re-check after
+  // redirect:"follow" never saw a NAME that resolved private.
+  const r = await safeFetch(check.url, { headers: { accept: "image/*" }, schemes: ["https:"],
+    maxBytes: personPhoto.PHOTO_MAX_BYTES, timeoutMs: personPhoto.PHOTO_FETCH_TIMEOUT_MS });
+  if (!r.ok) {
+    if (r.status) return { error: `http ${r.status}` };
+    return { error: r.reason === "the answer was too large" ? "larger than 10 MB" : r.reason === "the page took too long" ? "timed out after 10s" : r.reason };
+  }
+  const buf = r.body;
+  if (!buf.length) return { error: "empty response" };
+  // Type by CONTENT, never by the header or the extension — the same rule
+  // the upload route follows.
+  const ct = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+    .find(m => imageBytesMatchMime(m, buf));
+  if (!ct) return { error: "not an image" };
+  return { buffer: buf, contentType: ct };
 }
 
 async function processPhotoQueue({ limit = PHOTO_FETCH_BUDGET, orgId = null } = {}) {
@@ -10217,19 +10215,18 @@ async function deliverWebhooks() {
     const t = Math.floor(Date.now() / 1000);
     const sig = crypto.createHmac("sha256", d.secret).update(W.signatureBase(t, body)).digest("hex");
     let status = 0, errText = null;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
-      const r = await fetch(d.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json",
-                   [W.SIGNATURE_HEADER]: W.signatureHeader(t, sig),
-                   "user-agent": "Steward-Webhooks/1" },
-        body, signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      status = r.status;
-    } catch (e) { status = 0; errText = String(e.message || e).slice(0, 200); }
+    // The endpoint is an address an admin typed, so it goes through the one
+    // safe fetch (FIX-43): never a private or metadata address, never a
+    // redirect (a signed body is posted where it was pointed, nowhere else).
+    const r = await safeFetch(d.url, {
+      method: "POST", schemes: ["https:"], maxRedirects: 0, maxBytes: 64 * 1024, overflow: "truncate", timeoutMs: 10000,
+      headers: { "Content-Type": "application/json",
+                 [W.SIGNATURE_HEADER]: W.signatureHeader(t, sig),
+                 "user-agent": "Steward-Webhooks/1" },
+      body,
+    });
+    status = r.status || 0;
+    if (!r.status && r.reason) errText = String(r.reason).slice(0, 200);
 
     const outcome = W.deliveryOutcome(status);
     if (outcome.ok) {
