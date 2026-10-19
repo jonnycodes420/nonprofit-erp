@@ -108,10 +108,14 @@ function robotsDisallows(text) {
 const robotsAllows = (dis, pathname) => !dis.some(p => pathname.startsWith(p));
 
 // ── THE READERS (pure: HTML in, facts out) ─────────────────────────────────
-const decode = s => String(s || "")
-  .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
-  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
-const stripTags = h => decode(String(h || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+// One pass over every entity, so "&amp;lt;" reads as the text "&lt;" and is
+// never decoded twice. The result is plain text: it is only ever shown as text.
+const ENTITIES = { nbsp: " ", amp: "&", quot: '"', apos: "'", lt: "<", gt: ">" };
+const decode = s => String(s || "").replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => {
+  if (e[0] === "#") { const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1)); return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }
+  return Object.prototype.hasOwnProperty.call(ENTITIES, e.toLowerCase()) ? ENTITIES[e.toLowerCase()] : m;
+});
+const stripTags = h => decode(String(h || "").replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, " ").replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, " ")
   .replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 const attr = (tag, name) => { const m = tag.match(new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i")); return m ? decode(m[2] ?? m[3] ?? m[4] ?? "") : ""; };
 const tags = (html, name) => String(html || "").match(new RegExp(`<${name}\\b[^>]*>`, "gi")) || [];
