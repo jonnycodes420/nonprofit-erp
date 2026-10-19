@@ -341,6 +341,23 @@ async function reset() {
   ok("§9 what follows the gift still happens after the answer: the group's starting line and the call on the Thread",
     seen.n === members.n && !!thr && /Call to thank for the \$1,500\.00 gift/.test(thr.next_step_label), { seen: seen.n, members: members.n, thr });
 
+  // ── §10 the deposit slip line moves as the checks are logged (FIX-45) ───
+  // Planted defect that turned this red: batchOut without the logged count
+  // (the line read "add up to $325.00, the same as the deposit slip" after
+  // every confirm).
+  console.log("\n§10 the batch line after a confirm");
+  await q(`INSERT INTO capture_batches (id,org_id,slip_cents,created_by,created_by_name) VALUES ('capb_cap1',$1,32500,${sys})`, [ORG]);
+  for (const [id, cents] of [["cap1_b_1", 25000], ["cap1_b_2", 7500]]) {
+    await q(`INSERT INTO capture_items (id,org_id,kind,stakes,status,source,batch_id,proposal,created_by,created_by_name)
+             VALUES ($1,$2,'check','money','waiting','photo','capb_cap1',$3::jsonb,${sys})`, [id, ORG, JSON.stringify({ amount: { cents, settled: true } })]);
+  }
+  const b1 = await api("POST", "/capture/cap1_b_1/confirm", tok, { amountCents: 25000, date: "2026-10-13", donorId: "d_cap1_marg", fundId: "f_cap1_gen", kind: "check" });
+  ok("§10 the confirm answers with the batch as it now stands: 1 of 2 logged and what is left",
+    b1.status === 200 && !!b1.body.batch && /the same as the deposit slip\. 1 of 2 logged, \$75\.00 still to confirm\./.test(b1.body.batch.sentence), b1.body.batch);
+  const list10 = await api("GET", "/capture", tok);
+  const lb = ((list10.body && list10.body.batches) || []).find(x => x.id === "capb_cap1");
+  ok("§10 To confirm says the same when it is opened again", !!lb && lb.sentence === b1.body.batch.sentence, lb);
+
   for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
   mock.close();
   await reset();

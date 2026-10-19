@@ -102,7 +102,9 @@ export function CaptureInbox({ isReadOnly, onOpenThanks }) {
 
   // The batch just read first, then every batch still waiting (a slip photographed earlier).
   const shownBatches = [batch, ...((data && data.batches) || []).filter(x => !batch || x.id !== batch.id)].filter(Boolean);
-  const changed = opts => { announce(); if (!(opts && opts.silent)) load(); };
+  // FIX-45: a confirm answers with its batch as it now stands ("1 of 3
+  // logged"), which replaces the line shown, without reloading the cards.
+  const changed = opts => { announce(); if (opts && opts.batch) setBatch(opts.batch); if (!(opts && opts.silent)) load(); };
 
   const afterRead = r => {
     setBatch(r && r.batch ? r.batch : null);

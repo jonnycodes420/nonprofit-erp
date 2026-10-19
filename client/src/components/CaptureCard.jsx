@@ -198,7 +198,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
         ? await apiFetch(`/capture/${encodeURIComponent(card.id)}/confirm`, { method: "POST", body: JSON.stringify(body) })
         : await apiFetch(`/capture/${encodeURIComponent(card.id)}/apply`, { method: "POST", body: JSON.stringify({ donorId: body.donorId }) });
       setDone(resp);
-      onChanged && onChanged({ silent: true });
+      onChanged && onChanged({ silent: true, batch: resp && resp.batch });
     } catch (e) { setErr(errorMessage(e, "This could not be logged. Nothing was saved; try again.")); }
     setBusy(false);
   };

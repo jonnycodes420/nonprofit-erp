@@ -31,11 +31,15 @@ function cardOut(orgId, c) {
   };
 }
 
-async function batchOut(orgId, batchId) {
+// `loggedId` is a card being confirmed in the same moment: it counts as logged
+// before its own row says so, so the confirm can answer with the batch line in
+// the same round trip as the card's update.
+async function batchOut(orgId, batchId, { loggedId = null } = {}) {
   if (!batchId) return null;
-  const [b] = await query("SELECT * FROM capture_batches WHERE id=? AND org_id=?", [batchId, orgId]);
+  const [[b], cards] = await Promise.all([
+    query("SELECT * FROM capture_batches WHERE id=? AND org_id=?", [batchId, orgId]),
+    query("SELECT id, proposal, status FROM capture_items WHERE org_id=? AND batch_id=? ORDER BY created_at, page", [orgId, batchId])]);
   if (!b) return null;
-  const cards = await query("SELECT id, proposal FROM capture_items WHERE org_id=? AND batch_id=? ORDER BY created_at, page", [orgId, batchId]);
   const amounts = cards.map(c => (c.proposal && c.proposal.amount && c.proposal.amount.cents) ?? null);
   const unread = amounts.filter(a => a == null).length;
   const checks = amounts.reduce((s, a) => s + (a || 0), 0);
@@ -46,7 +50,15 @@ async function batchOut(orgId, batchId) {
     else if (checks === slip) { matches = true; sentence = `The ${cards.length} checks add up to ${K.cents$(checks)}, the same as the deposit slip.`; }
     else { matches = false; sentence = `The ${cards.length} checks add up to ${K.cents$(checks)}, but the deposit slip says ${K.cents$(slip)}. ${K.cents$(Math.abs(slip - checks))} ${slip > checks ? "is missing from the checks" : "more than the slip"}.`; }
   }
-  return { id: b.id, cardIds: cards.map(c => c.id), slipCents: slip, checksCents: checks, matches, sentence };
+  // FIX-45: the line moves as the checks are logged. It used to read the same
+  // after every confirm, as if nothing had happened.
+  const isLogged = c => c.status === "confirmed" || c.id === loggedId;
+  const logged = cards.filter(isLogged).length;
+  const leftCents = cards.filter(c => !isLogged(c) && c.status !== "skipped")
+    .reduce((s, c) => s + ((c.proposal && c.proposal.amount && c.proposal.amount.cents) || 0), 0);
+  if (sentence && logged === cards.length) sentence += ` All ${cards.length} are logged.`;
+  else if (sentence && logged) sentence += ` ${logged} of ${cards.length} logged, ${K.cents$(leftCents)} still to confirm.`;
+  return { id: b.id, cardIds: cards.map(c => c.id), slipCents: slip, checksCents: checks, matches, sentence, logged, leftCents };
 }
 
 async function captureAddress(orgId) {
@@ -330,12 +342,14 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
         await openGiftThread(orgId, donorId, { giftId, actorId: who.id, actorName: who.name }).catch(() => {});
       }
     };
-    const [after] = await query(`UPDATE capture_items SET status='confirmed', gift_id=?, pledge_id=?, donor_id=?, decided_at=NOW(), decided_by=?, decided_by_name=?
-                WHERE id=? AND org_id=? RETURNING *`, [giftId, pledgeId, donorId, who.id, who.name, c.id, orgId]);
+    const [[after], batch] = await Promise.all([
+      query(`UPDATE capture_items SET status='confirmed', gift_id=?, pledge_id=?, donor_id=?, decided_at=NOW(), decided_by=?, decided_by_name=?
+              WHERE id=? AND org_id=? RETURNING *`, [giftId, pledgeId, donorId, who.id, who.name, c.id, orgId]),
+      batchOut(orgId, c.batch_id, { loggedId: c.id })]);
     // Receipts follow the org's setting exactly as a hand-entered gift does:
     // Steward never sends one for a gift logged by hand; it is one click on the gift.
     const receipt = giftId && !duplicateOf ? (o && o.receipts_enabled ? "one_click" : "off") : null;
-    res.json({ card: cardOut(orgId, after), giftId, pledgeId, duplicateOf, thankYouDraftId: draft ? draft.id : null,
+    res.json({ card: cardOut(orgId, after), batch, giftId, pledgeId, duplicateOf, thankYouDraftId: draft ? draft.id : null,
       thankYouDraft: draft ? { id: draft.id, body: draft.body } : null,
       receipt, callOnThread, sentence: [sentence,
         draft ? "A thank-you is drafted for you to read and send." : null,
