@@ -231,9 +231,68 @@ async function defaultFund(orgId) {
   return g || null;
 }
 
-// The memo line or the letter's designation, against the org's funds and the
-// words this org taught Steward on earlier confirms. Unsure means the org's
-// default fund, highlighted.
+// The memo line or the letter's designation, against the org's funds, in four
+// steps (FIX-45): the words this org taught Steward on earlier confirms; a
+// fund named outright; a close word ("boathouse" for Harbor Skills Boat); and
+// last, with AI on, the model's pick with its confidence. Unsure means the
+// org's default fund (or the model's low-confidence pick), highlighted.
+const FUND_STOP = new Set(["the", "for", "and", "our", "your", "with", "from", "this", "that", "fund", "funds", "gift", "gifts",
+  "general", "donation", "memo", "please", "use", "towards", "toward", "support", "program", "programs"]);
+const fundWords = t => lc(t).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !FUND_STOP.has(w));
+// Two words are close when one begins with the other and the shorter has four
+// letters or more: boat and boathouse, scholar and scholarships, art and arts
+// does not count (three letters is too short to mean anything).
+const closeWord = (a, b) => { const [s, l] = a.length <= b.length ? [a, b] : [b, a]; return s.length >= 4 && l.startsWith(s); };
+// A word close to the organisation's own name says who the check is to, not
+// which fund: "Harborlight" on a memo is not the Harbor Skills Boat fund.
+function closeFund(text, funds, orgName = "") {
+  const own = fundWords(orgName);
+  const memo = fundWords(text).filter(w => !own.some(o => o === w || closeWord(o, w)));
+  if (!memo.length) return null;
+  const scored = funds.map(f => {
+    const names = fundWords([f.name, f.public_name].filter(Boolean).join(" "));
+    const pairs = [];
+    for (const n of new Set(names)) { const m = memo.find(w => closeWord(w, n)); if (m) pairs.push([m, n]); }
+    return { f, pairs };
+  }).filter(x => x.pairs.length);
+  if (!scored.length) return null;
+  const best = Math.max(...scored.map(x => x.pairs.length));
+  const top = scored.filter(x => x.pairs.length === best);
+  return top.length === 1 ? top[0] : null;
+}
+const FUND_PICK_SCHEMA = {
+  type: "object", additionalProperties: false, required: ["fund", "confidence"],
+  properties: {
+    fund: { type: "string", description: "The id of the one fund the money is meant for, copied exactly from the list, or none." },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+  },
+};
+async function modelFund(orgId, text, funds) {
+  if (!funds.length || !D.aiGate || !D.anthropicFor) return null;
+  const gate = await D.aiGate(orgId);
+  if (!gate.ok) return null;
+  try {
+    const msg = await D.anthropicFor(orgId).messages.create({
+      model: "claude-haiku-4-5-20251001", max_tokens: 200, thinking: { type: "disabled" },
+      tools: [{ name: "pick_fund", description: "Say which fund the memo means, and how sure you are.", strict: true, input_schema: FUND_PICK_SCHEMA }],
+      tool_choice: { type: "tool", name: "pick_fund" },
+      messages: [{ role: "user", content: [
+        "A donor wrote this on a check or a letter: " + JSON.stringify(String(text).slice(0, 120)),
+        "The organisation's funds, one per line as id: name:",
+        ...funds.map(f => `${f.id}: ${f.name}${f.public_name ? " (" + f.public_name + ")" : ""}`),
+        "Pick the fund the donor means. Say none if no fund fits. High confidence only when the words clearly mean that fund.",
+      ].join("\n") }],
+    });
+    const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === "pick_fund");
+    const pick = use && use.input;
+    const f = pick && funds.find(x => x.id === pick.fund);
+    if (!f || !["high", "medium", "low"].includes(pick.confidence)) return null;
+    return { f, confidence: pick.confidence };
+  } catch (e) {
+    console.error("[capture] fund pick failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 120));
+    return null;
+  }
+}
 async function fundFor(orgId, item) {
   const text = [item.fundName, item.memo].filter(Boolean).join(" ");
   const funds = await D.query("SELECT id, name, public_name FROM fin_funds WHERE org_id=? ORDER BY name", [orgId]);
@@ -248,6 +307,14 @@ async function fundFor(orgId, item) {
     const tm = await import("./shared/textMatch.js");
     const hits = funds.filter(f => [f.name, f.public_name].filter(Boolean).some(n => tm.eitherContainsTokenRun(text, n)));
     if (hits.length === 1) return { id: hits[0].id, name: hits[0].name, unsure: false, why: `the ${item.kind === "check" ? "memo" : "letter"} names it` };
+    const [org] = await D.query("SELECT name FROM orgs WHERE id=?", [orgId]);
+    const close = closeFund(text, hits.length > 1 ? hits : funds, org && org.name);
+    if (close) return { id: close.f.id, name: close.f.name, unsure: false,
+      why: `the ${item.kind === "check" ? "memo" : "letter"} says "${close.pairs[0][0]}", close to ${close.f.name}` };
+    const m = await modelFund(orgId, text, funds);
+    if (m) return { id: m.f.id, name: m.f.name, unsure: m.confidence !== "high", confidence: m.confidence,
+      why: m.confidence === "high" ? `Steward read "${text.slice(0, 60)}" as ${m.f.name}`
+        : `Steward thinks "${text.slice(0, 60)}" means ${m.f.name}, but isn't sure; check it` };
   }
   const d = await defaultFund(orgId);
   return { id: d ? d.id : null, name: d ? d.name : null, unsure: true,
@@ -554,6 +621,6 @@ module.exports = {
   fromMailboxMessage, captureSlug, prepareFile,
   clockSql, clock, CLOCK_SENTENCE, CLOCK_DAYS,
   configure, scrubBank, readDocument, storeFile, decodeDataUrl, sniff, cardsFromFile, cardFromItem, insertCard,
-  applyLow, undoLow, receivedAtFor, fundFor, donorFor, amountFor, defaultFund, fileUrl,
+  applyLow, undoLow, receivedAtFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, defaultFund, fileUrl,
   MAX_BYTES, UNDO_DAYS, MONEY_KINDS, LOW_KINDS, KINDS, READ_SCHEMA, READ_PROMPT, AI_OFF_SENTENCE, cents$,
 };

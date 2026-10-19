@@ -82,6 +82,8 @@ const C1 = FIXTURES["check-1.png"], DAF = FIXTURES["daf-letter.pdf"];
 
 // ── THE STAND-IN: the model and Gmail ─────────────────────────────────────
 const queued = [];      // what the "model" will transcribe next, in order
+const queuedFund = [];  // FIX-45: what the "model" picks for a memo's fund, in order
+const fundPicks = [];   // every fund pick the server asked for
 const sentToModel = []; // every request body the server sent the model
 const gmailHits = [];
 const PDF_BYTES = fs.readFileSync(path.join(FX, "pledge-form.pdf"));
@@ -99,6 +101,12 @@ const mock = http.createServer((req, res) => {
   req.on("end", () => {
     const u = new URL(req.url, "http://x");
     const send = (code, j) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(j)); };
+    if (u.pathname === "/v1/messages" && body.includes('"name":"pick_fund"')) {
+      fundPicks.push(body);
+      return send(200, { id: "msg_standin_fund", type: "message", role: "assistant", model: "claude-haiku-4-5", stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", id: "tu_f", name: "pick_fund", input: queuedFund.shift() || { fund: "none", confidence: "low" } }] });
+    }
     if (u.pathname === "/v1/messages") {
       sentToModel.push(body);
       const items = queued.shift() || [];
@@ -357,6 +365,25 @@ async function reset() {
   const list10 = await api("GET", "/capture", tok);
   const lb = ((list10.body && list10.body.batches) || []).find(x => x.id === "capb_cap1");
   ok("§10 To confirm says the same when it is opened again", !!lb && lb.sentence === b1.body.batch.sentence, lb);
+
+  // ── §11 a memo's fund: learned, named, close, then the model (FIX-45) ───
+  // Planted defect that turned this red: fundFor without the close-word step
+  // ("for the boathouse" fell to the default fund, unsure).
+  console.log("\n§11 the memo's fund");
+  await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('f_cap1_boat',$1,'Harbor Skills Boat',true)`, [ORG]);
+  const picks0 = fundPicks.length;
+  queued.push([checkItem({ ...C1, memo: "for the boathouse" })]);
+  const u11 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-1.png", dataUrl: dataUrl("check-1.png", "image/png") }], source: "photo" });
+  const f11 = u11.body && u11.body.cards && u11.body.cards[0] && u11.body.cards[0].fund;
+  ok("§11 \"for the boathouse\" is the Harbor Skills Boat fund, by a close word, without asking the model",
+    !!f11 && f11.id === "f_cap1_boat" && f11.unsure === false && /boathouse/.test(f11.why) && fundPicks.length === picks0, f11);
+  queuedFund.push({ fund: "f_cap1_bld", confidence: "low" });
+  queued.push([checkItem({ ...C1, memo: "new roof" })]);
+  const u12 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-2.png", dataUrl: dataUrl("check-2.png", "image/png") }], source: "photo" });
+  const f12 = u12.body && u12.body.cards && u12.body.cards[0] && u12.body.cards[0].fund;
+  ok("§11 nothing close, so the model picks, and a low-confidence pick is proposed but highlighted as unsure",
+    !!f12 && f12.id === "f_cap1_bld" && f12.unsure === true && f12.confidence === "low" && fundPicks.length === picks0 + 1 && /new roof/.test(fundPicks[picks0] || ""), f12);
 
   for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
   mock.close();
