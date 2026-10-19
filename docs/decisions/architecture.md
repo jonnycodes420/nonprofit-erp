@@ -40,6 +40,9 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Keep the read-only API as two doors with two locks.** `requireApiKey` guards `/api/v1/*`
   only, and `requireAuth` never accepts a key. The org comes from the key's stored row, never from
   a header or query. A revoked key answers the same 401 as an unknown one. (BUILD-98 switch)
+- **Fetch an address a person typed only through `safeFetch.js`.** A website, a logo, a spreadsheet
+  photo, a webhook endpoint: resolved once, every answer public, the socket pinned to that IP, each redirect
+  re-checked. Never `fetch()` a URL from a body, a file or a page. (FIX-43)
 - **Store a credential only sealed by `shared/secretBox.js` with AAD bound to the org.** There is
   no plaintext fallback: with no key the route answers 503 and writes nothing. (BUILD-89S,
   BUILD-98 switch)

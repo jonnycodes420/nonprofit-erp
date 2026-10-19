@@ -945,7 +945,10 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
       }
       const funds = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false LIMIT 1", [orgId]);
       if (!funds.length) {
-        await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,false)",
+        // FIX-43: five values for five columns. `VALUES (?,?,?,?,false)` with a
+        // fifth bound value threw on every org with accounts and no
+        // unrestricted fund, which is where "Undo all of setup" leaves one.
+        await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,?)",
           ["ff_" + uuid().slice(0, 8), orgId, "General Operating", "General unrestricted operating fund", false]);
       }
     }

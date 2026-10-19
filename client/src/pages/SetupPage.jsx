@@ -235,6 +235,7 @@ function Ready({ run, onReload, onUndone }) {
     if (o.kind === "import") nav("/donors");
     else if (o.kind === "settings") nav(`/app/settings?section=${o.section}`);
     else if (o.kind === "tab") nav(`/app/${o.tab === "templates" ? "communications" : o.tab}`);
+    else if (o.kind === "old_report_check") nav(`/app/reports?report=board-files&check=${encodeURIComponent(o.id)}`);
   };
   const doUndo = async () => {
     setBusy(true);

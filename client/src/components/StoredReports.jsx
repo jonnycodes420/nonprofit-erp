@@ -31,7 +31,8 @@ async function download(id, name) {
 
 export default function StoredReports({ onNavigate }) {
   const [list, setList] = useState(null);
-  const [checking, setChecking] = useState(null);
+  // FIX-43: setup's readout links here with ?check=<report id> to open its check.
+  const [checking, setChecking] = useState(() => { try { return new URLSearchParams(window.location.search).get("check"); } catch { return null; } });
   const [open, setOpen] = useState(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);

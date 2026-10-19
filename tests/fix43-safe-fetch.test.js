@@ -30,7 +30,7 @@ const SF = require("../safeFetch");
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
   if (cond) { pass++; console.log("  PASS  " + name); }
-  else { fail++; console.log("  FAIL  " + name + (extra !== undefined ? " — " + JSON.stringify(extra).slice(0, 400) : "")); }
+  else { fail++; console.log("  FAIL  " + name + (extra !== undefined ? " : " + JSON.stringify(extra).slice(0, 400) : "")); }
 }
 
 // THE STAND-IN NETWORK. Each IP serves what is in NET; any other IP refuses.

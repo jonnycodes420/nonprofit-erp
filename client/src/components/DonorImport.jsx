@@ -13,6 +13,7 @@ import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
+import { normalizeNameForDonorMatch, donorsFromUnmatchedGifts } from "../../../shared/giftFileDonors.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { detectNpsp, npspMapping, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
 import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
@@ -3551,14 +3552,6 @@ function yearColToDate(header, convention) {
   return null;
 }
 
-function normalizeNameForDonorMatch(name) {
-  if (!name) return "";
-  let s = String(name).trim().toLowerCase().replace(/\s+/g, " ");
-  const ci = s.indexOf(",");
-  if (ci > 0) s = `${s.slice(ci+1).trim()} ${s.slice(0,ci).trim()}`;
-  return s;
-}
-
 function matchDonorForGift(rawName, rawEmail, donors) {
   const em   = (rawEmail || "").toLowerCase().trim();
   const name = (rawName  || "").trim();
@@ -3602,6 +3595,8 @@ function matchDonorForGift(rawName, rawEmail, donors) {
 // It returns the SAME shapes `buildBothPayload` returns, because the import it
 // feeds is the combined import that already exists. There is no second import
 // path, and this function adds no third.
+// It lives in shared/giftFileDonors.js (FIX-43) so setup's gifts-only file
+// runs the same grouping.
 // FIX-11 Part 4 — THE GIFT-HISTORY IMPORTER WAS ROUNDING TO WHOLE DOLLARS.
 //
 // `Math.round(amtVal || 0)` in both parse paths, since this surface was
@@ -3616,41 +3611,6 @@ const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 const fmtMoneyPlain = n => "$" + (Math.round((Number(n) || 0) * 100) / 100)
   .toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function donorsFromUnmatchedGifts(unmatched) {
-  const byKey = new Map();
-  const donors = [];
-  const gifts = [];
-  for (const g of unmatched) {
-    const email = String(g.rawEmail || "").toLowerCase().trim();
-    const name = String(g.rawName || "").trim();
-    // An identity with neither is not a person and cannot be created. It stays
-    // out, counted, rather than becoming a donor called "".
-    if (!email && !name) continue;
-    const key = email && email.includes("@") ? "e:" + email : "n:" + normalizeNameForDonorMatch(name);
-    if (!byKey.has(key)) {
-      byKey.set(key, donors.length);
-      donors.push({
-        name: name || email,
-        email: email && email.includes("@") ? email : "",
-        // Everything else a donor row can carry is deliberately absent: a gift
-        // file knows a name, an address and an amount, and inventing a stage
-        // or a status from it would be making something up.
-      });
-    }
-    gifts.push({
-      donorIndex: byKey.get(key),
-      amount: g.amount, date: g.date,
-      type: g.type || "cash", campaign: g.campaign || "", notes: g.notes || "",
-      externalId: g.externalId || undefined,
-    });
-  }
-  return {
-    donors, gifts,
-    nameless: unmatched.filter(g => !String(g.rawEmail || "").trim() && !String(g.rawName || "").trim()).length,
-    dollars: Math.round(gifts.reduce((s, g) => s + (Number(g.amount) || 0), 0) * 100) / 100,
-  };
-}
 
 function autoDetectWideConfig(headers, rows) {
   const yearCols = headers.filter(h => YEAR_HDR_PAT.test(String(h)));
