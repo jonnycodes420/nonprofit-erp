@@ -46,7 +46,7 @@ const SUPER = "inc-super@example.org";
 
 async function reset() {
   for (const o of [ORG, DEMO, OFF, HQ]) {
-    for (const t of ["interactions", "pledges", "gifts", "sequence_enrollments",
+    for (const t of ["interactions", "pledges", "recurring_subscriptions", "gifts", "sequence_enrollments",
                      "sequence_steps", "sequences", "digest_sends", "donors",
                      "users", "accounts", "fin_funds", "orgs"]) {
       if (t === "sequence_steps") {
@@ -137,6 +137,35 @@ const mkDonor = async (id, org, email, isSample) =>
   // MAIL-1: the onboarding sequence is gone, not gated: nothing creates it.
   ok("no code creates an onboarding sequence any more (MAIL-1)",
     !/INSERT INTO sequences[^;]*'onboarding'/.test(src) && !/function sendOnboardingSequence/.test(src), null);
+
+  // ── §2b · FIX-45 · A DEMO ORG GENERATES NO SENDS AT ALL ─────────────────
+  // Muse (19 Oct): Harborlight's hourly sweep picked twelve pledge reminders to
+  // example.com people and the gate refused each one, every hour. The gate
+  // held, but the work was generated anyway. These run the real sweeps: a
+  // demo org's overdue pledge and failed card, and a sample person's pledge in
+  // a real org, are never PICKED. The real person's pledge beside them is,
+  // which is what proves the count can be anything but zero.
+  console.log("\n§2b · a demo org and a sample person generate no sends (FIX-45)");
+  await mkUser("u_inc_demo", DEMO, "inc-demo@example.org");
+  const overdue = "2026-01-05";
+  for (const [id, org, donor] of [["pl_inc_demo", DEMO, "d_inc_demo"], ["pl_inc_smpl", ORG, "d_inc_smpl"], ["pl_inc_real", ORG, "d_inc_real"]]) {
+    await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,first_overdue_at,next_reminder_at)
+             VALUES ($1,$2,$3,500,$4,'open',NOW() - INTERVAL '2 days',NOW() - INTERVAL '1 hour')`, [id, org, donor, overdue]);
+  }
+  await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,status,next_dunning_at)
+           VALUES ('rs_inc_demo',$1,'d_inc_demo','sub_inc_demo_fix45',25,'past_due',NOW() - INTERVAL '1 hour')`, [DEMO]);
+  const demoTok = await login("inc-demo@example.org", PW);
+  const orgTok = await login(ADMIN, PW);
+  const demoPick = await api("POST", "/pledges/process-reminders", demoTok);
+  ok("the pledge-reminder sweep picks NOTHING in a demo org", demoPick.status === 200 && demoPick.body.picked === 0, demoPick.body);
+  const orgPick = await api("POST", "/pledges/process-reminders", orgTok);
+  ok("…and in a real org it picks the real person's pledge and never the sample person's",
+    orgPick.status === 200 && orgPick.body.picked === 1, orgPick.body);
+  const dun = await api("POST", "/recurring/process-dunning", demoTok);
+  ok("the dunning sweep picks no demo org's failed card", dun.status === 200 && dun.body.picked === 0, dun.body);
+  const mp = require("../mailPolicy");
+  ok("one rule for the gate and the sweeps: every demo org orgKind.js names is a demo org to the gate",
+    require("../orgKind").DEMO_ORG_IDS.every(id => mp.isDemoOrg({ id })) && mp.isDemoOrg({ id: "x", org_kind: "demo" }), null);
 
   // ── §3 · PROVISIONING IS NOT A SIGNUP ────────────────────────────────────
   console.log("\n— §3 · provisioning an org is not a signup —");

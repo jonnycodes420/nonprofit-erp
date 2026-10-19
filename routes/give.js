@@ -4097,8 +4097,9 @@ app.post("/recurring/check-cards", requireAuth, requireAdmin, wrap(async (req, r
 }));
 
 app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await processDunning();
-  res.json({ success: true });
+  const out = await processDunning();
+  // FIX-45: how many of THIS org's cards the sweep picked (never another org's ids).
+  res.json({ success: true, picked: ((out && out.picked) || []).filter(r => r.orgId === req.user.orgId).length });
 }));
 
 // Public — a donor clicking the "Update my card" button in a dunning email.

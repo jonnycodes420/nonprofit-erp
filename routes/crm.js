@@ -25364,8 +25364,9 @@ app.get("/donors/:id/recurring-subscription", requireAuth, wrap(async (req, res)
 }));
 
 app.post("/pledges/process-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await processPledgeReminders();
-  res.json({ success: true });
+  const out = await processPledgeReminders();
+  // FIX-45: how many of THIS org's pledges the sweep picked (never another org's ids).
+  res.json({ success: true, picked: ((out && out.picked) || []).filter(r => r.orgId === req.user.orgId).length });
 }));
 
 // Everyday staff action, matching POST /recurring/:donorId/resend — resends

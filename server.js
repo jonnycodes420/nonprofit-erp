@@ -6656,7 +6656,9 @@ async function processSequences() {
       `SELECT se.*, s.name AS seq_name, s.org_id, s.trigger AS seq_trigger
        FROM sequence_enrollments se
        JOIN sequences s ON se.sequence_id = s.id
-       WHERE se.status = 'active' AND se.next_send_at <= NOW()`,
+       JOIN orgs o ON o.id = s.org_id
+       WHERE se.status = 'active' AND se.next_send_at <= NOW()
+         AND ${mailPolicy.orgSendsSql("o")}`,
       []
     );
     for (const enr of enrollments) {
@@ -7589,8 +7591,10 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
     `SELECT se.*, s.name AS seq_name, s.turned_on_by_name, s.turned_on_at, s.trigger AS seq_trigger
        FROM sequence_enrollments se
        JOIN sequences s ON s.id = se.sequence_id
+       JOIN orgs o ON o.id = se.org_id
       WHERE se.status = 'active' AND se.track_key IS NOT NULL
         AND s.status = 'active' AND se.next_send_at <= NOW()${scope}
+        AND ${mailPolicy.orgSendsSql("o")}
       ORDER BY se.next_send_at ASC LIMIT ?`, params);
   const out = { sent: 0, skipped: 0, stopped: 0, failed: 0, waited: 0, due: due.length };
   // Group by org so the window and the clock are read once per org, not once
@@ -7739,14 +7743,19 @@ async function closeEnrollment(id, status, reason) {
 // module-level async function run on startup and on an interval, also
 // exposed as an admin-only manual-trigger route.
 async function processDunning() {
+  const picked = [];
   try {
+    // FIX-45: never a demo org's or a sample person's card (orgSendsSql).
     const rows = await query(
       `SELECT rs.*, d.name AS donor_name, d.email AS donor_email
        FROM recurring_subscriptions rs
-       JOIN donors d ON d.id = rs.donor_id
-       WHERE rs.status IN ('past_due','recovering') AND rs.next_dunning_at <= NOW()`,
+       JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id
+       JOIN orgs o ON o.id = rs.org_id
+       WHERE rs.status IN ('past_due','recovering') AND rs.next_dunning_at <= NOW()
+         AND d.is_sample IS NOT TRUE AND ${mailPolicy.orgSendsSql("o")}`,
       []
     );
+    picked.push(...rows.map(r => ({ orgId: r.org_id, subscriptionId: r.id })));
     for (const rs of rows) {
       try {
         const orgRows = await query(
@@ -7793,6 +7802,7 @@ async function processDunning() {
       } catch (e) { console.error("[dunning] subscription", rs.id, e.message); }
     }
   } catch (e) { console.error("[dunning] processDunning:", e.message); }
+  return { picked };
 }
 
 // ── THE CARD THAT IS GOING TO DIE, BEFORE IT DIES (2026-09-11) ─────────────
@@ -8771,6 +8781,7 @@ async function sustainerFileFacts(orgId, today) {
 const PLEDGE_REMINDER_SCHEDULE_DAYS = [0, 3, 7, 14];
 
 async function processPledgeReminders() {
+  const picked = [];
   try {
     // Step 1 — the trigger. Recurring dunning's cadence is initialized by a
     // Stripe webhook (invoice.payment_failed); a pledge due date has no
@@ -8792,13 +8803,19 @@ async function processPledgeReminders() {
     }
 
     // Step 2 — send whatever's due, exactly like processDunning().
+    // FIX-45: a demo org's pledges and a sample person's are never picked:
+    // the mail gate used to refuse them every hour, forever (orgSendsSql).
     const rows = await query(
       `SELECT p.*, d.name AS donor_name, d.email AS donor_email
        FROM pledges p
-       JOIN donors d ON d.id = p.donor_id
+       JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+       JOIN orgs o ON o.id = p.org_id
        WHERE p.status = 'open' AND p.next_reminder_at <= NOW()
-         AND COALESCE(p.is_match,false) = false`
+         AND COALESCE(p.is_match,false) = false
+         AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
+         AND ${mailPolicy.orgSendsSql("o")}`
     );
+    picked.push(...rows.map(p => ({ orgId: p.org_id, pledgeId: p.id })));
     for (const p of rows) {
       try {
         const orgRows = await query(
@@ -8833,6 +8850,7 @@ async function processPledgeReminders() {
       } catch (e) { console.error("[pledge-reminder] pledge", p.id, e.message); }
     }
   } catch (e) { console.error("[pledge-reminder] processPledgeReminders:", e.message); }
+  return { picked };
 }
 
 // ── Billing helpers ────────────────────────────────────────────────────────
