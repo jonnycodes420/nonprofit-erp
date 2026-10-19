@@ -177,6 +177,9 @@ async function orgFromLoginEmail(email) {
 }
 
 function orgOf(req, responseBody) {
+  // CLIENT-SAFE-1: a super-admin changing ONE org's setting files the row in
+  // that org's log, not in Steward's own (req.audit.forOrg).
+  if (req.auditForOrgId) return req.auditForOrgId;
   if (req.user && req.user.orgId) return req.user.orgId;
   if (req.apiKey && req.apiKey.orgId) return req.apiKey.orgId;
   if (req.portal && req.portal.org && req.portal.org.id) return req.portal.org.id;
@@ -388,6 +391,7 @@ function auditTrail(opts = {}) {
       label(text) { extra.entityLabel = text; },
       action(verb) { extra.action = verb; },
       org(orgId) { req.auditOrgId = orgId; },
+      forOrg(orgId) { req.auditForOrgId = orgId; },
       actor(a) { req.auditActor = a; },
       // SURVEY-1 — an ANONYMOUS answer is recorded like any other change, but
       // without the internet address: "anonymous" means no IP anywhere, the

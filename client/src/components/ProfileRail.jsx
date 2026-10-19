@@ -15,6 +15,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 import { orgTodayCivil } from "../lib/orgToday";
 import { MEETING_ACTION } from "./MeetingPanels";
+import { ClientFlag } from "./PrivacyPanel";
 
 // Ink ground, light text. The greys are cream at reduced opacity, the design
 // system's own answer for secondary text on ink.
@@ -200,10 +201,11 @@ export function ConnectedCard({ connected }) {
 
 // The contact card's extra lines: the address, the preferred way, and every
 // do-not flag said plainly.
-export function ContactExtras({ contact }) {
+export function ContactExtras({ contact, donorId, isReadOnly }) {
   if (!contact) return null;
   return (
     <>
+      {donorId && (contact.privacyOn || contact.isClient) && <><dt style={DIM}>Privacy</dt><dd style={{ margin: 0 }}><ClientFlag donorId={donorId} isClient={contact.isClient} isReadOnly={isReadOnly} /></dd></>}
       {contact.address && <><dt style={DIM}>Address</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }} data-testid="dp-rail-address">{contact.address}</dd></>}
       {contact.preferred && <><dt style={DIM}>Prefers</dt><dd style={{ margin: 0 }}>{contact.preferred}</dd></>}
       {(contact.flags || []).length > 0 && <><dt style={DIM}>Careful</dt><dd style={{ margin: 0, display: "flex", flexDirection: "column", gap: 3 }} data-testid="dp-rail-flags">

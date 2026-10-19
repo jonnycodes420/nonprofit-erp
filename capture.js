@@ -338,6 +338,17 @@ async function cardsFromFile(orgId, buffer, fileName, from, batchId = null) {
   const email = from.source === "email";
   const r = await readDocument(orgId, { buffer: f.buffer, contentType: f.contentType });
   if (email && r.ai !== "read") return { cards: [], ignored: "not_read" };
+  // CLIENT-SAFE-1: in privacy mode a health sentence in what was read off an
+  // emailed attachment is replaced before the card is written.
+  if (from.healthScreen && r.ai === "read") {
+    const C = await import("./shared/clientSafe.js");
+    let held = 0;
+    r.items = r.items.map(it => Object.fromEntries(Object.entries(it).map(([k, v]) => {
+      if (typeof v !== "string" || !v) return [k, v];
+      const h = C.holdHealth(v); held += h.held; return [k, h.text];
+    })));
+    if (held) await require("./clientSafe").recordHold(orgId, { donorIds: from.senderDonorId ? [from.senderDonorId] : [], source: "capture", actorId: from.actorId });
+  }
   const items = r.ai === "read" ? r.items.filter(i => i.kind !== "deposit_slip" && !(email && i.kind === "other")) : [];
   const slip = r.ai === "read" ? r.items.find(i => i.kind === "deposit_slip") : null;
   if (email && !items.length) return { cards: [], ignored: "not_a_card" };
@@ -373,6 +384,9 @@ async function cardsFromFile(orgId, buffer, fileName, from, batchId = null) {
 // PDFs and images only, each at most MAX_BYTES; everything else stays unstored.
 async function fromMailboxMessage(orgId, { donorIds, direction, attachmentCount, provider, messageId, receivedAt, actorId, actorName, loadAttachments }) {
   if (direction !== "inbound" || !Array.isArray(donorIds) || donorIds.length !== 1 || !attachmentCount) return { cards: 0 };
+  // CLIENT-SAFE-1: an attachment from a person marked as a client is never a card.
+  const privacy = await require("./clientSafe").privacyFor(orgId);
+  if (privacy.on && privacy.clientIds.has(donorIds[0])) return { cards: 0 };
   const done = await D.query("SELECT 1 FROM capture_items WHERE org_id=? AND source_ref LIKE ? LIMIT 1", [orgId, `${provider}:${messageId}:%`]);
   if (done.length) return { cards: 0 };
   const atts = (await loadAttachments()) || [];
@@ -382,7 +396,7 @@ async function fromMailboxMessage(orgId, { donorIds, direction, attachmentCount,
     const t = sniff(a.buffer);
     if (t !== PDF && !IMAGE_TYPES.includes(t)) continue;
     const r = await cardsFromFile(orgId, a.buffer, a.fileName || "attachment", {
-      source: "email", receivedAt, sourceRef: `${provider}:${messageId}:${i}`, actorId, actorName, senderDonorId: donorIds[0] });
+      source: "email", receivedAt, sourceRef: `${provider}:${messageId}:${i}`, actorId, actorName, senderDonorId: donorIds[0], healthScreen: privacy.on });
     cards += (r.cards || []).length;
   }
   return { cards };

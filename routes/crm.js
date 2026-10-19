@@ -4390,7 +4390,8 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId, id = req.params.id;
   const [d] = await query(
     `SELECT id, name, email, phone, address, address2, city, state, zip, country, birth_month, birth_day,
-            deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable
+            deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable,
+            is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
        FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
@@ -4523,7 +4524,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   if (d.do_not_email || suppressed.length) flags.push({ key: "do_not_email", label: "No email: opted out" });
   if (d.email_unreachable) flags.push({ key: "email_unreachable", label: "Email bounced" });
   if (d.address_unmailable) flags.push({ key: "address_unmailable", label: "Address returned mail" });
-  const contact = { email: d.email || null, phone: d.phone || null, address, preferred: null, flags };
+  // CLIENT-SAFE-1: the client flag has its own row (ContactExtras), shown when
+  // the org's privacy mode is on or the flag is already set.
+  const contact = { email: d.email || null, phone: d.phone || null, address, preferred: null, flags,
+    isClient: d.is_client === true, privacyOn: d.client_privacy === true };
 
   res.json({ today, rhythm, recurring, thankYous, thankYousSource: thankYous.length ? thankYousSource : null,
     comingUp: comingUp.slice(0, 6), volunteering, connected, contact });

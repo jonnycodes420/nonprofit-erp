@@ -4237,6 +4237,7 @@ app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/capture").routers.r0);       // CAPTURE-1 To confirm
 app.use(require("./routes/setup").routers.r0);         // ONBOARD-1 Set up Steward for me
 app.use(require("./routes/voice").routers.r0);         // VOICE-1 Tell Steward
+app.use(require("./routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy mode
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
@@ -9346,6 +9347,7 @@ function syncErrorSentence(providerKey, what, e) {
 // is a Postgres advisory lock, so it also holds across two instances.
 const APIC = require("./apiCheck");
 const MBF = require("./mailboxFetch");
+const CLIENT_SAFE = require("./clientSafe");
 const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
 const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
 async function noteRetryAfter(conn, e) {
@@ -9454,13 +9456,17 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
                       updated_at=NOW() WHERE id=?`, [conn.id]);
     return { logged: 0, found: 0, reason: "no_people", gatedChange };
   }
+  // CLIENT-SAFE-1: with privacy mode on, a person marked as a client is not
+  // searched for, a message with one on it is never fetched, and anything that
+  // still names one is dropped like a never-log address.
+  const privacy = await CLIENT_SAFE.privacyFor(orgId);
   const donorsByEmail = new Map();
-  for (const d of donors) donorsByEmail.set(String(d.email).trim().toLowerCase(), d.id);
+  for (const d of donors) if (!privacy.clientIds.has(d.id)) donorsByEmail.set(String(d.email).trim().toLowerCase(), d.id);
 
   const staffRows = await query(`SELECT email FROM users WHERE org_id=?`, [orgId]);
   const staffEmails = staffRows.map(r => String(r.email || "").trim().toLowerCase()).filter(Boolean);
   const neverRows = await query(`SELECT pattern FROM mailbox_never_log WHERE user_id=?`, [userId]);
-  const neverLog = neverRows.map(r => r.pattern);
+  const neverLog = [...neverRows.map(r => r.pattern), ...privacy.clientEmails];
   // Both exclusion tables, so anything removed under the old integration stays
   // removed under this one.
   const exRows = await query(
@@ -9479,7 +9485,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
     lastPct = pct; lastAt = Date.now();
     await run(`UPDATE mailbox_connections SET read_progress=? WHERE id=?`, [pct, conn.id]).catch(() => {});
   };
-  const fetched = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()], { onProgress });
+  const fetched = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()], { onProgress, clients: privacy.clientEmails });
   // Every request the provider refused, and none it answered: that is a
   // failed read, said so, never "nothing new".
   if (fetched.asked && fetched.refused === fetched.asked)
@@ -9509,6 +9515,10 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
       `SELECT id FROM interactions WHERE org_id=? AND metadata->>'message_id'=? LIMIT 1`, [orgId, String(m.id)]);
     if (seen.length) continue;
 
+    // CLIENT-SAFE-1: health sentences are replaced before anything is
+    // written; with AI off only the date, direction, people and subject stay.
+    const screened = await CLIENT_SAFE.screenForStore(orgId, { subject: decision.subject, body: decision.body }, privacy);
+    decision.subject = screened.subject; decision.body = screened.body;
     const note = ML.conversationNote(decision, { staffName });
     const body = decision.body ? `${note}\n\n${decision.body}` : note;
     for (const donorId of decision.donorIds) {
@@ -9525,7 +9535,10 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
                           ...(decision.direction === "inbound" ? { mail_kind: ML.mailKind(m) } : {}),
                           ...(m.threadKey ? { thread_key: String(m.threadKey) } : {}),
                           ...(decision.attachmentCount && m.webLink ? { web_link: m.webLink } : {}),
+                          ...(screened.held ? { held_back: "health" } : {}),
+                          ...(screened.metadataOnly ? { metadata_only: true } : {}),
                           logged_by: userId })]);
+      if (screened.held) await CLIENT_SAFE.recordHold(orgId, { donorIds: [donorId], interactionId: intId, source: "mailbox", actorId });
       logged++;
       // A CONVERSATION IS A TOUCH, AND NOTHING MORE. It can close a Thread
       // step that asked for exactly this contact. It does not move giving,
@@ -9635,7 +9648,9 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   const staffRows = await query(`SELECT email, name FROM users WHERE org_id=?`, [orgId]);
   const staffEmails = staffRows.map(r => String(r.email || "").trim().toLowerCase()).filter(Boolean);
   const staffNames = staffRows.map(r => r.name).filter(Boolean);
-  const neverLog = (await query(`SELECT pattern FROM mailbox_never_log WHERE user_id=?`, [userId])).map(r => r.pattern);
+  // CLIENT-SAFE-1: a meeting with somebody marked as a client is not logged.
+  const neverLog = [...(await query(`SELECT pattern FROM mailbox_never_log WHERE user_id=?`, [userId])).map(r => r.pattern),
+    ...(await CLIENT_SAFE.privacyFor(orgId)).clientEmails];
   const excludedIds = (await query(
     `SELECT message_id FROM mailbox_exclusions WHERE org_id=? AND provider=?`, [orgId, providerKey + ":calendar"]))
     .map(r => r.message_id);
@@ -9987,7 +10002,7 @@ async function mailboxAccessToken(conn, orgId, providerKey) {
 // GRAPH_API_BASE) serves every mail URL, the attachments included.
 const GMAIL_BASE = () => process.env.GMAIL_API_BASE || "https://gmail.googleapis.com";
 const GRAPH_BASE = () => process.env.GRAPH_API_BASE || "https://graph.microsoft.com";
-async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgress = null } = {}) {
+async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgress = null, clients = null } = {}) {
   const out = [];
   const seen = new Set();
   const CHUNK = 15, CAP = 120;
@@ -10017,15 +10032,38 @@ async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgres
     }
   };
   const keep = m => { if (m && m.id && !seen.has(String(m.id)) && out.length < CAP) { seen.add(String(m.id)); out.push(m); } };
+  const privacyGuard = !!(clients && clients.size);
+  const addrIn = v => { const m = String(v || "").match(/<([^>]+)>/); return (m ? m[1] : String(v || "")).trim().toLowerCase(); };
+  const involves = addrs => addrs.some(a => clients.has(addrIn(a)));
   const GRAPH_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink,conversationId,internetMessageHeaders";
   if (providerKey === "google") {
     // Gmail's search covers every folder, so mail she SENT to a donor is in
     // this answer too; the SENT label is what marks it hers. SCALE-2: as many
     // addresses per search as Gmail will run, searches four ahead and message
     // fetches eight at a time, kept in the old order (mailboxFetch.js).
-    for (const m of await MBF.readGmail({ ask, base: GMAIL_BASE(), emails: donorEmails, toMessage: gmailToMessage, cap: CAP, onProgress })) keep(m);
+    // CLIENT-SAFE-1: with people marked as clients, each message's addresses
+    // are read first and a message involving a client is never fetched.
+    const allow = privacyGuard ? async id => {
+      const h = await ask(`${GMAIL_BASE()}/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&fields=id,payload/headers`);
+      if (!h) return false;
+      return !involves((h.payload?.headers || []).filter(x => /^(from|to|cc)$/i.test(String(x.name || ""))).flatMap(x => String(x.value || "").split(",").map(addrIn)));
+    } : null;
+    for (const m of await MBF.readGmail({ ask, base: GMAIL_BASE(), emails: donorEmails, toMessage: gmailToMessage, cap: CAP, onProgress, allow })) keep(m);
     return { messages: out, asked, refused, lastStatus, lastBody };
   }
+  // CLIENT-SAFE-1: Outlook lists addresses only, and the message itself is
+  // fetched only when nobody on it is a client.
+  const ADDR_SELECT = "id,from,toRecipients,ccRecipients";
+  const listed = async (url, sent) => {
+    const list = await ask(url.replace(`$select=${GRAPH_SELECT}`, `$select=${privacyGuard ? ADDR_SELECT : GRAPH_SELECT}`));
+    for (const m of (list?.value || [])) {
+      if (!privacyGuard) { keep(sent ? { ...graphToMessage(m), sent: true } : graphToMessage(m)); continue; }
+      const addrs = [m.from?.emailAddress?.address, ...(m.toRecipients || []).map(r => r.emailAddress?.address), ...(m.ccRecipients || []).map(r => r.emailAddress?.address)].map(addrIn);
+      if (involves(addrs) || out.length >= CAP || seen.has(String(m.id))) continue;
+      const full = await ask(`${GRAPH_BASE()}/v1.0/me/messages/${encodeURIComponent(m.id)}?$select=${GRAPH_SELECT}`);
+      if (full) keep(sent ? { ...graphToMessage(full), sent: true } : graphToMessage(full));
+    }
+  };
   for (let i = 0; i < donorEmails.length && out.length < CAP; i += CHUNK) {
     const chunk = donorEmails.slice(i, i + CHUNK);
     if (onProgress) await onProgress(i, donorEmails.length);
@@ -10036,11 +10074,9 @@ async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgres
       // RECIPIENT, so the provider still returns only messages that involve
       // somebody on file.
       const filter = chunk.map(e => `from/emailAddress/address eq '${e.replace(/'/g, "''")}'`).join(" or ");
-      const list = await ask(`${GRAPH_BASE()}/v1.0/me/messages?$top=40&$select=${GRAPH_SELECT}&$filter=${encodeURIComponent(filter)}`);
-      for (const m of (list?.value || [])) keep(graphToMessage(m));
+      await listed(`${GRAPH_BASE()}/v1.0/me/messages?$top=40&$select=${GRAPH_SELECT}&$filter=${encodeURIComponent(filter)}`, false);
       const search = `"${chunk.map(e => `to:${e.replace(/"/g, "")}`).join(" OR ")}"`;
-      const sent = await ask(`${GRAPH_BASE()}/v1.0/me/mailFolders/sentitems/messages?$top=40&$select=${GRAPH_SELECT}&$search=${encodeURIComponent(search)}`);
-      for (const m of (sent?.value || [])) keep({ ...graphToMessage(m), sent: true });
+      await listed(`${GRAPH_BASE()}/v1.0/me/mailFolders/sentitems/messages?$top=40&$select=${GRAPH_SELECT}&$search=${encodeURIComponent(search)}`, true);
     }
   }
   return { messages: out, asked, refused, lastStatus, lastBody };
@@ -12017,6 +12053,8 @@ require("./routes/agent").mount({
   requireSuperAdmin, resend,
 });
 // VOICE-1: Tell Steward plans and undoes through the Agent's engine, so it mounts after it.
+require("./clientSafe").configure({ query, run, uuid, aiGate, anthropicFor, recordAiFallback });
+require("./routes/clientSafe").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, actor, uuid, aiGate });
 require("./routes/voice").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL });
 require("./routes/give").mount({
   ASSET_ID_RE, CARD_CHECK_BUDGET, DONOR_ACCOUNTS_ENABLED, DONOR_MAIL_ADDR, GIVE_MONTHLY_DEFAULT,

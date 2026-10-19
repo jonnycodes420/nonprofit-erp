@@ -18,6 +18,7 @@ import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
+import { usePrivacy } from "./PrivacyPanel";
 import { displayDate } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 
@@ -241,6 +242,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
+  const [privacy]=usePrivacy();   // CLIENT-SAFE-1
   const [planSel,setPlanSel]=useState(null);   // BUILD-85 — the selection being planned
   const [assignDrop,setAssignDrop]=useState(false);
   const [delModal,setDelModal]=useState(false);
@@ -326,6 +328,19 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       setSelIds(new Set());if(onBulkDone)onBulkDone();
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);setStageDrop(false);
+  }
+
+  async function bulkMarkClients(){
+    const ids=selFiltered.map(d=>d.id);
+    setBusy(true);
+    try{
+      const r=await apiFetch("/privacy/clients/mark",{method:"POST",body:JSON.stringify({donorIds:ids,source:"list",apply:true})});
+      setSelIds(new Set());if(onBulkDone)onBulkDone();
+      offerUndo({message:r.sentence,undoSeconds:30,undoAction:async()=>{
+        await apiFetch(`/privacy/marks/${encodeURIComponent(r.markId)}/undo`,{method:"POST",body:"{}"});if(onBulkDone)onBulkDone();
+      }});
+    }catch(e){flash((e&&e.body&&e.body.sentence)||"Nobody was marked.");}
+    setBusy(false);
   }
 
   async function bulkAssign(userId,name){
@@ -547,6 +562,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
 
           {/* PARITY-1 Part D — put the ticked people in a group kept by hand. */}
           {!isReadOnly&&<AddToGroup donorIds={selFiltered.map(d=>d.id)}/>}
+
+          {/* CLIENT-SAFE-1 — mark the ticked people as clients, with Undo. Shown when privacy mode is on. */}
+          {!isReadOnly&&privacy&&privacy.on&&<button data-testid="dir-mark-clients" onClick={bulkMarkClients} disabled={busy}
+            style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+            Mark as clients
+          </button>}
 
           {/* Add to pipeline — the deliberate act that puts prospects on the board (Team). */}
           {teamPortfolios&&<button onClick={bulkAddPipeline} disabled={busy}
