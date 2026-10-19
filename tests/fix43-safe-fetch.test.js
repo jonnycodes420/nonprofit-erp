@@ -21,6 +21,7 @@
 "use strict";
 
 const http = require("http");
+const { testNow } = require("./clock");
 const fs = require("fs");
 const path = require("path");
 const { EventEmitter } = require("events");
@@ -144,9 +145,9 @@ const SECRET = { body: "the metadata secret", headers: { "content-type": "text/p
     const cut = await SF.safeFetch("https://good.example/", { resolve, requestImpl, maxBytes: 1000, overflow: "truncate" });
     ok("§3 a body over the cap is refused, or cut at the cap when asked", big.ok === false && /too large/.test(big.reason) && cut.ok === true && cut.body.length === 1000, { big, cut: cut.body && cut.body.length });
     NET = { [PUB]: { hang: true } };
-    const t0 = Date.now();
+    const t0 = testNow();
     const slow = await SF.safeFetch("https://good.example/", { resolve, requestImpl, timeoutMs: 300 });
-    ok("§3 an answer that never comes times out", slow.ok === false && /too long/.test(slow.reason) && Date.now() - t0 < 2000, slow);
+    ok("§3 an answer that never comes times out", slow.ok === false && /too long/.test(slow.reason) && testNow() - t0 < 2000, slow);
     const https1 = await SF.safeFetch("http://good.example/", { resolve, requestImpl, schemes: ["https:"] });
     ok("§3 a caller that asks for https only gets https only", https1.ok === false, https1);
   }
