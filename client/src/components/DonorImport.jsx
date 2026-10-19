@@ -3804,7 +3804,8 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
 
   // ── FIX-11 Part 4 — THE PEOPLE THIS FILE WOULD CREATE ──────────────────
   // Computed from the unmatched rows, shown BEFORE anything is written, and
-  // fed to the combined import that already exists.
+  // fed to the combined import that already exists. A mapped payment method
+  // rides along (shared/giftFileDonors.js keeps it, as setup does: FIX-44).
   const wouldCreate = useMemo(
     () => donorsFromUnmatchedGifts(matchedGifts.filter(g => g.confidence === "unmatched")),
     [matchedGifts]);

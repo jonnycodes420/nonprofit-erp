@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // HARDEN-1 item 4 · THE NIGHTLY REAL-AI RUN.
 //
-// Twenty FIXED questions against a server whose model calls go, through the
+// Twenty-one FIXED questions against a server whose model calls go, through the
 // counting proxy (scripts/nightly-ai/proxy.js), to the real API. Half are Agent
 // instructions (POST /agent/instructions), half are Ask questions (POST /ask,
 // the route the Ask box uses). Each answer is judged twice:
@@ -64,6 +64,7 @@ const MONTHLY = `EXISTS (SELECT 1 FROM recurring_subscriptions r WHERE r.org_id 
 //   people       an Ask answer that lists people with a count
 //   figure       an Ask answer with one figure
 //   why          an Ask answer that explains (a sentence, no people needed)
+//   call         an Ask answer naming five people, each with a reason
 // truth(ctx) returns a Set of donor ids, or { value } for a figure.
 // cover: the share of the truth set the answer must reach (agent plans).
 // exact: an Ask answer's peopleCount must equal the truth set's size.
@@ -118,6 +119,9 @@ const QUESTIONS = [
       WHERE g.org_id = $1 AND d.deleted_at IS NULL AND g.date >= $2`, [c.yearStart])).v) }) },
   { id: "Q10", route: "ask", kind: "why", text: "Why is retention down this year?",
     truth: c => c.ids(`SELECT id FROM donors WHERE org_id = $1 AND deleted_at IS NULL`), superset: true },
+  // FIX-44: the demo question. Five names, each with its reason, every time.
+  { id: "Q11", route: "ask", kind: "call", text: "Who should I call tomorrow morning?",
+    truth: c => c.ids(`SELECT id FROM donors WHERE org_id = $1 AND deleted_at IS NULL AND COALESCE(deceased, false) = false`), superset: true },
 ];
 
 // ── CHECKS ──────────────────────────────────────────────────────────────────
@@ -164,7 +168,7 @@ function peopleOf(q, body) {
     const steps = (body.plan && body.plan.steps) || [];
     return [...new Set(steps.map(s => s.donorId).filter(Boolean))];
   }
-  return (body.people || []).map(p => p.donorId || p.id).filter(Boolean);
+  return (body.who || body.people || []).map(p => p.donorId || p.id).filter(Boolean);
 }
 
 async function judge(q, r, c) {
@@ -194,6 +198,11 @@ async function judge(q, r, c) {
       if (body.answered !== true) why.push(`not answered${body.sentence ? ": " + String(body.sentence).slice(0, 160) : ""}`);
       if (!String(body.sentence || "").trim()) why.push("no sentence");
       if (q.kind === "people" && !(Array.isArray(body.people) && body.people.length)) why.push("expected a list of people, got none");
+      if (q.kind === "call") {
+        const who = Array.isArray(body.who) ? body.who : [];
+        if (who.length !== 5) why.push(`expected five people to call, got ${who.length}`);
+        if (who.some(w => !String(w.reason || "").trim())) why.push("a person to call has no reason");
+      }
     }
   }
   // IN SCOPE
@@ -322,10 +331,14 @@ async function spend() {
   if (creditLine) {
     console.log(`\n${creditLine}. Stopped; ${skipped.length} question(s) not judged. Summary at ${OUT}`);
     if (process.env.GITHUB_ACTIONS) console.log(`::error::${creditLine}`);
+    if (process.env.GITHUB_STEP_SUMMARY) { try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, creditLine + "\n"); } catch { /* logged above */ } }
     await db.end();
     process.exit(1);
   }
-  console.log(`\n${summary.passed}/${summary.total} passed · spend $${usd != null ? usd.toFixed(4) : "unknown"}${summary.capReached ? " · THE SPEND CAP WAS REACHED" : ""} · summary at ${OUT}`);
+  // FIX-44: the run is started by hand, so its cost is the one line on the run's page.
+  const line = `${summary.passed}/${summary.total} passed · spend $${usd != null ? usd.toFixed(2) : "unknown"} of the $${Number((endSpend && endSpend.cap) || 2).toFixed(2)} cap${summary.capReached ? " · THE SPEND CAP WAS REACHED" : ""}`;
+  if (process.env.GITHUB_STEP_SUMMARY) { try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n"); } catch { /* the log line below still says it */ } }
+  console.log(`\n${line} · summary at ${OUT}`);
   await db.end();
   process.exit(failed.length || summary.capReached ? 1 : 0);
 })().catch(e => { console.error("The nightly run could not finish:", e && e.message); process.exit(2); });

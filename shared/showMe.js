@@ -38,6 +38,8 @@ export const SHOW_KEYS = [
   "closeness", "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner", "gavePage", "auctionBidder",
   // JOURNEYS-4: event guests, four ways (groups.js eventGuestSql).
   "eventGuest",
+  // FIX-44: a first gift ever on or after a day.
+  "firstGiftFrom",
 ];
 const EVENT_GUEST_WORDS = { registered: "registered for an event", attended: "came to an event",
   no_show: "registered for an event but did not come", brought_guest: "came to an event as somebody's guest and has not given yet" };
@@ -231,6 +233,11 @@ export function templateSpec(text, ctx = {}) {
   take(/\b(gives?|giving) monthly\b/g, () => { rules.monthly = "1"; });
   take(/\bvolunteers?\b/g, () => { rules.role = "volunteer"; });
   take(/\blapsed\b/g, () => { rules.lifecycle = "lapsed"; });
+  // FIX-44: "for the first time this month / this week / this year".
+  take(/\b(?:(?:gave|given|give|donated|giving)(?: a gift)? )?for the first time (this month|this week|this year)\b|\bfirst[- ]time (?:donors?|givers?) (this month|this week|this year)\b/g, (m, a, b) => {
+    const span = a || b;
+    rules.firstGiftFrom = span === "this month" ? today.slice(0, 8) + "01" : span === "this year" ? today.slice(0, 4) + "-01-01" : minusDays(today, 6);
+  });
   take(/\b(new donors?|first[- ]time donors?)\b/g, () => { rules.lifecycle = "new"; });
   take(/\brecaptured\b/g, () => { rules.lifecycle = "recaptured"; });
   take(/\bmajor( donors?| givers?)?\b/g, () => { rules.level = "major"; });
@@ -285,6 +292,7 @@ const KEY_HELP = {
   household: "any or none: in a household or not",
   gaveFrom: "YYYY-MM-DD: gave on or after this date (with gaveTo)",
   gaveTo: "YYYY-MM-DD: gave on or before this date (with gaveFrom)",
+  firstGiftFrom: "YYYY-MM-DD: their first gift ever came on or after this date (\"gave for the first time this month\" is the first of this month; never lifecycle new, which is the last 12 months)",
   notGaveFrom: "YYYY-MM-DD: gave nothing on or after this date (with notGaveTo)",
   notGaveTo: "YYYY-MM-DD: gave nothing on or before this date (with notGaveFrom)",
   notDeceased: "1: leave out people marked deceased",
@@ -460,6 +468,7 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.funder) w.push("funds a grant");
   if (rules.openTask) w.push("an open task");
   // Said gently: "not deceased" read as blunt on a list of people.
+  if (rules.firstGiftFrom) w.push(`gave for the first time on or after ${dayWords(rules.firstGiftFrom)}`);
   if (rules.notDeceased) w.push("leaving out anyone marked deceased");
   return w.map((x, i) => (i === 0 ? cap(x) : x));
 }
@@ -469,10 +478,18 @@ function dayWords(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? `${M[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}, ${d.slice(0, 4)}` : String(d);
 }
 const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-export function listSentence(count) {
+// FIX-44: the sentence names the people, first three by the list's own order,
+// and an empty list says which filters found nobody (issue #209: "149 people
+// match." named no one, and the answer carried no people).
+const andList = xs => (xs.length < 3 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+export function listSentence(count, names = [], words = []) {
   const n = count < 10 ? WORDS[count] : Number(count).toLocaleString("en-US");
-  if (!count) return "Nobody on file matches these filters today.";
-  return count === 1 ? "One person matches." : `${n} people match.`;
+  const said = (words || []).filter(w => !/marked deceased/.test(w)).map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w));
+  if (!count) return said.length ? `Nobody on file today matches ${said.length === 1 ? "that" : "all of these"} (${said.join(", ")}), so no one is listed.` : "Nobody on file matches these filters today.";
+  const top = (names || []).filter(Boolean).slice(0, 3);
+  if (count === 1) return top.length ? `One person matches, ${top[0]}.` : "One person matches.";
+  if (!top.length) return `${n} people match.`;
+  return count <= 3 ? `${n} people match, ${andList(top)}.` : `${n} people match, led by ${andList(top)}.`;
 }
 export function refusalSentence(what) {
   return `${CANT_FILTER}${what && what !== "unread" ? ` (${String(what).slice(0, 80)})` : ""}. Nothing was changed, and we've noted the question.`;

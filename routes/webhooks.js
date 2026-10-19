@@ -75,14 +75,31 @@ const invoiceLineInterval = inv => {
     || line?.plan?.interval || null;
 };
 
+// FIX-44 · A BAD BODY IS A CLEAN 400, AND SAYS WHY IN ONE LOG LINE. The raw
+// parser's own error (a body past the limit, a broken stream) used to fall
+// through to the final handler as a 500, and a real Stripe event past the old
+// 100kb default would have been retried by Stripe for days. tenant-matrix's
+// anonymous probe of this route twice got ECONNRESET on CI (RECONCILE-1,
+// FIX-43); it never reproduced locally (300 bad bodies, server up), so each
+// refusal now names what it saw: the next one tells us whether the request
+// arrived at all.
+const stripeWebhookRaw = express.raw({ type: "application/json", limit: "1mb" });
+function stripeWebhookRefused(req, reason) {
+  console.warn(`[stripe-webhook] refused (${reason}): ${req.headers["content-length"] || "?"} bytes, content-type ${req.headers["content-type"] || "none"}, signature ${req.headers["stripe-signature"] ? "present" : "absent"}, connection ${req.headers.connection || "none"}`);
+}
 // Stripe webhook must receive raw body — register BEFORE express.json()
-app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err => {
+  if (!err) return next();
+  stripeWebhookRefused(req, err.type || err.code || "unreadable body");
+  return res.status(400).json({ error: "Webhook body could not be read." });
+}), async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const sig = req.headers["stripe-signature"];
   let event;
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
+    stripeWebhookRefused(req, sig ? "signature did not verify" : "no signature");
     return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
   }
 

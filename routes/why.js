@@ -258,7 +258,10 @@ async function showMe(req, res, typed, preset = null) {
     withAsk: asking,
     askStep: asking ? { label: "Plan the ask", dueIn: 14, sentence: "Planning an ask adds a step to that person's Thread, due in two weeks. Nothing is sent." } : null,
     answered: true, kind: "list", question: { key: "show", text: typed }, specSource, aiOff,
-    rules: chk.rules, words: SM.filterWords(chk.rules, ctx), sentence: SM.listSentence(count),
+    rules: chk.rules, words: SM.filterWords(chk.rules, ctx), sentence: SM.listSentence(count, rows.map(r => r.name), SM.filterWords(chk.rules, ctx)),
+    // FIX-44: the same people every other Ask answer carries, so a list
+    // answer names its people wherever an answer is read (issue #209).
+    people: rows.map(r => ({ donorId: r.id, name: r.name, cents: Math.round(Number(r.total_giving || 0) * 100) })), peopleCount: count,
     count, countSource: { key: "show-me", params: { rules: JSON.stringify(chk.rules) } },
     countDefinition: "Everyone on file these filters find today, the same rows the Donors list shows for them.",
     groupSentence: GR.rulesSentence(chk.rules),

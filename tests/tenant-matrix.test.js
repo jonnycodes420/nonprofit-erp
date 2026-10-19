@@ -962,6 +962,26 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const whoGot = await q(`SELECT donor_id, org_id FROM gifts WHERE stripe_payment_id='pi_matrix_x1'`);
   ok("the gift landed in A and NOT on B's donor row", whoGot.length === 1 && whoGot[0].org_id === A && whoGot[0].donor_id !== `d_${B}`, whoGot);
 
+  // FIX-44: the money route answers every bad body with a clean 400 and the
+  // server stays up. Red on main: a body past the raw parser's limit was a 500
+  // (PayloadTooLargeError through the final handler). Fifty of each bad body,
+  // as the anonymous probe sends them and worse.
+  {
+    const bad = [["json {}", "application/json", "{}"], ["no body", "application/json", undefined], ["garbage", "application/json", "{not json"],
+      ["bad signature", "application/json", '{"id":"evt_x","type":"payment_intent.succeeded"}', "t=1,v1=deadbeef"],
+      ["over a megabyte", "application/json", JSON.stringify({ x: "a".repeat(1100000) })]];
+    const seen = {};
+    for (let i = 0; i < 50; i++) for (const [name, ct, body, sg] of bad) {
+      let k;
+      try { const r = await fetch(M + "/stripe/webhook", { method: "POST", redirect: "manual", headers: { "Content-Type": ct, ...(sg ? { "stripe-signature": sg } : {}) }, body }); await r.text(); k = `${name} ${r.status}`; }
+      catch (e) { k = `${name} ${e.cause?.code || e.message}`; }
+      seen[k] = (seen[k] || 0) + 1;
+    }
+    ok("fifty of each bad webhook body: every one a clean 400", Object.keys(seen).length === bad.length && Object.keys(seen).every(k => / 400$/.test(k)), seen);
+    const alive = await fetch(M + "/health").then(r => r.status).catch(e => e.message);
+    ok("the server answers after the bad bodies", alive === 200, alive);
+  }
+
   // importing the email of a B-ONLY donor at A must surface no B data in dedupe
   const imp = await mfetch("POST", "/donors/import-combined", aAdmin, {
     donors: [{ name: "Fresh Import", email: "donor-zzmarkb@mx.local" }], gifts: [],

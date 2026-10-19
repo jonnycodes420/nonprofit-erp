@@ -42,6 +42,28 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // FIX-44 · Lost & Found under `vite dev`. The build converts drift.js and
+    // orgTime.js through commonjsOptions above, but the dev server converts
+    // CommonJS only inside node_modules, so the worker's import of Drift had no
+    // default export there. In dev only, these two root files are served as ES
+    // modules: each `require("./x")` becomes an import, and module.exports is
+    // the default export. The files themselves are unchanged.
+    {
+      name: "root-cjs-in-dev",
+      apply: "serve",
+      transform(code, id) {
+        const file = id.split("?")[0];
+        if (!/[\\/](drift|orgTime)\.js$/.test(file) || /node_modules/.test(file)) return null;
+        if (new URL("../", import.meta.url).pathname !== file.replace(/[^\\/]+$/, "")) return null;
+        const imports = [];
+        const body = code.replace(/require\((["'])(\.\/[^"']+)\1\)/g, (m, q, p) => {
+          const name = `__cjs${imports.length}`;
+          imports.push(`import ${name} from "${/\.js$/.test(p) ? p : p + ".js"}";`);
+          return name;
+        });
+        return { code: `${imports.join("\n")}\nconst module = { exports: {} }; const exports = module.exports;\n${body}\nexport default module.exports;\n`, map: null };
+      },
+    },
     {
       name: "build-sha-meta",
       transformIndexHtml() {
