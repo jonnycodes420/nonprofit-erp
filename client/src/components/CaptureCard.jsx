@@ -198,7 +198,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
         ? await apiFetch(`/capture/${encodeURIComponent(card.id)}/confirm`, { method: "POST", body: JSON.stringify(body) })
         : await apiFetch(`/capture/${encodeURIComponent(card.id)}/apply`, { method: "POST", body: JSON.stringify({ donorId: body.donorId }) });
       setDone(resp);
-      onChanged && onChanged({ silent: true });
+      onChanged && onChanged({ silent: true, batch: resp && resp.batch });
     } catch (e) { setErr(errorMessage(e, "This could not be logged. Nothing was saved; try again.")); }
     setBusy(false);
   };
@@ -211,7 +211,8 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
       setSkipOpen(false);
       onChanged && onChanged();
       offerUndo({
-        message: `Skipped the ${what}. It is out of To confirm.`,
+        message: `Skipped the ${what}. It is under Skipped in To confirm.`,
+        listed: true,   // FIX-45: Recent changes lists a skipped card from the server
         undoAction: () => apiFetch(`/capture/${encodeURIComponent(card.id)}/unskip`, { method: "POST" }),
       }, what, () => onChanged && onChanged());
     } catch (e) { setErr(errorMessage(e, "It could not be skipped. Try again.")); }

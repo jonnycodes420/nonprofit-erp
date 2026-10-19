@@ -11,6 +11,7 @@ import { errorMessage } from "../lib/domainError";
 import Uploader from "./Uploader";
 import { SnapChecks, prepareCaptureFile, uploadCaptureFiles, CAPTURE_MAX_BYTES, CAPTURE_MAX_LABEL } from "./SnapChecks";
 import { CaptureCard } from "./CaptureCard";
+import { UNDONE } from "../lib/recentUndo";
 
 const DROP_ACCEPT = ["image/*", "application/pdf", ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 
@@ -81,6 +82,51 @@ function DoneForYou({ items, isReadOnly, onChanged }) {
   );
 }
 
+// FIX-45: a skipped card is not gone. The Skipped filter lists the last 30
+// days of them with why, who and when, and Bring back puts one back in To
+// confirm exactly as it was.
+const KIND_WORD = { check: "check", daf_grant: "DAF grant", stock_gift: "stock gift", matching_gift: "matching gift", pledge: "pledge", other: "item" };
+const skippedLine = c => {
+  const who = c.donor ? ((c.donor.choices || []).find(x => x.id === c.donor.selectedId) || c.donor.prefill || {}).name : null;
+  const cents = c.amount && Number.isFinite(Number(c.amount.cents)) ? Number(c.amount.cents) : null;
+  const amt = cents != null ? "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " : "";
+  const word = KIND_WORD[c.kind] || "item";
+  if (who || amt) return `${amt || word[0].toUpperCase() + word.slice(1)}${amt ? word : ""}${who ? ` from ${who}` : ""}`;
+  return String(c.headline || `A ${KIND_WORD[c.kind] || "item"}`).replace(/[?.]+$/, "");
+};
+function SkippedList({ rows, isReadOnly, onBack }) {
+  const [busy, setBusy] = useState(null);
+  const [msg, setMsg] = useState("");
+  const bringBack = async c => {
+    setBusy(c.id); setMsg("");
+    try {
+      await apiFetch(`/capture/${encodeURIComponent(c.id)}/unskip`, { method: "POST" });
+      setMsg(`Brought back the ${KIND_WORD[c.kind] || "item"}. It is waiting in To confirm.`);
+      onBack();
+    } catch (e) { setMsg(errorMessage(e, "It could not be brought back. Someone may have already.")); }
+    setBusy(null);
+  };
+  return (
+    <div data-testid="capture-skipped" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
+      {!rows.length && <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>Nothing was skipped in the last 30 days.</div>}
+      {rows.map(c => (
+        <div key={c.id} data-testid="capture-skipped-row" data-card-id={c.id}
+          style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, color: T.ink, overflowWrap: "anywhere" }}>{skippedLine(c)}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>Skipped{c.decidedByName ? ` by ${c.decidedByName}` : ""}{c.decidedAt ? `, ${when(c.decidedAt)}` : ""}{c.skipReason ? `: ${String(c.skipReason).replace(/_/g, " ")}` : ""}</div>
+          </div>
+          <button type="button" data-testid="capture-bring-back" disabled={isReadOnly || busy === c.id} onClick={() => bringBack(c)}
+            style={{ background: T.white, color: T.greenDk, border: "1px solid " + T.green, borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            {busy === c.id ? "Bringing back…" : "Bring back"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CaptureInbox({ isReadOnly, onOpenThanks }) {
   const [data, setData] = useState(null);
   const [funds, setFunds] = useState([]);
@@ -91,18 +137,31 @@ export function CaptureInbox({ isReadOnly, onOpenThanks }) {
   const [dropErr, setDropErr] = useState("");
   const [sending, setSending] = useState(false);
   const [pinned, setPinned] = useState({});   // cards confirmed in this visit, kept on screen with their result
+  const [view, setView] = useState("waiting");  // FIX-45: "waiting" or "skipped"
+  const [skipped, setSkipped] = useState([]);
 
-  const load = () => apiFetch("/capture")
-    .then(r => { setData(r); setErr(""); })
-    .catch(e => setErr(errorMessage(e, "Could not load what is waiting to be confirmed.")));
+  const loadSkipped = () => apiFetch("/capture/skipped").then(r => setSkipped(r.skipped || [])).catch(() => setSkipped([]));
+  const load = () => {
+    loadSkipped();
+    return apiFetch("/capture")
+      .then(r => { setData(r); setErr(""); })
+      .catch(e => setErr(errorMessage(e, "Could not load what is waiting to be confirmed.")));
+  };
   useEffect(() => {
     load();
     apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => setFunds([]));
+    // FIX-45: an Undo anywhere (the toast, Recent changes) reloads what is
+    // waiting from the server, so a card brought back shows here at once.
+    const onUndone = () => load();
+    window.addEventListener(UNDONE, onUndone);
+    return () => window.removeEventListener(UNDONE, onUndone);
   }, []);
 
   // The batch just read first, then every batch still waiting (a slip photographed earlier).
   const shownBatches = [batch, ...((data && data.batches) || []).filter(x => !batch || x.id !== batch.id)].filter(Boolean);
-  const changed = opts => { announce(); if (!(opts && opts.silent)) load(); };
+  // FIX-45: a confirm answers with its batch as it now stands ("1 of 3
+  // logged"), which replaces the line shown, without reloading the cards.
+  const changed = opts => { announce(); if (opts && opts.batch) setBatch(opts.batch); if (!(opts && opts.silent)) load(); };
 
   const afterRead = r => {
     setBatch(r && r.batch ? r.batch : null);
@@ -194,7 +253,15 @@ export function CaptureInbox({ isReadOnly, onOpenThanks }) {
       )}
 
       {err && <div style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div role="tablist" aria-label="Show" data-testid="capture-filter" style={{ display: "flex", gap: 6 }}>
+        {[["waiting", `Waiting (${n})`], ["skipped", `Skipped (${skipped.length})`]].map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={view === k} data-testid={"capture-filter-" + k} onClick={() => setView(k)}
+            style={{ background: view === k ? T.ink : T.white, color: view === k ? T.white : T.ink, border: "1px solid " + (view === k ? T.ink : T.bg2),
+                     borderRadius: 99, padding: "6px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>
+        ))}
+      </div>
+      {view === "skipped" && <SkippedList rows={skipped} isReadOnly={isReadOnly} onBack={() => { announce(); load(); }} />}
+      <div style={{ display: view === "skipped" ? "none" : "flex", flexDirection: "column", gap: 12 }}>
         {shown.map(c => (
           <CaptureCard key={c.id} card={c} funds={funds} isReadOnly={isReadOnly} onOpenThanks={onOpenThanks}
             onChanged={opts => {

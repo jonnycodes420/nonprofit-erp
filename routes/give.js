@@ -138,11 +138,11 @@ app.post("/invitation-request", invitationLimiter, wrap(async (req, res) => {
         from: "Steward <noreply@stewardapp.dev>",
         to: founderEmail,
         replyTo: e,   // BUILD-88c C.1 — the SDK ignores `reply_to`; see donorSendOpts
-        subject: `Invitation request — ${org}`,
+        subject: `Invitation request · ${org}`,
         html: `<div style="font-family:Georgia,serif;line-height:1.7;color:#0f1a12">
           <p><strong>${esc(n)}</strong> (${esc(e)})<br/>${esc(org)}${role ? " · " + esc(clean(role, 120)) : ""}</p>
           <p>Donor database: ${esc(clean(donorBand, 40) || "not answered")}</p>
-          <p>Hardest part of keeping donors: ${esc(clean(hardestPart, 2000) || "—")}</p>
+          <p>Hardest part of keeping donors: ${esc(clean(hardestPart, 2000) || "Not set")}</p>
         </div>`,
       }).catch(err => console.error("invitation-request notify failed:", err?.message || err));
     }
@@ -1545,7 +1545,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
   try {
     const { error: sendErr } = await resend.emails.send({
       ...(await donorSendOpts(org.id, donor.email, "campaign")), // BUILD-88c C.1
-      to: donor.email, subject: `${subject} — ${orgName}`, html,
+      to: donor.email, subject: `${subject} · ${orgName}`, html,
     });
     if (sendErr) { console.error("[recurring] donor notification error:", sendErr.message); return false; }
     return true;
@@ -1619,11 +1619,11 @@ app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
         const opens = recent.filter(r => r.note?.startsWith("Opened"));
         if (opens.length >= 2) {
           await run(`UPDATE donors SET notes = CASE WHEN notes NOT LIKE '%High engagement%'
-            THEN TRIM(COALESCE(notes||' | ','') || 'High engagement — opened last 2+ emails')
+            THEN TRIM(COALESCE(notes||' | ','') || 'High engagement, opened last 2+ emails')
             ELSE notes END WHERE id=? AND org_id=?`, [donorId, rec.org_id]);
         } else if (opens.length === 0 && recent.length >= 3) {
           await run(`UPDATE donors SET notes = CASE WHEN notes NOT LIKE '%Low email engagement%'
-            THEN TRIM(COALESCE(notes||' | ','') || 'Low email engagement — consider phone outreach')
+            THEN TRIM(COALESCE(notes||' | ','') || 'Low email engagement, consider phone outreach')
             ELSE notes END WHERE id=? AND org_id=?`, [donorId, rec.org_id]);
         }
       } catch (e) { /* non-critical */ }
@@ -2154,7 +2154,7 @@ app.get("/giving-pages/:id/funnel", requireAuth, wrap(async (req, res) => {
     // NOTHING ABOUT WHO, and the screen says so rather than leaving somebody to
     // wonder what Steward knows about their donors' browsing.
     privacyNote: "Steward counts how many times this form was opened and finished. "
-      + "It records nothing about who opened it — no names, no addresses, no cookies.",
+      + "It records nothing about who opened it, no names, no addresses, no cookies.",
   });
 }));
 
@@ -3483,14 +3483,14 @@ const donateHandler = async (req, res) => {
   const productName = auctionWin
     ? `${auctionWin.item.title}, ${auctionWin.auction.title} (auction), ${org.name}`
     : memLevel
-    ? `${memLevel.name} membership — ${org.name}`
+    ? `${memLevel.name} membership · ${org.name}`
     : eventLevel
-    ? `${eventQty} × ${eventLevel.name} — ${eventRow.name}`
+    ? `${eventQty} × ${eventLevel.name} · ${eventRow.name}`
     : peerFundraiserId
-    ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
+    ? `Donation to ${org.name} · ${pageTitle} (via ${fundraiserName}'s fundraiser)`
     : givingPageId
-      ? `Donation to ${org.name} — ${pageTitle}`
-      : `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
+      ? `Donation to ${org.name} · ${pageTitle}`
+      : `Donation to ${org.name}${fundName ? ` ${fundName}` : ""}`;
   const metadata = {
     donor_email: email,
     donor_name: donorName,
@@ -4070,7 +4070,7 @@ app.post("/demo-request", wrap(async (req, res) => {
       const { error } = await resend.emails.send({
         from,
         to: notifyTo,
-        subject: `New Steward demo request — ${name} (${orgName || "unknown org"})`,
+        subject: `New Steward demo request · ${name} (${orgName || "unknown org"})`,
         html: `<p><strong>New demo request:</strong></p>
                <p>Name: ${name}<br>Email: ${email}<br>Org: ${orgName}<br>Size: ${orgSize}<br>Challenge: ${challenge}</p>`,
       });
@@ -4097,8 +4097,9 @@ app.post("/recurring/check-cards", requireAuth, requireAdmin, wrap(async (req, r
 }));
 
 app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await processDunning();
-  res.json({ success: true });
+  const out = await processDunning();
+  // FIX-45: how many of THIS org's cards the sweep picked (never another org's ids).
+  res.json({ success: true, picked: ((out && out.picked) || []).filter(r => r.orgId === req.user.orgId).length });
 }));
 
 // Public — a donor clicking the "Update my card" button in a dunning email.
@@ -4470,7 +4471,7 @@ app.get("/recurring/unlinked", requireAuth, wrap(async (req, res) => {
     // card expired). "Gave $25 a month for 26 months. Nothing since June."
     const reason = stopped
       ? `Gave ${amtStr} a month${months ? ` for ${months} months` : ""}. Nothing since ${lastGift ? monthName(lastGift) : "their last gift"}.`
-      : `Giving ${amtStr} a month${months ? ` for ${months} months` : ""} — reconnect before their card would renew.`;
+      : `Giving ${amtStr} a month${months ? ` for ${months} months` : ""}, reconnect before their card would renew.`;
     return {
       donorId: r.id, donorName: r.name, email: r.email || null,
       amount: r.amount != null ? Math.round(r.amount * 100) / 100 : null,
@@ -4559,9 +4560,9 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
     const html = await brandEmailHeaderHtml(orgId)
       + `<p>Hi ${escapeHtml((d.name || "there").split(" ")[0])},</p>
          <p>Thank you for being a faithful monthly supporter of <strong>${escapeHtml(dfName)}</strong>. We've moved to a new giving system, and because card details can't transfer between systems, we need you to reconnect your ${escapeHtml(amtStr)} gift.</p>
-         <p>It takes about a minute — your amount is already filled in:</p>
+         <p>It takes about a minute, your amount is already filled in:</p>
          <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
-         <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed — and thank you for everything you've already given.</p>`;
+         <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed, and thank you for everything you've already given.</p>`;
     const from = await donorFromAddress(orgId).catch(() => undefined);
     const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId);
     if (ok) {
@@ -4700,7 +4701,7 @@ app.post("/recurring/proposals", requireAuth, checkWriteAccess, wrap(async (req,
     "SELECT id, name, email FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]);
   if (!donorRows.length) return res.status(404).json({ error: "donor_not_found" });
   const donor = donorRows[0];
-  if (!donor.email) return res.status(400).json({ error: "donor_has_no_email", message: "This donor has no email on file — a proposal is completed by the donor from an email." });
+  if (!donor.email) return res.status(400).json({ error: "donor_has_no_email", message: "This donor has no email on file, a proposal is completed by the donor from an email." });
 
   let sub = null;
   if (kind !== "create") {
@@ -4759,13 +4760,13 @@ app.post("/recurring/proposals", requireAuth, checkWriteAccess, wrap(async (req,
   // W-5: sendRecurringDonorEmail appends "— <org>" to every subject; naming
   // the org here too doubled it ("A request from X — X").
   const proposalDelivered = await sendRecurringDonorEmail(org, donor, "A request about your recurring gift",
-    `${actorName} at ${orgName} has proposed ${detail}. Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
+    `${actorName} at ${orgName} has proposed ${detail}. Nothing changes unless you complete it, the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
     { actionUrl: url, actionLabel: "Review and complete" });
   // W-4 log honesty: the timeline note claims a send only when one happened.
   await noteRecurringAction(orgId, donorId,
     proposalDelivered
       ? `Sent a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]})`
-      : `Created a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]}) — email delivery FAILED; resend it from the roster`,
+      : `Created a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]}): email delivery FAILED; resend it from the roster`,
     actorName);
   res.status(201).json({
     id, donorId, kind, subscriptionId: sub?.id || null,
@@ -4796,7 +4797,7 @@ app.post("/recurring/proposals/:id/resend", requireAuth, wrap(async (req, res) =
   const url = `${publicAppUrl()}/recurring/proposal?token=${token}`;
   const delivered = await sendRecurringDonorEmail(org, { email: p.donor_email, name: p.donor_name },
     `A reminder from ${displayNameCase(org.name)}`,
-    `A reminder about the proposed change to your recurring giving (${PROPOSAL_KIND_LABELS[p.kind]}). Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
+    `A reminder about the proposed change to your recurring giving (${PROPOSAL_KIND_LABELS[p.kind]}). Nothing changes unless you complete it, the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
     { actionUrl: url, actionLabel: "Review and complete" });
   // FIX-15 Part 3: a resend the provider refused does not spend the one
   // allowed resend, and the screen is told it did not go.
@@ -4810,7 +4811,7 @@ app.post("/recurring/proposals/:id/resend", requireAuth, wrap(async (req, res) =
 // ── The donor-facing completion pages (public, tokenized, org-branded) ─────
 function proposalPageHtml({ orgName, title, bodyHtml, button = null, formAction = null, token = null }) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escHtmlWf(title)} — ${escHtmlWf(orgName)}</title></head>
+<title>${escHtmlWf(title)}, ${escHtmlWf(orgName)}</title></head>
 <body style="margin:0;background:#f0ede6;font-family:Georgia,'Times New Roman',serif;color:#0f1a12;">
   <div style="max-width:520px;margin:48px auto;padding:0 20px;">
     <div style="background:#ffffff;border:1px solid #dce7df;border-radius:14px;padding:36px 32px;">
@@ -4863,24 +4864,24 @@ app.get("/recurring/proposal", donateLimiter, wrap(async (req, res) => {
   const cur = sub ? `$${Number(sub.amount).toLocaleString()}/${sub.interval || "month"}` : null;
   let bodyHtml, button;
   if (p.kind === "create") {
-    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has invited you to start a recurring gift of
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} · ${escHtmlWf(orgName)} has invited you to start a recurring gift of
       <strong>$${Number(p.proposed_amount).toLocaleString()}/${p.proposed_interval === "year" ? "year" : "month"}</strong>${p.fund_name ? `, supporting <strong>${escHtmlWf(p.fund_name)}</strong>` : ""}.</p>
-      <p style="font-size:14px;color:#555;">You'll enter payment details securely on Stripe — ${escHtmlWf(orgName)} never sees your card.</p>`;
+      <p style="font-size:14px;color:#555;">You'll enter payment details securely on Stripe, ${escHtmlWf(orgName)} never sees your card.</p>`;
     button = "Continue to Stripe";
   } else if (p.kind === "amount") {
-    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has proposed changing your recurring gift
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)}, ${escHtmlWf(orgName)} has proposed changing your recurring gift
       from <strong>${escHtmlWf(cur || "its current amount")}</strong> to <strong>$${Number(p.proposed_amount).toLocaleString()}/${sub?.interval || "month"}</strong>.</p>
       <p style="font-size:14px;color:#555;">Nothing changes unless you confirm. The new amount takes effect on your next scheduled charge.</p>`;
     button = "Confirm the new amount";
   } else if (p.kind === "frequency") {
-    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has proposed changing your recurring gift
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} · ${escHtmlWf(orgName)} has proposed changing your recurring gift
       from <strong>${escHtmlWf(cur || "its current schedule")}</strong> to repeat <strong>${p.proposed_interval === "year" ? "yearly" : "monthly"}</strong>.</p>
       <p style="font-size:14px;color:#555;">Nothing changes unless you confirm.</p>`;
     button = "Confirm the new schedule";
   } else {
-    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has asked you to update the card on your
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} · ${escHtmlWf(orgName)} has asked you to update the card on your
       <strong>${escHtmlWf(cur || "recurring")}</strong> gift.</p>
-      <p style="font-size:14px;color:#555;">You'll update it securely on Stripe — ${escHtmlWf(orgName)} never sees your card.</p>`;
+      <p style="font-size:14px;color:#555;">You'll update it securely on Stripe, ${escHtmlWf(orgName)} never sees your card.</p>`;
     button = "Update my card on Stripe";
   }
   res.send(proposalPageHtml({
@@ -4997,7 +4998,7 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
         ? `Your recurring gift to ${orgName} is now $${newAmt.toLocaleString()}/${newInterval} (was $${oldAmt.toLocaleString()}). The new amount takes effect on your next scheduled charge.`
         : `Your recurring gift to ${orgName} now repeats ${newInterval === "year" ? "yearly" : "monthly"}.`);
     res.send(proposalPageHtml({
-      orgName, title: "Done — thank you",
+      orgName, title: "Done: thank you",
       bodyHtml: p.kind === "amount"
         ? `<p>Your recurring gift is now <strong>$${newAmt.toLocaleString()}/${newInterval}</strong>. The new amount takes effect on your next scheduled charge.</p>`
         : `<p>Your recurring gift now repeats <strong>${newInterval === "year" ? "yearly" : "monthly"}</strong>.</p>`,
@@ -5398,8 +5399,8 @@ app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
   // W-4: dunning is transactional — the marketing suppression list no longer
   // blocks a staff resend. dunning_sent is logged ONLY on real delivery.
   const result = await sendDunningEmail(orgRows[0], donor, rs);
-  if (result.refused) return res.status(400).json({ error: `Cannot send — ${result.refused === "deceased" ? "this donor is marked deceased" : result.refused}.` });
-  if (!result.sent) return res.status(502).json({ sent: false, error: "The email provider rejected the send — nothing was recorded as sent. Try again shortly." });
+  if (result.refused) return res.status(400).json({ error: `Cannot send, ${result.refused === "deceased" ? "this donor is marked deceased" : result.refused}.` });
+  if (!result.sent) return res.status(502).json({ sent: false, error: "The email provider rejected the send, nothing was recorded as sent. Try again shortly." });
   await logRecoveryEvent(orgId, donor.id, rs.stripe_subscription_id, "dunning_sent", null, { manual: true });
   res.json({ sent: true });
 }));
@@ -5577,7 +5578,7 @@ async function sendPortalMagicLinkEmail(org, email, token, returnTo = null) {
   // (retried on the tick, surfaced on /health) — no more console-only failure.
   // The stored html is final-rendered, so a retry resends it verbatim; a link
   // that expires before a retry lands is harmless (the donor re-requests).
-  await sendDonorLifecycleEmail("magic_link", email, `Your sign-in link — ${theme.displayName}`, html, fromWithDisplayName(theme.displayName, DONOR_MAIL_ADDR())); // BUILD-64: org name in the inbox
+  await sendDonorLifecycleEmail("magic_link", email, `Your sign-in link · ${theme.displayName}`, html, fromWithDisplayName(theme.displayName, DONOR_MAIL_ADDR())); // BUILD-64: org name in the inbox
 }
 
 // Donor-facing confirmation for every money mutation (R-8). Transactional —
@@ -5598,7 +5599,7 @@ async function sendPortalMutationEmail(org, email, subject, bodyText) {
     const { error: sendErr } = await resend.emails.send({
       from: ident.from,
       ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
-      to: email, subject: `${subject} — ${theme.displayName}`, html,
+      to: email, subject: `${subject} · ${theme.displayName}`, html,
       _stewardOrgId: org.id, _stewardKind: "portal_change",   // MAIL-1: the org's mail policy applies
     });
     if (sendErr) console.error("[portal] mutation email error:", sendErr.message);
@@ -5631,12 +5632,12 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
       `INSERT INTO tasks (id,org_id,title,due,priority,type,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       ["t_" + uuid().slice(0, 8), org.id,
-       `${donor.name} ${verb} their ${amt} recurring gift — reach out today`,
+       `${donor.name} ${verb} their ${amt} recurring gift: reach out today`,
        orgToday(await orgTz(org.id)), "high", "donor", donor.id, officer.id, officer.name || "",
        "system:portal-drift", "Donor portal"]);
     const subj = `${donor.name} ${verb} their recurring gift`;
-    const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " — " + escHtmlWf(detail) : ""}.</p>
-      <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today — thank them for their giving, ask nothing, and learn what changed.</p>`;
+    const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " Not set " + escHtmlWf(detail) : ""}.</p>
+      <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today, thank them for their giving, ask nothing, and learn what changed.</p>`;
     await notifyUserOnce({
       org, userId: officer.id, email: officer.email,
       eventKey: `portal:${action}:${sub.id}`, channel: "portal_drift",
@@ -6310,7 +6311,7 @@ app.post("/portal/:orgSlug/impact/:updateId/viewed", requirePortalSession, wrap(
   const [u] = await query(`SELECT id, title FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.updateId, org.id]);
   if (!u) return res.status(404).json({ error: "not_found" });
   const donors = await portalDonorsFor(org.id, email);
-  for (const d of donors) await portalTimeline(org.id, d.id, `Portal: viewed impact update — ${u.title}`, "impact_view");
+  for (const d of donors) await portalTimeline(org.id, d.id, `Portal: viewed impact update · ${u.title}`, "impact_view");
   res.json({ ok: true });
 }));
 
@@ -6479,7 +6480,7 @@ app.post("/portal/:orgSlug/recurring/:subId/cancel", portalMutationLimiter, requ
     await portalAudit(org.id, donor.id, email, "recurring_cancel", req, { subId: sub.id, reason });
     await logRecurringChange(org.id, sub.id, donor.id, "canceled_voluntary",
       { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "donor" });
-    await portalTimeline(org.id, donor.id, `Portal: canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${reason ? ` — reason: ${reason}` : ""}`, "recurring_cancel");
+    await portalTimeline(org.id, donor.id, `Portal: canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${reason ? ` reason: ${reason}` : ""}`, "recurring_cancel");
     portalDriftAlert(org, donor, sub, "recurring_cancel", reason).catch(() => {});
     sendPortalMutationEmail(org, email, "Your recurring gift is canceled",
       `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift is canceled. You won't be charged again. Thank you for everything you've given.`).catch(() => {});
@@ -6665,7 +6666,7 @@ async function validateWidget(raw, orgId) {
         break;
       case "richtext": {
         const v = validateStoryBlocks(raw.blocks);
-        if (v.error) return { error: "Rich text must be paragraphs, headings, and lists — no HTML." };
+        if (v.error) return { error: "Rich text must be paragraphs, headings, and lists, no HTML." };
         w.blocks = v.blocks || [];
         break;
       }
@@ -6686,7 +6687,7 @@ async function validateWidget(raw, orgId) {
       case "stats": {
         const items = Array.isArray(raw.items) ? raw.items.slice(0, 4) : [];
         w.items = items.map(i => ({ value: wStr(i?.value, 40), label: wStr(i?.label, 80) })).filter(i => i.value && i.label);
-        if (!w.items.length) return { error: "Stats need at least one value + label (your own numbers — nothing is computed for you)." };
+        if (!w.items.length) return { error: "Stats need at least one value + label (your own numbers, nothing is computed for you)." };
         break;
       }
       case "funds": {
@@ -6846,7 +6847,7 @@ const PORTAL_STARTERS = {
     label: "Story first",
     widgets: [
       { type: "hero", heading: "", sub: "", image: null, size: "tall" },
-      { type: "richtext", blocks: [{ type: "p", text: "Tell the story of your work here — in your own words." }] },
+      { type: "richtext", blocks: [{ type: "p", text: "Tell the story of your work here, in your own words." }] },
       { type: "mygiving" }, { type: "impact", heading: "What your giving made possible" },
       { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
     ],
@@ -7094,7 +7095,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   }
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
   res.json({ ...ps, adjusted, ...(adjusted ? { message: tintAdjusted
-    ? "Your colors were adjusted slightly so text stays readable (WCAG AA) — light accents are deepened, dark backgrounds lightened."
+    ? "Your colors were adjusted slightly so text stays readable (WCAG AA), light accents are deepened, dark backgrounds lightened."
     : "Your color was deepened slightly so text stays readable (WCAG AA)." } : {}) });
 }));
 
@@ -7294,7 +7295,7 @@ app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimite
     if (existing.length) {
       await donorAudit(existing[0].id, email, "signup_existing", req);
       await sendDonorLifecycleEmail("signup_existing", email, `Your ${CONSUMER_BRAND} account`,
-        consumerEmailHtml(`<p>Someone (hopefully you) tried to create a ${escHtmlWf(CONSUMER_BRAND)} account with this address — but you already have one.</p>
+        consumerEmailHtml(`<p>Someone (hopefully you) tried to create a ${escHtmlWf(CONSUMER_BRAND)} account with this address, but you already have one.</p>
           <p>You can sign in at <a href="${publicAppUrl()}/giving">${publicAppUrl()}/giving</a>. Forgot your password? Use "Reset password" there. If this wasn't you, you can safely ignore this email.</p>`));
       return;
     }
@@ -7306,10 +7307,10 @@ app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimite
       [id, email, bcrypt.hashSync(password, 12), sha256hex(token)]);
     await donorAudit(id, email, "signup", req, { consent: true, consentAt: new Date().toISOString() });
     const link = `${publicAppUrl()}/giving/verify#token=${token}`;
-    await sendDonorLifecycleEmail("verify", email, `Verify your email — ${CONSUMER_BRAND}`,
+    await sendDonorLifecycleEmail("verify", email, `Verify your email · ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>Welcome. Confirm this email address to see your giving in one place:</p>
         <p style="text-align:center;margin:28px 0;"><a href="${link}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>
-        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>`));
+        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. Each nonprofit sees only its own relationship with you, we never share your giving at one organization with another.</p>`));
   })().catch(e => console.error("[account] signup async failed:", e.message));
 }));
 
@@ -7347,7 +7348,7 @@ app.post("/account/login", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter
     (async () => {
       const token = crypto.randomBytes(32).toString("base64url");
       await run(`UPDATE donor_accounts SET verify_token_hash=?, verify_expires_at=NOW()+INTERVAL '60 minutes' WHERE id=?`, [sha256hex(token), acct.id]);
-      await sendDonorLifecycleEmail("verify", email, `Verify your email — ${CONSUMER_BRAND}`,
+      await sendDonorLifecycleEmail("verify", email, `Verify your email · ${CONSUMER_BRAND}`,
         consumerEmailHtml(`<p>Confirm this email address to sign in:</p>
           <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
     })().catch(() => {});
@@ -7389,7 +7390,7 @@ app.post("/account/request-link", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIp
     if (!acct.email_verified_at) {
       const vtoken = crypto.randomBytes(32).toString("base64url");
       await run(`UPDATE donor_accounts SET verify_token_hash=?, verify_expires_at=NOW()+INTERVAL '60 minutes' WHERE id=?`, [sha256hex(vtoken), acct.id]);
-      await sendDonorLifecycleEmail("verify", acct.email, `Verify your email — ${CONSUMER_BRAND}`,
+      await sendDonorLifecycleEmail("verify", acct.email, `Verify your email · ${CONSUMER_BRAND}`,
         consumerEmailHtml(`<p>Confirm this email address to sign in:</p>
           <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${vtoken}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
       return;
@@ -7402,7 +7403,7 @@ app.post("/account/request-link", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIp
       ["dsl_" + uuid().slice(0, 10), acct.id, sha256hex(token)]);
     await donorAudit(acct.id, email, "signin_link_requested", req);
     const link = `${publicAppUrl()}/giving/signin#token=${token}`; // fragment: never sent in a Referer
-    await sendDonorLifecycleEmail("signin_link", email, `Your sign-in link — ${CONSUMER_BRAND}`,
+    await sendDonorLifecycleEmail("signin_link", email, `Your sign-in link · ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>Here is your secure sign-in link for your giving account:</p>
         <p style="text-align:center;margin:28px 0;"><a href="${link}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">See my giving</a></p>
         <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>`));
@@ -7443,7 +7444,7 @@ app.post("/account/request-reset", requireFlag(DONOR_ACCOUNTS_ENABLED), accountI
        VALUES (?,?,?, NOW() + INTERVAL '60 minutes')`,
       ["dar_" + uuid().slice(0, 10), acct.id, sha256hex(token)]);
     await donorAudit(acct.id, email, "reset_requested", req);
-    await sendDonorLifecycleEmail("reset", email, `Reset your password — ${CONSUMER_BRAND}`,
+    await sendDonorLifecycleEmail("reset", email, `Reset your password · ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>Set a new password for your giving account:</p>
         <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/reset#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Reset password</a></p>
         <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. If you didn't request it, you can safely ignore this email.</p>`));
@@ -7506,10 +7507,10 @@ app.post("/account/change-email", requireDonorAccount, accountIpLimiter, wrap(as
       `UPDATE donor_accounts SET pending_email = ?, email_change_token_hash = ?, email_change_expires_at = NOW() + INTERVAL '60 minutes' WHERE id = ?`,
       [newEmail, sha256hex(token), acct.id]);
     await donorAudit(acct.id, acct.email, "email_change_requested", req, { to: newEmail });
-    await sendDonorLifecycleEmail("email_change", acct.email, `Confirm your email change — ${CONSUMER_BRAND}`,
+    await sendDonorLifecycleEmail("email_change", acct.email, `Confirm your email change · ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>You asked to change your account email to <strong>${escHtmlWf(newEmail)}</strong>. To confirm, use this link (sent to your CURRENT address on purpose):</p>
         <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/confirm-email#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Confirm change</a></p>
-        <p style="font-size:13px;color:#555;">If this wasn't you, change your password now — this link expires in 60 minutes and works once.</p>`));
+        <p style="font-size:13px;color:#555;">If this wasn't you, change your password now, this link expires in 60 minutes and works once.</p>`));
   })().catch(e => console.error("[account] email change failed:", e.message));
 }));
 
@@ -7534,8 +7535,8 @@ app.post("/account/change-email/confirm", requireFlag(DONOR_ACCOUNTS_ENABLED), a
     [acct.pending_email, sha256hex(verifyToken), acct.id]);
   await revokeAccountSessions(acct.id, null); // email changed → every session dies
   await donorAudit(acct.id, acct.pending_email, "email_changed", req, { from: acct.email });
-  await sendDonorLifecycleEmail("verify", acct.pending_email, `Verify your new email — ${CONSUMER_BRAND}`,
-    consumerEmailHtml(`<p>Almost done — verify your new address to finish the change:</p>
+  await sendDonorLifecycleEmail("verify", acct.pending_email, `Verify your new email · ${CONSUMER_BRAND}`,
+    consumerEmailHtml(`<p>Almost done: verify your new address to finish the change:</p>
       <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${verifyToken}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
   res.json({ ok: true, message: "Confirmed. Now verify the new address from its own inbox." });
 }));
@@ -7562,10 +7563,10 @@ app.post("/account/aliases", requireDonorAccount, accountIpLimiter, accountEmail
        ON CONFLICT (account_id,email) DO UPDATE SET token_hash = EXCLUDED.token_hash, token_expires_at = EXCLUDED.token_expires_at`,
       ["dal_" + uuid().slice(0, 10), acct.id, email, sha256hex(token)]);
     await donorAudit(acct.id, email, "alias_requested", req);
-    await sendDonorLifecycleEmail("alias", email, `Confirm this email — ${CONSUMER_BRAND}`,
+    await sendDonorLifecycleEmail("alias", email, `Confirm this email · ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>Confirm that this address is yours to see the giving recorded under it in your dashboard:</p>
         <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/confirm-alias#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Yes, this is my email</a></p>
-        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. If you didn't request it, ignore this email — nothing will be linked.</p>`));
+        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. If you didn't request it, ignore this email, nothing will be linked.</p>`));
   })().catch(e => console.error("[account] alias request failed:", e.message));
 }));
 
@@ -7850,7 +7851,7 @@ app.get("/account/tax-summary", requireDonorAccount, wrap(async (req, res) => {
      JOIN portal_settings ps ON ps.org_id = r.org_id AND ps.enabled = true AND ps.network_listed = true
      WHERE r.voided_at IS NULL ORDER BY r.created_at DESC LIMIT 300`, [acct.id]);
   res.json({
-    note: "For your records — consult your tax preparer.",
+    note: "For your records, consult your tax preparer.",
     years: rows.map(r => ({ year: r.year, orgSlug: r.org_slug, orgName: displayNameCase(r.org_name), total: parseFloat(r.total) || 0, gifts: r.gifts })),
     receipts: receipts.map(r => ({ id: r.id, orgSlug: r.org_slug, type: r.type, number: r.receipt_number, amount: parseFloat(r.amount) || 0, taxYear: r.tax_year, date: r.created_at })),
   });
@@ -8015,7 +8016,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
      ON CONFLICT (org_id) DO NOTHING`, [orgId, name]);
   const appId = "napp_" + uuid().slice(0, 8);
   const status = einHolder.length ? "dispute" : "pending";
-  const decision = [{ at: new Date().toISOString(), by: "system", action: "created", consent: true, detail: einHolder.length ? `EIN already claimed by ${einHolder[0].org_id} — routed to dispute queue` : "application created" }];
+  const decision = [{ at: new Date().toISOString(), by: "system", action: "created", consent: true, detail: einHolder.length ? `EIN already claimed by ${einHolder[0].org_id}: routed to dispute queue` : "application created" }];
   await run(
     `INSERT INTO network_applications (id, org_id, ein, status, ein_result, domain_check, website, disputed_org_id, decisions)
      VALUES (?,?,?,?,?,?,?,?,?)`,

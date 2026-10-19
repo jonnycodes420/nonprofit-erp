@@ -819,8 +819,15 @@ const NOT_YET = [
 const RO_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const RO_TELL = /\b(what|anything)\b.*\b(import|file|read|upload)\b.*\b(tell|told|show|say|said|find|found)\b|\bwhat changed\b/i;
 const RO_CAME_BACK = /\bwho\b.*\b(came back|come back|returned|gave again)\b/i;
+// FIX-45 1.6: the readouts only know about imports and reads, one month at a
+// time. "Show me lapsed donors who came back this year" was answered from them
+// ("No readout in October found a lapsed donor who came back.") while the
+// gifts said 192. So a comeback question over any period but a month, or one
+// the readouts found nobody for, is not theirs: it goes on to the gift-based
+// answer (askCatalog recaptured_count), which counts every door.
+const RO_NOT_A_MONTH = /\b(this|last|past|previous|next)\s+(year|quarter|week|fiscal year|fy)\b|\b(ytd|year to date|so far this year|all time|ever|since|in (19|20)\d\d|(19|20)\d\d)\b|\b(last|past)\s+\d+\s+(days|weeks|months|years)\b/i;
 async function readoutAnswer(orgId, typed) {
-  const tell = RO_TELL.test(typed), back = RO_CAME_BACK.test(typed);
+  const tell = RO_TELL.test(typed), back = RO_CAME_BACK.test(typed) && !RO_NOT_A_MONTH.test(typed);
   if (!tell && !back) return null;
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const mi = RO_MONTHS.findIndex(m => new RegExp(`\\b${m}\\b`, "i").test(typed));
@@ -840,9 +847,9 @@ async function readoutAnswer(orgId, typed) {
     const lines = [];
     for (const r of rows) for (const l of (typeof r.lines === "string" ? JSON.parse(r.lines) : r.lines || []))
       if (l.kind === "lapsed_returned" && l.count > 0) lines.push({ r, l });
-    if (!lines.length) return { answered: true, kind: "answer", sentence: `No readout in ${monthWord} found a lapsed donor who came back.`,
-      sentenceParts: [`No readout in ${monthWord} found a lapsed donor who came back.`], figures: {}, table: null, people: null, steps,
-      counted: "Read from the readouts written after each import and read. Steward wrote nothing." };
+    // Nothing on a readout is not "nobody came back": a gift typed in, a
+    // Stripe gift or a check never writes a readout. The gifts answer it.
+    if (!lines.length) return null;
     const seen = new Map();
     for (const { l } of lines) for (const x of l.rows || []) if (!seen.has(x.donorId)) seen.set(x.donorId, x);
     const names = Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, [...seen.keys()]])).map(d => [d.id, d.name]));

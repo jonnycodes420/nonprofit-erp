@@ -498,7 +498,7 @@ export function moveHomeLine({ active = false, imports = 0, giftsImported = 0, p
   if (n(giftsImported) > 0) return "This is your file. Nothing here was typed by us.";
   const p = n(peopleImported);
   return p
-    ? `This is your file — ${p.toLocaleString("en-US")} ${p === 1 ? "person" : "people"}, and no giving history in it yet. Nothing here was typed by us, and gifts can come in a second file whenever you have one.`
+    ? `This is your file, ${p.toLocaleString("en-US")} ${p === 1 ? "person" : "people"}, and no giving history in it yet. Nothing here was typed by us, and gifts can come in a second file whenever you have one.`
     : "This is your file. Nothing here was typed by us.";
 }
 

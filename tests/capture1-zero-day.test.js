@@ -35,6 +35,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@loc
 if (/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)) process.env.DB_SSL = "disable";
 process.env.DISABLE_BACKGROUND_TICKS = "1";
 process.env.DISABLE_RATE_LIMIT = "1";
+process.env.TEST_MODE = "1";   // FIX-45: GET /capture/:id/settled answers only in TEST_MODE
 process.env.SESSION_CACHE_TTL_MS = "0";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "local-test-secret";
 process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || "re_dummy_local";
@@ -58,6 +59,19 @@ globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url))
 const LOGS = [];
 for (const k of ["log", "error", "warn"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
+// FIX-45 §9: prod's database is a round trip away and this one is not. While
+// PG_DELAY is on, every statement waits that long first, which is how a
+// confirm that is quick here took over 30 seconds on Harborlight.
+let PG_DELAY = 0, PG_COUNT = 0;
+{ const pg = require("pg"); const real = pg.Client.prototype.query;
+  pg.Client.prototype.query = function (...a) {
+    if (!PG_DELAY) return real.apply(this, a);
+    PG_COUNT++;
+    // The pool calls with a callback; a direct client call wants a promise.
+    if (typeof a[a.length - 1] === "function") { setTimeout(() => real.apply(this, a), PG_DELAY); return undefined; }
+    return new Promise(r => setTimeout(r, PG_DELAY)).then(() => real.apply(this, a));
+  }; }
+
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { FAKE_ROUTING, FAKE_ACCOUNT, FIXTURES } = require("../scripts/capture1-make-fixtures.js");
 const FX = path.join(__dirname, "fixtures", "capture1");
@@ -69,6 +83,8 @@ const C1 = FIXTURES["check-1.png"], DAF = FIXTURES["daf-letter.pdf"];
 
 // ── THE STAND-IN: the model and Gmail ─────────────────────────────────────
 const queued = [];      // what the "model" will transcribe next, in order
+const queuedFund = [];  // FIX-45: what the "model" picks for a memo's fund, in order
+const fundPicks = [];   // every fund pick the server asked for
 const sentToModel = []; // every request body the server sent the model
 const gmailHits = [];
 const PDF_BYTES = fs.readFileSync(path.join(FX, "pledge-form.pdf"));
@@ -86,6 +102,12 @@ const mock = http.createServer((req, res) => {
   req.on("end", () => {
     const u = new URL(req.url, "http://x");
     const send = (code, j) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(j)); };
+    if (u.pathname === "/v1/messages" && body.includes('"name":"pick_fund"')) {
+      fundPicks.push(body);
+      return send(200, { id: "msg_standin_fund", type: "message", role: "assistant", model: "claude-haiku-4-5", stop_reason: "tool_use",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", id: "tu_f", name: "pick_fund", input: queuedFund.shift() || { fund: "none", confidence: "low" } }] });
+    }
     if (u.pathname === "/v1/messages") {
       sentToModel.push(body);
       const items = queued.shift() || [];
@@ -113,7 +135,7 @@ const checkItem = f => ({ ...blank, kind: "check", payer: f.payer, amountDigits:
   memo: `${f.memo} ⑆${FAKE_ROUTING}⑆ ${FAKE_ACCOUNT}⑈ ${f.number}`, date: "2026-10-12", chequeNumber: f.number,
   sentence: `A check from ${f.payer}, routing ${FAKE_ROUTING}, account ${FAKE_ACCOUNT}.`, routingNumber: FAKE_ROUTING });
 
-const TABLES = ["capture_items", "capture_batches", "capture_fund_words", "thank_you_drafts", "gift_soft_credits", "threads", "interactions",
+const TABLES = ["group_sweep_seen", "group_crossings", "audiences", "donor_rhythm", "capture_items", "capture_batches", "capture_fund_words", "thank_you_drafts", "gift_soft_credits", "threads", "interactions",
   "fin_transactions", "gifts", "pledges", "mailbox_connections", "inbound_email_drops", "portal_assets", "tasks", "donors",
   "user_sessions", "users", "fin_funds", "accounts", "budgets", "ai_usage"];
 async function reset() {
@@ -173,6 +195,12 @@ async function reset() {
   const [cardRow] = await q(`SELECT asset_id, status, gift_id FROM capture_items WHERE id=$1`, [card.id]);
   ok("§2 the image is attached to the gift and kept as evidence", !!gifts[0] && gifts[0].cheque_asset_id === cardRow.asset_id && cardRow.status === "confirmed"
     && cardRow.gift_id === gifts[0].id, { gift: gifts[0], cardRow });
+  // FIX-45: Muse confirmed a check and found the profile's Files empty. The
+  // image was on the gift; the Files read never looked there.
+  const files = await api("GET", `/donors/${card.donor.selectedId}/materials`, tok);
+  const chk = (Array.isArray(files.body) ? files.body : []).find(f => f.kind === "check_image" && f.gift_id === gifts[0].id);
+  ok("§2 the check image is in the donor's Files, with a signed link and the gift it belongs to",
+    files.status === 200 && !!chk && /\/person-photos\/pa_[a-f0-9]+\?e=\d+&s=/.test(chk.file_url || "") && /\$250\.00 gift on Oct 12, 2026/.test(chk.file_name), files.body);
   const drafts = await q(`SELECT id, gift_id, sent_at FROM thank_you_drafts WHERE org_id=$1`, [ORG]);
   ok("§2 a thank-you draft exists for the gift, not sent", drafts.length === 1 && drafts[0].gift_id === gifts[0].id && !drafts[0].sent_at
     && conf.body.thankYouDraftId === drafts[0].id, drafts);
@@ -297,6 +325,68 @@ async function reset() {
   const [wm] = await q(`SELECT COUNT(*)::int AS n FROM capture_items WHERE org_id=$1 AND status='waiting' AND stakes='money'`, [ORG]);
   ok("§8 Home's tile counts the money cards waiting to be confirmed", clock3.body.waiting === wm.n && wm.n === 1, { waiting: clock3.body.waiting, wm });
 
+  // ── §9 confirm answers when the gift is written, not when everything after it is
+  // Planted defects that turned this red: main's one-insert-per-member group
+  // baseline (7,960ms: the answer waited on about 300 statements), and,
+  // with the baseline fixed, recordGift called without deferTriggers in the
+  // confirm route (92 statements against 56: the journeys and the after-change step).
+  console.log("\n§9 confirm answers quickly");
+  await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name)
+           SELECT 'd_cap1_many_' || i, $1, 'Person ' || i, 'active', ${sys} FROM generate_series(1,300) i`, [ORG]);
+  await q(`INSERT INTO audiences (id,org_id,name,segment,kind,rules,created_by,created_by_name)
+           VALUES ('aud_cap1_all',$1,'Everyone in the file','{}'::jsonb,'dynamic','{}'::jsonb,${sys})`, [ORG]);
+  const [members] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
+  PG_DELAY = 20; PG_COUNT = 0;
+  const t9 = performance.now();
+  const fast = await api("POST", `/capture/${oc.id}/confirm`, tok, { amountCents: 150000, date: "2026-10-13", donorId: "d_cap1_james", fundId: "f_cap1_gen", kind: "check" });
+  const ms9 = Math.round(performance.now() - t9), n9 = PG_COUNT;
+  PG_DELAY = 0;
+  ok(`§9 confirm answers in under 2 seconds with 20ms per statement (took ${ms9}ms)`, fast.status === 200 && ms9 < 2000
+    && fast.body.card && fast.body.card.status === "confirmed" && !!fast.body.thankYouDraft, { ms9, status: fast.status });
+  ok(`§9 the answer waits on the gift, its draft and the card only: at most 70 statements (${n9})`, n9 <= 70, n9);
+  await api("GET", `/capture/${oc.id}/settled`, tok);
+  const [seen] = await q(`SELECT COUNT(*)::int AS n FROM group_sweep_seen WHERE group_id='aud_cap1_all' AND donor_id <> '__baseline__'`);
+  const [thr] = await q(`SELECT next_step_label FROM threads WHERE org_id=$1 AND donor_id='d_cap1_james' AND closed_at IS NULL`, [ORG]);
+  ok("§9 what follows the gift still happens after the answer: the group's starting line and the call on the Thread",
+    seen.n === members.n && !!thr && /Call to thank for the \$1,500\.00 gift/.test(thr.next_step_label), { seen: seen.n, members: members.n, thr });
+
+  // ── §10 the deposit slip line moves as the checks are logged (FIX-45) ───
+  // Planted defect that turned this red: batchOut without the logged count
+  // (the line read "add up to $325.00, the same as the deposit slip" after
+  // every confirm).
+  console.log("\n§10 the batch line after a confirm");
+  await q(`INSERT INTO capture_batches (id,org_id,slip_cents,created_by,created_by_name) VALUES ('capb_cap1',$1,32500,${sys})`, [ORG]);
+  for (const [id, cents] of [["cap1_b_1", 25000], ["cap1_b_2", 7500]]) {
+    await q(`INSERT INTO capture_items (id,org_id,kind,stakes,status,source,batch_id,proposal,created_by,created_by_name)
+             VALUES ($1,$2,'check','money','waiting','photo','capb_cap1',$3::jsonb,${sys})`, [id, ORG, JSON.stringify({ amount: { cents, settled: true } })]);
+  }
+  const b1 = await api("POST", "/capture/cap1_b_1/confirm", tok, { amountCents: 25000, date: "2026-10-13", donorId: "d_cap1_marg", fundId: "f_cap1_gen", kind: "check" });
+  ok("§10 the confirm answers with the batch as it now stands: 1 of 2 logged and what is left",
+    b1.status === 200 && !!b1.body.batch && /the same as the deposit slip\. 1 of 2 logged, \$75\.00 still to confirm\./.test(b1.body.batch.sentence), b1.body.batch);
+  const list10 = await api("GET", "/capture", tok);
+  const lb = ((list10.body && list10.body.batches) || []).find(x => x.id === "capb_cap1");
+  ok("§10 To confirm says the same when it is opened again", !!lb && lb.sentence === b1.body.batch.sentence, lb);
+
+  // ── §11 a memo's fund: learned, named, close, then the model (FIX-45) ───
+  // Planted defect that turned this red: fundFor without the close-word step
+  // ("for the boathouse" fell to the default fund, unsure).
+  console.log("\n§11 the memo's fund");
+  await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('f_cap1_boat',$1,'Harbor Skills Boat',true)`, [ORG]);
+  const picks0 = fundPicks.length;
+  queued.push([checkItem({ ...C1, memo: "for the boathouse" })]);
+  const u11 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-1.png", dataUrl: dataUrl("check-1.png", "image/png") }], source: "photo" });
+  const f11 = u11.body && u11.body.cards && u11.body.cards[0] && u11.body.cards[0].fund;
+  ok("§11 \"for the boathouse\" is the Harbor Skills Boat fund, by a close word, without asking the model",
+    !!f11 && f11.id === "f_cap1_boat" && f11.unsure === false && /boathouse/.test(f11.why) && fundPicks.length === picks0, f11);
+  queuedFund.push({ fund: "f_cap1_bld", confidence: "low" });
+  queued.push([checkItem({ ...C1, memo: "new roof" })]);
+  const u12 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-2.png", dataUrl: dataUrl("check-2.png", "image/png") }], source: "photo" });
+  const f12 = u12.body && u12.body.cards && u12.body.cards[0] && u12.body.cards[0].fund;
+  ok("§11 nothing close, so the model picks, and a low-confidence pick is proposed but highlighted as unsure",
+    !!f12 && f12.id === "f_cap1_bld" && f12.unsure === true && f12.confidence === "low" && fundPicks.length === picks0 + 1 && /new roof/.test(fundPicks[picks0] || ""), f12);
+
+  for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
   mock.close();
   await reset();
   await closeDb();

@@ -143,11 +143,107 @@ function scanEnGb(rootDir) {
   return hits;
 }
 
-module.exports = { scanEnGb, PARSER_FILES };
+// ── FIX-45 · NO EM DASH A PERSON CAN READ ─────────────────────────────────
+// docs/MESSAGING.md: "No em dashes." scanEmDash(rootDir) returns every long
+// dash (U+2014, or the HTML entities &mdash; / &#8212;) inside a string a
+// person can read: a string literal, template literal or JSX text in the app,
+// the marketing site, server sentences, emails, PDFs and the demo seed, plus
+// the HTML entry pages and the What's new files. Unlike the spelling rule, a
+// string with no space counts: a lone "—" in a table cell is on screen too.
+// Never read: comments and regex literals (the files are parsed), a
+// console.* line (a log, not a screen), a parser's alias lists and the
+// PARSER_FILES above (another system's text), and a dash passed to
+// includes/split/replace/indexOf/test (code looking FOR a dash).
+//
+// It fails when: someone writes "Raised — so far" in a screen, an email, a PDF,
+// a page title, a changelog line or the demo seed. scripts/fix45-no-em-dash.js
+// is the sweep that rewrites them.
+const DASH = /—|&mdash;|&#8212;/;
+const EM_ROOTS = [...new Set([...ROOTS, "scripts/seed"])];
+const EM_FILES = ["client/index.html", "client/giving.html", "client/public/offline.html"];
+const LOOKS_FOR = new Set(["includes", "split", "replace", "replaceAll", "indexOf", "lastIndexOf", "test", "startsWith", "endsWith", "match"]);
+
+function rootJsFiles(rootDir) {
+  return fs.readdirSync(rootDir).filter(f => /\.(c|m)?js$/.test(f) && !/^(eslint|vite|vitest|playwright)\b/.test(f))
+    .map(f => path.join(rootDir, f));
+}
+
+function scanEmDash(rootDir) {
+  const parser = loadParser(rootDir);
+  const files = [];
+  for (const r of EM_ROOTS) walk(path.join(rootDir, r), files);
+  for (const f of rootJsFiles(rootDir)) if (!files.includes(f)) files.push(f);
+  const hits = [];
+  for (const abs of files) {
+    const rel = path.relative(rootDir, abs).split(path.sep).join("/");
+    if (PARSER_FILES.has(rel) || rel === "tests/polish2/enGb.js") continue;
+    const src = fs.readFileSync(abs, "utf8");
+    if (!DASH.test(src)) continue;
+    let ast;
+    try {
+      ast = parser.parse(src, { sourceType: "unambiguous", errorRecovery: true,
+        plugins: ["jsx", "classProperties", "optionalChaining", "topLevelAwait"] });
+    } catch (e) {
+      hits.push({ file: rel, line: 0, text: "(unparsed) " + e.message, ranges: [] });
+      continue;
+    }
+    const visit = (node, skip) => {
+      if (!node || typeof node.type !== "string") return;
+      // A console line is a log; code that looks FOR a dash is not saying one.
+      if (node.type === "CallExpression" && node.callee) {
+        const c = node.callee;
+        if (c.type === "MemberExpression" && c.object && c.object.name === "console") return;
+        if (c.type === "MemberExpression" && c.property && LOOKS_FOR.has(c.property.name)) {
+          visit(c.object, skip);
+          return;
+        }
+      }
+      let text = null, ranges = null;
+      if (node.type === "StringLiteral" || node.type === "JSXText") { text = node.value; ranges = [[node.start, node.end]]; }
+      else if (node.type === "TemplateLiteral") {
+        text = node.quasis.map((q) => q.value.cooked || q.value.raw).join(" ${} ");
+        ranges = node.quasis.map((q) => [q.start, q.end]);
+      }
+      if (text != null && !skip && DASH.test(text)) {
+        hits.push({ file: rel, line: node.loc ? node.loc.start.line : 0, text: text.trim().slice(0, 160), ranges });
+      }
+      if (node.type === "StringLiteral" || node.type === "JSXText") return;
+      for (const k of Object.keys(node)) {
+        if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments" || k === "innerComments") continue;
+        const v = node[k];
+        const childSkip = skip || (node.type === "ObjectProperty" && k === "value" && node.key &&
+          ALIAS_KEYS.test(node.key.name || node.key.value || ""));
+        if (Array.isArray(v)) v.forEach((c) => c && typeof c === "object" && visit(c, childSkip));
+        else if (v && typeof v === "object" && typeof v.type === "string") visit(v, childSkip);
+      }
+    };
+    visit(ast.program, false);
+  }
+  // The HTML entry pages: every line outside an HTML comment.
+  for (const rel of EM_FILES) {
+    const abs = path.join(rootDir, rel);
+    if (!fs.existsSync(abs)) continue;
+    const src = fs.readFileSync(abs, "utf8").replace(/<!--[\s\S]*?-->/g, m => m.replace(/[^\n]/g, " "));
+    src.split("\n").forEach((l, i) => { if (DASH.test(l)) hits.push({ file: rel, line: i + 1, text: l.trim().slice(0, 160), ranges: [] }); });
+  }
+  // What's new: the public page and the in-app panel read these files.
+  const cl = path.join(rootDir, "docs", "changelog");
+  if (fs.existsSync(cl)) for (const f of fs.readdirSync(cl).filter(f => f.endsWith(".md") && f !== "README.md")) {
+    fs.readFileSync(path.join(cl, f), "utf8").split("\n").forEach((l, i) => {
+      if (DASH.test(l)) hits.push({ file: "docs/changelog/" + f, line: i + 1, text: l.trim().slice(0, 160), ranges: [] });
+    });
+  }
+  return hits;
+}
+
+module.exports = { scanEnGb, scanEmDash, PARSER_FILES };
 
 if (require.main === module) {
   const root = process.argv[2] || path.join(__dirname, "..", "..");
   const hits = scanEnGb(root);
   for (const h of hits) console.log(`${h.file}:${h.line}  [${h.word}]  ${h.text}`);
   console.log(`${hits.length} British spelling(s) a person can read`);
+  const dashes = scanEmDash(root);
+  for (const h of dashes) console.log(`${h.file}:${h.line}  [em dash]  ${h.text}`);
+  console.log(`${dashes.length} em dash(es) a person can read`);
 }

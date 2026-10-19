@@ -127,12 +127,12 @@ const NOTE_STOP_OBJECTS = new Set(["it", "that", "this", "them", "one", "more", 
 
 // Human-readable names for the rules, for the "why this was proposed" line.
 export const NOTE_RULE_LABELS = {
-  asked_for:    "From your note — an ask",
-  asked_about:  "From your note — a question",
-  promised:     "From your note — a promise",
-  wants:        "From your note — something wanted",
-  needs:        "From your note — something needed",
-  following_up: "From your note — a follow-up",
+  asked_for:    "From your note: an ask",
+  asked_about:  "From your note: a question",
+  promised:     "From your note: a promise",
+  wants:        "From your note: something wanted",
+  needs:        "From your note: something needed",
+  following_up: "From your note: a follow-up",
 };
 
 // Trim a captured phrase down to the one thing the step is about: stop at the

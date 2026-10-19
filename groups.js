@@ -772,10 +772,12 @@ const BASELINE = "__baseline__";
 async function baselineGroup(orgId, group, today = "") {
   const ids = await memberIds(orgId, group);
   await query(`DELETE FROM group_sweep_seen WHERE org_id=? AND group_id=?`, [orgId, group.id]);
-  for (const id of [BASELINE, ...ids]) {
-    await query(`INSERT INTO group_sweep_seen (org_id, group_id, donor_id, seen_on) VALUES (?,?,?,?)
-                 ON CONFLICT (group_id, donor_id) DO NOTHING`, [orgId, group.id, id, today || ""]);
-  }
+  // FIX-45: one statement for the whole starting line. One insert per member
+  // was 1,238 round trips on a freshly seeded Harborlight, all inside the
+  // first gift's request, which is how a check confirm took 30 seconds.
+  await query(`INSERT INTO group_sweep_seen (org_id, group_id, donor_id, seen_on)
+               SELECT ?, ?, x, ? FROM unnest(?::text[]) AS x
+               ON CONFLICT (group_id, donor_id) DO NOTHING`, [orgId, group.id, today || "", [BASELINE, ...ids]]);
   return ids.length;
 }
 // The groups by rule that an armed "joins a group" journey watches.

@@ -25,6 +25,7 @@ import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { useLocation } from "react-router-dom";
 import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
+import RemoveMenu from "./RemoveMenu";
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -287,7 +288,8 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       )}
 
       {!loading && subtab === "pages" && (
-        <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
+        <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} isReadOnly={isReadOnly}
+          onChanged={() => apiFetch("/giving-pages").then(p => setPages(p || [])).catch(() => {})} />
       )}
 
       {/* PARITY-2 Part 4: auctions: items, bids, winners, pay links. */}
@@ -1108,7 +1110,7 @@ function NewGivingPage({ onClose }) {
 const draftBadge = <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft waiting</span>;
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
-function PagesView({ pages, orgSlug, onNavigate }) {
+function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }) {
   const [shareId, setShareId] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const active = pages.filter(p => p.status === "active");
@@ -1160,6 +1162,9 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Volunteer page</span>
                 {!p.published_at && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Not published yet</span>}
                 {p.published_at && p.has_draft && draftBadge}
+                {/* FIX-45: a page can be removed. The server decides: archived when
+                    sign-ups or gifts came through it, deleted when nothing did. */}
+                <span style={{ marginLeft: "auto" }}><RemoveMenu kind="volunteer_page" id={p.id} disabled={isReadOnly} onDone={onChanged} /></span>
               </div>
               <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
                 {[["vol_signups", "vol_signups_source", "Sign-ups"], ["vol_shifts_filled", "vol_shifts_filled_source", "Shifts filled"], ["vol_views", "vol_views_source", "Views"]].map(([k, sk, label]) => (
@@ -1188,6 +1193,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                 <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
                 {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Counts toward {p.campaign_name}</span>}
                 {p.has_draft && draftBadge}
+                <span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} /></span>
               </div>
               {goal > 0 && p.show_goal !== false && (
                 <Thermometer raised={raised} goal={goal} percent={pct} raisedSource={raisedSource} raisedLabel={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} />

@@ -153,7 +153,7 @@ export function buildDeposit(payout, gifts = [], revenue = [], mapping = {}) {
   if (linesTotal !== net) {
     const d = linesTotal - net;
     return { ok: false, problem: "does_not_foot", differenceCents: d,
-      sentence: `This deposit's lines come to ${money(linesTotal)} and ${money(net)} arrived in the bank — ${money(Math.abs(d))} ${d > 0 ? "more" : "less"} than Steward can account for. Nothing was sent.` };
+      sentence: `This deposit's lines come to ${money(linesTotal)} and ${money(net)} arrived in the bank, ${money(Math.abs(d))} ${d > 0 ? "more" : "less"} than Steward can account for. Nothing was sent.` };
   }
 
   return { ok: true, sentence: `${lines.length} line${lines.length === 1 ? "" : "s"} totalling ${money(net)}, which is what arrived in the bank.`,

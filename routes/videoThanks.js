@@ -130,7 +130,7 @@ app.post("/donors/:id/video-thanks", requireAuth, checkWriteAccess, wrap(async (
   const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, orgId]);
   const signer = (me && String(me.name || "").trim()) || "";
   const subject = `A thank-you from ${orgName || "us"}`;
-  const body = `Dear ${firstName(d.name)},\n\nI recorded a short video to say thank you. You can watch it here:\n\n${videoUrl(token)}\n\n`
+  const body = `Dear ${(await import("../shared/greeting.js")).greetingName(d) || firstName(d.name)},\n\nI recorded a short video to say thank you. You can watch it here:\n\n${videoUrl(token)}\n\n`
     + `With gratitude,${signer ? `\n${signer}` : ""}${orgName ? `\n${orgName}` : ""}`;
   const draftId = "md_" + uuid().slice(0, 12);
   await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)

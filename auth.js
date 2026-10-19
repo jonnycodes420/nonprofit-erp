@@ -72,7 +72,7 @@ async function requireAuth(req, res, next) {
     const validAfterSec = Math.floor(new Date(info.sessions_valid_after).getTime() / 1000);
     // iat is whole seconds; allow 1s of clock skew before rejecting.
     if (typeof payload.iat === "number" && payload.iat < validAfterSec - 1) {
-      return res.status(401).json({ error: "session_revoked", message: "Your session is no longer valid — please log in again" });
+      return res.status(401).json({ error: "session_revoked", message: "Your session is no longer valid, please log in again" });
     }
     // Overlay the LIVE role/org so requireAuth-derived context reflects the DB
     // within the TTL, not the (possibly stale) JWT claims.

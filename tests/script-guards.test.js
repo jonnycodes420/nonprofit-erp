@@ -349,6 +349,7 @@ const EXEMPT = {
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
   "build95-cheque-drill": "BUILD-95 — the cheque-reading boundary drill: reads local image files, calls the Anthropic API directly and prints what came back. No BASE, no DATABASE_URL, no Steward server, no app write of any kind; it refuses to run under NODE_ENV=production",
   "capture1-make-fixtures": "CAPTURE-1: draws the fake check, slip and letter fixtures with sharp and pdfkit into tests/fixtures/capture1/; no BASE, no DATABASE_URL, no network, no app write",
+  "fix45-no-em-dash": "FIX-45 2.6: rewrites em dashes in the repo's OWN source files (the strings tests/polish2/enGb.js scanEmDash finds). No BASE, no DATABASE_URL, no network, no app write",
   "audit-gate": "BUILD-75 B.6 — runs `npm audit --json` on the local package and compares against audit/npm-audit-allowlist.json; no BASE, no DB, no app writes",
   // ── CHORE-2 — the sharded battery's four helpers. None of them has a BASE,
   // a DATABASE_URL or any notion of an app: they read a suite list, a plan, a

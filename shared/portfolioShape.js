@@ -80,10 +80,10 @@ export function targetProgress({ targetCents, committedCents, fiscalLabel }) {
 export function targetSentence(p, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (v => String(v));
   if (!p || !p.set) {
-    return `No target set for ${p && p.fiscalLabel ? p.fiscalLabel : "this year"} — type one and this figure starts meaning something.`;
+    return `No target set for ${p && p.fiscalLabel ? p.fiscalLabel : "this year"}, type one and this figure starts meaning something.`;
   }
   const head = `${fm(p.committedCents)} committed of a ${fm(p.targetCents)} target for ${p.fiscalLabel || "this year"}`;
-  if (p.overCents > 0) return `${head} — ${fm(p.overCents)} over.`;
+  if (p.overCents > 0) return `${head}, ${fm(p.overCents)} over.`;
   return `${head}, which is ${p.rawPercent}% of it. The target is the one you typed.`;
 }
 
@@ -122,5 +122,5 @@ export function unassignedSentence({ count, thresholdCents }, formatMoney) {
 export function portfolioCountSentence(count, officerName) {
   const n = Number(count) || 0;
   if (n === 0) return `${officerName || "This officer"} has nobody assigned yet.`;
-  return `${n} ${n === 1 ? "person is" : "people are"} assigned to ${officerName || "this officer"} — which is what puts them on ${officerName ? "their" : "the"} board.`;
+  return `${n} ${n === 1 ? "person is" : "people are"} assigned to ${officerName || "this officer"}, which is what puts them on ${officerName ? "their" : "the"} board.`;
 }

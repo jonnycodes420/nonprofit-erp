@@ -20,7 +20,9 @@ const R = require("../removal");
 
 const routers = { r0: express.Router() };
 const VOLUNTEER_KINDS = new Set(["volunteer_role", "shift", "volunteer_signup"]);
-const UNDO_SECONDS = 10;
+// FIX-45: the toast offers Undo for a minute (the walk lost three Undos to ten
+// seconds); Recent changes keeps it for as long as the row sits in the trash.
+const UNDO_SECONDS = 60;
 const BULK_MAX = 200;
 
 // What a retire / archive / unassign writes, and the columns Undo restores.
@@ -83,6 +85,16 @@ const WITH = {
   },
 };
 
+// FIX-45: a removed row's photos come back with it. While the row sat in the
+// trash nothing pointed at its pictures, so a prune of their kind may have put
+// them into the 90-day retention window (deleted_at set, bytes kept). Undo
+// clears that mark for every asset the restored row names, in this org only.
+const ASSET_IDS = /pa_[a-f0-9]{24}/g;
+async function bringBackAssets(tx, runTx, orgId, data) {
+  const ids = [...new Set(JSON.stringify(data || {}).match(ASSET_IDS) || [])];
+  if (!ids.length) return 0;
+  return runTx(tx, `UPDATE portal_assets SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NOT NULL`, [orgId, ids]);
+}
 function mount(ctx) {
   const { actor, checkWriteAccess, query, queryTx, requireAuth, run, runTx, uuid, withTransaction, wrap, itemStates } = ctx;
   const app = routers.r0;
@@ -145,7 +157,7 @@ function mount(ctx) {
     await runTx(tx, `UPDATE ${K.table} SET ${sets.join(", ")} WHERE id=? AND org_id=?`, [...args, p.id, orgId]);
     await runTx(tx, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
                      VALUES (?,?,?,?,?::jsonb,?,?)`,
-      [trashId, orgId, "removal:" + p.mode, p.id, JSON.stringify({ table: K.table, kind: p.kind, prev }), who.id, who.name]);
+      [trashId, orgId, "removal:" + p.mode, p.id, JSON.stringify({ table: K.table, kind: p.kind, prev, name: p.name }), who.id, who.name]);
     return trashId;
   }
 
@@ -153,6 +165,84 @@ function mount(ctx) {
   const doneSentence = (p, K) => p.mode === "unassign" ? `Removed the winner of ${p.name}. The item is unassigned.`
     : K.people ? `Removed ${p.name}.` : `${DONE[p.mode]} the ${p.name} ${K.noun}.`;
 
+
+  // FIX-45 · RECENT CHANGES. This person's last 50 changes that can still be
+  // undone, newest first, each with the request that undoes it. Read from the
+  // seams that already undo things (nothing new is recorded to make the list):
+  //   · the trash (deleted_records): every Remove and every Delete that offered
+  //     Undo, for as long as the row is still in the trash (30 days listed)
+  //   · a card skipped in To confirm, until it is brought back (30 days)
+  //   · a person added by hand in the last day who has no gift yet (an admin
+  //     only, because taking a person out is an admin's delete)
+  // A GET: it writes nothing.
+  const LIST_DAYS = 30;
+  const TABLE_NOUN = { interactions: "entry", threads: "next step", tasks: "task", pledges: "pledge", opportunities: "ask",
+    households: "household", donor_relationships: "relationship", planned_gifts: "planned gift", donor_materials: "file",
+    proposals: "ask", impact_metrics: "impact metric", gifts: "gift" };
+  const rowName = d => {
+    const v = d && (d.name || d.title || d.label || d.subject || d.next_step_label || d.note || "");
+    return String(v || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  };
+  app.get("/recent-changes", requireAuth, wrap(async (req, res) => {
+    const orgId = req.user.orgId, userId = req.user.userId;
+    const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [userId, orgId]);
+    const isAdmin = !!(me && me.role === "admin");
+    const [trash, skipped, added] = await Promise.all([
+      query(`SELECT t.id, t.table_name, t.record_id, t.row_data, t.created_at, d.name AS donor_name
+               FROM deleted_records t
+               LEFT JOIN donors d ON t.table_name = 'donors' AND d.id = t.record_id AND d.org_id = t.org_id
+              WHERE t.org_id=? AND t.created_by=? AND t.restored_at IS NULL AND t.created_at > NOW() - INTERVAL '${LIST_DAYS} days'
+              ORDER BY t.created_at DESC LIMIT 50`, [orgId, userId]),
+      query(`SELECT id, kind, headline, proposal, skip_reason, decided_at FROM capture_items
+              WHERE org_id=? AND decided_by=? AND status='skipped' AND decided_at > NOW() - INTERVAL '${LIST_DAYS} days'
+              ORDER BY decided_at DESC LIMIT 50`, [orgId, userId]),
+      isAdmin ? query(`SELECT d.id, d.name, a.created_at FROM fin_audit_log a
+                         JOIN donors d ON d.id = a.entity_id AND d.org_id = a.org_id
+                        WHERE a.org_id=? AND a.user_id=? AND a.entity_type='donor' AND a.action='created'
+                          AND a.created_at > NOW() - INTERVAL '1 day' AND d.deleted_at IS NULL AND COALESCE(d.gift_count,0) = 0
+                          AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id)
+                        ORDER BY a.created_at DESC LIMIT 50`, [orgId, userId]) : [],
+    ]);
+    const plus = (at, days) => new Date(new Date(at).getTime() + days * 864e5).toISOString();
+    const rows = [];
+    for (const t of trash) {
+      const data = typeof t.row_data === "string" ? JSON.parse(t.row_data) : (t.row_data || {});
+      const soft = String(t.table_name).startsWith("removal:");
+      const kind = soft ? data.kind : data.__removal;
+      const K = kind ? R.kindOf(kind) : null;
+      const noun = K ? K.noun : t.table_name === "donors" ? "person" : (TABLE_NOUN[t.table_name] || "record");
+      const name = t.table_name === "donors" ? (t.donor_name || "") : soft ? String(data.name || "") : rowName(data);
+      const mode = soft ? t.table_name.slice("removal:".length) : "delete";
+      const verb = t.table_name === "donors" ? "Moved to trash" : mode === "retire" ? "Retired" : mode === "archive" ? "Archived"
+        : mode === "unassign" ? "Removed the winner of" : K && K.people ? "Removed" : "Deleted";
+      const sentence = mode === "unassign" ? `${verb} ${name || "an auction item"}.`
+        : t.table_name === "donors" ? `${verb}: ${name || "a person"}.`
+        : `${verb} the ${noun}${name ? `: ${name}` : ""}.`;
+      rows.push({ id: t.id, kind: soft || data.__removal ? "removal" : "trash", sentence, at: t.created_at, until: plus(t.created_at, LIST_DAYS),
+        undo: soft || data.__removal ? { method: "POST", path: "/removals/undo", body: { undoIds: [t.id] } }
+                                     : { method: "POST", path: `/deleted-records/${encodeURIComponent(t.id)}/restore` } });
+    }
+    const CARD_WORD = { check: "check", daf_grant: "DAF grant", stock_gift: "stock gift", matching_gift: "matching gift", pledge: "pledge", other: "item" };
+    for (const c of skipped) {
+      const p = c.proposal || {};
+      const who = p.donor ? ((p.donor.choices || []).find(x => x.id === p.donor.selectedId) || p.donor.prefill || {}).name : null;
+      const cents = p.amount && Number.isFinite(Number(p.amount.cents)) ? Number(p.amount.cents) : null;
+      const amt = cents != null ? "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " : "";
+      const sentence = who || amt
+        ? `Skipped the ${amt}${CARD_WORD[c.kind] || "item"}${who ? ` from ${who}` : ""} in To confirm.`
+        : `Skipped in To confirm: ${String(c.headline || CARD_WORD[c.kind] || "an item").replace(/[?.]+$/, "")}.`;
+      rows.push({ id: "skip:" + c.id, kind: "capture_skip", sentence, at: c.decided_at,
+        until: plus(c.decided_at, LIST_DAYS), undoLabel: "Bring back",
+        undo: { method: "POST", path: `/capture/${encodeURIComponent(c.id)}/unskip` } });
+    }
+    for (const d of added) {
+      rows.push({ id: "add:" + d.id, kind: "person_added", sentence: `Added ${d.name || "a person"}.`, at: d.created_at,
+        until: plus(d.created_at, 1), undoLabel: "Take back out",
+        undo: { method: "DELETE", path: `/donors/${encodeURIComponent(d.id)}` } });
+    }
+    rows.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.json({ rows: rows.slice(0, 50), now: new Date().toISOString() });
+  }));
   const PREFIXES = ["/removals", "/volunteer-hub/removals"];
   const kindOk = (req, kind) => !req.path.startsWith("/volunteer-hub/") || VOLUNTEER_KINDS.has(kind);
 
@@ -188,6 +278,7 @@ function mount(ctx) {
               if (WITH[K.table]) await WITH[K.table].give(tx, ctx, data.__with, data, orgId);
               back.push({ kind: data.__removal, id: t.record_id });
             }
+            await bringBackAssets(tx, runTx, orgId, data);
             await runTx(tx, `UPDATE deleted_records SET restored_at = NOW() WHERE id=?`, [t.id]);
           }
         });

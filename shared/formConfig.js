@@ -141,7 +141,7 @@ export function validateFormConfig(raw, { orgFundIds = [], existingQuestionKeys 
     // the "nobody can give" rule below UNREACHABLE — a guard that cannot fire,
     // which the suite caught on its first run.
     else if (!a.length) out.amountsCents = [];
-    else if (a.length > LIMITS.amounts) errors.push({ field: "amountsCents", message: `At most ${LIMITS.amounts} suggested amounts — more than that will not fit on a phone.` });
+    else if (a.length > LIMITS.amounts) errors.push({ field: "amountsCents", message: `At most ${LIMITS.amounts} suggested amounts, more than that will not fit on a phone.` });
     else {
       const bad = a.find(v => !isInt(v) || v <= 0 || v > LIMITS.amountCentsMax);
       if (bad !== undefined) errors.push({ field: "amountsCents", message: "Every suggested amount is a whole number of cents above zero." });
@@ -564,7 +564,7 @@ export function thankYouText(config, { orgName = "" } = {}) {
 // exactly where a number without a definition gets over-read.
 export const FUNNEL_METRICS = [
   { key: "views", label: "Views",
-    definition: "How many times the form was loaded. Not people — one person opening it twice is two." },
+    definition: "How many times the form was loaded. Not people, one person opening it twice is two." },
   { key: "starts", label: "Starts",
     definition: "How many of those got as far as choosing an amount and moving on to their details." },
   { key: "completions", label: "Gifts",
@@ -673,7 +673,7 @@ export function abVerdict(aFunnel, bFunnel, { minViews = AB_MIN_VIEWS } = {}) {
     if (needB) parts.push(`${needB} more on B`);
     return {
       winner: null, callable: false, shortfall,
-      sentence: `Too early to tell. Each version needs ${minViews} views before the difference between them means anything — ${parts.join(" and ")}.`,
+      sentence: `Too early to tell. Each version needs ${minViews} views before the difference between them means anything, ${parts.join(" and ")}.`,
     };
   }
   // ABOVE THE FLOOR IT STILL REPORTS COUNTS, and names the leader as leading

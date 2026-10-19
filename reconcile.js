@@ -145,8 +145,10 @@ async function matchPeople(orgId, people) {
 }
 
 async function fundsAndMaps(orgId) {
-  const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=?`, [orgId]);
-  const camps = await query(`SELECT id, name FROM campaigns WHERE org_id=?`, [orgId]);
+  // Oldest first, so two funds of one name always resolve to the same one
+  // (the import's own lookup reads them in this order too).
+  const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY created_at, id`, [orgId]);
+  const camps = await query(`SELECT id, name FROM campaigns WHERE org_id=? ORDER BY created_at, id`, [orgId]);
   const maps = await query(`SELECT label_key, fund_id FROM old_report_fund_maps WHERE org_id=?`, [orgId]);
   const fundById = new Map(funds.map(f => [f.id, f]));
   return {

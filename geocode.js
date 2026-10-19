@@ -84,7 +84,7 @@ function providerConfig(env = process.env) {
     let host = "";
     try { host = new URL(nomBase).hostname.toLowerCase(); } catch { return { name: "unconfigured", reason: "GEOCODE_NOMINATIM_BASE is not a URL" }; }
     if (PUBLIC_NOMINATIM_HOSTS.has(host))
-      return { name: "unconfigured", reason: `${host} is the PUBLIC Nominatim instance — its usage policy forbids this; point GEOCODE_NOMINATIM_BASE at a self-hosted instance` };
+      return { name: "unconfigured", reason: `${host} is the PUBLIC Nominatim instance, its usage policy forbids this; point GEOCODE_NOMINATIM_BASE at a self-hosted instance` };
     return { name: "nominatim", base: nomBase.replace(/\/+$/, "") };
   }
   return { name: "unconfigured", reason: "no geocoding provider is configured (set GEOCODIO_API_KEY, or GEOCODE_NOMINATIM_BASE for a self-hosted instance)" };

@@ -122,7 +122,7 @@ export const PROVIDERS = {
       "Back in Steward, choose which Square locations take donations.",
     ],
     // Said BEFORE the steps: this is the thing that surprises people.
-    waitNote: "Square cannot tell a donation from a lesson fee — they are the same kind of payment to it. Steward imports NOTHING from Square until you say which locations (or which item wording) are giving, so nobody's lesson fees land on a donor record.",
+    waitNote: "Square cannot tell a donation from a lesson fee, they are the same kind of payment to it. Steward imports NOTHING from Square until you say which locations (or which item wording) are giving, so nobody's lesson fees land on a donor record.",
   },
   cashapp: {
     key: "cashapp", label: "Cash App", mode: "file", recurring: "inferred",

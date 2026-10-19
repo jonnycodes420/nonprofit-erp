@@ -37,7 +37,7 @@ export const RESTRICTED_METRICS = [
   { key: "spent", label: "Spent",
     definition: "Spending recorded against this award by hand. It is not read from a bank feed." },
   { key: "remaining", label: "Remaining to spend",
-    definition: "Received minus spent — the restricted money you are holding right now. It deliberately excludes what the funder still owes, because you cannot spend that." },
+    definition: "Received minus spent, the restricted money you are holding right now. It deliberately excludes what the funder still owes, because you cannot spend that." },
 ];
 export const RESTRICTED_METRIC_KEYS = RESTRICTED_METRICS.map(m => m.key);
 export function metricDefinition(key) {
@@ -96,7 +96,7 @@ export function balanceSentence(b, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!b) return "";
   if (!b.restricted) {
-    return `${fm(b.awardedCents)} awarded, unrestricted — the organization decides where it goes.`;
+    return `${fm(b.awardedCents)} awarded, unrestricted, the organization decides where it goes.`;
   }
   if (b.overspent) {
     return `${fm(-b.remainingCents)} more has been spent against this award than the funder has paid. Check the spending entries or the payments.`;
@@ -157,7 +157,7 @@ export function validateSpend({ amountCents, spentOn, description } = {}) {
     errors.push({ field: "spentOn", message: "The date must be YYYY-MM-DD." });
   }
   if (!String(description || "").trim()) {
-    errors.push({ field: "description", message: "Say what the money was spent on — a restricted-spend line with no description cannot be defended in an audit." });
+    errors.push({ field: "description", message: "Say what the money was spent on, a restricted-spend line with no description cannot be defended in an audit." });
   }
   return { ok: errors.length === 0, errors };
 }

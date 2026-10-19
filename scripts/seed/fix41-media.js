@@ -4,7 +4,7 @@
 // the event pages and the volunteer page are written. It only ever writes
 // org_b72demo, through the `q` the seed hands it, and only seed-demo calls it.
 //
-//   · Ten of the twelve auction items get a photo (the jersey and the golf are
+//   · Ten of the twelve auction items get a photo (two get several, FIX-45; the jersey and the golf are
 //     left without, so the demo also shows "Add a photo" where one belongs).
 //   · Every giving page without a cover gets one, and the volunteer page too.
 //   · The event pages' existing pictures get their words for a screen reader.
@@ -51,6 +51,14 @@ const AUCTION = {
   aui_b72_10: [A("demo-impact-studio.jpg"), "Hands shaping clay on a potter's wheel", 0.5, 0.5],
   aui_b72_12: [A("auction-cooking.jpg"), "A bright salad in a bowl on a wooden board", 0.5, 0.5],
 };
+// FIX-45: two items carry more than one photo, so the demo can show the
+// photos being reordered (the first one is the cover). These follow the
+// item's own photo above, in this order. Same committed, licensed photos.
+const MORE_PHOTOS = {
+  aui_b72_02: [[A("auction-wine-grapes.jpg"), "Dark grapes on the vine, for the wine pairing", 0.5, 0.5],
+               [A("auction-cooking.jpg"), "A bright salad in a bowl on a wooden board", 0.5, 0.5]],
+  aui_b72_03: [[A("auction-lake-canoe.jpg"), "A canoe on still water under pine trees", 0.45, 0.6]],
+};
 // The giving pages without a cover, in order, take these in turn.
 const PAGE_PHOTOS = [
   [A("demo-hero-choir.jpg"), "Young singers on stage, mid-song", 0.5, 0.4],
@@ -63,11 +71,16 @@ const PAGE_PHOTOS = [
 async function seedFix41Media(q, ORG) {
   let items = 0;
   for (const [id, [file, alt, fx, fy]] of Object.entries(AUCTION)) {
-    const url = await storePhoto(q, ORG, file);
+    const photos = [{ url: await storePhoto(q, ORG, file), alt, fx, fy }];
+    for (const [f2, alt2, fx2, fy2] of MORE_PHOTOS[id] || []) photos.push({ url: await storePhoto(q, ORG, f2), alt: alt2, fx: fx2, fy: fy2 });
     const r = await q(`UPDATE auction_items SET photos=$1::jsonb WHERE id=$2 AND org_id=$3 RETURNING id`,
-      [JSON.stringify([{ url, alt, fx, fy }]), id, ORG]);
+      [JSON.stringify(photos), id, ORG]);
     items += r.length;
   }
+  // The seed checks itself: the two items exist and each carries its photos.
+  const many = await q(`SELECT id FROM auction_items WHERE org_id=$1 AND id = ANY($2) AND jsonb_array_length(photos) >= 2`,
+    [ORG, Object.keys(MORE_PHOTOS)]);
+  if (many.length !== Object.keys(MORE_PHOTOS).length) throw new Error(`[seed] expected ${Object.keys(MORE_PHOTOS).length} auction items with several photos, found ${many.length}`);
   const pages = await q(`SELECT id, title FROM giving_pages WHERE org_id=$1 AND status='active' AND COALESCE(image_url,'')=''
                           AND COALESCE(page_kind,'give')='give' ORDER BY created_at, id`, [ORG]);
   for (let i = 0; i < pages.length; i++) {
@@ -83,7 +96,7 @@ async function seedFix41Media(q, ORG) {
     [JSON.stringify({ alt: "Young singers on stage at the gala", fx: 0.5, fy: 0.4 }), ORG]);
   await q(`UPDATE events SET hero_meta=$1::jsonb WHERE id='ev_b72_5k' AND org_id=$2 AND hero_image_url IS NOT NULL`,
     [JSON.stringify({ alt: "Three volunteers working together outdoors", fx: 0.5, fy: 0.45 }), ORG]);
-  console.log(`[seed] pictures: ${items} auction items with a photo (two left without, to show "Add a photo"), ${pages.length} giving page covers, ${vol.length} volunteer page cover`);
+  console.log(`[seed] pictures: ${items} auction items with a photo (two of them with several, to show reordering; two left without, to show "Add a photo"), ${pages.length} giving page covers, ${vol.length} volunteer page cover`);
 }
 
 module.exports = { seedFix41Media };

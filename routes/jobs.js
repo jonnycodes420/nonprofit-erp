@@ -116,7 +116,10 @@ if (!backgroundTicksDisabled()) {
 async function processScheduledCampaigns() {
   try {
     const due = await query(
-      "SELECT * FROM campaigns WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()", []
+      // FIX-45: a demo org's scheduled campaign is never picked (mailPolicy.orgSendsSql).
+      `SELECT c.* FROM campaigns c JOIN orgs o ON o.id = c.org_id
+        WHERE c.status='scheduled' AND c.scheduled_at IS NOT NULL AND c.scheduled_at <= NOW()
+          AND ${require("../mailPolicy").orgSendsSql("o")}`, []
     );
     for (const campaign of due) {
       try {
@@ -343,7 +346,8 @@ async function processCardExpiry() {
     const orgs = await query(
       `SELECT DISTINCT o.id, o.name, o.recurring_dunning_enabled
          FROM orgs o JOIN recurring_subscriptions rs ON rs.org_id = o.id
-        WHERE rs.status IN ('active','past_due','recovering') AND rs.card_exp_year IS NOT NULL`, []);
+        WHERE rs.status IN ('active','past_due','recovering') AND rs.card_exp_year IS NOT NULL
+          AND ${require("../mailPolicy").orgSendsSql("o")}`, []);   // FIX-45: never a demo org
     for (const org of orgs) {
       await notifyExpiringCards(org, {}).catch(e => console.error("[card-expiry]", org.id, e.message));
     }

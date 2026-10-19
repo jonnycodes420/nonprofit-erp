@@ -356,6 +356,63 @@ async function seed() {
        JSON.stringify(tabs) === JSON.stringify(["Overview", "Gifts & pledges", "Asks & pipeline", "Conversations", "Emails", "Tasks", "Notes", "Funds", "Related", "Files"]), tabs);
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim()).filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
+
+    // FIX-45 1.5 · THE RECORD'S READ FAILS ONCE, SLOWLY. Margaret Chen's
+    // profile opened on "Gifts & pledges 0" with no header figures, and only a
+    // reload fixed it: a failed GET /donors/:id ended "loading" with nothing in
+    // it. The first attempt here is held for 1.5s and then fails. The tab may
+    // not claim 0 meanwhile, and the record recovers on its own.
+    // serviceWorkers: "block", or the worker's requests never reach page.route (FIX-21).
+    const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    const p2 = await ctx2.newPage();
+    await p2.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
+    let held = 0;
+    const apiBase = process.env.BASE || "http://localhost:5601";
+    await p2.route(u => u.href.startsWith(apiBase) && /\/donors\/d_hf1$/.test(u.pathname), async route => {
+      if (route.request().method() === "GET" && held++ === 0) { await new Promise(r => setTimeout(r, 1500)); return route.abort("connectionreset"); }
+      return route.continue();
+    });
+    await p2.goto(`${APP}/donors/d_hf1`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    const early = [];
+    for (let i = 0; i < 8; i++) {
+      early.push(await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 150 }).catch(() => null));
+      await p2.waitForTimeout(150);
+    }
+    ok("§1b while the record's read is out, the gifts tab shows no count rather than 0", !early.includes("0"), early);
+    const settled = await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 8000 }).catch(() => null);
+    ok("§1b after a failed first read, the record recovers by itself: Gifts & pledges 1", settled === "1" && held >= 2, { settled, held });
+    await ctx2.close();
+    // §8 FIX-45 — donor search filters as you type. The server's answer is
+    // held back three seconds here (a slow day on prod), and the list must
+    // still narrow within a second of typing: before, nothing moved until the
+    // server answered, which read as "it only filters on Enter".
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,created_by,created_by_name)
+             VALUES ('d_hf1b',$1,'Quillon Ashgrove','quillon@hf1.test','cultivate',250,1,'system:test','Test')
+             ON CONFLICT (id) DO NOTHING`, [ORG]);
+    // Its own context with the service worker blocked: the worker answers
+    // fetches itself, and a route on the page never sees them (FIX-21).
+    const ctx8 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await ctx8.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
+    const page8 = await ctx8.newPage();
+    let held8 = 0;
+    await page8.route(/\/donors\?.*search=/, async route => { held8++; await new Promise(r => setTimeout(r, 3000)); await route.continue().catch(() => {}); });
+    await page8.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page8.waitForFunction(() => document.body.innerText.includes("Quillon Ashgrove") && document.body.innerText.includes("Verity Yarrowdale"), null, { timeout: 15000 }).catch(() => {});
+    const before = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
+    ok("§8 both donors are listed before she types", before.ash && before.yar, before);
+    await page8.locator("input.donors-search").first().pressSequentially("Yarrow", { delay: 0 });
+    await page8.waitForTimeout(800);
+    const shown = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
+    ok("§8 the list narrows as she types, before the server answers", shown.yar && !shown.ash, shown);
+    await page8.waitForTimeout(3500);
+    const settled8 = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
+    ok("§8 …and the server's answer agrees when it lands", settled8.yar && !settled8.ash, settled8);
+    ok("§8 the search request really was held back (the test can see it)", held8 > 0, held8);
+    await ctx8.close();
     await browser.close();
     if (srv) srv.close();
   }

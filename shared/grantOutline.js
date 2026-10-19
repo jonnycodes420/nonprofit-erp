@@ -121,7 +121,7 @@ export function outcomeLanguage(text) {
 // The sentence offered in place of an outcome Steward cannot back. It is a
 // PROMPT to the human, not a placeholder that reads like content.
 export const OUTCOMES_PROMPT =
-  "Steward does not hold program outcomes — attendance, results, what changed for the people you serve. Nobody has entered them, so nothing here can state them. Write this section yourself; the figures above are the parts Steward can back.";
+  "Steward does not hold program outcomes, attendance, results, what changed for the people you serve. Nobody has entered them, so nothing here can state them. Write this section yourself; the figures above are the parts Steward can back.";
 
 export const OUTLINE_FOOTER =
   "Every figure above is rendered by Steward from its own rows. Sentences that could not cite a row were left out and counted.";

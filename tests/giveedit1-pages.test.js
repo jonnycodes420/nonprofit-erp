@@ -214,6 +214,45 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
     const [{ n: cards }] = await q(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id=$1 AND status='active'`, [ORG]);
     ok("§12 a card for every page, and one for the donation form", rows.length === cards + 1, { rows: rows.length, cards });
     ok("§12 every card has the same four buttons", rows.length > 0 && rows.every(r => JSON.stringify(r) === want), rows);
+
+    // §13 FIX-45 — the cover photo is the picture at the TOP of the public
+    // page, above the gift form, in a 16:9 box, on a desktop and a phone. It
+    // sat inside the story column (order 2) and rendered below the form.
+    await q(`UPDATE giving_pages SET image_url=$2, image_meta=$3::jsonb WHERE id=$1`,
+      ["gp_ge1plain", APP + "/favicon.svg", JSON.stringify({ alt: "Boats on the bay", fx: 0.5, fy: 0.5 })]);
+    for (const width of [1440, 390]) {
+      const pp = await browser.newPage({ viewport: { width, height: 900 } });
+      await pp.goto(`${APP}/give/${SLUG}/spring-paddle`, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await pp.waitForSelector('[data-testid="page-cover"]', { timeout: 20000 }).catch(() => {});
+      const geo = await pp.evaluate(() => {
+        const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, w: r.width, h: r.height }; };
+        return { cover: box(document.querySelector('[data-testid="page-cover"]')), form: box(document.getElementById("give-form")) };
+      });
+      ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
+      ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
+      await pp.close();
+    }
+
+    // §14 FIX-45 — a giving page can be removed from its card. Nothing came
+    // through the built page, so Remove deletes it; Undo brings it back.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector('[data-testid="page-card"]', { timeout: 20000 }).catch(() => {});
+    const mores = await page.$$eval('[data-testid="page-card"] [data-testid="row-more"]', els => els.map(e => e.getAttribute("data-kind")));
+    ok("§14 every giving page card has a Remove menu", mores.length === cards && mores.every(k => k === "giving_page"), { mores, cards });
+    const builtCard = page.locator('[data-testid="page-card"]', { hasText: "Year-end" });
+    await builtCard.locator('[data-testid="row-more"]').click().catch(() => {});
+    await page.locator('[data-testid="row-remove"]').click({ timeout: 5000 }).catch(() => {});
+    const dialog = await page.locator('[data-testid="confirm-yes"]').first().evaluate(b => b.closest('[role="dialog"]') ? b.closest('[role="dialog"]').innerText : b.parentElement.parentElement.innerText).catch(() => "");
+    ok("§14 the confirm says it is deleted, since nothing came through it", /deleted/i.test(dialog), dialog.slice(0, 300));
+    await page.locator('[data-testid="confirm-yes"]').first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => ![...document.querySelectorAll('[data-testid="page-card"]')].some(c => c.innerText.includes("Year-end")), null, { timeout: 8000 }).catch(() => {});
+    const [gone] = await q(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE id='gp_ge1built'`);
+    ok("§14 the page is deleted", gone.n === 0, gone);
+    await page.locator('[data-testid="undo-toast"] button', { hasText: /^Undo/ }).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="page-card"]:has-text("Year-end")', { timeout: 8000 }).catch(() => {});
+    const [back] = await q(`SELECT status FROM giving_pages WHERE id='gp_ge1built'`);
+    const shown = await page.$$eval('[data-testid="page-card"]', els => els.some(e => e.innerText.includes("Year-end")));
+    ok("§14 Undo brings the page back, on the list too", !!back && back.status === "active" && shown, { back, shown });
     await browser.close();
   }
 

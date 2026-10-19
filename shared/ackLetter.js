@@ -20,8 +20,10 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
+import { greetingName } from "./greeting.js";
+
 export const ACK_MERGE_FIELDS = [
-  { key: "salutation", label: "Salutation", hint: "Dear Margaret — their salutation if set, otherwise their first name" },
+  { key: "salutation", label: "Salutation", hint: "Dear Margaret: their salutation if set, otherwise their first name" },
   { key: "first", label: "First name" },
   { key: "name", label: "Full name" },
   { key: "gift_amount", label: "Gift amount", hint: "one gift, or the total when a donor has several in the batch" },
@@ -107,7 +109,9 @@ export function letterFields({ donor, gifts, org }) {
     ? `, ${tributes[0].tributeType === "memory" ? "in memory of" : "in honor of"} ${tributes[0].tributeName}` : "";
   const isOrg = donor.kind === "organisation";
   return {
-    salutation: String(donor.salutation || "").trim() || (isOrg ? `Friends at ${donor.name}` : firstNameOf(donor.name)),
+    // FIX-45: one greeting rule for every letter (shared/greeting.js): the
+    // salutation, "Friends at" an organisation, or both names on a joint record.
+    salutation: greetingName({ ...donor, kind: isOrg ? "organisation" : donor.kind }),
     first: isOrg ? "" : firstNameOf(donor.name),
     name: donor.name || "",
     gift_amount: list.length ? formatCents(totalCents) : "",

@@ -2826,7 +2826,7 @@ async function runSchemaInit(pool) {
       id TEXT PRIMARY KEY,
       org_id TEXT NOT NULL REFERENCES orgs(id),
       name TEXT NOT NULL,
-      -- [{ type, label, offsetDays }] — validated by shared/planShape.js before
+      -- [{ type, label, offsetDays }], validated by shared/planShape.js before
       -- anything is stored, so a template cannot hold a step the Thread engine
       -- would refuse when its turn came.
       steps JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -8405,7 +8405,7 @@ async function seedData() {
   }
 
   const volunteers = [
-    ["v1", orgId, "Priya Nair",    "pnair@example.com",   84,  '["event coordination","social media"]', "2025-04-12", null,  "high",      "Google",   "Very enthusiastic. Works in tech — capacity likely $500-1000 first gift."],
+    ["v1", orgId, "Priya Nair",    "pnair@example.com",   84,  '["event coordination","social media"]', "2025-04-12", null,  "high",      "Google",   "Very enthusiastic. Works in tech, capacity likely $500-1000 first gift."],
     ["v2", orgId, "Carlos Mendez", "cmendez@example.com", 210, '["teaching","curriculum"]',             "2025-05-01", null,  "high",      "NYC DOE",  "Most dedicated volunteer. Teaches after-school weekly. Deep mission alignment."],
     ["v3", orgId, "Sophie Laurent","slaurent@example.com",  32, '["design","photography"]',             "2025-03-20", null,  "medium",    "Freelance","Provided design work for annual report."],
     ["v4", orgId, "Devon Brooks",  "dbrooks@example.com", 156, '["accounting","admin"]',                "2025-04-28", "d3", "converted", "Deloitte", "Already a donor. Helps with books quarterly. Strong board candidate."],
@@ -8419,11 +8419,11 @@ async function seedData() {
   }
 
   const tasks = [
-    ["t1", orgId, "Call Margaret Chen — major gift conversation", "2025-05-23", "high",   "donor",     0, "d1"],
+    ["t1", orgId, "Call Margaret Chen: major gift conversation", "2025-05-23", "high",   "donor",     0, "d1"],
     ["t2", orgId, "Submit NEA final report",                      "2025-07-15", "high",   "grant",     0, null],
     ["t3", orgId, "Follow up: Rockefeller LOI status",            "2025-06-01", "medium", "grant",     0, null],
     ["t4", orgId, "Re-engage James Okafor (lapsed 18mo)",         "2025-05-28", "medium", "donor",     0, "d3"],
-    ["t5", orgId, "Board packet — Q2 financials",                 "2025-05-30", "high",   "board",     0, null],
+    ["t5", orgId, "Board packet: Q2 financials",                 "2025-05-30", "high",   "board",     0, null],
     ["t6", orgId, "Volunteer appreciation event planning",        "2025-06-15", "low",    "volunteer", 1, null],
   ];
   for (const t of tasks) {
@@ -8467,7 +8467,7 @@ async function seedData() {
   const funds = [
     ["fn1", orgId, "General Operating",          42000, 0],
     ["fn2", orgId, "NEA Arts Education",          35000, 1],
-    ["fn3", orgId, "NY Community Trust — Youth",  25000, 1],
+    ["fn3", orgId, "NY Community Trust: Youth",  25000, 1],
     ["fn4", orgId, "Gala Reserve",                 8200, 0],
   ];
   for (const f of funds) {
@@ -8550,7 +8550,7 @@ async function seedData() {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
     [
       "cmp_01", orgId, "Spring Appeal 2025", "appeal",
-      "Help us reach 120 more students — a message from CREO Arts",
+      "Help us reach 120 more students, a message from CREO Arts",
       "Dear {{donor_name}},\n\nYour support has made an incredible difference. This year, CREO Arts served 120 students across 4 NYC schools.\n\nAs we plan for fall, we need your help to expand our reach. A gift of any size helps us purchase art supplies, pay teaching artists, and keep our programs free for students who need them most.\n\nYour previous gift of {{gift_amount}} made a real impact. Will you renew your support today?\n\nWith gratitude,\nThe CREO Arts Team",
       "draft",
       '{"stages":["steward","solicit"],"statuses":["major","mid"]}',
@@ -8576,16 +8576,16 @@ async function seedData() {
     ["acc_4040", orgId, "4040", "Program Revenue",                    "revenue",   "program"],
     ["acc_4050", orgId, "4050", "Special Events Revenue",             "revenue",   "events"],
     ["acc_4060", orgId, "4060", "Other Revenue",                      "revenue",   "other"],
-    ["acc_5010", orgId, "5010", "Program Services — Salaries",        "expense",   "program"],
-    ["acc_5020", orgId, "5020", "Program Services — Supplies",        "expense",   "program"],
-    ["acc_5030", orgId, "5030", "Program Services — Contractors",     "expense",   "program"],
-    ["acc_5040", orgId, "5040", "Program Services — Occupancy",       "expense",   "program"],
-    ["acc_6010", orgId, "6010", "Management & General — Salaries",    "expense",   "management"],
-    ["acc_6020", orgId, "6020", "Management & General — Admin",       "expense",   "management"],
-    ["acc_6030", orgId, "6030", "Management & General — Technology",  "expense",   "management"],
-    ["acc_7010", orgId, "7010", "Fundraising — Salaries",             "expense",   "fundraising"],
-    ["acc_7020", orgId, "7020", "Fundraising — Events",               "expense",   "fundraising"],
-    ["acc_7030", orgId, "7030", "Fundraising — Marketing",            "expense",   "fundraising"],
+    ["acc_5010", orgId, "5010", "Program Services: Salaries",        "expense",   "program"],
+    ["acc_5020", orgId, "5020", "Program Services: Supplies",        "expense",   "program"],
+    ["acc_5030", orgId, "5030", "Program Services: Contractors",     "expense",   "program"],
+    ["acc_5040", orgId, "5040", "Program Services: Occupancy",       "expense",   "program"],
+    ["acc_6010", orgId, "6010", "Management & General: Salaries",    "expense",   "management"],
+    ["acc_6020", orgId, "6020", "Management & General: Admin",       "expense",   "management"],
+    ["acc_6030", orgId, "6030", "Management & General: Technology",  "expense",   "management"],
+    ["acc_7010", orgId, "7010", "Fundraising: Salaries",             "expense",   "fundraising"],
+    ["acc_7020", orgId, "7020", "Fundraising: Events",               "expense",   "fundraising"],
+    ["acc_7030", orgId, "7030", "Fundraising: Marketing",            "expense",   "fundraising"],
   ];
   for (const a of chartOfAccounts) {
     await pool.query(
@@ -8598,8 +8598,8 @@ async function seedData() {
   // ── Finance Funds ─────────────────────────────────────────────────────────
   const finFunds = [
     ["ff_01", orgId, "General Operating",         "General unrestricted operating fund", false],
-    ["ff_02", orgId, "NEA Arts Education",         "NEA grant — restricted to arts education programs", true],
-    ["ff_03", orgId, "NY Community Trust — Youth", "Community Trust grant — restricted to youth development", true],
+    ["ff_02", orgId, "NEA Arts Education",         "NEA grant: restricted to arts education programs", true],
+    ["ff_03", orgId, "NY Community Trust: Youth", "Community Trust grant: restricted to youth development", true],
     ["ff_04", orgId, "Gala Reserve",              "Board-designated reserve for annual gala", false],
   ];
   for (const f of finFunds) {
@@ -8612,25 +8612,25 @@ async function seedData() {
 
   // ── Sample Transactions 2025 ──────────────────────────────────────────────
   const finTxns = [
-    ["ft_01", orgId, "2025-01-03",  "Annual Fund Gift — Atkinson",        "Robert Atkinson",       3000,  "income",  "acc_4010", "ff_01"],
+    ["ft_01", orgId, "2025-01-03",  "Annual Fund Gift: Atkinson",        "Robert Atkinson",       3000,  "income",  "acc_4010", "ff_01"],
     ["ft_02", orgId, "2025-01-15",  "Community Trust Q1 Disbursement",    "NY Community Trust",    25000, "income",  "acc_4020", "ff_03"],
-    ["ft_03", orgId, "2025-02-14",  "Valentine Appeal — Torres",          "Diana Torres",          250,   "income",  "acc_4010", "ff_01"],
+    ["ft_03", orgId, "2025-02-14",  "Valentine Appeal: Torres",          "Diana Torres",          250,   "income",  "acc_4010", "ff_01"],
     ["ft_04", orgId, "2025-03-01",  "NEA Spring Disbursement",            "NEA",                   25000, "income",  "acc_4030", "ff_02"],
-    ["ft_05", orgId, "2025-04-05",  "Spring Appeal — Chen",               "Margaret Chen",         1500,  "income",  "acc_4010", "ff_01"],
-    ["ft_06", orgId, "2025-03-15",  "Spring Campaign — Park",             "William Park",          600,   "income",  "acc_4010", "ff_01"],
-    ["ft_07", orgId, "2025-05-10",  "Foundation Grant — Q2",              "Sunrise Foundation",    10000, "income",  "acc_4020", "ff_02"],
-    ["ft_08", orgId, "2025-01-15",  "Program Staff — January",            "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
-    ["ft_09", orgId, "2025-01-20",  "Art Supplies — Q1",                  "Blick Art Materials",   1200,  "expense", "acc_5020", "ff_02"],
-    ["ft_10", orgId, "2025-01-31",  "Office Rent — January",              "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
-    ["ft_11", orgId, "2025-02-15",  "Program Staff — February",           "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
-    ["ft_12", orgId, "2025-02-28",  "Office Rent — February",             "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
-    ["ft_13", orgId, "2025-03-15",  "Program Staff — March",              "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
-    ["ft_14", orgId, "2025-03-20",  "Admin Software — Q1",               "Quickbooks, Zoom",      450,   "expense", "acc_6030", "ff_01"],
-    ["ft_15", orgId, "2025-03-31",  "Office Rent — March",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
-    ["ft_16", orgId, "2025-04-15",  "Program Staff — April",              "Payroll",               8500,  "expense", "acc_5010", "ff_02"],
+    ["ft_05", orgId, "2025-04-05",  "Spring Appeal: Chen",               "Margaret Chen",         1500,  "income",  "acc_4010", "ff_01"],
+    ["ft_06", orgId, "2025-03-15",  "Spring Campaign: Park",             "William Park",          600,   "income",  "acc_4010", "ff_01"],
+    ["ft_07", orgId, "2025-05-10",  "Foundation Grant: Q2",              "Sunrise Foundation",    10000, "income",  "acc_4020", "ff_02"],
+    ["ft_08", orgId, "2025-01-15",  "Program Staff: January",            "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_09", orgId, "2025-01-20",  "Art Supplies: Q1",                  "Blick Art Materials",   1200,  "expense", "acc_5020", "ff_02"],
+    ["ft_10", orgId, "2025-01-31",  "Office Rent: January",              "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_11", orgId, "2025-02-15",  "Program Staff: February",           "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_12", orgId, "2025-02-28",  "Office Rent: February",             "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_13", orgId, "2025-03-15",  "Program Staff: March",              "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_14", orgId, "2025-03-20",  "Admin Software: Q1",               "Quickbooks, Zoom",      450,   "expense", "acc_6030", "ff_01"],
+    ["ft_15", orgId, "2025-03-31",  "Office Rent: March",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_16", orgId, "2025-04-15",  "Program Staff: April",              "Payroll",               8500,  "expense", "acc_5010", "ff_02"],
     ["ft_17", orgId, "2025-04-20",  "Teaching Artist Contractors",        "Carlos Mendez",         3000,  "expense", "acc_5030", "ff_02"],
-    ["ft_18", orgId, "2025-04-30",  "Office Rent — April",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
-    ["ft_19", orgId, "2025-05-15",  "Program Staff — May",                "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_18", orgId, "2025-04-30",  "Office Rent: April",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_19", orgId, "2025-05-15",  "Program Staff: May",                "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
     ["ft_20", orgId, "2025-05-20",  "Spring Gala Expenses",               "Event Venue",           4200,  "expense", "acc_7020", "ff_04"],
   ];
   for (const t of finTxns) {
@@ -8723,7 +8723,7 @@ async function seedData() {
     ["dseed_02", orgId, "Marcus Webb",     "mwebb@example.com",     "718-555-0802", "new",   "prospect", 0,     null, null,         0, '["cold"]',           "Identified via prospect research. Local business owner, arts-adjacent.", null],
     ["dseed_03", orgId, "Renee Castillo",  "rcastillo@example.com", "347-555-0803", "new",   "qualify",  0,     null, null,         0, '["referral"]',       "Researching giving capacity. Attended an info session, hasn't given yet.", null],
     ["dseed_04", orgId, "Owen Bishop",     "obishop@example.com",   "929-555-0804", "new",   "qualify",  250,   250,  seedAgo(40),  1, '["first-gift"]',     "Made a small first gift after the winter showcase. Assessing upgrade potential.", seedAgo(40)],
-    ["dseed_05", orgId, "Vanessa Cole",    "vcole@example.com",     "917-555-0805", "mid",   "solicit",  8000,  3000, seedAgo(200), 2, '["arts","overdue"]', "Ready for the ask — capacity signals are strong. Overdue for a follow-up call.", seedAgo(650)],
+    ["dseed_05", orgId, "Vanessa Cole",    "vcole@example.com",     "917-555-0805", "mid",   "solicit",  8000,  3000, seedAgo(200), 2, '["arts","overdue"]', "Ready for the ask, capacity signals are strong. Overdue for a follow-up call.", seedAgo(650)],
     ["dseed_06", orgId, "Julian Marsh",    "jmarsh@example.com",    "646-555-0806", "mid",   "solicit",  15000, 5000, seedAgo(150), 2, '["recurring"]',      "Consistent annual donor, due for this year's ask conversation.", seedAgo(900)],
     ["dseed_07", orgId, "Camille Torres",  "ctorres@example.com",   "212-555-0807", "mid",   "steward",  3200,  500,  seedAgo(20),  3, '["arts","loyal"]',   "Just crossed $2,500 lifetime giving. Warm relationship, steady giver.", seedAgo(920)],
     ["dseed_08", orgId, "Nathaniel Cross", "ncross@example.com",    "718-555-0808", "new",   "steward",  1050,  300,  seedAgo(35),  2, '["arts"]',           "Recently crossed $1,000 lifetime giving. Responsive to email outreach.", seedAgo(410)],
@@ -8764,7 +8764,7 @@ async function seedData() {
   // 2025-dated and have long since passed, which is why the Dashboard's
   // Grant Deadlines widget always read empty.
   const upcomingGrants = [
-    ["gseed_01", orgId, "Robert Wood Johnson Foundation", "Arts & Wellbeing Initiative", 45000, 0, "pending",     seedFromNow(12), null, "Dana Whitfield", "LOI accepted — full proposal under review.", '["First-time applicant"]'],
+    ["gseed_01", orgId, "Robert Wood Johnson Foundation", "Arts & Wellbeing Initiative", 45000, 0, "pending",     seedFromNow(12), null, "Dana Whitfield", "LOI accepted, full proposal under review.", '["First-time applicant"]'],
     ["gseed_02", orgId, "Mellon Foundation",               "Community Arts Access",       60000, 0, "prospecting", seedFromNow(25), null, "Priya Raman",    "Site visit completed; decision expected soon.", '["First-time applicant"]'],
   ];
   for (const g of upcomingGrants) {
@@ -8777,11 +8777,11 @@ async function seedData() {
 
   // Recent activity so the Dashboard feed isn't empty
   const recentActivity = [
-    ["iseed_01", orgId, "dseed_07", "gift",    "Gift received — $500 (Spring Appeal)",                                                                        seedAgo(20)],
-    ["iseed_02", orgId, "dseed_07", "call",    "Thank-you call for recent gift — warm response",                                                              seedAgo(18)],
+    ["iseed_01", orgId, "dseed_07", "gift",    "Gift received: $500 (Spring Appeal)",                                                                        seedAgo(20)],
+    ["iseed_02", orgId, "dseed_07", "call",    "Thank-you call for recent gift, warm response",                                                              seedAgo(18)],
     ["iseed_03", orgId, "dseed_08", "email",   "Subject: Thank you for your generous support\n\nSo grateful for your continued generosity toward our after-school program.", seedAgo(9)],
-    ["iseed_04", orgId, "dseed_09", "meeting", "Coffee meeting — discussed fall gala sponsorship",                                                             seedAgo(5)],
-    ["iseed_05", orgId, "dseed_05", "call",    "Cultivation call — discussed program impact, gauging interest in a leadership gift",                          seedAgo(13)],
+    ["iseed_04", orgId, "dseed_09", "meeting", "Coffee meeting: discussed fall gala sponsorship",                                                             seedAgo(5)],
+    ["iseed_05", orgId, "dseed_05", "call",    "Cultivation call: discussed program impact, gauging interest in a leadership gift",                          seedAgo(13)],
     ["iseed_06", orgId, "dseed_02", "note",    "Introduced by board member; interested in youth arts programming",                                            seedAgo(2)],
   ];
   for (const i of recentActivity) {
@@ -8799,11 +8799,11 @@ async function seedData() {
   const milestoneDrafts = [
     ["mdseed_01", orgId, "dseed_07", null, "threshold_2500",
      "Camille, a quick thank you",
-     "Camille — I wanted to pause and let you know you've now given $3,200 with us. That total has now covered a full year of scholarship support for one of our students. It's donors like you, giving steadily and thoughtfully, who make that kind of continuity possible. Thank you for sticking with us.",
+     "Camille, I wanted to pause and let you know you've now given $3,200 with us. That total has now covered a full year of scholarship support for one of our students. It's donors like you, giving steadily and thoughtfully, who make that kind of continuity possible. Thank you for sticking with us.",
      "pending_review"],
     ["mdseed_02", orgId, "dseed_08", null, "threshold_1000",
-     "Nathaniel — a thank you at $1,000",
-     "Nathaniel — you've now given $1,050 total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.",
+     "Nathaniel: a thank you at $1,000",
+     "Nathaniel, you've now given $1,050 total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.",
      "pending_review"],
     // Elena's $10,000 crossing is NOT here — per the Phase 2 note/email split
     // (isNoteMoment() in server.js), $10k+ thresholds get a "write a note"
@@ -8827,7 +8827,7 @@ async function seedData() {
     ["notereminder_01", orgId, "dseed_09", null, "threshold_10000", JSON.stringify([
       "Just crossed $10,000 in total lifetime giving ($12,500 total).",
       'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
-      `They've been giving for ${elenaYears} years — since ${orgTime.formatCivil(elenaFirst).replace(/ \d+,/, "")}.`,
+      `They've been giving for ${elenaYears} years, since ${orgTime.formatCivil(elenaFirst).replace(/ \d+,/, "")}.`,
     ]), "pending"],
     ["notereminder_02", orgId, "dseed_06", null, "anniversary_year_2", JSON.stringify([
       "This marks their 2-year anniversary with your organization.",
@@ -8953,16 +8953,16 @@ async function seedOrgData(orgId) {
     ["4040", "Program Revenue",                    "revenue",   "program"],
     ["4050", "Special Events Revenue",             "revenue",   "events"],
     ["4060", "Other Revenue",                      "revenue",   "other"],
-    ["5010", "Program Services — Salaries",        "expense",   "program"],
-    ["5020", "Program Services — Supplies",        "expense",   "program"],
-    ["5030", "Program Services — Contractors",     "expense",   "program"],
-    ["5040", "Program Services — Occupancy",       "expense",   "program"],
-    ["6010", "Management & General — Salaries",    "expense",   "management"],
-    ["6020", "Management & General — Admin",       "expense",   "management"],
-    ["6030", "Management & General — Technology",  "expense",   "management"],
-    ["7010", "Fundraising — Salaries",             "expense",   "fundraising"],
-    ["7020", "Fundraising — Events",               "expense",   "fundraising"],
-    ["7030", "Fundraising — Marketing",            "expense",   "fundraising"],
+    ["5010", "Program Services: Salaries",        "expense",   "program"],
+    ["5020", "Program Services: Supplies",        "expense",   "program"],
+    ["5030", "Program Services: Contractors",     "expense",   "program"],
+    ["5040", "Program Services: Occupancy",       "expense",   "program"],
+    ["6010", "Management & General: Salaries",    "expense",   "management"],
+    ["6020", "Management & General: Admin",       "expense",   "management"],
+    ["6030", "Management & General: Technology",  "expense",   "management"],
+    ["7010", "Fundraising: Salaries",             "expense",   "fundraising"],
+    ["7020", "Fundraising: Events",               "expense",   "fundraising"],
+    ["7030", "Fundraising: Marketing",            "expense",   "fundraising"],
   ];
 
   for (const [code, name, type, subtype] of chartOfAccounts) {
@@ -8972,9 +8972,15 @@ async function seedOrgData(orgId) {
     );
   }
 
-  // Single General Operating fund
+  // Single General Operating fund. FIX-45: only when the org has no
+  // unrestricted fund yet. An org that made its funds before its chart (the
+  // ledger heal in ensureOrgLedger) got a SECOND "General Operating", and every
+  // lookup by name then chose between the two by row order: an import put its
+  // gifts in one and the old-report check counted the other (reconcile1-checks
+  // went red on CI whenever the physical order flipped).
   await pool.query(
-    `INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES ($1, $2, $3, $4, $5)`,
+    `INSERT INTO fin_funds (id, org_id, name, description, restricted)
+     SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM fin_funds WHERE org_id = $2 AND restricted = false)`,
     [`ff_${uuid().slice(0, 8)}`, orgId, "General Operating", "General unrestricted operating fund", false]
   );
 }

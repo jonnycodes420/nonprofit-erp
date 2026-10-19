@@ -186,6 +186,13 @@ async function opensAndFoots(tok, src, cents, kind) {
     gifts: imp.map(([, , fund, amount], i) => ({ donorIndex: i, amount, date: `${OLD}-08-0${i + 1}`, type: "cash", paymentMethod: "Check", fund, externalId: `RC1-${i}` })) });
   await api("POST", "/imports", tok, { id: run, name: "The missing gifts", sourceFilename: "missing.csv", shape: "gift_file_with_donors", rowsIn: imp.length, giftsCreated: imp.length, donorsCreated: 3, summary: {} });
   ok("§recheck the missing gifts are imported", r.status === 200 && r.body?.giftsInserted === imp.length, r.body);
+  // FIX-45: the ordering dependency. The ledger heal used to add a second
+  // "General Operating" beside the org's own, and the import and the check each
+  // chose one of the two by row order; the recheck below went red on CI's
+  // runs whenever the order flipped. One fund of that name, holding every gift.
+  const gen = await q(`SELECT f.id, (SELECT COUNT(*)::int FROM gifts g WHERE g.fund_id = f.id) AS n FROM fin_funds f
+                        WHERE f.org_id=$1 AND LOWER(f.name)='general operating'`, [ORG]);
+  ok("§recheck the org has one General Operating fund, and the imported gifts are in it", gen.length === 1 && gen[0].id === "fund_rc1_gen" && gen[0].n === 4 + 3, gen);
   const re = await waitFor(async () => {
     const c = (await api("GET", `/old-reports/${sheet}/check`, tok)).body.check;
     return c && c.checkedAt !== checkedAt && c.status === "matches" ? c : null;

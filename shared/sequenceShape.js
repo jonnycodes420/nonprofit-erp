@@ -247,6 +247,6 @@ export function retroactiveSentence(count, triggerKey) {
                  added_volunteer: "were added as volunteers", manual: "were enrolled by hand" }[triggerKey]
                  || "would have qualified";
   if (!count) return "Nobody would have been enrolled in the past year, so there is nothing to catch up on.";
-  return `This starts from today. ${count} ${count === 1 ? "person" : "people"} ${what} in the past year and will NOT be enrolled — ` +
+  return `This starts from today. ${count} ${count === 1 ? "person" : "people"} ${what} in the past year and will NOT be enrolled, ` +
          "you can add them by hand from their records if you want them in it.";
 }

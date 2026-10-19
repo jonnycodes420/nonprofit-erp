@@ -7,6 +7,7 @@ import { HelpPanel } from "./HelpPanel";
 import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
+import { openRecentChanges } from "./RecentChanges";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -417,8 +418,9 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
         {[["Account settings","Your name, password and sign-in",()=>onNavigate("settings",{section:"account"})],
           ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})],
           ["Two-factor and sessions","A code at sign-in, and every browser you're signed in on",()=>onNavigate("settings",{section:"security"})],
+          ["Recent changes","Your last 50 changes, each with Undo",openRecentChanges],
           ["What's new"+(wnUnseen?" ·":""),"What we shipped lately",openWn]]
-          .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":undefined}
+          .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":label==="Recent changes"?"topbar-recent-changes":undefined}
             onClick={()=>{setMeOpen(false);go();}}
             style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"8px 14px",cursor:"pointer",fontFamily:"inherit"}}>
             <div style={{fontSize:13,color:T.inkInverse,fontWeight:600}}>{label}</div>

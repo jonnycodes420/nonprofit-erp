@@ -138,6 +138,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirRows,setDirRows]=useState(null); // null = loading
   const[dirTotal,setDirTotal]=useState(0);
   const[dirSearch,setDirSearch]=useState(search);
+  // FIX-45: the search the rows on screen answer. Until the server answers the
+  // words in the box, the rows already loaded narrow as she types (below).
+  const[dirRowsFor,setDirRowsFor]=useState(null);
   const[dirReloadKey,setDirReloadKey]=useState(0);
   useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
   // IMPORT-2: "Bring in your notes" from a profile or the donor import's last screen.
@@ -165,6 +168,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(cancelled)return;
         setDirRows((r.donors||[]).map(adaptDonor));
         setDirTotal(r.total||0);
+        setDirRowsFor(dirSearch.trim());
       }catch(e){console.error(e);if(!cancelled)setDirRows([]);}
     })();
     return()=>{cancelled=true;};
@@ -250,7 +254,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
     .filter(matchesAdvanced)
     .filter(matchesCf);
-  const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
+  // FIX-45: search filters as you type. The server's answer comes after a
+  // 300ms pause and a round trip, and on a slow day nothing on screen moved
+  // until then, which read as "it only filters on Enter". So while the answer
+  // for the words in the box is still coming, the loaded rows narrow by name
+  // and email at once; the server's rows replace them when they land.
+  const searchTerm=search.trim().toLowerCase();
+  const searchPending=dirRows!==null&&dirRowsFor!==null&&search.trim()!==dirRowsFor;
+  const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf)
+    .filter(d=>!searchPending||!searchTerm||((d.name||"")+" "+(d.email||"")).toLowerCase().includes(searchTerm));
 
   const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
   useEffect(()=>{
@@ -743,7 +755,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
 
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}

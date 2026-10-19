@@ -571,7 +571,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(
     `SELECT t.id, t.donor_id, t.gift_id, t.body, t.voice, t.opened_at, t.created_at,
-            d.name AS donor_name, d.email AS donor_email,
+            d.name AS donor_name, d.email AS donor_email, d.salutation AS donor_salutation, d.spouse_name AS donor_spouse, d.kind AS donor_kind,
             g.amount::float AS amount, g.date AS gift_date, f.name AS fund_name
        FROM thank_you_drafts t
        JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
@@ -598,7 +598,8 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
       fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
       // POLISH-2: signed by whoever is reading the queue, since she sends it.
-      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice }) })),
+      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice,
+        person: { salutation: r.donor_salutation, spouseName: r.donor_spouse, kind: r.donor_kind } }) })),
   });
 }));
 
@@ -834,18 +835,18 @@ function computeMoveSuggestions(donor, ctx = {}) {
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
-      reason: "First gift received — qualify this donor and start cultivating." });
+      reason: "First gift received, qualify this donor and start cultivating." });
   }
   // A gift landed while being solicited → the ask effectively closed; steward.
   if (stage === "solicit" && daysSinceGift != null && daysSinceGift <= 90) {
     out.push({ signal: "gift_after_solicit", toStage: "steward",
-      reason: "A gift landed after your solicitation — move to Stewardship." });
+      reason: "A gift landed after your solicitation, move to Stewardship." });
   }
   // In active cultivation but gone quiet (not yet lapsed) → take a look.
   if (["qualify", "cultivate"].includes(stage) && daysSinceGift != null
       && daysSinceGift > 180 && daysSinceGift < LAPSE_DAYS) {
     out.push({ signal: "going_quiet", toStage: null,
-      reason: `No gift in ${Math.round(daysSinceGift / 30)} months — reach out before they lapse.` });
+      reason: `No gift in ${Math.round(daysSinceGift / 30)} months, reach out before they lapse.` });
   }
   return out;
 }
@@ -3221,7 +3222,7 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
       const c = Number(raw);
       if (!Number.isInteger(c) || c < F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION) {
         return res.status(400).json({ code: "bad_upsell_threshold",
-          error: `The threshold is a whole number of cents, at least ${F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION} — below that the monthly suggestion is too small to be worth asking about.` });
+          error: `The threshold is a whole number of cents, at least ${F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION}, below that the monthly suggestion is too small to be worth asking about.` });
       }
       await run(`UPDATE orgs SET form_upsell_threshold_cents=? WHERE id=?`, [c, req.params.id]);
     }
@@ -3420,7 +3421,7 @@ app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     if (typeof logoData !== "string" || !/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);base64,/.test(logoData))
       return res.status(400).json({ error: "Logo must be a PNG, JPEG, GIF, WebP, or SVG image." });
     if (Buffer.byteLength(logoData, "utf8") > LOGO_MAX_BYTES)
-      return res.status(400).json({ error: "Logo is too large — please use an image under 350KB." });
+      return res.status(400).json({ error: "Logo is too large, please use an image under 350KB." });
     sets.push("logo_data=?"); params.push(logoData);
   }
 
@@ -3594,7 +3595,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     );
     await run(
       `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [sid("smpl_ftx"+n), orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId, userId, userName]
+      [sid("smpl_ftx"+n), orgId, d.lastGift, `Gift · ${d.name}`, d.name, d.last, "income", null, fundId, userId, userName]
     );
   }
   // Additional historical gifts for top donors
@@ -3677,9 +3678,9 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   await run(
     `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
     [sid("smpl_camp1"),orgId,"Year-End Giving Appeal","Make a difference before the year ends",
-     "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today — doubled by a board matching challenge — will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
+     "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today, doubled by a board matching challenge, will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
      "sent",
-     "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match — expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
+     "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match, expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
      200000,142000,dAgo(45),dAgo(-20),userId,userName]
   );
 
@@ -3688,15 +3689,15 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     {id:"smpl_i1",donor:"smpl_d1",type:"meeting",note:"Stewardship lunch at Per Se. Discussed Capital Campaign leadership gift opportunity. Very enthusiastic about naming the rehearsal hall. Will bring husband to site visit next month.",date:dAgo(15)},
     {id:"smpl_i2",donor:"smpl_d1",type:"call",note:"Called to thank for $150k Annual Fund renewal. She mentioned interest in an endowed scholarship. Will follow up with proposal.",date:dAgo(45)},
     {id:"smpl_i3",donor:"smpl_d2",type:"meeting",note:"Portfolio review with James and Carol. Carol is particularly interested in scholarship outcomes. James wants to see facility plans for capital campaign.",date:dAgo(25)},
-    {id:"smpl_i4",donor:"smpl_d3",type:"call",note:"Discovery call — board member referral. David runs a PE firm, has significant capacity. Deep interest in youth workforce development. Scheduled site visit for next week.",date:dAgo(8)},
+    {id:"smpl_i4",donor:"smpl_d3",type:"call",note:"Discovery call, board member referral. David runs a PE firm, has significant capacity. Deep interest in youth workforce development. Scheduled site visit for next week.",date:dAgo(8)},
     {id:"smpl_i5",donor:"smpl_d3",type:"meeting",note:"Site visit to after-school program. Deeply moved by student presentations. Ask conversation: mid-six figures for endowed scholarship. Strategy session with ED scheduled.",date:dAgo(45)},
     {id:"smpl_i6",donor:"smpl_d4",type:"email",note:"Subject: Follow-up on proposal\n\nSent $20k proposal documents as discussed. Patricia confirmed receipt and said she would review with her financial advisor this month.",date:dAgo(30)},
-    {id:"smpl_i7",donor:"smpl_d5",type:"meeting",note:"Met at Kennedy Center gala. Strong connection to arts education mission — has given to 3 similar organizations. Invited to Fall Cultivation Dinner.",date:dAgo(18)},
+    {id:"smpl_i7",donor:"smpl_d5",type:"meeting",note:"Met at Kennedy Center gala. Strong connection to arts education mission, has given to 3 similar organizations. Invited to Fall Cultivation Dinner.",date:dAgo(18)},
     {id:"smpl_i8",donor:"smpl_d6",type:"call",note:"Follow-up after proposal submission. Linda said the grants committee meets next month. Asked about a board matching gift opportunity.",date:dAgo(12)},
-    {id:"smpl_i9",donor:"smpl_d8",type:"event",note:"Attended Spring Gala with spouse. Made $3,500 gift at the event. Very engaged during student performances — a strong cultivation prospect.",date:dAgo(30)},
+    {id:"smpl_i9",donor:"smpl_d8",type:"event",note:"Attended Spring Gala with spouse. Made $3,500 gift at the event. Very engaged during student performances, a strong cultivation prospect.",date:dAgo(30)},
     {id:"smpl_i10",donor:"smpl_d9",type:"call",note:"Cold outreach from board referral. Michael is a real estate developer, new to NYC philanthropy. Invited to a site visit. Very responsive.",date:dAgo(22)},
-    {id:"smpl_i11",donor:"smpl_d21",type:"email",note:"Subject: Reconnecting — 2 years since your last gift\n\nSent personalized re-engagement email. Arthur's company was recently acquired. New email confirmed by EA.",date:dAgo(40)},
-    {id:"smpl_i12",donor:"smpl_d22",type:"call",note:"Left voicemail — 3rd attempt this quarter. Meredith has not responded to outreach since her major gift 3 years ago. May need board member warm intro.",date:dAgo(60)},
+    {id:"smpl_i11",donor:"smpl_d21",type:"email",note:"Subject: Reconnecting, 2 years since your last gift\n\nSent personalized re-engagement email. Arthur's company was recently acquired. New email confirmed by EA.",date:dAgo(40)},
+    {id:"smpl_i12",donor:"smpl_d22",type:"call",note:"Left voicemail, 3rd attempt this quarter. Meredith has not responded to outreach since her major gift 3 years ago. May need board member warm intro.",date:dAgo(60)},
     {id:"smpl_i13",donor:"smpl_d1",type:"stewardship",note:"Mailed annual impact report with personal handwritten note. Highlighted the scholarship recipients she funded this year.",date:dAgo(20)},
     {id:"smpl_i14",donor:"smpl_d2",type:"gift",note:"Received $75,000 annual fund gift via wire transfer. Acknowledgement letter sent same day.",date:dAgo(60)},
     {id:"smpl_i15",donor:"smpl_d3",type:"meeting",note:"Strategy session with ED and board chair. Confirmed ask of $75,000 for named scholarship fund. Meeting scheduled for next week.",date:dAgo(5)},
@@ -3710,11 +3711,11 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
 
   // 5 tasks
   const tasks = [
-    {id:"smpl_t1",title:"Call David Okonkwo — schedule formal ask meeting",priority:"high",due:dAgo(-3),donor:"smpl_d3"},
+    {id:"smpl_t1",title:"Call David Okonkwo: schedule formal ask meeting",priority:"high",due:dAgo(-3),donor:"smpl_d3"},
     {id:"smpl_t2",title:"Draft MacArthur Foundation full proposal",priority:"high",due:dAgo(-14),donor:null},
     {id:"smpl_t3",title:"Send Fall Cultivation Dinner invitations to Prospect-stage donors",priority:"medium",due:dAgo(-7),donor:null},
     {id:"smpl_t4",title:"Prepare NEA mid-year grant report",priority:"medium",due:dAgo(-30),donor:null},
-    {id:"smpl_t5",title:"Follow up with Arthur Blake — re-engagement email",priority:"low",due:dAgo(-2),donor:"smpl_d21"},
+    {id:"smpl_t5",title:"Follow up with Arthur Blake, re-engagement email",priority:"low",due:dAgo(-2),donor:"smpl_d21"},
   ];
   for (const t of tasks) {
     await run(
@@ -4084,7 +4085,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
   for (const [e, list] of byEmail) {
     if (list.length < 2) continue;
     list.forEach(d => inEmailGroup.add(d.id));
-    groups.push({ tier: "email", reason: `Same email — ${e}`, donors: list.map(donorOut) });
+    groups.push({ tier: "email", reason: `Same email · ${e}`, donors: list.map(donorOut) });
   }
 
   // Tier 2 — same normalized name, or near-identical name (edit distance ≤2
@@ -4102,7 +4103,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
     if (list.length < 2) continue;
     if (list.every(d => inEmailGroup.has(d.id))) continue;
     list.forEach(d => inNameGroup.add(d.id));
-    groups.push({ tier: "name", reason: `Same name — "${list[0].name}"`, donors: list.map(donorOut) });
+    groups.push({ tier: "name", reason: `Same name · "${list[0].name}"`, donors: list.map(donorOut) });
   }
   const buckets = new Map();
   for (const d of named) {
@@ -4119,7 +4120,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
       if (inEmailGroup.has(a.id) && inEmailGroup.has(b.id)) continue;
       const na = normDonorName(a.name), nb = normDonorName(b.name);
       if (na.length >= 8 && nb.length >= 8 && editDistance(na, nb, 2) <= 2) {
-        groups.push({ tier: "name", reason: `Similar names — "${a.name}" / "${b.name}"`, donors: [a, b].map(donorOut) });
+        groups.push({ tier: "name", reason: `Similar names · "${a.name}" / "${b.name}"`, donors: [a, b].map(donorOut) });
       }
     }
   }
@@ -4232,7 +4233,7 @@ app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
 // and a sentence saying what will appear there and when.
 const PROFILE_FIGURE_BLANKS = {
   lifetime: {
-    blank: "Nothing has been given on this record yet. The first gift — logged here, imported, or given online — starts this total, and it never resets.",
+    blank: "Nothing has been given on this record yet. The first gift, logged here, imported, or given online, starts this total, and it never resets.",
     short: "No giving yet.",
   },
   lastGift: {
@@ -4741,7 +4742,7 @@ function importLedger(kind, unit = "gift") {
       if (round2(this.rawCentsDropped) >= 0.005) {
         const lost = round2(this.rawCentsDropped);
         const err = new Error(
-          `Import aborted — ${this.rawRowsWithCents} row(s) in the file carry cents that would not be stored: ` +
+          `Import aborted · ${this.rawRowsWithCents} row(s) in the file carry cents that would not be stored: ` +
           `$${lost.toFixed(2)} would be silently dropped across ${this.rows.inFile} row(s). Nothing was saved.`);
         err.code = "import_unreconciled";
         err.reconciliation = { ...this.report(), centsBlindSpot: true,
@@ -4755,7 +4756,7 @@ function importLedger(kind, unit = "gift") {
         parts.push(`${Math.abs(b.rowGap)} ${this.unit} row(s) ${b.rowGap > 0 ? "unaccounted for" : "counted twice"}`);
       if (!b.dollarsBalanced)
         parts.push(`$${Math.abs(b.dollarGap).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${b.dollarGap > 0 ? "unaccounted for" : "counted twice"}`);
-      const err = new Error(`Import aborted — the file did not reconcile: ${parts.join("; ")}. Nothing was saved.`);
+      const err = new Error(`Import aborted, the file did not reconcile: ${parts.join("; ")}. Nothing was saved.`);
       err.code = "import_unreconciled";
       err.reconciliation = this.report();
       throw err;
@@ -5172,7 +5173,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     if (!columnSummary.balanced) {
       return res.status(409).json({
         error: "columns_unreconciled",
-        message: `your file has ${inFile} columns but ${columnSummary.accounted} have a disposition${columnSummary.counts.invalid ? ` (${columnSummary.counts.invalid} invalid)` : ""} — nothing was imported`,
+        message: `your file has ${inFile} columns but ${columnSummary.accounted} have a disposition${columnSummary.counts.invalid ? ` (${columnSummary.counts.invalid} invalid)` : ""}: nothing was imported`,
         columns: columnSummary,
       });
     }
@@ -5202,7 +5203,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }
   if (cfRefused.length) {
     return res.status(422).json({ error: "custom_field_values_refused",
-      message: `${cfRefused.length} row(s) carry custom-field values the field definitions refuse — nothing was imported`,
+      message: `${cfRefused.length} row(s) carry custom-field values the field definitions refuse, nothing was imported`,
       refused: cfRefused.slice(0, 20) });
   }
 
@@ -5721,7 +5722,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const wanted = new Map();   // key → the file's own spelling (first wins)
     for (const g of giftsToInsert) { const k = fundKey(g.fund); if (k && !wanted.has(k)) wanted.set(k, String(g.fund).trim()); }
     if (wanted.size) {
-      const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+      // FIX-45: oldest first, so a name two funds share resolves the same way every time.
+      const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY created_at, id", [orgId]);
       for (const f of existing) { const k = fundKey(f.name); if (k && !fundIdByKey.has(k)) fundIdByKey.set(k, f.id); }
       const toCreate = [...wanted.entries()].filter(([k]) => !fundIdByKey.has(k));
       for (let fi = 0; fi < toCreate.length; fi += 200) {
@@ -6854,7 +6856,8 @@ async function trashRow(table, id, req) {
     return trashId;
   });
 }
-const UNDO_SECONDS = 10;
+// FIX-45: a minute on the toast; Recent changes lists the trash row after that.
+const UNDO_SECONDS = 60;
 
 // DELETE /interactions/:id — remove a mis-logged touchpoint. Per convention,
 // DELETE routes get no checkWriteAccess. Gmail-synced rows are deliberately
@@ -6907,6 +6910,9 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
         [JSON.stringify(t.row_data)]);
       const data = typeof t.row_data === "string" ? JSON.parse(t.row_data) : t.row_data;
       if (RESTORE_WITH[t.table_name]) await RESTORE_WITH[t.table_name](client, data && data.__with, t.record_id, req.user.orgId);
+      // FIX-45: any picture the row names comes back out of the retention window with it.
+      const assetIds = [...new Set(JSON.stringify(data || {}).match(/pa_[a-f0-9]{24}/g) || [])];
+      if (assetIds.length) await runTx(client, "UPDATE portal_assets SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NOT NULL", [req.user.orgId, assetIds]);
       await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ?", [t.id]);
     });
   } catch (e) {
@@ -7069,7 +7075,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
 
   const giftId = "g_" + uuid().slice(0, 8);
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
-  if (!giftDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required — an unparseable date is an error, never today's date." });
+  if (!giftDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
   // BUILD-73 Part 2 — the money seam. The comment that used to sit here said
   // "INTEGER column", which stopped being true at the cover-fees migration and
   // is the likeliest reason the rounding outlived its justification.
@@ -7195,7 +7201,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
   }
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
-  if (date && !newDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required — an unparseable date is an error, never today's date." });
+  if (date && !newDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required, an unparseable date is an error, never today's date." });
   // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
   // edit → donor-recalc → ledger-stamp trio under a per-gift advisory lock, the
   // same primitive the import/webhook-donor dedup paths use. recalcDonorSummary
@@ -7871,7 +7877,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   const [gift] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!gift) return res.status(404).json({ error: "Gift not found" });
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
-  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet — set it up in Settings first." });
+  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet, set it up in Settings first." });
   const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [gift.donor_id, orgId]);
   if (!donor) return res.status(404).json({ error: "Donor not found" });
 
@@ -7909,7 +7915,7 @@ app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(a
   if (!taxYear) return res.status(400).json({ error: "year required" });
   const orgId = req.user.orgId;
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
-  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet — set it up in Settings first." });
+  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet, set it up in Settings first." });
   const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!donor) return res.status(404).json({ error: "Donor not found" });
 
@@ -8928,7 +8934,7 @@ async function renderMoveReportPdf({ report, org, imp, vendor }) {
     doc.y += 5;
     for (const l of report.lines) {
       doc.font("Helvetica").fontSize(7.5).fillColor(GREY)
-         .text(`${l.label} — ${l.sentence}`, L, doc.y, { width: R - L });
+         .text(`${l.label} · ${l.sentence}`, L, doc.y, { width: R - L });
       doc.y += 2;
     }
     doc.moveDown(0.6);
@@ -9153,7 +9159,7 @@ app.post("/deposits/plan", requireAuth, wrap(async (req, res) => {
   if (body.depositDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.depositDate)))
     return res.status(400).json({ error: "depositDate must be a date (YYYY-MM-DD)" });
   if (body.depositDate && String(body.depositDate) > today)
-    return res.status(400).json({ error: "A deposit is a thing that happened — its date cannot be in the future." });
+    return res.status(400).json({ error: "A deposit is a thing that happened, its date cannot be in the future." });
   const plan = await planDeposit(req.user.orgId, body);
   res.json({ ...plan, today });
 }));
@@ -9166,7 +9172,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
   const body = req.body || {};
   const depositDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.depositDate || "")) ? String(body.depositDate) : null;
   if (!depositDate) return res.status(400).json({ error: "A deposit needs the date it was deposited." });
-  if (depositDate > today) return res.status(400).json({ error: "A deposit is a thing that happened — its date cannot be in the future." });
+  if (depositDate > today) return res.status(400).json({ error: "A deposit is a thing that happened, its date cannot be in the future." });
 
   // BUILD-95 — the cheque photographs, stored BEFORE any gift is written, so
   // a gift is never written pointing at bytes that failed to save. A photo
@@ -9232,7 +9238,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
           `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,import_id,metadata)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
           ["int_" + uuid().slice(0, 8), orgId, l.donorId, "payment",
-           `Payment, not a gift: ${money.formatCents(l.cents)}${l.memo ? ` — ${l.memo}` : ""} (${l.reason.replace(/_/g, " ")})`,
+           `Payment, not a gift: ${money.formatCents(l.cents)}${l.memo ? ` ${l.memo}` : ""} (${l.reason.replace(/_/g, " ")})`,
            depositDate, actorInfo.id, actorInfo.name, importId2,
            JSON.stringify({ via: "deposit", kind: l.reason, cents: l.cents, check: l.check || null })]);
         created.payments++;
@@ -9934,7 +9940,21 @@ app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const mg = await require("../prospect").canSee(req.user.userId);
   const rows = await query(`SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at,major_gifts_only FROM donor_materials
       WHERE donor_id=? AND org_id=?${mg ? "" : " AND COALESCE(major_gifts_only,false) = false"} ORDER BY uploaded_at DESC`, [req.params.id, req.user.orgId]);
-  res.json(rows);
+  // FIX-45: the photograph of a check is this person's file too. It lives on
+  // the gift (gifts.cheque_asset_id, written by To confirm and by "attach the
+  // check"), so it is listed here beside the uploads, read-only: it is the
+  // gift's evidence and is removed with the gift, never from this list.
+  const checks = await query(`SELECT id, amount, date, cheque_asset_id, created_by_name, created_at FROM gifts
+      WHERE donor_id=? AND org_id=? AND cheque_asset_id IS NOT NULL`, [req.params.id, req.user.orgId]);
+  const day = d => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : ""; };
+  const files = rows.concat(checks.map(g => ({
+    id: "check:" + g.id, kind: "check_image", gift_id: g.id, donor_id: req.params.id,
+    file_name: `Check for the $${Number(g.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} gift on ${day(g.date)}`,
+    file_type: "image/webp", file_url: donorPhotoUrl(req.user.orgId, g.cheque_asset_id),
+    notes: "Attached to the gift.", uploaded_by: g.created_by_name || null, uploaded_at: g.created_at,
+  })));
+  files.sort((x, y) => new Date(y.uploaded_at) - new Date(x.uploaded_at));
+  res.json(files);
 }));
 
 // Server-side backstop for donor material uploads. The client only checks
@@ -11348,7 +11368,7 @@ app.post("/donors/:id/proposals", requireAuth, requireCrm, checkWriteAccess, wra
     const clash = await openProposalConflict(orgId, donor.id, fund.fundId, null);
     return res.status(409).json(clash || { code: "proposal_already_open", error: "There is already an open proposal for that fund." });
   }
-  await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} — ${money.formatCentsPlain(askCents)}, ${P.stageLabel(stage)}`);
+  await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} · ${money.formatCentsPlain(askCents)}, ${P.stageLabel(stage)}`);
   const funds = await orgFundNames(orgId);
   const [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [id]);
   res.status(201).json(proposalRow(row, funds));
@@ -11507,8 +11527,8 @@ app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async 
     }
     await logProposalLine(orgId, existing.donor_id, req,
       `Proposal ${P.stageLabel(existing.proposal_stage)} → ${P.stageLabel(patch.stage)}: ${existing.name || "Ask"}`
-      + (patch.stage === "declined" ? ` — ${P.declineReasonLabel(req.body.declineReason)}` : "")
-      + (wrote ? ` — recorded as a ${wrote.kind}` : ""));
+      + (patch.stage === "declined" ? ` ${P.declineReasonLabel(req.body.declineReason)}` : "")
+      + (wrote ? ` recorded as a ${wrote.kind}` : ""));
   }
 
   sets.push("updated_at=NOW()");
@@ -11576,7 +11596,7 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
                 openCount: w.openCount, sentence: P.weightedSentence(w, money.formatCentsPlain) },
     openAsk: { cents: w.askCents, amount: toDollars(w.askCents),
                sentence: w.openCount === 0 ? "No open proposals yet."
-                 : `${money.formatCentsPlain(w.askCents)} asked for across ${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"} — the ask amounts, not what anybody expects to land.` },
+                 : `${money.formatCentsPlain(w.askCents)} asked for across ${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"}, the ask amounts, not what anybody expects to land.` },
     stages: P.PROPOSAL_STAGES, probabilities: P.PROBABILITIES, declineReasons: P.DECLINE_REASONS,
     funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
     officers: officers.map(o => ({ id: o.id, name: o.name })),
@@ -13953,7 +13973,7 @@ async function briefRowsFor(orgId, donorId) {
   const money = require("../money");
   const givingWord = t("giver_singular") || "donor";
 
-  lines.push(`person:${donor.id} — ${donor.name}${donor.kind === "organisation" ? " (an organization)" : ""}, `
+  lines.push(`person:${donor.id} · ${donor.name}${donor.kind === "organisation" ? " (an organization)" : ""}, `
     + `${money.formatCentsPlain(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
     + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organization calls somebody like this a ${givingWord}.`);
@@ -13966,7 +13986,7 @@ async function briefRowsFor(orgId, donorId) {
       ORDER BY g.date DESC, g.id LIMIT 12`, [orgId, donorId]);
   for (const g of gifts) {
     refs.add(`gift:${g.id}`);
-    lines.push(`gift:${g.id} — ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
+    lines.push(`gift:${g.id} · ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
       + `${g.fund_name ? ` to ${t("fund_singular") || "fund"} "${g.fund_name}"` : ""}`
       + `${g.campaign ? `, appeal "${g.campaign}"` : ""}${g.payment_method ? `, by ${g.payment_method}` : ""}.`);
   }
@@ -13975,7 +13995,7 @@ async function briefRowsFor(orgId, donorId) {
   for (const p of await query(
     `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC LIMIT 6`, [orgId, donorId])) {
     refs.add(`pledge:${p.id}`);
-    lines.push(`pledge:${p.id} — a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
+    lines.push(`pledge:${p.id}, a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
   }
 
   // HOUSEHOLD AND RELATED PEOPLE.
@@ -13984,7 +14004,7 @@ async function briefRowsFor(orgId, donorId) {
     if (h) {
       refs.add(`household:${h.id}`);
       const members = await query("SELECT name FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL", [orgId, h.id, donorId]);
-      lines.push(`household:${h.id} — in the household "${h.name}"${members.length ? `, with ${members.map(m => m.name).join(" and ")}` : ""}.`);
+      lines.push(`household:${h.id}, in the household "${h.name}"${members.length ? `, with ${members.map(m => m.name).join(" and ")}` : ""}.`);
     }
   }
   // SOFT CREDITS (BUILD-98 Part 1) — gifts that were somebody else's money.
@@ -13995,7 +14015,7 @@ async function briefRowsFor(orgId, donorId) {
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 6`, [orgId, donorId]).catch(() => [])) {
     refs.add(`softcredit:${sc.id}`);
-    lines.push(`softcredit:${sc.id} — soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
+    lines.push(`softcredit:${sc.id}: soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
       + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
   }
 
@@ -14007,7 +14027,7 @@ async function briefRowsFor(orgId, donorId) {
       WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
       ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
     refs.add(`proposal:${o.id}`);
-    lines.push(`proposal:${o.id} — an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
+    lines.push(`proposal:${o.id}: an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
       + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
       + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
       + `${o.expected_close_civil ? `, expected to close ${o.expected_close_civil}` : ""}`
@@ -14020,7 +14040,7 @@ async function briefRowsFor(orgId, donorId) {
       WHERE org_id=? AND donor_id=? AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship'])
         AND COALESCE(note,'') <> '' ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, donorId])) {
     refs.add(`conversation:${i.id}`);
-    lines.push(`conversation:${i.id} — ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
+    lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
   }
 
   // THE PLAN'S NEXT STEP.
@@ -14030,14 +14050,14 @@ async function briefRowsFor(orgId, donorId) {
     const [openStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='open'", [plan.id]);
     const [nextStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='pending' ORDER BY seq LIMIT 1", [plan.id]);
     const s = openStep || nextStep;
-    lines.push(`plan:${plan.id} — on the cultivation plan "${plan.template_name}"`
+    lines.push(`plan:${plan.id}: on the cultivation plan "${plan.template_name}"`
       + (s ? `; ${openStep ? "the open step" : "the next step"} is "${s.label}", due ${s.due_date}.` : "; every step is closed."));
   }
 
   // WHAT THE OFFICER WROTE.
   if (String(donor.notes || "").trim()) {
     refs.add(`note:${donor.id}`);
-    lines.push(`note:${donor.id} — the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
+    lines.push(`note:${donor.id}: the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
   }
 
   // The grounded numeric set: every figure that genuinely appears in the rows,
@@ -14758,7 +14778,7 @@ async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS
      VALUES (?,?,?,?,?,?,'income',?,?,?,'grant',?,?)
      ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
     ["ft_" + uuid().slice(0, 8), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
-     `Grant awarded: ${funder} — ${program || ""}`, funder,
+     `Grant awarded: ${funder} · ${program || ""}`, funder,
      parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId, by.id, by.name]
   ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
 }
@@ -14868,7 +14888,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
       ).catch(() => ({ changes: 0 }));
       adopted = !!upd.changes;
       if (adopted) writeAuditLog(orgId, req.user.userId, req.user.email, "updated", "transaction", adoptTxnId, {
-        description: `Linked existing manual income to grant award: ${funder} — ${program || ""} (books once, not twice)`,
+        description: `Linked existing manual income to grant award: ${funder} · ${program || ""} (books once, not twice)`,
         new: { grant_id: req.params.id },
       }).catch(() => {});
     }
@@ -15163,7 +15183,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   if (!g) return res.status(404).json({ error: "Grant not found" });
   if (!g.funder_donor_id) {
     return res.status(400).json({ code: "funder_not_linked",
-      error: "Link this grant to the funder's organization record before awarding it — the pledge has to belong to somebody." });
+      error: "Link this grant to the funder's organization record before awarding it, the pledge has to belong to somebody." });
   }
   let awardedCents;
   try { awardedCents = parseMoneyOrThrow(req.body.amountAwarded, "amountAwarded"); }
@@ -16279,7 +16299,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
   const fundWord = t("fund_singular") || "fund";
 
   // 1 — THE GRANT ITSELF: what was promised, in the proposal's own fields.
-  lines.push(`grant:${g.id} — a grant from ${g.funder_name || "a funder"} for "${g.program || "no program named"}", `
+  lines.push(`grant:${g.id}: a grant from ${g.funder_name || "a funder"} for "${g.program || "no program named"}", `
     + `requested ${money.formatCentsPlain(toCents(g.amount_requested) || 0)}, `
     + `awarded ${money.formatCentsPlain(balance.awardedCents)}, currently ${g.status}`
     + `${g.fund_name ? `, designated to the ${fundWord} "${g.fund_name}"` : ""}`
@@ -16300,7 +16320,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     // timestamptz is a day out for every org west of Greenwich after 7pm, and
     // `date-seam` is right to count it as an unrouted site (BUILD-89S's gotcha).
     const storedOn = d.uploaded_at ? orgToday(org, d.uploaded_at) : null;     // ORG_TZ_SEAM_OK
-    lines.push(`document:${d.id} — a ${grantDocs.docTypeLabel(d.doc_type).toLowerCase()} on file, "${d.file_name}", `
+    lines.push(`document:${d.id}: a ${grantDocs.docTypeLabel(d.doc_type).toLowerCase()} on file, "${d.file_name}", `
       + `stored ${storedOn || "on a date the record does not carry"}. `
       + `Steward has NOT read this file; only that it exists is known.`);
   }
@@ -16310,9 +16330,9 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
     [orgId, g.award_pledge_id]) : []) {
     refs.add(`payment:${p.id}`);
-    lines.push(`payment:${p.id} — ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
+    lines.push(`payment:${p.id}, ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
   }
-  lines.push(`grant:${g.id} — of the award, ${money.formatCentsPlain(balance.receivedCents)} has been received and `
+  lines.push(`grant:${g.id}: of the award, ${money.formatCentsPlain(balance.receivedCents)} has been received and `
     + `${money.formatCentsPlain(balance.outstandingCents)} is still owed by the funder.`);
 
   // 4 — WHAT WAS SPENT AGAINST IT. Entered by hand; the row says so, because a
@@ -16321,9 +16341,9 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT id, amount, spent_on, description FROM grant_spend
       WHERE org_id=? AND grant_id=? ORDER BY spent_on ASC`, [orgId, g.id])) {
     refs.add(`spend:${s.id}`);
-    lines.push(`spend:${s.id} — ${money.formatCentsPlain(toCents(s.amount) || 0)} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
+    lines.push(`spend:${s.id}, ${money.formatCentsPlain(toCents(s.amount) || 0)} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
   }
-  lines.push(`grant:${g.id} — ${money.formatCentsPlain(balance.spentCents)} has been recorded as spent against this award, `
+  lines.push(`grant:${g.id} · ${money.formatCentsPlain(balance.spentCents)} has been recorded as spent against this award, `
     + `leaving ${money.formatCentsPlain(balance.remainingCents)} of the money received still to spend.`);
 
   // 5 — THE PROGRAMME'S OWN GIVING IN THE PERIOD. Only gifts to THIS grant's
@@ -16338,7 +16358,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
         ORDER BY gi.amount DESC NULLS LAST, gi.id LIMIT 25`, [orgId, g.fund_id, start, end]);
     for (const gi of fundGifts) {
       refs.add(`gift:${gi.id}`);
-      lines.push(`gift:${gi.id} — ${money.formatCentsPlain(toCents(gi.amount) || 0)} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
+      lines.push(`gift:${gi.id} · ${money.formatCentsPlain(toCents(gi.amount) || 0)} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
         + `${gi.donor_name ? ` from ${gi.donor_name}` : ""}.`);
     }
     givers = await query(
@@ -16350,7 +16370,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
       [orgId, g.fund_id, start, end]);
     for (const p of givers) {
       refs.add(`person:${p.id}`);
-      lines.push(`person:${p.id} — ${p.name} gave ${Number(p.gifts)} ${Number(p.gifts) === 1 ? "gift" : "gifts"} `
+      lines.push(`person:${p.id} · ${p.name} gave ${Number(p.gifts)} ${Number(p.gifts) === 1 ? "gift" : "gifts"} `
         + `totalling ${money.formatCentsPlain(toCents(p.total) || 0)} to this ${fundWord} in the period.`);
     }
   }
@@ -16360,7 +16380,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT id, kind, due_date, state, notes FROM grant_milestones
       WHERE org_id=? AND grant_id=? ORDER BY due_date ASC`, [orgId, g.id])) {
     refs.add(`milestone:${ms.id}`);
-    lines.push(`milestone:${ms.id} — ${M.milestoneStepLabel({ kind: ms.kind, funderName: g.funder_name, program: g.program })}, `
+    lines.push(`milestone:${ms.id} · ${M.milestoneStepLabel({ kind: ms.kind, funderName: g.funder_name, program: g.program })}, `
       + `due ${ms.due_date}, currently ${ms.state}`
       + `${String(ms.notes || "").trim() ? `. The note on it: "${String(ms.notes).slice(0, 300)}"` : "."}`);
   }
@@ -16372,7 +16392,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
         WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> ''
         ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, g.funder_donor_id])) {
       refs.add(`conversation:${i.id}`);
-      lines.push(`conversation:${i.id} — ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
+      lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
     }
   }
 
@@ -16440,7 +16460,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
     "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
     "",
     "RULES, and the first one is the whole job:",
-    "- YOU MAY NOT STATE AN OUTCOME. This organization's records hold money, dates, documents and people — they do not hold",
+    "- YOU MAY NOT STATE AN OUTCOME. This organization's records hold money, dates, documents and people, they do not hold",
     "  attendance, results, or what changed for anybody. Do not write that anyone was served, reached, helped or improved.",
     "  The outcomes section is a PROMPT to the human who knows; say plainly that the records cannot supply it.",
     "- Use no figure that is not in the rows you were handed, and state no rule about how grants or giving work.",
@@ -16451,7 +16471,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
     "- The headline names the grant and the period, and contains no figure.",
     "",
     "The sections you may use, and what each rests on:",
-    ...O.OUTLINE_SECTIONS.map(s => `- ${s.heading} — ${s.source || "NOTHING IN THE RECORDS. Say so; do not invent it."}`),
+    ...O.OUTLINE_SECTIONS.map(s => `- ${s.heading} · ${s.source || "NOTHING IN THE RECORDS. Say so; do not invent it."}`),
   ].join("\n");
   const user = [
     `The rows, on the ${ctx.grant.funder_name || "funder"} grant for "${ctx.grant.program || "no program named"}", `
@@ -18676,16 +18696,16 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const isLapsing = atRiskDonorIds.has(d.id);
     let reason, action;
     if (isLapsing) {
-      reason = `Gave $${lastAmt.toLocaleString()} — last gift ${daysSinceGift} days ago, lapsing risk`;
+      reason = `Gave $${lastAmt.toLocaleString()}: last gift ${daysSinceGift} days ago, lapsing risk`;
       action = "call";
     } else if (daysSinceContact) {
-      const prefix = totalGiving > 0 ? `Gave $${totalGiving.toLocaleString()} total — ` : "";
+      const prefix = totalGiving > 0 ? `Gave $${totalGiving.toLocaleString()} total · ` : "";
       reason = `${prefix}no contact in ${daysSinceContact} days`;
       action = totalGiving >= 5000 ? "call" : "email";
     } else {
       reason = d.stage === "qualify"
-        ? "New prospect — no contact yet. First outreach sets the tone."
-        : "In your portfolio — no outreach logged yet. Make a strong first impression.";
+        ? "New prospect, no contact yet. First outreach sets the tone."
+        : "In your portfolio, no outreach logged yet. Make a strong first impression.";
       action = "call";
     }
 
@@ -18705,7 +18725,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const totalGiving = parseFloat(l.total_giving) || 0;
     const lapsedItem = {
       donorId: l.id, donorName: l.name,
-      reason: `Lapsed — ${daysSince != null ? `last gift ${daysSince} days ago` : "no gift on record"}${totalGiving > 0 ? `, $${totalGiving.toLocaleString()} lifetime value` : ""}`,
+      reason: `Lapsed · ${daysSince != null ? `last gift ${daysSince} days ago` : "no gift on record"}${totalGiving > 0 ? `, $${totalGiving.toLocaleString()} lifetime value` : ""}`,
       priority: 60 + Math.min(20, totalGiving / 5000), action: "lapsed",
       totalGiving, isLapsing: true,
     };
@@ -18732,7 +18752,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     if (flagged) {
       upsertItem({
         donorId: g.donor_id, donorName: g.donor_name,
-        reason: `Imported gift of $${Number(g.amount).toLocaleString()} on ${giftDate} — one of the file's largest. Confirm the amount is real before thanking.`,
+        reason: `Imported gift of $${Number(g.amount).toLocaleString()} on ${giftDate}, one of the file's largest. Confirm the amount is real before thanking.`,
         priority: 90, action: "confirm-gift",
         totalGiving: parseFloat(g.total_giving) || 0,
         confirmGift: { name: flagged.name, dollars: flagged.dollars },
@@ -18741,7 +18761,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     }
     upsertItem({
       donorId: g.donor_id, donorName: g.donor_name,
-      reason: `Gave $${Number(g.amount).toLocaleString()} on ${giftDate} — not yet thanked`,
+      reason: `Gave $${Number(g.amount).toLocaleString()} on ${giftDate}: not yet thanked`,
       priority: 75, action: "thank",
       totalGiving: parseFloat(g.total_giving) || 0,
     });
@@ -18776,8 +18796,8 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     // not just an amount/date edit on a gift that still exists.
     for (const m of mismatched) {
       const reason = m.gift_amount == null
-        ? `Receipt #${m.receipt_number} — the gift it was issued for has been deleted — review`
-        : `Receipt #${m.receipt_number} no longer matches its gift ($${Number(m.receipt_amount).toLocaleString()} receipted vs. $${Number(m.gift_amount).toLocaleString()} now on the gift) — review`;
+        ? `Receipt #${m.receipt_number}: the gift it was issued for has been deleted, review`
+        : `Receipt #${m.receipt_number} no longer matches its gift ($${Number(m.receipt_amount).toLocaleString()} receipted vs. $${Number(m.gift_amount).toLocaleString()} now on the gift), review`;
       upsertItem({
         donorId: m.donor_id, donorName: m.donor_name,
         reason, priority: 70, action: "receipt_mismatch", receiptId: m.receipt_id,
@@ -18808,7 +18828,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   for (const m of milestoneRows) {
     const milestoneItem = {
       donorId: m.donor_id, donorName: m.donor_name,
-      reason: `Milestone email drafted — "${m.subject}" ready for review`,
+      reason: `Milestone email drafted · "${m.subject}" ready for review`,
       priority: 80, action: "milestone",
       totalGiving: parseFloat(m.total_giving) || 0,
       draftId: m.draft_id,
@@ -18828,7 +18848,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   for (const a of atRiskDraftRows) {
     upsertItem({
       donorId: a.donor_id, donorName: a.donor_name,
-      reason: "Flagged today — AI-drafted re-engagement email ready for review",
+      reason: "Flagged today: AI-drafted re-engagement email ready for review",
       priority: 81, action: "milestone",
       totalGiving: parseFloat(a.total_giving) || 0,
       draftId: a.draft_id, isLapsing: true,
@@ -18843,7 +18863,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const points = typeof n.talking_points === "string" ? JSON.parse(n.talking_points) : n.talking_points;
     upsertItem({
       donorId: n.donor_id, donorName: n.donor_name,
-      reason: "Worth a personal note — see talking points",
+      reason: "Worth a personal note: see talking points",
       priority: 82, action: "note",
       totalGiving: parseFloat(n.total_giving) || 0,
       reminderId: n.reminder_id, talkingPoints: points || [],
@@ -18859,7 +18879,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString()}/${rs.interval === "year" ? "yr" : "mo"}` : "a recurring gift";
     upsertItem({
       donorId: rs.donor_id, donorName: rs.donor_name,
-      reason: `Recurring gift failed — ${amountStr} at risk`,
+      reason: `Recurring gift failed · ${amountStr} at risk`,
       priority: 85, action: "recurring",
       totalGiving: parseFloat(rs.total_giving) || 0,
       subscriptionId: rs.stripe_subscription_id,
@@ -18876,7 +18896,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const amountStr = pd.amount != null ? `$${Number(pd.amount).toLocaleString()}/${pd.interval === "year" ? "yr" : "mo"}` : "their recurring gift";
     upsertItem({
       donorId: pd.donor_id, donorName: pd.donor_name,
-      reason: `${verb === "canceled" ? "Canceled" : "Paused"} ${amountStr} via the portal — reach out today, thank them, learn what changed`,
+      reason: `${verb === "canceled" ? "Canceled" : "Paused"} ${amountStr} via the portal: reach out today, thank them, learn what changed`,
       priority: 88, action: "call",
       totalGiving: parseFloat(pd.total_giving) || 0,
     });
@@ -18899,7 +18919,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     if (!match) continue;
     upsertItem({
       donorId: d.id, donorName: d.name,
-      reason: `${match.companyName} matches employee gifts ${match.ratio} — ask about submitting a match request`,
+      reason: `${match.companyName} matches employee gifts ${match.ratio}: ask about submitting a match request`,
       priority: 30, action: "matching_gift",
       totalGiving: parseFloat(d.total_giving) || 0,
       matchCompany: match.companyName, matchRatio: match.ratio,
@@ -19471,7 +19491,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const touch = shape.touchTypeFor(String(req.body?.touch || ""));
   if (!touch) return res.status(400).json({ error: "Unknown touch type" });
   const line = typeof req.body?.line === "string" ? req.body.line.trim().slice(0, 8000) : "";
-  if (!line) return res.status(400).json({ error: "The one line is required — what happened?" });
+  if (!line) return res.status(400).json({ error: "The one line is required, what happened?" });
   // FIX-14 Part 1 — where it happened, for a meeting or a visit. The card is
   // titled by it ("Meeting at Starbucks").
   const place = typeof req.body?.place === "string" ? req.body.place.trim().slice(0, 200) : "";
@@ -19485,7 +19505,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   let step = null;
   if (!nsSkipped) {
     const typeLabel = shape.nextStepLabelFor(ns?.type);
-    if (!ns || !typeLabel) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true} — a skip is recorded, silence is not accepted" });
+    if (!ns || !typeLabel) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true}: a skip is recorded, silence is not accepted" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) return res.status(400).json({ error: "nextStep.due must be a date (YYYY-MM-DD)" });
     // The label is the user's own sentence when they wrote one (a note-derived
     // step, or one they retyped in the row); the type's label otherwise. A
@@ -19499,7 +19519,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
       return res.status(400).json({ error: "nextStep.time must be a 24-hour HH:MM, or omitted for a date-only step" });
     if (time && !org.timezone_confirmed_at) {
       return res.status(400).json({ error: "timezone_unset",
-        message: "Set your organization's timezone in Settings before scheduling a reminder at a specific time — Steward will not fire one at a guessed hour." });
+        message: "Set your organization's timezone in Settings before scheduling a reminder at a specific time, Steward will not fire one at a guessed hour." });
     }
     step = { type: ns.type, label, due: ns.due, time };
   }
@@ -19526,7 +19546,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     let giftAmt;
     try { giftAmt = toDollars(parseMoneyOrThrow(giftIn.amount, "gift.amount")); }
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
-    if (!(giftAmt > 0)) return res.status(400).json({ error: "A gift on a conversation must be more than zero — leave it blank if there was none." });
+    if (!(giftAmt > 0)) return res.status(400).json({ error: "A gift on a conversation must be more than zero, leave it blank if there was none." });
     if (giftIn.fundId && !(await orgOwns("fin_funds", giftIn.fundId, orgId)))
       return res.status(404).json({ error: "Fund not found" });
     giftWritten = await recordGift({
@@ -19791,7 +19811,7 @@ app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
     const on = String(req.body?.revisitOn || "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return res.status(400).json({ error: "revisitOn must be a date (YYYY-MM-DD)" });
     const org = await orgTz(orgId);
-    if (on <= orgToday(org)) return res.status(400).json({ error: "revisitOn must be a future date — a revisit today is just the open thread" });   // ORG_TZ_SEAM_OK
+    if (on <= orgToday(org)) return res.status(400).json({ error: "revisitOn must be a future date, a revisit today is just the open thread" });   // ORG_TZ_SEAM_OK
     // MOVE the due date, and keep the first one. A revisit is a new promise
     // about when; leaving due_date behind made every deferred thread return as
     // a false alarm, and dropping it would lose the day she originally said.
@@ -19836,7 +19856,7 @@ app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, 
 
   const shape = await threadShapeMod();
   const label = shape.sanitizeStepLabel(req.body?.label);
-  if (!label) return res.status(400).json({ error: "A next step needs a label — say what you are going to do." });
+  if (!label) return res.status(400).json({ error: "A next step needs a label, say what you are going to do." });
   const due = String(req.body?.due || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
 
@@ -19888,7 +19908,7 @@ app.post("/threads/plan", requireAuth, checkWriteAccess, wrap(async (req, res) =
 
   const shape = await threadShapeMod();
   const label = shape.sanitizeStepLabel(req.body?.label);
-  if (!label) return res.status(400).json({ error: "A next step needs a label — say what you are going to do." });
+  if (!label) return res.status(400).json({ error: "A next step needs a label, say what you are going to do." });
   const due = String(req.body?.due || "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
 
@@ -20879,7 +20899,7 @@ async function parseDonorFacingCampaignFields(b, orgId) {
   if (b.donorDescription !== undefined) { sets.push("donor_description = ?"); params.push(String(b.donorDescription || "").trim().slice(0, 600) || null); }
   if (b.donorStory !== undefined) {
     const v = validateStoryBlocks(b.donorStory);
-    if (v.error) return { status: 400, body: { error: v.error, message: "The story must be paragraphs, headings, and lists — no HTML or embeds." } };
+    if (v.error) return { status: 400, body: { error: v.error, message: "The story must be paragraphs, headings, and lists, no HTML or embeds." } };
     sets.push("donor_story = ?"); params.push(v.blocks && v.blocks.length ? JSON.stringify(v.blocks) : null);
   }
   if (b.heroImageData !== undefined) {
@@ -21841,7 +21861,7 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl,
       html: `<p>Hi ${escapeHtml(fundraiser.name)},</p>
              <p>Thanks for starting a personal fundraiser for <strong>${escapeHtml(givingPage.title)}</strong> on behalf of <strong>${escapeHtml(org.name)}</strong>! ${pending ? `${escapeHtml(org.name)} looks at every new page before it goes live, and yours will be public as soon as they approve it. You can write your story in the meantime.` : "Your page is live and ready to share."}</p>
              <p><a href="${manageUrl}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Manage Your Fundraiser</a></p>
-             <p>Use that link any time to update your story, goal, or photo — bookmark it, since there's no password to reset it with.</p>`,
+             <p>Use that link any time to update your story, goal, or photo, bookmark it, since there's no password to reset it with.</p>`,
     });
     if (error) throw new Error(error.message);
     return true;
@@ -22340,11 +22360,11 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
         role: "user",
         content: `Write an executive summary for a nonprofit board of directors. Exactly 3 paragraphs. Confident, board-appropriate, factual tone. No bullet points. No headers. Prose only.
 
-Paragraph 1 — Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
+Paragraph 1, Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
 
-Paragraph 2 — Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} last quarter. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
+Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} last quarter. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
 
-Paragraph 3 — Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
+Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
 Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}.`,
       }],
@@ -22386,7 +22406,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text("B O A R D   R E P O R T", 0, doc.y + 10, { align: "center" });
     doc.font("Helvetica-Bold").fontSize(22).fillColor(GREEN).text(ql, 0, doc.y + 10, { align: "center" });
     doc.font("Helvetica").fontSize(10).fillColor("#4b5563").text(genDate, 0, doc.y + 8, { align: "center" });
-    doc.font("Helvetica").fontSize(8).fillColor("#374151").text("CONFIDENTIAL — FOR BOARD USE ONLY", 0, doc.y + 40, { align: "center", characterSpacing: 1.5 });
+    doc.font("Helvetica").fontSize(8).fillColor("#374151").text("CONFIDENTIAL: FOR BOARD USE ONLY", 0, doc.y + 40, { align: "center", characterSpacing: 1.5 });
 
     // ── PAGE 2: Executive Summary ──────────────────────────────────────────
     doc.addPage();
@@ -22422,7 +22442,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     });
     y += 72;
 
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Budget vs. Actuals — Expense Accounts", 50, y); y += 18;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Budget vs. Actuals, Expense Accounts", 50, y); y += 18;
     doc.rect(50, y, PW - 100, 22).fill(GREEN);
     doc.font("Helvetica-Bold").fontSize(8).fillColor("#fff");
     doc.text("Account", 58, y + 7, { width: 195 });
@@ -22437,7 +22457,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       const vari = bgt - act;
       doc.rect(50, y, PW - 100, 20).fill(i % 2 === 0 ? "#ffffff" : BG);
       doc.font("Helvetica").fontSize(8).fillColor(INK).text(row.name || "Uncategorized", 58, y + 6, { width: 195 });
-      doc.text(bgt > 0 ? fmtD(bgt) : "—", 260, y + 6, { width: 85, align: "right" });
+      doc.text(bgt > 0 ? fmtD(bgt) : "Not set", 260, y + 6, { width: 85, align: "right" });
       doc.text(fmtD(act), 352, y + 6, { width: 85, align: "right" });
       doc.font("Helvetica-Bold").fillColor(vari >= 0 ? "#1a6b4a" : "#dc2626").text((vari >= 0 ? "+" : "") + fmtD(vari), 444, y + 6, { width: 78, align: "right" });
       y += 20;
@@ -22489,7 +22509,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     }
     y += 56;
 
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Top 10 Donors — Lifetime Giving", 50, y); y += 18;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Top 10 Donors: Lifetime Giving", 50, y); y += 18;
     doc.rect(50, y, PW - 100, 22).fill(GREEN);
     doc.font("Helvetica-Bold").fontSize(8).fillColor("#fff");
     doc.text("#", 58, y + 7, { width: 18 });
@@ -22504,7 +22524,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       doc.rect(50, y, PW - 100, 20).fill(i % 2 === 0 ? "#ffffff" : BG);
       doc.font("Helvetica").fontSize(8).fillColor(INK3).text(String(i + 1), 58, y + 6, { width: 18 });
       doc.fillColor(INK).text(display, 82, y + 6, { width: 235 });
-      doc.fillColor(INK3).text(d.stage || "—", 324, y + 6, { width: 90 });
+      doc.fillColor(INK3).text(d.stage || "Not set", 324, y + 6, { width: 90 });
       doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(d.total_giving), 422, y + 6, { width: 100, align: "right" });
       y += 20;
     });
@@ -22538,7 +22558,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
         const days = Math.round((new Date(g.deadline) - now) / 86400000);
         doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(g.funder, 58, y + 5, { width: 200 });
-        doc.fillColor(INK3).text(g.program || "—", 264, y + 5, { width: 140 });
+        doc.fillColor(INK3).text(g.program || "Not set", 264, y + 5, { width: 140 });
         doc.font("Helvetica-Bold").fillColor(days <= 14 ? "#dc2626" : "#f59e0b").text(days + "d", 415, y + 5, { width: 100, align: "right" });
         y += 19;
       });
@@ -22547,7 +22567,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
 
     doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
 
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Communications — Q" + q + " Activity", 50, y); y += 18;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Communications: Q" + q + " Activity", 50, y); y += 18;
     const cw = (PW - 100) / 3;
     [
       ["Campaigns Sent", String(sentQ.length)],
@@ -22646,7 +22666,7 @@ function parseReportParams(q, org = null) {   // ORG_TZ_SEAM_OK
     p.period = p.yearMode;
   }
   if (p.from > p.to) throw bad("from must be on or before to");
-  if (Date.parse(p.to) - Date.parse(p.from) > 10 * 366 * 86400000) throw bad("Date range too large — 10 years max");
+  if (Date.parse(p.to) - Date.parse(p.from) > 10 * 366 * 86400000) throw bad("Date range too large: 10 years max");
 
   if (q.fundId) p.fundId = String(q.fundId);
   if (q.campaignId) p.campaignId = String(q.campaignId);
@@ -23662,7 +23682,7 @@ function reportToCsv(key, data, opts = {}) {
     }
     case "solicitations": {
       const rows = [
-        ["FORECAST — open asks", data.forecast.open], ["FORECAST — stage-weighted", data.forecast.weighted],
+        ["FORECAST: open asks", data.forecast.open], ["FORECAST: stage-weighted", data.forecast.weighted],
         ["", ""], ["OPEN ASKS BY STAGE", ""],
         ...data.byStage.map(s => [s.stage, `${s.count} asks · ${s.ask}`]),
         ["", ""], ["BY OFFICER (open / made / closed)", ""],
@@ -24449,8 +24469,8 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     const boxes = [
       ["Total Given", fmtD(totalGiving)],
       ["Gifts Given", String(giftCount)],
-      ["Donor Since", firstGiftLabel || "—"],
-      ["Years Giving", yearsGiving != null ? String(Math.max(yearsGiving, 0)) : "—"],
+      ["Donor Since", firstGiftLabel || "Not set"],
+      ["Years Giving", yearsGiving != null ? String(Math.max(yearsGiving, 0)) : "Not set"],
     ];
     const bw = (PW - 100) / boxes.length;
     boxes.forEach(([label, value], i) => {
@@ -24491,7 +24511,7 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
       doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
       doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Recent Gifts", 50, y); y += 18;
       recentGifts.forEach((g, i) => {
-        const d = g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+        const d = g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Not set";
         doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(d, 58, y + 5, { width: 90 });
         doc.fillColor(INK3).text(g.campaign || "General", 155, y + 5, { width: 250 });
@@ -24792,7 +24812,7 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
     if (!whisperResp.ok) {
       const errText = await whisperResp.text();
       console.error("[voice-memo] Whisper error:", whisperResp.status, errText);
-      return res.status(502).json({ error: "Transcription failed — please try again." });
+      return res.status(502).json({ error: "Transcription failed, please try again." });
     }
     const whisperJson = await whisperResp.json();
     transcript = (whisperJson.text || "").trim();
@@ -24811,7 +24831,7 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
       model: "claude-sonnet-4-6",
       max_tokens: 200,
       thinking: { type: "disabled" },   // FIX-28: a short extraction needs no thinking (the ASK-3 rule)
-      system: `Extract from a voice memo a nonprofit development officer just recorded about a donor. Return ONLY valid JSON: {"personalDetail":"..." or null,"suggestedAction":"..." or null} — no markdown, no explanation. personalDetail: one short, specific, worth-remembering fact about the donor (family, interests, preferences, life event) mentioned in the memo — null if nothing like that was mentioned. suggestedAction: one short, concrete next step implied by the memo (e.g. "Send the gala invite", "Follow up after their trip in March") — null if none is implied.`,
+      system: `Extract from a voice memo a nonprofit development officer just recorded about a donor. Return ONLY valid JSON: {"personalDetail":"..." or null,"suggestedAction":"..." or null}, no markdown, no explanation. personalDetail: one short, specific, worth-remembering fact about the donor (family, interests, preferences, life event) mentioned in the memo, null if nothing like that was mentioned. suggestedAction: one short, concrete next step implied by the memo (e.g. "Send the gala invite", "Follow up after their trip in March"), null if none is implied.`,
       messages: [{ role: "user", content: `Donor: ${donorRows[0].name}\nTranscript: ${transcript}` }],
     });
     // FIX-28: an unfinished reply suggests nothing.
@@ -24971,13 +24991,13 @@ app.post("/custom-fields", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   if (wantsOptions && !options.length) return res.status(400).json({ error: "select fields need at least one option" });
   if (!wantsOptions && options.length) return res.status(400).json({ error: `a ${type} field does not take options` });
   if (options.length > CF_LIMITS.OPTIONS_PER_SELECT)
-    return res.status(400).json({ error: `that is ${options.length} options — the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}. Past that a select is free text wearing a costume; consider a text field.` });
+    return res.status(400).json({ error: `that is ${options.length} options, the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}. Past that a select is free text wearing a costume; consider a text field.` });
 
   // The 40-field cap counts LIVE fields; archiving frees a slot, and restore
   // is never blocked by the cap (restore must always work — spec 1.6).
   const live = await query(`SELECT COUNT(*)::int AS n FROM custom_field_defs WHERE org_id=? AND entity=? AND archived_at IS NULL`, [req.user.orgId, entity]);
   if (live[0].n >= CF_LIMITS.FIELDS_PER_ENTITY)
-    return res.status(400).json({ error: `this org already has ${live[0].n} ${entity} fields — the limit is ${CF_LIMITS.FIELDS_PER_ENTITY}. Archive fields you no longer use to make room.` });
+    return res.status(400).json({ error: `this org already has ${live[0].n} ${entity} fields, the limit is ${CF_LIMITS.FIELDS_PER_ENTITY}. Archive fields you no longer use to make room.` });
 
   const existingKeys = (await query(`SELECT key FROM custom_field_defs WHERE org_id=? AND entity=?`, [req.user.orgId, entity])).map(r => r.key);
   const key = generateFieldKey(label, existingKeys);   // immutable forever from here
@@ -25015,7 +25035,7 @@ app.put("/custom-fields/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
   // migration wearing a dropdown, and the honest version of it is out of
   // scope. The key never changes, period (1.2).
   if ((req.body.type || req.body.fieldType) && String(req.body.type || req.body.fieldType) !== field.type)
-    return res.status(400).json({ error: "a field's type cannot change after creation — archive this field and create a new one" });
+    return res.status(400).json({ error: "a field's type cannot change after creation, archive this field and create a new one" });
   if (req.body.key && req.body.key !== field.key)
     return res.status(400).json({ error: "a field's key never changes" });
 
@@ -25033,9 +25053,9 @@ app.put("/custom-fields/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
       // option orphans every value that holds it. (An honest option
       // migration is future work; recorded in the findings.)
       const missing = options.filter(o => !next.includes(o));
-      if (missing.length) return res.status(400).json({ error: `options cannot be removed: ${missing.join(", ")} — stored values still point at them` });
+      if (missing.length) return res.status(400).json({ error: `options cannot be removed: ${missing.join(", ")}: stored values still point at them` });
       if (next.length > CF_LIMITS.OPTIONS_PER_SELECT)
-        return res.status(400).json({ error: `that is ${next.length} options — the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}` });
+        return res.status(400).json({ error: `that is ${next.length} options: the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}` });
       options = next;
     }
   }
@@ -25346,8 +25366,9 @@ app.get("/donors/:id/recurring-subscription", requireAuth, wrap(async (req, res)
 }));
 
 app.post("/pledges/process-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await processPledgeReminders();
-  res.json({ success: true });
+  const out = await processPledgeReminders();
+  // FIX-45: how many of THIS org's pledges the sweep picked (never another org's ids).
+  res.json({ success: true, picked: ((out && out.picked) || []).filter(r => r.orgId === req.user.orgId).length });
 }));
 
 // Everyday staff action, matching POST /recurring/:donorId/resend — resends
@@ -25366,7 +25387,7 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
   if (!p.donor_email) return res.status(400).json({ error: "This donor has no email on file." });
 
   const decision = await donorMailDecision("pledge_reminder", p.donor_email, req.user.orgId);
-  if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor's email is suppressed (${decision.reason})`}.` });
+  if (!decision.send) return res.status(400).json({ error: `Cannot send, ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor's email is suppressed (${decision.reason})`}.` });
 
   const orgRows = await query(
     "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]
@@ -25741,7 +25762,7 @@ async function importMemberships(orgId, rows, who) {
   const hold = (r, why) => out.held.push({ line: Number.isInteger(r.line) ? r.line : null, name: r.name || r.email || null, level: r.level || null, why });
   for (const r of rows.slice(0, 50000)) {
     const level = MI.matchLevel(levels, r.level);
-    if (!level) { hold(r, `no level called "${String(r.level || "").slice(0, 60)}" — add it in Members, or fix the file`); continue; }
+    if (!level) { hold(r, `no level called "${String(r.level || "").slice(0, 60)}": add it in Members, or fix the file`); continue; }
     const iso = v => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
     const starts = iso(r.starts) || iso(r.joined);
     if (!starts) { hold(r, "no start date that could be read"); continue; }
@@ -27541,7 +27562,7 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
         paymentMethod: req.body.paymentMethod, idempotencyKey: `event_attendee:${att.id}`,
         conflict: "idempotency",
         actorId: actor(req).id, actorName: actor(req).name,
-        ledgerDescription: `Event Gift — ${evt?.name || "event"}`,
+        ledgerDescription: `Event Gift · ${evt?.name || "event"}`,
         timelineNote: `Gift at ${evt?.name || "event"}`, source: "event",
       });
       const giftId = written.gift ? written.gift.id : null;
@@ -27887,13 +27908,13 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   const counts = { donors, gifts, interactions, grants, pledges, planned_gifts: plannedGifts, recurring, giving_pages: givingPages, peer_fundraisers: peerFundraisers, receipts };
   const readme = [
-    `Steward data export — ${orgRows[0]?.name || orgId}`,
+    `Steward data export · ${orgRows[0]?.name || orgId}`,
     `Exported: ${new Date().toISOString()}`,
     "",
     "This zip contains your organization's complete data as CSV files you can",
     "open in any spreadsheet, import into another system, or archive. Rows",
     "flagged in a \"Sample data\" column came from Steward's demo dataset and",
-    "can be filtered out. Your data is yours — this export is available",
+    "can be filtered out. Your data is yours, this export is available",
     "anytime, including after a subscription ends.",
     "",
     "Row counts:",

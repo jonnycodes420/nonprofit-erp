@@ -31,11 +31,15 @@ function cardOut(orgId, c) {
   };
 }
 
-async function batchOut(orgId, batchId) {
+// `loggedId` is a card being confirmed in the same moment: it counts as logged
+// before its own row says so, so the confirm can answer with the batch line in
+// the same round trip as the card's update.
+async function batchOut(orgId, batchId, { loggedId = null } = {}) {
   if (!batchId) return null;
-  const [b] = await query("SELECT * FROM capture_batches WHERE id=? AND org_id=?", [batchId, orgId]);
+  const [[b], cards] = await Promise.all([
+    query("SELECT * FROM capture_batches WHERE id=? AND org_id=?", [batchId, orgId]),
+    query("SELECT id, proposal, status FROM capture_items WHERE org_id=? AND batch_id=? ORDER BY created_at, page", [orgId, batchId])]);
   if (!b) return null;
-  const cards = await query("SELECT id, proposal FROM capture_items WHERE org_id=? AND batch_id=? ORDER BY created_at, page", [orgId, batchId]);
   const amounts = cards.map(c => (c.proposal && c.proposal.amount && c.proposal.amount.cents) ?? null);
   const unread = amounts.filter(a => a == null).length;
   const checks = amounts.reduce((s, a) => s + (a || 0), 0);
@@ -46,7 +50,15 @@ async function batchOut(orgId, batchId) {
     else if (checks === slip) { matches = true; sentence = `The ${cards.length} checks add up to ${K.cents$(checks)}, the same as the deposit slip.`; }
     else { matches = false; sentence = `The ${cards.length} checks add up to ${K.cents$(checks)}, but the deposit slip says ${K.cents$(slip)}. ${K.cents$(Math.abs(slip - checks))} ${slip > checks ? "is missing from the checks" : "more than the slip"}.`; }
   }
-  return { id: b.id, cardIds: cards.map(c => c.id), slipCents: slip, checksCents: checks, matches, sentence };
+  // FIX-45: the line moves as the checks are logged. It used to read the same
+  // after every confirm, as if nothing had happened.
+  const isLogged = c => c.status === "confirmed" || c.id === loggedId;
+  const logged = cards.filter(isLogged).length;
+  const leftCents = cards.filter(c => !isLogged(c) && c.status !== "skipped")
+    .reduce((s, c) => s + ((c.proposal && c.proposal.amount && c.proposal.amount.cents) || 0), 0);
+  if (sentence && logged === cards.length) sentence += ` All ${cards.length} are logged.`;
+  else if (sentence && logged) sentence += ` ${logged} of ${cards.length} logged, ${K.cents$(leftCents)} still to confirm.`;
+  return { id: b.id, cardIds: cards.map(c => c.id), slipCents: slip, checksCents: checks, matches, sentence, logged, leftCents };
 }
 
 async function captureAddress(orgId) {
@@ -153,6 +165,14 @@ app.post("/capture/:id/unskip", requireAuth, checkWriteAccess, wrap(async (req, 
   res.json({ card: cardOut(req.user.orgId, r[0]) });
 }));
 
+// FIX-45: the cards skipped in the last 30 days, for To confirm's Skipped
+// filter, each with Bring back (POST /capture/:id/unskip).
+app.get("/capture/skipped", requireAuth, wrap(async (req, res) => {
+  const rows = await query(`SELECT * FROM capture_items WHERE org_id=? AND status='skipped' AND decided_at > NOW() - INTERVAL '30 days'
+                             ORDER BY decided_at DESC LIMIT 100`, [req.user.orgId]);
+  res.json({ skipped: rows.map(c => cardOut(req.user.orgId, c)) });
+}));
+
 app.post("/capture/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const out = await K.undoLow(req.user.orgId, req.params.id, await whoOf(req));
   if (out.error === "not_found") return res.status(404).json({ error: "not_found" });
@@ -179,6 +199,16 @@ app.post("/capture/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, r
 }));
 
 // ── CONFIRM: the one tap that records money ───────────────────────────────
+// FIX-45: in TEST_MODE, the work still running after a confirm answered, by
+// card, so a suite can wait for it (GET /capture/:id/settled) instead of
+// guessing with a sleep.
+const afterConfirm = new Map();
+app.get("/capture/:id/settled", requireAuth, wrap(async (req, res) => {
+  if (process.env.TEST_MODE !== "1") return res.status(404).json({ error: "not_found" });
+  const p = afterConfirm.get(req.params.id);
+  if (p) await p;
+  res.json({ settled: true });
+}));
 const METHOD = { check: "Check", daf_grant: "DAF grant", stock_gift: "Stock", matching_gift: "Matching gift", pledge: null, other: "Check" };
 
 async function newPerson(orgId, p, who) {
@@ -208,20 +238,21 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
     if (!Number.isFinite(cents) || cents <= 0) { await release(); return res.status(400).json({ error: "amount", sentence: "Type the amount from the image before you confirm." }); }
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || "")) ? b.date : orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
     let donorId = b.donorId ? String(b.donorId) : null;
+    const fundId = b.fundId ? String(b.fundId) : null;
+    // FIX-45: the two checks do not depend on each other, so they are one
+    // round trip, not two.
+    const [dRows, fRows] = await Promise.all([
+      donorId ? query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]) : [],
+      fundId ? query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : []]);
     if (donorId) {
-      const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]);
-      if (!d) { await release(); return res.status(404).json({ error: "donor_not_found" }); }
+      if (!dRows[0]) { await release(); return res.status(404).json({ error: "donor_not_found" }); }
     } else if (b.newPerson) {
       donorId = await newPerson(orgId, b.newPerson, who);
     }
     if (!donorId) { await release(); return res.status(400).json({ error: "who", sentence: "Choose who this is from, or add them as a new person." }); }
-    let fundId = b.fundId ? String(b.fundId) : null;
-    if (fundId) {
-      const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
-      if (!f) { await release(); return res.status(404).json({ error: "fund_not_found" }); }
-    }
+    if (fundId && !fRows[0]) { await release(); return res.status(404).json({ error: "fund_not_found" }); }
 
-    let giftId = null, pledgeId = null, duplicateOf = null, sentence = "";
+    let giftId = null, pledgeId = null, duplicateOf = null, sentence = "", later = null;
     if (kind === "pledge") {
       pledgeId = "pl_" + ctx.uuid().slice(0, 8);
       const due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate || "")) ? b.startDate : date;
@@ -272,30 +303,42 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           idempotencyKey: "capture:" + c.id, conflict: "idempotency",
           notes: kind === "daf_grant" ? "Donor-advised fund grant, from To confirm." : "",
           actorId: who.id, actorName: who.name, source: "capture", door: "capture", extras,
+          // FIX-45: she is waiting on this button. The journeys, groups and
+          // after-change step run straight after the answer (see below).
+          deferTriggers: true,
         });
+        later = w.later || null;
         if (w.duplicate) {
           const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]);
           giftId = g ? g.id : null;
         } else giftId = w.gift.id;
         sentence = `Logged ${K.cents$(cents)}${kind === "daf_grant" && extras ? ", with soft credit to the advisor" : ""}.`;
-        giftHooks.autoUnlapseOnGift && await giftHooks.autoUnlapseOnGift(orgId, donorId).catch(() => {});
       }
     }
 
-    // A memo she confirmed into a fund is remembered for next time.
-    const phrase = String((c.read && (c.read.memo || c.read.fundName)) || "").trim().toLowerCase().slice(0, 60);
-    if (fundId && phrase && phrase.length >= 3) {
-      await run(`INSERT INTO capture_fund_words (org_id,phrase,fund_id,created_by,created_by_name) VALUES (?,?,?,?,?)
-                 ON CONFLICT (org_id, phrase) DO UPDATE SET fund_id=EXCLUDED.fund_id`, [orgId, phrase, fundId, who.id, who.name]);
-    }
-
     // The thank-you draft recordGift queued, and the call for a major gift.
-    const [draft] = giftId && !duplicateOf ? await query("SELECT id, body FROM thank_you_drafts WHERE org_id=? AND gift_id=? LIMIT 1", [orgId, giftId]) : [];
-    const [o] = await query("SELECT major_gift_line_cents, receipts_enabled FROM orgs WHERE id=?", [orgId]);
+    const [[draft], [o]] = await Promise.all([
+      giftId && !duplicateOf ? query("SELECT id, body FROM thank_you_drafts WHERE org_id=? AND gift_id=? LIMIT 1", [orgId, giftId]) : [],
+      query("SELECT major_gift_line_cents, receipts_enabled FROM orgs WHERE id=?", [orgId])]);
     const line = o && o.major_gift_line_cents != null ? Number(o.major_gift_line_cents) : 100000;
-    let callOnThread = false;
-    if (giftId && !duplicateOf) {
-      if (cents >= line) {
+    // FIX-45 · THE CARD IS DONE WHEN THE GIFT IS. Confirm answers as soon as
+    // the gift, its draft and the card are written. What follows a gift (the
+    // journeys, the groups, the after-change step, a lapsed donor's stage, the
+    // Thread) runs straight after the answer, in the order it always ran.
+    // Before this, the first gift after a re-seed waited on 1,300 statements
+    // and the button said "Logging..." for over 30 seconds.
+    const callOnThread = !!(giftId && !duplicateOf && cents >= line);
+    const followUp = async () => {
+      // A memo she confirmed into a fund is remembered for next time.
+      const phrase = String((c.read && (c.read.memo || c.read.fundName)) || "").trim().toLowerCase().slice(0, 60);
+      if (fundId && phrase && phrase.length >= 3) {
+        await run(`INSERT INTO capture_fund_words (org_id,phrase,fund_id,created_by,created_by_name) VALUES (?,?,?,?,?)
+                   ON CONFLICT (org_id, phrase) DO UPDATE SET fund_id=EXCLUDED.fund_id`, [orgId, phrase, fundId, who.id, who.name]);
+      }
+      if (later) await later;
+      if (!giftId || duplicateOf) return;
+      if (giftHooks.autoUnlapseOnGift) await giftHooks.autoUnlapseOnGift(orgId, donorId).catch(() => {});
+      if (callOnThread) {
         const tz = await orgTz(orgId);
         const today = orgToday(tz);                                   // ORG_TZ_SEAM_OK
         const label = `Call to thank for the ${K.cents$(cents)} gift`;
@@ -303,23 +346,25 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           openedOn: today, openingGiftId: giftId, actorId: who.id, actorName: who.name }));
         if (!opened) await run(`UPDATE threads SET next_step_type='thank', next_step_label=?, due_date=? WHERE org_id=? AND donor_id=? AND closed_at IS NULL`,
           [label, today, orgId, donorId]);
-        callOnThread = true;
       } else {
         await openGiftThread(orgId, donorId, { giftId, actorId: who.id, actorName: who.name }).catch(() => {});
       }
-    }
-    await run(`UPDATE capture_items SET status='confirmed', gift_id=?, pledge_id=?, donor_id=?, decided_at=NOW(), decided_by=?, decided_by_name=?
-                WHERE id=? AND org_id=?`, [giftId, pledgeId, donorId, who.id, who.name, c.id, orgId]);
+    };
+    const [[after], batch] = await Promise.all([
+      query(`UPDATE capture_items SET status='confirmed', gift_id=?, pledge_id=?, donor_id=?, decided_at=NOW(), decided_by=?, decided_by_name=?
+              WHERE id=? AND org_id=? RETURNING *`, [giftId, pledgeId, donorId, who.id, who.name, c.id, orgId]),
+      batchOut(orgId, c.batch_id, { loggedId: c.id })]);
     // Receipts follow the org's setting exactly as a hand-entered gift does:
     // Steward never sends one for a gift logged by hand; it is one click on the gift.
     const receipt = giftId && !duplicateOf ? (o && o.receipts_enabled ? "one_click" : "off") : null;
-    const [after] = await query("SELECT * FROM capture_items WHERE id=? AND org_id=?", [c.id, orgId]);
-    res.json({ card: cardOut(orgId, after), giftId, pledgeId, duplicateOf, thankYouDraftId: draft ? draft.id : null,
+    res.json({ card: cardOut(orgId, after), batch, giftId, pledgeId, duplicateOf, thankYouDraftId: draft ? draft.id : null,
       thankYouDraft: draft ? { id: draft.id, body: draft.body } : null,
       receipt, callOnThread, sentence: [sentence,
         draft ? "A thank-you is drafted for you to read and send." : null,
         receipt === "one_click" ? "Send the receipt from the gift when you're ready." : null,
         callOnThread ? "A call to thank them is on the Thread for today." : null].filter(Boolean).join(" ") });
+    const settled = followUp().catch(e => console.error("[capture] after confirm:", e.message));
+    if (process.env.TEST_MODE === "1") afterConfirm.set(c.id, settled.then(() => afterConfirm.delete(c.id)));
   } catch (e) {
     await release();
     throw e;

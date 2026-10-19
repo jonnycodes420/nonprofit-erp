@@ -40,8 +40,22 @@
 
 // The demonstration orgs by id, the same two twoFactor.js names: Harborlight
 // and the CREO boot fixture never send, whatever their switches say.
-const DEMO_ORG_IDS = ["org_b72demo", "org_creo"];
-const isDemoOrg = org => !!org && (org.is_demo_org === true || DEMO_ORG_IDS.includes(org.id));
+// FIX-45: and every demo org orgKind.js names (Riverbend, Meadowbrook), and any
+// org whose kind somebody set to demo, so the two files cannot disagree.
+const DEMO_ORG_IDS = [...new Set(["org_b72demo", "org_creo", ...require("./orgKind").DEMO_ORG_IDS])];
+const isDemoOrg = org => !!org && (org.is_demo_org === true || org.org_kind === "demo" || DEMO_ORG_IDS.includes(org.id));
+
+// FIX-45 (Muse, 19 Oct): THE SAME RULE, AT THE SOURCE. The gate above refused
+// twelve pledge reminders a demo org's sweep had already picked, and the sweep
+// picked them again every hour, because nothing upstream knew the org was
+// fiction. A sweep that chooses donor mail to send reads this in its WHERE
+// clause, so a demo org (and a sample person, which the sweep filters itself)
+// never becomes a send to refuse. `o` is the alias of the orgs row; it must be
+// joined. The ids are constants, never input, so inlining them is safe.
+function orgSendsSql(o = "o") {
+  return `(COALESCE(${o}.is_demo_org, false) = false AND COALESCE(${o}.org_kind, '') <> 'demo'`
+    + ` AND ${o}.id NOT IN (${DEMO_ORG_IDS.map(id => `'${id}'`).join(",")}))`;
+}
 
 const CATEGORY = {
   STAFF: "staff",
@@ -112,5 +126,5 @@ const REASON_SENTENCE = {
   org_gate_unreadable: "Steward could not check this organization's email setting, so nothing was sent.",
 };
 
-module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding, isDemoOrg,
+module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding, isDemoOrg, orgSendsSql, DEMO_ORG_IDS,
   billingBeforeOnboarding, REASON_SENTENCE, NOT_BILLED_KINDS };

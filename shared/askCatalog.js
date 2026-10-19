@@ -278,7 +278,21 @@ export function templatePlan(text, ctx = {}) {
   take(/\b(my |our |the )?top (\d{1,3}) (donors|givers|supporters)\b/g, (m, a, n) => { out.top = Number(n); out.kind = "who"; out.metric = "raised"; });
   take(/\bwho gave for the first time\b|\bgave for the first time\b/g, () => { out.kind = /\bwho\b/.test(String(text).toLowerCase()) ? "who" : "metric"; out.metric = "new_donor_count"; });
   take(/\bwhich (campaign|appeal|fund|event)s? (raised|brought in|did) (the )?(most|best)\b/g, (m, w) => { out.groupBy = w === "appeal" ? "campaign" : w; out.metric = "raised"; });
-  take(/\b(how many )?(lapsed donors|donors|people) (came|come|have come|who came) back\b|\b(how many )?(were )?(won|brought) back\b/g, () => { out.metric = "recaptured_count"; });
+  // FIX-45 1.6: every way of asking who came back is the same count: "who came
+  // back", "lapsed donors who returned", "returning donors", "recaptured
+  // donors", "gave again after lapsing". Asked with who/which/show me, the
+  // answer is the people.
+  const BACK = [
+    /\b(how many )?((lapsed|former|old) )?(donors|givers|supporters|people) (who )?(came|come|have come|has come|'ve come|’ve come) back\b/g,
+    /\b(how many )?((lapsed|former|old) )?(donors|givers|supporters|people) (who )?(returned|have returned|gave again|have given again|started giving again)\b/g,
+    /\bwho('s| has| have)? (came|come|returned|gave again|started giving again)( back)?\b/g,
+    /\b(how many )?(my |our |the )?(returning|returned|recaptured|reactivated|came-back|won-back) (donors|givers|supporters|people)\b/g,
+    /\b(how many )?(were )?(won|brought) back\b/g,
+  ];
+  let backSaid = false;
+  for (const re of BACK) take(re, () => { out.metric = "recaptured_count"; backSaid = true; });
+  const asked = String(text).toLowerCase();
+  if (backSaid && !/\bhow many\b/.test(asked) && /\b(who|which|show|list|find|name)\b/.test(asked)) out.kind = "who";
   take(/\bhow has (their|his|her) giving changed\b|\btheir giving over (the )?years\b/g, () => { out.metric = "raised"; out.groupBy = "year"; out.period = { kind: "all_time" }; });
   take(/\bhow many (active )?volunteers\b|\bactive volunteers\b|\bvolunteers on the roster\b/g, () => { out.metric = "volunteer_count"; });
   take(/^\s*who (gave|has given|donated|gives)\b/g, () => { out.kind = "who"; out.metric = out.metric || "donor_count"; });

@@ -128,7 +128,7 @@ export const TRIGGERS = [
   { key: "email_engaged_no_gift", label: "They open or click an appeal but don't give", sweep: true, needsOpenData: true,
     sentence: "Starts 14 days after somebody opened or clicked an appeal, from Steward or Mailchimp, if they have not given since. Once per appeal." },
   { key: "by_hand",        label: "You put them in it yourself",
-    sentence: "Never starts on its own — you choose who goes in it." },
+    sentence: "Never starts on its own, you choose who goes in it." },
 ];
 // JOURNEYS-4 — attended_event is also read by the sweep (a check-in at the
 // door that no route announced), and so is first_event.
@@ -636,7 +636,7 @@ export function validateJourney(input = {}) {
   const trigger = String(input.trigger || "").trim();
   if (!TRIGGER_KEYS.includes(trigger)) {
     errors.push({ field: "trigger",
-      message: `A journey needs a trigger — one of: ${TRIGGER_KEYS.join(", ")}.` });
+      message: `A journey needs a trigger, one of: ${TRIGGER_KEYS.join(", ")}.` });
   }
 
   const t = triggerByKey(trigger);

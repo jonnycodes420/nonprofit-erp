@@ -17,7 +17,7 @@
 // deadlines) directly with the company before a donor submits a request.
 
 const LIST_CURATED_DATE = "2026-07-15";
-const SOURCE_NOTE = "Curated from publicly known company matching-gift programs — not a live feed. Confirm current terms with the employer before submitting a match request.";
+const SOURCE_NOTE = "Curated from publicly known company matching-gift programs, not a live feed. Confirm current terms with the employer before submitting a match request.";
 
 // name: the canonical display name. aliases: alternate legal names,
 // abbreviations, or former names that don't reduce to the canonical name via

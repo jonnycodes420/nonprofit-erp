@@ -170,6 +170,24 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   const ask2 = await api("POST", "/ask", tok, { text: "what did the latest import tell us?" });
   ok("§3 Ask: 'what did the latest import tell us?' is the readout, each count opening its line",
      ask2.status === 200 && (ask2.body?.table?.rows || []).length === 3 && ask2.body.table.rows.every(r => r.value?.source?.key === "readout-line"), ask2.body);
+  // FIX-45 1.6 · A COMEBACK THE READOUTS NEVER SAW. Hal came back today by a
+  // gift typed in by hand, so no readout knows about him. "Show me lapsed
+  // donors who came back this year" was answered from the readouts and missed
+  // everybody like him (Harborlight: "No readout in October found a lapsed
+  // donor who came back." while 192 had). Every comeback phrasing is the gifts.
+  await person("d_l1_hal", "Hal Handtyped", `hal@${DOMAIN}`);
+  await gift("g_l1_hal0", "d_l1_hal", 300, 900);
+  await gift("g_l1_hal1", "d_l1_hal", 75, 0);
+  for (const text of ["Show me lapsed donors who came back this year", "Who came back this year?",
+                      "Who are my recaptured donors?", "Which lapsed donors gave again this year?"]) {
+    const a = await api("POST", "/ask", tok, { text });
+    ok(`§3 Ask: '${text}' names Hal, from the gifts`,
+       a.status === 200 && a.body?.answered === true && (a.body?.people || []).some(p => p.donorId === "d_l1_hal")
+         && a.body?.figures?.value?.source?.key !== "readout-line", { sentence: a.body?.sentence, people: (a.body?.people || []).map(p => p.donorId) });
+  }
+  const back3 = await api("POST", "/ask", tok, { text: "How many returning donors this year?" });
+  ok("§3 Ask: 'How many returning donors this year?' is the came-back count, not a refusal",
+     back3.status === 200 && back3.body?.answered === true && Number(back3.body?.figures?.value?.value) >= 1, back3.body?.sentence);
   const thread = await api("GET", "/readouts/latest", tok);
   ok("§3 the readout is the Thread's newest readout item", thread.body?.readout?.id === roId, thread.body);
 

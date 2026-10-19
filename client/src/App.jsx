@@ -40,6 +40,7 @@ import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } fr
 import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
+import { openRecentChanges } from "./components/RecentChanges";
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
@@ -1066,6 +1067,11 @@ function AppShell() {
         <button data-testid="mobile-connect-inbox" onClick={()=>{navigateTo("settings",{section:"connections",focus:"inbox"});setMoreOpen(false);}} className="mobile-more-row">
           <span className="mob-icon" style={{fontSize:16,width:28,textAlign:"center"}}>@</span>
           <span style={{flex:1}}>Connect your inbox</span>
+        </button>
+        {/* FIX-45: Recent changes, the profile menu's item, on the phone. */}
+        <button data-testid="mobile-recent-changes" onClick={()=>{setMoreOpen(false);openRecentChanges();}} className="mobile-more-row">
+          <span className="mob-icon" style={{fontSize:16,width:28,textAlign:"center"}}>↺</span>
+          <span style={{flex:1}}>Recent changes</span>
         </button>
         <button className="mobile-more-signout" onClick={()=>{logout();setMoreOpen(false);}}>
           <span className="mob-icon" style={{fontSize:18,width:28,textAlign:"center"}}>↩</span>

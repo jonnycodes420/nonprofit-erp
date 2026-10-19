@@ -582,7 +582,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             if (wasLapsed) {
               await run(
                 "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6)",
-                ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap — follow up with ${donorName||email} within 48 hours`,
+                ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap, follow up with ${donorName||email} within 48 hours`,
                  orgToday(await orgTz(orgId), new Date(Date.now()+2*24*60*60*1000)), SYS_STRIPE.id, SYS_STRIPE.name]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
               ).catch(()=>{});
             }
@@ -727,7 +727,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name) VALUES ($1,$2,$3,'high',0,NOW(),$4,$5)`,
-              [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`, SYS_STRIPE.id, SYS_STRIPE.name]
+              [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor: send personal thank-you`, SYS_STRIPE.id, SYS_STRIPE.name]
             );
             // Health record for the failed-payment recovery system — created
             // 'active' up front so every recurring gift has one from day one,
@@ -996,7 +996,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe — gift reversed`, today]
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe, gift reversed`, today]
                 ).catch(() => {});
               }
               }); // end withAdvisoryLock(gift:…) — full-refund reversal serialized per gift
@@ -1022,7 +1022,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe — gift adjusted to $${remaining.toLocaleString()}`, today]
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe, gift adjusted to $${remaining.toLocaleString()}`, today]
                 ).catch(() => {});
               }
               }); // end withAdvisoryLock(gift:…) — partial-refund adjust serialized per gift
@@ -1088,7 +1088,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 if (g.donor_id) {
                   await recalcDonorSummary(g.donor_id, orgId);
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute LOST: $${amt.toLocaleString()} online gift charged back via Stripe — gift reversed`, today]).catch(() => {});
+                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute LOST: $${amt.toLocaleString()} online gift charged back via Stripe, gift reversed`, today]).catch(() => {});
                 }
                 console.log(`[stripe] dispute LOST ${dispute.id} — gift ${g.id} reversed ($${amt})`);
               } else {
@@ -1097,17 +1097,17 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 await run("UPDATE gifts SET disputed_at=COALESCE(disputed_at, NOW()), dispute_status=$1 WHERE id=$2 AND org_id=$3", [uiStatus, g.id, orgId]);
                 if (won && g.donor_id) {
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${amt.toLocaleString()} online gift dispute resolved in your favor — funds reinstated`, today]).catch(() => {});
+                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${amt.toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
                 } else if (firstFlag && event.type === "charge.dispute.created") {
                   // LOUD: a high-priority staff task + a donor timeline note. A
                   // dispute has a Stripe response deadline; silence loses it by
                   // default. (The day-view + Finance surface disputed gifts too.)
                   const due = orgToday(await orgTz(orgId), dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : new Date(Date.now() + 7 * 86400000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
                   await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6,$7)",
-                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed — $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
+                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed, $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
                   if (g.donor_id) {
                     await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                      ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""} — respond in Stripe`, today]).catch(() => {});
+                      ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}: respond in Stripe`, today]).catch(() => {});
                   }
                   console.log(`[stripe] dispute CREATED ${dispute.id} — gift ${g.id} flagged + staff task ($${amt})`);
                 }
@@ -1142,7 +1142,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               if (g.dispute_status !== "won") {
                 await run("UPDATE gifts SET dispute_status='won', disputed_at=COALESCE(disputed_at,NOW()) WHERE id=$1 AND org_id=$2", [g.id, orgId]);
                 if (g.donor_id) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${(parseFloat(g.amount) || 0).toLocaleString()} online gift dispute resolved in your favor — funds reinstated`, today]).catch(() => {});
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${(parseFloat(g.amount) || 0).toLocaleString()} online gift dispute resolved in your favor, funds reinstated`, today]).catch(() => {});
               }
             });
             console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${g.id} kept, marked won`);
@@ -1178,7 +1178,7 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                 if (snap.donor_id) {
                   await recalcDonorSummary(snap.donor_id, orgId);
                   await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
-                    ["i_" + uuid().slice(0, 8), orgId, snap.donor_id, `Dispute WON on appeal: $${(parseFloat(snap.amount) || 0).toLocaleString()} online gift reinstated — the reversed gift, ledger entry and receipt were restored`, today]).catch(() => {});
+                    ["i_" + uuid().slice(0, 8), orgId, snap.donor_id, `Dispute WON on appeal: $${(parseFloat(snap.amount) || 0).toLocaleString()} online gift reinstated: the reversed gift, ledger entry and receipt were restored`, today]).catch(() => {});
                 }
                 await run("DELETE FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
                 console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${snap.id} RESTORED ($${snap.amount})`);
@@ -1567,8 +1567,8 @@ async function markEmailEvent(orgId, email, reason, event) {
        VALUES (?,?,?,'email',?,?,?)`,
       ["i_" + uuid().slice(0, 8), orgId, d.id,
        reason === "bounced"
-         ? `Email to ${email} hard-bounced and will not be tried again${detail ? ` — ${detail}` : ""}`
-         : `${email} marked this as spam — removed from every list`,
+         ? `Email to ${email} hard-bounced and will not be tried again${detail ? ` ${detail}` : ""}`
+         : `${email} marked this as spam: removed from every list`,
        orgToday(await orgTz(orgId)), "system:resend-webhook"]);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   }
   return rows.length;
@@ -2154,7 +2154,7 @@ function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
       ? `<h1>You're unsubscribed</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}won't receive any more emails from ${who}. It can take a few minutes to fully take effect.</p>`
       : `<h1>Unsubscribe from ${esc(orgName || "these emails")}?</h1>
          <p>${email ? `<strong>${esc(email)}</strong> ` : "You "}will stop receiving emails from ${who}.
-            Receipts for gifts you make will still be sent — those are records, not mail.</p>
+            Receipts for gifts you make will still be sent, those are records, not mail.</p>
          <form method="POST" action="/unsubscribe?token=${encodeURIComponent(token || "")}">
            <button type="submit" class="go">Unsubscribe me</button>
          </form>`;
@@ -2163,7 +2163,7 @@ function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Unsubscribed — Steward</title>
+<title>Unsubscribed: Steward</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -2284,9 +2284,9 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
   const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
   const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
   const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
-  const subject = "You're all set — thank you!";
+  const subject = "You're all set, thank you!";
   const bodyHtml = `<p>Hi ${firstName},</p>
-<p>Great news — your card on file worked, and your ${amountStr} gift to ${dfName} went through. Your recurring support is active again, and we're so grateful for it.</p>
+<p>Great news, your card on file worked, and your ${amountStr} gift to ${dfName} went through. Your recurring support is active again, and we're so grateful for it.</p>
 <p>Thank you for sticking with us.</p>
 <p>With gratitude,<br/>${dfName}</p>`
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
@@ -2424,7 +2424,7 @@ app.post("/stripe/campaign-link", requireAuth, wrap(async (req, res) => {
 
   const stripeOpts = { stripeAccount: org.stripe_account_id };
   const product = await stripe.products.create(
-    { name: `Donation to ${org.name}${campaignName ? ` — ${campaignName}` : ""}` },
+    { name: `Donation to ${org.name}${campaignName ? ` ${campaignName}` : ""}` },
     stripeOpts
   );
   const price = await stripe.prices.create(
