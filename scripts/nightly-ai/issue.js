@@ -30,6 +30,12 @@ if (!file || !fs.existsSync(file)) {
   process.exit(0);
 }
 const s = JSON.parse(fs.readFileSync(file, "utf8"));
+// FIX-38: out of credit is one line, not a table of questions that never got an answer.
+if (s.creditLine) {
+  open(`Nightly AI run ${s.today}: ${s.creditLine}`,
+    `${s.creditLine}. The run stopped there and did not judge the ${(s.skipped || []).length} question(s) left. Run: ${runUrl}.`);
+  process.exit(0);
+}
 const failed = s.results.filter(r => !r.pass);
 if (!failed.length && !s.capReached) { console.log("Every question passed and the cap was not reached: no issue."); process.exit(0); }
 

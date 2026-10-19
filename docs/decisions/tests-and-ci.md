@@ -73,7 +73,11 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
   not even to describe the error digest. A squash merge copies every commit message into one, GitHub honours
   the marker anywhere in it, and the merge to main then runs no CI and deploys nothing. HARDEN-1's merge
-  (269724f) did exactly this; a follow-up PR deployed it. Only `error-digest.yml`'s own commit carries it. (HARDEN-1)
+  (269724f) did exactly this; a follow-up PR deployed it. No commit carries it, not even the error digest's. (HARDEN-1)
+- **The error digest lands as a pull request, never a push to main** (`digest/YYYY-MM-DD`, one open at a time,
+  set to squash-merge itself). It needs three repo settings: Actions may create pull requests, auto-merge is
+  allowed, and the required `test` check must run on a PR the workflow's own token opened, which it never does
+  by itself (a GITHUB_TOKEN event starts no workflow). (FIX-38)
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)

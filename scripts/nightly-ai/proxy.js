@@ -22,6 +22,12 @@
 //                        call (default: none). GET /__spend returns it too.
 //   UPSTREAM             default https://api.anthropic.com
 //
+// FIX-38: the first 400 whose message says the credit balance is too low marks
+// the ledger `creditOut` (the calls and the spend before it) and every later
+// call is answered with that same 400 here, never sent upstream: the account
+// has no credit, so asking again only adds noise. run.js reads the mark and
+// stops the run with one line instead of failing each question.
+//
 // scripts/ sits outside tests/fix12-ai-switch.test.js's server scan on purpose:
 // this file is test tooling, never loaded by server.js.
 "use strict";
@@ -41,7 +47,7 @@ if (!KEY) {
   process.exit(2);
 }
 
-const ledger = { calls: 0, refused: 0, errors: 0, inputTokens: 0, outputTokens: 0, usd: 0, cap: CAP, capReached: false, byStatus: {}, byModel: {} };
+const ledger = { calls: 0, refused: 0, errors: 0, inputTokens: 0, outputTokens: 0, usd: 0, cap: CAP, capReached: false, creditOut: null, byStatus: {}, byModel: {} };
 const save = () => { if (SPEND_FILE) try { fs.writeFileSync(SPEND_FILE, JSON.stringify(ledger, null, 2)); } catch { /* the ledger in memory still answers /__spend */ } };
 save();
 
@@ -68,6 +74,11 @@ function usageOf(body, contentType) {
   return { inT, outT };
 }
 
+// Anthropic answers an empty account with a 400 invalid_request_error whose
+// message reads "Your credit balance is too low to access the Anthropic API".
+const CREDIT_OUT = /credit balance is too low/i;
+const creditError = () => JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API (already seen this run; call not sent by the counting proxy)." } });
+
 const server = http.createServer((req, res) => {
   if (req.url === "/__spend") {
     res.writeHead(200, { "content-type": "application/json" });
@@ -80,6 +91,11 @@ const server = http.createServer((req, res) => {
       ledger.refused++; ledger.capReached = true; save();
       res.writeHead(429, { "content-type": "application/json" });
       return res.end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: `nightly spend cap of $${CAP} reached; call refused by the counting proxy` } }));
+    }
+    if (ledger.creditOut) {
+      ledger.refused++; save();
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(creditError());
     }
     const headers = { ...req.headers };
     delete headers.host; delete headers["accept-encoding"]; delete headers.authorization; delete headers["content-length"];
@@ -98,6 +114,10 @@ const server = http.createServer((req, res) => {
         res.end();
         const text = Buffer.concat(out).toString("utf8");
         const { inT, outT } = usageOf(text, ur.headers["content-type"]);
+        if (ur.statusCode === 400 && !ledger.creditOut && CREDIT_OUT.test(text)) {
+          ledger.creditOut = { afterCalls: ledger.calls, usd: ledger.usd, at: new Date().toISOString() };
+          console.log(`[nightly-ai proxy] Anthropic credit ran out after ${ledger.calls} calls, $${ledger.usd.toFixed(2)} spent; later calls are not sent`);
+        }
         ledger.calls++;
         ledger.byStatus[ur.statusCode] = (ledger.byStatus[ur.statusCode] || 0) + 1;
         if (ur.statusCode >= 400) ledger.errors++;

@@ -22,6 +22,10 @@
 // Env: BASE (default http://localhost:5601), DATABASE_URL, ORG (org_b72demo),
 //      LOGIN_EMAIL / LOGIN_PASSWORD (the demo seed's director), PROXY
 //      (http://localhost:6524, for /__spend), OUT, ONLY (comma list of ids).
+// Out of credit (FIX-38): the proxy marks the first "credit balance is too low"
+//      400. The run stops there, skips the questions left, and says so in ONE
+//      line ("Anthropic credit ran out after N calls, $X spent"): that is a
+//      billing state, not N failing questions.
 // Offline: `node scripts/nightly-ai/run.js --recheck <summary.json>` re-judges
 //      saved responses against today's truth sets without one model call.
 "use strict";
@@ -268,7 +272,10 @@ async function spend() {
   // counted (ai_fallbacks); with AI on, any of them is a failure to look at.
   const startedAt = (await db.query("SELECT NOW() AS t")).rows[0].t;
   const results = [];
+  let creditOut = null;
+  const skipped = [];
   for (const q of qs) {
+    if (creditOut) { skipped.push(q.id); continue; }
     let r;
     if (saved) {
       const old = saved.results.find(x => x.id === q.id);
@@ -282,6 +289,7 @@ async function spend() {
       const after = await spend();
       r.usd = before && after ? Math.round((after.usd - before.usd) * 1e4) / 1e4 : null;
       r.modelCalls = before && after ? after.calls - before.calls : null;
+      if (after && after.creditOut) { creditOut = after.creditOut; skipped.push(q.id); continue; }
     }
     const v = await judge(q, r, c);
     results.push({ id: q.id, route: q.route, kind: q.kind, text: q.text, pass: v.pass, why: v.why, metrics: v.metrics,
@@ -290,7 +298,10 @@ async function spend() {
   }
   const endSpend = saved ? saved.spend : await spend();
   const usd = saved ? saved.usd : endSpend && startSpend ? Math.round((endSpend.usd - startSpend.usd) * 1e4) / 1e4 : (endSpend ? endSpend.usd : null);
-  const fallbacks = saved ? (saved.fallbacks || []) : (await db.query(
+  if (saved && saved.creditOut) creditOut = saved.creditOut;
+  const creditLine = creditOut ? `Anthropic credit ran out after ${creditOut.afterCalls} calls, $${Number(creditOut.usd || 0).toFixed(2)} spent` : null;
+  // Out of credit, every AI call after it fell back: those rows say nothing new.
+  const fallbacks = creditOut ? [] : saved ? (saved.fallbacks || []) : (await db.query(
     `SELECT surface, reason, COUNT(*)::int AS n FROM ai_fallbacks WHERE org_id = $1 AND created_at >= $2 AND reason <> 'ai_off'
       GROUP BY surface, reason ORDER BY n DESC`, [ORG, startedAt]).catch(() => ({ rows: [] }))).rows;
   if (fallbacks.length) {
@@ -303,10 +314,17 @@ async function spend() {
     when: new Date().toISOString(), today, base: BASE, org: ORG, fallbacks,
     passed: results.length - failed.length, failed: failed.length, total: results.length,
     usd, cap: endSpend ? endSpend.cap : null, capReached: !!(endSpend && endSpend.capReached),
+    creditOut, creditLine, skipped,
     spend: endSpend, results,
   };
   fs.mkdirSync(path.dirname(path.resolve(OUT)), { recursive: true });
   fs.writeFileSync(OUT, JSON.stringify(summary, null, 2));
+  if (creditLine) {
+    console.log(`\n${creditLine}. Stopped; ${skipped.length} question(s) not judged. Summary at ${OUT}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error::${creditLine}`);
+    await db.end();
+    process.exit(1);
+  }
   console.log(`\n${summary.passed}/${summary.total} passed · spend $${usd != null ? usd.toFixed(4) : "unknown"}${summary.capReached ? " · THE SPEND CAP WAS REACHED" : ""} · summary at ${OUT}`);
   await db.end();
   process.exit(failed.length || summary.capReached ? 1 : 0);

@@ -4,10 +4,16 @@
 # the Railway CLI and the project-scoped RAILWAY_TOKEN that ci.yml's
 # deploy-railway job already uses (service nonprofit-erp, environment
 # production; read only), groups them by type and by route with
-# scripts/error-digest.js, and commits docs/errors/YYYY-MM-DD.md to main.
+# scripts/error-digest.js, and writes docs/errors/YYYY-MM-DD.md.
 #
-# The commit message carries [skip ci], so it never starts ci.yml and never
-# deploys. No new service, no settings change.
+# FIX-38: main's ruleset refuses a direct push (the required check "test"), so
+# the digest goes in as a pull request: branch digest/YYYY-MM-DD, titled
+# "Error digest, Oct 14, 2026", the top errors in its description, set to
+# squash-merge itself once the required check passes. If an earlier digest PR
+# is still open, today's file is added to it and it is retitled, never a second
+# PR. The branch is rebuilt on today's main each time, so it is never behind.
+# A PR opened with the workflow's own token starts no other workflow; the
+# settings that needs are in docs/decisions/tests-and-ci.md.
 name: Error digest
 
 on:
@@ -21,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: error-digest
@@ -86,15 +93,51 @@ jobs:
       - name: Write the digest
         run: node scripts/error-digest.js --in logs.jsonl --day "${{ steps.logs.outputs.day }}"
 
-      - name: Commit it to main
+      - name: Open or update the digest pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAY: ${{ steps.logs.outputs.day }}
         run: |
           git config user.name "steward-error-digest"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp "docs/errors/$DAY.md" "$RUNNER_TEMP/digest.md"
+          OPEN=$(gh pr list --state open --base main --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("digest/"))] | sort_by(.number) | .[0] // empty | "\(.number) \(.headRefName)"')
+          PR=""; BRANCH="digest/$DAY"
+          [ -n "$OPEN" ] && { PR=${OPEN%% *}; BRANCH=${OPEN#* }; }
+          # Rebuild the branch on today's main, keep the days already on it.
+          git fetch origin main
+          git checkout -B "$BRANCH" origin/main
+          if [ -n "$PR" ]; then
+            git fetch origin "$BRANCH"
+            git diff --name-only origin/main "origin/$BRANCH" -- docs/errors | while read -r f; do
+              git checkout "origin/$BRANCH" -- "$f"
+            done
+          fi
+          cp "$RUNNER_TEMP/digest.md" "docs/errors/$DAY.md"
           git add docs/errors
-          if git diff --cached --quiet; then echo "nothing new to commit"; exit 0; fi
-          git commit -m "Error digest for ${{ steps.logs.outputs.day }} [skip ci]"
-          for i in 1 2 3; do
-            git push origin HEAD:main && exit 0
-            git pull --rebase origin main
-          done
-          exit 1
+          if git diff --cached --quiet origin/main; then echo "The digest for $DAY is already on main."; exit 0; fi
+          git commit -m "Error digest for $DAY"
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+          TITLE="Error digest, $(date -u -d "$DAY" '+%b %-d, %Y')"
+          {
+            for f in $(git diff --name-only origin/main HEAD -- docs/errors | sort -r); do
+              # The heading, the one-sentence total and the five most frequent kinds.
+              awk '/^# /{print "## " substr($0,3); next} /^## By type/{t=1; next} /^## /{t=0} t && /^\|/{if (++n <= 7) print; next} !t && n==0 && NF{print}' "$f"
+              echo; echo "Full digest: \`$f\`"; echo
+            done
+            echo "Opened by the Error digest workflow, run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. It merges itself once the required check passes."
+          } > "$RUNNER_TEMP/body.md"
+          if [ -n "$PR" ]; then
+            gh pr edit "$PR" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          else
+            if ! gh pr create --base main --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"; then
+              echo "::error::The digest for $DAY is on branch $BRANCH, but GitHub refused to open its pull request. Turn on Settings, Actions, General, Workflow permissions, \"Allow GitHub Actions to create and approve pull requests\"."
+              exit 1
+            fi
+            PR=$(gh pr view "$BRANCH" --json number --jq .number)
+          fi
+          echo "Digest PR: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/pull/$PR"
+          if ! gh pr merge "$PR" --squash --auto; then
+            echo "::warning::Digest PR #$PR is open but could not be set to merge itself. Turn on Settings, General, Pull Requests, \"Allow auto-merge\"."
+          fi
