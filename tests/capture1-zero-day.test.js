@@ -35,6 +35,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@loc
 if (/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)) process.env.DB_SSL = "disable";
 process.env.DISABLE_BACKGROUND_TICKS = "1";
 process.env.DISABLE_RATE_LIMIT = "1";
+process.env.TEST_MODE = "1";   // FIX-45: GET /capture/:id/settled answers only in TEST_MODE
 process.env.SESSION_CACHE_TTL_MS = "0";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "local-test-secret";
 process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || "re_dummy_local";
@@ -336,9 +337,9 @@ async function reset() {
            VALUES ('aud_cap1_all',$1,'Everyone in the file','{}'::jsonb,'dynamic','{}'::jsonb,${sys})`, [ORG]);
   const [members] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
   PG_DELAY = 20; PG_COUNT = 0;
-  const t9 = Date.now();
+  const t9 = performance.now();
   const fast = await api("POST", `/capture/${oc.id}/confirm`, tok, { amountCents: 150000, date: "2026-10-13", donorId: "d_cap1_james", fundId: "f_cap1_gen", kind: "check" });
-  const ms9 = Date.now() - t9, n9 = PG_COUNT;
+  const ms9 = Math.round(performance.now() - t9), n9 = PG_COUNT;
   PG_DELAY = 0;
   ok(`§9 confirm answers in under 2 seconds with 20ms per statement (took ${ms9}ms)`, fast.status === 200 && ms9 < 2000
     && fast.body.card && fast.body.card.status === "confirmed" && !!fast.body.thankYouDraft, { ms9, status: fast.status });
