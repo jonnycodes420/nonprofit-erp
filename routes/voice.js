@@ -191,6 +191,7 @@ async function finish(req, m, ids, read) {
   await run(`UPDATE voice_memos SET status=?, donor_ids=?, cards=?, instruction_id=?, run_ids=?, read=? WHERE id=? AND org_id=?`,
     [read.noteOnly ? "note" : "done", JSON.stringify(order), JSON.stringify(cards), insId, JSON.stringify([result.runId]),
      JSON.stringify({ ...read, sensitive: read.sensitive.map(s => ({ category: s.category, neutral: s.neutral })), pending: null }), m.id, orgId]);
+  if (read.meetingId) await linkMeeting(orgId, read.meetingId, m.id, result.runId);
   if (req.audit) req.audit.summary(`Tell Steward: ${result.done || 0} done, ${cards.length} waiting for a yes`, { count: (result.steps || []).length });
   return { body: { memo: await memoOut(orgId, await memoRow(orgId, m.id)) } };
 }
@@ -212,17 +213,30 @@ app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) =>
   if (text.length < MEMO_MIN) return res.status(400).json({ error: "memo_empty", sentence: "Tell Steward what happened first." });
   if (text.length > MEMO_MAX) return res.status(400).json({ error: "memo_too_long", sentence: "That memo is too long. Say it in a few sentences." });
   const source = req.body.source === "speech" ? "speech" : "typed";
+  return fileMemo(req, res, { text, source, donorId: req.body.donorId, picks: req.body.picks || null });
+}));
+
+// ONE MEMO PATH. A spoken or typed memo, and (VOICE-2) a meeting's summary,
+// are filed by this one function: who, the one short read, the plan, the cards.
+async function fileMemo(req, res, { text, source, donorId = null, picks = null, meetingId = null, heldDetails = [] }) {
+  const orgId = req.user.orgId;
+  const V = await VM();
   const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]);
   if (org && org.agent_paused_at) return res.status(503).json({ error: "agent_paused", sentence: "The Agent is paused for this organization, so Steward filed nothing." });
 
   // WHO: the profile she is on, and the names in her words, matched in code.
   const E = engine();
-  const named = await E.agentNamedIn(orgId, text, req.body.picks || null);
+  let named = await E.agentNamedIn(orgId, text, picks);
+  // The person she is on (or chose for the meeting) answers "which Margaret?"
+  // for the name that matches them: a memo about Margaret Chen, from her
+  // profile, never asks which Margaret.
+  if (donorId && !named.badPick && named.ambiguous.some(g => g.ids.includes(String(donorId))))
+    named = await E.agentNamedIn(orgId, text, [...(picks || []), String(donorId)]);
   if (named.badPick) return res.status(400).json({ error: "not_one_of_them", sentence: "That is not one of the records that name matches. Pick one from the list." });
   if (named.ambiguous.length) return res.json({ which: await which(orgId, named.ambiguous[0]) });
   let ids = [...(named.scope || [])];
-  if (req.body.donorId) {
-    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]);
+  if (donorId) {
+    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(donorId), orgId]);
     if (!d) return res.status(404).json({ error: "Donor not found" });
     ids = [d.id, ...ids.filter(x => x !== d.id)];
   }
@@ -243,9 +257,12 @@ app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) =>
 
   // AI OFF: a logged note on the one person, and nothing else.
   const noteOnly = async (why) => {
+    // VOICE-2: the person she picked IS the one. Before, a memo that named two
+    // people kept both, so every pick asked her to pick again.
+    if (donorId && ids.length > 1) ids = [ids[0]];
     if (ids.length !== 1) return res.json({ pick: { ai: "off", sentence: `${why} Steward will save your memo as a note on the person you pick.${ids.length > 1 ? " It names more than one person, so pick one." : ""}` } });
     const n = V.memoAsNote(text);
-    const m = await save("planned", { noteOnly: true, note: n.note, sensitive: n.sensitive.map(s => ({ ...s, category: s.category || "family" })), followUps: [], interests: [], money: [], contact: [], email: null }, "off");
+    const m = await save("planned", { meetingId, noteOnly: true, note: n.note, sensitive: n.sensitive.map(s => ({ ...s, category: s.category || "family" })), followUps: [], interests: [], money: [], contact: [], email: null }, "off");
     const out = await finish(req, m, ids, j(m.read) && { ...j(m.read), sensitive: n.sensitive });
     return out.error ? res.status(out.error).json(out.body) : res.status(201).json(out.body);
   };
@@ -270,7 +287,9 @@ app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) =>
     await recordAiFallback(orgId, "voice_memo", e).catch(() => {});
   }
   if (!raw) return noteOnly("Steward could not read the memo just now.");
-  const read = V.normalizeMemo(raw, text, { today, funds });
+  const read = { ...V.normalizeMemo(raw, text, { today, funds }), meetingId };
+  // A meeting's personal details were held back from its summary; each waits as a card.
+  for (const h of heldDetails) if (read.sensitive.length < 4 && !read.sensitive.some(x => x.category === h.category)) read.sensitive.push(h);
 
   // A NAME NOBODY ON FILE HAS: offer to add them, and wait.
   const heardNew = read.people.filter(h => !V.heardIsMatched(h, onFile));
@@ -284,7 +303,7 @@ app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) =>
   const m = await save("planned", read, "on");
   const out = await finish(req, m, ids, read);
   return out.error ? res.status(out.error).json(out.body) : res.status(201).json(out.body);
-}));
+}
 
 // She answers "who?": add a heard name as a new person, pick somebody, or leave a name out.
 app.post("/voice/memos/:id/people", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -439,6 +458,275 @@ app.post("/voice/memos/:id/undo", requireAuth, checkWriteAccess, wrap(async (req
   res.json({ ok: true, undone, failed, memo: await memoOut(orgId, await memoRow(orgId, m.id)),
     sentence: `Undone: ${undone} ${undone === 1 ? "change" : "changes"} taken back.`
       + (kept.length ? ` The ${kept.length === 1 ? "amount" : "amounts"} you confirmed yourself ${kept.length === 1 ? "stays" : "stay"} on the record; remove ${kept.length === 1 ? "it" : "them"} from the person's giving if ${kept.length === 1 ? "it was" : "they were"} wrong.` : "") });
+}));
+
+// ── VOICE-2 · MEETING MODE ──────────────────────────────────────────────────
+// "Listen to this meeting": the page listens through the microphone, restarts
+// the browser's recognizer whenever it stops on its own, and saves the words
+// here as they come (PUT), so a closed tab or a dropped connection loses
+// nothing. At Stop, one short call writes the summary, and the summary is
+// filed through fileMemo, the same path as a spoken memo. The transcript is
+// kept on the conversation, screened, and deleted with one click.
+const MT = () => import("../shared/voiceMeeting.js");
+const MEETING_OPEN = ["listening", "paused"];
+
+async function meetingRow(orgId, id) {
+  const [m] = await query("SELECT * FROM voice_meetings WHERE id=? AND org_id=?", [id, orgId]);
+  return m || null;
+}
+async function meetingOut(orgId, m, { withTranscript = true } = {}) {
+  const ids = j(m.donor_ids) || [];
+  const people = ids.length ? await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])", [orgId, ids]) : [];
+  const T = await MT();
+  return {
+    id: m.id, status: m.status, ai: m.ai, segments: m.segments, held: m.held,
+    people: ids.map(id => people.find(p => p.id === id)).filter(Boolean),
+    startedAt: m.started_at, stoppedAt: m.stopped_at, updatedAt: m.updated_at,
+    minutes: T.minutesBetween(m.started_at, m.stopped_at || m.updated_at),
+    notes: m.notes || "", transcript: withTranscript ? (m.transcript || "") : undefined,
+    transcriptChars: String(m.transcript || "").length,
+    transcriptDeletedAt: m.transcript_deleted_at || null,
+    summary: j(m.summary) ? (({ held: _h, ...rest }) => rest)(j(m.summary)) : null, memoId: m.memo_id || null,
+    interactionIds: j(m.interaction_ids) || [],
+  };
+}
+const mine = (req, m) => m && m.created_by === actor(req).id;
+
+// After the memo path filed the summary: the conversation(s) it logged carry
+// the meeting, so the transcript is on the conversation.
+async function linkMeeting(orgId, meetingId, memoId, runId) {
+  const rows = runId ? await query("SELECT entity_id FROM agent_writes WHERE org_id=? AND run_id=? AND tool IN ('log_conversation','log_note') AND entity_id IS NOT NULL", [orgId, runId]) : [];
+  const ints = rows.map(r => r.entity_id);
+  if (ints.length) await run(`UPDATE interactions SET metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb WHERE org_id=? AND id = ANY(?::text[])`,
+    [JSON.stringify({ meetingId }), orgId, ints]);
+  await run("UPDATE voice_meetings SET memo_id=?, interaction_ids=?, status='filed', summary = summary - 'held', updated_at=NOW() WHERE id=? AND org_id=?",
+    [memoId, JSON.stringify(ints), meetingId, orgId]);
+}
+
+// Start. She has been shown the consent line; the request says so.
+app.post("/voice/meetings", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  if (req.body.consent !== true) return res.status(400).json({ error: "consent_first", sentence: "Let everyone know you're taking notes, then press Start." });
+  const T = await MT();
+  let ids = [];
+  if (req.body.donorId) {
+    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    ids = [d.id];
+  }
+  const refusedFor = await clientRefusal(orgId, ids);
+  if (refusedFor) return res.status(409).json({ error: "client", sentence: refusedFor });
+  const id = "vmt_" + uuid().slice(0, 10);
+  await run(`INSERT INTO voice_meetings (id,org_id,status,donor_ids,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
+    [id, orgId, "listening", JSON.stringify(ids), String(req.body.notes || "").slice(0, 20000), actor(req).id, actor(req).name]);
+  res.status(201).json({ meeting: await meetingOut(orgId, await meetingRow(orgId, id)), consentLine: T.CONSENT_LINE });
+}));
+
+// BEFORE THE MEETING: the same brief Home's meeting card shows (giving, the
+// last time, the open ask, their last email, a gift not yet thanked), and her
+// meetings today with people on file, to pick from.
+app.get("/voice/meetings/brief", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const fin = require("./finance");
+  let brief = null;
+  if (req.query.donorId) {
+    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.query.donorId), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    if (await clientRefusal(orgId, [d.id])) return res.json({ brief: null, today: [] });
+    brief = await fin.meetingBrief(orgId, d.id, new Date().toISOString());
+  }
+  let today = [];
+  try {
+    const t = await fin.composeTodayMeetings(orgId, req.user.userId);
+    const priv = await require("../clientSafe").privacyFor(orgId);   // CLIENT-SAFE-1: a client's meeting is never offered
+    today = (t.meetings || []).filter(mt => (mt.people || []).length && !(priv.on && mt.people.some(p => priv.clientIds.has(p.id))) && (!mt.endsAt || new Date(mt.endsAt).getTime() > Date.now() - 2 * 3600e3))
+      .map(mt => ({ id: mt.id, title: mt.title, startsAt: mt.startsAt, location: mt.location, people: mt.people.map(p => ({ id: p.id, name: p.name })) })).slice(0, 4);
+  } catch { today = []; }
+  res.json({ brief, today });
+}));
+
+// Her meeting still running (a tab that closed mid-meeting comes back to it).
+app.get("/voice/meetings/open", requireAuth, wrap(async (req, res) => {
+  const [m] = await query(`SELECT * FROM voice_meetings WHERE org_id=? AND created_by=? AND status = ANY(?::text[]) ORDER BY updated_at DESC LIMIT 1`,
+    [req.user.orgId, actor(req).id, MEETING_OPEN]);
+  res.json({ meeting: m ? await meetingOut(req.user.orgId, m) : null });
+}));
+
+app.get("/voice/meetings/:id", requireAuth, wrap(async (req, res) => {
+  const m = await meetingRow(req.user.orgId, req.params.id);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  res.json({ meeting: await meetingOut(req.user.orgId, m) });
+}));
+
+// Saved as it comes. The page sends the whole transcript so far (idempotent);
+// a stale save never shortens what is already kept.
+app.put("/voice/meetings/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await MT();
+  const m = await meetingRow(orgId, req.params.id);
+  if (!m || !mine(req, m)) return res.status(404).json({ error: "Not found" });
+  if (!MEETING_OPEN.includes(m.status)) return res.status(409).json({ error: "meeting_stopped", sentence: "This meeting has already stopped." });
+  const transcript = String(req.body.transcript == null ? m.transcript : req.body.transcript).slice(0, T.TRANSCRIPT_MAX);
+  const keep = transcript.length >= String(m.transcript || "").length ? transcript : m.transcript;
+  const status = req.body.status === "paused" ? "paused" : req.body.status === "listening" ? "listening" : m.status;
+  await run("UPDATE voice_meetings SET transcript=?, notes=?, segments=GREATEST(segments, ?), status=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [keep, String(req.body.notes == null ? m.notes : req.body.notes).slice(0, 20000), Math.max(0, Number(req.body.segments) || 0), status, m.id, orgId]);
+  res.json({ ok: true, savedChars: keep.length });
+}));
+
+// Throw a running meeting away: nothing is filed and the words are gone.
+app.post("/voice/meetings/:id/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const m = await meetingRow(orgId, req.params.id);
+  if (!m || !mine(req, m)) return res.status(404).json({ error: "Not found" });
+  if (!MEETING_OPEN.includes(m.status)) return res.status(409).json({ error: "meeting_stopped" });
+  await run("UPDATE voice_meetings SET status='discarded', transcript='', notes='', stopped_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?", [m.id, orgId]);
+  res.json({ ok: true });
+}));
+
+// AI OFF (or the summary could not be written): the transcript is saved as a
+// note on the person she chose, and nothing else happens.
+async function meetingAsNote(req, res, m, T, why) {
+  const orgId = req.user.orgId;
+  const ids = j(m.donor_ids) || [];
+  if (!ids.length) return res.json({ meeting: await meetingOut(orgId, m, { withTranscript: false }),
+    pick: { ai: "off", sentence: `${why} Pick who the meeting was with, and Steward saves the transcript as a note on them.` } });
+  const screened = T.screenTranscript(m.transcript);
+  const D = await import("../shared/displayDate.js");
+  const today = orgToday(await orgTz(orgId));
+  const mins = T.minutesBetween(m.started_at, m.stopped_at);
+  const note = [`Meeting notes, ${D.displayDateShort(today, today)}${mins ? `, about ${mins} minutes` : ""}.`,
+    String(m.notes || "").trim() ? `Your notes: ${String(m.notes).trim()}` : "",
+    screened.text ? `Transcript: ${screened.text}` : "Nothing was heard."].filter(Boolean).join("\n\n");
+  const r = await asHer(req, "POST", `/donors/${ids[0]}/interactions`, { type: "note", date: today, note, metadata: { meetingId: m.id, via: "tell_steward_meeting" } });
+  if (r.status >= 300) return res.status(r.status).json(r.body || { error: "note_failed" });
+  await run("UPDATE voice_meetings SET status='note', ai='off', transcript=?, held=?, interaction_ids=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [screened.text, screened.held, JSON.stringify([r.body && r.body.id].filter(Boolean)), m.id, orgId]);
+  return res.status(201).json({ meeting: await meetingOut(orgId, await meetingRow(orgId, m.id)), note: `${why} The transcript is saved as a note on the person, and nothing else was done.` });
+}
+
+// File the summary through the one memo path. Called at Stop, and again when
+// she answers "which one?" or "who was it?".
+async function fileMeeting(req, res, m, { picks = null, donorId = null } = {}) {
+  const orgId = req.user.orgId;
+  const sum = j(m.summary) || {};
+  const ids = j(m.donor_ids) || [];
+  const chosen = donorId || ids[0] || null;
+  // fileMemo answers through res; catch its answer to add the meeting to it.
+  const out = await new Promise((resolve, reject) => {
+    const cap = { status(code) { cap.code = code; return cap; }, json(body) { resolve({ code: cap.code || 200, body }); return cap; } };
+    fileMemo(req, cap, { text: sum.memoText || "A meeting.", source: "meeting", donorId: chosen, picks, meetingId: m.id, heldDetails: sum.held || [] }).catch(reject);
+  });
+  const fresh = await meetingRow(orgId, m.id);
+  return res.status(out.code).json({ ...out.body, meeting: await meetingOut(orgId, fresh, { withTranscript: false }) });
+}
+
+app.post("/voice/meetings/:id/stop", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await MT();
+  let m = await meetingRow(orgId, req.params.id);
+  if (!m || !mine(req, m)) return res.status(404).json({ error: "Not found" });
+  if (!MEETING_OPEN.includes(m.status)) return res.status(409).json({ error: "meeting_stopped", sentence: "This meeting has already stopped." });
+  // The last words from the page, then the meeting is closed to more.
+  const last = req.body.transcript == null ? m.transcript : String(req.body.transcript).slice(0, T.TRANSCRIPT_MAX);
+  const transcript = last.length >= String(m.transcript || "").length ? last : m.transcript;
+  const notes = String(req.body.notes == null ? m.notes : req.body.notes).slice(0, 20000);
+  const took = await run(`UPDATE voice_meetings SET transcript=?, notes=?, segments=GREATEST(segments, ?), status='stopped', stopped_at=NOW(), updated_at=NOW()
+                           WHERE id=? AND org_id=? AND status = ANY(?::text[])`,
+    [transcript, notes, Math.max(0, Number(req.body.segments) || 0), m.id, orgId, MEETING_OPEN]);
+  if (!took || took.changes === 0) return res.status(409).json({ error: "meeting_stopped", sentence: "This meeting has already stopped." });
+  m = await meetingRow(orgId, m.id);
+  if (String(m.transcript || "").trim().length + String(m.notes || "").trim().length < 4)
+    return res.status(400).json({ error: "nothing_heard", sentence: "Steward did not hear anything in this meeting, so nothing was filed.", meeting: await meetingOut(orgId, m) });
+
+  const gate = await agentGate(orgId);
+  if (!gate.ok) return meetingAsNote(req, res, m, T, "Steward's AI is off for this organization.");
+
+  // ONE SHORT CALL: the summary.
+  const ids = j(m.donor_ids) || [];
+  const onFile = ids.length ? await engine().agentReadPeople(orgId, { ids }) : [];
+  const today = orgToday(await orgTz(orgId));
+  const prompt = T.buildMeetingPrompt({ transcript: T.screenTranscript(m.transcript).text, notes: m.notes, people: onFile.map(p => p.name), today,
+    minutes: T.minutesBetween(m.started_at, m.stopped_at) });
+  let raw = null;
+  try {
+    const msg = await anthropicFor(orgId).messages.create({
+      model: AGENT_MODEL, max_tokens: 1500, thinking: { type: "disabled" },
+      system: prompt.system, messages: prompt.messages,
+      tools: [{ name: T.MEETING_TOOL.name, description: T.MEETING_TOOL.description, strict: true, input_schema: T.MEETING_TOOL.input_schema }],
+      tool_choice: { type: "tool", name: T.MEETING_TOOL.name },
+    });
+    const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === T.MEETING_TOOL.name);
+    raw = use && use.input ? use.input : null;
+  } catch (e) {
+    console.error("[voice] meeting summary failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 120));
+    await recordAiFallback(orgId, "voice_meeting", e).catch(() => {});
+  }
+  if (!raw) return meetingAsNote(req, res, m, T, "Steward could not write the summary just now.");
+  const screened = T.screenTranscript(m.transcript);
+  // `held` rides only until the summary is filed (linkMeeting drops it).
+  const sum = { ...T.normalizeMeeting(raw, { people: onFile.map(p => p.name) }), held: screened.details.slice(0, 4) };
+  // The transcript as kept is the screened one, from here on.
+  await run("UPDATE voice_meetings SET summary=?, ai='on', transcript=?, held=? WHERE id=? AND org_id=?",
+    [JSON.stringify(sum), screened.text, screened.held, m.id, orgId]);
+  return fileMeeting(req, res, await meetingRow(orgId, m.id));
+}));
+
+// She answered "which one?" or picked the person: file the same summary.
+app.post("/voice/meetings/:id/file", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await MT();
+  const m = await meetingRow(orgId, req.params.id);
+  if (!m || !mine(req, m)) return res.status(404).json({ error: "Not found" });
+  if (m.status !== "stopped") return res.status(409).json({ error: "already_filed", sentence: "This meeting has already been filed." });
+  if (req.body.donorId) {
+    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(req.body.donorId), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    const refusedFor = await clientRefusal(orgId, [d.id]);
+    if (refusedFor) return res.status(409).json({ error: "client", sentence: refusedFor });
+    await run("UPDATE voice_meetings SET donor_ids=? WHERE id=? AND org_id=?", [JSON.stringify([d.id]), m.id, orgId]);
+  }
+  const fresh = await meetingRow(orgId, m.id);
+  if (!j(fresh.summary)) return meetingAsNote(req, res, fresh, T, "Steward's AI is off for this organization.");
+  return fileMeeting(req, res, fresh, { picks: Array.isArray(req.body.picks) ? req.body.picks : null, donorId: req.body.donorId || null });
+}));
+
+// One click: the transcript is gone. The summary and what it filed stay.
+app.delete("/voice/meetings/:id/transcript", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const m = await meetingRow(orgId, req.params.id);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  await run("UPDATE voice_meetings SET transcript='', transcript_deleted_at=NOW(), transcript_deleted_by=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [actor(req).id, m.id, orgId]);
+  res.json({ meeting: await meetingOut(orgId, await meetingRow(orgId, m.id)), sentence: "The transcript is deleted. The summary and what it filed stay." });
+}));
+
+// ASK ABOUT THIS MEETING: one question, answered from this transcript only.
+app.post("/voice/meetings/:id/ask", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await MT();
+  const m = await meetingRow(orgId, req.params.id);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const question = String(req.body.question || "").trim();
+  if (question.length < 3) return res.status(400).json({ error: "ask_empty", sentence: "Ask a question about the meeting." });
+  if (!String(m.transcript || "").trim() && !String(m.notes || "").trim()) return res.status(409).json({ error: "no_transcript", sentence: "This meeting's transcript was deleted, so there is nothing to ask about." });
+  const gate = await agentGate(orgId);
+  if (!gate.ok) return res.status(503).json({ error: "ai_off", sentence: "Questions about a meeting need Steward's AI, which is off. The transcript is below." });
+  const prompt = T.buildAskPrompt({ question, transcript: m.transcript, notes: m.notes });
+  try {
+    const msg = await anthropicFor(orgId).messages.create({
+      model: AGENT_MODEL, max_tokens: 600, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
+      tools: [{ name: T.ASK_TOOL.name, description: T.ASK_TOOL.description, strict: true, input_schema: T.ASK_TOOL.input_schema }],
+      tool_choice: { type: "tool", name: T.ASK_TOOL.name },
+    });
+    const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === T.ASK_TOOL.name);
+    const a = (use && use.input) || {};
+    res.json({ answer: String(a.answer || "").replace(/\u2014/g, ",").slice(0, 800) || "The meeting did not cover that.",
+      quotes: T.groundedQuotes(a.quotes, m.transcript, m.notes) });
+  } catch (e) {
+    await recordAiFallback(orgId, "voice_meeting_ask", e).catch(() => {});
+    res.status(503).json({ error: "ask_failed", sentence: "Steward could not answer just now. The transcript is below." });
+  }
 }));
 }
 

@@ -386,6 +386,28 @@ async function reset() {
   ok("§11 nothing close, so the model picks, and a low-confidence pick is proposed but highlighted as unsure",
     !!f12 && f12.id === "f_cap1_bld" && f12.unsure === true && f12.confidence === "low" && fundPicks.length === picks0 + 1 && /new roof/.test(fundPicks[picks0] || ""), f12);
 
+  // ── §12 VOICE-2: made out to someone else, and the written cents ─────────
+  // Planted: payeeMismatch returning null, the confirm route's payee gate
+  // removed, and the fraction parsers reverted each turned this red.
+  console.log("\n§12 payee and the written cents");
+  queued.push([{ ...checkItem(C1), amountDigits: "$250 17/xx", amountWords: "Two hundred & fifty dollars + 17/100", payee: "Captain Hook" }]);
+  const u13 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-1.png", dataUrl: dataUrl("check-1.png", "image/png") }], source: "photo" });
+  const c13 = u13.body && u13.body.cards && u13.body.cards[0];
+  ok("§12 \"$250 17/xx\" with \"Two hundred & fifty dollars + 17/100\" reads $250.17, settled",
+    !!c13 && c13.amount.cents === 25017 && c13.amount.settled === true, c13 && c13.amount);
+  ok("§12 the card says plainly who the check is made out to",
+    !!c13 && c13.payee && c13.payee.mismatch === true && c13.payee.sentence === "This check is made out to Captain Hook, not Capture One.", c13 && c13.payee);
+  const g13 = (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1`, [ORG]))[0].n;
+  const no13 = await api("POST", `/capture/${c13.id}/confirm`, tok, { amountCents: 25017, date: "2026-10-13", donorId: "d_cap1_marg", fundId: "f_cap1_gen", kind: "check" });
+  const g13b = (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1`, [ORG]))[0].n;
+  ok("§12 without Log it anyway the confirm is refused and nothing is recorded", no13.status === 409 && no13.body.error === "payee_mismatch" && g13b === g13, { s: no13.status, b: no13.body });
+  const yes13 = await api("POST", `/capture/${c13.id}/confirm`, tok, { amountCents: 25017, date: "2026-10-13", donorId: "d_cap1_marg", fundId: "f_cap1_gen", kind: "check", logAnyway: true });
+  ok("§12 with Log it anyway it is one gift of $250.17", yes13.status === 201 || yes13.status === 200, { s: yes13.status, b: yes13.body });
+  queued.push([{ ...checkItem(C1), payee: "The Capture One, Inc." }]);
+  const u14 = await api("POST", "/capture/upload", tok, { files: [{ name: "check-2.png", dataUrl: dataUrl("check-2.png", "image/png") }], source: "photo" });
+  const c14 = u14.body && u14.body.cards && u14.body.cards[0];
+  ok("§12 \"The Capture One, Inc.\" is the org: no warning", !!c14 && !c14.payee, c14 && c14.payee);
+
   for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
   mock.close();
   await reset();

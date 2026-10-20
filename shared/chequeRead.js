@@ -61,20 +61,27 @@ const ONES = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, ei
 const TENS = { twenty:20, thirty:30, forty:40, fourty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
 const SCALES = { hundred:100, thousand:1000, million:1000000 };
 
+// The cents as people write them on a check (VOICE-2): a fraction over 100,
+// with "xx" or "--" standing in for either side ("17/xx", "xx/100", "17/--").
+// The numerator is the cents; a placeholder numerator is no cents.
+const FRAC = /(?:^|\s)(\d{1,2}|no|xx|x|zero|-{1,2})\s*\/\s*(?:100|xx|x|-{1,2})\s*$/;
+function fracCents(f) { return /^\d+$/.test(f) ? Number(f) : 0; }
+
 // "Two hundred fifty and 00/100" → 25000 cents. Returns null when the words do
-// not parse — which is a REFUSAL, not a zero.
+// not parse, which is a REFUSAL, not a zero. VOICE-2: "&" and "+" read as
+// "and" ("Two hundred & fifty dollars + 17/100" is $250.17), and the fraction
+// may use a placeholder ("17/xx", "xx/100").
 export function writtenAmountToCents(raw) {
   if (!raw) return null;
-  let s = String(raw).toLowerCase().replace(/[*—–_]+/g, " ").trim();
-  s = s.replace(/\bdollars?\b/g, " ").replace(/\bonly\b/g, " ").replace(/\bcents?\b/g, " ");
+  let s = String(raw).toLowerCase().replace(/[*—–_]+/g, " ").replace(/[&+]/g, " and ").trim();
+  s = s.replace(/\bdollars?\b/g, " ").replace(/\bonly\b/g, " ").replace(/\bcents?\b/g, " ").replace(/\s+/g, " ").trim();
 
   // The cents ride a fraction over 100. It is always the LAST thing on the
   // line, which is what separates it from a British "one hundred and fifty".
   let cents = 0;
-  const frac = s.match(/(\d{1,2}|no|xx|zero)\s*\/\s*100\s*$/);
+  const frac = s.match(FRAC);
   if (frac) {
-    const f = frac[1];
-    cents = /^\d+$/.test(f) ? Number(f) : 0;
+    cents = fracCents(frac[1]);
     s = s.slice(0, frac.index);
   }
   s = s.replace(/\band\s*$/, " ").trim();
@@ -101,6 +108,24 @@ export function writtenAmountToCents(raw) {
   }
   if (!saw) return null;
   return (total + run) * 100 + cents;
+}
+
+// The figures in the box (VOICE-2). People write the cents in the box the same
+// way as on the line: "$250 17/xx", "250 xx/100", "$75 17/--", or the
+// superscript "250^17" that a transcription reads as "250 17". Anything else
+// goes to `fallback` (the app's one money parser, normalizeMoney), so "250.17"
+// and "$1,250.00" read exactly as they always have. null is a refusal.
+export function chequeDigitsToCents(raw, fallback) {
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim().replace(/^\$\s*/, "").replace(/\s*(?:dollars?|usd)\s*$/i, "").trim();
+  const m = s.match(/^(\d{1,3}(?:,\d{3})+|\d+)(?:\.|\s+|-)?\s*(\d{1,2}|xx|x|no|-{1,2})\s*\/\s*(?:100|xx|x|-{1,2})$/i);
+  if (m) return Number(m[1].replace(/,/g, "")) * 100 + fracCents(m[2].toLowerCase());
+  if (typeof fallback === "function") {
+    const v = fallback(String(raw));
+    return Number.isFinite(v) ? v : null;
+  }
+  const n = s.replace(/,/g, "");
+  return /^\d+(\.\d{1,2})?$/.test(n) ? Math.round(Number(n) * 100) : null;
 }
 
 // THE CROSS-CHECK. This is the whole reason a read can be trusted at all.
@@ -138,3 +163,43 @@ export function unsettledSentence(rec, money) {
 
 export const CHEQUE_READ_NOTE =
   "Steward read these from the photographs. Nothing is recorded until you commit the deposit.";
+
+// WHO THE CHECK IS MADE OUT TO (VOICE-2). A check made out to somebody else
+// ("Pay to the order of Captain Hook") is not the org's money, however it
+// arrived. `payeeMismatch` says so in one sentence, and the confirm waits for
+// "Log it anyway". Forgiving on purpose: case, punctuation, "the", "Inc",
+// common abbreviations, a shortened name ("Harborlight" for "Harborlight Youth
+// Collective") and the initials all count as the org. A blank payee (or one
+// that could not be read) is no warning. `orgNames` is every name the org goes
+// by (display name first: the one the sentence uses).
+const PAYEE_DROP = new Set(["the", "inc", "incorporated", "llc", "ltd", "corp", "corporation", "co", "company", "nfp", "pbc", "a"]);
+const PAYEE_ABBR = { ctr: "center", cntr: "center", centre: "center", assn: "association", assoc: "association", intl: "international",
+  fdn: "foundation", fndn: "foundation", found: "foundation", svcs: "services", svc: "services", soc: "society", univ: "university",
+  dept: "department", natl: "national", amer: "american", mt: "mount", ft: "fort", org: "organization", orgn: "organization" };
+const NOT_A_NAME = /^(cash|bearer|n\/?a|none|blank|illegible|unreadable)$/;
+export function payeeWords(name) {
+  return String(name || "").toLowerCase().replace(/&/g, " and ").replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ")
+    .split(" ").filter(Boolean).map(w => PAYEE_ABBR[w] || w).filter(w => !PAYEE_DROP.has(w));
+}
+function payeeIsOrg(payee, orgName) {
+  const p = payeeWords(payee), o = payeeWords(orgName);
+  if (!p.length || !o.length) return false;
+  if (p.join(" ") === o.join(" ")) return true;
+  const ps = p.filter(w => w !== "and" && w !== "of" && w !== "for"), os = new Set(o);
+  // Every word she wrote is one of the org's words: "Harborlight" or "Harborlight Youth".
+  if (ps.length && ps.every(w => os.has(w))) return true;
+  // Spacing: "Harbor Light Youth" for "Harborlight Youth Collective".
+  const pj = ps.join(""), oj = o.join("");
+  if (pj.length >= 5 && oj.startsWith(pj)) return true;
+  // The initials: "HYC" for Harborlight Youth Collective.
+  const initials = o.filter(w => w !== "and" && w !== "of" && w !== "for").map(w => w[0]).join("");
+  return ps.length === 1 && initials.length >= 2 && ps[0] === initials;
+}
+export function payeeMismatch(payee, orgNames) {
+  const raw = String(payee || "").replace(/^\s*pay\s+to\s+the\s+order\s+of\s*:?\s*/i, "").trim();
+  if (!raw || NOT_A_NAME.test(raw.toLowerCase())) return null;
+  const names = (orgNames || []).map(n => String(n || "").trim()).filter(Boolean);
+  if (!names.length) return null;
+  if (names.some(n => payeeIsOrg(raw, n))) return null;
+  return { payee: raw, orgName: names[0], sentence: `This check is made out to ${raw}, not ${names[0]}.` };
+}

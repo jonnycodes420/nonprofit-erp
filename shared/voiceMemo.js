@@ -72,7 +72,7 @@ const SENSITIVE = [
   ["child", /\b(?:(?:her|his|their|my|our)\s+(?:son|daughter|child|children|kids?|baby|toddler|teenager|boy|girl)s?|grandsons?|granddaughters?|grandchild\w*|stepsons?|stepdaughters?)\b/i],
 ];
 export const SENSITIVE_CATEGORIES = SENSITIVE.map(([k]) => k);
-const NEUTRAL = {
+export const NEUTRAL = {
   health: "Mentioned a health matter.",
   family: "Mentioned a family matter.",
   money_trouble: "Mentioned a personal money matter.",

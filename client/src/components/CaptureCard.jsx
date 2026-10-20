@@ -174,12 +174,15 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState(null);
+  // VOICE-2: a check made out to somebody else waits for "Log it anyway".
+  const payeeOff = isMoney && card.payee && card.payee.mismatch;
+  const [logAnyway, setLogAnyway] = useState(false);
 
   const cents = toCents(amount);
   const amountBlank = cents == null;
   const fundUnsure = card.fund && card.fund.unsure && !fundTouched;
   const donorReady = donor.mode === "new" ? !!(donor.newPerson.name || "").trim() : !!donor.donorId;
-  const canConfirm = !isReadOnly && !busy && donorReady && (!isMoney || (!amountBlank && cents > 0));
+  const canConfirm = !isReadOnly && !busy && donorReady && (!isMoney || (!amountBlank && cents > 0)) && (!payeeOff || logAnyway);
   const what = KIND_LABEL[card.kind] || "item";
   const btnLabel = isMoney
     ? (amountBlank ? `Log this ${what}` : `Log ${money(cents)} ${card.kind === "pledge" ? "pledge" : what}`)
@@ -188,6 +191,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   const confirm = async () => {
     setBusy(true); setErr("");
     const body = { kind: card.kind, amountCents: cents, date, fundId: fundId || null };
+    if (payeeOff && logAnyway) body.logAnyway = true;
     if (donor.mode === "new") body.newPerson = donor.newPerson; else body.donorId = donor.donorId;
     if (card.kind === "pledge") { body.frequency = frequency; body.installments = installments ? Number(installments) : null; body.startDate = startDate || null; }
     if (card.kind === "matching_gift" && matchesGiftId) body.matchesGiftId = matchesGiftId;
@@ -270,6 +274,15 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
               </Field>
             )}
           </div>
+          {payeeOff && (
+            <div data-testid="capture-payee" style={{ fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 700 }}>{card.payee.sentence}</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, fontSize: 13, cursor: isReadOnly ? "default" : "pointer", minHeight: 32 }}>
+                <input type="checkbox" data-testid="capture-log-anyway" checked={logAnyway} disabled={isReadOnly || busy} onChange={e => setLogAnyway(e.target.checked)} />
+                Log it anyway
+              </label>
+            </div>
+          )}
           {isMoney && card.amount && !card.amount.settled && card.amount.sentence && (
             <div data-testid="capture-amount-note" style={{ fontSize: 12.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, lineHeight: 1.5 }}>{card.amount.sentence}</div>
           )}
@@ -346,7 +359,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
               </button>
               {isMoney && !canConfirm && !isReadOnly && (
                 <span style={{ fontSize: 12, color: T.ink3 }}>
-                  {amountBlank ? "Fill in the amount from the image." : !donorReady ? "Choose who it is from." : ""}
+                  {amountBlank ? "Fill in the amount from the image." : !donorReady ? "Choose who it is from." : payeeOff && !logAnyway ? "This check is made out to someone else. Tick Log it anyway to log it." : ""}
                 </span>
               )}
             </div>

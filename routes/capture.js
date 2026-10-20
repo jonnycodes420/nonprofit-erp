@@ -24,6 +24,7 @@ function cardOut(orgId, c) {
     receivedAt: c.received_at, batchId: c.batch_id,
     read: c.read || {}, amount: (c.proposal || {}).amount || null, donor: (c.proposal || {}).donor || null,
     fund: (c.proposal || {}).fund || null, advisor: (c.proposal || {}).advisor || null, matches: (c.proposal || {}).matches || null,
+    payee: (c.proposal || {}).payee || null,
     headline: c.headline, sentence: c.sentence, ai: c.ai,
     giftId: c.gift_id, pledgeId: c.pledge_id, donorId: c.donor_id, skipReason: c.skip_reason,
     appliedSummary: (c.applied || {}).summary || null, undoUntil: c.undo_until,
@@ -233,6 +234,9 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
   if (!c) return res.status(404).json({ error: "not_found", sentence: "This card was already confirmed or skipped." });
   const release = () => run("UPDATE capture_items SET status='waiting' WHERE id=? AND org_id=? AND status='confirming'", [c.id, orgId]);
   try {
+    // VOICE-2: a check made out to somebody else waits for "Log it anyway".
+    const payee = c.proposal && c.proposal.payee;
+    if (payee && payee.mismatch && b.logAnyway !== true) { await release(); return res.status(409).json({ error: "payee_mismatch", sentence: `${payee.sentence} Tick "Log it anyway" if it is still a gift to you.` }); }
     const kind = K.MONEY_KINDS.includes(b.kind) ? b.kind : (K.MONEY_KINDS.includes(c.kind) ? c.kind : "check");
     const cents = Math.round(Number(b.amountCents));
     if (!Number.isFinite(cents) || cents <= 0) { await release(); return res.status(400).json({ error: "amount", sentence: "Type the amount from the image before you confirm." }); }

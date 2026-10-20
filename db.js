@@ -3577,6 +3577,32 @@ async function runSchemaInit(pool) {
       undone_at TIMESTAMPTZ, undone_by TEXT, undone_by_name TEXT
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_voice_memos_org ON voice_memos (org_id, created_at DESC)`);
+  // VOICE-2: a meeting Steward listened to. The transcript is saved as it
+  // comes (so a closed tab loses nothing), screened when it is filed, and
+  // deletable with one click. Text only: there is no audio column, because
+  // the browser hands the page words and never sound.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS voice_meetings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      status TEXT NOT NULL DEFAULT 'listening',
+      donor_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      transcript TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      segments INTEGER NOT NULL DEFAULT 0,
+      summary JSONB,
+      memo_id TEXT,
+      interaction_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      held INTEGER NOT NULL DEFAULT 0,
+      ai TEXT,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      stopped_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      transcript_deleted_at TIMESTAMPTZ, transcript_deleted_by TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_voice_meetings_org ON voice_meetings (org_id, created_by, created_at DESC)`);
   // The gift-to-thanked clock. received_at: the check's date or the email's
   // arrival, whichever is later and not in the future (a live door: when it
   // came in). thanked_at: a thank-you sent, a thank-you call, or a note marked
