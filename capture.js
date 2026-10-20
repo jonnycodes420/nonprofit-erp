@@ -65,6 +65,7 @@ const S = d => ({ type: "string", description: d });
 const ITEM_FIELDS = {
   kind: { type: "string", enum: KINDS, description: "What this item is." },
   payer: S("Check: the name PRINTED on the check (top left), not the signature. Letter: the person or organisation the money comes from."),
+  payee: S("Check: the name on the Pay to the order of line, verbatim, exactly as written. Otherwise empty."),
   amountDigits: S("Check: the amount in the box, exactly as written. Deposit slip: its total. Otherwise empty."),
   amountWords: S("Check: the amount line, verbatim, including any fraction such as 00/100. Otherwise empty."),
   amountStated: S("Letter or form: the amount as written. Otherwise empty."),
@@ -99,7 +100,8 @@ const READ_PROMPT = [
   "",
   "Transcribe ONLY what is written. Do not interpret, correct, complete or tidy anything.",
   "- A check: transcribe the amount in the box and the amount in words SEPARATELY and independently; they are checked",
-  "  against each other afterwards. The payer is the name printed on the check, not the signature.",
+  "  against each other afterwards. The payer is the name printed on the check, not the signature. The payee is",
+  "  whoever is written on the Pay to the order of line, verbatim, even when it is not this organization.",
   "- NEVER transcribe the MICR line at the bottom of a check (the routing number, the account number). Leave it out of",
   "  every field, including the memo.",
   "- Leave a field empty when it is not on the item or you cannot read it. A blank costs a line of typing; a guess costs",
@@ -186,7 +188,7 @@ async function amountFor(item) {
   const { normalizeMoney } = await import("./shared/importShape.js");
   const toC = s => { const m = normalizeMoney(String(s || "")); return m.value == null ? null : Math.round(m.value * 100); };
   if (item.kind === "check" || item.kind === "deposit_slip") {
-    const rec = cr.reconcileAmount(toC(item.amountDigits), cr.writtenAmountToCents(item.amountWords));
+    const rec = cr.reconcileAmount(cr.chequeDigitsToCents(item.amountDigits, toC), cr.writtenAmountToCents(item.amountWords));
     if (item.kind === "deposit_slip" && rec.cents == null && rec.digits != null) return { cents: rec.digits, settled: true, sentence: null };
     return { cents: rec.agreed ? rec.cents : null, settled: rec.agreed, sentence: rec.agreed ? null : cr.unsettledSentence(rec, cents$) };
   }
@@ -351,6 +353,13 @@ function templateSentence(kind, read, amount) {
 const AI_OFF_SENTENCE = "Steward didn't read this one because AI is off. Fill it in from the image.";
 const AI_FAILED_SENTENCE = "Steward couldn't read this one just now. Fill it in from the image.";
 
+// Every name the org goes by, the donor-facing one first (VOICE-2's payee check).
+async function orgNamesFor(orgId) {
+  const [o] = await D.query(`SELECT o.name, o.legal_name, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.id=?`, [orgId]);
+  if (!o) return [];
+  return [...new Set([o.display_name, o.name, o.legal_name].map(n => String(n || "").replace(/\s*\(demo\)\s*$/i, "").trim()).filter(Boolean))];
+}
+
 // One read item, as a card row (not yet inserted).
 async function cardFromItem(orgId, item, ai) {
   const kind = KINDS.includes(item.kind) ? item.kind : "other";
@@ -366,6 +375,10 @@ async function cardFromItem(orgId, item, ai) {
           choices: (m.candidates || []).map(c => ({ id: c.id, name: c.name, why: [c.email, c.address].filter(Boolean).join(", ") || "same name" })) };
   }
   if (kind === "matching_gift") extra.matches = await originalGiftFor(orgId, read);
+  if (kind === "check" && read.payee) {
+    const mis = (await import("./shared/chequeRead.js")).payeeMismatch(read.payee, await orgNamesFor(orgId));
+    if (mis) extra.payee = { ...mis, mismatch: true };
+  }
   const dName = donor.state === "matched" ? donor.choices[0].name : (donor.prefill.name || null);
   const sentence = ai === "read" ? (scrubBank(read.sentence) || templateSentence(kind, read, amount)) + (amount.sentence && !String(read.sentence || "").includes(amount.sentence) ? " " + amount.sentence : "")
     : ai === "off" ? AI_OFF_SENTENCE : AI_FAILED_SENTENCE;
@@ -621,6 +634,6 @@ module.exports = {
   fromMailboxMessage, captureSlug, prepareFile,
   clockSql, clock, CLOCK_SENTENCE, CLOCK_DAYS,
   configure, scrubBank, readDocument, storeFile, decodeDataUrl, sniff, cardsFromFile, cardFromItem, insertCard,
-  applyLow, undoLow, receivedAtFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, defaultFund, fileUrl,
+  applyLow, undoLow, receivedAtFor, orgNamesFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, defaultFund, fileUrl,
   MAX_BYTES, UNDO_DAYS, MONEY_KINDS, LOW_KINDS, KINDS, READ_SCHEMA, READ_PROMPT, AI_OFF_SENTENCE, cents$,
 };

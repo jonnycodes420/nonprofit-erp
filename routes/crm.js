@@ -9120,8 +9120,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
     }
     if (!out) return { line, error: "read_failed" };
 
-    const dm = normalizeMoney(out.amountDigits || "");
-    const digitsCents = dm.value == null ? null : Math.round(dm.value * 100);
+    const digitsCents = cr.chequeDigitsToCents(out.amountDigits || "", v => { const dm = normalizeMoney(v); return dm.value == null ? null : Math.round(dm.value * 100); });
     const wordsCents = cr.writtenAmountToCents(out.amountWords);
     const rec = cr.reconcileAmount(digitsCents, wordsCents);
 
