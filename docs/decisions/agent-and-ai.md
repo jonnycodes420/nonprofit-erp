@@ -174,6 +174,15 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   conversation, Thread step, interest and draft are done for her with one Undo, and money, contact changes and
   personal details are cards. The model never supplies a date, an amount, a fund or a person: `shared/voiceMemo.js`
   and `agentNamedIn` do. A sensitive sentence is held back from everything filed until she saves it in neutral words.
+- **Meeting mode (VOICE-2).** A meeting is a `voice_meetings` row: the page saves the transcript as it comes
+  (PUT, longest wins) and keeps a browser copy, so a closed tab loses nothing. At Stop one call (`MEETING_TOOL`)
+  writes the summary, and the summary is filed by `fileMemo`, the same function as a spoken memo; the transcript is
+  kept screened (`screenTranscript`), linked on the conversation (`interactions.metadata.meetingId`) and deleted in one
+  click. Start needs `consent:true`. Listening is browser speech recognition only (no paid service), detected by
+  `listenMode`, and it hears the room, never another app's audio. AI off: the transcript is a note and nothing else.
+  The one question about a meeting answers from that transcript only; it is not a chat.
+- **The person she chose answers "which one".** A memo from Margaret Chen's profile (or a meeting with her) that
+  says "Margaret" never asks which Margaret, and a pick list's answers build up (`picks`), never replace each other.
 
 ## Gotchas
 - **A strict tool may hold at most 16 union-typed params and 24 optional ones**, or the API refuses the whole

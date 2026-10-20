@@ -262,6 +262,7 @@ CORE=(
   capture1-zero-day
   onboard1-setup
   voice1-tell-steward
+  voice2-everywhere
   fix43-safe-fetch
   clientsafe1
   support1-answers

@@ -721,7 +721,7 @@ app.post("/voice/meetings/:id/ask", requireAuth, wrap(async (req, res) => {
     });
     const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === T.ASK_TOOL.name);
     const a = (use && use.input) || {};
-    res.json({ answer: String(a.answer || "").replace(/—/g, ",").slice(0, 800) || "The meeting did not cover that.",
+    res.json({ answer: String(a.answer || "").replace(/\u2014/g, ",").slice(0, 800) || "The meeting did not cover that.",
       quotes: T.groundedQuotes(a.quotes, m.transcript, m.notes) });
   } catch (e) {
     await recordAiFallback(orgId, "voice_meeting_ask", e).catch(() => {});

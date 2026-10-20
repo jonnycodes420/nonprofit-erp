@@ -131,7 +131,7 @@ export function buildMeetingPrompt({ transcript, notes, people = [], today, minu
   return { system: MEETING_SYSTEM, messages: [{ role: "user", content: lines.join("\n") }] };
 }
 
-const clean = (s, n = 300) => String(s || "").replace(/\s+/g, " ").replace(/—/g, ",").trim().slice(0, n);
+const clean = (s, n = 300) => String(s || "").replace(/\s+/g, " ").replace(/\u2014/g, ",").trim().slice(0, n);
 // Every item is screened on its own: a personal detail the model kept is
 // dropped from the summary on the screen, not only from the memo.
 const list = (a, n) => (Array.isArray(a) ? a : []).map(x => clean(x)).filter(x => x && !sensitiveCategory(x)).slice(0, n);
