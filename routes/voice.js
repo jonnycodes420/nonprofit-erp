@@ -226,6 +226,14 @@ async function fileMemo(req, res, { text, source, donorId = null, picks = null, 
 
   // WHO: the profile she is on, and the names in her words, matched in code.
   const E = engine();
+  // Only picks that answer one of THIS memo's questions count. A pick left
+  // over from an earlier memo, or one whose name dropped out of the words,
+  // used to refuse every click ("That is not one of the records"); now it is
+  // dropped, and a pick can still only be one of the records a name matched.
+  if (picks && picks.length) {
+    const asked = new Set((await E.agentNamedIn(orgId, text, null)).ambiguous.flatMap(g => g.ids));
+    picks = [].concat(picks).map(String).filter(id => asked.has(id));
+  }
   let named = await E.agentNamedIn(orgId, text, picks);
   // The person she is on (or chose for the meeting) answers "which Margaret?"
   // for the name that matches them: a memo about Margaret Chen, from her

@@ -27,14 +27,14 @@ const MEETING = ["Thanks for coming down to the boathouse, Margaret.", " The spr
 // Says one phrase every 300ms; after three phrases this session ends on its
 // own (the real recognizer does after a silence or a minute), and the page
 // must start a new one. The phrase index lives on window, across sessions.
-const FAKE_SR = (phrases, perSession) => `(() => {
+const FAKE_SR = (phrases, perSession, interim = false) => `(() => {
   const words = ${JSON.stringify(phrases)};
   window.__srSessions = 0; window.__srI = 0;
   class SR { constructor() { this.t = []; this.res = []; }
     start() { window.__srSessions++; let n = 0; const tick = () => {
         if (window.__srI >= words.length || n >= ${perSession}) { this.t.push(setTimeout(() => this.onend && this.onend(), 50)); return; }
         const w = words[window.__srI++]; n++;
-        this.res.push({ 0: { transcript: w }, isFinal: true, length: 1 });
+        this.res.push({ 0: { transcript: w }, isFinal: ${!interim}, length: 1 });
         this.onresult && this.onresult({ resultIndex: this.res.length - 1, results: this.res });
         this.t.push(setTimeout(tick, 300)); };
       this.t.push(setTimeout(tick, 300)); }
@@ -58,10 +58,10 @@ async function pg(sql, args) {
   const org = await fetch(API + "/org", { headers: H }).then(r => r.json());
   const browser = await chromium.launch();
 
-  async function open(w, h, { speech = true, phrases = MEETING, perSession = 3 } = {}) {
+  async function open(w, h, { speech = true, phrases = MEETING, perSession = 3, interim = false } = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, serviceWorkers: "block", hasTouch: w < 500, isMobile: w < 500 });
     // Headless Chromium has a recognizer of its own (that never hears); the Firefox leg takes it away.
-    await ctx.addInitScript(speech ? FAKE_SR(phrases, perSession) : "(() => { try { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; } catch {} window.SpeechRecognition = undefined; window.webkitSpeechRecognition = undefined; })();");
+    await ctx.addInitScript(speech ? FAKE_SR(phrases, perSession, interim) : "(() => { try { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; } catch {} window.SpeechRecognition = undefined; window.webkitSpeechRecognition = undefined; })();");
     const page = await ctx.newPage();
     const errors = [];
     page.on("console", m => { if (m.type() === "error" && !/status of (404|500)/.test(m.text()) && !/\[SW\]|favicon|fonts/.test(m.text())) errors.push(m.text().slice(0, 200)); });
@@ -101,6 +101,23 @@ async function pg(sql, args) {
     await s.shot("03-which-filed");
     await s.page.click('[data-testid="tell-done"]');
     ok(`${w} no console errors so far`, s.errors.length === 0, s.errors);
+    await s.ctx.close();
+
+    // Part 2b: "Margaret" was still half-heard (not final) when she pressed
+    // Send. Her click must answer the words that were asked about: it used to
+    // re-send the box without them ("Tell Steward what happened first.").
+    s = await open(w, h, { phrases: ["Lunch with Margaret about the boathouse"], perSession: 1, interim: true });
+    await s.tell();
+    await s.page.click('[data-testid="tell-mic"]');
+    await s.page.waitForFunction(() => window.__srI >= 1, null, { timeout: 5000 });
+    await s.page.waitForTimeout(200);
+    await s.page.click('[data-testid="tell-send"]');
+    await s.page.waitForSelector('[data-testid="tell-which"]', { timeout: 8000 });
+    const half = s.page.locator('[data-testid="tell-which-choice"]').first();
+    if (w < 500) await half.tap(); else await half.click();
+    await s.page.waitForSelector('[data-testid="tell-results"]', { timeout: 10000 }).catch(() => {});
+    const refused = await s.page.locator('[role="alert"]').count() ? await s.page.locator('[role="alert"]').innerText() : "";
+    ok(`${w} a name still half-heard at Send: her pick files the memo`, await s.page.locator('[data-testid="tell-results"]').isVisible() && !refused, refused);
     await s.ctx.close();
 
     // Part 3: meeting mode.

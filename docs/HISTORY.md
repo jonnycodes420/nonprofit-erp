@@ -25,6 +25,10 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## VOICE-2b · The Margaret pick refused on prod (2026-10-20)
+
+Jonathan picked a Margaret on stewardapp.dev and got "That is not one of the records that name matches." Two causes. The server refused the whole request when ANY pick did not answer one of this memo's questions, and VOICE-2's picks build up, so one leftover pick refused every later click. And the box re-read its words at the click, so a name still half-heard (not final) when Send was pressed dropped out between the question and the answer. Now fileMemo drops picks that answer none of this memo's questions (a pick can still only be one of the records a name matched), and a pick re-sends exactly the words that were asked about. voice2-everywhere §2 and the voice2-walk "half-heard" leg each failed before the fix.
+
 ## VOICE-2 · Tell Steward everywhere, a whole meeting filed, and the check fixes (2026-10-20)
 
 Jonathan walked prod on 20 Oct: check capture and Tell Steward on the phone were good; the green bar on Home looked

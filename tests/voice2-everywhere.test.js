@@ -149,6 +149,16 @@ const count = async (sql, args = [ORG]) => (await q(sql, args))[0].n;
   const w4 = await api("POST", "/voice/memos", tok, { text: "Called Margaret about the boathouse", donorId: "d_v2_mchen" });
   ok("§2 from her own profile Steward never asks which Margaret", w4.status === 201 && w4.body.memo && w4.body.memo.people.map(p => p.id).join() === "d_v2_mchen", { s: w4.status, b: w4.body.which || w4.body.memo && w4.body.memo.people });
 
+  // A pick left over from an earlier memo (or one whose name dropped out of
+  // the words) rides along with the one she just clicked: her click still
+  // counts. It used to refuse every click: "That is not one of the records".
+  queued.memo_actions.push(read({ how: "lunch", summary: "Lunch with Margaret about the boathouse.", people: ["Margaret"] }));
+  const leftover = await api("POST", "/voice/memos", tok, { text: "Lunch with Margaret about the boathouse", picks: ["d_v2_jw", "d_v2_mlind"] });
+  ok("§2 a stale pick never refuses her click: filed on the Margaret she picked", leftover.status === 201 && leftover.body.memo
+    && leftover.body.memo.people.map(p => p.id).join() === "d_v2_mlind", { s: leftover.status, b: leftover.body });
+  const ghost = await api("POST", "/voice/memos", tok, { text: "Lunch with Margaret about the boathouse", picks: ["d_nobody_else"] });
+  ok("§2 a pick that matches nothing asks again, it does not refuse", ghost.status === 200 && !!ghost.body.which && ghost.body.which.people.length === 2, { s: ghost.status, b: ghost.body });
+
   // AI off, a memo naming two people: the one she picks is the one.
   await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]);
   const TWO = "Saw Margaret Chen and James Whitford at the regatta";

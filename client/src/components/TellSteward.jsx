@@ -138,10 +138,16 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
+  // The words asked about are the words answered: a pick re-sends exactly what
+  // was sent, so a name still half-heard when she pressed Send cannot drop
+  // out between the question and her click. A fresh Send starts fresh picks.
+  const sentWords = useRef("");
   async function send(extra = {}) {
     if (listening) stop();
-    const words = (text + (interim ? " " + interim : "")).trim();
+    const answering = !!(extra.picks || extra.donorId) && sentWords.current;
+    const words = answering ? sentWords.current : (text + (interim ? " " + interim : "")).trim();
     if (words.length < 4) { setErr("Tell Steward what happened first."); return; }
+    if (!answering) { picks.current = []; sentWords.current = words; finalText.current = words; setText(words); setInterim(""); }
     setBusy(true); setErr("");
     try {
       const r = await apiFetch("/voice/memos", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined, ...extra }) });
