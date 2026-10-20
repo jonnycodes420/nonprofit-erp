@@ -1620,11 +1620,13 @@ function TrustAdmin() {
 function SupportAdmin() {
   const [t, setT] = useState(null);
   const [qs, setQs] = useState(null);
+  const [sup, setSup] = useState(null);   // SUPPORT-1: what the help assistant could not answer
   const [draft, setDraft] = useState({});
   const [msg, setMsg] = useState("");
   const load = () => {
     adminFetch("/admin/tickets").then(d => setT(d.tickets || [])).catch(() => setT([]));
     adminFetch("/admin/questions").then(setQs).catch(() => {});
+    adminFetch("/admin/support/unanswered").then(setSup).catch(() => {});
   };
   useEffect(() => { load(); }, []);
   const reply = (id, status) => adminFetch(`/admin/tickets/${id}/reply`, { method: "POST", body: JSON.stringify({ body: draft[id] || "", status }) })
@@ -1644,6 +1646,16 @@ function SupportAdmin() {
         <button onClick={() => reply(k.id, "closed")}>Close</button>
       </div>}
     </div>)}
+    <div style={{ fontWeight: 700, margin: "16px 0 8px" }}>What the help assistant could not answer</div>
+    {sup && <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>{sup.sentence} Last 30 days: {sup.last30?.asked || 0} asked, {sup.last30?.answered || 0} answered.</div>}
+    {sup && !(sup.unanswered || []).length && <div style={box}>Nothing unanswered yet.</div>}
+    {(sup?.unanswered || []).length > 0 && <div style={box} data-testid="admin-support-unanswered">
+      {sup.unanswered.map((u, i) => <div key={i} style={{ display: "flex", gap: 12, fontSize: 13, padding: "4px 0", borderBottom: i < sup.unanswered.length - 1 ? "1px solid " + A.border : "none" }}>
+        <b style={{ minWidth: 28, textAlign: "right" }}>{u.times}</b>
+        <span style={{ flex: 1 }}>{u.question}</span>
+        <span style={{ opacity: 0.7, whiteSpace: "nowrap" }}>{u.surfaces.includes("site") ? (u.surfaces.length > 1 ? "app and site" : "site") : "app"} · {u.orgs} {u.orgs === 1 ? "org" : "orgs"}</span>
+      </div>)}
+    </div>}
     <div style={{ fontWeight: 700, margin: "16px 0 8px" }}>What Steward could not answer</div>
     <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>Questions asked that none of the answers covers yet, grouped by topic. This is the roadmap.</div>
     {qs && !(qs.unanswered || []).length && <div style={box}>Nothing unanswered yet.</div>}
