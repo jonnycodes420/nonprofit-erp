@@ -205,7 +205,7 @@ const pad = n => String(n).padStart(2, "0");
       const a = await (await fetch(B + "/ask", { method: "POST", headers: H, body: JSON.stringify({ text }) })).json();
       const want = cameBackSince(fromDays(days)).length;
       const f = (a.figures || {}).value;
-      ok(`§3 "${text}" answers ${want}, from the template, and foots`, a.answered === true && a.planSource === "template" && f && Number(f.value) === want && await foots(f),
+      ok(`§3 "${text}" answers ${want}, from the template, and foots`, a.answered === true && a.planSource === "template" && f && Number(f.value) === want && / in the last \d+ (days|weeks)/.test(a.sentence || "") && await foots(f),
         { answered: a.answered, src: a.planSource, got: f && f.value, want, sentence: a.sentence });
     }
     ok("§3 …and the windows differ in the fixture (6 weeks is not 90 days)", cameBackSince(fromDays(42)).length !== cameBackSince(fromDays(90)).length);

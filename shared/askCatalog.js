@@ -568,7 +568,7 @@ export function answerSentence(a, plan, ctx = {}) {
   const P = [];
   const t = x => P.push(x), f = k => P.push({ fig: k });
   const L = a.period ? a.period.label : "";
-  const per = !a.period ? "" : /so far$/.test(L) ? ` in ${L.replace(/ so far$/, "")} so far` : L === "all time" ? " ever" : /^(this|the|last) /.test(L) ? ` ${L}` : ` in ${L}`;
+  const per = !a.period ? "" : /so far$/.test(L) ? ` in ${L.replace(/ so far$/, "")} so far` : L === "all time" ? " ever" : /^(this|last) /.test(L) ? ` ${L}` : ` in ${L}`;   // FIX-46: "in the last 90 days"
   const unit = (m, n) => (METRICS[m].unit ? METRICS[m].unit[n === 1 ? 0 : 1] : "");
   const v = a.value;
   const sc = a.scope || "";
