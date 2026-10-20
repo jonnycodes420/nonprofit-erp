@@ -152,7 +152,8 @@ async function personSample(orgId, person) {
                                   receipt_address, tax_language FROM orgs WHERE id=?`, [orgId]);
   const v = Object.fromEntries(BK.MERGE_FIELDS.map(f => [f.key, f.sample]));
   const sig = [o && o.receipt_signature_name, o && o.receipt_signature_title, o && o.brand_signature_extra].filter(Boolean).join("\n");
-  return { ...v, first_name: (await import("../shared/greeting.js")).firstNames(person) || v.first_name, full_name: person.name || v.full_name,
+  const GR = await import("../shared/greeting.js");
+  return { ...v, first_name: GR.firstNames(person) || v.first_name, greeting: GR.greetingName(person) || v.first_name, full_name: person.name || v.full_name,
     org_name: (o && o.name) || v.org_name, signature: sig || v.signature, org_address: (o && o.receipt_address) || "",
     tax_language: (o && o.tax_language) || BK.DEFAULT_TAX_LANGUAGE((o && (o.legal_name || o.name)) || "") };
 }
@@ -190,7 +191,7 @@ async function sampleFields(orgId, person, ectx) {
     }
   }
   return {
-    first_name: firstName(person.name) || "Margaret",
+    first_name: firstName(person.name) || "Margaret", greeting: firstName(person.name) || "Margaret",
     last_gift_amount: lastAmount, last_gift_date: lastDate,
     campaign: "your next appeal", give_link: ectx.giveLink, org_name: ectx.orgName,
   };

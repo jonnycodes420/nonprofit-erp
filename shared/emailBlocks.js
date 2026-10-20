@@ -31,6 +31,8 @@
 // display block and alt. The only <style> block holds the two media queries an
 // inbox may ignore without harm: the phone stack and the dark scheme.
 
+import { greetMerge } from "./greeting.js";
+
 export const FOOTER_SLOT = "<!--steward:footer-->";
 
 // The fields a person may type into an email. Every one is filled per donor
@@ -92,7 +94,8 @@ export function youtubeThumb(videoId) {
 const fieldDefs = extra => (extra && extra.length ? [...EMAIL_MERGE_FIELDS, ...extra.filter(f => f && f.key && !MERGE_KEYS.has(f.key))] : EMAIL_MERGE_FIELDS);
 const keysOf = defs => (defs === EMAIL_MERGE_FIELDS ? MERGE_KEYS : new Set(defs.map(f => f.key)));
 function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS) {
-  const escaped = esc(raw);
+  // FIX-46: a name field after "Dear" is the greeting (fields.greeting).
+  const escaped = esc(greetMerge(raw, fields && fields.greeting));
   const keys = keysOf(defs);
   return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name) => {
     const key = MERGE_ALIASES[name] || name;
@@ -141,7 +144,7 @@ function resolveSrc(src, links) {
 // reports them.
 export function renderSubject(subject, fields, extraFields) {
   const defs = fieldDefs(extraFields), keys = keysOf(defs);
-  return String(subject || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
+  return greetMerge(String(subject || ""), fields && fields.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
     return keys.has(k) ? fieldValue(fields || {}, k, defs) : w;
   }).replace(/[\r\n]+/g, " ").trim();
@@ -165,7 +168,7 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
 
   const T = (raw, where) => { blankCheck(raw, problems, where); return mergeText(raw, F, problems, where, defs); };
   // The plain-text part gets the same fields, unescaped (it is not HTML).
-  const plain = s => String(s == null ? "" : s).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
+  const plain = s => greetMerge(String(s == null ? "" : s), F.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
     return keys.has(k) ? fieldValue(F, k, defs) : w;
   });

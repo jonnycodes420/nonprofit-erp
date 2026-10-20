@@ -22,6 +22,8 @@
 // whether the sponsor template is offered at all, because an organisation that
 // calls its monthly givers "monthly donors" has no sponsors to update.
 
+import { greetMerge } from "./greeting.js";
+
 export const MERGE_FIELDS = [
   { token: "{{first_name}}", label: "First name", sample: "Margaret" },
   { token: "{{donor_name}}", label: "Full name", sample: "Margaret Chen" },
@@ -52,7 +54,8 @@ export function renderMergeFields(html, values = {}) {
     total_giving: values.total_giving || "$0",
     year: values.year || String(new Date().getUTCFullYear()),
   };
-  return normalizeMergeFields(html)
+  // FIX-46: "Dear {{donor_name}}" greets (values.greeting, shared/greeting.js).
+  return greetMerge(normalizeMergeFields(html), values.greeting || values.first_name)
     .replace(/{{first_name}}/g, v.first_name)
     .replace(/{{donor_name}}/g, v.donor_name)
     .replace(/{{org_name}}/g, v.org_name)

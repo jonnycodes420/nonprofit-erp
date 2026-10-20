@@ -93,6 +93,27 @@ const minusYear = s => { const p = parse(s); return ymd(p.y - 1, p.m, Math.min(p
 const addDays = (s, n) => { const p = parse(s); const t = new Date(Date.UTC(p.y, p.m - 1, p.d + n)); return t.toISOString().slice(0, 10); };
 const daysBetween = (a, b) => Math.round((Date.UTC(parse(b).y, parse(b).m - 1, parse(b).d) - Date.UTC(parse(a).y, parse(a).m - 1, parse(a).d)) / 864e5);
 
+// FIX-46 · A RECENT WINDOW. "The last 90 days" is a custom span that ends
+// today and counts today (as "the last twelve months" does), carrying its own
+// words for the sentence. Only words of this exact shape are kept as a label.
+const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  fourteen: 14, eighteen: 18, twenty: 20, thirty: 30, sixty: 60, ninety: 90 };
+const recentWords = w => (/^the last \d{1,4} (days?|weeks?|months?)$/.test(String(w || "")) ? String(w) : null);
+function recentSpan(n, unit, today) {
+  const k = /^\d+$/.test(n) ? Number(n) : NUM_WORDS[n];
+  if (!k || !parse(today)) return null;
+  const u = unit.replace(/s$/, "");
+  let from;
+  if (u === "day") from = addDays(today, -(k - 1));
+  else if (u === "week") from = addDays(today, -(k * 7 - 1));
+  else {
+    const t = parse(today), mm = t.m - 1 - k, y = t.y + Math.floor(mm / 12), m = ((mm % 12) + 12) % 12 + 1;
+    from = addDays(ymd(y, m, Math.min(t.d, lastDay(y, m))), 1);
+  }
+  if (from < "1900-01-01") return null;
+  return { kind: "custom", from, to: today, words: `the last ${k} ${k === 1 ? u : u + "s"}` };
+}
+
 // A period in the org's calendar: { from, to, label, toDate }. `toDate` is
 // true when the period runs to today (so a comparison stops at the same day).
 export function resolvePeriod(period, ctx) {
@@ -120,7 +141,7 @@ export function resolvePeriod(period, ctx) {
     case "last_12_months": return { from: addDays(minusYear(ctx.today), 1), to: ctx.today, label: "the last twelve months", toDate: true };
     case "this_week": { const dow = (new Date(Date.UTC(t.y, t.m - 1, t.d)).getUTCDay() + 6) % 7; return { from: addDays(ctx.today, -dow), to: ctx.today, label: "this week", toDate: true }; }
     case "all_time": return { from: "1900-01-01", to: ctx.today, label: "all time", toDate: true };
-    case "custom": return { from: p.from, to: p.to, label: `${p.from} to ${p.to}` };
+    case "custom": return { from: p.from, to: p.to, label: recentWords(p.words) || `${p.from} to ${p.to}`, ...(p.to === ctx.today ? { toDate: true } : {}) };
     default: return null;
   }
 }
@@ -166,7 +187,7 @@ export function validatePlan(raw, ctx = {}) {
     if (p.kind === "year" && !(Number(p.year) >= 1990 && Number(p.year) <= 2100)) return { ok: false, refused: "that year" };
     if (p.kind === "custom" && !(parse(p.from) && parse(p.to) && p.from <= p.to)) return { ok: false, refused: "those dates" };
     plan.period = { kind: p.kind, ...(p.month ? { month: Number(p.month) } : {}), ...(p.year ? { year: Number(p.year) } : {}),
-      ...(p.kind === "custom" ? { from: p.from, to: p.to } : {}) };
+      ...(p.kind === "custom" ? { from: p.from, to: p.to, ...(recentWords(p.words) ? { words: p.words } : {}) } : {}) };
   }
   // Compare and break down: gift-set metrics only.
   if (raw.compare) {
@@ -350,6 +371,12 @@ export function templatePlan(text, ctx = {}) {
   take(/\blast quarter\b/g, () => P({ kind: "last_quarter" }));
   take(/\bthis week\b/g, () => P({ kind: "this_week" }));
   take(/\b(in the )?(last|past) (12|twelve) months\b/g, () => P({ kind: "last_12_months" }));
+  // FIX-46: any recent window, "in the last 90 days", "over the past 6 weeks",
+  // "within the last three months". The span ends today and counts today.
+  take(/\b((in|over|during|within) )?(the )?(last|past) (\d{1,4}|[a-z]+) (days?|weeks?|months?)\b/g, (m, a, b, the, c, n, unit) => {
+    const span = recentSpan(n, unit, ctx.today);
+    if (span) P(span); else putBack += ` ${m} `;
+  });
   take(/\b(ever|all time|of all time)\b/g, () => P({ kind: "all_time" }));
   take(MONTH_RE, (m, a, mon, y) => { const i = MONTHS.indexOf(mon) >= 0 ? MONTHS.indexOf(mon) : MON3.indexOf(mon); P({ kind: "month", month: i + 1, ...(y ? { year: Number(y) } : {}) }); });
   take(/\b(in |during )?((19|20)\d{2})\b/g, (m, a, y) => P({ kind: "year", year: Number(y) }));
@@ -541,7 +568,7 @@ export function answerSentence(a, plan, ctx = {}) {
   const P = [];
   const t = x => P.push(x), f = k => P.push({ fig: k });
   const L = a.period ? a.period.label : "";
-  const per = !a.period ? "" : /so far$/.test(L) ? ` in ${L.replace(/ so far$/, "")} so far` : L === "all time" ? " ever" : /^(this|the|last) /.test(L) ? ` ${L}` : ` in ${L}`;
+  const per = !a.period ? "" : /so far$/.test(L) ? ` in ${L.replace(/ so far$/, "")} so far` : L === "all time" ? " ever" : /^(this|last) /.test(L) ? ` ${L}` : ` in ${L}`;   // FIX-46: "in the last 90 days"
   const unit = (m, n) => (METRICS[m].unit ? METRICS[m].unit[n === 1 ? 0 : 1] : "");
   const v = a.value;
   const sc = a.scope || "";

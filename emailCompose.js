@@ -103,6 +103,8 @@ async function personFields(ctx, donor, { campaignName = "" } = {}) {
     // Empty means "use the renderer's own fallback" ("friend", "your gift").
     // FIX-45: a joint record's first names, "Desmond and Ruth".
     first_name: firstName && donor ? (await import("./shared/greeting.js")).firstNames({ ...donor, name: nameCase(donor.name) }) : firstName,
+    // FIX-46: what "Dear {{donor_name}}" or "Dear {{first_name}}" says.
+    greeting: firstName && donor ? (await import("./shared/greeting.js")).greetingName({ ...donor, name: nameCase(donor.name) }) : firstName,
     last_name: lastName,
     last_gift_amount: last ? formatMoney(last.amount) : "",
     last_gift_date: last ? formatDate(last.date) : "",
@@ -118,6 +120,7 @@ function sampleFields(ctx, { name, email, campaignName = "" } = {}) {
   const { firstName, lastName } = splitName(name);
   return {
     first_name: firstName || "Margaret",
+    greeting: firstName || "Margaret",
     last_name: lastName,
     last_gift_amount: "$250",
     last_gift_date: formatDate(new Date()),
@@ -167,7 +170,8 @@ async function render(ctx, { blocks, subject, preheader, fields, mode = "send" }
 async function subjectFor(subject, fields) {
   const B = await blocksMod();
   const defs = new Map((B.EMAIL_MERGE_FIELDS || []).map(f => [f.key, f]));
-  return String(subject || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
+  const greeted = (await import("./shared/greeting.js")).greetMerge(subject, fields && fields.greeting);   // FIX-46
+  return greeted.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
     const key = k === "first" ? "first_name" : k === "org" ? "org_name" : k;
     const v = fields && fields[key];
     if (v != null && String(v).trim() !== "") return String(v);

@@ -303,7 +303,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   }
   const html = blocksHtml || await brandEmailHeaderHtml(orgId)
     + T.renderMergeFields(campaign.body || "", {
-        first_name: first, donor_name: me?.name || first,
+        first_name: first, donor_name: me?.name || first, greeting: first,
         org_name: displayNameCase(org?.name || ""), gift_amount: "$250", total_giving: "$4,150",
         year: String(new Date().getUTCFullYear()),
       })
@@ -26291,7 +26291,8 @@ async function openNoShowTask(orgId, eventId, who) {
     const key = `event_missed:${event.id}`;
     const [had] = await query("SELECT id FROM milestone_drafts WHERE org_id=? AND donor_id=? AND milestone_key=?", [orgId, m.donor_id, key]);
     if (had) continue;
-    const values = { first_name: String(m.name || "").split(/\s+/)[0], event_name: event.name, signature };
+    const GR = await import("../shared/greeting.js");
+    const values = { first_name: GR.firstNames(m), greeting: GR.greetingName(m), event_name: event.name, signature };
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
       ["md_" + uuid().slice(0, 12), orgId, m.donor_id, key,

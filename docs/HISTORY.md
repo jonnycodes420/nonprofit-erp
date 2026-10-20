@@ -25,6 +25,16 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-46 · FIX-45's leftovers: recent windows, greetings, the give form, stale lists (2026-10-19)
+
+Built beside SUPPORT-1 (its own tab). Four items from Muse's FIX-45 walk.
+
+- **Ask "in the last 90 days" (1).** `templatePlan` reads "(in|over|during|within) (the) last/past N days/weeks/months" (digits or a few number words) as a `custom` period ending today and counting today, carrying `words` for the sentence; `validatePlan` keeps `words` only in that exact shape. The answer sentence now says "in the last 90 days" (the "the ..." labels lost their "in"). ask2-plans §3: four typed phrasings, each from the template, each foots, and 6 weeks differs from 90 days in the fixture.
+- **Greetings (2).** `greetMerge(text, greeting)` in `shared/greeting.js`: a name field (`donor_name`, `full_name`, `name`, `first_name`, `first`) straight after Dear/Hi/Hello/Hey/Greetings/Good morning is the record's greeting (salutation, then first names, both people on a joint record); elsewhere it keeps its meaning. Every renderer runs it first: the block renderer (Agent "Start from a template", journey template drafts, campaigns from templates, subjects), `brandKit.renderTemplate` (one-person and volunteer templates), `renderMergeFields`, receipts' custom message, legacy campaigns, sequence steps, dunning and pledge reminders. Callers pass `greeting`; the volunteer drafts that split the name now use `firstNames`. fix37 §7 (Agent draft and template preview) and mail-suppression (campaign bytes) were red on main.
+- **Give form step line (3).** The `sr-only` class was never defined anywhere, so "Step 1 of 3" printed under the progress bar. Hidden inline (`SR_ONLY` in GiveSteps.jsx), still `role="status"`. giveedit1 §13 checks it at 1440 and 390 on a configured form, plus no sideways scroll.
+- **"$0, no gift on file" (4).** Re-engage (with Team and the map) drew from `lib/people.js`'s whole-org list, held for the whole browser session; only a write inside Donors cleared it. A check confirmed in To confirm (or a Stripe gift) left Re-engage on $0 while the profile, which reads the server, showed the gift. Donors now reads that list fresh each time it opens, any `apiFetch` write forgets it (`onWrite` in api.js), and ⌘K search asks again when the box reopens. hotfix1-profile §9 was red on main ("$0 no gift on file" after the gift). Every list already read `donors.total_giving`, which `recordGift` keeps in the same step; the server was right, the browser was not.
+- Seed unchanged.
+
 ## FIX-45 · What Muse found on Harborlight, fixed before the board demo (2026-10-19)
 
 Muse walked the 18 Oct builds on prod Harborlight. Fifteen items, worst first; built by the parent session (capture items) and four forks in their own worktrees.

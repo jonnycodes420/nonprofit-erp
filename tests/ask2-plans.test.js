@@ -19,6 +19,8 @@
 //   · count refunds in average_gift → §1 "average" goes red;
 //   · take the median of every gift instead of the positive ones → §1 median;
 //   · let a breakdown cell read the whole set → §2 a group does not foot.
+//   · FIX-46: drop the "last N days/weeks/months" reading from templatePlan →
+//     §3 every typed comeback question is refused.
 
 const http = require("http");
 const path = require("path");
@@ -37,6 +39,7 @@ const pad = n => String(n).padStart(2, "0");
   const Y = now.getUTCFullYear();
   const back = k => { const d = new Date(Date.UTC(Y, now.getUTCMonth(), now.getUTCDate() - k)); const s = d.toISOString().slice(0, 10); return s < `${Y}-01-01` ? `${Y}-01-01` : s; };
 
+  const ago = k => new Date(Date.UTC(Y, now.getUTCMonth(), now.getUTCDate() - k)).toISOString().slice(0, 10);   // not held to this year
   for (const t of ["question_log", "recurring_subscriptions", "gifts", "events", "campaigns", "fin_funds", "donors", "user_sessions", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
@@ -45,7 +48,7 @@ const pad = n => String(n).padStart(2, "0");
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('ff_a2_sch',$1,'Scholarship Fund',true),('ff_a2_gen',$1,'General Operating',false)`, [ORG]);
   await q(`INSERT INTO campaigns (id,org_id,name,goal_amount,status,start_date,end_date) VALUES ('c_a2_push',$1,'Spring Push',5000,'active',$2,$3)`, [ORG, `${Y - 1}-01-01`, `${Y}-12-31`]);
   await q(`INSERT INTO events (id,org_id,name,date,event_type) VALUES ('ev_a2_lantern',$1,'Lantern Night',$2,'gala')`, [ORG, back(5)]);
-  const D = { a: "Marblehead", b: "Marblehead", c: "Salem", d: "Salem", e: "Salem", f: "Salem", g: "Salem", h: "Salem" };
+  const D = { a: "Marblehead", b: "Marblehead", c: "Salem", d: "Salem", e: "Salem", f: "Salem", g: "Salem", h: "Salem", i: "Salem" };
   for (const [k, city] of Object.entries(D))
     await q(`INSERT INTO donors (id,org_id,name,city,stage,created_by,created_by_name) VALUES ($1,$2,$3,$4,'active','system:test','test')`, [`d_a2_${k}`, ORG, `Plan Fixture ${k.toUpperCase()}`, city]);
   await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status) VALUES ('rs_a2_b',$1,'d_a2_b','sub_a2_b',25,'month','active')`, [ORG]);
@@ -65,6 +68,8 @@ const pad = n => String(n).padStart(2, "0");
     ["f", back(9), 60, "ff_a2_sch", null, null],
     ["g", `${Y - 1}-02-14`, 410, "ff_a2_gen", null, null],             // first gift last year, not again
     ["h", back(1), 10, "ff_a2_gen", null, null],
+    ["i", ago(60), 45, "ff_a2_gen", null, null],                      // FIX-46: came back about two months ago
+    ["i", `${Y - 3}-05-02`, 45, "ff_a2_gen", null, null],
   ];
   let gi = 0;
   for (const [k, date, amt, fund, camp, ev] of G)
@@ -83,6 +88,9 @@ const pad = n => String(n).padStart(2, "0");
   const byDonorY = Object.entries(pos(thisY).reduce((m, g) => ((m[g[0]] = (m[g[0]] || 0) + cents(g[2])), m), {})).sort((a, b) => b[1] - a[1]);
   const prevBefore = (k, d) => G.filter(g => g[0] === k && g[2] > 0 && g[1] < d).map(g => g[1]).sort().pop();
   const cameBack = people(thisY).filter(k => { const f = pos(thisY).filter(g => g[0] === k).map(g => g[1]).sort()[0]; const p = prevBefore(k, f); return p && p < `${+f.slice(0, 4) - 1}${f.slice(4)}`; });
+  // FIX-46: who came back inside a window that ends today (the same rule).
+  const fromDays = n => ago(n - 1);
+  const cameBackSince = from => { const inW = G.filter(g => g[1] >= from && g[1] <= T); return people(inW).filter(k => { const f = pos(inW).filter(g => g[0] === k).map(g => g[1]).sort()[0]; const p = prevBefore(k, f); return p && p < `${+f.slice(0, 4) - 1}${f.slice(4)}`; }); };
   const firstLast = Object.keys(D).filter(k => (firstOf(k) || "").startsWith(String(Y - 1)));
   const keptFirst = firstLast.filter(k => people(thisY).includes(k));
   const median = posY.length % 2 ? posY[(posY.length - 1) / 2] : Math.round((posY[posY.length / 2 - 1] + posY[posY.length / 2]) / 2);
@@ -190,6 +198,17 @@ const pad = n => String(n).padStart(2, "0");
     ok(`§2 all ${figs} figures on the twenty answers foot to their rows`, figs >= 30 && footed === figs, { figs, footed });
     const planted = await foots({ ...((await (await fetch(B + "/ask", { method: "POST", headers: H, body: JSON.stringify({ text: "Ledger item 01 for the treasurer" }) })).json()).figures.value), value: (sumC(thisY) + 1) / 100 });
     ok("§2 …and a figure one cent off its rows does not foot", planted === false);
+
+    console.log("\n— §3 · FIX-46: came back in any recent window, typed —");
+    for (const [text, days] of [["How many donors came back in the last 90 days", 90], ["Who came back in the past 6 weeks?", 42],
+                                ["how many lapsed donors returned over the last ninety days", 90], ["Who came back in the last 120 days", 120]]) {
+      const a = await (await fetch(B + "/ask", { method: "POST", headers: H, body: JSON.stringify({ text }) })).json();
+      const want = cameBackSince(fromDays(days)).length;
+      const f = (a.figures || {}).value;
+      ok(`§3 "${text}" answers ${want}, from the template, and foots`, a.answered === true && a.planSource === "template" && f && Number(f.value) === want && / in the last \d+ (days|weeks)/.test(a.sentence || "") && await foots(f),
+        { answered: a.answered, src: a.planSource, got: f && f.value, want, sentence: a.sentence });
+    }
+    ok("§3 …and the windows differ in the fixture (6 weeks is not 90 days)", cameBackSince(fromDays(42)).length !== cameBackSince(fromDays(90)).length);
   } finally {
     child.kill();
     mock.close();

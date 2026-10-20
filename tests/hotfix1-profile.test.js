@@ -413,6 +413,46 @@ async function seed() {
     ok("§8 …and the server's answer agrees when it lands", settled8.yar && !settled8.ash, settled8);
     ok("§8 the search request really was held back (the test can see it)", held8 > 0, held8);
     await ctx8.close();
+    // §9 FIX-46 — A LIST'S TOTALS ARE TODAY'S. Re-engage (with Team and the
+    // map) drew from a whole-org list held for the browser session, so a gift
+    // logged anywhere else left it saying "$0, no gift on file" beside a
+    // profile that said $1,500. Here the gift lands while Re-engage is open
+    // (a check confirmed in another tab, a Stripe gift); she leaves Donors and
+    // comes back, and the row must carry the gift.
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,created_by,created_by_name)
+             VALUES ('d_hf1c',$1,'Odalys Fenwright','odalys@hf1.test','lapsed',0,0,'system:test','Test')
+             ON CONFLICT (id) DO NOTHING`, [ORG]);
+    const ctx9 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await ctx9.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
+    const page9 = await ctx9.newPage();
+    const odalys = () => page9.evaluate(() => {
+      const el = [...document.querySelectorAll("*")].find(e => e.children.length === 0 && e.textContent.trim() === "Odalys Fenwright");
+      let r = el; for (let i = 0; i < 8 && r; i++) { r = r.parentElement; if (r && r.classList.contains("reEngage-row")) break; }
+      return r ? r.innerText.replace(/\s+/g, " ") : null;
+    });
+    const reengage = async () => {
+      await page9.getByRole("button", { name: /Re-engage/ }).first().click();
+      await page9.waitForFunction(() => document.body.innerText.includes("Odalys Fenwright"), null, { timeout: 15000 }).catch(() => {});
+    };
+    await page9.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page9.waitForSelector("input.donors-search", { timeout: 20000 }).catch(() => {});
+    await reengage();
+    const row0 = await odalys();
+    ok("§9 before the gift, Re-engage says no gift on file", !!row0 && /no gift on file/.test(row0) && /\$0\b/.test(row0), row0);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,fund_id,created_by,created_by_name) VALUES ('g_hf1c',$1,'d_hf1c',1500,$2,$3,'system:test','Test')`,
+      [ORG, civilPlusDays(-400), `ff_${ORG}`]);
+    await q(`UPDATE donors SET total_giving=1500, gift_count=1, last_gift_date=$2, last_gift_amount=1500 WHERE id='d_hf1c' AND org_id=$1`, [ORG, civilPlusDays(-400)]);
+    await page9.locator('[data-nav-id="dashboard"]:visible').first().click();
+    await page9.waitForTimeout(1200);
+    await page9.locator('[data-nav-id="donors"]:visible').first().click();
+    await page9.waitForSelector("input.donors-search", { timeout: 20000 }).catch(() => {});
+    await reengage();
+    await page9.waitForTimeout(1500);
+    const row1 = await odalys();
+    ok("§9 back on Re-engage, the row carries the gift the profile shows ($1,500), not $0", !!row1 && /\$1,500/.test(row1) && !/no gift on file/.test(row1), row1);
+    await ctx9.close();
     await browser.close();
     if (srv) srv.close();
   }

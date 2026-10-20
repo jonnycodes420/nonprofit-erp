@@ -41,6 +41,11 @@ const ERR = T.gold;
 const MUTED = T.ink3;
 const HAIRLINE = "rgba(0,0,0,0.14)";
 const HAIRLINE_SOFT = "rgba(0,0,0,0.10)";
+// FIX-46: the step line is for screen readers only. It carried a "sr-only"
+// class that no stylesheet defines (and an embedded form has no host CSS to
+// lean on), so it printed under the progress bar. Hidden inline, the usual way.
+const SR_ONLY = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden",
+  clip: "rect(0 0 0 0)", clipPath: "inset(50%)", whiteSpace: "nowrap", border: 0 };
 
 // `en-US`, NAMED. It was `toLocaleString(undefined, …)`, which is the exact
 // shape EVENTS-2 banned: a browser in half of Europe flips the separator and
@@ -321,7 +326,7 @@ export default function GiveSteps({
           </div>
         ))}
       </div>
-      <div className="sr-only" role="status" aria-live="polite">{`Step ${step + 1} of 3: ${stepLabel[step]}`}</div>
+      <div className="sr-only" data-testid="give-step-status" style={SR_ONLY} role="status" aria-live="polite">{`Step ${step + 1} of 3: ${stepLabel[step]}`}</div>
 
       {spec.headline && step === 0 ? (
         <div style={{ fontFamily: th.serif, fontSize: 22, lineHeight: 1.25, marginBottom: 14 }}>{spec.headline}</div>

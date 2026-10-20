@@ -155,12 +155,22 @@ export function prefetch(paths) {
   }
 }
 
+// FIX-46 · A WRITE FORGETS EVERY LIST HELD FOR THE SESSION. lib/people.js
+// keeps the whole-org list (Team, Re-engage, the map) once per session, and
+// only a write inside Donors cleared it, so a check confirmed in Fundraising
+// left Re-engage saying "$0, no gift on file" while the profile, which reads
+// the server, said $1,500. Anything that holds a list registers here.
+const writeHooks = new Set();
+export function onWrite(fn) { writeHooks.add(fn); return () => writeHooks.delete(fn); }
+const forgetLists = () => { for (const fn of writeHooks) { try { fn(); } catch { /* one list's hook never stops a write */ } } };
+
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   // FIX-25: a write also forgets the reads in flight. A read asked for after a
   // write must not be handed the answer to a read that left before it, or a
   // list re-read after "Approve all" comes back as it was before the approval.
-  if (method !== "GET") { kept.clear(); inFlight.clear(); return apiFetchNow(path, options); }
+  // FIX-46: and the lists held for the session, before and after the write.
+  if (method !== "GET") { kept.clear(); inFlight.clear(); forgetLists(); return apiFetchNow(path, options).finally(forgetLists); }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
   const hit = kept.get(key);

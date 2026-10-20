@@ -802,10 +802,11 @@ app.post("/volunteer-hub/bulk/draft", requireAuth, checkWriteAccess, wrap(async 
   let drafted = 0, noEmail = 0;
   for (const p of people) {
     if (!p.email) { noEmail++; continue; }
-    const first = String(p.name || "").split(/\s+/)[0] || "there";
+    const GR = await import("../shared/greeting.js");   // FIX-46: one greeting rule
+    const first = GR.firstNames(p) || "there";
     await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
                VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?) ON CONFLICT DO NOTHING`,
-      ["md_" + uuid().slice(0, 12), orgId, p.id, `vol:msg:${batch}:${p.id}`, subject, body.replace(/\{\{\s*first_name\s*\}\}/gi, first), who.id, who.name]);
+      ["md_" + uuid().slice(0, 12), orgId, p.id, `vol:msg:${batch}:${p.id}`, subject, GR.greetMerge(body, GR.greetingName(p)).replace(/\{\{\s*first_name\s*\}\}/gi, first), who.id, who.name]);
     drafted++;
   }
   res.json({ drafted, message: `${drafted} ${drafted === 1 ? "draft" : "drafts"} written${noEmail ? `; ${noEmail} with no email were left out` : ""}. Nothing is sent until you press Send in Schedule, To send.` });

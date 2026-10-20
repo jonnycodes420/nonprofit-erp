@@ -195,6 +195,24 @@ const file = (tag, n, perDonor = 1) => ({
   const qj = (queue.body?.drafts || []).find(d => d.donorId === joint.id);
   ok("§6 …and the thank-you queue reads it the same way", !!qj && /^Dear Desmond and Ruth,/.test(qj.body), qj && qj.body.slice(0, 60));
 
+  // ── §7 · FIX-46: A SAVED TEMPLATE'S "Dear {{donor_name}}" GREETS ─────────
+  // The merge field that greets is the greeting, not the full name ("Dear
+  // Margaret Chen,"): an Agent draft started from a saved email template, and
+  // a one-person template previewed against the record.
+  await q(`INSERT INTO email_templates (id,org_id,name,purpose,subject,preheader,blocks,created_by,created_by_name)
+           VALUES ('et_fix46g',$1,'Greets','person','Hello {{donor_name}}','',$2::jsonb,'system:test','test')`,
+    [ORG, JSON.stringify([{ type: "header" }, { type: "richtext", blocks: [{ type: "p", text: "Dear {{donor_name}}," }, { type: "p", text: "A gift from {{first_name}} matters." }] }])]);
+  for (const [d, want, tag] of [[joint, "Desmond and Ruth", "j"], [saluted, "Dr. Lee", "s"]]) {
+    await q(`INSERT INTO agent_drafts (id,org_id,donor_id,subject,body,status,purpose) VALUES ($1,$2,$3,'x','x','pending','thank')`, [`ad_fix46${tag}`, ORG, d.id]);
+    const ft = await api("POST", `/agent/drafts/ad_fix46${tag}/from-template`, tok, { templateId: "et_fix46g" });
+    const body = ft.body?.body || "";
+    ok(`§7 an Agent draft from a saved template greets "Dear ${want},"`, body.includes(`Dear ${want},`) && !body.includes("{{"), body.slice(0, 120));
+    ok(`§7 …and its subject's greeting too`, ft.body?.subject === `Hello ${want}`, ft.body?.subject);
+  }
+  const pv = await api("POST", "/templates/thanks_first/preview", tok, { donorId: joint.id, subject: "Thanks", body: "Dear {{full_name}},\n\nThank you, {{full_name}}." });
+  ok("§7 a one-person template's greeting reads both people, the rest keeps the full name",
+     /^Dear Desmond and Ruth,/.test(pv.body?.body || "") && (pv.body?.body || "").includes("Thank you, Desmond & Ruth Okafor."), pv.body?.body);
+
   await wipe();
   await closeDb();
   summary();

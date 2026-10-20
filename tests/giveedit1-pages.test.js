@@ -220,16 +220,30 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
     // sat inside the story column (order 2) and rendered below the form.
     await q(`UPDATE giving_pages SET image_url=$2, image_meta=$3::jsonb WHERE id=$1`,
       ["gp_ge1plain", APP + "/favicon.svg", JSON.stringify({ alt: "Boats on the bay", fx: 0.5, fy: 0.5 })]);
+    // FIX-46: a configured form, so the page draws the three steps.
+    await q(`UPDATE giving_pages SET form_config=$2::jsonb WHERE id='gp_ge1plain' AND org_id=$1`,
+      [ORG, JSON.stringify({ amountsCents: [2500, 5000, 10000], allowOther: true, offerMonthly: true, defaultFrequency: "once" })]);
     for (const width of [1440, 390]) {
       const pp = await browser.newPage({ viewport: { width, height: 900 } });
       await pp.goto(`${APP}/give/${SLUG}/spring-paddle`, { waitUntil: "domcontentloaded", timeout: 60000 });
       await pp.waitForSelector('[data-testid="page-cover"]', { timeout: 20000 }).catch(() => {});
+      await pp.waitForSelector('.give-steps [role="status"]', { state: "attached", timeout: 20000 }).catch(() => {});
       const geo = await pp.evaluate(() => {
         const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, w: r.width, h: r.height }; };
         return { cover: box(document.querySelector('[data-testid="page-cover"]')), form: box(document.getElementById("give-form")) };
       });
       ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
       ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
+      // FIX-46: the "Step 1 of 3" line is read to a screen reader and never
+      // drawn (it printed under the progress bar), and the form fits the phone.
+      const sr = await pp.evaluate(() => {
+        const el = [...document.querySelectorAll('[role="status"]')].find(e => /^Step \d of 3/.test(e.textContent || ""));
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { text: el.textContent, w: r.width, h: r.height, wide: document.documentElement.scrollWidth };
+      });
+      ok(`§13 FIX-46 the step line is there for a screen reader and not on screen at ${width}`, !!sr && sr.w <= 1 && sr.h <= 1, sr);
+      ok(`§13 FIX-46 the give page has no sideways scroll at ${width}`, !!sr && sr.wide <= width, sr);
       await pp.close();
     }
 
