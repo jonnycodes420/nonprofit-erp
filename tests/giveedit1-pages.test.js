@@ -230,6 +230,16 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
       });
       ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
       ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
+      // FIX-46: the "Step 1 of 3" line is read to a screen reader and never
+      // drawn (it printed under the progress bar), and the form fits the phone.
+      const sr = await pp.evaluate(() => {
+        const el = [...document.querySelectorAll('[role="status"]')].find(e => /^Step \d of 3/.test(e.textContent || ""));
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { text: el.textContent, w: r.width, h: r.height, wide: document.documentElement.scrollWidth };
+      });
+      ok(`§13 FIX-46 the step line is there for a screen reader and not on screen at ${width}`, !!sr && sr.w <= 1 && sr.h <= 1, sr);
+      ok(`§13 FIX-46 the give page has no sideways scroll at ${width}`, !!sr && sr.wide <= width, sr);
       await pp.close();
     }
 
