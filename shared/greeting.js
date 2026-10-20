@@ -56,12 +56,15 @@ export function firstNames(person = {}) {
 
 // FIX-46 · A MERGE FIELD THAT GREETS. A saved template, a sequence step or a
 // journey email that opens "Dear {{donor_name}}," used to print the whole
-// name ("Dear Margaret Chen,"). In the greeting, any name field is the
-// greeting above: the salutation, then first names, both people on a joint
-// record. Everywhere else the field keeps its own meaning, so "a gift from
-// {{donor_name}}" is still the full name. Every renderer runs this first,
-// before it fills its own fields, with greetingName(person) as `greeting`.
-const GREETS = /\b(dear|hi|hello|hey|greetings|good (?:morning|afternoon|evening))(,?[ \t]+)\{\{\s*(?:donor_name|full_name|name|first_name|first)\s*\}\}/gi;
+// name ("Dear Margaret Chen,"). After Dear/Hi/Hello, the full-name field
+// ({{donor_name}}, {{full_name}}, {{name}}) is the greeting above: the
+// salutation, then first names, both people on a joint record. Everywhere else
+// it keeps its own meaning, so "a gift from {{donor_name}}" is still the full
+// name. {{first_name}} is never touched here (Jonathan, 19 Oct): a template
+// that says "Dear {{first_name}}" chose first names, both on a joint record,
+// never the salutation; that field is firstNames() in every renderer. Every
+// renderer runs this first, with greetingName(person) as `greeting`.
+const GREETS = /\b(dear|hi|hello|hey|greetings|good (?:morning|afternoon|evening))(,?[ \t]+)\{\{\s*(?:donor_name|full_name|name)\s*\}\}/gi;
 export function greetMerge(text, greeting) {
   const s = String(text == null ? "" : text);
   const g = String(greeting || "").trim();
