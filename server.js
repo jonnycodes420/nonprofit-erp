@@ -3595,7 +3595,9 @@ async function allocateReceiptNumber(orgId) {
 
 function applyReceiptTokens(str, org, donor) {
   if (!str) return "";
-  return String(str).replace(/\{\{donor_name\}\}/g, donor.name || "").replace(/\{\{org_name\}\}/g, org.name || "");
+  // FIX-46: "Dear {{donor_name}}" greets (shared/greeting.js), loaded at boot.
+  const greeted = GREET ? GREET.greetMerge(str, GREET.greetingName(donor || {})) : String(str);
+  return greeted.replace(/\{\{donor_name\}\}/g, donor.name || "").replace(/\{\{org_name\}\}/g, org.name || "");
 }
 
 // One PDF renderer for both a single-gift receipt and a year-end statement
@@ -5233,7 +5235,7 @@ async function legacyCampaignBody(body, donor, orgName, year) {
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
   const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-  return (body || "")
+  return (await GREET_READY).greetMerge(body || "", GREET.greetingName(donor))
     .replace(/{{first_name}}/g,   firstName)
     .replace(/{{last_name}}/g,    lastName)
     .replace(/{{donor_name}}/g,   donor.name)
@@ -6692,7 +6694,7 @@ async function processSequences() {
             ["Not sent: the onboarding sequence is off for good", enr.id]);
           continue;
         }
-        const [recipient] = await query("SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
+        const [recipient] = await query("SELECT id, name, email, salutation, spouse_name, kind FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
         // "Write a note" reminders are handled before the email-presence
         // check below — they're an in-app nudge for staff to write a real
         // note, not an email send, so a donor without an email on file can
@@ -6794,7 +6796,8 @@ async function processSequences() {
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = displayNameCase(orgRows[0]?.name) || "";
         const firstName = recipient.name ? (await GREET_READY).firstNames(recipient) : "";
-        const applyTokens = str => (str || "")
+        const greeting = recipient.name ? GREET.greetingName(recipient) : "";
+        const applyTokens = str => GREET.greetMerge(str || "", greeting)
           .replace(/{{donor_name}}/g, recipient.name)
           .replace(/{{user_name}}/g, recipient.name)
           .replace(/{{first_name}}/g, firstName)

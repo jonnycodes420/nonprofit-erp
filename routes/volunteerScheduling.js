@@ -1885,11 +1885,12 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
     let drafted = 0, noEmail = 0;
     for (const r of rows) {
       if (!r.email) { noEmail++; continue; }
-      const first = String(r.name || "").split(/\s+/)[0] || "there";
+      const GR = await import("../shared/greeting.js");   // FIX-46: one greeting rule
+      const first = GR.firstNames(r) || "there";
       await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?,?) ON CONFLICT DO NOTHING`,
         ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:msg:${batch}:${r.person_id}`, subject,
-         body.replace(/\{\{\s*first_name\s*\}\}/gi, first), r.slot_id, who.id, who.name]);
+         GR.greetMerge(body, GR.greetingName(r)).replace(/\{\{\s*first_name\s*\}\}/gi, first), r.slot_id, who.id, who.name]);
       drafted++;
     }
     return res.json({ ok: true, drafted, batch,
@@ -2047,7 +2048,8 @@ async function draftThanksFor(orgId, signupId) {
   const [yr] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=?`,
     [orgId, r.person_id, today.slice(0, 4)]);
   const signature = [org.receipt_signature_name, org.receipt_signature_title, org.brand_signature_extra].filter(Boolean).join("\n") || orgName;
-  const values = { first_name: String(r.name || "").split(/\s+/)[0], full_name: r.name, org_name: orgName, year: today.slice(0, 4),
+  const GR = await import("../shared/greeting.js");
+  const values = { first_name: GR.firstNames(r), greeting: GR.greetingName(r), full_name: r.name, org_name: orgName, year: today.slice(0, 4),
     volunteer_hours: String(Number(yr.h || 0) / 100), signature };
   const subject = B.renderTemplate((tpl && tpl.subject) || def.subject, values).text;
   let body = B.renderTemplate((tpl && tpl.body) || def.body, values).text;
@@ -2395,7 +2397,8 @@ async function draftVolunteerEmail(orgId, kind, { personId, name, slotId = null,
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
   const orgName = await donorFacingOrgName(orgId, org.name || "").catch(() => org.name || "");
   const signature = [org.receipt_signature_name, org.receipt_signature_title, org.brand_signature_extra].filter(Boolean).join("\n") || orgName;
-  const all = { first_name: String(name || "").split(/\s+/)[0] || "there", full_name: name, org_name: orgName, signature, ...values };
+  const GR = await import("../shared/greeting.js");
+  const all = { first_name: GR.firstNames({ name }) || "there", greeting: GR.greetingName({ name }), full_name: name, org_name: orgName, signature, ...values };
   const subject = B.renderTemplate((tpl && tpl.subject) || def.subject, all).text;
   let body = B.renderTemplate((tpl && tpl.body) || def.body, all).text;
   // A shift with no place written down says nothing about where, rather than

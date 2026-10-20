@@ -11,6 +11,8 @@
 // Two colours, from a palette that is already legible on cream and white (the
 // same accents Settings offers for the app). No free hex: a brand colour a
 // reader cannot read on a printed letter is not a brand colour.
+import { greetMerge } from "./greeting.js";
+
 export const PALETTE = Object.freeze([
   { hex: "#0d5c3a", name: "Emerald" },
   { hex: "#0f1a12", name: "Ink" },
@@ -113,7 +115,8 @@ export const kindDef = k => TEMPLATE_KINDS.find(t => t.kind === k) || null;
 // known field with no value for this person is reported as missing.
 export function renderTemplate(text, values) {
   const missing = new Set(), unknown = new Set();
-  const out = String(text || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => {
+  // FIX-46: a name field after "Dear" is the greeting (values.greeting).
+  const out = greetMerge(String(text || ""), values && values.greeting).replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (m, k) => {
     const key = k.toLowerCase();
     if (!MERGE_KEYS.includes(key)) { unknown.add(key); return m; }
     const v = values ? values[key] : null;

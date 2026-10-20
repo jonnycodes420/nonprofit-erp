@@ -222,6 +222,10 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
       ok("FIX-26 the send answers with the same count", send.body?.recipientCount === pv.body?.count, { send: send.body, shown: pv.body?.count });
     }
     ok("clean donor received the campaign", to(cleanEmail).length === 1, { delivered: to(cleanEmail).length });
+    // FIX-46: "Hi {{donor_name}}" greets by first name (shared/greeting.js);
+    // it used to send "Hi Clean Reachable".
+    const cleanHtml = String((to(cleanEmail)[0] || {}).html || "");
+    ok("FIX-46 the campaign's greeting is the first name, not the full name", /Hi Clean\b/.test(cleanHtml) && !/Hi Clean Reachable/.test(cleanHtml), cleanHtml.slice(0, 300));
     ok("suppressed donor did NOT receive the campaign", to(donorEmail).length === 0, { delivered: to(donorEmail).length });
     ok("do-not-contact donor did NOT receive the campaign", to(dncEmail).length === 0, { delivered: to(dncEmail).length });
     ok("deceased donor did NOT receive the campaign", to(deadEmail).length === 0, { delivered: to(deadEmail).length });

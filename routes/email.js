@@ -11,6 +11,11 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 
 const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
+// FIX-46: what a reminder calls somebody (shared/greeting.js), loaded once.
+let GREET = null;
+const GREET_READY = import("../shared/greeting.js").then(m => { GREET = m; return m; });
+const firstNamesOf = donor => (GREET ? GREET.firstNames(donor) : (donor.name ? donor.name.trim().split(/\s+/)[0] : ""));
+const greetIn = (str, donor) => (GREET ? GREET.greetMerge(str || "", GREET.greetingName(donor)) : (str || ""));
 
 // Bound by mount(), which server.js calls at the end of boot. Nothing below runs
 // before then: server.js calls these functions only from request handlers and jobs.
@@ -423,8 +428,8 @@ const DEFAULT_DUNNING_BODY = `<p>Hi {{first_name}},</p>
 <p>With gratitude,<br/>{{org_name}}</p>`;
 
 function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
-  return (str || "")
+  const firstName = donor.name ? firstNamesOf(donor) : "";
+  return greetIn(str, donor)
     .replace(/{{donor_name}}/g, donor.name || "")
     .replace(/{{first_name}}/g, firstName)
     .replace(/{{org_name}}/g, displayNameCase(org.name) || "")
@@ -443,6 +448,7 @@ function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
 // retry); sent:false with refused:null = provider failure (retry later).
 // Callers log `dunning_sent` ONLY when sent is true — the log never lies.
 async function sendDunningEmail(org, donor, subscriptionRow) {
+  await GREET_READY;
   const decision = await donorMailDecision("dunning", donor.email, org.id);
   if (!decision.send) {
     console.log(`[dunning] refused for ${donor.email} (${decision.reason})`);
@@ -669,8 +675,8 @@ const DEFAULT_PLEDGE_REMINDER_BODY = `<p>Hi {{first_name}},</p>
 <p>With gratitude,<br/>{{org_name}}</p>`;
 
 function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }) {
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
-  return (str || "")
+  const firstName = donor.name ? firstNamesOf(donor) : "";
+  return greetIn(str, donor)
     .replace(/{{donor_name}}/g, donor.name || "")
     .replace(/{{first_name}}/g, firstName)
     .replace(/{{org_name}}/g, displayNameCase(org.name) || "")
@@ -680,6 +686,7 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
 }
 
 async function sendPledgeReminderEmail(org, donor, pledgeRow) {
+  await GREET_READY;
   // W-4: a reminder to give is solicitation — MARKETING in the policy.
   const decision = await donorMailDecision("pledge_reminder", donor.email, org.id);
   if (!decision.send) {
