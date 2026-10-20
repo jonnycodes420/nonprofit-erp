@@ -58,7 +58,7 @@ process.env.INBOUND_EMAIL_SECRET = "local-inbound-secret";
 const LOGS = [];
 for (const k of ["log", "error", "warn", "info"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
 const { testNow } = require("./clock");
 
 const A = "org_cs1a", B = "org_cs1b", C = "org_cs1c";
@@ -289,7 +289,9 @@ const json = v => (typeof v === "string" ? JSON.parse(v) : v) || {};
   const notSuper = await api("POST", `/admin/orgs/${B}/privacy`, tokA, { on: true });
   ok("§8 an org admin cannot use the support switch", notSuper.status === 403, notSuper.status);
   const sup = await api("POST", `/admin/orgs/${B}/privacy`, tokSuper, { on: true });
-  const [audB] = await q(`SELECT org_id, user_name AS actor_name, action FROM fin_audit_log WHERE org_id=$1 AND entity_type='org setting' ORDER BY created_at DESC LIMIT 1`, [B]);
+  // The audit row is written when the response finishes, so it can land a
+  // moment after the answer reaches the test: wait for it, briefly.
+  const audB = await waitFor(async () => (await q(`SELECT org_id, user_name AS actor_name, action FROM fin_audit_log WHERE org_id=$1 AND entity_type='org setting' ORDER BY created_at DESC LIMIT 1`, [B]))[0], { timeout: 3000 });
   const pA2 = await api("GET", "/privacy", tokA);
   ok("§8 support turns it on for that org, recorded in that org's log as Steward support",
     sup.status === 200 && sup.body.on === true && !!audB && audB.actor_name === "Steward support" && /turned on/.test(audB.action), { sup: sup.status, audB });
