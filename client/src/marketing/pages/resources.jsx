@@ -8,6 +8,9 @@ import { API } from "../../api";
 import { PRODUCT_WORDS } from "../../../../shared/changelog.js";
 import { HELP_ARTICLES } from "../../../../shared/helpArticles.js";
 import { searchArticles } from "../../../../shared/helpSearch.js";
+// SUPPORT-1: the articles written as Markdown in docs/help, and the help assistant.
+import { HELP_DOCS } from "../../../../shared/helpDocs.js";
+import { SupportChat } from "../../components/SupportChat.jsx";
 // TRUST-2: What's new is the files in docs/changelog/, one per build, never
 // generated from commit messages. A super-admin can hide an entry.
 import { CHANGELOG } from "../../lib/changelog";
@@ -245,12 +248,22 @@ export function Faq() {
 // for, searchable over titles and bodies. Written from what each screen does
 // today (shared/helpArticles.js); the app's "?" panel reads the same articles.
 const TASK_FIRST = a => ((a.screens || []).length ? 1 : 0);
+const EVERY_ARTICLE = [...HELP_ARTICLES, ...HELP_DOCS];
+// The website's chat is a visitor's: no sign-in, so no organization's data.
+const siteSend = async (path, body) => {
+  const kind = path.endsWith("/handoff") ? "handoff" : "chat";
+  const r = await fetch(API + "/support/site/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "That did not go through. Write to jonathan@stewardapp.dev.");
+  return j;
+};
 export function Help() {
   const [q, setQ] = useState("");
-  const list = q.trim() ? searchArticles(HELP_ARTICLES, q, 20) : [...HELP_ARTICLES].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
+  const list = q.trim() ? searchArticles(EVERY_ARTICLE, q, 20) : [...EVERY_ARTICLE].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
   return <>
     <Hero eyebrow="Help center" crumbs={[["Customers"], ["Help center"]]} h="How do I <b>do this in Steward?</b>" lede="Short answers for people doing a lot with a little. There is an article for every screen and for the jobs people come for, and if yours is not here, a person answers." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap">
+      <div id="ask" style={{ maxWidth: 640, marginBottom: 28 }}><SupportChat visitor send={siteSend} page="/help" /></div>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help center" aria-label="Search the help center"
         style={{ width: "100%", maxWidth: 560, padding: "12px 14px", fontSize: 16, borderRadius: 10, border: "1px solid #D4CFC6", marginBottom: 20, fontFamily: "inherit" }} />
       <div className="cards">
@@ -262,7 +275,7 @@ export function Help() {
   </>;
 }
 export function HelpArticle({ slug }) {
-  const a = HELP_ARTICLES.find(x => x.slug === slug);
+  const a = EVERY_ARTICLE.find(x => x.slug === slug);
   const [voted, setVoted] = useState(null);
   if (!a) return null;
   const vote = v => { setVoted(v); fetch(API + "/help/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: a.slug, helpful: v }) }).catch(() => {}); };

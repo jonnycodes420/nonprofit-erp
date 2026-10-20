@@ -13,7 +13,7 @@ export const HELP_ARTICLES = [
     summary: `Home is your tap on the shoulder each morning: the people who need you today, each with one next step.`,
     sections: [
       { h: `What you see`, p: [
-        `Home opens with today's date and a greeting. Below it are sections, in this order unless you change it: "Set up Steward" (a checklist while you are getting started), The Thread, Drift, monthly gifts that need you, thank-yous ready, Sequences, and "Tell Steward what to do".`,
+        `Home opens with today's date and a greeting, and under it a box where you can ask Steward a question about your records, or tell it what to do. Below that are sections, in this order unless you change it: "Set up Steward" (a checklist while you are getting started), The Thread, Drift, monthly gifts that need you, thank-yous ready, Sequences, and "Tell Steward what to do".`,
         `The Thread shows "First thing": one person and their next step. Drift lists donors who have gone quiet past their own giving pattern. The right rail, "Today", has three tiles: "Open follow-ups", "Due today" and the monthly givers whose card failed this week. Click a tile to see the people behind it.`,
         `If you have connected a calendar and have meetings today, a short brief for each one appears at the top.`,
         `After a meeting, type what happened and Steward reads your note for a pledge, a gift, a fund and a next step, shown under "Steward heard". Each one quotes your own words, and nothing is recorded until you press save. With AI turned off, a simpler reader does the same job and says so. You can also get these meeting briefs by email each morning: tick "Your meetings today" in Settings, under Account.`,
@@ -39,26 +39,27 @@ export const HELP_ARTICLES = [
     slug: `tasks`,
     title: `Tasks`,
     screens: [`tasks`],
-    summary: `Tasks is your list of follow-ups, grouped by when they are due.`,
+    summary: `Tasks is your list of follow-ups and next steps, sorted by the day they are due.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your tasks." A line at the top counts what needs attention (overdue and due today), what is open and what is done. Tasks are grouped as Overdue, Due today, Upcoming and No date, with the soonest first.`,
-        `Each row shows the task, its due date, the donor it is linked to (click the name to open their record), who it is assigned to, and a HIGH badge when it is high priority. Finished tasks fold into "Completed" at the bottom.`,
-        `The "Mine / All" switch chooses between tasks assigned to you and every task in your organization. Mine is the default.`,
+        `The screen is titled "Your tasks." At the top is a box where you add a task in plain words. Below it are six tabs, each with a count: Today, Upcoming (the next seven days), Overdue, Later (more than seven days away), No date, and Done (finished in the last 30 days).`,
+        `Each row shows the task, its day, the person it is about (click the name to open their record), and a button for what the task asks for, such as "Log the call", "Draft the email" or "Draft the thank-you". Every open task also has "Snooze".`,
+        `"Mine" shows the tasks that are yours and "Everyone" shows the whole organization's. An admin can also pick one person's tasks from "Any staff member".`,
       ]},
       { h: `Add a task`, steps: [
-        `Click "+ New task".`,
-        `Type what needs to happen, for example "Call Jane about the spring gala".`,
-        `If you want, set "Due", "Priority" (high, medium or low) and "Linked donor (optional)".`,
-        `Click "Add task", or press Enter.`,
+        `Type it in the box at the top in plain words, for example "Call Bill Harmon Friday 2pm about the gala", then click "Add" or press Enter.`,
+        `Steward shows what it read: the task, who it is about, the day, the time and the kind (Call, Email, Meeting, Thank-you, Write or Other). Change anything that is wrong. If more than one person matches the name, choose under "Which one?".`,
+        `Click "Save task". An Undo appears for a moment in case you change your mind.`,
       ]},
-      { h: `Finish or reopen a task`, steps: [
-        `Click the square box beside a task to mark it complete.`,
-        `To reopen one, open "Completed" and click the task.`,
+      { h: `Change, finish or snooze a task`, steps: [
+        `Click a task to open it. You can change the task, its day and time, kind, priority (Normal or High), its owner and whether it repeats (every week, every month on the same day, every month on the first Monday, or every quarter), and add notes and a checklist. Click "Save".`,
+        `Click the round box beside a task to finish it. For a call or a meeting with a person, Steward asks how it went and what the next step is, then "Save and mark done". Tick "No next step" if there is none.`,
+        `Click "Snooze" to move it to "Tomorrow", "Next week" or a day you pick, with an optional reason that stays on the task.`,
+        `To work on several at once, click "Select" (or press and hold a task on a phone), tick the tasks, then "Reassign", "Move", "Mark done" or "Delete".`,
       ]},
       { h: `What this screen does not do`, p: [
-        `A task you add here is always assigned to you; there is no field to assign it to someone else. You cannot edit or delete a task from this screen. Tasks also arrive from other places, such as a plan the Agent ran or a follow-up after an event.`,
-        `If your subscription has lapsed, the buttons are greyed out with the note "Reactivate your subscription to make changes."`,
+        `Tasks never sends anything by itself. "Draft the email" and "Draft the thank-you" open a draft for you to read, and it goes only when you press send. A task that belongs to something else, like a step in a journey or a grant deadline, is changed where it lives rather than deleted here.`,
+        `If your subscription has lapsed, you can see your tasks but not add or change them.`,
       ]},
     ],
   },
@@ -97,8 +98,8 @@ export const HELP_ARTICLES = [
     summary: `Donors is everyone who ever believed in your work, one record each, where you search, filter and open a person's whole story.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage and Map), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
-        `The Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open "⊞ Filters" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live.`,
+        `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
+        `The Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open "⊞ Filters" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live. Data health lists records that need tidying, such as possible duplicates.`,
       ]},
       { h: `Add a donor`, steps: [
         `Click "+ Add". A "New Donor" card opens.`,
@@ -106,7 +107,7 @@ export const HELP_ARTICLES = [
         `Click "Save".`,
       ]},
       { h: `Record a gift`, p: [
-        `There is no gift button on the list itself. Open the person, go to "Gifts & Pledges" and click "+ Add Gift". The "Gift Amount ($)" box on the new donor card sets their totals only and does not create a dated gift, so record the real gift on their record.`,
+        `There is no gift button on the list itself. Open the person, go to "Gifts & pledges" and click "+ Add Gift". The "Gift Amount ($)" box on the new donor card sets their totals only and does not create a dated gift, so record the real gift on their record.`,
       ]},
       { h: `Act on several people at once`, steps: [
         `Click "Select" and tick the rows you want.`,
@@ -127,11 +128,16 @@ export const HELP_ARTICLES = [
         `A group kept by hand holds the people you put in it until somebody takes them out. Add people from the Donors list (click "Select", tick them, then "Add to a group") or from a person's profile, under their name.`,
         `A group by rule carries a lightning mark. Its rule is the same filters the Donors list has: role, giving level, lifecycle, closeness, whether they have given, and stage. Every rule must hold. Who is in it is worked out fresh each time, so a gift that takes somebody to Mid moves them into a Mid group the moment it is recorded, and a refund that takes them back under moves them out. "Warm volunteers who have never given" is one rule: Volunteers, Warm, Has never given.`,
       ]},
+      { h: `Start from a list Steward already sees`, steps: [
+        `Open Groups. Under "Start from a list Steward already sees" are starter groups such as "Gave last year, not yet this year", "Monthly givers", "Volunteers who have never given" and "Board members", each with how many of your people fit it today.`,
+        `Click one to see who is in it, then "Add". It becomes a group by rule that keeps itself up to date.`,
+        `To make your own, click "New group".`,
+      ]},
       { h: `A group's page`, p: [
         `Each group shows how many people are in it, their average gift, what they gave this fiscal year and in total, how many gifts that is, and the last twelve months month by month. Click any number to see the people or gifts behind it. The list of people can be narrowed to Mid or Major.`,
       ]},
       { h: `Where a group works`, p: [
-        `A group can be the audience of a campaign, a tag in your email tool (Settings, Connections), who a journey is for, what starts a journey ("They join a group"), who a survey goes to, and a filter on a saved dashboard and its board pack, where it narrows the gift figures to the group's people.`,
+        `"Email this group" opens a new campaign for it, and "Start a journey" starts one for it. A group can be the audience of a campaign, a tag in your email tool (Settings, Connections), who a journey is for, what starts a journey ("They join a group"), who a survey goes to, and a filter on a saved dashboard and its board pack, where it narrows the gift figures to the group's people.`,
       ]},
     ],
   },
@@ -172,7 +178,7 @@ export const HELP_ARTICLES = [
     summary: `Communications is where you write and send email campaigns, build sequences and approve milestone emails.`,
     sections: [
       { h: `What you see`, p: [
-        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool and Drafts to review. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
+        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool, Drafts to review and Surveys. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
       ]},
       { h: `Send a campaign`, steps: [
         `Open Campaigns and click "+ New Campaign". Start from a template with "Use this →" or from blank.`,
@@ -195,7 +201,7 @@ export const HELP_ARTICLES = [
         `Each draft has "Send", "Mark reviewed", "Edit" and "Dismiss". Saving an edit also marks it reviewed. "Send all reviewed" sends every draft marked reviewed, and only those.`,
       ]},
       { h: `Good to know`, p: [
-        `Your email tool reports on sends from Mailchimp or Constant Contact once connected. It cannot resend them. "Email This Segment →" on Audience opens a blank campaign, so pick the segment again in the campaign.`,
+        `Your email tool reports on sends from Mailchimp or Constant Contact once connected. It cannot resend them. "Email this audience" on Audience opens a new campaign; choose who it goes to under "Audience Segment".`,
       ]},
     ],
   },
@@ -232,7 +238,7 @@ export const HELP_ARTICLES = [
     summary: `Fundraising is the place for money coming in: goals, campaigns, pages, auctions, peer-to-peer, recurring gifts, memberships, major gifts and deposits.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your fundraising." with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Events, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance, Pipeline, Proposals, Portfolios and Plans. Money in holds Deposits, Acknowledgments and Funds.`,
+        `The screen is titled "Your fundraising." with four sections. Overview shows your goals, what you have raised this period, active campaigns, live giving pages and recent gifts. Campaigns & pages holds Campaigns, Giving pages & forms, Tickets & sponsors, Auctions, Peer-to-peer, Recurring and Memberships. Major gifts holds At a glance, Pipeline, Proposals, Portfolios and Plans. Money in holds To confirm, Deposits, Acknowledgments, Funds and Started, not finished.`,
         `Auctions, Peer-to-peer and Memberships also have their own entries in the sidebar, under Raise, and each one opens its part of this screen.`,
       ]},
       { h: `Create a campaign`, steps: [
@@ -247,7 +253,7 @@ export const HELP_ARTICLES = [
         `Fill in "Deposit date", "Slip total" and the lines, then click "Read the slip" and check it before you commit.`,
       ]},
       { h: `Good to know`, p: [
-        `Giving pages are created in Settings, under Giving Pages. This screen lists them with "Open ↗" and "Copy link".`,
+        `Start a giving page with "New giving page" under Giving pages & forms. Each page has "Edit in editor", "Open page", "Copy link" and "QR and embed". Nothing changes for donors until you publish.`,
         `"Propose a recurring gift" under Recurring emails the donor a proposal. Nothing changes until they accept, and the link lasts 14 days.`,
         `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organization's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
         `Every plan includes the Pipeline. Moving a card asks what happened.`,
@@ -293,25 +299,29 @@ export const HELP_ARTICLES = [
     summary: `Grants tracks applications from first research to award, with the deadlines Steward watches for you.`,
     sections: [
       { h: `What you see`, p: [
-        `Three tabs: "Pipeline", "Deadlines" and "✦ Find Grants". Pipeline shows what is in the works, what has been received and the next deadline, as a board ("Kanban") or a "List".`,
+        `Six tabs: Pipeline, Funders, Deadlines, Library, Reports and "✦ Find grants". Pipeline shows every grant as a "Board" with eight stages (Prospecting, LOI, Invited, Submitted, Awarded, Declined, Reporting and Closed), or as a "List". Each card shows the ask, the funder and the next deadline.`,
+        `Funders keeps one page per funder, Library holds the text and documents you reuse in applications, and Reports shows how the year's grants stand.`,
       ]},
       { h: `Add a grant`, steps: [
-        `Click "+ Add Grant".`,
-        `Fill in "Funder", and if you have them, "Program / Grant Name", "Ask Amount ($)", "Program Officer", "Status" and "Deadline".`,
-        `Click "Save Grant".`,
+        `On Pipeline, click "Add a grant".`,
+        `Fill in "Funder", and if you have them, "Program", "Ask ($)", "Program officer", the stage and a deadline.`,
+        `Click "Save grant". An Undo appears for a moment.`,
+      ]},
+      { h: `Move a grant along`, steps: [
+        `Drag its card to the next stage on the board. On a phone, choose the stage instead.`,
+        `Moving a grant to Declined asks why, so next year's ask can start from it. Undo puts a move back.`,
       ]},
       { h: `Add a deadline`, steps: [
         `Open the grant and click "Add a deadline".`,
-        `Pick the kind: LOI due, Proposal due, Decision expected, Report due or Renewal window opens.`,
+        `Pick the kind: LOI due, Proposal due, Decision expected, Report due, Renewal window opens, or Custom.`,
         `Pick the date, add a note if you want, and click "Add".`,
-        `When it is handled, click "Done", or "Move to" a new date.`,
+        `When it is handled, click "Done". "Edit" changes it and "Take off" removes it.`,
       ]},
       { h: `Deadlines tab`, p: [
         `Lists the open deadlines for the next twelve months. When one is near, a follow-up opens for the grant's officer. Admins can change how early that happens under "How early Steward reminds you" and "Save lead times".`,
       ]},
       { h: `Good to know`, p: [
-        `The board and the list use different stage names. Awarded and LOI can only be set by dragging a card on the board. "Delete" on a grant is for admins. It asks you to confirm, then removes the grant for good.`,
-        `There is no separate grant report tracker: you set a Report due deadline, and "✦ Report Outline" can draft an outline. To bring grants in from a file, use Donors, "↑ Import & tools ▾", "Import grants".`,
+        `Deleting a grant asks you to confirm, then removes it for good, with its deadlines and notes. To bring grants in from a file, click "Bring in a spreadsheet" on Pipeline, or use Donors, "↑ Import & tools ▾", "Import grants".`,
       ]},
     ],
   },
@@ -382,7 +392,7 @@ export const HELP_ARTICLES = [
     summary: `Reports holds every report and the four dashboards, and lets you build and save your own.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your Reports". The rail on the left has "Build a report", a search box, and groups: Dashboards (Board, Fundraising, People and Recurring), Your saved reports, Who stopped giving, Who gives the most, The year, Money in, Grants, and Volunteers and members.`,
+        `The screen is titled "Your Reports". The rail on the left has "Build a report", a search box, and groups: Dashboards (Board, Fundraising, People and Recurring, any dashboards your team saved, "Board pack", "Past reports" and "New dashboard"), Your saved reports, Who stopped giving, Who gives the most, The year, Money in, Grants, and Volunteers and members.`,
         `Who stopped giving holds LYBUNT, SYBUNT, lapsed donors and retention. Every figure comes with the sentence that defines it, and clicking a figure shows the rows behind it.`,
       ]},
       { h: `Run and export a report`, steps: [
@@ -410,7 +420,7 @@ export const HELP_ARTICLES = [
     summary: `Agent is where you tell Steward what to do in plain words. It shows you the plan, and nothing happens until you say yes.`,
     sections: [
       { h: `What you see`, p: [
-        `Five tabs: Plans, Ask, Workflows, Waiting for you and Guardrails. Steward reads, counts, finds people and drafts. It never records money on its own, refunds, changes a pledge or a monthly gift, or issues a tax receipt.`,
+        `Six tabs: Plans, Ask, Workflows, Waiting for you, What changed (what each import and connection read brought in) and Guardrails. Steward reads, counts, finds people and drafts. It never records money on its own, refunds, changes a pledge or a monthly gift, or issues a tax receipt.`,
       ]},
       { h: `What it can do for you`, p: [
         `Tell it in your own words and it does the work through the same buttons you would press, as you, and checks each result before it says Done:`,
@@ -449,7 +459,7 @@ export const HELP_ARTICLES = [
     summary: `Settings is where your organization, team, connections, receipts, data and security are set up.`,
     sections: [
       { h: `The sections`, p: [
-        `Organization: your name, mission, staff and board, and your brand. Team: who can sign in, and invites. Connections: every outside service in one place, from Stripe and PayPal to your inbox, your books and API keys, and whether each one is still working. Giving Pages: your time zone, donor-covers-fees and your giving pages. Customization: custom fields and impact metrics. Your words: what you call donors and gifts. Journeys. Tax Receipts. Imports. Audit log (admins). Your Data. Account. Security.`,
+        `Organization: your name, mission, staff and board, and your brand. Team: who can sign in, and invites. Connections: every outside service in one place, from Stripe and PayPal to your inbox, your books and API keys, and whether each one is still working. Giving Pages: your time zone, donor-covers-fees and your giving pages. Customization: custom fields and impact metrics. Your words: what you call donors and gifts. Journeys. Tax Receipts. Brand kit: your logo, colors and fonts for emails and pages. Imports. Audit log (admins). Privacy: privacy mode for people you serve. Your Data. Account. Security.`,
         `Organizations on the Portal plan also see a Donor Portal section.`,
       ]},
       { h: `Find a setting`, steps: [
@@ -474,8 +484,8 @@ export const HELP_ARTICLES = [
     summary: `The profile is one person's whole story: every gift, every hour, every conversation, their next step and your tools.`,
     sections: [
       { h: `What you see`, p: [
-        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a call", "Plan a follow-up" and "More ▾". Four figures sit below: Lifetime, Last gift, Last met and Last email. Click any of them to see the rows behind it.`,
-        `The tabs are Overview, Gifts & Pledges, Funds, Related, Materials and Activity. Overview has "What do I do next", the timeline, giving by year, recent conversations, household and tasks.`,
+        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a call", "Plan a follow-up" and "More ▾". Below them sit their figures: Lifetime, This year, Last gift, Average gift, their first and largest gift, Last met and Last email. Click any of them to see the rows behind it.`,
+        `The tabs are Overview, Gifts & pledges, Asks & pipeline, Conversations, Emails, Tasks, Notes, Funds, Related and Files. Overview has the timeline, giving by year, recent conversations and their household.`,
         `The rail on the right always shows their next step, contact details, relationship owner, journey and quick actions.`,
       ]},
       { h: `Log a call`, steps: [
@@ -484,17 +494,17 @@ export const HELP_ARTICLES = [
         `Save it. It joins their timeline.`,
       ]},
       { h: `Record a gift`, steps: [
-        `Open "Gifts & Pledges" and click "+ Add Gift".`,
+        `Open "Gifts & pledges" and click "+ Add Gift".`,
         `Enter the amount, date, type and payment method. Pick a campaign or a pledge it fulfills if it has one.`,
         `Tick "Acknowledgement sent" if you have already thanked them.`,
         `Click "Save".`,
         `Click "Send receipt" on the row to email a tax receipt.`,
       ]},
       { h: `Add a task`, steps: [
-        `On Overview, find the tasks list and click "+ Add task".`,
+        `Click "More ▾", then "Add a task". Their open tasks are on the Tasks tab.`,
       ]},
       { h: `More`, p: [
-        `"More ▾" holds "Request a gift" (a link the donor can give through), "Impact summary", "Send their page link", "Edit record" and, for admins, "Export this person's data". "Erase this person" sits at the bottom of Overview, for admins. See Export or erase a donor.`,
+        `"More ▾" holds "Request a gift" (a link the donor can give through), drafting help such as "Draft an email" and "Brief me", "Record a video thank-you", "Add a task", "Impact summary", "Send their page link" and "Edit record". For admins it also holds "Export this person's data" and "Erase this person". See Export or erase a donor. A draft is only a draft: nothing reaches the donor until you send it.`,
       ]},
     ],
   },
@@ -544,7 +554,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Good to know`, p: [
         `Donorbox has no direct connection yet, so its card offers "Import a file": its gift export comes in as a statement.`,
-        `For a bookkeeping tool, "Manage" opens "Where the money posts", where "Save the mapping" says which account each fund goes to. For an email tool, "Preview" then "Save and keep in step".`,
+        `For a bookkeeping tool, "Manage" opens "Where the money posts", where "Save the mapping" says which account each fund goes to. For an email tool, "Preview" shows what the read would bring in, then "Save and read" (or "Save, read and add people").`,
         `Your donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here.`,
       ]},
     ],
@@ -563,7 +573,7 @@ export const HELP_ARTICLES = [
         `Click "+ New Giving Page". Only admins see it.`,
         `Fill in the page.`,
         `Click "Create giving page".`,
-        `To change it later, click "Edit", then "Save changes".`,
+        `To change it later, click "Edit", then "Save changes", or "Edit in editor" to change the page's words and layout in the page editor, where nothing changes for donors until you publish.`,
       ]},
       { h: `Let donors cover the fees`, steps: [
         `Under "Let Donors Cover Processing Costs", click "Enable donor-covers-fees".`,
@@ -615,7 +625,7 @@ export const HELP_ARTICLES = [
         `Click "Preview receipt" to see a sample receipt as a PDF.`,
       ]},
       { h: `What happens next`, p: [
-        `Online gifts through your giving pages are receipted automatically. For a gift you record by hand, click "Send receipt" on the gift's row in the donor's Gifts & Pledges tab.`,
+        `Online gifts through your giving pages are receipted automatically. For a gift you record by hand, click "Send receipt" on the gift's row in the donor's Gifts & pledges tab.`,
         `The sample in "Preview receipt" is a single gift receipt for a made-up donor, not a year-end statement.`,
       ]},
       { h: `Turn receipts off`, p: [
@@ -800,7 +810,7 @@ export const HELP_ARTICLES = [
         `Click "Add". Click "Remove" to take one off.`,
       ]},
       { h: `Pause or disconnect`, p: [
-        `"Sync now" reads straight away. "Pause" stops reading until you click "Turn back on". "Disconnect" stops it and keeps what was logged. "Disconnect and remove" also deletes what it logged, and cannot be undone.`,
+        `Each connected mailbox shows what was read and logged lately. If a read failed, "Check again" tries straight away and "Reconnect" signs in again. "Pause" stops reading until you click "Turn back on". "Disconnect" stops it and keeps what was logged. "Disconnect and remove" also deletes what it logged, and cannot be undone.`,
       ]},
       { h: `Rather not connect`, p: [
         `Use your organization's BCC address instead: BCC it on any email to a donor and the email lands on their record. Find it under "Log an email by BCC", with a "Copy" button. A message that names nobody on file is held for you to place, or stored nowhere.`,
@@ -830,7 +840,7 @@ export const HELP_ARTICLES = [
         `Sign and post the letters, then click "Mark as sent".`,
       ]},
       { h: `Already thanked them`, p: [
-        `Tick "Acknowledgement sent" when you add the gift on the donor's Gifts & Pledges tab, or tick Ack on the gift row later.`,
+        `Tick "Acknowledgement sent" when you add the gift on the donor's Gifts & pledges tab, or tick Ack on the gift row later.`,
       ]},
       { h: `Make the drafts sound like you`, p: [
         `Click "Teach Steward your voice →", or open Settings, Account, paste a few of your own thank-yous and click "Save my voice".`,
@@ -890,7 +900,7 @@ export const HELP_ARTICLES = [
         `Their statement is still made, just not emailed, so plan to reach them another way.`,
       ]},
       { h: `One donor at a time`, steps: [
-        `Open the donor and go to "Gifts & Pledges".`,
+        `Open the donor and go to "Gifts & pledges".`,
         `Click "Year-end statement", choose the "Tax year", and click "Generate & email".`,
         `It replaces any earlier statement for that year.`,
       ]},
@@ -945,7 +955,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Erase a person`, steps: [
         `Open the person's record. You need to be an admin.`,
-        `On Overview, scroll to the bottom and click "Erase this person".`,
+        `Click "More ▾", then "Erase this person".`,
         `Read what will happen.`,
         `Type ERASE in capitals in the box.`,
         `Click "Erase for good", or "Cancel".`,

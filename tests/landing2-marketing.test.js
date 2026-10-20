@@ -155,6 +155,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
         if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
+        if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
         linkish.push([f, v]);
       }
     }
@@ -268,7 +269,10 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     // (JSON and PDF). Named here one by one; any other request is still red.
     const READS = ["/status/summary", "/changelog/hidden", "/legal/dpa`", "/legal/dpa.pdf",
       // HELP-1 — "Did this help?" sends a slug and a yes or no, nothing else.
-      "/help/feedback"];
+      "/help/feedback",
+      // SUPPORT-1 — the help center's chat: the visitor's question, and the
+      // email they give when they ask for Jonathan. No org, no sign-in.
+      "/support/site/"];
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 1, others);

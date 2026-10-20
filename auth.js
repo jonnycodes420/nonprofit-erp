@@ -146,6 +146,7 @@ const COORDINATOR_SEGMENTS = new Set([
   "volunteer-hours",    // the hours import
   "me",                 // their own account, password and two-step
   "people",             // one person's record; the money half is stripped
+  "support",            // SUPPORT-1: the help assistant; it reads no giving for this role
 ]);
 function coordinatorMayReach(path) {
   if (COORDINATOR_EXACT.has(path)) return true;

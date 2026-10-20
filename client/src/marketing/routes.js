@@ -18,6 +18,7 @@ import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
 import { ARTICLES } from "./articles/index.js";
 import { GLOSSARY, GLOSSARY_UPDATED } from "./data/glossary.js";
 import { HELP_ARTICLES } from "../../../shared/helpArticles.js";
+import { HELP_DOCS } from "../../../shared/helpDocs.js";   // SUPPORT-1: docs/help/*.md
 import { PILLAR, VISION, UNDER } from "./data/messaging.js";
 
 // Titles drop the headline markup. The copy uses only <b>, <em> and <br>.
@@ -82,6 +83,7 @@ export const ROUTES = [
   { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
   { path: "/help", page: "help", title: T("How do I do this in Steward?"), description: "An article for every screen in Steward and for the jobs people come for, searchable. If it is not here, a person answers." },
   ...HELP_ARTICLES.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),
+  ...HELP_DOCS.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),
   { path: "/whats-new", page: "whatsNew", title: T("What we shipped lately."), description: "Steward ships improvements every week. Here is the recent list, newest first." },
 
   { path: "/tools", page: "tools", title: T("Free tools, no signup."), description: "Run them on your own numbers. Nothing you type leaves your browser." },

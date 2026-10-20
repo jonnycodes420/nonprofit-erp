@@ -6028,6 +6028,14 @@ async function runSchemaInit(pool) {
         ALTER TABLE question_log DROP CONSTRAINT IF EXISTS question_log_surface;
         ALTER TABLE question_log ADD CONSTRAINT question_log_surface CHECK (surface IN ('help','agent','analyst','why'));
       END IF; END $$`);
+  // SUPPORT-1 — the support agent logs here too: 'support' in the app, 'site'
+  // on the website, with the ids of the sources that answered (never the answer).
+  await pool.query(`ALTER TABLE question_log ADD COLUMN IF NOT EXISTS sources TEXT`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'question_log_surface' AND pg_get_constraintdef(oid) LIKE '%site%') THEN
+        ALTER TABLE question_log DROP CONSTRAINT IF EXISTS question_log_surface;
+        ALTER TABLE question_log ADD CONSTRAINT question_log_surface CHECK (surface IN ('help','agent','analyst','why','support','site'));
+      END IF; END $$`);
   await pool.query(`CREATE TABLE IF NOT EXISTS support_tickets (
       id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE, user_id TEXT NOT NULL, user_email TEXT NOT NULL, user_name TEXT,
       subject TEXT NOT NULL, screen TEXT, browser TEXT, status TEXT NOT NULL DEFAULT 'open',

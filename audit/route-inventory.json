@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-19T18:51:17.504Z",
- "count": 1316,
+ "generatedAt": "2026-10-20T00:38:31.708Z",
+ "count": 1321,
  "routes": [
   {
    "method": "POST",
@@ -27315,6 +27315,96 @@
    }
   },
   {
+   "method": "POST",
+   "path": "/support/chat",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/support/chat",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/support/handoff",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/support/handoff",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/support/site/chat",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/support/site/chat",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/support/site/handoff",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/support/site/handoff",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/support/unanswered",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/support/unanswered",
+    "referenced": true
+   }
+  },
+  {
    "method": "GET",
    "path": "/media",
    "line": null,
@@ -29163,7 +29253,7 @@
    "identifiers": [],
    "frontend": {
     "probe": "/help/ask",
-    "referenced": true
+    "referenced": false
    }
   },
   {
@@ -29183,7 +29273,7 @@
    "identifiers": [],
    "frontend": {
     "probe": "/help/settings",
-    "referenced": true
+    "referenced": false
    }
   },
   {
@@ -29223,7 +29313,7 @@
    "identifiers": [],
    "frontend": {
     "probe": "/help/tickets",
-    "referenced": true
+    "referenced": false
    }
   },
   {
