@@ -220,10 +220,14 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
     // sat inside the story column (order 2) and rendered below the form.
     await q(`UPDATE giving_pages SET image_url=$2, image_meta=$3::jsonb WHERE id=$1`,
       ["gp_ge1plain", APP + "/favicon.svg", JSON.stringify({ alt: "Boats on the bay", fx: 0.5, fy: 0.5 })]);
+    // FIX-46: a configured form, so the page draws the three steps.
+    await q(`UPDATE giving_pages SET form_config=$2::jsonb WHERE id='gp_ge1plain' AND org_id=$1`,
+      [ORG, JSON.stringify({ amountsCents: [2500, 5000, 10000], allowOther: true, offerMonthly: true, defaultFrequency: "once" })]);
     for (const width of [1440, 390]) {
       const pp = await browser.newPage({ viewport: { width, height: 900 } });
       await pp.goto(`${APP}/give/${SLUG}/spring-paddle`, { waitUntil: "domcontentloaded", timeout: 60000 });
       await pp.waitForSelector('[data-testid="page-cover"]', { timeout: 20000 }).catch(() => {});
+      await pp.waitForSelector('.give-steps [role="status"]', { state: "attached", timeout: 20000 }).catch(() => {});
       const geo = await pp.evaluate(() => {
         const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, w: r.width, h: r.height }; };
         return { cover: box(document.querySelector('[data-testid="page-cover"]')), form: box(document.getElementById("give-form")) };

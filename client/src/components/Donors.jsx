@@ -247,7 +247,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useEffect(()=>{
     if(!wholeOrgView||orgPeople)return;
     let live=true;
-    allPeople().then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>console.error(e));
+    // FIX-46: read fresh each time Donors opens, as the profile is. Held for
+    // the whole session, a gift logged anywhere else (To confirm, Stripe, an
+    // import) left Re-engage showing "$0, no gift on file" beside a profile
+    // that said $1,500. Team, Re-engage and the map share this one read.
+    allPeople({force:true}).then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>console.error(e));
     return()=>{live=false;};
   },[wholeOrgView,orgPeople]);
   const filtered=(orgPeople||[])

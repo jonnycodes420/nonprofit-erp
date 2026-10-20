@@ -145,9 +145,12 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
 
   // WIRE-1: ONE server search (GET /search), org-scoped, every kind of
   // record by its name, five of each. Debounced; a stale answer is dropped.
+  // FIX-46: and again each time the box opens, so a person's figures are
+  // today's, not the ones from before a gift was logged elsewhere.
   useEffect(()=>{
     const term = q.trim();
     if (term.length < 2) { setResults(null); return; }
+    if (!open) return;
     const seq = ++seqRef.current;
     const t = setTimeout(async ()=>{
       try {
@@ -159,7 +162,7 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
       } catch { if (seq === seqRef.current) { setResults([]); setMore({}); setExpanded(null); } }
     }, 220);
     return ()=>clearTimeout(t);
-  },[q]);
+  },[q,open]);
 
   const navMatches = useMemo(()=>{
     const term = q.trim().toLowerCase();

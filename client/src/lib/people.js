@@ -7,9 +7,10 @@
 //
 // allPeople() is for the few views that really draw the whole org at once
 // (Team, Re-engage, the map, the call list): it loads the old whole-org list
-// when one of them opens, once per session, never on sign-in.
+// when one of them opens (FIX-46: fresh each time Donors opens, and forgotten
+// on any write), never on sign-in.
 import { useEffect, useState } from "react";
-import { apiFetch, adaptDonor } from "../api";
+import { apiFetch, adaptDonor, onWrite } from "../api";
 
 const qs = o => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
 
@@ -54,6 +55,9 @@ export function allPeople({ force = false } = {}) {
   return ALL;
 }
 export function forgetAllPeople() { ALL = null; }
+// FIX-46: any write may change somebody's totals, so the next whole-org view
+// asks the server again (the same rows the profile reads).
+onWrite(forgetAllPeople);
 
 // A picker's suggestions for what has been typed so far (debounced). Returns
 // [rows, pending]: pending is true until the answer for this text is back, so
