@@ -209,6 +209,19 @@ const file = (tag, n, perDonor = 1) => ({
     ok(`§7 an Agent draft from a saved template greets "Dear ${want},"`, body.includes(`Dear ${want},`) && !body.includes("{{"), body.slice(0, 120));
     ok(`§7 …and its subject's greeting too`, ft.body?.subject === `Hello ${want}`, ft.body?.subject);
   }
+  // Jonathan, 19 Oct: "Dear {{first_name}}" is first names only (both on a
+  // joint record), never the salutation; only the full-name field greets.
+  await q(`INSERT INTO email_templates (id,org_id,name,purpose,subject,preheader,blocks,created_by,created_by_name)
+           VALUES ('et_fix46f',$1,'First names','person','Hi {{first_name}}','',$2::jsonb,'system:test','test')`,
+    [ORG, JSON.stringify([{ type: "header" }, { type: "richtext", blocks: [{ type: "p", text: "Dear {{first_name}}," }, { type: "p", text: "Thank you." }] }])]);
+  for (const [d, want, tag] of [[saluted, "Ann", "sf"], [joint, "Desmond and Ruth", "jf"]]) {
+    await q(`INSERT INTO agent_drafts (id,org_id,donor_id,subject,body,status,purpose) VALUES ($1,$2,$3,'x','x','pending','thank')`, [`ad_fix46${tag}`, ORG, d.id]);
+    const ft = await api("POST", `/agent/drafts/ad_fix46${tag}/from-template`, tok, { templateId: "et_fix46f" });
+    ok(`§7 "Dear {{first_name}}" in an Agent draft reads first names only: "Dear ${want},"`,
+       (ft.body?.body || "").includes(`Dear ${want},`) && ft.body?.subject === `Hi ${want}`, { body: ft.body?.body, subject: ft.body?.subject });
+  }
+  const pf = await api("POST", "/templates/thanks_first/preview", tok, { donorId: saluted.id, subject: "Thanks", body: "Dear {{first_name}},\n\nThank you." });
+  ok("§7 …and in a one-person template, never the salutation", /^Dear Ann,/.test(pf.body?.body || ""), pf.body?.body);
   const pv = await api("POST", "/templates/thanks_first/preview", tok, { donorId: joint.id, subject: "Thanks", body: "Dear {{full_name}},\n\nThank you, {{full_name}}." });
   ok("§7 a one-person template's greeting reads both people, the rest keeps the full name",
      /^Dear Desmond and Ruth,/.test(pv.body?.body || "") && (pv.body?.body || "").includes("Thank you, Desmond & Ruth Okafor."), pv.body?.body);
