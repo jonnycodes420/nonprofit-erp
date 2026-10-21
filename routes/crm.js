@@ -12698,6 +12698,7 @@ app.post("/journey-sends/:id/skip", requireAuth, checkWriteAccess, wrap(async (r
   res.json({ ok: true, sentence: "Skipped. It will not send, and the step stays on the Thread." });
 }));
 app.post("/journeys/:id/sending-tomorrow/skip-all", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  if (!(await journeyRow(req.user.orgId, req.params.id))) return res.status(404).json({ error: "Journey not found" });
   const list = await sendingNext(req.user.orgId, req.params.id);
   let n = 0;
   for (const s of list.sends) {
