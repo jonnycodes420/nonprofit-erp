@@ -553,7 +553,7 @@ export const HELP_ARTICLES = [
         `Click "Fix" on a card that needs attention. It opens the same detail with the reason at the top.`,
       ]},
       { h: `Good to know`, p: [
-        `Donorbox has no direct connection yet, so its card offers "Import a file": its gift export comes in as a statement.`,
+        `Donorbox has no direct connection yet. Its card is in Giving, but it does not connect to Donorbox: its one button, "Import a file", brings in Donorbox's gift export as a statement. Nothing comes in from Donorbox on its own.`,
         `For a bookkeeping tool, "Manage" opens "Where the money posts", where "Save the mapping" says which account each fund goes to. For an email tool, "Preview" shows what the read would bring in, then "Save and read" (or "Save, read and add people").`,
         `Your donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here.`,
       ]},

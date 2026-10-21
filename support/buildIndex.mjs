@@ -145,6 +145,12 @@ export async function connectionTruth() {
   return rows;
 }
 const STATUS_WORD = { works: "works today", waiting: "is not available yet", "not built": "is not built" };
+// FIX-47: what a not-built connection's card in Settings, Connections really
+// offers. A row's own line ("Gifts and recurring plans pulled in") says what it
+// WOULD do once built; printed beside "is not built" it read as a working card.
+const NOT_BUILT_CARD = {
+  "Donorbox": "Settings, Connections has a Donorbox card in the Giving section, but it does not connect to Donorbox: its only button is \"Import a file\", for Donorbox's gift export as a statement file. Nothing comes in from Donorbox on its own.",
+};
 
 export async function buildPassages() {
   const passages = [];
@@ -179,9 +185,10 @@ export async function buildPassages() {
 
   const truth = await connectionTruth();
   for (const c of truth) {
-    const lines = [`${c.name} ${STATUS_WORD[c.status]}.`, c.what, c.why].filter(Boolean);
+    // A not-built row's line is what it would do one day, so it is said as that.
+    const lines = [`${c.name} ${STATUS_WORD[c.status]}.`, c.status === "not built" ? (c.what ? `Once built: ${c.what.replace(/^./, x => x.toLowerCase())}` : "") : c.what, c.why].filter(Boolean);
     if (c.status === "works") lines.push(c.file ? "There is no live connection to read: you drop in its export or statement in Settings, Connections." : "Connect it in Settings, Connections.");
-    if (c.status === "not built") lines.push("Nobody can connect it from Settings today. Its gifts can come in as a file you import.");
+    if (c.status === "not built") lines.push(NOT_BUILT_CARD[c.name] || "Nobody can connect it from Settings today, and it has no card there. Its gifts can come in as a file you import.");
     passages.push({ id: `connection:${c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, source: "connection", title: "Connections", heading: c.name,
       link: "/connections", route: c.status === "works" ? "/app/settings?section=connections" : null, screen: null, status: c.status, text: lines.join(" ") });
   }

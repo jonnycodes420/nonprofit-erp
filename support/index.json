@@ -1069,7 +1069,7 @@
    "link": "/help/settings-connections",
    "route": "/app/settings?section=connections",
    "screen": "settings:connections",
-   "text": "Donorbox has no direct connection yet, so its card offers \"Import a file\": its gift export comes in as a statement.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
+   "text": "Donorbox has no direct connection yet. Its card is in Giving, but it does not connect to Donorbox: its one button, \"Import a file\", brings in Donorbox's gift export as a statement. Nothing comes in from Donorbox on its own.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
   },
   {
    "id": "help:settings-giving-pages:0",
@@ -3381,7 +3381,7 @@
    "route": null,
    "screen": null,
    "status": "not built",
-   "text": "Donorbox is not built. Gifts and recurring plans pulled in. Nobody can connect it from Settings today. Its gifts can come in as a file you import."
+   "text": "Donorbox is not built. Once built: gifts and recurring plans pulled in. Settings, Connections has a Donorbox card in the Giving section, but it does not connect to Donorbox: its only button is \"Import a file\", for Donorbox's gift export as a statement file. Nothing comes in from Donorbox on its own."
   },
   {
    "id": "connection:quickbooks-online",

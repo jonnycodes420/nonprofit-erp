@@ -145,6 +145,12 @@ async function clean() {
     const dbx = await ask("Can I connect Donorbox? [sup1]", ta, "settings");
     ok("§3 Donorbox: says it is not built, from the connections truth", /not built/i.test(dbx.body.text || "") && (dbx.body.citations || []).some(c => c.link === "/connections"), show(dbx));
     ok("§3 Donorbox: offers Jonathan", dbx.body.offerJonathan === true, show(dbx));
+    // FIX-47: the help assistant told Jonathan there is a Donorbox card "like the other
+    // services". There is a card, and it only imports a file; the source must say so,
+    // and must not set the would-be line ("gifts pulled in") beside "is not built".
+    const dbxP = (await (await import("../support/buildIndex.mjs")).buildPassages()).find(p => p.id === "connection:donorbox");
+    ok("§3 Donorbox's source says its card only imports a file, and nothing comes in on its own",
+      !!dbxP && /only button is "Import a file"/.test(dbxP.text) && /Nothing comes in from Donorbox on its own/.test(dbxP.text) && !/is not built\. Gifts/.test(dbxP.text), dbxP && dbxP.text);
     const pay = await ask("Does Steward run payroll for our staff? [sup1]", ta, "finance");
     ok("§3 a feature with no source: says it does not know, no guess", pay.body.covered === false && /rather not guess/.test(pay.body.text || "") && !(pay.body.citations || []).length, show(pay));
     ok("§3 and offers Jonathan", pay.body.offerJonathan === true && pay.body.handoff === "not_covered", show(pay));
