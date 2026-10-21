@@ -21,9 +21,27 @@ import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { AskAnswer } from "./AskPanel";
-import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE } from "../../../shared/voiceTalk.js";
+import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip, doAllLine } from "../../../shared/voiceTalk.js";
+import { told } from "../lib/stewardTold";
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
+// VOICE-4: ONE recognizer for the page. A new one per press (and per opening
+// of this window) made Safari ask for the microphone every time.
+let pageRecognizer = null;
+const recognizer = () => { if (!pageRecognizer && SR) pageRecognizer = new SR(); return pageRecognizer; };
+const MIC_ASKS_KEY = "steward_mic_asks";
+const micAsks = () => { try { return Number(sessionStorage.getItem(MIC_ASKS_KEY)) || 0; } catch { return 0; } };
+// The browser is about to ask when the permission still reads "prompt".
+async function countMicAsk() {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return micAsks();
+    const st = await navigator.permissions.query({ name: "microphone" });
+    if (st.state !== "prompt") return micAsks();
+    const n = micAsks() + 1;
+    try { sessionStorage.setItem(MIC_ASKS_KEY, String(n)); } catch { /* storage blocked */ }
+    return n;
+  } catch { return micAsks(); }
+}
 const isPhone = () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
 const HOLD_MS = 350;
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
@@ -61,17 +79,25 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
   const wantOn = useRef(false);
   const downAt = useRef(0);
   const finalText = useRef("");
+  const [micTip, setMicTip] = useState(false);
 
   useEffect(() => {
     apiFetch(`/voice/memos${donor ? `?donorId=${encodeURIComponent(donor.id)}` : ""}`).then(r => setRecent((r.memos || []).slice(0, 3))).catch(() => {});
-    return () => { wantOn.current = false; try { rec.current && rec.current.abort(); } catch { /* already stopped */ } };
+    return () => {
+      wantOn.current = false;
+      const r = rec.current;
+      try { r && r.abort(); } catch { /* already stopped */ }
+      // The recognizer outlives this window; its answers stop coming here.
+      if (r) { r.onresult = null; r.onerror = null; r.onend = null; }
+    };
   }, [donor]);
 
   // ── LISTENING ─────────────────────────────────────────────────────────────
   function start() {
     if (!SR || listening) return;
     setErr("");
-    const r = new SR();
+    const r = recognizer();
+    countMicAsk().then(n => setMicTip(showMicTip({ ua: navigator.userAgent, asks: n }))).catch(() => {});
     r.lang = navigator.language || "en-US";
     r.continuous = true;
     r.interimResults = true;
@@ -96,7 +122,15 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     r.onend = () => { setInterim(""); if (wantOn.current) { try { r.start(); } catch { setListening(false); } } else setListening(false); };
     rec.current = r;
     wantOn.current = true;
-    try { r.start(); setListening(true); setSource("speech"); } catch { setSpeech(false); }
+    // The page's one recognizer may still be winding down from the last
+    // press: wait for it rather than give up on speech.
+    try { r.start(); setListening(true); setSource("speech"); }
+    catch (e) {
+      if (e && e.name === "InvalidStateError") {
+        try { r.abort(); } catch { /* already stopped */ }
+        setTimeout(() => { try { r.start(); setListening(true); setSource("speech"); } catch { setSpeech(false); } }, 200);
+      } else setSpeech(false);
+    }
   }
   function stop() {
     wantOn.current = false;
@@ -133,18 +167,19 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     try {
       const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined, ...extra }) });
       setStep(r);
+      if (r.memo || (r.plan && r.plan.ranAlone)) told({ memoId: r.memo && r.memo.id });   // VOICE-4: the screen behind shows it at once
     } catch (e) { setErr(said(e)); }
     setBusy(false);
   }
   async function people(body) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(`/voice/memos/${step.needsPeople.memoId}/people`, { method: "POST", body: JSON.stringify(body) }); setStep(s => ({ ...r, then: s && s.then, answer: s && s.answer })); }
+    try { const r = await apiFetch(`/voice/memos/${step.needsPeople.memoId}/people`, { method: "POST", body: JSON.stringify(body) }); setStep(s => ({ ...r, then: s && s.then, answer: s && s.answer })); told(); }
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
   async function act(path) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(path, { method: "POST", body: "{}" }); setStep(s => ({ ...s, memo: r.memo, note: r.sentence || null })); }
+    try { const r = await apiFetch(path, { method: "POST", body: "{}" }); setStep(s => ({ ...s, memo: r.memo, note: r.sentence || null })); told({ memoId: r.memo && r.memo.id }); }
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
@@ -172,6 +207,19 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
+  // VOICE-4: one tap for every card, and the plan shown with them.
+  async function doAll() {
+    const m = step && step.memo, pl = step && step.plan;
+    const pending = pl && pl.id && pl.plan && !pl.ranAlone && !pl.ran ? pl.id : null;
+    setBusy(true); setErr("");
+    try {
+      const r = await apiFetch(`/voice/memos/${m.id}/all`, { method: "POST", body: JSON.stringify(pending ? { instructionId: pending } : {}) });
+      setStep(s => ({ ...s, memo: r.memo, plan: s.plan && r.ran ? { ...s.plan, ran: r.ran } : s.plan,
+        note: (r.failed || []).length ? `Not done: ${r.failed.map(f => `${f.title} (${f.sentence})`).join("; ")}` : "All of it is done." }));
+      told({ memoId: m.id });
+    } catch (e) { setErr(said(e)); }
+    setBusy(false);
+  }
   const another = () => { picks.current = []; setStep(null); setText(""); finalText.current = ""; setSource("typed"); };
 
   const memo = step && step.memo;
@@ -186,6 +234,7 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     <Modal onClose={onClose} title={title} subtitle={sub} width={answer ? 600 : 520} align={phone ? "top" : "center"} ariaLabel="Tell Steward">
       <div data-testid="tell-steward-sheet" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
+        {micTip && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
         {!step && <>
           {speech && (
@@ -217,7 +266,7 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Recent memos</div>
             {recent.map(m => (
               <button key={m.id} onClick={() => setStep({ memo: m })} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 0", cursor: "pointer", borderBottom: "1px solid " + T.bg3 }}>
-                <div style={{ fontSize: 13.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.text}</div>
+                <div style={{ fontSize: 13.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.preview || m.text}</div>
                 <div style={{ fontSize: 12, color: T.ink3 }}>{new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {m.people.map(p => p.name).join(", ") || "nobody"} · {m.status === "undone" ? "undone" : `${m.done.length} done, ${m.waiting.filter(c => c.state === "waiting").length} waiting`}</div>
               </button>))}
           </div>}
@@ -239,8 +288,9 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
           {(memo || plan) && <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Your question</div>}
           <AskAnswer answer={answer} compact isReadOnly={false} onAsk={ask} />
         </section>}
-        {plan && !asking && <PlanCard plan={plan} busy={busy} setBusy={setBusy} onPick={id => planFor(plan.text, id)} onNavigate={onNavigate} onClose={onClose} />}
-        {memo && <Results memo={memo} note={step.note} busy={busy} act={act} onClose={onClose} onNavigate={onNavigate} onAnother={another} />}
+        {plan && !asking && !plan.ranAlone && <PlanCard plan={plan} busy={busy} setBusy={setBusy} onPick={id => planFor(plan.text, id)}
+          onChoose={name => planFor(plan.choose.text.replace(plan.choose.heard, name))} onNavigate={onNavigate} onClose={onClose} />}
+        {memo && <Results memo={memo} plan={plan} note={step.note} busy={busy} act={act} onAll={doAll} onClose={onClose} onNavigate={onNavigate} onAnother={another} />}
         {!memo && (plan || answer) && !asking && <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
           <button onClick={another} style={btn(false)}>Tell another</button>
           <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
@@ -300,13 +350,20 @@ function NeedsPeople({ np, busy, onAnswer, onBack }) {
 // SOMETHING TO DO: the Agent's plan, exactly as the Agent tab would show it,
 // and nothing runs until she presses Confirm (her click on the Agent's own
 // confirm route). "Not now" sets it aside.
-function PlanCard({ plan, busy, setBusy, onPick, onNavigate, onClose }) {
+function PlanCard({ plan, busy, setBusy, onPick, onChoose, onNavigate, onClose }) {
   const [ran, setRan] = useState(null);
   const [gone, setGone] = useState(false);
   const [err, setErr] = useState("");
   const box = { border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenDk, borderRadius: 10, padding: "12px 14px" };
   const head = <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>To do</div>;
   if (plan.which) return <div style={box}>{head}<WhichOne which={plan.which} busy={busy} onPick={onPick} onBack={null} /></div>;
+  // VOICE-4: a group or journey name that is not one: the closest two, one
+  // click each. Steward never makes a new one without asking.
+  if (plan.choose) return <div data-testid="tell-plan-choose" style={box}>{head}
+    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{plan.choose.sentence}</div>
+    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+      {plan.choose.options.map(o => <button key={o.id} type="button" data-testid="tell-plan-choice" disabled={busy} onClick={() => onChoose(o.name)} style={btn(false)}>{o.name}</button>)}
+    </div></div>;
   if (plan.read) return <div data-testid="tell-plan-read" style={box}>{head}
     <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{plan.read.sentence || plan.read.title}</div>
     {(plan.read.people || []).length > 0 && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6 }}>{plan.read.people.map(p => p.name).join(", ")}</div>}
@@ -316,7 +373,7 @@ function PlanCard({ plan, busy, setBusy, onPick, onNavigate, onClose }) {
     <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{(plan.cannot && plan.cannot.sentence) || plan.sentence || "Steward could not plan that. Nothing was done."}</div></div>;
   const confirm = async () => {
     setBusy(true); setErr("");
-    try { setRan(await apiFetch(`/agent/instructions/${plan.id}/confirm`, { method: "POST", body: "{}" })); }
+    try { setRan(await apiFetch(`/agent/instructions/${plan.id}/confirm`, { method: "POST", body: "{}" })); told(); }
     catch (e) { setErr(said(e)); }
     setBusy(false);
   };
@@ -347,14 +404,28 @@ function PlanCard({ plan, busy, setBusy, onPick, onNavigate, onClose }) {
   </div>;
 }
 
-const CARD_LABEL = { draft: "Email draft", money: "Amount", contact: "Contact change", sensitive: "Personal detail" };
-function Results({ memo, note, busy, act, onClose, onNavigate, onAnother }) {
+const CARD_LABEL = { draft: "Email draft", money: "Amount", contact: "Contact change", sensitive: "Personal detail",
+  thanks: "Receipt and thank-you", flag: "Email", ask: "The ask" };
+const YES_LABEL = { sensitive: "Save as a note", thanks: "Send both" };
+const ALL_KINDS = ["money", "thanks", "contact", "flag", "ask"];
+function Results({ memo, plan, note, busy, act, onAll, onClose, onNavigate, onAnother }) {
   const [showMemo, setShowMemo] = useState(false);
   const waiting = memo.waiting || [];
   const open = waiting.filter(c => c.state === "waiting");
   const decided = waiting.filter(c => c.state !== "waiting");
   const undone = memo.status === "undone";
+  // VOICE-4: more than one thing to say yes to: one button, and one line that
+  // says exactly what it will do. A personal detail and an email draft are
+  // never in it; each still takes its own tap.
+  const pendingPlan = plan && plan.id && plan.plan && !plan.ranAlone && !plan.ran ? plan.plan : null;
+  const forAll = open.filter(c => ALL_KINDS.includes(c.kind));
+  const allLine = !undone && forAll.length + (pendingPlan ? 1 : 0) > 1 ? doAllLine(forAll, pendingPlan) : "";
+  const saved = waiting.some(c => c.state === "saved");
   return <div data-testid="tell-results" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    {allLine && <div data-testid="tell-do-all" style={{ border: "1px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+      <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>{allLine}.</div>
+      <button data-testid="tell-do-all-button" disabled={busy} onClick={onAll} style={btn(true)}>Do all of this</button>
+    </div>}
     {note && <div style={{ background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: T.ink }}>{note}</div>}
     {memo.people.length > 0 && <div style={{ fontSize: 13.5, color: T.ink2 }}>About {memo.people.map(p => p.name).join(" and ")}{memo.ai === "off" ? ". AI is off, so your memo was saved as a note and nothing else." : "."}</div>}
     <section>
@@ -372,26 +443,28 @@ function Results({ memo, note, busy, act, onClose, onNavigate, onAnother }) {
       {open.map(c => <div key={c.id} data-testid={`tell-card-${c.kind}`} style={{ border: "1px solid " + T.bg3, borderLeft: "3px solid " + (c.kind === "sensitive" || c.kind === "money" ? "#C9A84C" : T.greenDk), borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 3 }}>{CARD_LABEL[c.kind]}</div>
         <div style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{c.title}</div>
+        {c.detail && <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>{c.detail}</div>}
+        {c.kind === "thanks" && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>One yes sends the receipt and the drafted thank-you to them. Nothing goes before it.</div>}
         {c.kind === "draft" && <div style={{ fontSize: 13, color: T.ink2, marginTop: 4, lineHeight: 1.45 }}><b>{c.subject}</b><br />{String(c.body || "").slice(0, 180)}{String(c.body || "").length > 180 ? "..." : ""}</div>}
         {c.quote && c.kind !== "draft" && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>You said: "{c.quote}"</div>}
         {c.kind === "sensitive" && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>Steward did not file this. Save it and only the words above go on their record, as a note.</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           {c.kind === "draft"
             ? <button onClick={() => { onClose(); onNavigate && onNavigate("agent", { agentView: "waiting" }); }} style={btn(true)}>Open the draft</button>
-            : <button disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/cards/${c.id}/yes`)} style={btn(true)}>{c.kind === "sensitive" ? "Save as a note" : "Yes"}</button>}
+            : <button data-testid={`tell-card-yes-${c.kind}`} disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/cards/${c.id}/yes`)} style={btn(true)}>{YES_LABEL[c.kind] || "Yes"}</button>}
           <button disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/cards/${c.id}/no`)} style={btn(false)}>{c.kind === "sensitive" ? "Discard" : c.kind === "draft" ? "Throw away" : "Not now"}</button>
         </div>
       </div>)}
     </section>}
     {decided.length > 0 && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6 }}>
-      {decided.map(c => <div key={c.id}>{c.state === "saved" ? "Saved" : "Set aside"}: {c.title}</div>)}
+      {decided.map(c => <div key={c.id}>{c.state === "saved" ? (c.kind === "thanks" ? "Sent" : "Saved") : c.state === "undone" ? "Undone" : "Set aside"}: {c.title}</div>)}
     </div>}
     <div>
       <button onClick={() => setShowMemo(v => !v)} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{showMemo ? "Hide" : "Show"} what you said</button>
       {showMemo && <div style={{ marginTop: 6, fontSize: 13.5, color: T.ink2, lineHeight: 1.5, background: "#F0EDE6", borderRadius: 10, padding: "10px 12px" }}>{memo.text}</div>}
     </div>
     <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
-      {!undone && memo.done.length > 0 ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/undo`)} style={btn(false)}>Undo this memo</button> : <span />}
+      {!undone && (memo.done.length > 0 || saved) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/undo`)} style={btn(false)}>Undo this memo</button> : <span />}
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={onAnother} style={btn(false)}>Tell another</button>
         <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>

@@ -285,6 +285,15 @@ export function normalizeMemo(raw, transcript, { today, funds = [] } = {}) {
            money: money.slice(0, 4), contact: contact.slice(0, 3), sensitive: sensitive.slice(0, 4), people, filedMemo };
 }
 
+// VOICE-4: how a memo reads in a list (Recent memos): its first plain words,
+// with the held-back part left out rather than shown as a bracketed line.
+export function memoPreview(text, read) {
+  const plain = String(text || "").split(HELD_MARK).join(" ").replace(/\s+/g, " ").trim();
+  if (plain) return plain;
+  const summary = read && typeof read.summary === "string" ? stripSensitive(read.summary).text.replace(/\s+/g, " ").trim() : "";
+  return summary || "A memo with a personal detail, held back for your yes";
+}
+
 // With AI off there is no read: the memo is a note on the person she picks,
 // held back the same way if it carries a sensitive sentence.
 export function memoAsNote(transcript) {
@@ -300,4 +309,4 @@ export function heardIsMatched(heard, people = []) {
 }
 
 export default { MEMO_TOOL, MEMO_SYSTEM, buildMemoPrompt, normalizeMemo, dueFromMemo, conversationDate, conversationKind,
-  matchFund, amountCentsIn, sensitiveCategory, stripSensitive, sentences, memoAsNote, heardIsMatched, HELD_MARK, HOW_LABEL, cents$ };
+  matchFund, amountCentsIn, sensitiveCategory, stripSensitive, sentences, memoAsNote, memoPreview, heardIsMatched, HELD_MARK, HOW_LABEL, cents$ };

@@ -50,6 +50,7 @@ import { useDonorStatus, StatusTags, ClosenessLine, ImportRefusalsLine, Highligh
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
+import { told, useStewardTold } from "../lib/stewardTold";
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
@@ -949,7 +950,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [figs,setFigs]=useState(null);
   // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
   const [rel,setRel]=useState(null);
-  const before=useBeforeMeeting(donor?.id);   // VOICE-3: a meeting with them today or tomorrow
+  // VOICE-4: bumped by anything Tell Steward or the gift form changes, so the
+  // status (Average, Largest), the meeting card and the rail re-read at once.
+  const [toldNonce,setToldNonce]=useState(0);
+  const before=useBeforeMeeting(donor?.id, toldNonce);   // VOICE-3: a meeting with them today or tomorrow
   // ENGAGE-1 — the two scores and the suggested ask, one read.
   const scores=useScores(donor.id);
   // PROSPECT-1 — Room to give, the screening results, an organization's
@@ -961,7 +965,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [prospectBriefOpen,setProspectBriefOpen]=useState(false);
   // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
   const [stepNonce,setStepNonce]=useState(0);
-  const status=useDonorStatus(donor.id, figs, stepNonce);
+  const status=useDonorStatus(donor.id, figs, `${stepNonce}:${toldNonce}`);
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
@@ -1702,6 +1706,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       })});
       addGiftIdemRef.current=null;
       setAddGiftOpen(false);
+      // VOICE-4: every tile re-reads, not only the ones the gift read carries
+      // (Average and Largest come from the status read, which waited on figs).
+      told({donorId:donor.id,gift:true});
       setAddGiftForm({amount:"",date:orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
       loadGiftsFull();
       if(addGiftForm.pledgeId)loadPledges();
@@ -1832,11 +1839,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
   // VOICE-1 — a memo filed from the sheet shows on this profile at once.
-  useEffect(()=>{
-    const on=()=>{ if(onInteractionAdded)onInteractionAdded(); };
-    window.addEventListener("steward:told",on);
-    return()=>window.removeEventListener("steward:told",on);
-  },[onInteractionAdded]);
+  // VOICE-4: and everything on it re-reads: the figures and gifts, Average
+  // and Largest, the rail's step, the meeting card, the asks.
+  useStewardTold(()=>{
+    setToldNonce(n=>n+1); loadGiftsFull(); loadRel(); loadDpThread(); if(reloadProps)reloadProps();
+    if(onInteractionAdded)onInteractionAdded();
+  });
   // MEMBERS-2 — one click sends this person the link to their own page. The
   // email goes out through the normal path and the token never comes back to
   // this screen: a staff member who could read it could open the page.
@@ -2663,7 +2671,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
               {campaigns.length>0&&<><select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:2}}>
                 <option value="">Campaign: not attributed</option>
-                {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                {campaigns.map(c=>{const st=String(c.startDate||c.start_date||"").slice(0,10);return <option key={c.id} value={c.id}>{c.name}{st&&st>addGiftForm.date?` (starts ${displayDate(st)})`:""}</option>;})}
               </select>
               <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div></>}
               {pledges.filter(p=>p.status==="open").length>0&&(

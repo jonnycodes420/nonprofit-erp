@@ -229,6 +229,10 @@ const LOOPBACK_HARDCODED = [
   // and NODE_ENV production); it files a memo, plans and asks, on the LOCAL
   // scratch Harborlight it is pointed at.
   "voice3-walk",
+  // VOICE-4: Margaret's memo, before and after. Loopback only (refuses anything
+  // else and NODE_ENV production); it files memos, records and removes a gift,
+  // and puts her back as she was, on the LOCAL scratch Harborlight.
+  "voice4-walk",
   // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
   // it drafts and saves on the LOCAL scratch database it is pointed at.
   "fix30-walk",

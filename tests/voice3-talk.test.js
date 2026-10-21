@@ -10,7 +10,8 @@
 //      calendar's meeting carries the id the card matches on;
 //   §3 a question: "Who should I call tomorrow?" is answered by Ask, the same
 //      five names Ask gives, and nothing is written;
-//   §4 something to do: "Remind me to call Tobias Friday" is the Agent's plan,
+//   §4 something to do: "Remind me to call Tobias Friday" is the Agent's plan
+//      (VOICE-4: a reminder is low stakes and runs at once, with Undo),
 //      waiting for Confirm, and NOTHING is written before it; Confirm runs it;
 //   §5 a mixed memo: the conversation is filed and the reminder is planned on
 //      the same person ("send her" becomes Margaret), not run;
@@ -168,7 +169,7 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
   ok("§2 the calendar's lunch carries the id the card matches on", !!calItem && calItem.donorId === "d_v3_mchen", (cal.body.items || []).map(i => [i.type, i.ref && i.ref.calendarEventId]));
   const prof = fs.readFileSync(path.join(ROOT, "client/src/components/DonorProfile.jsx"), "utf8");
   const calJsx = fs.readFileSync(path.join(ROOT, "client/src/components/Calendar.jsx"), "utf8");
-  ok("§2 the profile and the calendar both draw the one card", /useBeforeMeeting\(donor\?\.id\)/.test(prof) && /<BeforeYourMeeting data=\{briefHere\}/.test(calJsx), null);
+  ok("§2 the profile and the calendar both draw the one card", /useBeforeMeeting\(donor\?\.id(, toldNonce)?\)/.test(prof) && /<BeforeYourMeeting data=\{briefHere\}/.test(calJsx), null);
 
   // ── §3 a question ────────────────────────────────────────────────────────
   console.log("\n§3 Who should I call tomorrow?");
@@ -189,25 +190,22 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
 
   // ── §4 something to do ───────────────────────────────────────────────────
   console.log("\n§4 Remind me to call Tobias Friday");
-  const memos0 = await n(`SELECT COUNT(*)::int AS n FROM voice_memos WHERE org_id=$1`);
-  const w1 = await writes();
   const d1 = await api("POST", "/voice/talk", tok, { text: "Remind me to call Tobias Friday", source: "speech" });
   const plan = d1.body.plan || {};
-  ok("§4 it is something to do, planned by the Agent", d1.status === 200 && d1.body.talk.kind === "do" && plan.status === 201 && !!plan.id
+  ok("§4 it is something to do, planned by the Agent", d1.status === 201 && d1.body.talk.kind === "do" && plan.status === 201 && !!plan.id
     && plan.plan && plan.plan.steps.length === 1 && plan.plan.steps[0].donorId === "d_v3_tobias", { talk: d1.body.talk, plan });
-  const [ins] = await q(`SELECT status, text FROM agent_instructions WHERE id=$1 AND org_id=$2`, [plan.id, ORG]);
-  ok("§4 the plan waits for Confirm", ins && ins.status === "planned", ins);
-  ok("§4 nothing is written before Confirm (no task, step, note, run or memo)", await writes() === w1
-    && await n(`SELECT COUNT(*)::int AS n FROM voice_memos WHERE org_id=$1`) === memos0, null);
-  const conf = await api("POST", `/agent/instructions/${plan.id}/confirm`, tok, {});
-  // The Agent's own task (a thread it opens carries its own linked task, FIX-31).
-  const tasks = await q(`SELECT donor_id, title FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND link_kind IS NULL`, [ORG]);
-  ok("§4 her Confirm runs it: the reminder is a task on Tobias", conf.status === 200 && tasks.length === 1 && /call Tobias/i.test(tasks[0].title), { s: conf.status, tasks });
+  // VOICE-4: a reminder is low stakes, so it runs at once and is listed with
+  // the one Undo (it waited for Confirm in VOICE-3). Money and personal details
+  // still wait (voice4-does-it-all).
+  const tasks = await q(`SELECT id, donor_id, title FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND link_kind IS NULL AND voided_at IS NULL`, [ORG]);
+  ok("§4 a reminder runs at once: the task is on Tobias, listed with Undo", plan.ranAlone === true && !!d1.body.memo && tasks.length === 1 && /call Tobias/i.test(tasks[0].title), { ranAlone: plan.ranAlone, tasks });
+  const und = await api("POST", `/voice/memos/${d1.body.memo.id}/undo`, tok, {});
+  const left = await q(`SELECT 1 FROM tasks WHERE org_id=$1 AND donor_id='d_v3_tobias' AND link_kind IS NULL AND done=0 AND voided_at IS NULL`, [ORG]);
+  ok("§4 and Undo takes it back", und.status === 200 && left.length === 0, { und: und.body, left });
 
   // ── §5 a mixed memo ──────────────────────────────────────────────────────
   console.log("\n§5 Coffee with Margaret went great, remind me to send her the boat photos Friday");
   queued.memo_actions.push(memoRead({ how: "coffee", summary: "Coffee with Margaret went great.", people: ["Margaret"] }));
-  const tasks0 = await n(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1`);
   const mx = await api("POST", "/voice/talk", tok, { text: "Coffee with Margaret went great, remind me to send her the boat photos Friday", source: "speech" });
   const conv = await q(`SELECT donor_id, note FROM interactions WHERE org_id=$1 AND donor_id='d_v3_mchen' AND type IN ('meeting','call','note') ORDER BY created_at DESC LIMIT 1`, [ORG]);
   ok("§5 the conversation is filed on Margaret", mx.status === 201 && mx.body.talk.kind === "mixed" && mx.body.memo && mx.body.memo.people[0].id === "d_v3_mchen"
@@ -215,7 +213,8 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
   const mp = mx.body.plan || {};
   ok("§5 the reminder is planned on her (\"send her\" became Margaret Chen)", mp.status === 201 && /send Margaret Chen the boat photos/i.test(mp.text)
     && mp.plan && mp.plan.steps.length === 1 && mp.plan.steps[0].donorId === "d_v3_mchen", mp);
-  ok("§5 and not run: no new task until she confirms", await n(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1`) === tasks0, null);
+  ok("§5 the reminder ran as part of the same memo (one Undo for both)", mp.ranAlone === true && mp.memoId === mx.body.memo.id
+    && await n(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1 AND donor_id='d_v3_mchen'`) > 0, { ranAlone: mp.ranAlone, memoId: mp.memoId });
 
   // ── §6 unsure ────────────────────────────────────────────────────────────
   console.log("\n§6 log this, or have Steward do it?");

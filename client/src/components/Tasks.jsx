@@ -9,6 +9,7 @@ import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName } from "../../../shared/greeting.js";
+import { useStewardTold } from "../lib/stewardTold";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -74,6 +75,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
     })) } : prev)).catch(() => {});
   }, [q, view, setData]);
   useEffect(() => { setRows(null); setSelected(new Set()); load(); }, [load]);
+  useStewardTold(() => { load(); });   // VOICE-4: what Tell Steward did shows at once
   const stopSelecting = useCallback(() => { setSelecting(false); setSelected(new Set()); }, []);
   useEffect(() => {
     if (!selecting) return undefined;

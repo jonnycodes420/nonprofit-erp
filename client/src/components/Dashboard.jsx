@@ -28,6 +28,7 @@ import { SuggestedAskLine } from "./ScoreWhy";
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { useStewardTold } from "../lib/stewardTold";
 import { MorningBrief } from "./MeetingPanels";
 import { MailboxBanner } from "./InboxConnect";
 import { displayDateShort } from "../../../shared/displayDate";
@@ -567,6 +568,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   useEffect(()=>{loadTaskCounts();},[]);
   const loadThreads=(sc=threadScope)=>{loadTaskCounts();return apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));};
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
+  useStewardTold(()=>{loadThreads();});   // VOICE-4: the Thread re-reads when Tell Steward acts
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
   const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();

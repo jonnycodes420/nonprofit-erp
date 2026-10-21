@@ -34,6 +34,21 @@ export function listenMode(win) {
   if (SR) return { mode: "speech", phone, line: null };
   return { mode: "text", phone, line: phone ? NO_LISTEN_PHONE_LINE : NO_LISTEN_LINE };
 }
+// VOICE-4: Safari asks for the microphone each time a NEW recognizer starts
+// on a page where the site's setting is "Ask". Steward used to make a new one
+// per press, so it asked every press; now it keeps one per page. What is left
+// is Safari's own per-site setting, and the second ask in a session shows
+// this one line.
+export const SAFARI_MIC_TIP = "To stop Safari asking each time: Safari, Settings, Websites, Microphone, stewardapp.dev, Allow.";
+export function isSafariUA(ua) {
+  const u = String(ua || "");
+  return /safari/i.test(u) && !/chrome|chromium|crios|fxios|edg\/|edga|edgios|android|opr\//i.test(u);
+}
+// `asks`: how many times this session the browser was going to ask (the
+// permission read "prompt" as listening started).
+export function showMicTip({ ua, asks }) {
+  return isSafariUA(ua) && Number(asks) >= 2;
+}
 // These three mean the recognizer will not listen at all, so the screen falls
 // back to typing; anything else ("no-speech", "network") is a pause.
 export function errorStopsListening(code) {
@@ -140,4 +155,92 @@ export function readIntent(raw, text) {
   return { kind: present.length === 0 ? null : present.length === 1 ? present[0] : "mixed", ...out };
 }
 
-export default { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, UNSURE_LINE, splitTalk, namePronouns, INTENT_TOOL, INTENT_SYSTEM, readIntent };
+// ── VOICE-4 · TELL STEWARD DOES IT ALL ──────────────────────────────────────
+// "Log the gift" is never a task: the money is the card, and her yes on the
+// card is the logging. A follow-up that only says to record what she just
+// told Steward is dropped.
+const MONEY_CHORE = /^(please\s+)?(log|record|enter|add|put in|book|note)\s+(that|this|it|the (gift|donation|check|cheque|money|amount|payment)|her gift|his gift|their gift)\b/i;
+export function isMoneyChore(label) { return MONEY_CHORE.test(tidy(label)); }
+// "send her the receipt", "thank her": readied with the gift as one Confirm.
+const RECEIPT_CHORE = /\b(receipt|thank[- ]?you( note| letter| email)?|thank (her|him|them)|send (her|him|them) a thank)\b/i;
+export function isReceiptChore(label) { return RECEIPT_CHORE.test(String(label || "")); }
+
+// Low stakes: these run at once, listed with Undo. Anything else from the
+// Agent's plan waits for Confirm, and money or personal details never run alone.
+export const LOW_STAKES_TOOLS = ["add_to_group", "remove_from_group", "start_journey", "stop_journey", "create_task", "add_tag", "register_event", "set_next_step"];
+export function planRunsAlone(plan) {
+  const steps = (plan && plan.steps) || [];
+  return steps.length > 0 && !(plan.sends > 0) && steps.every(s => LOW_STAKES_TOOLS.includes(s.tool) && (!s.state || s.state === "runs"));
+}
+
+// THE NAME OF A GROUP, JOURNEY OR GUEST LIST in what she said. "Put her in the
+// Major donor journey" -> { kind: "journey", heard: "Major donor" }.
+const TARGET = /\b(?:in|into|to|onto|on|from|out of|off)\s+(?:the\s+|our\s+|my\s+)?(.{2,60}?)\s+(journey|group|list|guest list)\b/i;
+export function targetIn(text) {
+  const m = TARGET.exec(String(text || ""));
+  if (!m) return null;
+  const kind = /journey/i.test(m[2]) ? "journey" : /guest list/i.test(m[2]) ? "event" : "group";
+  return { kind, heard: tidy(m[1]).replace(/^(the|our|my)\s+/i, ""), phrase: m[0] };
+}
+const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\b(the|a|an|journey|group|list|guests?|guest list)\b/g, " ").replace(/\s+/g, " ").trim();
+function lev(a, b) {
+  const p = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = p[0]; p[0] = i;
+    for (let j = 1; j <= b.length; j++) { const t = p[j]; p[j] = Math.min(p[j] + 1, p[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+  }
+  return p[b.length];
+}
+// The same name, or the closest two to offer. Never a new one.
+export function matchName(heard, rows) {
+  const h = norm(heard);
+  const exact = (rows || []).filter(r => norm(r.name) === h);
+  if (exact.length === 1) return { exact: exact[0], options: [] };
+  // "the gala guest list": the one name that holds every word she said.
+  const words = h.split(" ").filter(Boolean);
+  const holds = words.length ? (rows || []).filter(r => { const n = ` ${norm(r.name)} `; return words.every(w => n.includes(` ${w} `)); }) : [];
+  if (holds.length === 1) return { exact: holds[0], options: [] };
+  const hw = new Set(h.split(" ").filter(Boolean));
+  const scored = (rows || []).map(r => {
+    const n = norm(r.name), nw = n.split(" ").filter(Boolean);
+    const shared = nw.filter(w => hw.has(w) || [...hw].some(x => x.length > 3 && (w.startsWith(x) || x.startsWith(w)))).length;
+    const d = lev(h, n) / Math.max(h.length, n.length, 1);
+    return { r, score: shared * 2 + (1 - d) };
+  }).sort((a, b) => b.score - a.score || String(a.r.name).localeCompare(String(b.r.name)));
+  return { exact: null, options: scored.slice(0, 2).map(x => x.r) };
+}
+
+// Two things she can say that the Agent has no tool for, and that wait for
+// her tap as cards: who may be emailed, and the size of the ask.
+export function directCards(text) {
+  const t = String(text || "");
+  const out = [];
+  if (/\b(do not|don't|dont|no more|stop)\s+(e-?mail|emailing)\b|\bdo[- ]not[- ]email\b/i.test(t)) out.push({ kind: "flag", field: "do_not_email", value: true });
+  const ask = /\b(?:ask|ask amount)\s+(?:to|at)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(k|thousand)?\b/i.exec(t);
+  if (ask && /\b(change|set|make|raise|lower|move|update)\b/i.test(t)) {
+    const n = Number(ask[1].replace(/,/g, "")) * (ask[2] ? 1000 : 1);
+    if (n > 0) out.push({ kind: "ask", cents: Math.round(n * 100) });
+  }
+  return out;
+}
+
+// The one line over "Do all of this": what one tap will do, in order.
+const usd = c => "$" + (Math.round(Number(c) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: (Number(c) % 100) ? 2 : 0, maximumFractionDigits: 2 });
+export function doAllLine(cards, plan) {
+  const bits = [];
+  for (const c of cards || []) {
+    if (c.state !== "waiting" && c.state !== "pending") continue;
+    if (c.kind === "money") bits.push(c.moneyKind === "pledge" ? `record a ${usd(c.cents)} pledge` : c.moneyKind === "gift" ? `record ${usd(c.cents)}` : `log interest in ${usd(c.cents)}`);
+    else if (c.kind === "thanks") bits.push("send the receipt and thank-you");
+    else if (c.kind === "contact") bits.push(`change the ${c.field}`);
+    else if (c.kind === "flag") bits.push("mark do not email");
+    else if (c.kind === "ask") bits.push(`change the ask to ${usd(c.cents)}`);
+  }
+  for (const s of (plan && plan.steps) || []) bits.push(String(s.short || s.line || s.describes || s.tool).replace(/\.$/, "").replace(/^./, ch => ch.toLowerCase()));
+  if (!bits.length) return "";
+  const line = bits.join(", ");
+  return line[0].toUpperCase() + line.slice(1);
+}
+
+export default { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, UNSURE_LINE, splitTalk, namePronouns, INTENT_TOOL, INTENT_SYSTEM, readIntent,
+  isMoneyChore, isReceiptChore, LOW_STAKES_TOOLS, planRunsAlone, targetIn, matchName, directCards, doAllLine };
