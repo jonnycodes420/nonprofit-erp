@@ -9369,7 +9369,11 @@ async function refreshMailboxSyncHealth({ log = false } = {}) {
     || (r.last_ok ? now - new Date(r.last_ok).getTime() > SYNC_STALE_MS : now - new Date(r.created_at).getTime() > SYNC_STALE_MS));
   if (log) for (const r of stale)
     console.error(`[mailbox-stale] ${r.provider} connection ${r.id} has not read successfully since ${r.last_ok ? new Date(r.last_ok).toISOString() : "it was connected"}${r.status === "error" ? " (permission refused)" : ""}`);
-  mailboxSyncHealth = { connections: rows.length, stale: stale.length, checkedAt: new Date().toISOString() };
+  // FIX-47: each stale connection by provider and when it last read, so the
+  // status script can say which one needs a reconnect. Never an address:
+  // /health is public.
+  mailboxSyncHealth = { connections: rows.length, stale: stale.length, checkedAt: new Date().toISOString(),
+    staleList: stale.slice(0, 10).map(r => ({ provider: r.provider, lastReadAt: r.last_ok ? new Date(r.last_ok).toISOString() : null, refused: r.status === "error" })) };
   return mailboxSyncHealth;
 }
 async function startSyncRun(conn, kind, trigger) {

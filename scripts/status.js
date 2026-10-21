@@ -37,7 +37,33 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   } finally { clearTimeout(t); }
 }
 
-(async () => {
+// FIX-47 · A MAILBOX THAT HAS NOT READ IS ITS OWN LINE, NOT A FAILED SMOKE.
+// The smoke is the four routes; a stale mailbox is one person's connection
+// that needs a reconnect, and it used to turn the whole smoke red while every
+// route answered 200. Counts and providers only: no address leaves prod.
+const PROVIDER_WORD = { google: "Gmail", gmail: "Gmail", microsoft: "Outlook", outlook: "Outlook" };
+function agoWords(iso, now) {
+  if (!iso) return null;
+  const h = Math.floor((now - new Date(iso).getTime()) / 3600e3);
+  return h >= 48 ? `${Math.floor(h / 24)} days ago` : h >= 1 ? `${h}h ago` : "under an hour ago";
+}
+function mailboxReport(mailboxSync, { now = Date.now(), backendUp = true } = {}) {
+  if (!mailboxSync) return { ok: null, detail: backendUp ? "no mailboxSync on /health (older deploy)" : "backend unreachable", lines: [] };
+  if (!mailboxSync.checkedAt) return { ok: null, detail: "no sync run since the deploy yet; re-run in a minute", lines: [] };
+  const stale = Number(mailboxSync.stale) || 0;
+  const lines = (mailboxSync.staleList || []).map(m => {
+    const who = `${PROVIDER_WORD[String(m.provider || "").toLowerCase()] || m.provider || "A"} mailbox`;
+    const when = agoWords(m.lastReadAt, now);
+    return `${who} ${m.refused ? "lost its permission" : when ? `last read ${when}` : "has not read since it was connected"}, reconnect in Connections`;
+  });
+  if (stale > lines.length) lines.push(`${stale - lines.length} more mailbox(es) not read in 2 hours, reconnect in Connections`);
+  return { ok: stale === 0, detail: `${mailboxSync.connections} connection(s), ${stale} not read in 2 hours · checked ${mailboxSync.checkedAt}`, lines };
+}
+// The smoke verdict is the routes' alone.
+const smokeVerdict = (routesOk) => routesOk;
+module.exports = { mailboxReport, smokeVerdict };
+
+if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
   const localHead = git("rev-parse HEAD");
   const branch = git("rev-parse --abbrev-ref HEAD");
@@ -118,16 +144,11 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   } else aiDetail = "backend unreachable, not run";
 
   // FIX-33: every live mailbox connection has read successfully in the last
-  // two hours. Counts only (no address leaves prod). A stale connection FAILS
-  // the smoke: "Connected" with nothing read is exactly what Jonathan hit.
-  let mailOk = null, mailDetail = "";
-  if (!mailboxSync) mailDetail = backendSha ? "no mailboxSync on /health (older deploy)" : "backend unreachable";
-  else if (!mailboxSync.checkedAt) mailDetail = "no sync run since the deploy yet; re-run in a minute";
-  else {
-    mailOk = Number(mailboxSync.stale) === 0;
-    mailDetail = `${mailboxSync.connections} connection(s), ${mailboxSync.stale} not read in 2 hours · checked ${mailboxSync.checkedAt}`;
-  }
-  if (mailOk === false && smokeOk !== null) smokeOk = false;
+  // two hours. FIX-47: reported on its own line per mailbox; the smoke stays
+  // the routes' verdict.
+  const mail = mailboxReport(mailboxSync, { backendUp: !!backendSha });
+  const mailOk = mail.ok, mailDetail = mail.detail;
+  smokeOk = smokeVerdict(smokeOk);
 
   // ── report ───────────────────────────────────────────────────────────────────
   const row = (label, val, note = "") => console.log(`  ${label.padEnd(18)} ${val}${note ? "  " + DIM + note + RESET : ""}`);
@@ -138,7 +159,8 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   row("prod backend", backendSha ? short(backendSha) : `${YELLOW}${backendErr}${RESET}`, backendSha ? "" : BACKEND);
   row("prod frontend", frontendSha ? short(frontendSha) : `${YELLOW}${frontendErr}${RESET}`, frontendSha ? "" : FRONTEND);
   row("prod smoke", smokeOk === true ? `${GREEN}ok${RESET}` : smokeOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, smokeDetail);
-  row("mailbox sync", mailOk === true ? `${GREEN}ok${RESET}` : mailOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, mailDetail);
+  row("mailbox sync", mailOk === true ? `${GREEN}ok${RESET}` : mailOk === false ? `${YELLOW}needs a reconnect${RESET}` : `${YELLOW}unverified${RESET}`, mailDetail);
+  for (const l of mail.lines) console.log(`  ${"".padEnd(18)} ${YELLOW}${l}${RESET}`);
   // INT-PROD-1: guardsOk with the name of each guard that fails, so a false
   // never needs a hunt. Reported, not a smoke failure: a guard is a page.
   row("guards", !guards ? `${YELLOW}unverified${RESET}` : guards.ok === true ? `${GREEN}ok${RESET}` : `${RED}FALSE${RESET}`,

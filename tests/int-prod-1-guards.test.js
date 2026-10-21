@@ -84,6 +84,36 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   ok("§4 …and guardsOk is true exactly when that list is empty", Array.isArray(h.guardsFailed) && h.guardsOk === (h.guardsFailed.length === 0),
      { guardsOk: h.guardsOk, guardsFailed: h.guardsFailed });
 
+  // ── §5 · FIX-47 · A STALE MAILBOX IS ITS OWN LINE, THE SMOKE STAYS GREEN ──
+  // scripts/status.js against a local stand-in for prod: every smoke route
+  // answers 200 and one Gmail mailbox has not read in two hours. The smoke used
+  // to read FAILING here. No address is on /health, so none is printed.
+  const http = require("http");
+  const { testNow } = require("./clock");
+  const lastRead = new Date(testNow() - 2.2 * 3600e3).toISOString();
+  const stub = http.createServer((req, res) => {
+    const send = (code, body, type = "application/json") => { res.writeHead(code, { "Content-Type": type }); res.end(typeof body === "string" ? body : JSON.stringify(body)); };
+    if (req.url === "/health") return send(200, { buildSha: "f47f47f", guardsOk: true, guardsFailed: [],
+      mailboxSync: { connections: 2, stale: 1, checkedAt: new Date(testNow()).toISOString(), staleList: [{ provider: "google", lastReadAt: lastRead, refused: false }] } });
+    if (req.url === "/auth/login") return send(200, { token: "stub" });
+    if (req.url.startsWith("/donors/export/csv")) return send(200, "Name,Email\nA,a@example.org\n", "text/csv");
+    if (req.url.startsWith("/custom-fields")) return send(200, []);
+    if (req.url === "/public/checkout-signin") return send(200, { route: "checkout-signin" });
+    if (req.url === "/signed-up") return send(200, "<html></html>", "text/html");
+    return send(200, '<html><head><meta name="build-sha" content="f47f47f"></head></html>', "text/html");
+  });
+  await new Promise(r => stub.listen(0, r));
+  const url = `http://localhost:${stub.address().port}`;
+  const out = await new Promise(resolve => {
+    const c = require("child_process").spawn(process.execPath, ["scripts/status.js"], { cwd: require("path").join(__dirname, ".."),
+      env: { ...process.env, STATUS_BACKEND_URL: url, STATUS_FRONTEND_URL: url, STATUS_SKIP_AI: "1", NO_COLOR: "1" } });
+    let o = ""; c.stdout.on("data", d => { o += d; }); c.stderr.on("data", d => { o += d; }); c.on("close", () => resolve(o.replace(/\x1b\[[0-9;]*m/g, "")));
+  });
+  stub.close();
+  const smokeRow = (out.split("\n").find(l => /^\s*prod smoke/.test(l)) || "");
+  ok("§5 every route answered 200, so the smoke is ok, not FAILING", /prod smoke\s+ok\b/.test(smokeRow) && !/PROD SMOKE FAILING/.test(out), smokeRow || out.slice(0, 600));
+  ok("§5 the stale mailbox is its own line, with no address", /Gmail mailbox last read 2h ago, reconnect in Connections/.test(out) && !/@/.test(out.split("\n").filter(l => /mailbox/i.test(l)).join(" ")), out.slice(0, 900));
+
   await clear();
   await closeDb();
   summary();

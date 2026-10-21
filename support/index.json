@@ -2,7 +2,7 @@
  "about": "SUPPORT-1 · built by support/buildIndex.mjs from Steward's own sources. Do not edit by hand.",
  "counts": {
   "help": 186,
-  "helpdoc": 78,
+  "helpdoc": 122,
   "faq": 16,
   "feature": 40,
   "messaging": 4,
@@ -1069,7 +1069,7 @@
    "link": "/help/settings-connections",
    "route": "/app/settings?section=connections",
    "screen": "settings:connections",
-   "text": "Donorbox has no direct connection yet, so its card offers \"Import a file\": its gift export comes in as a statement.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
+   "text": "Donorbox has no direct connection yet. Its card is in Giving, but it does not connect to Donorbox: its one button, \"Import a file\", brings in Donorbox's gift export as a statement. Nothing comes in from Donorbox on its own.\nQuickBooks: Intuit has approved Steward's app, and Steward turns it on one organization at a time for now. Until it is on for yours it cannot be connected, so ask us to turn it on. The bookkeeper file works without it.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
   },
   {
    "id": "help:settings-giving-pages:0",
@@ -1872,6 +1872,67 @@
    "text": "Removed for good: their name, contact details, notes, tags, photo, custom fields, and every logged email, meeting and conversation, along with their tasks, drafts and journey steps. Their name is scrubbed from gift notes and from receipts already made.\nKept: their gifts, as anonymous gifts, so your books, issued receipts and every total still match to the cent. The record stays as \"Erased person\". If they asked not to be emailed, their address stays on your do-not-email list so they are never mailed again. The audit log notes that an erasure happened, not what was erased.\nThis cannot be undone. Export first if the person asked for a copy."
   },
   {
+   "id": "helpdoc:ask:0",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "The Ask box answers a plain question about your own records in one sentence, and every number in the answer opens the gifts or people behind it."
+  },
+  {
+   "id": "helpdoc:ask:1",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "What this screen is for",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "Type a question the way you would ask a colleague, and Steward answers from your own records. The box is labelled \"Ask\" on Reports, \"Ask about this campaign\" on a campaign's page, and \"Ask\" on the Calendar, where every question is about the dates on screen. On Home, the box under the greeting takes a question too. Under the box are a few suggestions, drawn from the questions your organization asks most."
+  },
+  {
+   "id": "helpdoc:ask:2",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "Ask a question",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "1. On Reports, click the box that says \"Ask anything about your file\", type your question and press Enter, or click one of the suggestions.\n2. Read the answer. Click any number to see the gifts or people behind it. \"Counted:\" says exactly what was counted.\n3. Click \"How Steward read this\" to see how your question was understood.\n4. Ask a follow-up in the box at the bottom, such as \"And last year?\" or \"Who are they?\", and click \"Ask\". It builds on the answer before.\n5. Press Escape, or the × at the top, to close."
+  },
+  {
+   "id": "helpdoc:ask:3",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "Keep an answer",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "1. Click \"Pin to Home\" to keep the answer on Home. It is worked out again every time Home opens, so the number is always today's. \"Unpin\" removes it.\n2. Click \"Save to a dashboard\", choose a dashboard and click \"Add\". Only the person who made a dashboard can add to it."
+  },
+  {
+   "id": "helpdoc:ask:4",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "An example",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "You type \"How much did we raise last year from monthly donors?\". Steward answers in one sentence with the total, say $18,240, and \"Counted:\" under it. You click $18,240 and see each gift behind it. You ask \"Who are they?\" in the box at the bottom and see the people behind the answer, then click \"Pin to Home\"."
+  },
+  {
+   "id": "helpdoc:ask:5",
+   "source": "helpdoc",
+   "title": "Ask about your file",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/ask",
+   "route": "/app/reports",
+   "screen": "ask",
+   "text": "The Ask box never changes a gift or a person's details, and never sends anything. When an answer offers to plan a step and you click it, the step goes on your Thread and nothing is sent. If Steward cannot answer from your records, it says so plainly. When your organization has an old system's report for a stretch Steward has no gifts for, the answer quotes it and never adds it into Steward's numbers.",
+   "kind": "limits"
+  },
+  {
    "id": "helpdoc:auctions:0",
    "source": "helpdoc",
    "title": "Auctions",
@@ -2105,6 +2166,219 @@
    "kind": "limits"
   },
   {
+   "id": "helpdoc:funds:0",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "Funds shows each pot of money with a purpose: what is in it, what came in and went out, and whether it is restricted."
+  },
+  {
+   "id": "helpdoc:funds:1",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "What this screen is for",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "A fund is a pot of money with a purpose, such as General Operating or a scholarship. Funds live in Finance, under the Funds tab, beside Budgets. Each fund has a card with its balance, what came in and went out this period, and whether it is Restricted or Unrestricted, with a sentence about the restriction. Fundraising also has a Funds part, under Money in, that shows each balance and an \"Open Finance → Funds\" button."
+  },
+  {
+   "id": "helpdoc:funds:2",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "Add a fund",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "1. Open Finance, then Funds.\n2. Click \"+ Add fund\".\n3. Type the \"Fund name\" and a \"Description\".\n4. Under \"Name donors see in a thank-you\", type the words a donor should read, or leave it blank to use the fund name.\n5. Tick \"Restricted fund (donor or grant restricted)\" if the money may only be spent for one purpose.\n6. Click \"Save\"."
+  },
+  {
+   "id": "helpdoc:funds:3",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "See what moved through a fund",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "1. Click a fund's card to open every gift and expense in it, with the net.\n2. Under \"Fund Accounting\", click \"View txns →\" on a fund to open its transactions, or \"Edit\" to change it."
+  },
+  {
+   "id": "helpdoc:funds:4",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "An example",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "Margaret Chen gives $5,000 for the summer reading program. You add a fund named \"Summer Reading\", tick \"Restricted fund (donor or grant restricted)\", and under \"Name donors see in a thank-you\" type \"our summer reading program\". You pick that fund when you record her gift. Her thank-you names the program, and the Summer Reading card shows $5,000 in, marked Restricted."
+  },
+  {
+   "id": "helpdoc:funds:5",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "Remove a fund",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "1. Under \"Fund Accounting\", click \"More\" on the fund's row, then \"Remove\".\n2. If no gift is designated to it, it is deleted. If gifts are designated to it, it is retired instead: it is no longer offered for new gifts, and every past gift and report keeps it."
+  },
+  {
+   "id": "helpdoc:funds:6",
+   "source": "helpdoc",
+   "title": "Funds",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/funds",
+   "route": "/app/finance?subtab=funds",
+   "screen": "finance:funds",
+   "text": "Steward never moves money between funds and never holds or moves your money. Removing a fund never changes the gifts already designated to it.",
+   "kind": "limits"
+  },
+  {
+   "id": "helpdoc:lost-and-found:0",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "Lost & Found is Steward's free donor audit: drop in the export your database already makes and see who is past their own usual time to give, with no account and without your file leaving your browser."
+  },
+  {
+   "id": "helpdoc:lost-and-found:1",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "What this screen is for",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "Lost & Found is a free page on Steward's website, open to anyone, customer or not. You drop in a donor export and the whole audit runs in your browser tab. Your donor file never leaves your browser. Nothing is uploaded. Each donor is judged against their own rhythm, the usual gap between their gifts, so someone who gives every December is judged by December. Your results are free and complete with no email address."
+  },
+  {
+   "id": "helpdoc:lost-and-found:2",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "Run the audit",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "1. Open the Lost & Found page.\n2. Drag your file onto \"Drop your donor export here\", or click \"Run the free audit\" and pick it. A CSV or an Excel file with a donor, an amount and a date on each row is enough; nothing needs tidying first.\n3. Read the results: \"At risk\", \"Retention\" and \"On file\" at the top, then three groups: \"Call this week\", \"Call this month\" and \"Probably gone\".\n4. Click a group's \"See the names\" to see each donor, a year of their giving and one fact from your file about them.\n5. To audit a different file, click \"Audit another file\"."
+  },
+  {
+   "id": "helpdoc:lost-and-found:3",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "Get the board-ready PDF",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "1. Under \"The board-ready report\", fill in \"Your name\", \"Email\" and \"Organization\".\n2. Click \"Send me the PDF\". The PDF is built in your browser from the audit already on screen.\n3. Tick \"Add my anonymous totals to the nonprofit benchmark.\" only if you want to. It sends four numbers, never a name, an email or a single gift."
+  },
+  {
+   "id": "helpdoc:lost-and-found:4",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "An example",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "Dana Reyes, the development director at a small food bank, exports the donor list as a CSV and drops it in. The audit shows 14 donors under \"Call this week\". Dana clicks \"See the names\" and finds Margaret Chen, who gave $250 every spring and has not given this spring. That is the first call."
+  },
+  {
+   "id": "helpdoc:lost-and-found:5",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "What the numbers mean",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "At risk: what every donor past their own usual time gave in their last year of giving, across all three groups.\nRetention: the share of last year's donors who gave again.\nCall this week: just past their usual gap between gifts.\nCall this month: further past it, or a recurring gift that stopped within the last year.\nProbably gone: past the lapse line, shown so you know, not as a call list."
+  },
+  {
+   "id": "helpdoc:lost-and-found:6",
+   "source": "helpdoc",
+   "title": "Lost & Found",
+   "heading": "What Lost & Found doesn't do",
+   "link": "/help/lost-and-found",
+   "route": "/lost-and-found",
+   "screen": "lostandfound",
+   "text": "It looks backward once. It keeps nothing, and it does not put anyone into Steward. A donor with only one gift has no usual time to be past, so they are counted as not judged rather than guessed into a group. \"Start Steward with this file\" takes you to sign up; you bring the same file into Steward yourself.",
+   "kind": "limits"
+  },
+  {
+   "id": "helpdoc:major-gifts:0",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "Major gifts is where you keep every large ask in one place: who you are cultivating, what each ask is for, how much, and when you expect an answer."
+  },
+  {
+   "id": "helpdoc:major-gifts:1",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "What this screen is for",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "Major gifts is a tab in Fundraising. It has five parts: At a glance, Pipeline, Proposals, Portfolios and Plans. A proposal is one ask to one person: what it's for, how much, and when you expect an answer. Each proposal moves through six stages: Identified, Cultivating, Asked, Committed, Declined and Stewarding."
+  },
+  {
+   "id": "helpdoc:major-gifts:2",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "Start a proposal",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "1. Open the person's record and go to the \"Asks & pipeline\" tab.\n2. Click \"+ New ask\".\n3. Fill in \"What is the ask for?\", \"Ask amount\", \"Expected close\" and the \"Stage\". Add \"Probability you'd put on it\" if you have one in mind, the \"Fund it lands in\" and the \"Officer who owns it\".\n4. Click \"Create proposal\"."
+  },
+  {
+   "id": "helpdoc:major-gifts:3",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "Move a proposal along",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "1. Open Fundraising, then Major gifts, then Proposals.\n2. Click \"Move\" on the row, choose the new stage and click \"Save the move\".\n3. When you move it to Committed, Steward asks \"How did it come in?\". Choose \"As a pledge (they promised it)\" and Steward writes one pledge for the ask amount, or \"As a gift already on file\" to link a gift you have recorded.\n4. When you move it to Declined, choose a reason under \"Why?\". The reason stays on the record, even if you reopen it later."
+  },
+  {
+   "id": "helpdoc:major-gifts:4",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "An example",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "Margaret Chen has given $1,000 a year for six years. You add a proposal on her record: \"Lead gift for the new barn\", $25,000, expected close June 30, stage Cultivating, probability 50%. Her ask now counts in \"Open pipeline\", and $12,500 of it counts in \"Weighted\". In June she says yes and promises it over two years. You click \"Move\", choose Committed and \"As a pledge (they promised it)\", and the pledge closes itself when the money arrives."
+  },
+  {
+   "id": "helpdoc:major-gifts:5",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "What the numbers mean",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "Open pipeline: the ask amounts on every proposal still at Identified, Cultivating or Asked.\nWeighted: each open ask multiplied by the probability you set by hand. A proposal with no probability is left out.\nDue this quarter: open proposals whose expected close falls in this quarter.\nAsked this year: the ask amounts on proposals that reached Asked, Committed, Declined or Stewarding in this fiscal year.\nCommitted this year: what people said yes to in this fiscal year."
+  },
+  {
+   "id": "helpdoc:major-gifts:6",
+   "source": "helpdoc",
+   "title": "Major gifts",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/major-gifts",
+   "route": "/app/fundraising?fr=majorgifts",
+   "screen": "fundraising:majorgifts",
+   "text": "Steward never sets a probability for you, and never sends anything from this screen. A proposal is your record of the ask; the conversation stays yours.",
+   "kind": "limits"
+  },
+  {
    "id": "helpdoc:memberships:0",
    "source": "helpdoc",
    "title": "Memberships",
@@ -2254,6 +2528,67 @@
    "route": "/app/fundraising?fr=p2p",
    "screen": "p2p",
    "text": "Steward does not email your fundraisers for you. Notes open in your own mail, and adding a fundraiser sends nothing. A fundraiser is matched to a person in your records by exact email only; one shown as \"no record matched\" has no soft credit recorded until their email matches someone on file.",
+   "kind": "limits"
+  },
+  {
+   "id": "helpdoc:portal-editor:0",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "The portal editor is where you arrange and style your donor portal, the page donors sign in to, while seeing it the way a donor will on a phone or a laptop."
+  },
+  {
+   "id": "helpdoc:portal-editor:1",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "What this screen is for",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "The portal editor shows your donor portal with sample donor data, never a real donor's, and lets you change it in place. It has two modes. \"Page\" arranges the widgets on the page. \"Design\" sets the look and the page details: Identity, Colors, Type & cards, Page details and Footer. Page changes are a draft that autosaves, and donors see nothing until you click \"Publish\". Design changes save on their own as you make them. Only an admin can open the editor."
+  },
+  {
+   "id": "helpdoc:portal-editor:2",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "Open the editor",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "1. Open Donor Portal in the sidebar. It shows only for organizations on the donor portal plan; other organizations do not have this tab.\n2. Click \"Edit the portal\".\n3. Use \"Phone\" or \"Desktop\" to see the page the way a donor will."
+  },
+  {
+   "id": "helpdoc:portal-editor:3",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "Arrange the page",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "1. If the page is empty, pick a layout under \"Start with a layout\".\n2. Click \"+ Add widget\" and choose one, such as \"Hero\", \"Give button\", \"My Giving\", \"Programs & funds\" or \"Impact feed\". It lands at the end of the page with its options open.\n3. Drag a widget to move it, or use its up and down arrows. The ✕ removes it.\n4. Click \"Publish\", then \"Publish\" again to confirm. Donors see it immediately.\n5. To throw away a draft, click \"Revert to published\", then \"Discard draft\"."
+  },
+  {
+   "id": "helpdoc:portal-editor:4",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "An example",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "You want donors to see where their money goes. In \"Page\" you add \"Programs & funds\" and picks the Summer Reading and Food Pantry funds, then move \"Impact feed\" up under the \"Hero\". In \"Design\" you set the Primary color to her organization's green. You check the page on \"Phone\", where the sample donor Sam Sample's giving shows in \"My Giving\", then click \"Publish\"."
+  },
+  {
+   "id": "helpdoc:portal-editor:5",
+   "source": "helpdoc",
+   "title": "Portal editor",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/portal-editor",
+   "route": "/portal-editor",
+   "screen": "portal:editor",
+   "text": "The editor never shows a real donor's information. It does not turn the portal on or off: that switch is on the Donor Portal tab. Nothing in the Page layout reaches donors until you publish.",
    "kind": "limits"
   },
   {
@@ -2531,6 +2866,67 @@
    "kind": "limits"
   },
   {
+   "id": "helpdoc:started-not-finished:0",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "Started, not finished lists the gifts someone began on one of your own giving forms, with an email given, and did not complete, so you can write to them once if you choose."
+  },
+  {
+   "id": "helpdoc:started-not-finished:1",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "What this screen is for",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "Started, not finished sits under Fundraising, in Money in. When someone chooses an amount on one of Steward's own giving forms, gives their email and then does not pay, the gift appears here. It counts once an hour has passed or the payment page closed. When a gift from that email comes in, the row leaves the list on its own and moves under \"Finished later\", with a link to the gift. When there are new ones, Home shows one line, such as \"3 gifts were started on your giving forms and not finished, $150 in all.\", with \"See who\"."
+  },
+  {
+   "id": "helpdoc:started-not-finished:2",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "Write to someone",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "1. Open Fundraising, then Money in, then \"Started, not finished\".\n2. Read the row: the person, the amount, the form and the day it was started.\n3. Click \"Draft a note\". Steward drafts a short note in your organization's voice. Change any word in the Subject and Message.\n4. Click \"Send\", or \"Copy\" it to send from your own email. Only an admin can send from here.\n5. If you would rather leave it, click \"Set aside\"."
+  },
+  {
+   "id": "helpdoc:started-not-finished:3",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "An example",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "On Tuesday, Margaret Chen chose $50 a month on your donation form and closed the page before paying. On Wednesday her row reads \"$50 a month\", with the form's name and the day she started. You click \"Draft a note\", soften the second sentence and click \"Send\". Because she is already in Steward, the email is logged on her record. If she gives on Friday, her row moves to \"Finished later\"."
+  },
+  {
+   "id": "helpdoc:started-not-finished:4",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "What the numbers mean",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "Started and not finished this month: the total of gifts started this month on your own forms, with an email given, and not finished, at the amount each person chose. Click it to see the gifts behind it."
+  },
+  {
+   "id": "helpdoc:started-not-finished:5",
+   "source": "helpdoc",
+   "title": "Started, not finished",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/started-not-finished",
+   "route": "/app/fundraising?fr=unfinished",
+   "screen": "fundraising:unfinished",
+   "text": "Nothing is sent until a person presses Send. Steward sends at most one note per person per form, and none to someone who has given since. Only Steward's own giving forms are counted: a gift started on a connected platform, such as PayPal or Givebutter, is not seen here.",
+   "kind": "limits"
+  },
+  {
    "id": "helpdoc:tell-steward:0",
    "source": "helpdoc",
    "title": "Tell Steward",
@@ -2660,6 +3056,57 @@
    "route": "/app/fundraising?fr=toconfirm",
    "screen": "fundraising:toconfirm",
    "text": "Steward never logs money from a card by itself, and never sends a thank-you from here: the draft waits on your thank-you list. If a card is an employer's matching gift and Steward cannot find the original gift it matches, it cannot be logged yet; log the original gift first, or skip it. When a donor-advised fund's letter names an advisor who is not in Steward yet, no soft credit is added until you add them.",
+   "kind": "limits"
+  },
+  {
+   "id": "helpdoc:welcome:0",
+   "source": "helpdoc",
+   "title": "Welcome, step by step",
+   "heading": "",
+   "link": "/help/welcome",
+   "route": "/welcome",
+   "screen": "welcome",
+   "text": "The Welcome screen sets Steward up one step at a time: your organization, your donors, where gifts come in, how you look after a new donor, a first goal and a first impact metric."
+  },
+  {
+   "id": "helpdoc:welcome:1",
+   "source": "helpdoc",
+   "title": "Welcome, step by step",
+   "heading": "What this screen is for",
+   "link": "/help/welcome",
+   "route": "/welcome",
+   "screen": "welcome",
+   "text": "Welcome is the step-by-step way to set up Steward, a few minutes a step. It opens with \"Welcome to Steward.\" and two ways in: \"Import your file\", to set up with your own donors, or \"Explore the demo\", which loads sample donors, gifts and conversations into your own workspace so every screen has something on it. You can clear the sample whenever you like from Settings. If you started at \"Set up Steward for me\", the \"Set it up yourself\" link there brings you here."
+  },
+  {
+   "id": "helpdoc:welcome:2",
+   "source": "helpdoc",
+   "title": "Welcome, step by step",
+   "heading": "Set up step by step",
+   "link": "/help/welcome",
+   "route": "/welcome",
+   "screen": "welcome",
+   "text": "1. Click \"Set up my organization →\".\n2. Under \"Tell us about your organization\", fill in \"Organization name\", \"Mission or tagline\" and \"Time zone\", then click \"Continue →\". Every date in Steward is read in that time zone.\n3. If your plan includes a team, \"Invite your team\" comes next. Add their emails and click \"Send invites →\", or \"I'll invite them later from Settings › Team\".\n4. Under \"Import your donors\", click \"Import a CSV or Excel file →\". Steward shows you what it found before it writes anything. \"I don't have a list ready yet, I'll do this later\" skips it.\n5. Under \"Where do gifts come in today?\", connect what you use, or click \"I'll do this later\".\n6. Under \"How do you look after a new donor?\", pick the closest one and click \"Use this one →\".\n7. Under \"Set your first goal\" and \"Define your first impact metric\", fill in the fields and click \"Continue →\".\n8. On \"You're ready.\", click \"Go to my home screen →\"."
+  },
+  {
+   "id": "helpdoc:welcome:3",
+   "source": "helpdoc",
+   "title": "Welcome, step by step",
+   "heading": "An example",
+   "link": "/help/welcome",
+   "route": "/welcome",
+   "screen": "welcome",
+   "text": "Dana Reyes runs a youth choir. Dana types \"Riverside Youth Choir\" and the choir's mission, imports last year's spreadsheet of 312 donors, connects nothing yet, and picks a journey. For the first goal she types \"Raise $25,000 this quarter\", with \"Total raised\" and a target of 25000. The first impact metric starts from Steward's template, \"Your ${amount} gift helps power Riverside Youth Choir's work in the community.\", and she keeps it."
+  },
+  {
+   "id": "helpdoc:welcome:4",
+   "source": "helpdoc",
+   "title": "Welcome, step by step",
+   "heading": "What Steward doesn't do here",
+   "link": "/help/welcome",
+   "route": "/welcome",
+   "screen": "welcome",
+   "text": "Nothing here sends to a donor. A journey's steps become reminders on your Thread on the day each is due. The team, donor file, gift sources and journey steps can each be left for later, and choosing the demo does not lock anything.",
    "kind": "limits"
   },
   {
@@ -3381,7 +3828,7 @@
    "route": null,
    "screen": null,
    "status": "not built",
-   "text": "Donorbox is not built. Gifts and recurring plans pulled in. Nobody can connect it from Settings today. Its gifts can come in as a file you import."
+   "text": "Donorbox is not built. Once built: gifts and recurring plans pulled in. Settings, Connections has a Donorbox card in the Giving section, but it does not connect to Donorbox: its only button is \"Import a file\", for Donorbox's gift export as a statement file. Nothing comes in from Donorbox on its own."
   },
   {
    "id": "connection:quickbooks-online",
@@ -3392,7 +3839,7 @@
    "route": null,
    "screen": null,
    "status": "waiting",
-   "text": "QuickBooks Online is not available yet. Direct connection. It is built and waiting on Intuit's approval before customers can connect it."
+   "text": "QuickBooks Online is not open to every organization yet. Direct connection. Intuit has approved Steward's QuickBooks app. Steward turns it on one organization at a time for now: ask us and we will turn it on for yours. Until it is on for yours, QuickBooks cannot be connected, and the bookkeeper file in Settings, Connections works without it."
   },
   {
    "id": "connection:zapier",
