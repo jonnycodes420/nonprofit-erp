@@ -16,13 +16,16 @@
 // The answer is one screen at two speeds: Done for you, with one Undo, and
 // Waiting for your yes (the drafted email, every amount, a contact change, a
 // personal detail).
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { AskAnswer } from "./AskPanel";
 import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip, doAllLine } from "../../../shared/voiceTalk.js";
 import { told } from "../lib/stewardTold";
+import { RefLink } from "./Linked";
+import { linkSegments } from "../../../shared/itemLinks.js";
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 // VOICE-4: ONE recognizer for the page. A new one per press (and per opening
@@ -404,12 +407,26 @@ function PlanCard({ plan, busy, setBusy, onPick, onChoose, onNavigate, onClose }
   </div>;
 }
 
+// THREAD-2 · a "Done for you" line links what it names: the person, and the
+// thing that was written ("Lunch logged" opens the conversation, a task line
+// opens the task). Opening one closes the window and goes there.
+function DoneLine({ d, goTo }) {
+  const open = (r, to) => goTo(to);
+  const segs = linkSegments(d.line, d.refs || []);
+  return <>{segs.map((sg, i) => sg.ref
+    ? <RefLink key={i} refItem={sg.ref} onOpen={open}>{sg.text}</RefLink>
+    : d.actRef ? <RefLink key={i} refItem={d.actRef} onOpen={open}>{sg.text}</RefLink>
+    : <Fragment key={i}>{sg.text}</Fragment>)}</>;
+}
+
 const CARD_LABEL = { draft: "Email draft", money: "Amount", contact: "Contact change", sensitive: "Personal detail",
   thanks: "Receipt and thank-you", flag: "Email", ask: "The ask" };
 const YES_LABEL = { sensitive: "Save as a note", thanks: "Send both" };
 const ALL_KINDS = ["money", "thanks", "contact", "flag", "ask"];
 function Results({ memo, plan, note, busy, act, onAll, onClose, onNavigate, onAnother }) {
   const [showMemo, setShowMemo] = useState(false);
+  const nav = useNavigate();
+  const goTo = to => { onClose(); nav(to); };
   const waiting = memo.waiting || [];
   const open = waiting.filter(c => c.state === "waiting");
   const decided = waiting.filter(c => c.state !== "waiting");
@@ -427,7 +444,7 @@ function Results({ memo, plan, note, busy, act, onAll, onClose, onNavigate, onAn
       <button data-testid="tell-do-all-button" disabled={busy} onClick={onAll} style={btn(true)}>Do all of this</button>
     </div>}
     {note && <div style={{ background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: T.ink }}>{note}</div>}
-    {memo.people.length > 0 && <div style={{ fontSize: 13.5, color: T.ink2 }}>About {memo.people.map(p => p.name).join(" and ")}{memo.ai === "off" ? ". AI is off, so your memo was saved as a note and nothing else." : "."}</div>}
+    {memo.people.length > 0 && <div style={{ fontSize: 13.5, color: T.ink2 }}>About {memo.people.map((p, i) => <Fragment key={p.id}>{i ? " and " : ""}<RefLink refItem={{ kind: "person", id: p.id, name: p.name, email: p.email }} onOpen={(r, to) => goTo(to)} /></Fragment>)}{memo.ai === "off" ? ". AI is off, so your memo was saved as a note and nothing else." : "."}</div>}
     <section>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Done for you</div>
       {undone ? <div style={{ fontSize: 13.5, color: T.ink3 }}>Undone by {memo.undoneByName || "you"}. Everything this memo filed was taken back.</div>
@@ -435,7 +452,7 @@ function Results({ memo, plan, note, busy, act, onAll, onClose, onNavigate, onAn
         : memo.done.map((d, i) => (
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0", fontSize: 14, color: T.ink, lineHeight: 1.45 }}>
             <span aria-hidden style={{ color: d.outcome === "done" ? T.greenDk : T.ink3, fontWeight: 800 }}>{d.outcome === "done" ? "✓" : "·"}</span>
-            <span>{d.line}{d.outcome !== "done" && d.reason ? <span style={{ color: T.ink3 }}> (not done: {d.reason})</span> : null}</span>
+            <span data-testid="tell-done-line"><DoneLine d={d} goTo={goTo} />{d.outcome !== "done" && d.reason ? <span style={{ color: T.ink3 }}> (not done: {d.reason})</span> : null}</span>
           </div>))}
     </section>
     {open.length > 0 && <section>

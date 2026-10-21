@@ -35,6 +35,8 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
 import { stepInSentence, ORG_NAME_RE } from "../../../shared/stepCase.js";
 import { DonorLink } from "./RecordLink";
+import { Linked, RefLink } from "./Linked";
+import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
 import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
@@ -2026,22 +2028,33 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           still open the record in a new tab (BUILD-45 D-1 is the reason that
           anchor exists and it is not being undone). A comment may not sit
           between an element's attributes. */}
-      <a href={`/donors/${t.donorId}`} className="attn-row-main"
-        style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
-        onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
-          if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>
+      {/* THREAD-2: EVERY NAME IS A LINK. The row held one <a> around the
+          whole sentence, and an anchor cannot hold another, so nothing it
+          named could open. The NAME is the real /donors/:id anchor now (the
+          D-1 keyboard and new-tab promise, kept), the row still opens the
+          rail on a plain click (rowClick), and what opened the thread, the
+          step and anything the words name are their own links. */}
+      <div className="attn-row-main"
+        style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",color:"inherit",cursor:"pointer"}}
+        onClick={rowClick(`/donors/${t.donorId}`,()=>{if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});})}>
         {/* BUILD-94 Part 1 — the face, and now literally so when the org has
             one. The mark used to be a first letter tinted brass-when-late; the
             row's own left edge already carries that signal, and a mark that
             changes colour by status is not the same mark everywhere. */}
         <PersonMark id={t.donorId} name={t.donorName} size={38}/>
         <div style={{flex:1,minWidth:0}}>
-          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{displayName(t.donorName)}</div>
+          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
+            <DonorLink id={t.donorId} onOpen={()=>{if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>{displayName(t.donorName)}</DonorLink>
+          </div>
           {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {stepInSentence(t.nextStep.label,[t.donorName])}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
+            {t.lastTouch?.ref?<RefLink refItem={t.lastTouch.ref}>{threadClause(t).replace(/\.$/,"")}</RefLink>:<Linked text={threadClause(t).replace(/\.$/,"")} refs={t.refs}/>}{"."}{" "}
+            <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {t.stepRef
+              ?<RefLink refItem={t.stepRef} data-testid="thread-step-link">{stepInSentence(t.nextStep.label,[t.donorName])}</RefLink>
+              :<Linked text={stepInSentence(t.nextStep.label,[t.donorName])} refs={t.refs}/>}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
+            {t.journey&&<span style={{color:T.ink3,fontSize:12.5}}>{" "}From the <RefLink refItem={t.journey}/> journey.</span>}
             {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-steps-more" aria-expanded={moreOpen===t.donorId}
               onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
               onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}
@@ -2049,7 +2062,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
           {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
             <ul data-testid="thread-steps-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
-              {t.moreSteps.map(m=><li key={m.id}>{m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
+              {t.moreSteps.map(m=><li key={m.id}>{m.stepRef?<RefLink refItem={m.stepRef}>{m.label}</RefLink>:m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
             </ul>)}
           {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
           {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
@@ -2092,7 +2105,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
           </div>
         </div>
-      </a>
+      </div>
       <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
         <button className="attn-row-action" onClick={()=>finishRow(t)} disabled={isReadOnly}
           title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
@@ -2130,29 +2143,32 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <li key={"stopped-"+f.subId} className="attn-row"
           style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,
                   borderLeft:"3px solid "+T.gold500}}>
-          <a href={`/donors/${f.donorId}`} className="attn-row-main"
+          {/* THREAD-2: the name and the monthly gift are links (the row's own
+              <a> could hold neither), and the row still opens the rail. */}
+          <div className="attn-row-main"
             style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,
-                    padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
-            onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
-              openRailDonor(f.donorId);}}>
+                    padding:"14px 16px 14px 13px",color:"inherit",cursor:"pointer"}}
+            onClick={rowClick(`/donors/${f.donorId}`,()=>openRailDonor(f.donorId))}>
             <PersonMark id={f.donorId} name={f.donorName} size={38}/>
             <div style={{flex:1,minWidth:0}}>
-              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{displayName(f.donorName)}</div>
+              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
+                <DonorLink id={f.donorId} onOpen={()=>openRailDonor(f.donorId)}>{displayName(f.donorName)}</DonorLink>
+              </div>
               <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-                {f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift stopped`:"Their recurring gift stopped"}
+                <RefLink refItem={{kind:"plan",id:f.subId,donorId:f.donorId}}>{f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift`:"Their recurring gift"}</RefLink>{" stopped"}
                 {failedOn?` ${agoPhrase(age)}`:""} when the card was declined.{" "}
                 <span style={{color:T.gold700,fontWeight:600}}>Next: send her a link to update it.</span>
               </div>
             </div>
             <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
               <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
-                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":"Not set"}
+                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":""}
               </div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
                 stopped
               </div>
             </div>
-          </a>
+          </div>
           <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
             <button className="attn-row-action" data-testid="home-stopped-card"
               onClick={()=>onNavigate("fundraising",{frSection:"recurring"})}

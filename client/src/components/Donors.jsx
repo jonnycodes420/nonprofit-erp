@@ -470,7 +470,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         lastTouchpoint:prev.lastTouchpoint??null,
         interactions:prev.interactions||[],
       }:prev);
-    }catch(e){console.error(e);}
+    }catch(e){
+      // THREAD-2 · a link to somebody this person can't see (another org's
+      // record, or one removed) says so, and shows nothing of it.
+      if(e&&(e.status===404||e.status===403)){setSelected(prev=>prev?.id===d.id?{id:d.id,noAccess:true}:prev);return;}
+      console.error(e);
+    }
   };
 
   // FIX-13 Part 6 — the address bar follows the list and the open profile.
@@ -638,7 +643,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           </div>
         </div>
       </Modal>}
-      {selected ? (
+      {selected?.noAccess ? (
+        <div data-testid="no-access" style={{padding:"40px 24px",textAlign:"center",color:T.ink,fontSize:15}}>
+          <div style={{fontWeight:700,marginBottom:6}}>You don't have access to this.</div>
+          <button onClick={()=>setSelected(null)} style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:T.ink}}>Back to people</button>
+        </div>
+      ) : selected ? (
       <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} aiErr={aiErr} loadingKey={loadingKey} getAI={getAI}

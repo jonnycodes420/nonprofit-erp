@@ -379,7 +379,9 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
 export function useDonorProposals(donorId) {
   const [d, setD] = useState(null);
   const load = useCallback(() => {
-    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
+    // THREAD-2: a link to someone this person can't see answers 404 here too;
+    // the page says "You don't have access to this", so it is not an error.
+    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => { if (e && e.status === 404) return; console.error("[proposals]", e); });
   }, [donorId]);
   useEffect(() => { setD(null); load(); }, [load]);
   return [d, load];

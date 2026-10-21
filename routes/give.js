@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const ItemRefs = require("../itemRefs");   // THREAD-2: names in staff email are links
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
 const { getAssetMeta } = require("../assetStore");
@@ -5637,8 +5638,14 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
        orgToday(await orgTz(org.id)), "high", "donor", donor.id, officer.id, officer.name || "",
        "system:portal-drift", "Donor portal"]);
     const subj = `${donor.name} ${verb} their recurring gift`;
-    const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " Not set " + escHtmlWf(detail) : ""}.</p>
-      <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today, thank them for their giving, ask nothing, and learn what changed.</p>`;
+    // THREAD-2: the person and the monthly gift are links, one button opens
+    // her. The detail used to print " Not set " where an em dash had been
+    // codemodded out; it is in brackets now.
+    const L = await ItemRefs.links(), base = publicAppUrl();
+    const person = { kind: "person", id: donor.id, name: donor.name, email: donor.email };
+    const body = `<p><strong>${L.refLinkHtml(person, base)}</strong> just ${verb} their ${L.refLinkHtml({ kind: "plan", id: sub.id, donorId: donor.id }, base, { label: amt })} recurring gift from the donor portal${detail ? " (" + escHtmlWf(detail) + ")" : ""}.</p>
+      <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today, thank them for their giving, ask nothing, and learn what changed.</p>
+      ${L.refButtonHtml(person, base)}`;
     await notifyUserOnce({
       org, userId: officer.id, email: officer.email,
       eventKey: `portal:${action}:${sub.id}`, channel: "portal_drift",

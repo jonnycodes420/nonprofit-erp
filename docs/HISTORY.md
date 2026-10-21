@@ -25,6 +25,10 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## THREAD-2 · Every name is a link (2026-10-21)
+
+`shared/itemLinks.js` is the one place a named thing becomes its page (`refPath`, `linkSegments`, the email helpers); `itemRefs.js` finds the org's own events, campaigns, journeys and groups named in a sentence. `composeThreads` gives every item `refs` and a `stepRef`; Home's Thread row, the stopped-card row and Tell Steward's "Done for you" render through `Linked`/`RefLink`. The morning email, the timed step reminder, the task-assignment, gift, portal-drift and quiet-connection emails link every name and end with one button. `GET /tasks/:id` and `/app/tasks?task=` open one task; another org's record says "You don't have access to this". Blank names: `POST`/`PUT /donors` saved `"   "` and the word `"null"` as names, which printed as an empty link in the morning email; refused at the write, and old rows show the email. Two `" Not set "` strings left by an em-dash codemod (portal-drift email, stopped-card age) fixed. Test `thread2-links` (37; 25 fail on main).
+
 ## NUMBERS-1 · Every number adds up, and we can prove it (2026-10-21)
 
 Jonathan added a $25,000 gift to Margaret Chen on prod: Lifetime, This year and Last gift moved, Average stayed "$14,423.08 of 13 gifts", Largest $15,000, and the gift counted toward GivingTuesday 2026, which had not started. The header drew First, Largest and Average from a second read (/status) that a gift from another door (the voice card, a capture) never refreshed; the server's numbers were right. Now all seven tiles come from GET /donors/:id (`numbers.donorGlance`). No campaign total looked at the campaign's dates: `campaignMatch.CAMPAIGN_GIFT_MATCH` is now the one rule (by id, or by name only with no id; donor not deleted; inside start and end) for every campaign, goal, page and portal total, and a write that chooses an out-of-window campaign is refused with the sentence.

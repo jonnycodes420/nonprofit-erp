@@ -267,6 +267,7 @@ CORE=(
   voice3-talk
   voice4-does-it-all
   auto1-send
+  thread2-links
   fix43-safe-fetch
   clientsafe1
   support1-answers

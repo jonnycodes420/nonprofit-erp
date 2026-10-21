@@ -1545,6 +1545,9 @@ const GC_READY = import("./shared/giftCredit.js").then(m => { GC = m; return m; 
 // FIX-45: what a draft calls somebody (shared/greeting.js), so "Desmond &
 // Ruth Okafor" is greeted as both of them. Read through greetFor below.
 let GREET = null;
+// THREAD-2: every name in a staff email links into the app (shared/itemLinks.js).
+const ItemRefs = require("./itemRefs");
+const staffLinks = () => ItemRefs.linksNow();
 const GREET_READY = import("./shared/greeting.js").then(m => { GREET = m; return m; });
 async function greetFor(person, fallback = "there") {
   await GREET_READY;
@@ -2166,7 +2169,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
           org: { id: s.org_id }, userId: admin.id, email: admin.email,
           eventKey: `connection:${s.id}:${incident}`, channel: "email", prefKind: null,
           subject: a.status === "broken" ? `${label} has stopped working` : `${label} has gone quiet`,
-          bodyHtml: `<p>${line}</p><p>Open Settings, then Connections, to see what Steward last read and when.</p>`,
+          bodyHtml: `<p>${line}</p><p>Connections shows what Steward last read and when.</p>${(await ItemRefs.links()).buttonHtml(`Open ${label}`, `${publicAppUrl()}/app/settings?section=connections`)}`,
         }).catch(() => ({ sent: false }));
         if (r && r.sent) out.emailed++;
       }
@@ -5985,7 +5988,7 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
 
 async function composeDailyTaskReminder(orgId, userId, today) {
   const rows = await query(
-    `SELECT t.*, d.name AS donor_name FROM tasks t
+    `SELECT t.*, d.name AS donor_name, d.email AS donor_email FROM tasks t
        LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
       WHERE t.org_id=? AND t.assigned_to=? AND t.done=0 AND t.voided_at IS NULL
         AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) <= ?
@@ -6222,8 +6225,9 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
   const ownerClause = !userId ? ""
     : (isAdmin ? "AND (t.owner_id = ? OR t.owner_id IS NULL)" : "AND t.owner_id = ?");
   const rows = await query(
-    `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_type, t.next_step_label,
-            t.due_date, t.due_time, t.opened_on, d.total_giving, d.gift_count, t.opening_gift_id
+    `SELECT t.id, t.donor_id, d.name AS donor_name, d.email AS donor_email, t.next_step_type, t.next_step_label,
+            t.due_date, t.due_time, t.opened_on, d.total_giving, d.gift_count, t.opening_gift_id, t.calendar_event_id,
+            (SELECT k.id FROM tasks k WHERE k.org_id = t.org_id AND k.thread_id = t.id AND k.link_kind = 'next_step' AND k.done = 0 LIMIT 1) AS step_task_id
        FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
@@ -6258,9 +6262,13 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
        FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
   const majorThreshold = parseFloat(p90) || 0;
 
+  const L = await ItemRefs.links();
   const shaped = eligible.map(r => ({
     id: r.id, donorId: r.donor_id,
-    donorName: displayNameCase(r.donor_name || ""),
+    // THREAD-2: never a blank name in the morning email.
+    donorName: L.nameOrFallback(displayNameCase(r.donor_name || ""), r.donor_email),
+    stepRef: r.calendar_event_id ? { kind: "meeting", id: r.calendar_event_id, donorId: r.donor_id, date: r.due_date }
+      : r.step_task_id ? { kind: "task", id: r.step_task_id, donorId: r.donor_id } : null,
     stepLabel: r.next_step_label, due: r.due_date,
     nextStep: { due: r.due_date },
     daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
@@ -6273,7 +6281,7 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
   }));
   const q = rank.buildQueue(shaped, today, { cap: rank.EMAIL_CAP });
   return q.list.map(t => ({
-    id: t.id, donorId: t.donorId, donorName: t.donorName, stepLabel: t.stepLabel,
+    id: t.id, donorId: t.donorId, donorName: t.donorName, stepLabel: t.stepLabel, stepRef: t.stepRef || null,
     due: t.due, daysOpen: t.daysOpen, why: t.rank.why, band: t.band,
   }));
 }
@@ -6334,13 +6342,17 @@ function morningBriefSubject(threads, taskCount, org, meetingCount = 0, readoutC
 // answer "why am I looking at this one first?" without the reader guessing.
 function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [], readouts = [] }) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
+  // THREAD-2 · every person, task and meeting named here opens its page.
+  const L = staffLinks(), base = publicAppUrl();
+  const QUIET = `color:${SAGE};text-decoration:underline;`;
   const row = t => {
-    const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
+    const url = `${base}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
     const late = t.band === "overdue";
+    const step = t.stepRef ? L.refLinkHtml(t.stepRef, base, { label: t.stepLabel, style: QUIET }) : digestEsc(t.stepLabel);
     return `<tr><td style="padding:9px 0;border-bottom:1px solid #e4e0d6;">
       <div style="font-size:14px;color:${INK};">
-        <a href="${url}" style="color:${EMERALD};font-weight:700;text-decoration:underline;">${digestEsc(t.donorName)}</a>
-        <span style="color:${SAGE};"> · ${digestEsc(t.stepLabel)} · day ${t.daysOpen}</span>
+        <a href="${url}" style="color:${EMERALD};font-weight:700;text-decoration:underline;">${digestEsc(L.nameOrFallback(t.donorName))}</a>
+        <span style="color:${SAGE};"> · ${step} · day ${t.daysOpen}</span>
       </div>
       ${t.why ? `<div style="font-size:12px;color:${late ? TERRA : SAGE};margin-top:2px;">${digestEsc(t.why)}</div>` : ""}
     </td></tr>`;
@@ -6353,9 +6365,9 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
 
   const taskLi = t => {
     const late = String(t.due).slice(0, 10) < today;
-    const donor = t.donor_name ? ` · ${digestEsc(displayNameCase(t.donor_name))}` : "";
+    const donor = t.donor_id ? ` · ${L.refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, base, { style: QUIET })}` : "";
     return `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
-      ${digestEsc(t.title)}<span style="color:${late ? TERRA : SAGE};font-weight:700;"> · ${late ? "Overdue" : "Due today"}</span><span style="color:${SAGE};">${donor}</span></td></tr>`;
+      ${L.refLinkHtml({ kind: "task", id: t.id, name: t.title }, base, { style: `color:${INK};text-decoration:underline;` })}<span style="color:${late ? TERRA : SAGE};font-weight:700;"> · ${late ? "Overdue" : "Due today"}</span><span style="color:${SAGE};">${donor}</span></td></tr>`;
   };
   // BUILD-88a A.2 — DUE TODAY GOES FIRST. The late list led, so the thing she
   // has to do TODAY sat underneath the things she is already late for, and the
@@ -6377,7 +6389,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
     <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};" data-section="meetings">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your meetings today</div>
       <table style="margin-top:6px;border-collapse:collapse;width:100%;">${meetings.map(m => `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
-        <strong>${digestEsc(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${digestEsc(m.title || "Meeting")}${(m.people || []).length ? `<span style="color:${SAGE};"> with ${digestEsc(m.people.map(p => p.name).join(", "))}</span>` : ""}</td></tr>`).join("")}</table>
+        <strong>${digestEsc(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${digestEsc(m.title || "Meeting")}${(m.people || []).length ? `<span style="color:${SAGE};"> with ${m.people.map(p => p.id ? L.refLinkHtml({ kind: "person", id: p.id, name: p.name, email: p.email }, base, { style: QUIET }) : digestEsc(L.nameOrFallback(p.name, p.email))).join(", ")}</span>` : ""}</td></tr>`).join("")}</table>
     </div>` : "";
   // LIVE-1 · WHAT YESTERDAY'S IMPORTS AND READS TOLD US, one line each,
   // opening "What changed" where every line has its rows and its action.
@@ -6401,9 +6413,14 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
     : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:${EMERALD};">Add it in Settings</a> and it will.</div>`;
 
+  // The one button: the first person waiting, else her tasks, else Home.
+  const button = threads.length
+    ? L.buttonHtml(`Open ${L.nameOrFallback(threads[0].donorName)}`, `${base}/donors/${encodeURIComponent(threads[0].donorId)}?conversation=1`)
+    : tasks.count ? L.buttonHtml(`Review ${tasks.count} ${tasks.count === 1 ? "task" : "tasks"}`, `${base}/app/tasks`)
+    : L.buttonHtml("Open Steward", `${base}/dashboard`);
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
-      ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${footer}
+      ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${button}${footer}
       ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Account. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
@@ -6432,6 +6449,7 @@ async function yesterdaysReadouts(orgId, today) {
 }
 
 async function runMorningBriefForOrg(org, { today, send = true }) {
+  await ItemRefs.links();   // THREAD-2: the email's links are ready before it renders
   const out = { sent: [], skipped: [] };
   const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
 
@@ -6580,7 +6598,7 @@ ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px
 // Every open, unsnoozed, timed step due TODAY for this org, with its donor.
 async function composeStepReminders(orgId, today) {
   return await query(
-    `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_label, t.due_date, t.due_time,
+    `SELECT t.id, t.donor_id, d.name AS donor_name, d.email AS donor_email, t.next_step_label, t.due_date, t.due_time,
             t.owner_id, t.owner_name, t.created_by, t.opened_on
        FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
@@ -6591,7 +6609,7 @@ async function composeStepReminders(orgId, today) {
 }
 
 function stepReminderSubject(t, timeLabel) {
-  return `${timeLabel} · ${t.next_step_label} · ${displayNameCase(t.donor_name || "")}`;
+  return `${timeLabel} · ${t.next_step_label} · ${staffLinks().nameOrFallback(displayNameCase(t.donor_name || ""), t.donor_email)}`;
 }
 
 function renderStepReminderBody(t, org, timeLabel) {
@@ -6605,11 +6623,9 @@ function renderStepReminderBody(t, org, timeLabel) {
     : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">${digestEsc(timeLabel)}. ${digestEsc(t.next_step_label)}.</div>
-      <div style="font-size:14px;color:#0f1a12;margin-top:6px;">${digestEsc(displayNameCase(t.donor_name || ""))}</div>
+      <div style="font-size:14px;color:#0f1a12;margin-top:6px;">${staffLinks().refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, publicAppUrl())}</div>
       <div style="font-size:12.5px;color:#6b7d70;margin-top:2px;">This is the time you set for it.</div>
-      <div style="margin-top:16px;">
-        <a href="${url}" style="display:inline-block;background:#0d5c3a;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 18px;border-radius:8px;">Log what happened →</a>
-      </div>
+      ${staffLinks().buttonHtml(`Open ${staffLinks().nameOrFallback(displayNameCase(t.donor_name || ""), t.donor_email)}`, url)}
       ${footer}
     </div>`;
 }
@@ -6617,6 +6633,7 @@ function renderStepReminderBody(t, org, timeLabel) {
 // Run the timed reminders for one org at `nowHHMM` (the org's wall clock).
 // send=false → compose only, reserving nothing.
 async function runStepRemindersForOrg(org, { today, nowHHMM, send = true, force = false }) {
+  await ItemRefs.links();   // THREAD-2
   const out = { sent: [], skipped: [] };
   const { stepReminderDue } = await threadShapeMod();
   const rows = await composeStepReminders(org.id, today);
@@ -8397,9 +8414,12 @@ async function notifyTaskAssignment(task, { org, actorUserId = null, eventKey = 
   const urows = await query("SELECT id, name, email FROM users WHERE id=? AND org_id=?", [assigneeId, org.id]);
   if (!urows.length || !urows[0].email) return { sent: false, reason: "no_recipient" };
   const assignee = urows[0];
-  const donorName = task.donor_id
-    ? (await query("SELECT name FROM donors WHERE id=? AND org_id=?", [task.donor_id, org.id]))[0]?.name
+  const L = await ItemRefs.links(), base = publicAppUrl();
+  const donorRow = task.donor_id
+    ? (await query("SELECT name, email FROM donors WHERE id=? AND org_id=?", [task.donor_id, org.id]))[0] || null
     : null;
+  const person = donorRow ? { kind: "person", id: task.donor_id, name: displayNameCase(donorRow.name || ""), email: donorRow.email } : null;
+  const donorName = person ? L.refLabel(person) : null;
   let actorName = null;
   if (actorUserId) {
     const ar = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actorUserId, org.id]);
@@ -8408,12 +8428,16 @@ async function notifyTaskAssignment(task, { org, actorUserId = null, eventKey = 
   const context = actorName
     ? `${displayNameCase(actorName)} assigned you a task`
     : `A new task is waiting for you`;
-  const donorLine = donorName ? `<p style="margin:4px 0;color:#0f1a12;">Donor: <strong>${escHtmlWf(displayNameCase(donorName))}</strong></p>` : "";
+  // THREAD-2 · the task, the person and the gift are links; the one button
+  // opens the person (or the task when it is about nobody).
+  const giftRef = task.source_gift_id && task.donor_id ? { kind: "gift", id: task.source_gift_id, donorId: task.donor_id } : null;
+  const taskRef = { kind: "task", id: task.id, name: task.title, donorId: task.donor_id || null };
+  const donorLine = person ? `<p style="margin:4px 0;color:#0f1a12;">Donor: <strong>${L.refLinkHtml(person, base)}</strong>${giftRef ? ` · ${L.refLinkHtml(giftRef, base, { label: "the gift" })}` : ""}</p>` : "";
   const dueLine = task.due ? `<p style="margin:4px 0;color:#6b7d70;">Due ${escHtmlWf(String(task.due).slice(0, 10))}</p>` : "";
   const body = `<p>${escHtmlWf(context)} in ${escHtmlWf(displayNameCase(org.name))}.</p>
-<p style="font-size:16px;margin:12px 0 2px;color:#0f1a12;"><strong>${escHtmlWf(task.title)}</strong></p>
+<p style="font-size:16px;margin:12px 0 2px;color:#0f1a12;"><strong>${L.refLinkHtml(taskRef, base, { style: "color:#0f1a12;text-decoration:underline;" })}</strong></p>
 ${donorLine}${dueLine}
-<p style="margin-top:14px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">Open Steward →</a></p>`;
+${person ? L.refButtonHtml(person, base) : L.refButtonHtml(taskRef, base, "Open the task")}`;
   return notifyUserOnce({
     org, userId: assignee.id, email: assignee.email,
     eventKey: eventKey || `taskassign:${task.id}:${assignee.id}`,
@@ -8486,7 +8510,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       // "major-gift owner alert" A4 names explicitly.
       if (owner?.id) {
         await notifyTaskAssignment(
-          { id: taskId, org_id: org.id, title, due, donor_id: donor?.id || null, assigned_to: owner.id, assigned_to_name: owner.name },
+          { id: taskId, org_id: org.id, title, due, donor_id: donor?.id || null, assigned_to: owner.id, assigned_to_name: owner.name, source_gift_id: ctx.giftId || null },
           { org, actorUserId: null, eventKey: ctx.giftId ? `gift:${ctx.giftId}` : `taskwf:${taskId}` }
         ).catch(e => console.error("[workflow] task-assign email:", e.message));
       }
@@ -8522,9 +8546,14 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
         [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name, ctx.giftId || null]
       );
       // Email each distinct recipient (internal, no donor footer).
+      // THREAD-2 · the person and the gift are links, and the button opens her.
+      const L = await ItemRefs.links(), base = publicAppUrl();
+      const person = donor ? { kind: "person", id: donor.id, name: donor.name, email: donor.email } : null;
+      const giftLink = ctx.giftId && donor ? L.refLinkHtml({ kind: "gift", id: ctx.giftId, donorId: donor.id }, base, { label: amtStr || "a gift" }) : escHtmlWf(amtStr || "a gift");
       const emailBody = `<p>A gift just came in, a good moment to say thank you.</p>
-<p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(displayNameCase(org.name))}.</p>
-<p>Open Steward to send a thank-you while it's fresh, a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
+<p style="font-size:16px"><strong>${person ? L.refLinkHtml(person, base) : "A donor"}</strong> gave <strong>${giftLink}</strong> to ${escHtmlWf(displayNameCase(org.name))}.</p>
+<p>Send a thank-you while it's fresh, a fast, personal thank-you is the single biggest driver of a donor giving again.</p>
+${person ? L.refButtonHtml(person, base) : ""}`;
       // BUILD-36 A4: route through notifyUserOnce — respects the recipient's
       // per-user toggle AND dedups per gift event, so this gift-notify and the
       // major-gift owner alert never both email the same person for one gift.
@@ -8533,7 +8562,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
         if (r.email) await notifyUserOnce({
           org, userId: r.id, email: r.email, eventKey: giftEventKey, channel: "gift",
           prefKind: "portfolio_gifts",
-          subject: `New gift: ${donor?.name || "a donor"} gave ${amtStr || "a gift"}`, bodyHtml: emailBody,
+          subject: `New gift: ${donor ? L.nameOrFallback(donor.name, donor.email) : "a donor"} gave ${amtStr || "a gift"}`, bodyHtml: emailBody,
         });
       }
       return { type: "notify_gift", taskId, notified: recipients.map(r => r.name || r.email).filter(Boolean), mode };

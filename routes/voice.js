@@ -22,6 +22,7 @@
 const express = require("express");
 const { anthropicFor, recordAiFallback } = require("../aiClient");
 const orgTime = require("../orgTime");
+const ItemRefs = require("../itemRefs");   // THREAD-2: every name in a result is a link
 
 const routers = { r0: express.Router() };
 const MEMO_MIN = 4, MEMO_MAX = 4000;
@@ -71,6 +72,44 @@ async function memoRow(orgId, id) {
   return m || null;
 }
 
+// THREAD-2 · EVERY NAME IS A LINK. Each line of "Done for you" carries the
+// things it names: the person, and what was written (the conversation, the
+// task, the gift, the group, the journey, the event), read from this org only.
+const TOOL_REF = { log_conversation: "conversation", log_note: "note", draft_note: "note", create_task: "task",
+  mark_gift_thanked: "gift", add_to_group: "group", remove_from_group: "group", start_journey: "journey",
+  stop_journey: "journey", register_event: "event" };
+async function withRefs(orgId, done, people) {
+  const L = await ItemRefs.links();
+  for (const p of people) p.name = L.nameOrFallback(p.name, p.email);
+  const byId = new Map(people.map(p => [p.id, p]));
+  const want = id => done.filter(d => TOOL_REF[d.tool] === id && d.entityId).map(d => String(d.entityId));
+  const [tasks, groups, plans, events, ints] = await Promise.all([
+    want("task").length ? query("SELECT id, title FROM tasks WHERE org_id=? AND id = ANY(?::text[])", [orgId, want("task")]) : [],
+    want("group").length ? query("SELECT id, name FROM audiences WHERE org_id=? AND kind IS NOT NULL AND id = ANY(?::text[])", [orgId, want("group").map(x => x.split(":")[0])]) : [],
+    want("journey").length ? query(`SELECT p.id, p.template_id, COALESCE(t.name, p.template_name) AS name FROM cultivation_plans p
+        LEFT JOIN cultivation_templates t ON t.id = p.template_id AND t.org_id = p.org_id WHERE p.org_id=? AND p.id = ANY(?::text[])`, [orgId, want("journey")]) : [],
+    want("event").length ? query(`SELECT a.id, e.id AS event_id, e.name FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+        WHERE a.org_id=? AND a.id = ANY(?::text[])`, [orgId, want("event")]).catch(() => []) : [],
+    [...want("conversation"), ...want("note")].length ? query("SELECT id, type FROM interactions WHERE org_id=? AND id = ANY(?::text[])", [orgId, [...want("conversation"), ...want("note")]]) : [],
+  ]);
+  const find = (rows, id) => rows.find(r => r.id === id);
+  for (const d of done) {
+    const refs = [];
+    const person = d.donorId && byId.get(d.donorId);
+    if (person) refs.push({ kind: "person", id: person.id, name: person.name, email: person.email || null });
+    const k = TOOL_REF[d.tool], id = d.entityId ? String(d.entityId) : null;
+    let act = null;
+    if (k === "task" && find(tasks, id)) act = { kind: "task", id, donorId: d.donorId };
+    else if (k === "group") { const g = find(groups, id.split(":")[0]); if (g) refs.push({ kind: "group", id: g.id, name: g.name }); }
+    else if (k === "journey") { const pl = find(plans, id); if (pl && pl.template_id) refs.push({ kind: "journey", id: pl.template_id, name: pl.name }); }
+    else if (k === "event") { const a = find(events, id); if (a) refs.push({ kind: "event", id: a.event_id, name: a.name }); }
+    else if ((k === "conversation" || k === "note") && find(ints, id)) act = { kind: find(ints, id).type || "note", logged: true, id, donorId: d.donorId };
+    else if (k === "gift" && id && d.donorId) act = { kind: "gift", id, donorId: d.donorId };
+    d.refs = refs;
+    d.actRef = act;
+  }
+}
+
 // The results screen, from the rows as they are now.
 async function memoOut(orgId, m) {
   const V = await VM();
@@ -83,7 +122,7 @@ async function memoOut(orgId, m) {
       if (s.tool === "draft_note") return;   // the draft is in the yes column
       const o = acts[i] || {};
       done.push({ tool: s.tool, donorId: s.donorId || null, line: s.line || s.describes, outcome: o.outcome || null,
-        reason: o.reason || null, card: s.card || null });
+        reason: o.reason || null, card: s.card || null, entityId: o.entityId || null });
     });
   }
   const cards = j(m.cards) || [];
@@ -91,7 +130,8 @@ async function memoOut(orgId, m) {
   const drafts = draftIds.length ? await query("SELECT id, status FROM agent_drafts WHERE org_id=? AND id = ANY(?::text[])", [orgId, draftIds]) : [];
   const dState = new Map(drafts.map(d => [d.id, d.status]));
   const ids = j(m.donor_ids) || [];
-  const people = ids.length ? await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])", [orgId, ids]) : [];
+  const people = ids.length ? await query("SELECT id, name, email FROM donors WHERE org_id=? AND id = ANY(?::text[])", [orgId, ids]) : [];
+  await withRefs(orgId, done, people);
   return {
     id: m.id, status: m.status, ai: m.ai, source: m.source, text: m.text, preview: V.memoPreview(m.text, j(m.read)), createdAt: m.created_at, createdByName: m.created_by_name,
     undoneAt: m.undone_at, undoneByName: m.undone_by_name,
