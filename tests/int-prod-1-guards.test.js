@@ -89,11 +89,12 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   // answers 200 and one Gmail mailbox has not read in two hours. The smoke used
   // to read FAILING here. No address is on /health, so none is printed.
   const http = require("http");
-  const lastRead = new Date(Date.now() - 2.2 * 3600e3).toISOString();
+  const { testNow } = require("./clock");
+  const lastRead = new Date(testNow() - 2.2 * 3600e3).toISOString();
   const stub = http.createServer((req, res) => {
     const send = (code, body, type = "application/json") => { res.writeHead(code, { "Content-Type": type }); res.end(typeof body === "string" ? body : JSON.stringify(body)); };
     if (req.url === "/health") return send(200, { buildSha: "f47f47f", guardsOk: true, guardsFailed: [],
-      mailboxSync: { connections: 2, stale: 1, checkedAt: new Date().toISOString(), staleList: [{ provider: "google", lastReadAt: lastRead, refused: false }] } });
+      mailboxSync: { connections: 2, stale: 1, checkedAt: new Date(testNow()).toISOString(), staleList: [{ provider: "google", lastReadAt: lastRead, refused: false }] } });
     if (req.url === "/auth/login") return send(200, { token: "stub" });
     if (req.url.startsWith("/donors/export/csv")) return send(200, "Name,Email\nA,a@example.org\n", "text/csv");
     if (req.url.startsWith("/custom-fields")) return send(200, []);
