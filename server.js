@@ -7592,6 +7592,36 @@ async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor
 const SEQ_RATE_PER_SECOND = 8;     // Resend's documented floor, with headroom
 const SEQ_TICK_BUDGET = 200;
 
+// AUTO-1 · THE ONE SENDER for words a person on staff wrote and turned on:
+// a tracked sequence's step and a journey's automatic email step. Merge, the
+// unsubscribe footer, the org's sending identity and the provider call live
+// here once, so the two engines differ only in what they claim and log.
+// Returns { delivered, errText, subject, missing } and never throws.
+async function sendStaffWrittenEmail(orgId, donor, subjectTpl, bodyTpl, source) {
+  const values = await sequenceMergeValues(donor, orgId);
+  const subj = SEQ.renderMerge(subjectTpl, values);
+  const body = SEQ.renderMerge(bodyTpl, values);
+  const html = (body.text.includes("<") ? body.text
+    : `<p>${body.text.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
+    + await unsubscribeEmailFooterHtml(donor.email, orgId, source);
+  let delivered = true, errText = null;
+  if (process.env.RESEND_API_KEY) {
+    delivered = false;
+    try {
+      const opts = { ...(await donorSendOpts(orgId, donor.email, source)), to: donor.email, subject: subj.text, html };
+      const { error: sendErr } = await resend.emails.send(opts);
+      if (sendErr) errText = sendErr.message || String(sendErr);
+      else delivered = true;
+    } catch (e) { errText = e.message; }
+  }
+  return { delivered, errText, subject: subj.text, missing: [...new Set([...(subj.missing || []), ...(body.missing || [])])] };
+}
+// The merge, without sending: which fields this person cannot fill.
+async function staffWrittenMissing(orgId, donor, subjectTpl, bodyTpl) {
+  const values = await sequenceMergeValues(donor, orgId);
+  return [...new Set([...(SEQ.renderMerge(subjectTpl, values).missing || []), ...(SEQ.renderMerge(bodyTpl, values).missing || [])])];
+}
+
 async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, now = new Date() } = {}) {
   await SEQ_READY;
   const scope = orgId ? " AND se.org_id = ?" : "";
@@ -7669,13 +7699,6 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
           out.skipped++; continue;
         }
 
-        const values = await sequenceMergeValues(donor, oid);
-        const subj = SEQ.renderMerge(step.subject, values);
-        const body = SEQ.renderMerge(step.body, values);
-        const html = (body.text.includes("<") ? body.text
-          : `<p>${body.text.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
-          + await unsubscribeEmailFooterHtml(donor.email, oid, "sequence");
-
         // Rate limit: a simple per-second gate, because a burst is how a
         // provider starts refusing an org's mail.
         if (++inSecond >= SEQ_RATE_PER_SECOND) {
@@ -7683,18 +7706,8 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
           if (elapsed < 1000) await new Promise(r => setTimeout(r, 1000 - elapsed));
           inSecond = 0; secondStart = Date.now();
         }
-
-        let delivered = true, errText = null;
-        if (process.env.RESEND_API_KEY) {
-          delivered = false;
-          try {
-            const opts = { ...(await donorSendOpts(oid, donor.email, "sequence")),
-                           to: donor.email, subject: subj.text, html };
-            const { error: sendErr } = await resend.emails.send(opts);
-            if (sendErr) errText = sendErr.message || String(sendErr);
-            else delivered = true;
-          } catch (e) { errText = e.message; }
-        }
+        const { delivered, errText, subject: subjText } = await sendStaffWrittenEmail(oid, donor, step.subject, step.body, "sequence");
+        const subj = { text: subjText };
 
         if (!delivered) {
           // NEVER SWALLOWED (BUILD-37 H2). The row keeps the reason and the
@@ -12135,6 +12148,7 @@ require("./routes/give").mount({
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({
+  sendStaffWrittenEmail, orgSendClock,   // AUTO-1: the one sender, and the org's clock for the send window
   openAdminTask,   // WIRE-1: a peer-to-peer page waiting for approval is a task for an admin
   registerDraftSender: fn => { _sendDraft = fn; },
   // INT-5 — queueing a webhook. It never posts inline: a gift must not fail

@@ -231,6 +231,24 @@ async function templateTextFor(orgId, template, donor, { campaignName = "" } = {
   return { subject: await subjectFor(template.subject, fields), body: r.text.replace(/\n{3,}/g, "\n\n").trim(), problems: r.problems };
 }
 
+// AUTO-1 · WHICH MERGE FIELDS THIS PERSON CANNOT FILL. A send that would
+// read "Dear friend" because the record has no first name, or show a field
+// Steward does not know, is held for that person rather than sent.
+async function templateMergeGaps(orgId, template, donor) {
+  const B = await blocksMod();
+  const known = new Set([...(B.EMAIL_MERGE_FIELDS || []).map(f => f.key), "greeting", "donor_name", "last_name"]);
+  const ctx = await orgRenderContext(orgId);
+  const fields = await personFields(ctx, donor);
+  const raw = String(template.subject || "") + " " + JSON.stringify(template.blocks || []);
+  const gaps = [];
+  for (const m of raw.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)) {
+    const key = m[1] === "first" ? "first_name" : m[1] === "org" ? "org_name" : m[1] === "donor_name" ? "greeting" : m[1];
+    if (!known.has(key)) gaps.push({ token: m[1], kind: "unknown" });
+    else if (fields[key] == null || String(fields[key]).trim() === "") gaps.push({ token: m[1], kind: "empty" });
+  }
+  return [...new Map(gaps.map(g => [g.token, g])).values()];
+}
+
 // ── A CAMPAIGN FROM A TEMPLATE ─────────────────────────────────────────────
 // The campaign keeps the template's BLOCKS, and each person's copy is rendered
 // from them at send time (runCampaignSend). `body` holds a preview rendering
@@ -274,5 +292,5 @@ async function campaignFromTemplate(req, res, { run, uuid, actor }) {
 module.exports = {
   campaignFromTemplate,
   configure, blocksMod, hasBlocks, orgRenderContext, personFields, sampleFields, giveLink,
-  render, withFooter, subjectFor, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray,
+  render, withFooter, subjectFor, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray, templateMergeGaps,
 };
