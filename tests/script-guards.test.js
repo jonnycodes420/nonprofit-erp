@@ -46,6 +46,9 @@ const GUARDED_WRITERS = [
   // FIX-30: puts back the postal states the Agent overwrote with "runs".
   // Dry run by default; --apply/--undo write through writerDbUrl.
   "repair-runs-state",
+  // NUMBERS-1: moves gifts credited outside their campaign's dates to no campaign.
+  // Dry run by default; --apply writes through writerDbUrl, one audit row per gift.
+  "numbers1-campaign-window",
   // ADMIN-CLEAN: sorts every org into its kind, archives and deletes junk.
   // Dry run by default; --apply writes through writerDbUrl.
   "admin-clean",
@@ -265,6 +268,8 @@ const PROD_READONLY = [
   "clean1-orphan-report",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
   "mail-preflight",
+  // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.
+  "check-numbers",
   "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "build61-prod-verify", "check-webhook-subscriptions",
   // INT-PROD-1: one PayPal token POST, then GET-only Transaction Search; counts and totals only.

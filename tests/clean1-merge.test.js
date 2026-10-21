@@ -224,7 +224,9 @@ async function reset() {
   // session turned off. Touch the planted thread with triggers on, so the
   // fixture is in the state every real org is in before the merge.
   await q(`UPDATE threads SET due_date = due_date WHERE org_id=$1`, [ORG]);
-  for (const id of [A, B]) await q(`UPDATE donors SET total_giving=(SELECT COALESCE(SUM(amount),0) FROM gifts WHERE org_id=$1 AND donor_id=$2) WHERE id=$2`, [ORG, id]);
+  // NUMBERS-1: the whole summary, by the server's one statement, so the
+  // fixture's stored count and last gift agree with its gifts too.
+  for (const id of [A, B]) await q(require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [ORG, id]);
   ok(`a row is planted in every one of the ${MERGE_REFS.length - 1} other pointer columns`, planted === MERGE_REFS.length - 1, planted);
 
   const before = await snapshot();

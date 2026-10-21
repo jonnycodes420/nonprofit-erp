@@ -1016,6 +1016,8 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
                   "UPDATE gifts SET amount=$1, cover_fee_amount=LEAST(COALESCE(cover_fee_amount,0), $1) WHERE id=$2 AND org_id=$3",
                   [remaining, g.id, orgId]);
                 await runTx(client, "UPDATE fin_transactions SET amount=$1 WHERE gift_id=$2 AND org_id=$3", [remaining, g.id, orgId]);
+                // NUMBERS-1: its soft credits shrink with it.
+                for (const sql of require("../donorSummary").SOFT_CREDIT_RESIZE) await runTx(client, sql, [g.id, orgId]);
               });
               // F-5: a shrunk payment may drop a pledge back below fulfilled.
               if (g.pledge_id) await recalcPledgePayment(g.pledge_id, orgId).catch(() => {});

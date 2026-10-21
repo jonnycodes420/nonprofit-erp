@@ -262,6 +262,7 @@ CORE=(
   capture1-zero-day
   onboard1-setup
   voice1-tell-steward
+  numbers1-foot
   voice2-everywhere
   voice3-talk
   voice4-does-it-all

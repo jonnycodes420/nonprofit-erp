@@ -3745,6 +3745,23 @@ async function main() {
   await require("./seed/voice1-memos").seedVoice1(q, ORG, { TODAY, dAdd });   // VOICE-1: three memos from the last week, what each filed, and the two cards still waiting
   await require("./seed/clientsafe1-meadowbrook").seedClientSafe1(q, { teardownOrg, TZ, TODAY });   // CLIENT-SAFE-1: a third demo org, Meadowbrook Riding Center, in privacy mode
 
+  // NUMBERS-1 · EVERY NUMBER ON THE DEMO ADDS UP. Gift dates and owners move
+  // after the rollup near the top ran, so the totals kept on each person are
+  // recomputed last, by the one statement the server uses (donorSummary.js).
+  // And a campaign the seed filled with this autumn's gifts starts on its
+  // first gift: a gift dated before a campaign starts counts toward nothing,
+  // so a "partway there" bar would otherwise read $0.
+  {
+    const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
+    for (const org of [ORG, "org_riverbend_demo", "org_meadowbrook_demo"]) {
+      await q(DONOR_SUMMARY_UPDATE(), [org]);
+      await q(`UPDATE campaigns c SET start_date = s.first
+                 FROM (SELECT g.campaign_id, MIN(LEFT(g.date, 10))::date AS first FROM gifts g WHERE g.org_id = $1 AND g.campaign_id IS NOT NULL GROUP BY g.campaign_id) s
+                WHERE c.org_id = $1 AND c.id = s.campaign_id AND c.start_date IS NOT NULL AND s.first < c.start_date`, [org]);
+    }
+    console.log("[assert] every demo donor's stored totals recomputed from their gifts; no campaign holds a gift dated before it starts");
+  }
+
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took
   // 31.8 seconds on a fresh seed (0.13 after). The same list the server runs

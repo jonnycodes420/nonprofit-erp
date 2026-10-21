@@ -167,6 +167,8 @@ const resend = new Proxy(_rawResend, {
   },
 });
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
+const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { DONOR_SUMMARY_UPDATE } = require("./donorSummary");   // NUMBERS-1: the totals kept on a person
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
 const { signToken, tokenUserId, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
@@ -3069,6 +3071,21 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
 }
 
+// NUMBERS-1 · every number checked every night, counts only (numberCheck.js).
+// The tick looks hourly and runs once a day after 05:00 UTC, before the Error
+// digest reads the day's logs. The super-admin reads the latest night, and may
+// run it now; neither returns a name, an amount or an id.
+if (!backgroundTicksDisabled()) {
+  setInterval(() => require("./numberCheck").nightlyTick(require("./numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
+}
+app.get("/admin/number-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  res.json({ rows: await require("./numberCheck").latest() });
+}));
+app.post("/admin/number-checks/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const out = await require("./numberCheck").runAll({ screens: require("./numbers").screens });
+  res.json({ ranOn: out.ranOn, orgs: out.orgs, problems: out.problems, lines: out.lines });
+}));
+
 // PUBLIC. Current state, the last 90 days by day, the percentage computed from
 // stored checks (and the date it starts from), and the incidents.
 app.get("/status/summary", wrap(async (req, res) => {
@@ -3390,32 +3407,9 @@ async function autoLapseOrg(orgId) {
 }
 
 async function recalcDonorSummary(donorId, orgId) {
-  const agg = await query(
-    `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt, MAX(date) AS last_date
-     FROM gifts WHERE donor_id=? AND org_id=?`,
-    [donorId, orgId]
-  );
-  const total    = parseFloat(agg[0].total) || 0; // NUMERIC since the cover-fees migration
-  const cnt      = parseInt(agg[0].cnt,   10) || 0;
-  const lastDate = agg[0].last_date || null;
-
-  let lastAmt = 0;
-  if (lastDate) {
-    // If two gifts share the same latest date, take the one inserted last
-    const lr = await query(
-      `SELECT amount FROM gifts WHERE donor_id=? AND org_id=? AND date=?
-       ORDER BY created_at DESC LIMIT 1`,
-      [donorId, orgId, lastDate]
-    );
-    lastAmt = parseFloat(lr[0]?.amount) || 0; // amounts carry cents since the cover-fees migration
-  }
-
-  await run(
-    `UPDATE donors
-     SET total_giving=?, gift_count=?, last_gift_date=?, last_gift_amount=?, updated_at=NOW()
-     WHERE id=? AND org_id=?`,
-    [total, cnt, lastDate, lastAmt, donorId, orgId]
-  );
+  // NUMBERS-1: the one statement (donorSummary.js). It counts gifts above zero
+  // and breaks a same-day tie the way the profile's Last gift does.
+  await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, donorId]);
 }
 
 // ── The audit log helper the hand-placed calls still use ───────────────────
@@ -11313,7 +11307,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
           const [sum] = await query(
             `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised
                FROM gifts g JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
-              WHERE g.org_id=? AND (g.campaign_id=c.id OR g.campaign=c.name)
+              WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
                 AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at,'YYYY-MM-DD'))`,
             [ctx.campaignId, org.id]);
           const since = Math.round((Number(sum?.raised) || 0) * 100);
@@ -11341,7 +11335,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
                FROM gifts g
                JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
                JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
-              WHERE g.org_id=? AND (g.campaign_id=c.id OR g.campaign=c.name) AND g.amount > 0
+              WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")} AND g.amount > 0
               ORDER BY g.date DESC, g.id DESC LIMIT ?`, [ctx.campaignId, org.id, n])
         : ctx.pageId
         ? await query(

@@ -48,34 +48,13 @@ function configure(d) { deps = d; }
 const LOG = [];
 function logRun(entry) { LOG.push(entry); if (LOG.length > 500) LOG.shift(); }
 
-// Lifetime, count, last gift: one statement for the whole set (the import
-// hang fix's query, unchanged).
+// Lifetime, count, last gift: one statement for the whole set.
 async function recalcDonorSummaryBatch(query, donorIds, orgId) {
   const ids = [...new Set(donorIds)].filter(Boolean);
   if (!ids.length) return;
-  await query(
-    `WITH agg AS (
-       SELECT donor_id,
-              COALESCE(SUM(amount),0) AS total,
-              COUNT(*) AS cnt,
-              MAX(date) AS last_date
-       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
-       GROUP BY donor_id
-     ),
-     last_amt AS (
-       SELECT DISTINCT ON (donor_id) donor_id, amount
-       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
-       ORDER BY donor_id, date DESC, created_at DESC
-     )
-     UPDATE donors d
-        SET total_giving     = agg.total,
-            gift_count       = agg.cnt,
-            last_gift_date   = agg.last_date,
-            last_gift_amount = COALESCE(last_amt.amount, 0),
-            updated_at       = NOW()
-       FROM agg LEFT JOIN last_amt ON last_amt.donor_id = agg.donor_id
-      WHERE d.id = agg.donor_id AND d.org_id = ?`,
-    [orgId, ids, orgId, ids, orgId]);
+  // NUMBERS-1: the one statement (donorSummary.js), which also zeroes a person
+  // whose last gift was removed (the old one only touched people with gifts).
+  await query(require("./donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, ids]);
 }
 
 // Who is newly in a group by rule. Every group by rule is compared, not only

@@ -20,6 +20,7 @@ const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file d
 const { getAssetMeta } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
+const { CAMPAIGN_GIFT_MATCH } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 
 const routers = {
   r0: express.Router(),
@@ -1660,7 +1661,7 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
     `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
-         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name)), 0)
+         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
        END AS campaign_raised
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
@@ -6173,7 +6174,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
               c.hero_image_url, c.hero_crop, c.hero_focal_x, c.hero_focal_y, c.goal_progress_public, c.goal_amount,
               CASE WHEN c.goal_progress_public THEN
                 COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
-                          WHERE g2.org_id = c.org_id AND (g2.campaign_id = c.id OR g2.campaign = c.name)), 0)
+                          WHERE g2.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "c")}), 0)
               + COALESCE((SELECT SUM(gr.amount) FROM grants gr
                           WHERE gr.org_id = c.org_id AND gr.campaign_id = c.id AND gr.awarded_at IS NOT NULL), 0)
               END AS raised

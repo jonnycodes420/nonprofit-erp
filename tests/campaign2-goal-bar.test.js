@@ -100,6 +100,9 @@ async function publicPage(pageSlug) {
     const made = await api("POST", "/campaigns/from-template", tok, { template: "yearend", goalAmount: 50000 });
     ok("the template created the campaign, the page and the plan", made.status === 201, made.body);
     campaignId = made.body.campaignId; pageSlug = made.body.slug; pageId = made.body.pageId;
+    // NUMBERS-1: a gift counts toward a campaign only inside its dates, and
+    // the gifts below are dated last week, so the campaign starts before them.
+    await q(`UPDATE campaigns SET start_date = $1::date - 14 WHERE id = $2`, [lastWeek, campaignId]);
 
     const again = await api("POST", "/campaigns/from-template", tok, { template: "yearend" });
     ok("pressing it twice is refused, with the campaign it already made",

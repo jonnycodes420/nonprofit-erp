@@ -525,10 +525,8 @@ async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confid
     if (keptCentsAfter !== keptCentsBefore + mergedCentsBefore) {
       throw new Error(`merge did not foot: ${keptCentsBefore} + ${mergedCentsBefore} != ${keptCentsAfter}`);
     }
-    const [agg] = await queryTx(client, `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS cnt, MAX(date) AS last_date FROM gifts WHERE org_id=? AND donor_id=?`, [orgId, keptId]);
-    const [last] = agg.last_date ? await queryTx(client, `SELECT amount FROM gifts WHERE org_id=? AND donor_id=? AND date=? ORDER BY created_at DESC LIMIT 1`, [orgId, keptId, agg.last_date]) : [null];
-    await runTx(client, `UPDATE donors SET total_giving=?, gift_count=?, last_gift_date=?, last_gift_amount=? WHERE id=? AND org_id=?`,
-      [agg.total, agg.cnt, agg.last_date || null, last ? last.amount : 0, keptId, orgId]);
+    // NUMBERS-1: the kept person's summary by the one statement (donorSummary.js).
+    await runTx(client, require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, keptId]);
 
     // 5. One line on the kept person's timeline, and the record undo reads.
     const movedCount = moved.reduce((n, m) => n + (m.ids ? m.ids.length : m.keys.length), 0);
@@ -671,13 +669,18 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
         await runTx(client, `INSERT INTO ${s.table} SELECT * FROM jsonb_populate_record(NULL::${s.table}, ?::jsonb)`, [JSON.stringify(s.row)]);
       }
       if (m.note_id) await runTx(client, "DELETE FROM interactions WHERE id=? AND org_id=?", [m.note_id, orgId]);
-      // Gifts given to the kept person since the merge stay with them; their
-      // summary is recomputed only if the restored totals no longer foot.
+      // Gifts given to the kept person since the merge stay with them, and a
+      // gift edited, split or refunded since changes what the snapshot says.
+      // NUMBERS-1: so both summaries are recomputed by the one statement, which
+      // writes only what differs: a person whose gifts did not change comes
+      // back exactly as they were (the random test: merge, split, undo; merge,
+      // edit a date, undo).
       for (const id of [m.kept_id, m.merged_id]) {
-        const snap = id === m.kept_id ? m.kept_before : m.merged_before;
-        if (await giftCentsTx(client, orgId, id) !== cents(snap.total_giving)) {
-          const [agg] = await queryTx(client, `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS cnt, MAX(date) AS last_date FROM gifts WHERE org_id=? AND donor_id=?`, [orgId, id]);
-          await runTx(client, "UPDATE donors SET total_giving=?, gift_count=?, last_gift_date=? WHERE id=? AND org_id=?", [agg.total, agg.cnt, agg.last_date || null, id, orgId]);
+        {
+          // NUMBERS-1: the whole summary, by the one statement. This set the
+          // total, count and date but left the last gift's AMOUNT at the
+          // snapshot's, so a refund between the merge and its undo left it wrong.
+          await runTx(client, require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, id]);
         }
       }
       await runTx(client, "UPDATE donor_merges SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?", [me.id, me.name, m.id, orgId]);
