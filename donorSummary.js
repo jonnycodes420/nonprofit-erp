@@ -28,7 +28,11 @@ const DONOR_SUMMARY_UPDATE = (scope = "") => `
           FROM donors dd LEFT JOIN gifts g ON g.donor_id = dd.id AND g.org_id = dd.org_id
          WHERE dd.org_id = $1 ${scope.replace(/\bd\./g, "dd.")}
          GROUP BY dd.id) s
-  WHERE d.id = s.donor_id AND d.org_id = $1`;
+  WHERE d.id = s.donor_id AND d.org_id = $1
+    -- A person whose totals already agree is not written (an undone merge must
+    -- leave the row exactly as it was, updated_at included).
+    AND (d.total_giving, d.gift_count, d.last_gift_date, d.last_gift_amount)
+        IS DISTINCT FROM (COALESCE(s.total, 0)::numeric(12,2), COALESCE(s.n, 0)::int, s.last_date, COALESCE(s.last_amt, 0)::numeric(12,2))`;
 
 // A soft credit follows its gift when the gift's amount changes (an edit, a
 // split, a partial refund): a share stays that share of the new amount, a fixed
