@@ -162,7 +162,10 @@ async function closeMeeting(req, { donorId, date, how, today, interactionId }) {
 async function reopenMeeting(orgId, mt) {
   if (!mt || !mt.eventId) return;
   await run(`UPDATE calendar_events SET logged_at=NULL, logged_by=NULL, interaction_id=NULL, updated_at=NOW() WHERE id=? AND org_id=? AND interaction_id=?`, [mt.eventId, orgId, mt.interactionId]);
-  if ((mt.threadIds || []).length) await run(`UPDATE threads SET closed_at=NULL, close_kind=NULL, closing_interaction_id=NULL WHERE org_id=? AND id = ANY(?::text[])`, [orgId, mt.threadIds]);
+  // A step comes back only if nothing else has opened since (one open step per person).
+  for (const tid of mt.threadIds || [])
+    await run(`UPDATE threads t SET closed_at=NULL, close_kind=NULL, closing_interaction_id=NULL WHERE t.org_id=? AND t.id=?
+                 AND NOT EXISTS (SELECT 1 FROM threads o WHERE o.org_id=t.org_id AND o.donor_id=t.donor_id AND o.closed_at IS NULL)`, [orgId, tid]);
   if ((mt.taskIds || []).length) await run(`UPDATE tasks SET done=0, completed_at=NULL, completed_by_name=NULL, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`, [orgId, mt.taskIds]);
 }
 
@@ -472,13 +475,6 @@ async function sendThanks(req, m, card) {
   const orgId = req.user.orgId;
   const [g] = await query("SELECT id, donor_id, amount, date FROM gifts WHERE id=? AND org_id=?", [card.giftId, orgId]);
   if (!g) return { status: 404, error: "gift_gone", sentence: "That gift is no longer on the record." };
-  const [org] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);
-  let receiptSent = false;
-  if (org && org.receipts_enabled) {
-    const r = await asHer(req, "POST", `/gifts/${g.id}/receipt`, {});
-    if (r.status >= 300) return { status: r.status, error: "receipt_failed", sentence: (r.body && (r.body.sentence || r.body.error)) || "The receipt could not be sent." };
-    receiptSent = !!(r.body && (r.body.emailSent || r.body.receipt));
-  }
   const drafts = await asHer(req, "GET", "/thank-yous");
   const draft = ((drafts.body && drafts.body.drafts) || []).find(x => x.giftId === g.id);
   let [task] = await query(`SELECT id FROM tasks WHERE org_id=? AND source_gift_id=? AND done=0 AND voided_at IS NULL ORDER BY created_at LIMIT 1`, [orgId, g.id]);
@@ -495,7 +491,18 @@ async function sendThanks(req, m, card) {
   const body = draft ? draft.body : `Dear ${first},\n\nThank you for your gift.`;
   const sent = await asHer(req, "POST", `/tasks/${task.id}/thank`, { mode: "send", giftId: g.id, subject: `Thank you, ${first}`, body });
   if (sent.status >= 300) return { status: sent.status, error: "thanks_failed", sentence: (sent.body && (sent.body.sentence || sent.body.error)) || "The thank-you could not be sent." };
-  return { receiptSent, thankYouSent: true, taskId: task.id };
+  // The thank-you went, so the receipt goes with it (never one without the other's chance).
+  const [org] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);
+  let receiptSent = false, receiptId = null;
+  if (org && org.receipts_enabled) {
+    const r = await asHer(req, "POST", `/gifts/${g.id}/receipt`, {});
+    if (r.status >= 300) return { status: r.status, error: "receipt_failed", sentence: `The thank-you was sent; the receipt was not: ${(r.body && (r.body.sentence || r.body.error)) || "it could not be issued"}.` };
+    // The route answers with the receipt row itself (or { receipt } on a resend).
+    const rec = r.body && (r.body.receipt || (r.body.receipt_number ? r.body : null));
+    receiptSent = !!(rec && (rec.sent_to || r.body.emailSent));
+    receiptId = rec ? rec.id : null;
+  }
+  return { receiptSent, receiptId, thankYouSent: true, taskId: task.id };
 }
 
 // Two things the Agent has no tool for, done on her tap and undone exactly.
@@ -569,7 +576,7 @@ app.post("/voice/memos/:id/cards/:cardId/yes", requireAuth, checkWriteAccess, wr
   } else if (card.kind === "thanks") {
     const r = await sendThanks(req, m, card);
     if (r.error) return res.status(r.status || 409).json({ error: r.error, sentence: r.sentence });
-    await setCard(orgId, await memoRow(orgId, m.id), card.id, { state: "saved", by: actor(req).name, receiptSent: r.receiptSent, thankYouSent: r.thankYouSent, taskId: r.taskId });
+    await setCard(orgId, await memoRow(orgId, m.id), card.id, { state: "saved", by: actor(req).name, receiptSent: r.receiptSent, receiptId: r.receiptId, thankYouSent: r.thankYouSent, taskId: r.taskId });
   } else if (card.kind === "flag" || card.kind === "ask") {
     const r = await applyDirect(req, card);
     if (r.error) return res.status(r.status || 409).json({ error: r.error, sentence: r.sentence });
@@ -679,9 +686,20 @@ app.post("/voice/memos/:id/undo", requireAuth, checkWriteAccess, wrap(async (req
   // ask goes back to what it was, and the meeting it marked happened is open
   // again. What was SENT cannot be unsent, and the sentence says so.
   let sentStays = false;
-  for (const c of (j(m.cards) || []).filter(x => x.state === "saved")) {
+  // The receipt this memo issued is voided first: a gift with an active
+  // receipt cannot be deleted, and the receipt was for this memo's gift.
+  const savedCards = (j(m.cards) || []).filter(x => x.state === "saved").sort((a, b) => (a.kind === "thanks" ? 0 : 1) - (b.kind === "thanks" ? 0 : 1));
+  for (const c of savedCards) {
     let ok = true;
-    if (c.kind === "money" && c.giftId) ok = (await asHer(req, "DELETE", `/gifts/${c.giftId}`)).status < 300;
+    if (c.kind === "thanks" && c.receiptId) {
+      const v = await asHer(req, "POST", `/receipts/${c.receiptId}/void`, { reason: "Undone from Tell Steward" });
+      if (v.status >= 300) console.error("[voice] undo: the receipt was not voided:", v.status, JSON.stringify(v.body).slice(0, 200));
+    }
+    if (c.kind === "money" && c.giftId) {
+      const d = await asHer(req, "DELETE", `/gifts/${c.giftId}`);
+      ok = d.status < 300;
+      if (!ok) console.error("[voice] undo: the gift was not removed:", d.status, JSON.stringify(d.body).slice(0, 200));
+    }
     else if (c.kind === "money" && c.pledgeId) ok = (await asHer(req, "DELETE", `/pledges/${c.pledgeId}`)).status < 300;
     else if (c.kind === "flag" && c.before) await run("UPDATE donors SET do_not_email=?, updated_at=NOW() WHERE id=? AND org_id=?", [c.before.do_not_email === true, c.donorId, orgId]);
     else if (c.kind === "ask" && c.before && c.entityId) ok = (await asHer(req, "PUT", `/opportunities/${c.entityId}`, { targetAmount: c.before.target_amount })).status < 300;
@@ -838,10 +856,11 @@ app.post("/voice/talk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       }
       if (choose) out.plan = { choose };
       else {
-        const r = await asHer(req, "POST", "/agent/instructions", { text: doText, ...(req.body.personId ? { personId: String(req.body.personId) } : person ? { personId: person.id } : {}) });
+        const r = await asHer(req, "POST", "/agent/instructions", { text: doText, ...(req.body.personId ? { personId: String(req.body.personId) } : {}) });
         out.plan = { status: r.status, text: doText, ...(r.body || {}) };
         if (r.status < 300 && r.body && r.body.id && r.body.plan && T.planRunsAlone(r.body.plan)) {
           const c = await asHer(req, "POST", `/agent/instructions/${encodeURIComponent(r.body.id)}/confirm`, {});
+          if (!(c.status < 300 && c.body && c.body.runId)) console.error("[voice] low-stakes plan did not run:", c.status, JSON.stringify(c.body).slice(0, 300));
           if (c.status < 300 && c.body && c.body.runId) {
             const memoId = await memoFor(req, out.memo, doText, source, person, r.body.id);
             await run("UPDATE voice_memos SET run_ids = run_ids || ?::jsonb WHERE id=? AND org_id=?", [JSON.stringify([c.body.runId]), memoId, orgId]);

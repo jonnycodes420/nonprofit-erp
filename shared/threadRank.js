@@ -86,7 +86,7 @@ export const RANK_SIGNALS = [
     // VOICE-4: a task made for a gift ("Send Margaret the receipt") says the
     // gift it is for, and leads with it.
     key: "about_gift",
-    points: () => 0,
+    points: () => 1,
     applies: t => (t.giftAmount || 0) > 0,
     lead: true,
     why: t => `${money(t.giftAmount)} gift${t.giftDate ? `, ${dayShort(t.giftDate)}` : ""}`,
@@ -235,6 +235,8 @@ function normalize(t, today) {
     isFirstGift: !!(t.isFirstGift ?? t.is_first_gift),
     lifetimeGiving: Number(t.lifetimeGiving ?? t.lifetime_giving ?? 0) || 0,
     majorThreshold: Number(t.majorThreshold ?? t.major_threshold ?? 0) || 0,
+    giftAmount: Number(t.giftAmount ?? 0) || 0,
+    giftDate: t.giftDate || null,
   };
 }
 
