@@ -603,8 +603,9 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
   if (O.PROVIDERS[key].held) return res.status(503).json({ error: "not_available", sentence: O.PROVIDERS[key].held });
-  // PARITY-2 Part 5: QuickBooks opens only where the founder turned it on,
-  // until Intuit's app assessment is passed and production keys exist.
+  // PARITY-2 Part 5: QuickBooks opens only where the founder turned it on.
+  // Intuit approved the app on 7 Oct 2026 (INT-PROD-1); the switch stays per
+  // organization until QuickBooks is offered to everyone.
   if (key === "intuit") {
     const [o] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [req.user.orgId]);
     if (!o || o.qbo_sync_enabled !== true)

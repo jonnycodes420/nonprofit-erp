@@ -1069,7 +1069,7 @@
    "link": "/help/settings-connections",
    "route": "/app/settings?section=connections",
    "screen": "settings:connections",
-   "text": "Donorbox has no direct connection yet. Its card is in Giving, but it does not connect to Donorbox: its one button, \"Import a file\", brings in Donorbox's gift export as a statement. Nothing comes in from Donorbox on its own.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
+   "text": "Donorbox has no direct connection yet. Its card is in Giving, but it does not connect to Donorbox: its one button, \"Import a file\", brings in Donorbox's gift export as a statement. Nothing comes in from Donorbox on its own.\nQuickBooks: Intuit has approved Steward's app, and Steward turns it on one organization at a time for now. Until it is on for yours it cannot be connected, so ask us to turn it on. The bookkeeper file works without it.\nFor a bookkeeping tool, \"Manage\" opens \"Where the money posts\", where \"Save the mapping\" says which account each fund goes to. For an email tool, \"Preview\" shows what the read would bring in, then \"Save and read\" (or \"Save, read and add people\").\nYour donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here."
   },
   {
    "id": "help:settings-giving-pages:0",
@@ -3392,7 +3392,7 @@
    "route": null,
    "screen": null,
    "status": "waiting",
-   "text": "QuickBooks Online is not available yet. Direct connection. It is built and waiting on Intuit's approval before customers can connect it."
+   "text": "QuickBooks Online is not open to every organization yet. Direct connection. Intuit has approved Steward's QuickBooks app. Steward turns it on one organization at a time for now: ask us and we will turn it on for yours. Until it is on for yours, QuickBooks cannot be connected, and the bookkeeper file in Settings, Connections works without it."
   },
   {
    "id": "connection:zapier",
