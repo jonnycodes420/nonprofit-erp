@@ -21,9 +21,26 @@ import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { AskAnswer } from "./AskPanel";
-import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE } from "../../../shared/voiceTalk.js";
+import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip } from "../../../shared/voiceTalk.js";
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
+// VOICE-4: ONE recognizer for the page. A new one per press (and per opening
+// of this window) made Safari ask for the microphone every time.
+let pageRecognizer = null;
+const recognizer = () => { if (!pageRecognizer && SR) pageRecognizer = new SR(); return pageRecognizer; };
+const MIC_ASKS_KEY = "steward_mic_asks";
+const micAsks = () => { try { return Number(sessionStorage.getItem(MIC_ASKS_KEY)) || 0; } catch { return 0; } };
+// The browser is about to ask when the permission still reads "prompt".
+async function countMicAsk() {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return micAsks();
+    const st = await navigator.permissions.query({ name: "microphone" });
+    if (st.state !== "prompt") return micAsks();
+    const n = micAsks() + 1;
+    try { sessionStorage.setItem(MIC_ASKS_KEY, String(n)); } catch { /* storage blocked */ }
+    return n;
+  } catch { return micAsks(); }
+}
 const isPhone = () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
 const HOLD_MS = 350;
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
@@ -61,17 +78,25 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
   const wantOn = useRef(false);
   const downAt = useRef(0);
   const finalText = useRef("");
+  const [micTip, setMicTip] = useState(false);
 
   useEffect(() => {
     apiFetch(`/voice/memos${donor ? `?donorId=${encodeURIComponent(donor.id)}` : ""}`).then(r => setRecent((r.memos || []).slice(0, 3))).catch(() => {});
-    return () => { wantOn.current = false; try { rec.current && rec.current.abort(); } catch { /* already stopped */ } };
+    return () => {
+      wantOn.current = false;
+      const r = rec.current;
+      try { r && r.abort(); } catch { /* already stopped */ }
+      // The recognizer outlives this window; its answers stop coming here.
+      if (r) { r.onresult = null; r.onerror = null; r.onend = null; }
+    };
   }, [donor]);
 
   // ── LISTENING ─────────────────────────────────────────────────────────────
   function start() {
     if (!SR || listening) return;
     setErr("");
-    const r = new SR();
+    const r = recognizer();
+    countMicAsk().then(n => setMicTip(showMicTip({ ua: navigator.userAgent, asks: n }))).catch(() => {});
     r.lang = navigator.language || "en-US";
     r.continuous = true;
     r.interimResults = true;
@@ -96,7 +121,15 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     r.onend = () => { setInterim(""); if (wantOn.current) { try { r.start(); } catch { setListening(false); } } else setListening(false); };
     rec.current = r;
     wantOn.current = true;
-    try { r.start(); setListening(true); setSource("speech"); } catch { setSpeech(false); }
+    // The page's one recognizer may still be winding down from the last
+    // press: wait for it rather than give up on speech.
+    try { r.start(); setListening(true); setSource("speech"); }
+    catch (e) {
+      if (e && e.name === "InvalidStateError") {
+        try { r.abort(); } catch { /* already stopped */ }
+        setTimeout(() => { try { r.start(); setListening(true); setSource("speech"); } catch { setSpeech(false); } }, 200);
+      } else setSpeech(false);
+    }
   }
   function stop() {
     wantOn.current = false;
@@ -186,6 +219,7 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     <Modal onClose={onClose} title={title} subtitle={sub} width={answer ? 600 : 520} align={phone ? "top" : "center"} ariaLabel="Tell Steward">
       <div data-testid="tell-steward-sheet" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
+        {micTip && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
         {!step && <>
           {speech && (
@@ -217,7 +251,7 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Recent memos</div>
             {recent.map(m => (
               <button key={m.id} onClick={() => setStep({ memo: m })} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 0", cursor: "pointer", borderBottom: "1px solid " + T.bg3 }}>
-                <div style={{ fontSize: 13.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.text}</div>
+                <div style={{ fontSize: 13.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.preview || m.text}</div>
                 <div style={{ fontSize: 12, color: T.ink3 }}>{new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {m.people.map(p => p.name).join(", ") || "nobody"} · {m.status === "undone" ? "undone" : `${m.done.length} done, ${m.waiting.filter(c => c.state === "waiting").length} waiting`}</div>
               </button>))}
           </div>}

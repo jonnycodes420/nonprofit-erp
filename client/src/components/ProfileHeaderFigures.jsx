@@ -52,12 +52,12 @@ function One({ f, kind, label, def, figureKey, suffix = "" }) {
     source={f.source} blank={f.blank} blankShort={f.blankShort} figureKey={figureKey} variant="inline" />;
 }
 
-function Cell({ label, def, children, under, testid, first = false }) {
+function Cell({ label, def, children, under, testid, first = false, oneLine = false }) {
   return (
     <div className="dph-fig" data-testid={testid} style={{ minWidth: 0, padding: "10px 16px 2px", borderLeft: first ? "none" : "1px solid " + T.bg3 }}>
       <div style={LABEL}>{label}<Def label={label} def={def} /></div>
       <div style={VALUE}>{children}</div>
-      {under && <div style={UNDER}>{under}</div>}
+      {under && <div style={oneLine ? { ...UNDER, whiteSpace: "nowrap" } : UNDER} title={oneLine ? under : undefined}>{under}</div>}
     </div>
   );
 }
@@ -97,7 +97,7 @@ export function ProfileHeaderFigures({ figures, glance }) {
           : <One f={glanceFig(g.first)} kind="money" label="First gift" figureKey="profile.glance.first-gift" />}
       </Cell>
       <Cell label="Last met" def={censusById("profile.lastMet").sentence} testid="dp-fig-lastMet"
-        under={lm && lm.date ? `${lm.what ? lm.what + ", " : ""}${displayDateShort(lm.date, today)}` : null}>
+        under={lm && lm.date ? `${lm.what ? lm.what + ". " : ""}${displayDateShort(lm.date, today)}` : null} oneLine>
         <One f={F.lastMet} kind="count" suffix=" days" label="Last met" def={censusById("profile.lastMet").sentence} figureKey="profile.lastMet" />
       </Cell>
       <Cell label="Last email" def={censusById("profile.lastEmail").sentence} testid="dp-fig-lastEmail"

@@ -93,7 +93,7 @@ async function memoOut(orgId, m) {
   const ids = j(m.donor_ids) || [];
   const people = ids.length ? await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[])", [orgId, ids]) : [];
   return {
-    id: m.id, status: m.status, ai: m.ai, source: m.source, text: m.text, createdAt: m.created_at, createdByName: m.created_by_name,
+    id: m.id, status: m.status, ai: m.ai, source: m.source, text: m.text, preview: V.memoPreview(m.text, j(m.read)), createdAt: m.created_at, createdByName: m.created_by_name,
     undoneAt: m.undone_at, undoneByName: m.undone_by_name,
     people: ids.map(id => people.find(p => p.id === id)).filter(Boolean),
     done: m.undone_at ? [] : done.filter(d => !d.card),

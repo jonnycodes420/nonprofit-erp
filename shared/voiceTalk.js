@@ -34,6 +34,21 @@ export function listenMode(win) {
   if (SR) return { mode: "speech", phone, line: null };
   return { mode: "text", phone, line: phone ? NO_LISTEN_PHONE_LINE : NO_LISTEN_LINE };
 }
+// VOICE-4: Safari asks for the microphone each time a NEW recognizer starts
+// on a page where the site's setting is "Ask". Steward used to make a new one
+// per press, so it asked every press; now it keeps one per page. What is left
+// is Safari's own per-site setting, and the second ask in a session shows
+// this one line.
+export const SAFARI_MIC_TIP = "To stop Safari asking each time: Safari, Settings, Websites, Microphone, stewardapp.dev, Allow.";
+export function isSafariUA(ua) {
+  const u = String(ua || "");
+  return /safari/i.test(u) && !/chrome|chromium|crios|fxios|edg\/|edga|edgios|android|opr\//i.test(u);
+}
+// `asks`: how many times this session the browser was going to ask (the
+// permission read "prompt" as listening started).
+export function showMicTip({ ua, asks }) {
+  return isSafariUA(ua) && Number(asks) >= 2;
+}
 // These three mean the recognizer will not listen at all, so the screen falls
 // back to typing; anything else ("no-speech", "network") is a pause.
 export function errorStopsListening(code) {
