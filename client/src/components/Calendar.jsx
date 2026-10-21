@@ -24,6 +24,7 @@ import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
 import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
+import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;
@@ -480,6 +481,9 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
   // with "How did it go?" and "What's next?" (the server refuses a bare tick).
   const [finish, setFinish] = useState(null);
   const [resched, setResched] = useState(null);
+  // VOICE-3: this meeting, today or tomorrow, carries the brief for it.
+  const before = useBeforeMeeting(it.type === "meeting" && it.donorId ? it.donorId : null);
+  const briefHere = before && it.ref && before.meeting.id === it.ref.calendarEventId ? before : null;
   // FIX-34: a booked meeting that IS the next step carries that step, so its
   // card offers the step's actions and the day shows the meeting once.
   const stepRef = it.type === "meeting" && it.step ? { threadId: it.step.threadId, taskId: it.step.taskId } : it.ref;
@@ -561,6 +565,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
               </div>))}
           </div>)}
         {it.donorId && it.type !== "birthday" && it.type !== "deadline" && <div style={{ fontSize: 13.5 }}>With <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ fontWeight: 700, textDecoration: "underline dotted" }}>{it.donorName}</DonorLink></div>}
+        {briefHere && <BeforeYourMeeting data={briefHere} showTitle={false} compact/>}
         {it.conflict && <div data-testid="cal-card-conflict" style={{ fontSize: 13, color: T.ink, borderLeft: `3px solid ${T.gold}`, paddingLeft: 8 }}>{it.conflict}</div>}
         {it.ref && it.ref.synced && <div style={{ fontSize: 12.5, color: T.ink3 }}>Moving it here moves it on your connected calendar too.</div>}
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}

@@ -23,6 +23,7 @@ import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
+import BeforeYourMeeting from "./BeforeYourMeeting";   // VOICE-3
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
@@ -131,7 +132,7 @@ function TimeForm({ initialStart, initialMinutes = 60, onSubmit, submitLabel, bu
 // FIX-33: the Next step's Prep and Reschedule buttons open this card's brief
 // or its move form, so there is one brief and one move on the page.
 export const MEETING_ACTION = "steward:meeting-action";
-export function MeetingCard({ meeting, donor, onReload }) {
+export function MeetingCard({ meeting, donor, onReload, before = null }) {
   const [moving, setMoving] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -182,7 +183,8 @@ export function MeetingCard({ meeting, donor, onReload }) {
         {msg && <div style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
       </div>
       <div style={{ gridColumn: "span 2", borderLeft: "1px solid " + T.bg2, paddingLeft: 32 }}>
-        <BriefLines brief={meeting.brief} first={first}/>
+        {/* VOICE-3: today or tomorrow, the brief is the "Before your meeting" card. */}
+        {before ? <BeforeYourMeeting data={before} showTitle={false}/> : <BriefLines brief={meeting.brief} first={first}/>}
         {open && (
           <div data-testid="dp-brief-full" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid " + T.bg2, fontSize: 15, lineHeight: 1.6 }}>
             {meeting.brief?.giving && <div><span style={{ color: T.ink3 }}>Gave</span> {meeting.brief.giving.text}</div>}

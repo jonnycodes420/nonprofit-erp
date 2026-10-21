@@ -174,14 +174,17 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   conversation, Thread step, interest and draft are done for her with one Undo, and money, contact changes and
   personal details are cards. The model never supplies a date, an amount, a fund or a person: `shared/voiceMemo.js`
   and `agentNamedIn` do. A sensitive sentence is held back from everything filed until she saves it in neutral words.
-- **Meeting mode (VOICE-2).** A meeting is a `voice_meetings` row: the page saves the transcript as it comes
-  (PUT, longest wins) and keeps a browser copy, so a closed tab loses nothing. At Stop one call (`MEETING_TOOL`)
-  writes the summary, and the summary is filed by `fileMemo`, the same function as a spoken memo; the transcript is
-  kept screened (`screenTranscript`), linked on the conversation (`interactions.metadata.meetingId`) and deleted in one
-  click. Start needs `consent:true`. Listening is browser speech recognition only (no paid service), detected by
-  `listenMode`, and it hears the room, never another app's audio. AI off: the transcript is a note and nothing else.
-  The one question about a meeting answers from that transcript only; it is not a chat.
-- **The person she chose answers "which one".** A memo from Margaret Chen's profile (or a meeting with her) that
+- **One mic, three kinds of talk (VOICE-3).** `POST /voice/talk` splits what she said (`shared/voiceTalk.js`
+  `splitTalk`, in code; `INTENT_TOOL` only when the words carry no sign, and only parts that are her own words count):
+  what happened goes to `fileMemo`; something to do goes to `/agent/instructions` as her own request, so it is a plan
+  that runs only on her Confirm; a question goes to `/ask` and writes nothing. A mixed memo files first, then plans
+  the to-do on the memo's person ("send her" becomes the name). When nothing says which, the screen asks "Did you
+  mean to log this, or have Steward do it?" and her button sets `as`. Meeting mode (VOICE-2) is gone: no transcripts
+  are kept anywhere (`voice_meetings` is dropped).
+- **Before your meeting (VOICE-3).** `GET /donors/:id/before-meeting`: the next meeting with the person today or
+  tomorrow on the org's day (a calendar meeting until it ends, a hand-logged one dated ahead), with `meetingBrief`.
+  The profile, the calendar's meeting card and Home's lead slot all draw `BeforeYourMeeting.jsx`. Clients never.
+- **The person she chose answers "which one".** A memo from Margaret Chen's profile that
   says "Margaret" never asks which Margaret, and a pick list's answers build up (`picks`), never replace each other.
 
 ## Gotchas

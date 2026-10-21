@@ -263,6 +263,7 @@ CORE=(
   onboard1-setup
   voice1-tell-steward
   voice2-everywhere
+  voice3-talk
   fix43-safe-fetch
   clientsafe1
   support1-answers
