@@ -40,6 +40,7 @@ import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
 import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
+import { HomeLead } from "./HomeLead";   // HOME-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -52,7 +53,7 @@ const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/journey-se
   "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
   "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
   "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins",
-  "/donors/birthdays-near"];
+  "/donors/birthdays-near","/home/lead"];
 const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
   `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
   `/dashboard/retention/breakdown?scope=${scope}`];
@@ -552,6 +553,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // The daily line, and whatever she is telling it to do. Failures are silent
   // by design: the agent being unavailable must never blank her Home screen.
   const [agentDaily,setAgentDaily]=useState(null);
+  // HOME-2 · what leads Home today for the person signed in (GET /home/lead):
+  // the lead cards, the rail's order, and whether Why and What have anything
+  // to say. Failures are silent: Home keeps its frame without it.
+  const [homeDay,setHomeDay]=useState(null);
+  const loadHomeDay=()=>apiFetch("/home/lead").then(setHomeDay).catch(()=>setHomeDay(null));
+  useEffect(()=>{if(surface==="home")loadHomeDay();},[surface]);
+  const homeRail=(homeDay&&Array.isArray(homeDay.rail))?homeDay.rail:["thankClock","mailbox","meetings","firstThing","tiles"];
+  const railAt=k=>{const i=homeRail.indexOf(k);return i<0?99:i;};
+  const thankClockLow=railAt("thankClock")>railAt("tiles");
+  // The meeting in the lead is drawn there in full; the rail lists it, not twice.
+  const leadMeetingId=((homeDay&&homeDay.lead)||[]).find(c=>c.kind==="meeting")?.meetingId||null;
   const [agentText,setAgentText]=useState("");
   const loadAgentDaily=()=>apiFetch("/agent/daily-line")
     .then(setAgentDaily).catch(()=>setAgentDaily(null));
@@ -2922,12 +2934,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {/* HOME-TIDY 2 — WHAT IS IN FRONT OF HER TODAY sits here, beside the
             work: "how did the meeting go?" when one just ended, then the
             Thread's first thing (threadList[0], threadRank's own answer). */}
+        {/* HOME-2 · the rail reorders with the day (GET /home/lead `rail`): a
+            meeting soon goes to the top, and the gift-to-thank-you tile drops
+            below the numbers when nothing is waiting to be thanked. */}
         {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
           {/* CAPTURE-1: the gift-to-thank-you clock, approved from the mockup. */}
-          <HomeThankClock onNavigate={onNavigate}/>
-          <MailboxBanner onNavigate={onNavigate}/>
-          <MorningBrief compact onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
-          {threadList.length>0&&(()=>{
+          {!thankClockLow&&<div style={{order:railAt("thankClock")}}><HomeThankClock onNavigate={onNavigate}/></div>}
+          <div style={{order:railAt("mailbox")}}><MailboxBanner onNavigate={onNavigate}/></div>
+          <div style={{order:railAt("meetings")}} data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
+          {threadList.length>0&&<div style={{order:railAt("firstThing")}}>{(()=>{
             const first=threadList[0];
             return (
               <div data-testid="home-first-thing" style={{border:"1px solid "+T.bg2,borderRadius:14,padding:"14px 16px",background:T.white}}>
@@ -2958,7 +2973,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
                 </div>
               </div>);
-          })()}
+          })()}</div>}
         </div>}
         {/* HOME-TIDY — the day is the header's line, so the rail does not say it
             again. Three numbers side by side; each definition travels with its
@@ -2982,6 +2997,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           ))}
         </div>
+        {!editMode&&thankClockLow&&<div style={{marginTop:14}}><HomeThankClock onNavigate={onNavigate}/></div>}
         {/* FIX-22: one quiet line, only when somebody has a birthday this week. */}
         {birthdaysThisWeek.length>0&&(
           <div {...interactive(()=>setRailView({kind:"list",key:"birthdays"}),{label:`${birthdaysThisWeek.length} birthday${birthdaysThisWeek.length===1?"":"s"} this week`})}
@@ -3230,7 +3246,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           over the two doors, Why and What, each saying what it is. */}
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px"}}>
-          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}
+          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay}
+            lead={homeDay&&homeDay.lead&&homeDay.lead.length>0?<HomeLead lead={homeDay.lead} onNavigate={onNavigate} isReadOnly={isReadOnly} onSetAside={loadHomeDay}/>:null}
             agent={{available:!(agentDaily&&agentDaily.available===false),line:agentDaily&&agentDaily.line,
               onSend:t=>onNavigate("agent",{agentText:t,autoAsk:true}),
               onOpen:()=>onNavigate("agent",{agentView:((agentDaily&&agentDaily.waiting)||0)>0?"waiting":"guardrails"})}}/>

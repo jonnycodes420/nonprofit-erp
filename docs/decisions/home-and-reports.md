@@ -67,6 +67,16 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   and Drift the first five; the rest open in place, and the Thread and Drift lists each fold away from a
   chevron by their title (remembered in that browser, `steward_home_fold`). Institutional givers are gold
   links to their records. List actions are outlines or text.
+- **Home's lead slot is decided by `shared/homeLead.js` and read by `GET /home/lead` (HOME-2).** The frame never
+  moves: the day, Ask, the Thread, the rail and the floating mic. Under Ask sit at most two cards, one per kind
+  (meeting, gift, confirm, drift, card, season, seasonCall, event), ranked by named points: STAKES against the org's
+  p90 line, TIME, UNUSUAL. The score never reaches the screen. Below the floor (15) the lead is the quiet card, so it
+  is never empty. A director (admin) reads the org; anyone else reads the people assigned to them and their own
+  calendar. Why and What show only when this year is 5% and $500 off last year at the same point; otherwise they
+  fold into Ask's "Try:" questions. The rail orders its own five blocks (`rail`). "Not now" stores a row in
+  `home_lead_dismissals`: the card stays aside that day, and three of a kind in 90 days halve that kind for that
+  person only. A gift the person entered themself is not news to them and never leads their Home. `?at=` pins the
+  read in TEST_MODE only (tests/home2-living).
 - **The gift-to-thank-you tile is first in the Today rail's resting view** (CAPTURE-1, approved from the mockup). It
   reads `/thank-yous/clock`, the same number as Acknowledgments, shown exact so it foots with its rows; it draws nothing
   for an org with no thanked gift and no card waiting.

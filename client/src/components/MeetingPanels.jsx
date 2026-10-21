@@ -858,7 +858,9 @@ export function AddToRecord({ eventId, candidates = [], onDone, compact = true }
 }
 
 // ── HOME: TODAY'S MEETINGS, AND THE ONES WAITING FOR A NOTE ────────────────
-export function MorningBrief({ userName, onOpenPerson, compact = false }) {
+// HOME-2: `skipMeetingId` is the meeting Home's lead slot already shows in
+// full; here it is one line under Today, not a second brief.
+export function MorningBrief({ userName, onOpenPerson, compact = false, skipMeetingId = null }) {
   const [today, setToday] = useState(null);
   const [toLog, setToLog] = useState(null);
   const [done, setDone] = useState("");
@@ -870,7 +872,7 @@ export function MorningBrief({ userName, onOpenPerson, compact = false }) {
   useEffect(() => { load(); }, []);
   if (!today || !toLog) return null;
   const upcoming = today.meetings.filter(m => new Date(m.endsAt).getTime() > Date.now());
-  const lead = upcoming.find(m => m.brief) || null;
+  const lead = upcoming.find(m => m.brief && m.id !== skipMeetingId) || null;
   const rest = today.meetings.filter(m => m !== lead && new Date(m.endsAt).getTime() > Date.now());
   if (!lead && !rest.length && !toLog.length && !done) return null;
   const inLabel = iso => {

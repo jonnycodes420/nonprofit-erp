@@ -44,6 +44,7 @@ const HERO_CSS = `
   padding: 6px 6px 6px 20px; box-shadow: 0 1px 2px rgba(15,26,18,0.05); }
 .ask-hero-box:focus-within { border-color: ${T.greenDk}; box-shadow: 0 0 0 3px rgba(13,92,58,0.12); }
 .ask-doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ask-doors[data-count="1"] { grid-template-columns: 1fr; }
 .ask-door { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: ${T.ground}; border: 1px solid ${T.bg2};
   border-radius: 14px; padding: 14px 18px; cursor: pointer; font: inherit; min-width: 0; transition: background .12s ease, border-color .12s ease; }
 .ask-door:hover { background: ${T.white}; border-color: ${T.greenDk}; }
@@ -158,7 +159,12 @@ const QUESTION_START = /^\s*(why|what|whats|what's|who|whom|whose|how|which|when
 // is typed, so both get the same answer.
 export const isQuestion = t => /\?\s*$/.test(String(t || "")) || QUESTION_START.test(String(t || "")) || personIntent(t) === "talked";
 const DOORS = { why: "The reasons behind your numbers", what: "Results, and who to call next" };
-export function AskHero({ isReadOnly, onStepTaken, agent }) {
+// HOME-2: `day` is GET /home/lead's answer. Why and What show only when
+// there is something to say today ("Giving this year is $4,200 behind last
+// year at this point."); otherwise they fold into the questions under Ask.
+// `lead` is the lead slot, drawn between Ask and the agent's daily line.
+// Before the day has loaded, the two doors show as they always have.
+export function AskHero({ isReadOnly, onStepTaken, agent, day, lead }) {
   const [open, setOpen] = useState(null);
   const [text, setText] = useState("");
   const [kept, setKept] = useState(() => readKept());
@@ -171,16 +177,21 @@ export function AskHero({ isReadOnly, onStepTaken, agent }) {
     setText("");
     setOpen({ mode: "thread", replay: [{ text: t, go: { via: "ask", text: t } }], n: Date.now() });
   };
+  const ask = q => setOpen({ mode: "thread", replay: [{ text: q, go: { via: "ask", text: q } }], n: Date.now() });
+  const said = day && day.doors ? day.doors : null;
   const door = mode => (
-    <button key={mode} type="button" className="ask-door" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
+    <button key={mode} type="button" className="ask-door" data-testid={`ask-${mode}`}
+      onClick={() => said && said[mode] ? ask(said[mode].question) : setOpen({ mode, n: Date.now() })}
       aria-expanded={!!open && open.mode === mode}>
       <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, textAlign: "left" }}>
         <span style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: 22, lineHeight: 1.1, color: T.greenDk }}>{MODES[mode]}</span>
-        <span style={{ fontSize: 13, color: T.ink3, lineHeight: 1.35 }}>{DOORS[mode]}</span>
+        <span style={{ fontSize: 13, color: said && said[mode] ? T.ink : T.ink3, lineHeight: 1.35 }}>{said && said[mode] ? said[mode].line : DOORS[mode]}</span>
       </span>
       <span aria-hidden="true" style={{ fontSize: 22, color: T.greenDk, lineHeight: 1 }}>›</span>
     </button>
   );
+  const doorsShown = !said ? ["why", "what"] : ["why", "what"].filter(m => said[m]);
+  const tries = day && Array.isArray(day.tries) ? day.tries.slice(0, narrow ? 2 : 3) : [];
   return (
     <div data-testid="ask-hero" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <style>{RAIL_CSS + HERO_CSS}</style>
@@ -193,7 +204,15 @@ export function AskHero({ isReadOnly, onStepTaken, agent }) {
           style={{ ...BTN, borderRadius: 999, padding: "9px 20px", fontSize: 14, opacity: text.trim() ? 1 : 0.45, cursor: text.trim() ? "pointer" : "not-allowed" }}>
           {text.trim() && canAgent && !isQuestion(text) ? "Go" : "Ask"}</button>
       </form>
-      <div className="ask-doors">{door("why")}{door("what")}</div>
+      {tries.length > 0 && (
+        <div data-testid="ask-tries" style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 13, color: T.ink3, marginTop: -2 }}>
+          <span style={{ padding: "3px 2px", color: T.ink3 }}>Try:</span>
+          {tries.map(t => <button key={t} type="button" data-testid="ask-try" onClick={() => ask(t)}
+            style={{ border: "1px solid " + T.bg2, borderRadius: 16, padding: "3px 12px", background: T.ground, color: T.ink2, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{t}</button>)}
+        </div>
+      )}
+      {lead}
+      {doorsShown.length > 0 && <div className="ask-doors" data-count={doorsShown.length}>{doorsShown.map(door)}</div>}
       {(agent && agent.line) || kept ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline", fontSize: 12.5, color: T.ink3 }}>
           {agent && agent.line && <button type="button" data-testid="agent-daily-line" onClick={agent.onOpen}
