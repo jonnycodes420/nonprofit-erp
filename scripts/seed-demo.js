@@ -3743,6 +3743,7 @@ async function main() {
   await require("./seed/capture1-inbox").seedCapture1(q, ORG);   // CAPTURE-1: six cards in To confirm (a batch of checks with its slip, a pledge form, a DAF letter, an address change done for you) + a month of gift-to-thank-you times
   await require("./seed/onboard1-setup").seedOnboard1(q, { teardownOrg, TZ });   // ONBOARD-1: a second demo org, Riverbend Food Pantry, before setup
   await require("./seed/voice1-memos").seedVoice1(q, ORG, { TODAY, dAdd });   // VOICE-1: three memos from the last week, what each filed, and the two cards still waiting
+  await require("./seed/home2-days").seedHome2(q, ORG, { TODAY, TZ, orgTime, draftMod: await import("../shared/draftNote.js") });   // HOME-2: what leads Home today (the lunch, the $7,500 gift, Priya's coffee)
   await require("./seed/clientsafe1-meadowbrook").seedClientSafe1(q, { teardownOrg, TZ, TODAY });   // CLIENT-SAFE-1: a third demo org, Meadowbrook Riding Center, in privacy mode
 
   // NUMBERS-1 · EVERY NUMBER ON THE DEMO ADDS UP. Gift dates and owners move

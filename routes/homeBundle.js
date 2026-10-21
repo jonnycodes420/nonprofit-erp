@@ -25,7 +25,7 @@ const HOME_READS = new Set([
   "/fundraising/overview", "/goals/active", "/drift", "/threads", "/calendar/today", "/calendar/to-log",
   "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins", "/donors/birthdays-near", "/donors/counts",
   "/dashboard/today", "/metrics/stewardship-summary", "/dashboard/home", "/thank-yous",
-  "/dashboard/stewardship-debt/breakdown", "/dashboard/retention/breakdown",
+  "/dashboard/stewardship-debt/breakdown", "/dashboard/retention/breakdown", "/home/lead",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot

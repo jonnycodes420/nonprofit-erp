@@ -4263,6 +4263,7 @@ app.use(require("./routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy 
 app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support agent
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
+app.use(require("./routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/readouts").routers.r0);     // LIVE-1: what this told us
@@ -12047,6 +12048,7 @@ require("./routes/profileStatus").mount({
   actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,
 });
 require("./routes/homeBundle").mount({ requireAuth, testMode, wrap });
+require("./routes/homeLead").mount({ ...GRANTS1_CTX, meetingBrief: require("./routes/finance").meetingBrief });
 require("./routes/homeCalls").mount({
   actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, uuid, wrap,
 });
