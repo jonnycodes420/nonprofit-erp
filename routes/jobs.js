@@ -31,7 +31,7 @@ const {
 // `everyMs`. Which process runs it is jobQueue.js's business (STEWARD_PROCESS).
 // `run` returns its promise and lets errors through, so a failure is retried.
 const Q = require("../jobQueue");
-const every = (name, everyMs, fn, firstMs) => Q.define(name, { everyMs, firstMs, run: fn });
+const every = (name, everyMs, fn, firstMs, opts = {}) => Q.define(name, { everyMs, firstMs, run: fn, ...opts });
 
 // Scheduled sweep — runs on the existing 5-min cadence (same pattern as
 // processWorkflowSweeps / processDigests; NOT a second scheduler). Auto-lapse
@@ -368,7 +368,8 @@ if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   every("retryFailedNotifications", 5 * 60 * 1000, () => recordTick("retryFailedNotifications", retryFailedNotifications), 50000);
 }
 if (!backgroundTicksDisabled()) {
-  every("reconcileStripeVsGifts", RECONCILE_INTERVAL_MIN * 60 * 1000, () => reconcileStripeVsGifts(), 90000);
+  // FIX-47: both answer /health from this process's memory, so each boot runs them (perBoot).
+  every("reconcileStripeVsGifts", RECONCILE_INTERVAL_MIN * 60 * 1000, () => reconcileStripeVsGifts(), 90000, { perBoot: true });
 }
 // BUILD-65 Part 6 — surface the accountsChecked DENOMINATOR even before the
 // first sweep (and even when background ticks are disabled), so /health can
@@ -376,7 +377,7 @@ if (!backgroundTicksDisabled()) {
 setTimeout(() => refreshReconcileDenominator().catch(() => {}), 8000);
 setInterval(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
 if (!backgroundTicksDisabled()) {
-  every("checkWebhookSubscriptions", 60 * 60 * 1000, () => checkWebhookSubscriptions(), 95000);
+  every("checkWebhookSubscriptions", 60 * 60 * 1000, () => checkWebhookSubscriptions(), 95000, { perBoot: true });
 }
 if (!backgroundTicksDisabled()) {
   every("processWorkflowSweeps", 5 * 60 * 1000, () => recordTick("processWorkflowSweeps", processWorkflowSweeps), 25000);

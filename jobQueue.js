@@ -49,8 +49,13 @@ function role() {
 const runsJobs = () => role() !== "web";
 
 // A periodic job. `run` is what the old setInterval called.
-function define(name, { everyMs, firstMs = null, run: fn }) {
-  schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, run: fn });
+// `perBoot`: the job keeps its answer in this process's memory (the /health
+// guards), so every process that boots must run it `firstMs` after boot, as the
+// old setTimeout did. Without it the schedule row a previous process left kept
+// its slot, and after every deploy the guard read "notRun" until that slot came
+// round, up to a whole interval later (FIX-47).
+function define(name, { everyMs, firstMs = null, perBoot = false, run: fn }) {
+  schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, perBoot, booted: false, run: fn });
   handlers.set(name, () => fn());
 }
 // A job that is only ever enqueued (one org's sync, an import's recent gifts).
@@ -152,9 +157,14 @@ async function runOne(job) {
 // ── The scheduler: enqueue each due periodic job, once across all processes.
 async function scheduleDue() {
   for (const [name, s] of schedules) {
+    // A per-boot job's first pass in this process brings its slot forward to
+    // firstMs from now (never later than the slot it already had).
+    const bootNow = s.perBoot && !s.booted;
     await run(
       `INSERT INTO job_schedule (name, every_ms, next_run_at) VALUES (?, ?, NOW() + (?::int * INTERVAL '1 millisecond'))
-       ON CONFLICT (name) DO UPDATE SET every_ms = EXCLUDED.every_ms`, [name, s.everyMs, s.firstMs]);
+       ON CONFLICT (name) DO UPDATE SET every_ms = EXCLUDED.every_ms${bootNow ? ", next_run_at = LEAST(job_schedule.next_run_at, EXCLUDED.next_run_at)" : ""}`,
+      [name, s.everyMs, s.firstMs]);
+    s.booted = true;
     const due = await query(
       `UPDATE job_schedule SET next_run_at = NOW() + (every_ms * INTERVAL '1 millisecond'), last_enqueued_at = NOW()
         WHERE name = ? AND next_run_at <= NOW() RETURNING name`, [name]);
