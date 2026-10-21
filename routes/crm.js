@@ -32,6 +32,8 @@ const BK = require("../bookkeeper");
 const IXF = require("../interactionFiles");
 const TL = require("../timelineLine");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
+const { CAMPAIGN_GIFT_MATCH } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const NUM = require("../campaignMatch");
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
@@ -4325,7 +4327,11 @@ async function donorProfileFigures(orgId, donorId, today) {
       blankShort: empty ? PROFILE_FIGURE_BLANKS[k].short : null,
     }];
   }));
-  return Object.fromEntries(got);
+  // NUMBERS-1 · First, Largest and Average ride the same read as Lifetime, so
+  // whatever refreshes one tile refreshes all of them (they were a second read
+  // that the voice card and other doors never re-asked for).
+  const glance = await require("../numbers").donorGlance(query, orgId, donorId);
+  return { ...Object.fromEntries(got), first: glance.first, largest: glance.largest, average: glance.average };
 }
 
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
@@ -7089,14 +7095,14 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   }
 
   if (effectiveCampaignId) {
-    const camp = await query("SELECT id, name, start_date::text AS start_day FROM campaigns WHERE id=? AND org_id=?", [effectiveCampaignId, req.user.orgId]);
+    const camp = await query("SELECT id, name, start_date, end_date FROM campaigns WHERE id=? AND org_id=?", [effectiveCampaignId, req.user.orgId]);
     if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
-    // VOICE-4: a campaign nobody picked for THIS gift (one it would inherit)
-    // that has not started by the gift's date is never its default. A person
-    // who picks an upcoming campaign by hand still gets it.
-    const giftDay = normalizeGiftDate(date);
-    const startDay = camp[0].start_day ? String(camp[0].start_day).slice(0, 10) : null;
-    if (!campaignId && giftDay && startDay && startDay > giftDay) effectiveCampaignId = null;
+    // NUMBERS-1 · a gift counts toward a campaign only inside its dates. A
+    // campaign somebody chose is refused with the sentence; one inherited from
+    // a pledge is simply not inherited, because nobody chose it.
+    const refusal = normalizeGiftDate(date) ? NUM.campaignWindowRefusal(camp[0], normalizeGiftDate(date)) : null;
+    if (refusal && campaignId) return res.status(400).json({ error: refusal, code: "campaign_window" });
+    if (refusal) effectiveCampaignId = null;
     else campaignName = camp[0].name;
   }
 
@@ -7206,8 +7212,13 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   let newCampaignId = g.campaign_id, newCampaign = campaign !== undefined ? campaign : g.campaign;
   if (campaignId !== undefined) {
     if (campaignId) {
-      const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+      const camp = await query("SELECT id, name, start_date, end_date FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
       if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+      // NUMBERS-1 · choosing a campaign for a gift dated outside it is refused
+      // with the sentence. A date edit alone keeps the attribution, and the
+      // gift then counts toward nothing (campaignMatch.js).
+      const refusal = NUM.campaignWindowRefusal(camp[0], (date && normalizeGiftDate(date)) || g.date);
+      if (refusal) return res.status(400).json({ error: refusal, code: "campaign_window" });
       newCampaignId = camp[0].id; newCampaign = camp[0].name;
     } else {
       // BUILD-43 (state-diff harness finding): an explicit clear must clear
@@ -7252,6 +7263,8 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
        req.params.id, req.user.orgId]
     );
+    // NUMBERS-1: a soft credit follows the gift's new amount.
+    for (const sql of require("../donorSummary").SOFT_CREDIT_RESIZE) await run(sql, [req.params.id, req.user.orgId]);
     // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
     await recalcDonorSummary(g.donor_id, req.user.orgId);
     // BUILD-43 (state-diff harness finding): the gift's LEDGER STAMP must move
@@ -20470,8 +20483,10 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   // are a SEPARATE pledged figure, never summed into raised.
   const [giftSum, pledgeSum, grantSum] = await Promise.all([
     query(
-      `SELECT COALESCE(SUM(amount - COALESCE(cover_fee_amount,0)),0) as total, COUNT(DISTINCT donor_id) as donor_count FROM gifts WHERE org_id=? AND (campaign=? OR campaign_id=?)`,
-      [req.user.orgId, c.name, c.id]
+      `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0) as total, COUNT(DISTINCT g.donor_id) as donor_count
+         FROM campaigns c JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
+        WHERE c.org_id=? AND c.id=?`,
+      [req.user.orgId, c.id]
     ),
     // F-5: pledged = honest REMAINING balance (amount − payments already
     // linked via gifts.pledge_id), so a partially-paid pledge counts only
@@ -20586,16 +20601,8 @@ async function fundraisingCampaignRows(orgId) {
   );
   if (!campaigns.length) return [];
   const [sums, pledgeSums, grantSums] = await Promise.all([
-    query(
-      `SELECT c.id AS cid,
-              COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount, 0)), 0) AS raised,
-              COUNT(DISTINCT g.donor_id) AS donor_count
-         FROM campaigns c
-         LEFT JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
-        WHERE c.org_id = ? AND c.goal_amount IS NOT NULL AND c.goal_amount > 0
-        GROUP BY c.id`,
-      [orgId]
-    ),
+    // NUMBERS-1: the one function every campaign total and the checker read.
+    require("../numbers").campaignGiftTotals(query, orgId),
     query(
       `SELECT p.campaign_id AS cid,
               COALESCE(SUM(GREATEST(p.amount - COALESCE(pp.paid,0), 0)), 0) AS pledged,
@@ -20661,6 +20668,8 @@ async function fundraisingCampaignRows(orgId) {
 // roll-up is a live SUM over the same gift rows (never a stored counter), so it
 // can't drift. Returns the goal portfolio + an org-wide roll-up header figure.
 const GOAL_CATEGORIES = ["annual", "project", "capital"];
+// NUMBERS-1: the checker reads the overview's roll-up through this.
+require("../numbers").screens.fundraisingPortfolio = orgId => fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio);
 function fundraisingGoalsPortfolio(rows) {
   // rows = fundraisingCampaignRows output.
   // Child raised/goal rolled up onto each parent.
@@ -21589,14 +21598,14 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
        to_char(gp.ends_on,'YYYY-MM-DD') AS page_ends_on,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
-         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name)), 0)
+         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
        END AS campaign_raised,
        -- PARITY-2 Part 2: THE DONOR COUNT BESIDE THE BAR, over the SAME rows
        -- the bar sums (the page's, or its campaign's when it counts toward
        -- one): each person once, however many gifts they made.
        (SELECT COUNT(DISTINCT donor_id)::int FROM gifts WHERE giving_page_id = gp.id AND amount > 0) AS page_donors,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
-         (SELECT COUNT(DISTINCT g.donor_id)::int FROM gifts g WHERE g.org_id = gp.org_id AND g.amount > 0 AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name))
+         (SELECT COUNT(DISTINCT g.donor_id)::int FROM gifts g WHERE g.org_id = gp.org_id AND g.amount > 0 AND ${CAMPAIGN_GIFT_MATCH("g", "c")})
        END AS campaign_donors
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id

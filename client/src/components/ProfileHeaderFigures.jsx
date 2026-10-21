@@ -10,9 +10,9 @@
 //   Lifetime · This year · Last gift · Average gift · First / Largest ·
 //   Last met · Last email
 //
-// Lifetime, This year, Last gift, Last met and Last email come with the donor
-// (GET /donors/:id `figures`); First, Largest and Average come from
-// GET /donors/:id/status `glance`, as they did in the old boxes.
+// All seven come with the donor (GET /donors/:id `figures`). First, Largest
+// and Average used to come from GET /donors/:id/status, a second read that a
+// gift recorded from another door never refreshed (NUMBERS-1).
 import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { censusById } from "../../../shared/numberCensus.js";
@@ -66,7 +66,11 @@ const glanceFig = g => (g ? { ...g, blankShort: "No gifts yet." } : null);
 
 export function ProfileHeaderFigures({ figures, glance }) {
   const F = figures || {};
-  const g = glance || {};
+  // NUMBERS-1 · First, Largest and Average come with Lifetime in one read, so
+  // they can never be a refresh behind it. The status read is the fallback
+  // only for a server that does not send them yet.
+  const G = glance || {};
+  const g = { first: F.first || G.first, largest: F.largest || G.largest, average: F.average || G.average };
   const today = new Date();
   const lg = F.lastGift && F.lastGift.under;
   const lm = F.lastMet && F.lastMet.under;

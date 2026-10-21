@@ -285,7 +285,9 @@ async function reset() {
   const row = async id => (await q("SELECT campaign_id FROM gifts WHERE id=$1", [id]))[0] || {};
   ok("§6 a pledge payment never inherits a campaign that has not started", !!g61.body.gift && !(await row(g61.body.gift.id)).campaign_id, g61.body);
   ok("§6 a gift with no campaign picked has none", !!g62.body.gift && !(await row(g62.body.gift.id)).campaign_id, g62.body);
-  ok("§6 an upcoming campaign picked by hand is kept", !!g63.body.gift && (await row(g63.body.gift.id)).campaign_id === "camp_v4_gt", g63.body);
+  // NUMBERS-1: a gift counts toward a campaign only inside its dates, so a
+  // hand pick of one that has not started is refused with the sentence.
+  ok("§6 an upcoming campaign picked by hand is refused, with its dates", g63.status === 400 && /GivingTuesday runs .* and this gift is dated/.test(g63.body.error || ""), g63.body);
 
   // ── §7 THE SCREEN RE-READS ───────────────────────────────────────────────
   console.log("\n§7 the screen keeps up");

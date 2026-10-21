@@ -32,6 +32,8 @@
 "use strict";
 
 const { query, querySetwise } = require("./db");
+const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { LAST_GIFT_ORDER } = require("./donorSummary");
 const orgTime = require("./orgTime");
 const money = require("./money");
 const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
@@ -861,8 +863,10 @@ const SOURCES = {
     measure: () => "sum",
     params: { donor: "id:required" },
     sentence: () => "The most recent gift this person gave, on its own: what it was, when it came in, what it went to and how it was paid.",
+    // NUMBERS-1: two gifts on one day, the one recorded last, which is the
+    // gift the stored last gift on the person names (donorSummary.js).
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} ORDER BY g.date DESC, g.id DESC LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1935,7 +1939,7 @@ const SOURCES = {
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date,
                    ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, 'Gift' AS detail
               FROM campaigns c
-              JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+              JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE c.org_id = ? AND c.id = ?
             UNION ALL
@@ -1996,7 +2000,7 @@ const SOURCES = {
       sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date,
                    ROUND(SUM(g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, 'Gave to this campaign' AS detail
               FROM campaigns c
-              JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+              JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE c.org_id = ? AND c.id = ?
              GROUP BY d.id, d.name`,
@@ -2198,7 +2202,7 @@ const SOURCES = {
       sql: `SELECT g.id || ':' || c.id AS id, 'gift' AS type, g.donor_id, d.name, g.date,
                    ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, c.name AS detail
               FROM campaigns c
-              JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+              JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE c.org_id = ? AND c.parent_goal_id = ? AND c.goal_amount > 0
             UNION ALL

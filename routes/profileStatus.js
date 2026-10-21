@@ -211,37 +211,25 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const w = DS.windowsFor(today);
   // SCALE-2: the reads below do not depend on each other, so they go side by
   // side; one after another, each waited its turn for a connection under load.
-  // At a glance. Each value is the figure's own, from its source.
-  const src = k => ({ key: k, params: { donor: d.id } });
-  const pGlance = Promise.all(
-    ["donor-lifetime", "donor-first-gift", "donor-latest-gift-alias", "donor-largest-gift", "donor-average-gift"].map(async k => {
-      const key = k === "donor-latest-gift-alias" ? "donor-last-gift" : k;
-      const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });
-      const count = f.measure === "per_gift" ? f.giftCount : f.totalRows;
-      return { source: src(key), label: f.label, sentence: f.sentence, value: count ? f.value : null, cents: count ? f.cents : null, date: f.rows[0] ? f.rows[0].date : null, count };
-    }));
-  // POLISH-1 · THE PROFILE FOOTS. Lifetime, the gift count and the average are
-  // one set of rows: Lifetime / count = Average, unless part of Lifetime is an
-  // imported total with no gifts behind it. What the average leaves out, and
-  // what came off it, is said in words beside it, from the same gifts table.
-  const pRefunds = query(
-    `SELECT (COUNT(*) FILTER (WHERE g.amount < 0))::int AS refunds,
-            COALESCE(SUM(g.amount) FILTER (WHERE g.amount < 0), 0)::text AS refunded,
-            COALESCE(SUM(g.amount), 0)::text AS itemized
-       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL`, [orgId, d.id]);
+  // At a glance. Each value is the figure's own, from its source. NUMBERS-1:
+  // the one builder GET /donors/:id also uses, so the header and this read
+  // can never hold two different averages.
+  const pGlance = require("../numbers").donorGlance(query, orgId, d.id);
   const pVh = query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h, MIN(date) AS first, MAX(date) AS last
                        FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, d.id]);
   const pMe = query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
   const pTags = query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
   const pMeeting = require("../meetingEffects").meetingSetFor(orgId, [d.id]);
   const pCanSee = require("../prospect").canSee(req.user.userId);
-  const [status, [lifetime, first, latest, largest, average], [r], vhRows, meRows, tagRows, meetingMap, canSee] = await Promise.all([
-    DS.statusFor(orgId, d.id, { today }), pGlance, pRefunds, pVh, pMe, pTags, pMeeting, pCanSee]);
-  const refundCents = -(money.toCents(String(r.refunded)) ?? 0);
-  const importedCents = lifetime.cents != null ? Math.max(0, lifetime.cents - (money.toCents(String(r.itemized)) ?? 0)) : 0;
-  Object.assign(average, { refunds: r.refunds, refundCents, importedCents });
-  const glance = { lifetime, first, latest, largest, average };
+  const src = k => ({ key: k, params: { donor: d.id } });
+  const pPair = Promise.all(["donor-lifetime", "donor-last-gift"].map(async key => {
+    const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });
+    return { source: src(key), label: f.label, sentence: f.sentence, value: f.totalRows ? f.value : null,
+      cents: f.totalRows ? f.cents : null, date: f.rows[0] ? f.rows[0].date : null, count: f.totalRows };
+  }));
+  const [status, g3, [lifetime, latest], vhRows, meRows, tagRows, meetingMap, canSee] = await Promise.all([
+    DS.statusFor(orgId, d.id, { today }), pGlance, pPair, pVh, pMe, pTags, pMeeting, pCanSee]);
+  const glance = { lifetime, first: g3.first, latest, largest: g3.largest, average: g3.average };
   const [hl, close, next] = await Promise.all([
     highlights(orgId, d, today, w),
     closeness(orgId, d, today, w),
