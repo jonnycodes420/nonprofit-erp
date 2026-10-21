@@ -30,7 +30,6 @@ let sharedProcessEmailMarketing = null;
 // FIX-12 Part 7a — set by mount() to the composer behind Home's morning brief,
 // so the optional morning email is built from the very same rows.
 let sharedComposeTodayMeetings = null;
-let sharedMeetingBrief = null;   // VOICE-2: the brief before a meeting Steward listens to
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
@@ -1427,6 +1426,39 @@ const eventOut = (c, extra = {}) => ({
   ...extra,
 });
 
+// VOICE-3 · BEFORE YOUR MEETING. The next meeting with this person when it is
+// today or tomorrow on the org's calendar day, with the brief from their own
+// record (giving, the last time, the open ask, their last email, a gift not
+// yet thanked). One read for every surface: the profile, a meeting on the
+// calendar, and Home's lead slot (client/src/components/BeforeYourMeeting.jsx).
+// A calendar meeting counts until it ends; a meeting logged by hand counts
+// when it is dated ahead (one dated today was most likely written after it).
+async function beforeMeeting(orgId, donorId) {
+  const priv = await require("../clientSafe").privacyFor(orgId);
+  if (priv.on && priv.clientIds.has(donorId)) return null;   // CLIENT-SAFE-1: never briefed
+  const { today } = await meetingTz(orgId);
+  const tomorrow = orgTime.addDays(today, 1);
+  const now = Date.now();
+  const rows = (await meetingsSrc.meetingsWith(orgId, donorId, { from: today, to: tomorrow, limit: 20 }))
+    .filter(m => m.kind === "calendar"
+      ? new Date(m.ends_at || new Date(new Date(m.starts_at).getTime() + 3600e3)).getTime() > now
+      : !m.held)
+    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : new Date(a.starts_at || 0) - new Date(b.starts_at || 0)));
+  const m = rows[0];
+  if (!m) return null;
+  return {
+    meeting: { id: m.id, kind: m.kind, title: m.title || (m.location ? `Meeting at ${m.location}` : "Meeting"), date: m.date,
+      startsAt: m.starts_at || null, endsAt: m.ends_at || null, location: m.location || null, day: m.date === today ? "today" : "tomorrow" },
+    brief: await meetingBrief(orgId, donorId, m.starts_at ? new Date(m.starts_at).toISOString() : new Date().toISOString()),
+  };
+}
+app.get("/donors/:id/before-meeting", requireAuth, wrap(async (req, res) => {
+  const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const b = await beforeMeeting(req.user.orgId, d.id);
+  res.json(b || { meeting: null, brief: null });
+}));
+
 // EVERYTHING THE PROFILE NEEDS FROM THE CALENDAR AND THE INBOX, in one read.
 app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId, donorId = req.params.id;
@@ -1591,7 +1623,6 @@ async function composeTodayMeetings(orgId, userId, { withLogged = false } = {}) 
   return { today, tz, meetings: out };
 }
 sharedComposeTodayMeetings = composeTodayMeetings;
-sharedMeetingBrief = meetingBrief;
 
 app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -4653,10 +4684,6 @@ module.exports = {
   routers, mount,
   // The daily pull, published to routes/jobs.js. It rides the existing tick;
   // INT-3 adds no second scheduler.
-  meetingBrief: (...args) => {
-    if (!sharedMeetingBrief) throw new Error("meetingBrief called before routes/finance mount()");
-    return sharedMeetingBrief(...args);
-  },
   composeTodayMeetings: (...args) => {
     if (!sharedComposeTodayMeetings) throw new Error("composeTodayMeetings called before routes/finance mount()");
     return sharedComposeTodayMeetings(...args);

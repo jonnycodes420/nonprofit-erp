@@ -49,6 +49,7 @@ import { AskButtons } from "./AskRail";
 import { useDonorStatus, StatusTags, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
+import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
@@ -948,6 +949,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [figs,setFigs]=useState(null);
   // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
   const [rel,setRel]=useState(null);
+  const before=useBeforeMeeting(donor?.id);   // VOICE-3: a meeting with them today or tomorrow
   // ENGAGE-1 — the two scores and the suggested ask, one read.
   const scores=useScores(donor.id);
   // PROSPECT-1 — Room to give, the screening results, an organization's
@@ -2245,7 +2247,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               Highlights, then About. Everything else that lived here has a
               tab of its own now (docs/profile-1/inventory.md says where). */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
-            {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={()=>{loadRel();loadDpThread();}}/>}
+            {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} before={before&&before.meeting.id===rel.nextMeeting.id?before:null} onReload={()=>{loadRel();loadDpThread();}}/>}
+            {/* VOICE-3 · a meeting logged ahead by hand has no calendar card, so the brief stands alone. */}
+            {before&&!(rel?.nextMeeting&&before.meeting.id===rel.nextMeeting.id)&&<BeforeYourMeeting data={before}/>}
             {/* FIX-33 · once the meeting time has passed, the profile asks. */}
             {(()=>{
               const due=(rel?.past||[]).find(m=>!m.loggedAt&&m.startsAt&&Date.now()-new Date(m.endsAt||m.startsAt).getTime()<7*864e5);

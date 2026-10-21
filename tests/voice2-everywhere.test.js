@@ -7,14 +7,7 @@
 //      picked (the picks build up); with AI off the person she picks is the
 //      one (it used to ask her to pick again forever); a memo from Margaret
 //      Chen's own profile never asks which Margaret;
-//   §3 a ten-minute meeting, its transcript sent in three segments as the
-//      browser's recognizer restarts: the consent line comes first, the words
-//      stitch into one transcript, Stop files ONE conversation, dated steps
-//      and a draft, the personal detail waits as a card and is held out of the
-//      saved transcript, nothing is sent, and the transcript deletes in one
-//      click;
-//   §4 no audio is stored anywhere;
-//   §5 AI off: the transcript is a note on the chosen person and nothing else;
+//   (§3 to §5, meeting mode, went with it in VOICE-3.)
 //   §6 a check made out to someone else is caught, and "$250 17/xx" with
 //      "Two hundred & fifty dollars + 17/100" reads $250.17 (the confirm
 //      route's gate is driven in capture1-zero-day §12).
@@ -22,12 +15,10 @@
 // It boots server.js IN-PROCESS (like voice1-tell-steward) because the model
 // is a stand-in: ANTHROPIC_BASE_URL points at a local server.
 //
-// Against main this fails at its first line (shared/voiceMeeting.js does not
-// exist). Planted defects that turned it red: the AI-off pick keeping both
-// people (§2), the profile person not answering "which Margaret" (§2), stitch
-// joining without the overlap check (§3), screenTranscript keeping the
-// sentence (§3), the consent check removed (§3), and payeeMismatch returning
-// null (§6).
+// Planted defects that turned it red: the AI-off pick keeping both people
+// (§2), the profile person not answering "which Margaret" (§2), and
+// payeeMismatch returning null (§6). The detection (§1) lives in
+// shared/voiceTalk.js since VOICE-3 took meeting mode out.
 "use strict";
 
 const http = require("http");
@@ -63,7 +54,7 @@ const sys = "'system:test','test'";
 
 // ── THE STAND-IN MODEL ─────────────────────────────────────────────────────
 // Answers whichever tool it is asked for from a queue per tool.
-const queued = { memo_actions: [], meeting_summary: [] };
+const queued = { memo_actions: [] };
 const asked = [];
 const mock = http.createServer((req, res) => {
   let body = "";
@@ -82,7 +73,7 @@ const mock = http.createServer((req, res) => {
 const read = o => ({ how: "", when: "", summary: "", people: [], follow_ups: [], interests: [], email: { subject: "", body: "" },
   money: [], contact: [], sensitive: [], ...o });
 
-const TABLES = ["voice_meetings", "voice_memos", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions", "ai_log", "threads", "interactions", "tasks",
+const TABLES = ["voice_memos", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions", "ai_log", "threads", "interactions", "tasks",
   "opportunities", "pledges", "fin_transactions", "gifts", "donors", "user_sessions", "users", "fin_funds", "ai_usage", "ai_fallbacks"];
 async function reset() {
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -94,7 +85,7 @@ const count = async (sql, args = [ORG]) => (await q(sql, args))[0].n;
 
 (async () => {
   console.log("voice2-everywhere (VOICE-2)");
-  const M = await import("../shared/voiceMeeting.js");
+  const M = await import("../shared/voiceTalk.js");
   const C = await import("../shared/chequeRead.js");
 
   // ── §1 the detection ──────────────────────────────────────────────────────
@@ -169,102 +160,6 @@ const count = async (sql, args = [ORG]) => (await q(sql, args))[0].n;
   const noteOn = await q(`SELECT donor_id FROM interactions WHERE org_id=$1 AND type='note' ORDER BY created_at DESC LIMIT 1`, [ORG]);
   ok("§2 AI off: picking one files the note on that one (it used to ask again)", p2.status === 201 && !p2.body.pick
     && await count(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND type='note'`) === notesBefore + 1 && noteOn[0] && noteOn[0].donor_id === "d_v2_jw", { s: p2.status, b: p2.body.pick || null, noteOn });
-  await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
-
-  // ── §3 a ten-minute meeting ───────────────────────────────────────────────
-  console.log("\n§3 a ten-minute meeting, three recognizer sessions");
-  ok("§3 the consent line is the brief's words", M.CONSENT_LINE === "Let everyone know you're taking notes.", M.CONSENT_LINE);
-  const noConsent = await api("POST", "/voice/meetings", tok, { donorId: "d_v2_mchen" });
-  ok("§3 no Start before the consent line", noConsent.status === 400 && noConsent.body.error === "consent_first"
-    && await count(`SELECT COUNT(*)::int AS n FROM voice_meetings WHERE org_id=$1`) === 0, noConsent.body);
-  const st = await api("POST", "/voice/meetings", tok, { consent: true, donorId: "d_v2_mchen" });
-  const MID = st.body && st.body.meeting && st.body.meeting.id;
-  ok("§3 Start", st.status === 201 && !!MID, st.body);
-  await q(`UPDATE voice_meetings SET started_at = NOW() - interval '10 minutes' WHERE id=$1`, [MID]);
-  // The recognizer stopped twice on its own; the second session repeated its predecessor's last words.
-  const SEG = ["Thanks for coming down to the boathouse Margaret.",
-    "the boathouse Margaret. The spring regatta is on April 12 and I will send you the details next Tuesday.",
-    "Her mother had surgery last week. We should invite her to the open day in March. She cares most about the east side kids."];
-  const stitched = M.stitchAll(SEG);
-  ok("§3 three sessions stitch into one transcript, the repeated seam once",
-    stitched.split("the boathouse Margaret").length === 2 && stitched.endsWith("She cares most about the east side kids.") && stitched.startsWith("Thanks for coming"), stitched);
-  let sofar = "";
-  for (let i = 0; i < SEG.length; i++) {
-    sofar = M.stitch(sofar, SEG[i]);
-    const put = await api("PUT", `/voice/meetings/${MID}`, tok, { transcript: sofar, notes: "Ask about the east side kids", segments: i + 1 });
-    if (put.status !== 200) ok("§3 save as it goes", false, put.body);
-  }
-  const stale = await api("PUT", `/voice/meetings/${MID}`, tok, { transcript: SEG[0], segments: 1 });
-  const [kept] = await q(`SELECT transcript, segments FROM voice_meetings WHERE id=$1`, [MID]);
-  ok("§3 saved as it goes, and a stale save never shortens it", stale.status === 200 && kept.transcript === stitched && kept.segments === 3, kept);
-  const open = await api("GET", "/voice/meetings/open", tok);
-  ok("§3 a closed tab comes back to the open meeting, words intact", open.body.meeting && open.body.meeting.id === MID && open.body.meeting.transcript === stitched, open.body.meeting && open.body.meeting.id);
-
-  queued.meeting_summary.push({ how: "visit", who: ["Margaret Chen"],
-    discussed: ["The spring regatta on April 12", "Her mother had surgery last week"], cares_about: ["The east side kids"],
-    promised: ["Dana will send the regatta details"],
-    next_steps: [{ step: "Send Margaret the regatta details", when: "next Tuesday" }, { step: "Invite Margaret to the open day", when: "in March" }] });
-  queued.memo_actions.push(read({ how: "visit", summary: "Visit with Margaret Chen at the boathouse. They talked about the spring regatta on April 12.", people: ["Margaret Chen"],
-    follow_ups: [{ label: "Send Margaret the regatta details", when: "next Tuesday", quote: "Send Margaret the regatta details next Tuesday" },
-                 { label: "Invite Margaret to the open day", when: "in March", quote: "Invite Margaret to the open day in March" }],
-    email: { subject: "Thank you for coming down", body: "Dear Margaret, thank you for coming to the boathouse. I will send the regatta details next Tuesday." } }));
-  const out0 = OUTBOUND.length;
-  const stop = await api("POST", `/voice/meetings/${MID}/stop`, tok, { transcript: stitched, notes: "Ask about the east side kids", segments: 3 });
-  const memo = stop.body && stop.body.memo;
-  ok("§3 Stop files the meeting", stop.status === 201 && !!memo && memo.source === "meeting", { s: stop.status, b: stop.body && (stop.body.which || stop.body.error) });
-  const summaryCall = asked.filter(a => a.name === "meeting_summary").pop();
-  ok("§3 the summary call carried her notes and held the personal detail back", !!summaryCall && summaryCall.body.includes("Ask about the east side kids") && !/surgery/i.test(summaryCall.body), summaryCall && summaryCall.body.slice(0, 200));
-  ok("§3 the filed memo says nothing of the surgery", !!memo && !/surgery/i.test(memo.text) && /regatta/.test(memo.text), memo && memo.text);
-  // Conversations are the memo's log_conversation writes (the timeline's draft and task lines are not).
-  const convs = await q(`SELECT id, metadata FROM interactions WHERE org_id=$1 AND donor_id='d_v2_mchen' AND metadata->>'memoId' = $2`, [ORG, memo && memo.id]);
-  ok("§3 ONE conversation logged, carrying the meeting", convs.length === 1 && convs[0].metadata.meetingId === MID, convs.map(c => c.metadata));
-  const [thr] = await q(`SELECT next_step_label, due_date FROM threads WHERE org_id=$1 AND donor_id='d_v2_mchen' AND closed_at IS NULL`, [ORG]);
-  const tasks = await q(`SELECT title, due AS due_date FROM tasks WHERE org_id=$1 AND donor_id='d_v2_mchen'`, [ORG]);
-  const [ty, tm] = today.split("-").map(Number);
-  const march = `${tm >= 3 ? ty + 1 : ty}-03-01`;
-  ok("§3 dated steps: the next one on the Thread, the March one a task", !!thr && /regatta/.test(thr.next_step_label) && String(thr.due_date).slice(0, 10) > today
-    && tasks.some(t => /open day/.test(t.title) && String(t.due_date).slice(0, 10) === march), { thr, tasks });
-  const drafts = await q(`SELECT status FROM agent_drafts WHERE org_id=$1 AND donor_id='d_v2_mchen'`, [ORG]);
-  ok("§3 a follow-up email drafted, waiting, never sent", drafts.length === 1 && drafts[0].status === "pending"
-    && memo.waiting.some(c => c.kind === "draft" && c.state === "waiting"), drafts);
-  ok("§3 the personal detail waits as a card", memo.waiting.some(c => c.kind === "sensitive" && c.category === "health" && c.state === "waiting"), memo.waiting.map(c => c.kind));
-  const outside = OUTBOUND.slice(out0).filter(u => !u.startsWith(process.env.BASE) && !u.startsWith("http://127.0.0.1") && !u.startsWith(process.env.ANTHROPIC_BASE_URL));
-  ok("§3 nothing went out of the building", outside.length === 0, outside);
-  const [vm] = await q(`SELECT status, transcript, held, summary, interaction_ids FROM voice_meetings WHERE id=$1`, [MID]);
-  ok("§3 the transcript is kept, screened: the surgery sentence is gone", vm.status === "filed" && !/surgery/i.test(vm.transcript)
-    && vm.transcript.includes(M.HELD_LINE) && /April 12/.test(vm.transcript) && vm.held === 1, vm.transcript);
-  ok("§3 the held words are not kept with the meeting either", !/surgery/i.test(JSON.stringify(vm.summary)) && !("held" in (vm.summary || {})), vm.summary);
-  const g = await api("GET", `/voice/meetings/${MID}`, tok);
-  ok("§3 ten minutes, on the conversation", g.body.meeting.minutes === 10 && g.body.meeting.interactionIds.includes(convs[0].id), g.body.meeting);
-  const del = await api("DELETE", `/voice/meetings/${MID}/transcript`, tok);
-  const [vm2] = await q(`SELECT transcript, transcript_deleted_at FROM voice_meetings WHERE id=$1`, [MID]);
-  ok("§3 one click deletes the transcript; the conversation stays", del.status === 200 && vm2.transcript === "" && !!vm2.transcript_deleted_at
-    && await count(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND id=$2`, [ORG, convs[0].id]) === 1, vm2);
-
-  // ── §4 no audio ───────────────────────────────────────────────────────────
-  console.log("\n§4 no audio stored");
-  const cols = await q(`SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('voice_meetings','voice_memos')`);
-  ok("§4 neither table has anywhere to put sound", cols.length > 10 && !cols.some(c => /audio|sound|recording|blob/i.test(c.column_name) || c.data_type === "bytea"), cols.filter(c => c.data_type === "bytea"));
-  const st4 = await api("POST", "/voice/meetings", tok, { consent: true, donorId: "d_v2_jw", audio: "UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=" });
-  await api("PUT", `/voice/meetings/${st4.body.meeting.id}`, tok, { transcript: "Hello James.", audio: "UklGRiQAAABXQVZF" });
-  const blob = await count(`SELECT COUNT(*)::int AS n FROM voice_meetings WHERE org_id=$1 AND row_to_json(voice_meetings)::text LIKE '%UklGR%'`);
-  ok("§4 audio sent by a page is dropped, not kept", blob === 0, blob);
-  await api("POST", `/voice/meetings/${st4.body.meeting.id}/discard`, tok, {});
-
-  // ── §5 AI off ─────────────────────────────────────────────────────────────
-  console.log("\n§5 AI off");
-  await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]);
-  const calls5 = asked.length;
-  const before5 = { t: await count(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1`), d: await count(`SELECT COUNT(*)::int AS n FROM agent_drafts WHERE org_id=$1`),
-    k: await count(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1`), c: await count(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND metadata ? 'memoId'`) };
-  const s5 = await api("POST", "/voice/meetings", tok, { consent: true, donorId: "d_v2_jo" });
-  const off = await api("POST", `/voice/meetings/${s5.body.meeting.id}/stop`, tok, { transcript: "James Okafor wants to volunteer at the regatta. Call him next week.", notes: "Good energy", segments: 1 });
-  const note5 = await q(`SELECT note, metadata FROM interactions WHERE org_id=$1 AND donor_id='d_v2_jo' AND type='note'`, [ORG]);
-  const after5 = { t: await count(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1`), d: await count(`SELECT COUNT(*)::int AS n FROM agent_drafts WHERE org_id=$1`),
-    k: await count(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1`), c: await count(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND metadata ? 'memoId'`) };
-  ok("§5 the transcript is a note on the chosen person", off.status === 201 && note5.length === 1 && /wants to volunteer/.test(note5[0].note) && /Good energy/.test(note5[0].note)
-    && note5[0].metadata.meetingId === s5.body.meeting.id, { s: off.status, note5 });
-  ok("§5 and nothing else: no step, no task, no draft, no conversation, no model", JSON.stringify(before5) === JSON.stringify(after5) && asked.length === calls5, { before5, after5 });
   await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
 
   // ── §6 the check ──────────────────────────────────────────────────────────

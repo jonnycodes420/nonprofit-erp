@@ -6,7 +6,9 @@
 // computer) it listens (hold to talk, or tap to start and tap to stop) and
 // shows the words as they come; where it has none (Firefox) it is a text box,
 // and the keyboard's or computer's own dictation does the listening.
-// VOICE-2 adds "Listen to this meeting" (MeetingMode.jsx).
+// VOICE-3: one place to talk to Steward. What happened is filed as before;
+// something to do comes back as the Agent's plan, with Confirm; a question is
+// answered by Ask, with its rows (routes/voice.js POST /voice/talk).
 // Either way she can edit every word before Steward reads any of it. No audio
 // is recorded here: the browser hands this page text, and only the text she
 // sends leaves the page (routes/voice.js).
@@ -18,8 +20,8 @@ import { useEffect, useRef, useState } from "react";
 import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
-import MeetingMode, { MeetingFiled } from "./MeetingMode";
-import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE } from "../../../shared/voiceMeeting.js";
+import { AskAnswer } from "./AskPanel";
+import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE } from "../../../shared/voiceTalk.js";
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 const isPhone = () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
@@ -46,15 +48,13 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
   const phone = isPhone();
   // VOICE-2 Part 1: detection, not the device. A browser that can listen does.
   const [speech, setSpeech] = useState(() => listenMode(typeof window !== "undefined" ? window : {}).mode === "speech");
-  const [meeting, setMeeting] = useState(null);   // null | { resume }
-  const [openMeeting, setOpenMeeting] = useState(null);
   const picks = useRef([]);
   const [listening, setListening] = useState(false);
   const [text, setText] = useState("");
   const [interim, setInterim] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [step, setStep] = useState(null);    // { which } | { pick } | { needsPeople } | { memo }
+  const [step, setStep] = useState(null);    // { which } | { pick } | { needsPeople } | { memo } | { plan } | { answer } | { talk: unsure }
   const [recent, setRecent] = useState([]);
   const [source, setSource] = useState("typed");
   const rec = useRef(null);
@@ -64,7 +64,6 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
 
   useEffect(() => {
     apiFetch(`/voice/memos${donor ? `?donorId=${encodeURIComponent(donor.id)}` : ""}`).then(r => setRecent((r.memos || []).slice(0, 3))).catch(() => {});
-    apiFetch("/voice/meetings/open").then(r => setOpenMeeting(r.meeting || null)).catch(() => {});
     return () => { wantOn.current = false; try { rec.current && rec.current.abort(); } catch { /* already stopped */ } };
   }, [donor]);
 
@@ -115,18 +114,10 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
   // last, and the list asked again forever).
   function pickOne(id) {
     picks.current = [...picks.current.filter(x => x !== id), id];
-    if (step && step.meetingId) return fileMeeting({ picks: picks.current });
     return send({ picks: picks.current });
   }
   function pickPerson(id) {
-    if (step && step.meetingId) return fileMeeting({ donorId: id, picks: picks.current });
     return send({ donorId: id, picks: picks.current });
-  }
-  async function fileMeeting(body) {
-    setBusy(true); setErr("");
-    try { const r = await apiFetch(`/voice/meetings/${step.meetingId}/file`, { method: "POST", body: JSON.stringify(body) }); setStep({ ...r, meetingId: step.meetingId }); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
   }
   // The words asked about are the words answered: a pick re-sends exactly what
   // was sent, so a name still half-heard when she pressed Send cannot drop
@@ -140,43 +131,63 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     if (!answering) { picks.current = []; sentWords.current = words; finalText.current = words; setText(words); setInterim(""); }
     setBusy(true); setErr("");
     try {
-      const r = await apiFetch("/voice/memos", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined, ...extra }) });
+      const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined, ...extra }) });
       setStep(r);
     } catch (e) { setErr(said(e)); }
     setBusy(false);
   }
   async function people(body) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(`/voice/memos/${step.needsPeople.memoId}/people`, { method: "POST", body: JSON.stringify(body) }); setStep({ ...r, meetingId: step.meetingId }); }
+    try { const r = await apiFetch(`/voice/memos/${step.needsPeople.memoId}/people`, { method: "POST", body: JSON.stringify(body) }); setStep(s => ({ ...r, then: s && s.then, answer: s && s.answer })); }
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
   async function act(path) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(path, { method: "POST", body: "{}" }); setStep(s => ({ memo: r.memo, note: r.sentence || null, meetingId: s && s.meetingId })); }
+    try { const r = await apiFetch(path, { method: "POST", body: "{}" }); setStep(s => ({ ...s, memo: r.memo, note: r.sentence || null })); }
     catch (e) { setErr(said(e)); }
     setBusy(false);
   }
 
+  // A mixed memo whose person had to be asked first: once it is filed, the
+  // to-do is planned on that person.
+  useEffect(() => {
+    if (!step || !step.memo || !step.then || step.plan || !(step.memo.people || [])[0]) return;
+    const then = step.then;
+    setStep(s => ({ ...s, then: null }));
+    apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text: then.do, as: "do", donorId: step.memo.people[0].id }) })
+      .then(r => setStep(s => ({ ...s, plan: r.plan })))
+      .catch(e => setErr(said(e)));
+  }, [step]);
+  // "Remind me to call Margaret", with two Margarets: she picks, and the plan is made on her.
+  async function planFor(text, personId) {
+    setBusy(true); setErr("");
+    try { const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text, as: "do", personId, donorId: donor ? donor.id : undefined }) }); setStep(s => ({ ...s, plan: r.plan })); }
+    catch (e) { setErr(said(e)); }
+    setBusy(false);
+  }
+  async function ask(text) {
+    setBusy(true); setErr("");
+    try { const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text, as: "ask" }) }); setStep({ talk: r.talk, answer: r.answer }); }
+    catch (e) { setErr(said(e)); }
+    setBusy(false);
+  }
+  const another = () => { picks.current = []; setStep(null); setText(""); finalText.current = ""; setSource("typed"); };
+
   const memo = step && step.memo;
-  const title = memo ? (memo.status === "undone" ? "Undone" : "Filed") : meeting ? "Listen to this meeting" : "Tell Steward";
-  const sub = memo || meeting ? null : donor ? `What happened with ${donor.name}? Steward files it; nothing is sent.` : "What happened? Steward files it; nothing is sent.";
-  const meetingDone = step && step.meetingId && step.meeting && !step.memo && !step.which && !step.pick && !step.needsPeople ? step : null;
+  const plan = step && step.plan;
+  const answer = step && step.answer;
+  const unsure = step && step.talk && step.talk.kind === "unsure";
+  const asking = step && (step.which || step.pick || step.needsPeople);
+  const title = memo ? (memo.status === "undone" ? "Undone" : "Filed") : plan && !answer ? "Steward's plan" : answer && !plan ? "Steward's answer" : "Tell Steward";
+  const sub = step ? null : donor ? `Tell Steward what happened with ${donor.name}, what to do, or what you want to know. Nothing is sent.` : "Tell Steward what happened, what to do, or what you want to know. Nothing is sent.";
 
   return (
-    <Modal onClose={onClose} title={title} subtitle={sub} width={meeting || (step && step.meetingId) ? 600 : 520} align={phone ? "top" : "center"} ariaLabel="Tell Steward">
+    <Modal onClose={onClose} title={title} subtitle={sub} width={answer ? 600 : 520} align={phone ? "top" : "center"} ariaLabel="Tell Steward">
       <div data-testid="tell-steward-sheet" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
 
-        {meeting && !step && <MeetingMode donor={donor} resume={meeting.resume || null} PickPerson={PickPerson}
-          onBack={() => { setMeeting(null); apiFetch("/voice/meetings/open").then(r => setOpenMeeting(r.meeting || null)).catch(() => {}); }}
-          onFiled={r => { picks.current = []; setMeeting(null); setOpenMeeting(null); setStep(r); }} />}
-
-        {!step && !meeting && <>
-          {openMeeting && <div data-testid="meeting-open-banner" style={{ border: "1px solid #C9A84C", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
-            A meeting is still open{openMeeting.people.length ? ` with ${openMeeting.people.map(p => p.name).join(" and ")}` : ""}, started {new Date(openMeeting.startedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}. Everything heard so far is saved.
-            <div style={{ marginTop: 8 }}><button type="button" data-testid="meeting-reopen" onClick={() => setMeeting({ resume: openMeeting })} style={btn(true)}>Go back to it</button></div>
-          </div>}
+        {!step && <>
           {speech && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
               <button data-testid="tell-mic" aria-pressed={listening} aria-label={listening ? "Stop listening" : "Start listening"}
@@ -190,7 +201,7 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
             </div>
           )}
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink2 }}>{speech ? "What Steward heard (change anything before you send)" : "Tell Steward what happened"}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink2 }}>{speech ? "What Steward heard (change anything before you send)" : "Tell Steward what happened, what to do, or ask"}</span>
             <textarea data-testid="tell-text" value={text + (interim ? (text ? " " : "") + interim : "")} rows={phone ? 6 : 5}
               onChange={e => { setText(e.target.value); setInterim(""); finalText.current = e.target.value; }}
               placeholder={donor ? `Lunch with ${String(donor.name).split(/\s+/)[0]}, loved the tour, wants to hear about the spring show, circle back in March.` : "Lunch with Margaret, loved the barn tour, wants to give to the new arena, circle back in March."}
@@ -199,10 +210,9 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
           </label>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {!speech && SR && <button onClick={() => setSpeech(true)} style={btn(false)}>Talk instead</button>}
-            <button data-testid="tell-meeting" type="button" onClick={() => { if (listening) stop(); setMeeting({}); }} style={btn(false)}>Listen to this meeting</button>
             <button data-testid="tell-send" disabled={busy} onClick={() => send()} style={{ ...btn(true), opacity: busy ? 0.6 : 1, flex: phone ? 1 : "0 0 auto" }}>{busy ? "Filing..." : "Send to Steward"}</button>
           </div>
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Steward never keeps a recording, only these words. Nothing is sent to anyone, and amounts and personal details wait for your yes.</div>
+          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Steward never keeps a recording, only these words. Nothing is sent to anyone. Amounts and personal details wait for your yes, and anything you ask Steward to do waits for Confirm.</div>
           {recent.length > 0 && <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Recent memos</div>
             {recent.map(m => (
@@ -215,12 +225,26 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
 
         {step && step.which && <WhichOne which={step.which} busy={busy} onPick={pickOne} onBack={() => { picks.current = []; setStep(null); }} />}
         {step && step.pick && <PickPerson sentence={step.pick.sentence} busy={busy} onPick={pickPerson} onBack={() => { picks.current = []; setStep(null); }} />}
-        {meetingDone && <><div data-testid="meeting-note" style={{ background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: T.ink }}>{meetingDone.note || "The meeting is saved."}</div>
-          <MeetingFiled meetingId={meetingDone.meetingId} />
-          <div style={{ display: "flex", justifyContent: "flex-end" }}><button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button></div></>}
-        {memo && step.meetingId && <MeetingFiled meetingId={step.meetingId} />}
         {step && step.needsPeople && <NeedsPeople np={step.needsPeople} busy={busy} onAnswer={people} onBack={() => setStep(null)} />}
-        {memo && <Results memo={memo} note={step.note} busy={busy} act={act} onClose={onClose} onNavigate={onNavigate} onAnother={() => { picks.current = []; setStep(null); setText(""); finalText.current = ""; setSource("typed"); }} />}
+        {unsure && <div data-testid="tell-unsure">
+          <p style={{ margin: "0 0 10px", fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>{step.talk.sentence}</p>
+          <div style={{ fontSize: 13, color: T.ink3, marginBottom: 10, background: "#F0EDE6", borderRadius: 10, padding: "8px 12px" }}>"{sentWords.current}"</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button data-testid="tell-as-log" disabled={busy} onClick={() => send({ as: "log" })} style={btn(true)}>Log it</button>
+            <button data-testid="tell-as-do" disabled={busy} onClick={() => send({ as: "do" })} style={btn(false)}>Have Steward do it</button>
+            <button onClick={() => setStep(null)} style={{ ...btn(false), border: "none" }}>Back</button>
+          </div>
+        </div>}
+        {answer && !asking && <section data-testid="tell-answer" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(memo || plan) && <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Your question</div>}
+          <AskAnswer answer={answer} compact isReadOnly={false} onAsk={ask} />
+        </section>}
+        {plan && !asking && <PlanCard plan={plan} busy={busy} setBusy={setBusy} onPick={id => planFor(plan.text, id)} onNavigate={onNavigate} onClose={onClose} />}
+        {memo && <Results memo={memo} note={step.note} busy={busy} act={act} onClose={onClose} onNavigate={onNavigate} onAnother={another} />}
+        {!memo && (plan || answer) && !asking && <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
+          <button onClick={another} style={btn(false)}>Tell another</button>
+          <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
+        </div>}
       </div>
     </Modal>
   );
@@ -237,7 +261,7 @@ function WhichOne({ which, busy, onPick, onBack }) {
         style={{ ...btn(false), display: "block", width: "100%", textAlign: "left", marginBottom: 8, touchAction: "manipulation", position: "relative", zIndex: 1 }}>
         <div>{p.name}</div><div style={{ fontSize: 12, fontWeight: 400, color: T.ink3, marginTop: 2 }}>{p.detail}</div>
       </button>))}
-    <button onClick={onBack} style={{ ...btn(false), border: "none" }}>Back to the memo</button>
+    {onBack && <button onClick={onBack} style={{ ...btn(false), border: "none" }}>Back to the memo</button>}
   </div>;
 }
 
@@ -270,6 +294,56 @@ function NeedsPeople({ np, busy, onAnswer, onBack }) {
     {!picking && <button onClick={() => setPicking(true)} style={{ ...btn(false), display: "block", width: "100%", marginBottom: 8 }}>{np.names && np.names.length ? "It was somebody already on file" : "Pick the person"}</button>}
     {picking && <PickPerson busy={busy} onPick={id => onAnswer({ pick: [id] })} />}
     <button onClick={onBack} style={{ ...btn(false), border: "none" }}>Back to the memo</button>
+  </div>;
+}
+
+// SOMETHING TO DO: the Agent's plan, exactly as the Agent tab would show it,
+// and nothing runs until she presses Confirm (her click on the Agent's own
+// confirm route). "Not now" sets it aside.
+function PlanCard({ plan, busy, setBusy, onPick, onNavigate, onClose }) {
+  const [ran, setRan] = useState(null);
+  const [gone, setGone] = useState(false);
+  const [err, setErr] = useState("");
+  const box = { border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenDk, borderRadius: 10, padding: "12px 14px" };
+  const head = <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>To do</div>;
+  if (plan.which) return <div style={box}>{head}<WhichOne which={plan.which} busy={busy} onPick={onPick} onBack={null} /></div>;
+  if (plan.read) return <div data-testid="tell-plan-read" style={box}>{head}
+    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{plan.read.sentence || plan.read.title}</div>
+    {(plan.read.people || []).length > 0 && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6 }}>{plan.read.people.map(p => p.name).join(", ")}</div>}
+    {plan.read.note && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>{plan.read.note}</div>}</div>;
+  const p = plan.plan;
+  if (!p || !plan.id) return <div data-testid="tell-plan-none" style={box}>{head}
+    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{(plan.cannot && plan.cannot.sentence) || plan.sentence || "Steward could not plan that. Nothing was done."}</div></div>;
+  const confirm = async () => {
+    setBusy(true); setErr("");
+    try { setRan(await apiFetch(`/agent/instructions/${plan.id}/confirm`, { method: "POST", body: "{}" })); }
+    catch (e) { setErr(said(e)); }
+    setBusy(false);
+  };
+  const notNow = async () => {
+    setBusy(true); setErr("");
+    try { await apiFetch(`/agent/instructions/${plan.id}/discard`, { method: "POST", body: "{}" }); setGone(true); }
+    catch (e) { setErr(said(e)); }
+    setBusy(false);
+  };
+  const outcomes = ran ? (ran.steps || []) : [];
+  return <div data-testid="tell-plan" style={box}>{head}
+    <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{p.headline || plan.text}</div>
+    <div style={{ marginTop: 6 }}>{(p.steps || []).map((st, i) => {
+      const o = outcomes[i];
+      return <div key={i} data-testid="tell-plan-step" style={{ display: "flex", gap: 8, fontSize: 13.5, color: T.ink, lineHeight: 1.45, padding: "3px 0" }}>
+        <span aria-hidden style={{ color: o && o.outcome === "done" ? T.greenDk : T.ink3, fontWeight: 800 }}>{o ? (o.outcome === "done" ? "✓" : "·") : "·"}</span>
+        <span>{st.line || st.describes || st.title || st.tool}{o && o.outcome !== "done" && o.reason ? <span style={{ color: T.ink3 }}> (not done: {o.reason})</span> : null}</span>
+      </div>;
+    })}</div>
+    {err && <div role="alert" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
+    {gone ? <div style={{ fontSize: 13.5, color: T.ink3, marginTop: 8 }}>Set aside. Nothing was done.</div>
+      : ran ? <div data-testid="tell-plan-done" style={{ fontSize: 13.5, color: T.ink, marginTop: 8 }}>Done: {ran.done || 0} of {(p.steps || []).length}. {(p.sends || 0) > 0 ? "" : "Nothing was sent."} <button type="button" onClick={() => { onClose(); onNavigate && onNavigate("agent", {}); }} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 13.5 }}>See it in the Agent</button></div>
+      : <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <button data-testid="tell-plan-confirm" disabled={busy} onClick={confirm} style={btn(true)}>{p.confirmLabel || "Confirm"}</button>
+        <button data-testid="tell-plan-notnow" disabled={busy} onClick={notNow} style={btn(false)}>Not now</button>
+        <span style={{ fontSize: 12, color: T.ink3 }}>Nothing happens until you confirm.</span>
+      </div>}
   </div>;
 }
 
