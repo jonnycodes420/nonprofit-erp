@@ -25,6 +25,10 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## VOICE-3 · Talk to Steward, and take out meeting mode (2026-10-21)
+
+Jonathan loves telling Steward what happened and what to do, and does not want a Granola-style recorder. Meeting mode is removed, not hidden: MeetingMode.jsx, shared/voiceMeeting.js, every /voice/meetings route, the voice_meetings table (dropped, with every transcript in it, since nothing could read or delete one any more), voice2-walk and voice2-everywhere §3-§5. The pre-meeting brief moved to a "Before your meeting" card (`BeforeYourMeeting.jsx`, `GET /donors/:id/before-meeting`) on the profile's meeting card and the calendar's meeting, today or tomorrow only, built so HOME-2 can drop it into its lead slot. The mic became one place to talk: `POST /voice/talk` sends what happened to `fileMemo`, something to do to the Agent's own plan route (it waits for Confirm), and a question to Ask; a mixed memo does both, and the to-do is planned on the memo's person. Code decides first (`splitTalk`); the model sorts only words with no sign, and its parts count only if they are her words. Found along the way, not fixed: an Agent `create_task` that opens a Thread step leaves two tasks (its own, and the thread's FIX-31 linked task). voice3-talk failed on main at its first line and red under two plants.
+
 ## VOICE-2b · The Margaret pick refused on prod (2026-10-20)
 
 Jonathan picked a Margaret on stewardapp.dev and got "That is not one of the records that name matches." Two causes. The server refused the whole request when ANY pick did not answer one of this memo's questions, and VOICE-2's picks build up, so one leftover pick refused every later click. And the box re-read its words at the click, so a name still half-heard (not final) when Send was pressed dropped out between the question and the answer. Now fileMemo drops picks that answer none of this memo's questions (a pick can still only be one of the records a name matched), and a pick re-sends exactly the words that were asked about. voice2-everywhere §2 and the voice2-walk "half-heard" leg each failed before the fix.

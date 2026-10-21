@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf } from "./shared";
+import { displayDate } from "../../../shared/displayDate.js";
 
 const LABEL = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
 const time = iso => (iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "");
@@ -32,7 +33,7 @@ export function beforeLines(brief) {
   if (!brief) return [];
   return [
     brief.giving && ["Giving", brief.giving.text],
-    brief.lastTime && ["Last time", `${brief.lastTime.date}: ${brief.lastTime.text || "a meeting"}`],
+    brief.lastTime && ["Last time", `${displayDate(String(brief.lastTime.date).slice(0, 10))}: ${brief.lastTime.text || "a meeting"}`],
     brief.openAsk && ["Open ask", brief.openAsk.text],
     brief.lastEmail && ["Their last email", `"${brief.lastEmail.quote}"`],
     brief.unthanked && ["Not thanked yet", brief.unthanked.text],
