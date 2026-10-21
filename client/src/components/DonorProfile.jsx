@@ -2663,7 +2663,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
               {campaigns.length>0&&<><select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:2}}>
                 <option value="">Campaign: not attributed</option>
-                {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                {campaigns.map(c=>{const st=String(c.startDate||c.start_date||"").slice(0,10);return <option key={c.id} value={c.id}>{c.name}{st&&st>addGiftForm.date?` (starts ${displayDate(st)})`:""}</option>;})}
               </select>
               <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div></>}
               {pledges.filter(p=>p.status==="open").length>0&&(

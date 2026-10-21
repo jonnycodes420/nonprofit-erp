@@ -4262,6 +4262,27 @@ const PROFILE_FIGURE_BLANKS = {
   },
 };
 
+// VOICE-4: the line under Last met is one short phrase, never cut mid-word.
+// "Lunch. Went well, she made a gift to the boat fund" reads "Lunch, went
+// well"; a longer first clause is cut back to the last whole word.
+const MEETING_PHRASE_MAX = 22;
+const PHRASE_TAIL = /\s+(?:a|an|the|at|to|of|in|on|for|with|and|or|down|up|about|from|by)$/i;
+function meetingPhrase(name) {
+  const line = String(name || "").split("\n")[0].replace(/\s+/g, " ").trim();
+  if (!line) return null;
+  const sentences = line.split(/(?<=[.!?])\s+/).map(x => x.replace(/[.!?]+$/, "").trim()).filter(Boolean);
+  const clause = x => String(x || "").split(/[,;:(]|\s[-\u2013]\s/)[0].trim();
+  let out = clause(sentences[0]);
+  // A one- or two-word opener ("Lunch.") takes the first clause of what follows.
+  if (out.split(" ").length <= 2 && sentences[1]) out = `${out}, ${clause(sentences[1]).replace(/^./, c => c.toLowerCase())}`;
+  if (out.length > MEETING_PHRASE_MAX) {
+    const cut = out.slice(0, MEETING_PHRASE_MAX + 1);
+    out = cut.slice(0, Math.max(cut.lastIndexOf(" "), 0)).replace(/[\s,;:]+$/, "") || out.split(" ")[0];
+    while (PHRASE_TAIL.test(out)) out = out.replace(PHRASE_TAIL, "");
+  }
+  return out || null;
+}
+
 // The four, in one round trip. `today` is the ORGANISATION's civil date,
 // computed once by the caller and handed to the source — figureSources.js
 // never reads a clock for a calendar day.
@@ -4283,7 +4304,7 @@ async function donorProfileFigures(orgId, donorId, today) {
   // Last gift is the date of the gift that number is.
   const UNDER = {
     lastGift: r => r.date ? { date: String(r.date).slice(0, 10) } : null,
-    lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: String(r.name || "").split("\n")[0].slice(0, 60) || null }),
+    lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: meetingPhrase(r.name) }),
     lastEmail: r => ({ date: String(r.date || "").slice(0, 10) || null, direction: /^From them/.test(r.detail || "") ? "replied" : /^To them/.test(r.detail || "") ? "sent" : null }),
   };
   const got = await Promise.all(wanted.map(async ([k, source]) => {
@@ -7068,9 +7089,15 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   }
 
   if (effectiveCampaignId) {
-    const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [effectiveCampaignId, req.user.orgId]);
+    const camp = await query("SELECT id, name, start_date::text AS start_day FROM campaigns WHERE id=? AND org_id=?", [effectiveCampaignId, req.user.orgId]);
     if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
-    campaignName = camp[0].name;
+    // VOICE-4: a campaign nobody picked for THIS gift (one it would inherit)
+    // that has not started by the gift's date is never its default. A person
+    // who picks an upcoming campaign by hand still gets it.
+    const giftDay = normalizeGiftDate(date);
+    const startDay = camp[0].start_day ? String(camp[0].start_day).slice(0, 10) : null;
+    if (!campaignId && giftDay && startDay && startDay > giftDay) effectiveCampaignId = null;
+    else campaignName = camp[0].name;
   }
 
   const giftId = "g_" + uuid().slice(0, 8);
