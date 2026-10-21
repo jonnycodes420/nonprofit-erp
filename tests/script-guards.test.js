@@ -364,6 +364,7 @@ const EXEMPT = {
   "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
   "build28-prepare-images": "local image generation, no network writes",
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
+  "stripe-live-prices": "writes to STRIPE, not the app (PRICING-1 bands); refuses a live key without --live and --live with a test key",
   "build95-cheque-drill": "BUILD-95 — the cheque-reading boundary drill: reads local image files, calls the Anthropic API directly and prints what came back. No BASE, no DATABASE_URL, no Steward server, no app write of any kind; it refuses to run under NODE_ENV=production",
   "capture1-make-fixtures": "CAPTURE-1: draws the fake check, slip and letter fixtures with sharp and pdfkit into tests/fixtures/capture1/; no BASE, no DATABASE_URL, no network, no app write",
   "fix45-no-em-dash": "FIX-45 2.6: rewrites em dashes in the repo's OWN source files (the strings tests/polish2/enGb.js scanEmDash finds). No BASE, no DATABASE_URL, no network, no app write",
@@ -449,6 +450,9 @@ for (const s of LOOPBACK_CAPTURES) {
 {
   const cbp = read("create-billing-products");
   ok(/--live/.test(cbp) && /sk_live|live/i.test(cbp), "create-billing-products keeps its refuse-live-without---live guard");
+  const slp = read("stripe-live-prices");
+  ok(/--live/.test(slp) && /sk_live|rk_live/.test(slp) && /STRIPE_BILLING_SECRET_KEY/.test(slp),
+     "stripe-live-prices refuses live without --live and reads only the billing key");
   const prep = read("build28-prepare-images");
   ok(!/process\.env\.BASE|method:\s*["'](POST|PUT|PATCH|DELETE)/.test(prep), "build28-prepare-images stays network-write-free");
 }

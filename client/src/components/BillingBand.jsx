@@ -39,7 +39,7 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
         {b.customPrice
           ? cell("Price", b.customPrice.usd === 0 ? "Free" : `${usd(b.customPrice.usd)}/month`,
               b.customPrice.endsOn ? `Your agreed price, until ${day(b.customPrice.endsOn)}.` : "Your agreed price.", "billing-price")
-          : cell("Band", b.band ? b.band.label : "Not set by band", b.band && b.band.legacy ? "Your earlier plan. It stays until you change it." : null, "billing-band-label")}
+          : cell("Band", b.band ? b.band.label : "Agreed by hand", b.band && b.band.legacy ? "Your earlier plan. It stays until you change it." : null, "billing-band-label")}
         {!b.customPrice && b.priceUsd != null && cell("Price", `${usd(b.priceUsd)}${per}`, null, "billing-price")}
         {cell("Records", Number(b.records).toLocaleString("en-US"), b.recordSentence, "billing-records")}
         {b.nextChargeAt && cell("Next charge", day(b.nextChargeAt), null, "billing-next-charge")}
