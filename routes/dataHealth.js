@@ -670,10 +670,11 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
       }
       if (m.note_id) await runTx(client, "DELETE FROM interactions WHERE id=? AND org_id=?", [m.note_id, orgId]);
       // Gifts given to the kept person since the merge stay with them; their
-      // summary is recomputed only if the restored totals no longer foot.
+      // summary is recomputed. NUMBERS-1: always, not only when the total no
+      // longer foots: a gift split since the merge keeps the total and changes
+      // the count (the random test: merge, split, undo).
       for (const id of [m.kept_id, m.merged_id]) {
-        const snap = id === m.kept_id ? m.kept_before : m.merged_before;
-        if (await giftCentsTx(client, orgId, id) !== cents(snap.total_giving)) {
+        {
           // NUMBERS-1: the whole summary, by the one statement. This set the
           // total, count and date but left the last gift's AMOUNT at the
           // snapshot's, so a refund between the merge and its undo left it wrong.

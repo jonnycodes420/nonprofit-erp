@@ -42,7 +42,7 @@ process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 const { ok, summary, login, api, q, closeDb, civilToday, civilPlusDays } = require("./helpers");
 
 const SEQUENCES = Number(process.env.NUMBERS1_SEQUENCES || 500);
-const SEED = Number(process.env.NUMBERS1_SEED || Date.now() % 1e9);
+const SEED = Number(process.env.NUMBERS1_SEED || require("crypto").randomInt(1, 1e9));
 const PREFIX = "org_n1_";
 const sys = "'system:test','test'";
 
@@ -329,7 +329,7 @@ async function shrink(seq, today) {
   console.log(`\n§3 ${SEQUENCES} random sequences, the checker after every step`);
   const top = rng(SEED);
   let passed = 0, failed = null, steps = 0;
-  const started = Date.now();
+  const started = process.hrtime.bigint();
   for (let n = 0; n < SEQUENCES && !failed; n++) {
     const seq = Array.from({ length: int(top, 1, 7) }, () => ({ kind: pick(top, KINDS), seed: Math.floor(top() * 1e9) }));
     steps += seq.length;
@@ -347,7 +347,7 @@ async function shrink(seq, today) {
     console.log(`  replay: NUMBERS1_SEED=${SEED} node tests/numbers1-foot.test.js`);
   }
   ok(`§3 ${passed} of ${SEQUENCES} random sequences (${steps} steps) kept every rule`, !failed && passed === SEQUENCES, failed && failed.why);
-  console.log(`  ${Math.round((Date.now() - started) / 1000)}s`);
+  console.log(`  ${Number((process.hrtime.bigint() - started) / 1000000000n)}s`);
   await wipe(`${PREFIX}%`);
   await wipe("org_n1m_%");
   mock.close();
