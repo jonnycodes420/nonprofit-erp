@@ -75,6 +75,10 @@ async function reset() {
     await q(`INSERT INTO capture_items (id,org_id,kind,stakes,status,source,proposal,received_at,created_by)
              VALUES ($1,$2,$3,'money','waiting','photo',$4,$5,'system:test')`,
       [`cap_h2_${i}`, ORG, kind, JSON.stringify({ amount: { cents } }), at(DAY1, "19:00")]);
+  // Lifetime totals from the gifts, the rollup the seed and recordGift keep.
+  await q(`UPDATE donors d SET total_giving=s.t, gift_count=s.n, first_gift_date=s.f, last_gift_date=s.l
+             FROM (SELECT donor_id, SUM(amount) t, COUNT(*) n, MIN(date) f, MAX(date) l FROM gifts WHERE org_id=$1 GROUP BY donor_id) s
+            WHERE d.id=s.donor_id AND d.org_id=$1`, [ORG]);
   // The year-end appeal.
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date) VALUES ('camp_h2_ye',$1,$2,'appeal','active',60000,$3,$4)`,
     [ORG, `Year-end ${Y}`, `${Y}-11-16`, `${Y}-12-31`]);
@@ -100,6 +104,10 @@ const lead = async (tok, iso) => {
     ok("§1 /home/lead answers", d1.status === 200, d1.status);
     ok("§1 the lunch leads", d1.kinds[0] === "meeting" && /Ansel/.test(d1.body.lead[0].title), d1.kinds);
     ok("§1 it says why, in words", /in 2 hours/.test((d1.body.lead[0] || {}).why || ""), (d1.body.lead[0] || {}).why);
+    // The card carries VOICE-3's brief (routes/finance.js meetingBrief). After
+    // VOICE-3 the brief's export went missing and the card came back empty.
+    const b1 = (d1.body.lead[0] || {}).brief;
+    ok("§1 the meeting card carries the brief: what he has given", b1 && b1.giving && /\$160,000/.test(b1.giving.text), b1);
     ok("§1 the rail puts the meeting first", (d1.body.rail || [])[0] === "meetings", d1.body.rail);
     ok("§1 the score never reaches the card", d1.body.lead && !("score" in d1.body.lead[0]) && !("points" in d1.body.lead[0]));
 

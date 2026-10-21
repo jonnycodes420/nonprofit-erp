@@ -59,12 +59,9 @@ function meetingCards(f) {
     return card("meeting", "meeting:" + m.id, [{ name: "time", n: time }, { name: "stakes", n: stakes }], {
       eyebrow: `${inWords(until).replace(/^in/, "In")} · ${m.time}${m.location ? " · " + m.location : ""}`,
       title: m.title, why, meetingId: m.id, donorId: m.person.id, donorName: m.person.name, startsAt: m.startsAt,
-      facts: [
-        b.giving && { label: "Gave", text: b.giving.text },
-        b.openAsk && { label: "Open ask", text: b.openAsk.text },
-        b.lastTime && { label: "Last time", text: b.lastTime.text },
-        b.lastEmail && { label: "Last email", text: `"${b.lastEmail.quote}"` },
-      ].filter(Boolean),
+      // The facts are drawn by VOICE-3's beforeLines(brief), the one list the
+      // profile, the calendar and Home share.
+      brief: m.brief || null,
     });
   });
 }

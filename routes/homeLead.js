@@ -70,7 +70,8 @@ async function readFacts(req, nowMs) {
   for (const c of cal) {
     const [p] = await query(`SELECT id, name FROM donors WHERE org_id=? AND id=? AND deleted_at IS NULL`, [orgId, c.person_ids[0]]);
     if (!p) continue;
-    const brief = meetingBrief ? await meetingBrief(orgId, p.id, new Date(c.starts_at).toISOString()).catch(() => null) : null;
+    // A brief that cannot be read leaves the card without its lines, never Home without its lead.
+    const brief = meetingBrief ? await Promise.resolve().then(() => meetingBrief(orgId, p.id, new Date(c.starts_at).toISOString())).catch(() => null) : null;
     meetings.push({ id: c.id, title: c.title, startsAt: new Date(c.starts_at).toISOString(), location: c.location || null,
       time: new Date(c.starts_at).toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }).toLowerCase().replace(/\s+/g, " "),
       person: { id: p.id, name: p.name }, brief });

@@ -8,6 +8,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import { openTellSteward } from "./TellSteward";
+import { beforeLines } from "./BeforeYourMeeting";   // VOICE-3: the one list of what to know before a meeting
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
@@ -66,9 +67,9 @@ export function HomeLead({ lead, onNavigate, onSetAside, isReadOnly }) {
               </div>
             )}
             <Why text={c.why} dark={dark} />
-            {c.kind === "meeting" && c.facts && c.facts.length > 0 && (
-              <dl style={{ display: "grid", gridTemplateColumns: "minmax(90px,118px) 1fr", gap: "7px 14px", fontSize: 14, margin: "4px 0 16px" }}>
-                {c.facts.map(f => [<dt key={f.label + "t"} style={{ color: T.inkInverse, opacity: 0.6, fontSize: 12.5 }}>{f.label}</dt>, <dd key={f.label + "d"} style={{ margin: 0 }}>{f.text}</dd>])}
+            {c.kind === "meeting" && beforeLines(c.brief).length > 0 && (
+              <dl data-testid="home-lead-before" aria-label="Before your meeting" style={{ display: "grid", gridTemplateColumns: "minmax(90px,118px) 1fr", gap: "7px 14px", fontSize: 14, margin: "4px 0 16px" }}>
+                {beforeLines(c.brief).map(([k, v]) => [<dt key={k + "t"} style={{ color: T.inkInverse, opacity: 0.6, fontSize: 12.5 }}>{k}</dt>, <dd key={k + "d"} style={{ margin: 0 }}>{v}</dd>])}
               </dl>
             )}
             {c.kind === "gift" && c.draft && (
