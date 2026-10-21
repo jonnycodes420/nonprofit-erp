@@ -21,12 +21,13 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_home2t";
 const TZ = "America/New_York";
 const DIR = `u_${ORG}_dir`, OFF = `u_${ORG}_off`;
 // The year whose 15 December is next.
-const now = new Date();
+const now = new Date(testNow());
 const Y = now.getUTCMonth() === 11 && now.getUTCDate() > 15 ? now.getUTCFullYear() + 1 : now.getUTCFullYear();
 const DAY1 = `${Y}-10-20`, DAY2 = `${Y}-10-21`, DAY3 = `${Y}-12-15`, QUIET = `${Y}-08-04`;
 // New York: daylight time in August and October, standard time in December.
