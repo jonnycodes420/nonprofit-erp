@@ -12,7 +12,7 @@ const TALK_TO_US = PRICING.talkToUs;
 const INCLUDED_GROUPS = PRICING.includedGroups;
 const EXTRAS = PRICING.extras;
 const YEARLY_NOTE = PRICING.yearlyNote;
-const ACTIVE_DONOR_SENTENCE = PRICING.activeDonorSentence;
+const RECORD_SENTENCE = PRICING.recordSentence;
 const COPY = {
   headline: PRICING.headline, lede: PRICING.lede, yearlyPill: PRICING.yearlyPill,
   monthToMonth: PRICING.monthToMonth, featuredBadge: PRICING.featuredBadge,
@@ -247,7 +247,7 @@ export default function Pricing() {
           </h2>
           <p style={{ margin: 0, fontSize: 19, lineHeight: 1.55, color: GREY, maxWidth: 680 }}>{COPY.lede}</p>
           <div data-testid="pricing-trial-line" style={{ fontSize: 15, color: PILL_INK, fontWeight: 700 }}>
-            Nothing is charged for your first thirty days.
+            The one-time setup fee is charged at signup; your plan's first charge is thirty days later.
           </div>
         </div>
 
@@ -321,10 +321,10 @@ export default function Pricing() {
         </div>
 
         {/* The definition, in ONE sentence. Every number has a sentence, and
-            "active donors" is the number this whole page is priced on. */}
+            "records" is the number this whole page is priced on. */}
         <p data-testid="pricing-active-donor-sentence"
           style={{ fontSize: 14, color: GREY, lineHeight: 1.6, margin: 0, maxWidth: 680, textAlign: "center" }}>
-          {ACTIVE_DONOR_SENTENCE} {YEARLY_NOTE}
+          {RECORD_SENTENCE} {YEARLY_NOTE}
         </p>
 
         {!isAuthed && (

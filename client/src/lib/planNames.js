@@ -27,7 +27,8 @@ export function tierForPlanValue(plan) {
   const s = String(plan || "");
   if (!s) return null;
   const id = s.includes("_") ? s.split("_")[0] : s;
-  return PRICING.tiers.find(t => t.id === id) || null;
+  // PRICING-1: the record bands, then the GTM-1a t-bands an org may be on.
+  return PRICING.tiers.find(t => t.id === id) || (PRICING.legacyTiers || []).find(t => t.id === id) || null;
 }
 
 // Null for a plan value nothing recognises, so a caller shows the raw value
@@ -50,6 +51,9 @@ export function planDisplayBand(plan) {
 // notice) where two elements will not fit.
 export function planDisplayLine(plan) {
   const name = planDisplayName(plan), band = planDisplayBand(plan);
+  // A record band's name is the start of its band ("Up to 500" / "Up to 500
+  // records"), so it says the band once rather than twice.
+  if (name && band && band.toLowerCase().startsWith(name.toLowerCase())) return band;
   if (name && band) return `${name} · ${band.charAt(0).toLowerCase()}${band.slice(1)}`;
   return name || String(plan || "");
 }

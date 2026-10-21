@@ -8989,9 +8989,12 @@ const PLAN_PRICE_ENV = {
 // GTM-1a — the tier prices join the mode check, so `/health.billing` reports a
 // live price id sitting behind a test key (or the reverse) for the bands that
 // are actually on sale, not only for the three legacy plans.
-for (const t of PRICING.TIERS) {
+// PRICING-1: each record band's one-time setup price, and the GTM-1a bands
+// orgs may still be on, are checked the same way.
+for (const t of [...PRICING.TIERS, ...PRICING.LEGACY_TIERS]) {
   PLAN_PRICE_ENV[`${t.id}_monthly`] = t.envMonthly;
   PLAN_PRICE_ENV[`${t.id}_yearly`] = t.envYearly;
+  if (t.envSetup) PLAN_PRICE_ENV[`${t.id}_setup`] = t.envSetup;
 }
 PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 
@@ -9051,113 +9054,192 @@ async function agentTrialAllowance(orgId) {
   };
 }
 
-// ── GTM-1b 1 · ACTIVE DONORS, AND THE BAND THEY PUT YOU IN ────────────────
+// ── PRICING-1 · RECORDS, AND THE BAND THEY PUT YOU IN ─────────────────────
 //
-// THE COUNT IS THE SENTENCE ON THE PRICING PAGE, IN SQL. `pricing.json`'s
-// activeDonorSentence says "a person or organization that has given a gift or
-// had a conversation logged in the last 24 months", and this is that and
-// nothing else: a DISTINCT donor with a gift OR a conversation inside the
-// window. Deleted donors do not count. The window comes from the catalogue,
-// so changing the sentence changes the count, which is the only way the two
-// can be kept honest.
-//
-// It is deliberately a count of DONORS, not of rows: an org with one donor and
-// four hundred gifts is a one-donor org.
-const ACTIVE_CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
-
-async function countActiveDonors(orgId, { months = PRICING.ACTIVE_DONOR_MONTHS } = {}) {
+// THE COUNT IS THE SENTENCE ON SIGNUP AND BILLING, IN SQL. `pricing.json`'s
+// recordSentence says "a person or organization with at least one gift", and
+// this is that and nothing else: a DISTINCT non-deleted donor row with at
+// least one gift, any date. Prospects, volunteers and contacts with no gift
+// never count. Four gifts from one person is one record.
+async function countRecords(orgId) {
   const [row] = await query(
-    `SELECT COUNT(*) AS c FROM (
-        SELECT d.id
-          FROM donors d
-         WHERE d.org_id = ? AND d.deleted_at IS NULL
-           AND (
-             EXISTS (SELECT 1 FROM gifts g
-                      WHERE g.donor_id = d.id AND g.org_id = d.org_id
-                        AND g.date IS NOT NULL AND g.date <> ''
-                        AND g.date::date >= (CURRENT_DATE - (? || ' months')::interval))
-             OR EXISTS (SELECT 1 FROM interactions i
-                         WHERE i.donor_id = d.id AND i.org_id = d.org_id
-                           AND i.type = ANY(?)
-                           AND i.date IS NOT NULL AND i.date <> ''
-                           AND i.date::date >= (CURRENT_DATE - (? || ' months')::interval))
-           )
-     ) t`,
-    [orgId, String(months), ACTIVE_CONVERSATION_TYPES, String(months)]);
+    `SELECT COUNT(*) AS c FROM donors d
+      WHERE d.org_id = ? AND d.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id)`,
+    [orgId]);
   return Number(row && row.c) || 0;
 }
 
 // The band an org is PAYING for, read off its plan. A legacy plan (core, team,
-// founding) has no band in the new catalogue and is never told it is over one
-// — those organisations are on a price that was never sold by size, and
-// inventing a band for them would be inventing a bill.
+// founding, and the GTM-1a t-bands) has no band in this catalogue and is never
+// told it is over one: inventing a band for them would be inventing a bill.
 function bandOfPlan(plan) {
   const id = String(plan || "");
   if (!id.includes("_")) return null;
   return PRICING.tierById(id.split("_")[0]);
 }
 
-// THIRTY DAYS. The agreement says the new price does not take effect for at
-// least thirty days after the org is told, and this is the one place that
-// arithmetic happens.
-const TIER_NOTICE_DAYS = 30;
+// THIRTY DAYS, from pricing.json. The agreement says a new price does not
+// take effect for at least this long after the owner is told.
+const TIER_NOTICE_DAYS = PRICING.BAND_MOVE.noticeDays;
+const MONTHS_OVER_BEFORE_NOTE = PRICING.BAND_MOVE.monthsOverBeforeNote;
 
-// Count, compare, and — only if they are over — record ONE open notice and
-// tell the admin. Returns what it found either way, so a caller can show the
-// count without having to know whether a notice was raised.
+// "2026-10" for an instant, in the org's own zone.
+function monthKey(now, tz) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/New_York", year: "numeric", month: "2-digit" })
+      .formatToParts(new Date(now));
+    return parts.find(p => p.type === "year").value + "-" + parts.find(p => p.type === "month").value;
+  } catch { return new Date(now).toISOString().slice(0, 7); }
+}
+function prevMonthKey(key, back = 1) {
+  let [y, m] = key.split("-").map(Number);
+  m -= back; while (m < 1) { m += 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
+// Count, record this month, compare, and, only when the org has been over its
+// band for MONTHS_OVER_BEFORE_NOTE months running, record ONE open notice and
+// tell the owner. Returns what it found either way.
 //
 // IT NEVER TOUCHES THE SUBSCRIPTION. Not the plan column, not Stripe, not the
-// amount. The whole point is that the price does not move on its own; what
-// moves is that somebody now knows.
-async function checkActiveDonorBand(orgId, { send = true, now = Date.now() } = {}) {
+// amount. The price moves only through applyAgreedBandMoves, after the notice
+// period, and only when the owner said yes.
+async function checkRecordBand(orgId, { send = true, now = Date.now() } = {}) {
   const [org] = await query(
-    `SELECT id, name, plan, subscription_status, tier_notice_band, tier_notice_effective_at
+    `SELECT id, name, plan, subscription_status, tier_notice_band, tier_notice_effective_at,
+            custom_price_cents, custom_price_ends_on
        FROM orgs WHERE id=?`, [orgId]);
   if (!org) return { checked: false, reason: "org_not_found" };
+  const count = await countRecords(orgId);
 
+  // Existing deals hold: a custom price is never measured against a band.
+  if (org.custom_price_cents != null) return { checked: false, reason: "custom_price", count, plan: org.plan };
   const band = bandOfPlan(org.plan);
-  if (!band) return { checked: false, reason: "no_band_on_this_plan", plan: org.plan };
+  if (!band) return { checked: false, reason: "no_band_on_this_plan", count, plan: org.plan };
 
-  const count = await countActiveDonors(orgId);
-  const fits = count <= band.maxDonors;
-  const shouldBe = PRICING.tierForDonorCount(count);   // null = above the top band
+  const fits = count <= band.maxRecords;
+  const shouldBe = PRICING.tierForRecordCount(count);   // null = above the top band
+  const tz = await orgTzName(orgId);
+  const month = monthKey(now, tz);
+  await run(
+    `INSERT INTO org_record_months (org_id, month, record_count, band_id, over, measured_at)
+     VALUES (?, ?, ?, ?, ?, NOW())
+     ON CONFLICT (org_id, month) DO UPDATE SET record_count=EXCLUDED.record_count, band_id=EXCLUDED.band_id,
+       over=EXCLUDED.over, measured_at=NOW()`,
+    [orgId, month, count, band.id, !fits]);
 
   if (fits) {
-    // Back inside the band they pay for (donors deleted, or an import undone):
-    // the open notice is withdrawn rather than left standing. A warning that
-    // is no longer true is worse than no warning.
+    // Back inside the band they pay for: the open notice is withdrawn. A
+    // warning that is no longer true is worse than no warning.
     if (org.tier_notice_band) {
-      await run(`UPDATE orgs SET tier_notice_band=NULL, tier_notice_at=NULL,
-                   tier_notice_effective_at=NULL, tier_notice_count=NULL, tier_notice_dismissed_at=NULL
+      await run(`UPDATE orgs SET tier_notice_band=NULL, tier_notice_at=NULL, tier_notice_effective_at=NULL,
+                   tier_notice_count=NULL, tier_notice_dismissed_at=NULL, tier_notice_agreed_at=NULL, tier_notice_agreed_by=NULL
                  WHERE id=?`, [orgId]);
-      console.log(`[tier] ${orgId} is back inside ${band.band} (${count}) — the open notice is withdrawn`);
+      console.log(`[tier] ${orgId} is back inside ${band.band} (${count}): the open notice is withdrawn`);
     }
-    return { checked: true, over: false, count, band: band.id, maxDonors: band.maxDonors };
+    return { checked: true, over: false, count, band: band.id, maxRecords: band.maxRecords, month };
   }
 
+  // Over this month. Was it over for the months before, running?
+  const want = [];
+  for (let i = 1; i < MONTHS_OVER_BEFORE_NOTE; i++) want.push(prevMonthKey(month, i));
+  const prior = want.length
+    ? await query(`SELECT month FROM org_record_months WHERE org_id=? AND over=true AND month = ANY(?)`, [orgId, want])
+    : [];
+  const monthsOver = 1 + prior.length;
   const nextBandId = shouldBe ? shouldBe.id : PRICING.TALK_TO_US.id;
-  // The SAME notice, not a new one: a second import that finds the same band
-  // must not restart the thirty days or send a second email.
+  if (monthsOver < MONTHS_OVER_BEFORE_NOTE) {
+    return { checked: true, over: true, count, band: band.id, maxRecords: band.maxRecords, month,
+             monthsOver, noted: false, nextBand: nextBandId };
+  }
+
+  // The SAME notice, not a new one: a second check that finds the same band
+  // must not restart the thirty days or send a second note.
   if (org.tier_notice_band === nextBandId) {
-    return { checked: true, over: true, count, band: band.id, maxDonors: band.maxDonors,
-             nextBand: nextBandId, alreadyNoticed: true,
-             effectiveAt: org.tier_notice_effective_at };
+    return { checked: true, over: true, count, band: band.id, maxRecords: band.maxRecords, month, monthsOver,
+             nextBand: nextBandId, noted: true, alreadyNoticed: true, effectiveAt: org.tier_notice_effective_at };
   }
 
   const effectiveAt = new Date(now + TIER_NOTICE_DAYS * 24 * 60 * 60 * 1000);
   await run(
     `UPDATE orgs SET tier_notice_band=?, tier_notice_at=NOW(), tier_notice_effective_at=?,
-       tier_notice_count=?, tier_notice_dismissed_at=NULL WHERE id=?`,
+       tier_notice_count=?, tier_notice_dismissed_at=NULL, tier_notice_agreed_at=NULL, tier_notice_agreed_by=NULL WHERE id=?`,
     [nextBandId, effectiveAt.toISOString(), count, orgId]);
-  console.log(`[tier] ${orgId} (${org.name}) has ${count} active donors, over ${band.band}. `
-    + `Notice raised for ${nextBandId}, effective ${effectiveAt.toISOString()}. Nothing has been charged differently.`);
+  console.log(`[tier] ${orgId} (${org.name}) has ${count} records, over ${band.band} for ${monthsOver} months running. `
+    + `Note raised for ${nextBandId}; nothing changes before ${effectiveAt.toISOString()} and nothing changes without the owner's yes.`);
 
   let mailed = { sent: false, skipped: "not_requested" };
   if (send) mailed = await sendTierNoticeEmail({ orgId, orgName: org.name, count, band, nextBandId, effectiveAt })
     .catch(e => ({ sent: false, failed: e.message }));
 
-  return { checked: true, over: true, count, band: band.id, maxDonors: band.maxDonors,
-           nextBand: nextBandId, effectiveAt: effectiveAt.toISOString(), mailed };
+  return { checked: true, over: true, count, band: band.id, maxRecords: band.maxRecords, month, monthsOver,
+           nextBand: nextBandId, noted: true, effectiveAt: effectiveAt.toISOString(), mailed };
+}
+
+// Every priced org, once a day. Cheap: one COUNT per org with a band plan.
+async function checkAllRecordBands({ now = Date.now() } = {}) {
+  const orgs = await query(
+    `SELECT id FROM orgs WHERE position('_' in COALESCE(plan, '')) > 0 AND custom_price_cents IS NULL
+        AND COALESCE(org_kind, '') NOT IN ('demo', 'internal_test', 'fixture')`, []);
+  const out = { checked: 0, noted: 0, orgs: [] };
+  for (const o of orgs) {
+    const r = await checkRecordBand(o.id, { now }).catch(e => ({ error: e.message }));
+    if (r && r.checked) out.checked++;
+    if (r && r.noted && !r.alreadyNoticed) { out.noted++; out.orgs.push(o.id); }
+  }
+  return out;
+}
+
+// The daily job: measure every banded org, then apply only the moves an owner
+// agreed to (up, after the notice) or asked for (down, at renewal).
+async function processRecordBands({ now = Date.now() } = {}) {
+  const checked = await checkAllRecordBands({ now });
+  const moved = await applyAgreedBandMoves({ now });
+  const orgs = [...new Set([...checked.orgs, ...moved.up.map(m => m.id), ...moved.down.map(m => m.id)])];
+  return { orgs, detail: `${checked.checked} measured, ${checked.noted} noted, ${moved.up.length} up, ${moved.down.length} down, ${moved.skipped.length} skipped` };
+}
+
+// THE ONLY PLACE A BAND PRICE MOVES. Up: the notice period has passed AND the
+// owner said yes. Down: the owner asked AND the subscription has reached its
+// renewal. Each swaps the subscription's one recurring price in Stripe with no
+// proration, then writes orgs.plan. Nothing here runs for a custom price.
+async function applyAgreedBandMoves({ now = Date.now(), orgId = null } = {}) {
+  const out = { up: [], down: [], skipped: [] };
+  const rows = await query(
+    `SELECT id, plan, stripe_subscription_id, tier_notice_band, tier_notice_effective_at, tier_notice_agreed_at,
+            band_down_to, current_period_end, custom_price_cents
+       FROM orgs
+      WHERE custom_price_cents IS NULL AND stripe_subscription_id IS NOT NULL AND (?::text IS NULL OR id = ?)
+        AND ((tier_notice_agreed_at IS NOT NULL AND tier_notice_effective_at <= to_timestamp(? / 1000.0))
+          OR (band_down_to IS NOT NULL AND current_period_end IS NOT NULL AND current_period_end <= to_timestamp(? / 1000.0)))`,
+    [orgId, orgId, now, now]);
+  for (const o of rows) {
+    const up = o.tier_notice_agreed_at && new Date(o.tier_notice_effective_at).getTime() <= now;
+    const toBand = up ? o.tier_notice_band : o.band_down_to;
+    const tier = PRICING.tierById(toBand);
+    if (!tier) { out.skipped.push({ id: o.id, reason: "no_price_for_" + toBand }); continue; }
+    const interval = String(o.plan || "").endsWith("_yearly") ? "yearly" : "monthly";
+    const priceId = PRICING.priceIdFor(tier.id, interval, process.env);
+    if (!priceId) { out.skipped.push({ id: o.id, reason: "price_not_configured" }); continue; }
+    try {
+      const sub = await billingStripe.subscriptions.retrieve(o.stripe_subscription_id);
+      const item = sub.items && sub.items.data && sub.items.data.find(i => i.price && i.price.recurring);
+      if (!item) { out.skipped.push({ id: o.id, reason: "no_recurring_item" }); continue; }
+      await billingStripe.subscriptions.update(o.stripe_subscription_id, {
+        items: [{ id: item.id, price: priceId }], proration_behavior: "none",
+        metadata: { plan: `${tier.id}_${interval}` },
+      });
+    } catch (e) { out.skipped.push({ id: o.id, reason: "stripe: " + e.message }); continue; }
+    await run(
+      `UPDATE orgs SET plan=?, tier_notice_band=NULL, tier_notice_at=NULL, tier_notice_effective_at=NULL, tier_notice_count=NULL,
+         tier_notice_dismissed_at=NULL, tier_notice_agreed_at=NULL, tier_notice_agreed_by=NULL,
+         band_down_to=NULL, band_down_requested_at=NULL WHERE id=?`,
+      [`${tier.id}_${interval}`, o.id]);
+    (up ? out.up : out.down).push({ id: o.id, to: `${tier.id}_${interval}` });
+    console.log(`[tier] ${o.id} moved ${up ? "up" : "down"} to ${tier.id}_${interval}, ${up ? "with the owner's yes" : "at renewal, as the owner asked"}`);
+  }
+  return out;
 }
 
 // The email. To the org's own admin, through the org mail gate like every
@@ -9177,20 +9259,22 @@ async function sendTierNoticeEmail({ orgId, orgName, count, band, nextBandId, ef
   const priceLine = next
     ? `The next band is ${next.band}, at $${next.monthlyUsd} a month or $${next.yearlyUsd} a year.`
     : `You are above every published band, so the next step is a conversation rather than a price.`;
+  const appUrl = publicAppUrl();
 
   const { sent, error } = await (async () => {
     const r = await resend.emails.send({
       _stewardOrgId: orgId, _stewardKind: "tier_notice",
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to, replyTo: process.env.FOUNDER_EMAIL || undefined,
-      subject: `${orgName} has grown past its plan band`,
+      subject: `${orgName} has grown past its plan`,
       html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7;max-width:520px">
-  <p>Steward now counts <strong>${count.toLocaleString("en-US")} active donors</strong> on ${escapeHtml(orgName)}.</p>
-  <p>${PRICING.ACTIVE_DONOR_SENTENCE}</p>
+  <p>Steward has counted more records than your plan covers for ${MONTHS_OVER_BEFORE_NOTE} months running: <strong>${count.toLocaleString("en-US")} records</strong> on ${escapeHtml(orgName)}.</p>
+  <p>${escapeHtml(PRICING.RECORD_SENTENCE)}</p>
   <p>You are paying for ${escapeHtml(band.band)}. ${escapeHtml(priceLine)}</p>
-  <p><strong>Nothing has changed, and nothing will change before ${escapeHtml(when)}.</strong>
-     Your card has not been charged differently and your plan has not moved. If the count looks
-     wrong to you, it usually means a file imported more people than you expected, reply to this
+  <p><strong>Nothing has changed, and nothing will change without your yes.</strong>
+     Your card has not been charged differently and your plan has not moved. If you agree, the new price
+     starts no sooner than ${escapeHtml(when)}; you can say yes in Settings, Billing (<a href="${appUrl}/settings#billing">${appUrl.replace(/^https?:\/\//, "")}/settings</a>).
+     If the count looks wrong, it usually means a file imported more people than you expected: reply to this
      message and we will look at it together.</p>
   <p style="color:#5A554F;font-size:13px">Steward &middot; stewardapp.dev</p>
 </div>`,
@@ -9294,16 +9378,17 @@ const PLAN_LIMITS = {
 // (every tier plan is in SOFT_BAND_PLANS below): going over it is a
 // conversation and thirty days' notice, never a door that shuts. GTM-1b 1 is
 // the notice.
-for (const p of require("./closeLink").TIER_CLOSE_PLANS) {
-  const tier = PRICING.tierById(p.tierId);
-  PLAN_LIMITS[p.id] = { seats: SEATS_UNLIMITED, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
+// PRICING-1: the record bands, and the GTM-1a t-bands an org may still be on.
+for (const p of require("./closeLink").CLOSE_PLANS.filter(c => c.tierId)) {
+  const tier = PRICING.tierForPlanValue(p.tierId);
+  PLAN_LIMITS[p.id] = { seats: SEATS_UNLIMITED, records: tier ? tier.maxRecords : 999999999, extraSeatPrice: null };
 }
 PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null };
 
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
 // no pre-cutover org's behavior changes.
-const TIER_PLAN_IDS = require("./closeLink").TIER_CLOSE_PLANS.map(p => p.id);
+const TIER_PLAN_IDS = require("./closeLink").CLOSE_PLANS.filter(c => c.tierId).map(p => p.id);
 const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal", "internal_test", ...TIER_PLAN_IDS]);
 
 // Returns the limits actually in effect for an org, accounting for trial state
@@ -11958,7 +12043,7 @@ require("./routes/billing").mount({
   planInterval: require("./closeLink").planInterval,
   SELLABLE_CLOSE_PLANS: require("./closeLink").SELLABLE_CLOSE_PLANS,
   customerAgreement: require("./customerAgreement"),
-  checkActiveDonorBand,
+  checkRecordBand, countRecords, checkAllRecordBands, applyAgreedBandMoves, processRecordBands,
 });
 require("./routes/finance").mount({
   AGENT_MODEL,
@@ -12164,7 +12249,7 @@ require("./routes/crm").mount({
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
   sendDonorLifecycleEmail, fromWithDisplayName,
-  checkActiveDonorBand, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkRecordBand, countRecords, checkAllRecordBands, applyAgreedBandMoves, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
@@ -12235,7 +12320,7 @@ require("./routes/jobs").mount({
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
-  processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
+  processTrackedSequences, processTrialReminders, processRecordBands, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,

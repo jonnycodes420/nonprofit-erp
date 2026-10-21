@@ -155,6 +155,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
         if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
+        if (v === "/public/pricing") continue;                       // PRICING-1: the price block reads the server's price list
         if (v === "/support/site/" || v === "/handoff") continue; // SUPPORT-1: the help center chat's API route
         linkish.push([f, v]);
       }
@@ -272,7 +273,10 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       "/help/feedback",
       // SUPPORT-1 — the help center's chat: the visitor's question, and the
       // email they give when they ask for Jonathan. No org, no sign-in.
-      "/support/site/"];
+      "/support/site/",
+      // PRICING-1 — the price block reads the server's price list, so a
+      // price changed on the server shows without a frontend build.
+      "/public/pricing"];
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 1, others);
@@ -433,10 +437,16 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("LANDING-5 · /pricing renders the price block and no tier card or compare table",
       /<PriceBlock h1 \/>/.test(pricing) && !/PRICING\.tiers|PRICING\.talkToUs|<table/.test(pricing));
     const sp = reach["client/src/pages/SignupPage.jsx"];
-    const bandFor = n => PRICING.tiers.find(t => n <= t.maxDonors) || null;
+    const bandFor = n => PRICING.tiers.find(t => n <= t.maxRecords) || null;
     ok("/signup preselects the tier from plan= and the interval from interval=",
       /TIERS\.find\(x => x\.id === params\.get\("plan"\)\)/.test(sp) && /params\.get\("interval"\) === "yearly"/.test(sp)
-        && PRICING.tiers.every(t => bandFor(t.maxDonors) === t));
+        && PRICING.tiers.every(t => bandFor(t.maxRecords) === t));
+    // PRICING-1 · the site's one price line is pricing.json's `marketing.line`
+    // with the lowest monthly price in it, and the block renders that line.
+    const fromUsd = Math.min(...PRICING.tiers.map(t => t.monthlyUsd));
+    ok("PRICING-1 · the public line reads \"Everything included, from $" + fromUsd + "/mo.\"",
+      PRICING.marketing.line.replace("{from}", String(fromUsd)) === "Everything included, from $" + fromUsd + "/mo."
+        && /\{priceLine\(from\)\}/.test(block) && !/\b199\b/.test(block), PRICING.marketing.line);
   }
 
 
@@ -570,7 +580,12 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       const PRICING_TIERS = JSON.parse(fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8")).tiers;
       const prices = [...PRICING_TIERS.flatMap(t => [t.monthlyUsd, t.yearlyUsd])].map(n => "$" + n.toLocaleString("en-US"));
       const priceRe = new RegExp("(" + prices.map(p => p.replace(/[$,]/g, m => "\\" + m)).join("|") + ")(?![\\d,])");
-      const hit = { dash: [], avoid: [], users: [], price: [], blocks: [], tier: [] };
+      const hit = { dash: [], avoid: [], users: [], price: [], blocks: [], tier: [], size: [], line: [] };
+      // PRICING-1 · the site never says how the price is set: no record or
+      // donor counts, no bands, no "active donors". Details live on signup and Billing.
+      // (Example counts in articles, "300 donors gave last year", are arithmetic, not price.)
+      const SIZE_WORDS = /\bactive donors?\b|\b\d[\d,]*\+?\s+records\b|\b(?:up to|over|more than|under) [\d,]{3,} (?:records|donors|active)\b|\b(?:price|pricing) band\b|\bper record\b|\bsetup fee (?:is|of) \$/i;
+      const FROM_LINE = "Everything included, from $" + Math.min(...PRICING_TIERS.map(t => t.monthlyUsd)) + "/mo.";
       const TIER_NAMES = /\b(Seed|Sapling|Orchard|Forest)\b/;
       for (const r of ROUTES) {
         const page = seo.assemblePage(base, r, render(r.path), extraFor(r));
@@ -583,7 +598,11 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
         const html = page.slice(page.indexOf('<div id="root">'));
         const outside = text(html.replace(/<section class="price-block"[\s\S]*?<\/section>/g, " ")) + " " + r.title + " " + r.description;
         { const m = outside.match(priceRe); if (m) hit.price.push(r.path + " " + m[0]); }
-        if (/class="price-block"/.test(html)) hit.blocks.push(r.path);
+        if (/class="price-block"/.test(html)) {
+          hit.blocks.push(r.path);
+          if (!text(html.match(/<section class="price-block"[\s\S]*?<\/section>/)[0]).includes(FROM_LINE)) hit.line.push(r.path);
+        }
+        { const m = words.match(SIZE_WORDS); if (m) hit.size.push(r.path + " " + m[0]); }
         { const m = words.match(TIER_NAMES); if (m) hit.tier.push(r.path + " " + m[0]); }
       }
       ok("LANDING-4 · no em dash on any rendered marketing page or help article", hit.dash.length === 0, hit.dash);
@@ -591,6 +610,8 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       ok("LANDING-4 · \"users\" only on the technical pages (security, legal, data)", hit.users.length === 0, hit.users);
       ok("LANDING-5 · no plan price outside the one price block (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
       ok("LANDING-5 · the price block is on Home and /pricing, and nowhere else", hit.blocks.join(" ") === "/ /pricing", hit.blocks);
+      ok("PRICING-1 · the price block says \"" + FROM_LINE + "\" on every page it is on", hit.blocks.length === 2 && hit.line.length === 0, hit.line);
+      ok("PRICING-1 · no record count, donor count, band or \"active donors\" on any marketing page", hit.size.length === 0, hit.size);
       ok("LANDING-5 · the tier names Seed, Sapling, Orchard and Forest appear on no marketing page", hit.tier.length === 0, hit.tier);
 
       // LANDING-5 · fewer words. No block of body text on Home runs over 30

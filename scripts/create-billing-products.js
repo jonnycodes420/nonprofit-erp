@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SUPERSEDED by scripts/stripe-live-prices.js (PRICING-1, the record bands). Kept for the legacy Core/Team/Founding prices only.
 // BUILD-24 — provision Steward's PLATFORM billing products/prices in Stripe.
 //
 // Creates the Core ($249/mo) and Team ($499/mo) recurring products/prices, the

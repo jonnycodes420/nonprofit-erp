@@ -42,7 +42,7 @@ const {
   // agreement and the founder address public signup reports to.
   PRICING, planAmountUsd, planInterval, SELLABLE_CLOSE_PLANS, customerAgreement,
   // GTM-1b — the active-donor count and the over-band notice.
-  checkActiveDonorBand,
+  checkRecordBand, countRecords, applyAgreedBandMoves,
 } = ctx;
 let app = routers.r0;
 // BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
@@ -777,7 +777,10 @@ function shortChargeDate(at, tz) {
 }
 
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
-  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, signed_at, stripe_customer_id, stripe_customer_id_test, stripe_subscription_id, grace_until, current_period_end, billing_card_brand, billing_card_last4 FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgs = await query(`SELECT plan, subscription_status, trial_ends_at, signed_at, stripe_customer_id, stripe_customer_id_test, stripe_subscription_id, grace_until, current_period_end, billing_card_brand, billing_card_last4,
+      setup_fee_cents, setup_fee_paid_at, custom_price_cents, custom_price_ends_on, custom_price_note,
+      tier_notice_band, tier_notice_effective_at, tier_notice_count, tier_notice_agreed_at, band_down_to, band_down_requested_at
+      FROM orgs WHERE id=?`, [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   const plan = org.plan || "trial";
@@ -796,13 +799,45 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     ? firstChargeSentence({ monthlyUsd: planPrice.monthlyUsd, firstChargeAt: trialEndsAt, tz })
     : null;
 
-  const [[seatRow], [recordRow]] = await Promise.all([
+  const [[seatRow], [recordRow], records] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
     query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [req.user.orgId]),
+    countRecords(req.user.orgId),
   ]);
+  // PRICING-1 · what Billing says: the band, the record count and how it is
+  // counted, the price, the next charge, and whether the setup fee was paid.
+  const tierNow = PRICING.tierForPlanValue(plan);
+  const isLegacyBand = !!(tierNow && !PRICING.tierById(tierNow.id));
+  const interval = String(plan).endsWith("_yearly") ? "yearly" : "monthly";
+  const countBand = PRICING.tierForRecordCount(records);
+  const pricing1 = {
+    records,
+    recordSentence: PRICING.RECORD_SENTENCE,
+    band: tierNow ? { id: tierNow.id, label: tierNow.band, maxRecords: tierNow.maxRecords, legacy: isLegacyBand } : null,
+    countBand: countBand ? { id: countBand.id, label: countBand.band } : { id: PRICING.TALK_TO_US.id, label: PRICING.TALK_TO_US.band },
+    interval,
+    priceUsd: planPrice ? planAmountUsd(planPrice) : null,
+    nextChargeAt: isTrial ? org.trial_ends_at : org.current_period_end,
+    setupFee: {
+      paid: !!org.setup_fee_paid_at, paidAt: org.setup_fee_paid_at,
+      usd: org.setup_fee_cents != null ? org.setup_fee_cents / 100 : (tierNow && tierNow.setupUsd) || null,
+    },
+    customPrice: org.custom_price_cents != null
+      ? { usd: org.custom_price_cents / 100, endsOn: org.custom_price_ends_on, note: org.custom_price_note || null } : null,
+    notice: org.tier_notice_band ? {
+      band: org.tier_notice_band,
+      label: (PRICING.tierById(org.tier_notice_band) || PRICING.TALK_TO_US).band,
+      monthlyUsd: (PRICING.tierById(org.tier_notice_band) || {}).monthlyUsd || null,
+      effectiveAt: org.tier_notice_effective_at, count: org.tier_notice_count, agreedAt: org.tier_notice_agreed_at,
+    } : null,
+    downTo: org.band_down_to ? { band: org.band_down_to, label: (PRICING.tierById(org.band_down_to) || {}).band || org.band_down_to,
+      requestedAt: org.band_down_requested_at, at: org.current_period_end } : null,
+    canMoveDown: !!(tierNow && !isLegacyBand && countBand && countBand.maxRecords < tierNow.maxRecords && org.custom_price_cents == null),
+  };
 
   res.json({
     plan,
+    ...pricing1,
     subscriptionStatus: org.subscription_status || "trialing",
     trialEndsAt: org.trial_ends_at,
     trialDaysLeft,
@@ -910,6 +945,12 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     priceMap[`${t.id}_monthly`] = process.env[t.envMonthly];
     priceMap[`${t.id}_yearly`] = process.env[t.envYearly];
   }
+  // The GTM-1a t-bands: an org already on one may re-subscribe on it (FIX-32
+  // "Keep Steward"), but nobody new picks one; the picker shows only TIERS.
+  for (const t of PRICING.LEGACY_TIERS) {
+    priceMap[`${t.id}_monthly`] = process.env[t.envMonthly];
+    priceMap[`${t.id}_yearly`] = process.env[t.envYearly];
+  }
   // Validation ordered BEFORE any Stripe API call so it's testable without keys.
   if (!(plan in priceMap)) return res.status(400).json({ error: "Invalid plan.", message: `Plan must be one of: ${Object.keys(priceMap).join(", ")}.` });
   if (plan === "founding" && !req.user.isSuperAdmin) {
@@ -942,15 +983,20 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     // TO. The discount is a coupon rather than a price precisely so it
     // survives this moment: an org that outgrows the first band would
     // otherwise lose the thing it was promised on the day it grew.
-    const [orgForDiscount] = await query("SELECT founding_partner, plan FROM orgs WHERE id=?", [req.user.orgId]);
+    const [orgForDiscount] = await query("SELECT founding_partner, plan, setup_fee_paid_at, custom_price_cents FROM orgs WHERE id=?", [req.user.orgId]);
     const isFounding = !!(orgForDiscount && (orgForDiscount.founding_partner || orgForDiscount.plan === "founding"));
 
+    // PRICING-1: the one-time setup fee, once per org. An org that already
+    // paid it (or is on a custom price) never sees it again.
+    const tierPicked = PRICING.tierById(String(plan).split("_")[0]);
+    const setupPriceId = tierPicked && process.env[tierPicked.envSetup];
+    const addSetup = !!(setupPriceId && orgForDiscount && !orgForDiscount.setup_fee_paid_at && orgForDiscount.custom_price_cents == null);
     const sessionParams = {
       mode: "subscription",
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }, ...(addSetup ? [{ price: setupPriceId, quantity: 1 }] : [])],
       success_url: publicAppUrl() + "/dashboard?subscribed=true",
       cancel_url:  publicAppUrl() + "/pricing",
-      metadata: { orgId: req.user.orgId, plan, ...(isFounding ? { foundingDiscount: "1" } : {}) },
+      metadata: { orgId: req.user.orgId, plan, ...(isFounding ? { foundingDiscount: "1" } : {}), ...(addSetup ? { setupFeeUsd: String(tierPicked.setupUsd) } : {}) },
       subscription_data: subData,
       customer: customerId,
       ...(isFounding ? { discounts: [{ coupon: PRICING.FOUNDING_COUPON.couponId }] } : {}),
@@ -1146,6 +1192,8 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
     // link has neither yet and Checkout mints them.
     customerId: targetOrg ? (targetOrg.billing_customer_id || null) : null,
     targetOrgId: targetOrg ? targetOrg.id : null,
+    // PRICING-1: a new organisation pays the band's setup fee at signing.
+    setupPriceId: !targetOrg && plan.setupEnv ? (process.env[plan.setupEnv] || null) : null,
     // FIX-32: a NEW org's link lands her signed in. An existing org already
     // has its admin and her password, so that link still lands on sign-in.
     successUrl: targetOrg ? publicAppUrl() + "/login?welcome=1" : signinSuccessUrl(signin.key),
@@ -1189,13 +1237,17 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
 app.get("/billing/donor-band", requireAuth, wrap(async (req, res) => {
   const [org] = await query(
     `SELECT id, plan, tier_notice_band, tier_notice_at, tier_notice_effective_at,
-            tier_notice_count, tier_notice_dismissed_at
+            tier_notice_count, tier_notice_dismissed_at, tier_notice_agreed_at
        FROM orgs WHERE id=?`, [req.user.orgId]);
   if (!org) return res.status(404).json({ error: "org_not_found" });
 
   if (req.query.recount === "1") {
-    const fresh = await checkActiveDonorBand(req.user.orgId, { send: false });
-    return res.json({ ...fresh, sentence: PRICING.ACTIVE_DONOR_SENTENCE, recounted: true });
+    // TEST_MODE may pin the clock (`at`), so a suite can measure two months
+    // running without waiting for them. Nothing else may.
+    const at = process.env.TEST_MODE === "1" && req.query.at ? Date.parse(String(req.query.at)) : NaN;
+    const fresh = await checkRecordBand(req.user.orgId, { send: process.env.TEST_MODE === "1" && req.query.send === "1",
+      ...(Number.isFinite(at) ? { now: at } : {}) });
+    return res.json({ ...fresh, sentence: PRICING.RECORD_SENTENCE, recounted: true });
   }
 
   const band = PRICING.tierById(String(org.plan || "").split("_")[0]);
@@ -1204,8 +1256,8 @@ app.get("/billing/donor-band", requireAuth, wrap(async (req, res) => {
     plan: org.plan,
     // FIX-4 6 — the plan has a NAME, and the donor count goes under it.
     planName: PRICING.planDisplayName(org.plan),
-    band: band ? { id: band.id, name: band.name, label: band.band, maxDonors: band.maxDonors } : null,
-    sentence: PRICING.ACTIVE_DONOR_SENTENCE,
+    band: band ? { id: band.id, name: band.name, label: band.band, maxRecords: band.maxRecords } : null,
+    sentence: PRICING.RECORD_SENTENCE,
     notice: org.tier_notice_band ? {
       nextBand: org.tier_notice_band,
       nextBandName: next ? next.name : PRICING.TALK_TO_US.name,
@@ -1216,8 +1268,46 @@ app.get("/billing/donor-band", requireAuth, wrap(async (req, res) => {
       noticedAt: org.tier_notice_at,
       effectiveAt: org.tier_notice_effective_at,
       dismissedAt: org.tier_notice_dismissed_at,
+      agreedAt: org.tier_notice_agreed_at,
     } : null,
   });
+}));
+
+// PRICING-1 · THE OWNER'S YES. The band note never moves a price by itself.
+// An admin agreeing records who and when; the new price starts on the notice's
+// effective date (applyAgreedBandMoves), never sooner. Above the top band
+// there is no price to agree to, only a conversation.
+app.post("/billing/band/agree", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query(`SELECT tier_notice_band, tier_notice_effective_at, custom_price_cents FROM orgs WHERE id=?`, [req.user.orgId]);
+  if (!org || !org.tier_notice_band) return res.status(409).json({ error: "no_open_notice", message: "There is no band change waiting for you." });
+  if (!PRICING.tierById(org.tier_notice_band)) return res.status(409).json({ error: "talk_to_us", message: "Above the largest band the next step is a conversation. Reply to the note and we will talk." });
+  await run(`UPDATE orgs SET tier_notice_agreed_at=NOW(), tier_notice_agreed_by=? WHERE id=? AND tier_notice_band IS NOT NULL`,
+    [req.user.userId, req.user.orgId]);
+  res.json({ ok: true, band: org.tier_notice_band, effectiveAt: org.tier_notice_effective_at });
+}));
+
+// TEST_MODE only: run the daily band moves now, at a pinned instant, for the
+// caller's own org, so a suite can prove a price moves only with a yes.
+app.post("/billing/band/apply-now", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (process.env.TEST_MODE !== "1") return res.status(404).json({ error: "not_found" });
+  const at = Date.parse(String((req.body || {}).at || ""));
+  res.json(await applyAgreedBandMoves({ orgId: req.user.orgId, ...(Number.isFinite(at) ? { now: at } : {}) }));
+}));
+
+// Moving DOWN: on the owner's request, at renewal, and only to the band the
+// current record count fits. `cancel: true` withdraws the request.
+app.post("/billing/band/move-down", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (req.body && req.body.cancel === true) {
+    await run(`UPDATE orgs SET band_down_to=NULL, band_down_requested_at=NULL WHERE id=?`, [req.user.orgId]);
+    return res.json({ ok: true, cancelled: true });
+  }
+  const [org] = await query(`SELECT plan, current_period_end, custom_price_cents FROM orgs WHERE id=?`, [req.user.orgId]);
+  const tierNow = org && PRICING.tierById(String(org.plan || "").split("_")[0]);
+  if (!tierNow || org.custom_price_cents != null) return res.status(409).json({ error: "no_band_plan", message: "Your price is not set by band, so there is nothing to move." });
+  const fits = PRICING.tierForRecordCount(await countRecords(req.user.orgId));
+  if (!fits || fits.maxRecords >= tierNow.maxRecords) return res.status(409).json({ error: "not_smaller", message: "Your records still need the band you are on." });
+  await run(`UPDATE orgs SET band_down_to=?, band_down_requested_at=NOW() WHERE id=?`, [fits.id, req.user.orgId]);
+  res.json({ ok: true, band: fits.id, label: fits.band, at: org.current_period_end });
 }));
 
 // Dismissing the banner hides the BANNER. It does not withdraw the notice, it
@@ -1253,14 +1343,16 @@ app.get("/public/pricing", wrap(async (req, res) => {
   const agr = customerAgreement.agreement();
   res.json({
     tiers: PRICING.TIERS.map(t => ({
-      id: t.id, band: t.band, maxDonors: t.maxDonors,
-      monthlyUsd: t.monthlyUsd, yearlyUsd: t.yearlyUsd,
+      id: t.id, name: t.name, band: t.band, maxRecords: t.maxRecords, featured: !!t.featured,
+      monthlyUsd: t.monthlyUsd, yearlyUsd: t.yearlyUsd, setupUsd: t.setupUsd,
     })),
+    fromMonthlyUsd: PRICING.fromMonthlyUsd(),
     talkToUs: PRICING.TALK_TO_US,
     included: PRICING.INCLUDED,
     termsStrip: PRICING.TERMS_STRIP,
     yearlyNote: PRICING.YEARLY_NOTE,
-    activeDonorSentence: PRICING.ACTIVE_DONOR_SENTENCE,
+    setupNote: PRICING.SETUP_NOTE,
+    recordSentence: PRICING.RECORD_SENTENCE,
     agreement: { version: agr.version, sha256: agr.sha256, available: !!agr.ok },
   });
 }));
@@ -1407,7 +1499,9 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   const contactName = String(b.contactName || "").trim();
   const contactEmail = String(b.contactEmail || "").trim().toLowerCase();
   const interval = String(b.interval || "monthly").trim();
-  const estimateRaw = b.estimatedDonors;
+  // PRICING-1: an estimate of RECORDS (people with at least one gift). The old
+  // field name is still read so a page open across the deploy still works.
+  const estimateRaw = b.estimatedRecords != null ? b.estimatedRecords : b.estimatedDonors;
 
   if (!orgName) return res.status(400).json({ error: "org_name_required", message: "Your organization's name is required." });
   if (!contactName) return res.status(400).json({ error: "contact_name_required", message: "Your name is required, it goes on the agreement." });
@@ -1417,12 +1511,12 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
 
   const estimate = Number(estimateRaw);
   if (!Number.isFinite(estimate) || estimate < 0 || !Number.isInteger(estimate))
-    return res.status(400).json({ error: "estimate_required", message: `How many active donors do you work? ${PRICING.ACTIVE_DONOR_SENTENCE}` });
+    return res.status(400).json({ error: "estimate_required", message: `About how many records do you have? ${PRICING.RECORD_SENTENCE}` });
 
   // ABOVE THE TOP BAND THERE IS NO PRICE. Selling the biggest tier to an org
   // that is larger than it is quoting a number that is wrong on the day it is
   // quoted, so this is a refusal with a door, not a fallback.
-  const tier = PRICING.tierForDonorCount(estimate);
+  const tier = PRICING.tierForRecordCount(estimate);
   if (!tier) {
     return res.status(409).json({
       error: "talk_to_us",
@@ -1462,11 +1556,14 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   if (!plan) return res.status(500).json({ error: "plan_missing", message: "That band is not configured. Nothing has been created." });
 
   const priceId = process.env[plan.env];
-  if (!priceId) {
+  // The setup fee is part of the price: a band without its setup price is not
+  // for sale, the same as a band without its monthly price.
+  const setupPriceId = plan.setupEnv ? process.env[plan.setupEnv] : null;
+  if (!priceId || (plan.setupEnv && !setupPriceId)) {
     // Said plainly to the visitor and LOUDLY in the log: a band on the public
     // page with no Stripe price behind it is a page selling something that
     // cannot be bought, and the founder needs to know within the minute.
-    console.error(`[signup] ${plan.env} is not set — the public page offers ${tier.band} ${interval} and Checkout cannot be started.`);
+    console.error(`[signup] ${!priceId ? plan.env : plan.setupEnv} is not set: signup offers ${tier.band} ${interval} and Checkout cannot be started.`);
     return res.status(503).json({
       error: "plan_not_configured",
       message: "That plan is not available to buy online yet. Write to us and we will set it up by hand, nothing has been created.",
@@ -1483,7 +1580,11 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
     const expected = planAmountUsd(plan) * 100;
     const wantInterval = planInterval(plan);
     const cadenceOk = price.recurring && price.recurring.interval === wantInterval && (price.recurring.interval_count || 1) === 1;
-    if (price.unit_amount !== expected || price.currency !== "usd" || !cadenceOk) {
+    // The setup price: one-time, in dollars, exactly the band's setup fee.
+    const setup = setupPriceId ? await billingStripe.prices.retrieve(setupPriceId) : null;
+    const setupOk = !setup || (setup.unit_amount === plan.setupUsd * 100 && setup.currency === "usd" && !setup.recurring);
+    if (setup && !setupOk) console.error(`[signup] SETUP PRICE MISMATCH: ${plan.setupEnv} (${setupPriceId}) is ${setup.unit_amount}, want ${plan.setupUsd * 100} one-time.`);
+    if (price.unit_amount !== expected || price.currency !== "usd" || !cadenceOk || !setupOk) {
       console.error(`[signup] PRICE MISMATCH: ${plan.env} (${priceId}) is ${price.unit_amount} ${price.currency}, `
         + `but ${plan.name} is $${planAmountUsd(plan)} every ${wantInterval}. Refusing to sell it.`);
       return res.status(503).json({
@@ -1502,7 +1603,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   // account whose password she had never set.
   const signin = mintSigninKey();
   const params = checkoutSessionParams({
-    plan, orgName, contactEmail, closeLinkId, priceId,
+    plan, orgName, contactEmail, closeLinkId, priceId, setupPriceId,
     successUrl: signinSuccessUrl(signin.key),
     cancelUrl: publicAppUrl() + "/pricing",
   });
@@ -1534,7 +1635,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
      String(req.ip || "").slice(0, 60), String(req.get("user-agent") || "").slice(0, 300)]
   );
 
-  console.log(`[signup] ${closeLinkId} — ${orgName} (${contactEmail}) chose ${plan.id}, ${estimate} active donors, `
+  console.log(`[signup] ${closeLinkId} — ${orgName} (${contactEmail}) chose ${plan.id}, about ${estimate} records, `
     + `agreement ${agr.version}`);
 
   // EVERY SIGNUP REACHES JONATHAN. Not a digest, not a dedupe: one message per
@@ -1548,6 +1649,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
     url: session.url,
     tier: tier.id, band: tier.band, interval,
     amountUsd: planAmountUsd(plan),
+    setupUsd: setupPriceId ? plan.setupUsd : null,
     firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
     notice: params.custom_text.submit.message,
     agreementVersion: agr.version,
@@ -1566,7 +1668,7 @@ async function notifyFounderOfSignup({ closeLinkId, orgName, contactName, contac
     `${orgName}`,
     `${contactName} · ${contactEmail}`,
     `${plan.name} · ${interval} · $${planAmountUsd(plan)}`,
-    `They said about ${estimate.toLocaleString("en-US")} active donors.`,
+    `They said about ${estimate.toLocaleString("en-US")} records.`,
     `Agreement ${agreementVersion} accepted.`,
     `Close link ${closeLinkId}. Nothing exists until they finish Checkout.`,
   ];
@@ -2412,6 +2514,29 @@ app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(as
   res.json(orgs[0]);
 }));
 
+// PRICING-1 · EXISTING DEALS HOLD. A custom price (CKRH at $149, a beta org
+// free until its date) is recorded here, by a super-admin only, with the date
+// it ends. An org with a custom price is never measured against a band and
+// never moved to a band price automatically, before or after that date: when
+// it ends, a person decides what happens next. `clear: true` removes it.
+app.post("/admin/orgs/:id/custom-price", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const [org] = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  if (b.clear === true) {
+    await run("UPDATE orgs SET custom_price_cents=NULL, custom_price_ends_on=NULL, custom_price_note=NULL WHERE id=?", [req.params.id]);
+    return res.json({ ok: true, customPrice: null });
+  }
+  const usd = Number(b.monthlyUsd);
+  if (!Number.isFinite(usd) || usd < 0) return res.status(400).json({ error: "custom_price_invalid", message: "Enter the monthly price in dollars (0 for free)." });
+  const endsOn = b.endsOn ? String(b.endsOn).slice(0, 10) : null;
+  if (endsOn && !/^\d{4}-\d{2}-\d{2}$/.test(endsOn)) return res.status(400).json({ error: "ends_on_invalid", message: "The end date must be a date." });
+  const note = b.note ? String(b.note).slice(0, 200) : null;
+  await run("UPDATE orgs SET custom_price_cents=?, custom_price_ends_on=?, custom_price_note=? WHERE id=?",
+    [Math.round(usd * 100), endsOn, note, req.params.id]);
+  res.json({ ok: true, customPrice: { usd, endsOn, note } });
+}));
+
 app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const { plan, foundingPartner } = req.body;
   // CKRH-1 — the list was written before the tiers existed and had gone stale:
@@ -2420,7 +2545,7 @@ app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(asy
   // whatever `pricing.json` currently holds, so the one price list stays the
   // one price list and this route cannot drift from it again.
   const tierIds = [];
-  for (const t of (PRICING.TIERS || [])) { tierIds.push(t.id, `${t.id}_monthly`, `${t.id}_yearly`); }
+  for (const t of [...(PRICING.TIERS || []), ...(PRICING.LEGACY_TIERS || [])]) { tierIds.push(t.id, `${t.id}_monthly`, `${t.id}_yearly`); }
   const valid = ["trial", "core", "team", "founding", "seed", "growth", "impact", ...tierIds];
   if (!valid.includes(plan)) return res.status(400).json({ error: "Invalid plan" });
 

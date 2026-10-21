@@ -19,7 +19,9 @@
 // is a subscription that silently stops updating the org's plan.
 const PRICING = require("./pricing");
 const TIER_PLAN_IDS = [];
-for (const t of PRICING.TIERS) TIER_PLAN_IDS.push(`${t.id}_monthly`, `${t.id}_yearly`);
+// PRICING-1: the record bands and the GTM-1a t-bands orgs may still be on.
+const ALL_TIERS = [...PRICING.TIERS, ...PRICING.LEGACY_TIERS];
+for (const t of ALL_TIERS) TIER_PLAN_IDS.push(`${t.id}_monthly`, `${t.id}_yearly`);
 const BILLING_PLAN_VALUES = new Set([
   "core", "team", "founding", "seed", "growth", "impact",
   PRICING.INTERNAL_TEST.id, ...TIER_PLAN_IDS,
@@ -40,7 +42,7 @@ function planForPriceId(priceId, env = process.env) {
   ];
   // The six tier prices, monthly and yearly. Appended rather than written out
   // so the list cannot fall behind pricing.js.
-  for (const t of PRICING.TIERS) {
+  for (const t of ALL_TIERS) {
     entries.push([env[t.envMonthly], `${t.id}_monthly`]);
     entries.push([env[t.envYearly], `${t.id}_yearly`]);
   }

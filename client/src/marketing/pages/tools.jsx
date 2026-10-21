@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Papa from "papaparse";
-import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A } from "../lib";
+import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A, priceLine } from "../lib";
 import { SRC, SRC_ALL } from "../data/research";
 import { PILLAR, GIFT_TERMS } from "../data/messaging";
 import PRICING from "../../../../pricing.json";
@@ -95,14 +95,12 @@ export function thermometerMath(g, r) {
 }
 
 // PROOF-2 · the retention gap on her own numbers: donors kept at each rate,
-// what the difference gives in a year, and a year of the Steward plan her
-// donor count lands on, from pricing.json. It says "less" when it is less.
+// and what the difference gives in a year. PRICING-1: the site never prices
+// by size, so the panel closes on the one price line, not on a band.
 export function gapMath(donors, gift, hi, lo) {
   const keptHi = Math.round(donors * hi / 100), keptLo = Math.round(donors * lo / 100);
   const more = keptHi - keptLo, worth = more * gift;
-  const tier = PRICING.tiers.find(t => donors <= t.maxDonors) || null;
-  const plan = tier ? tier.monthlyUsd * 12 : null;
-  return { keptHi, keptLo, more, worth: usd(worth), tier, plan: plan == null ? null : usd(plan), beats: plan == null ? null : worth > plan };
+  return { keptHi, keptLo, more, worth: usd(worth) };
 }
 
 function GapPanel({ hi, lo }) {
@@ -120,9 +118,7 @@ function GapPanel({ hi, lo }) {
       <div className="out" aria-live="polite">
         <div className="big">{m.more.toLocaleString()}</div><p>more donors giving again: {m.keptHi.toLocaleString()} at {hi}% against {m.keptLo.toLocaleString()} at {lo}%</p>
         <div className="big sm">{m.worth}</div><p>a year from those donors at your average gift</p>
-        <p style={{ marginTop: 22 }}>{m.tier
-          ? <>A year of Steward on {m.tier.name}, month to month, is {m.plan}. The gap is worth {m.beats ? "more" : "less"} than that.</>
-          : <>Above {PRICING.tiers[PRICING.tiers.length - 1].maxDonors.toLocaleString()} donors, Steward is priced with you.</>}</p>
+        <p style={{ marginTop: 22 }}>{priceLine(Math.min(...PRICING.tiers.map(t => t.monthlyUsd)))}</p>
       </div>
     </div>
     <p className="srcnote">The two rates: <A href={src[1]}>{src[0]}</A>. Organizations with a donor retention strategy reported {hi}% retention; those without one reported {lo}%. A survey shows what respondents reported, not what any one organization will see.</p>

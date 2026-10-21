@@ -23,7 +23,7 @@ const crypto = require("crypto");
 const DOC_PATH = path.join(__dirname, "legal", "customer-agreement.md");
 
 // Bump this WITH the document, in the same commit.
-const VERSION = "2026-09-27";
+const VERSION = "2026-10-21";
 
 let cached = null;
 

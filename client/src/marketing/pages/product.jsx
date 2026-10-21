@@ -119,7 +119,7 @@ export function Onboarding() {
       lede="Every new organization gets a real person for the move, the setup and the first month. You will know their name and their email address."
       photo="trainer-laptop" />
     <Steps eb="Your first 30 days" h="Four steps <b>to settled.</b>" list={[["Kickoff call", "Twenty minutes. We look at where your donors live today and what you need first."], ["The move", "You export, we map it with you, and the Move Report checks every total to the cent."], ["Connect your tools", "Stripe, Mailchimp, your inbox and the rest, connected together on a call."], ["First month check-in", "We review drift, journeys and your first month-end file together."]]} />
-    <Incl eb="Included" h="What every organization <b>gets.</b>" list={["A named person for the move", "Mapping of your old fields", "Connections set up on a call", "Thirty days free while you settle in", "Staff training on a call", "Email answers from a person", "Your data exported any time", "Undo the move for 30 days"]} />
+    <Incl eb="Included" h="What every organization <b>gets.</b>" list={["A named person for the move", "Mapping of your old fields", "Connections set up on a call", "Thirty days to settle in before the first monthly charge", "Staff training on a call", "Email answers from a person", "Your data exported any time", "Undo the move for 30 days"]} />
     <FinalCta />
   </>;
 }
