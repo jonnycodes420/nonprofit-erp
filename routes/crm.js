@@ -12662,7 +12662,12 @@ app.post("/journeys/:id/steps/:seq/auto", requireAuth, requireAdmin, checkWriteA
 // SENDING TOMORROW: every send waiting for the next weekday morning.
 async function sendingNext(orgId, templateId = null) {
   const today = orgToday(await orgTz(orgId));
-  const day = nextAutoSendDay(today, null);
+  // The next morning anything goes: tomorrow, or the first later weekday a
+  // waiting send is due on (a step due Friday shows as "on Friday").
+  const soonest = nextAutoSendDay(today, null);
+  const [m] = await query(`SELECT MIN(send_on) AS d FROM journey_sends WHERE org_id=? AND status='scheduled' ${templateId ? "AND template_id = ?" : ""}`,
+    templateId ? [orgId, templateId] : [orgId]);
+  const day = m && m.d && String(m.d) > soonest ? String(m.d) : soonest;
   const rows = await query(
     `SELECT js.id, js.donor_id, js.seq, js.send_on, js.template_id, d.name, t.name AS journey_name, et.subject AS subject
        FROM journey_sends js JOIN donors d ON d.id = js.donor_id JOIN cultivation_templates t ON t.id = js.template_id
@@ -12672,7 +12677,15 @@ async function sendingNext(orgId, templateId = null) {
   const [org] = await query(`SELECT auto_send_paused_at, auto_send_paused_by_name, is_demo_org, org_kind FROM orgs WHERE id=?`, [orgId]);
   return { day, when: dayWordsAuto(day, today), time: "9 AM", paused: !!(org && org.auto_send_paused_at), pausedByName: org && org.auto_send_paused_by_name,
     demo: require("../mailPolicy").isDemoOrg(org || {}),
-    sends: rows.map(r => ({ id: r.id, donorId: r.donor_id, name: r.name, journey: r.journey_name, step: Number(r.seq) + 1, subject: r.subject || "" })) };
+    sends: await Promise.all(rows.map(async (r, i) => ({ id: r.id, donorId: r.donor_id, name: r.name, journey: r.journey_name, step: Number(r.seq) + 1,
+      // Each person's own subject line, as it will read (the first hundred; past that, the template's).
+      subject: i < 100 ? await subjectForPerson(orgId, r).catch(() => r.subject || "") : (r.subject || "") }))) };
+}
+async function subjectForPerson(orgId, r) {
+  const [js] = await query(`SELECT email_template_id FROM journey_sends WHERE id=? AND org_id=?`, [r.id, orgId]);
+  const t = js && await emailCompose.templateFor(orgId, js.email_template_id);
+  const [d] = t ? await query(`SELECT * FROM donors WHERE id=? AND org_id=?`, [r.donor_id, orgId]) : [];
+  return t && d ? (await emailCompose.templateTextFor(orgId, t, d)).subject : (r.subject || "");
 }
 app.get("/journeys/:id/sending-tomorrow", requireAuth, wrap(async (req, res) => {
   if (!(await journeyRow(req.user.orgId, req.params.id))) return res.status(404).json({ error: "Journey not found" });
@@ -13125,6 +13138,18 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
        FROM cultivation_plans p WHERE p.org_id=? AND p.template_id IS NOT NULL
       GROUP BY p.template_id`, [req.user.orgId]);
   const byTpl = new Map(counts.map(c => [c.template_id, c]));
+  // AUTO-1: what each journey sent on its own, and what waits to.
+  const autoCounts = new Map((await query(
+    `SELECT template_id, COUNT(*) FILTER (WHERE status='sent')::int AS sent, COUNT(*) FILTER (WHERE status='scheduled')::int AS waiting,
+            COUNT(*) FILTER (WHERE status IN ('skipped','held'))::int AS skipped
+       FROM journey_sends WHERE org_id=? GROUP BY template_id`, [req.user.orgId]).catch(() => [])).map(r => [r.template_id, r]));
+  const autoOnBy = new Map();
+  for (const r of await query(`SELECT template_id, seq FROM journey_auto_steps WHERE org_id=? AND turned_off_at IS NULL ORDER BY seq`, [req.user.orgId]).catch(() => [])) {
+    if (!autoOnBy.has(r.template_id)) autoOnBy.set(r.template_id, []);
+    autoOnBy.get(r.template_id).push(Number(r.seq));
+  }
+  // "Nothing is sent without you" stops being true the moment a step sends itself.
+  const autoSentence = seqs => `${seqs.length === 1 ? "Step" : "Steps"} ${seqs.map(x => x + 1).join(" and ")} ${seqs.length === 1 ? "sends itself" : "send themselves"} on weekday mornings; nothing else is sent without you.`;
   // FIX-4 1c — the stages and tags this org actually uses, so the audience
   // controls offer what is on file rather than a list somebody has to type
   // from memory. Read here, once, beside the filters they belong to.
@@ -13183,7 +13208,8 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       audience: t.audience || {},
       audienceSentence: J.audienceSentence(t.audience || {}),
       presetKey: t.preset_key, enabled: !!t.journey_enabled,
-      touches: J.touchesSentence(t.steps || []),
+      touches: autoOnBy.has(t.id) ? J.touchesSentence(t.steps || []).replace("Nothing is sent without you.", autoSentence(autoOnBy.get(t.id))) : J.touchesSentence(t.steps || []),
+      autoSteps: autoOnBy.get(t.id) || [],
       // FIX-5 item 2 — arriving on Journeys opens one, and this is how the page
       // knows which: the most recently edited. `updated_at` is set on every
       // PATCH already, so nothing new has to be recorded for it.
@@ -13193,6 +13219,9 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       // PARITY-1 Part D — entered, in it, exited and completed, and the state.
       completed: Number((byTpl.get(t.id) || {}).completed) || 0,
       exited: Number((byTpl.get(t.id) || {}).exited) || 0,
+      sentAutomatically: Number((autoCounts.get(t.id) || {}).sent) || 0,
+      autoWaiting: Number((autoCounts.get(t.id) || {}).waiting) || 0,
+      autoSkipped: Number((autoCounts.get(t.id) || {}).skipped) || 0,
       triggerFilters: t.trigger_filters || {},
       exclusive: !!t.exclusive,
       state: J.journeyState({ enabled: !!t.journey_enabled, everEnabled: !!t.ever_enabled,

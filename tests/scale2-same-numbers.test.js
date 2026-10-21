@@ -49,7 +49,7 @@ const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const day = n => civilPlusDays(n);
 const TODAY = day(0);
 
-const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
+const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/journey-sends/notice", "/recurring/exceptions", "/readouts/latest", "/move",
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout", "/tasks/counts?scope=mine",
   "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact", "/fundraising/overview", "/goals/active", "/drift",
   "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins",

@@ -49,7 +49,7 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
 - **"Every gift in a window" is planned from the gift rows, not by the model guessing.** One `create_task`
   per gift, due dates from `dueDays` resolved on the server in the org's calendar, behind the AI switch and
   the plan sheet. A plan cut off at `max_tokens` is refused (422 `plan_truncated`), never half-run. (PARITY-1)
-- **Journeys start themselves, and still send nothing.** Triggers: first gift, first recurring gift, next
+- **Journeys start themselves, and send nothing unless a person turned one email step on (AUTO-1).** Triggers: first gift, first recurring gift, next
   gift, membership payment, becomes a prospect, joins a group, giving anniversary, birthday, and (JOURNEYS-3)
   membership ending or lapsed, monthly gift failed or cancelled, card expiring, volunteer hours, first
   event, grant awarded, peer-to-peer goal. Ready-made journeys for those arrive off; their email steps are

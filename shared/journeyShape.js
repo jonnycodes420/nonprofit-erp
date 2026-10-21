@@ -506,6 +506,9 @@ export const PRESET_KEYS = PRESETS.map(p => p.key);
 export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 
 // ── DRAFTS, AND WHY EVERY ONE OF THEM STILL NEEDS A PERSON ───────────────
+// AUTO-1: the one exception is an email step an owner or admin turned on to
+// send itself, for words staff saved (routes/crm.js, journey_auto_steps). The
+// catalogue below never carries that: it is a switch on the org, not a step key.
 // A draft is words Steward writes for her to read. It is not a send and it
 // never becomes one: the step is still a thread, the thread still closes on a
 // logged human action, and `requiresConfirmation` is true for EVERY step that

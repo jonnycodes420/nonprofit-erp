@@ -4,6 +4,7 @@ import { apiFetch } from "../api";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, editTemplateHref } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
+import { AutoSendSteps, SendingTomorrow, PauseAllSending } from "./AutoSend";   // AUTO-1
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -618,6 +619,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   const [err, setErr] = useState("");
   const [openId, setOpenId] = useState(null);      // which journey is expanded
   const [sel, setSel] = useState(0);               // selected step index
+  const [autoTick, setAutoTick] = useState(0);     // AUTO-1: a switch changed, so Sending tomorrow reads again
   const [draft, setDraft] = useState(null);        // the steps being edited
   const [meta, setMeta] = useState(null);          // name, description, trigger, conditions, priority
   const [saving, setSaving] = useState(false);
@@ -875,7 +877,9 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
     ? `${draft.length} touch${draft.length === 1 ? "" : "es"} over ${
         maxOffset < 45 ? `${Math.max(1, Math.round(maxOffset / 7))} week${Math.round(maxOffset / 7) === 1 ? "" : "s"}`
                        : `${Math.round(maxOffset / 30)} month${Math.round(maxOffset / 30) === 1 ? "" : "s"}`}. `
-      + "Nothing is sent without you."
+      + (current && current.autoSteps && current.autoSteps.length
+        ? `${current.autoSteps.length === 1 ? "Step" : "Steps"} ${current.autoSteps.map(x => x + 1).join(" and ")} ${current.autoSteps.length === 1 ? "sends itself" : "send themselves"} on weekday mornings; nothing else is sent without you.`
+        : "Nothing is sent without you.")
     : "";
 
   if (err && !data) return <div style={{ fontSize: 13, color: T.terracotta }}>{err}</div>;
@@ -1099,6 +1103,10 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                   </div>
                 )}
 
+                {/* ── AUTO-1 · STEPS THAT SEND THEMSELVES ───────────── */}
+                <AutoSendSteps journeyId={current.id} isAdmin={isAdmin && editable} onChanged={() => { setAutoTick(x => x + 1); load(); }} />
+                <SendingTomorrow journeyId={current.id} isReadOnly={!editable} refresh={autoTick} counts={current} />
+
                 {/* ── HOW IT IS GOING ────────────────────────────────── */}
                 {stats && (
                   <div style={{ borderTop: "1px solid " + T.bg3, padding: "14px 16px" }}>
@@ -1127,6 +1135,9 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
           </div>
         ))}
       </div>
+
+      {/* ── AUTO-1 · Pause all automatic sending, for the whole org ─────── */}
+      <PauseAllSending isAdmin={isAdmin && editable} />
 
       {/* ── JOURNEYS-3 · Journey settings: the touch gap ───────────────── */}
       <TouchGap data={data} editable={editable} onSaved={() => load()} />

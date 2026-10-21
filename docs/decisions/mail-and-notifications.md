@@ -115,6 +115,20 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 - **Sequences: she wrote every word, she turned it on, each send is hers, and no model is on the send path.**
   `/sequences/tracked/:id/turn-on` refuses a super-admin; turn-on is audited and every send's timeline line
   quotes it. (BUILD-94)
+- **A journey email step can send itself, and only like a sequence (AUTO-1, 21 Oct 2026, Jonathan's yes).**
+  Off on every journey, ready-made ones included; `journey_auto_steps` holds who turned one step on and a
+  fingerprint of its words, and new words hold the sends until someone turns it on again. Only words a person
+  on staff saved (`email_templates.words_saved_*`, stamped by her own Save or Publish, never by a starter, an AI
+  proposal, a super-admin or the Agent). Owners and admins only, never a super-admin or the Agent, after a
+  confirm with the words and "About N people will get this in the next 7 days" (audited). A step that opens is
+  scheduled (`journey_sends`, one row per step, the claim) for the next weekday, never the same day, so
+  "Sending tomorrow" can be read and skipped the night before; it sends 9 to 11 AM in a human-confirmed org
+  timezone through `sendStaffWrittenEmail`, the one sender a tracked sequence uses. Skipped with a timeline
+  reason: clients and privacy mode, unsubscribed, bounced, do not contact, deceased, a journey email this week,
+  a gift in the last 3 days. An empty or unknown merge field is held with a task. Pause all (Journeys, and
+  Settings, Journeys) is read before every claim; 200 sends per org per day, the rest wait and the owner gets
+  one task; demo orgs never send. Each send is a timeline email, an audit row and a journey count, all
+  "sent automatically". `tests/auto1-send.test.js`.
 - **Sequence enrolment comes only from its closed trigger set and is never retroactive; first-gift fires
   inside `recordGift` after the rollup.** A logged conversation is not a stop. (BUILD-94)
 - **Sequences send only in the weekday-morning window of a human-confirmed org timezone.** `validateSequence`
