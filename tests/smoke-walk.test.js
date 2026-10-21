@@ -351,8 +351,10 @@ async function demoDoor(browser) {
   await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
   await page.waitForTimeout(1500);
   await look("/dashboard");
+  // THREAD-2: the name itself is the anchor now (inside .attn-donor-name), so
+  // the step and what opened the thread can be links in the same row.
   await namesAreLinks("Home", () => [...document.querySelectorAll(".attn-donor-name")].map(n => {
-    const a = n.closest("a"); return { href: a && a.getAttribute("href"), id: null };
+    const a = n.closest("a") || n.querySelector("a"); return { href: a && a.getAttribute("href"), id: null };
   }));
 
   // Two ids can share one nav entry (workflows deep-links into Agent), so the
