@@ -59,7 +59,7 @@ async function reset() {
   }
 }
 
-const hrefs = html => [...html.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => ({ href: m[1].replace(/&amp;/g, "&"), text: m[2].replace(/<[^>]*>/g, "").replace(/[<>]/g, "").trim() }));
+const hrefs = html => [...html.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => ({ href: m[1].replace(/&amp;/g, "&"), text: m[2].trim() }));
 const pathOf = href => { const u = new URL(href); return u.pathname + u.search + u.hash; };
 const BLANK = /(^|\s)(null|undefined|unknown|untitled)(\s|$)/i;
 
