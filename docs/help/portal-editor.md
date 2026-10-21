@@ -9,7 +9,7 @@ summary: The portal editor is where you arrange and style your donor portal, the
 The portal editor shows your donor portal with sample donor data, never a real donor's, and lets you change it in place. It has two modes. "Page" arranges the widgets on the page. "Design" sets the look and the page details: Identity, Colors, Type & cards, Page details and Footer. Page changes are a draft that autosaves, and donors see nothing until you click "Publish". Design changes save on their own as you make them. Only an admin can open the editor.
 
 ## Open the editor
-1. Open Donor Portal in the sidebar. It is there when your organization has the donor portal.
+1. Open Donor Portal in the sidebar. It shows only for organizations on the donor portal plan; other organizations do not have this tab.
 2. Click "Edit the portal".
 3. Use "Phone" or "Desktop" to see the page the way a donor will.
 
@@ -21,7 +21,7 @@ The portal editor shows your donor portal with sample donor data, never a real d
 5. To throw away a draft, click "Revert to published", then "Discard draft".
 
 ## An example
-Margaret Chen wants donors to see where their money goes. In "Page" she adds "Programs & funds" and picks the Summer Reading and Food Pantry funds, then moves "Impact feed" up under the "Hero". In "Design" she sets the Primary color to her organization's green. She checks the page on "Phone", where the sample donor Sam Sample's giving shows in "My Giving", then clicks "Publish".
+You want donors to see where their money goes. In "Page" you add "Programs & funds" and picks the Summer Reading and Food Pantry funds, then move "Impact feed" up under the "Hero". In "Design" you set the Primary color to her organization's green. You check the page on "Phone", where the sample donor Sam Sample's giving shows in "My Giving", then click "Publish".
 
 ## What Steward doesn't do here
 The editor never shows a real donor's information. It does not turn the portal on or off: that switch is on the Donor Portal tab. Nothing in the Page layout reaches donors until you publish.

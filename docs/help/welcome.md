@@ -19,7 +19,7 @@ Welcome is the step-by-step way to set up Steward, a few minutes a step. It open
 8. On "You're ready.", click "Go to my home screen →".
 
 ## An example
-Margaret Chen runs a youth choir. She types "Riverside Youth Choir" and her mission, imports last year's spreadsheet of 312 donors, connects nothing yet, and picks a journey. For her first goal she types "Raise $25,000 this quarter", with "Total raised" and a target of 25000. Her first impact metric starts from Steward's template, "Your ${amount} gift helps power Riverside Youth Choir's work in the community.", and she keeps it.
+Dana Reyes runs a youth choir. Dana types "Riverside Youth Choir" and the choir's mission, imports last year's spreadsheet of 312 donors, connects nothing yet, and picks a journey. For the first goal she types "Raise $25,000 this quarter", with "Total raised" and a target of 25000. The first impact metric starts from Steward's template, "Your ${amount} gift helps power Riverside Youth Choir's work in the community.", and she keeps it.
 
 ## What Steward doesn't do here
 Nothing here sends to a donor. A journey's steps become reminders on your Thread on the day each is due. The team, donor file, gift sources and journey steps can each be left for later, and choosing the demo does not lock anything.

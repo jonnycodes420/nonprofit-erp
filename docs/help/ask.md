@@ -20,7 +20,7 @@ Type a question the way you would ask a colleague, and Steward answers from your
 2. Click "Save to a dashboard", choose a dashboard and click "Add". Only the person who made a dashboard can add to it.
 
 ## An example
-Margaret Chen types "How much did we raise last year from monthly donors?". Steward answers in one sentence, such as "Monthly donors gave $18,240 last year.", with "Counted:" under it. She clicks $18,240 and sees each gift behind it. She asks "Who are they?" and gets the list of names, then clicks "Pin to Home".
+You type "How much did we raise last year from monthly donors?". Steward answers in one sentence with the total, say $18,240, and "Counted:" under it. You click $18,240 and see each gift behind it. You ask "Who are they?" in the box at the bottom and see the people behind the answer, then click "Pin to Home".
 
 ## What Steward doesn't do here
-The Ask box only reads. It never changes a record and never sends anything. When an answer offers to plan a step, the step goes on your Thread and nothing is sent. If Steward cannot answer from your records, it says so plainly. When your organization has an old system's report for a stretch Steward has no gifts for, the answer quotes it and never adds it into Steward's numbers.
+The Ask box never changes a gift or a person's details, and never sends anything. When an answer offers to plan a step and you click it, the step goes on your Thread and nothing is sent. If Steward cannot answer from your records, it says so plainly. When your organization has an old system's report for a stretch Steward has no gifts for, the answer quotes it and never adds it into Steward's numbers.

@@ -21,7 +21,7 @@ Lost & Found is a free page on Steward's website, open to anyone, customer or no
 3. Tick "Add my anonymous totals to the nonprofit benchmark." only if you want to. It sends four numbers, never a name, an email or a single gift.
 
 ## An example
-Margaret Chen, the development director at a small food bank, exports her donor list as a CSV and drops it in. The audit shows 14 donors under "Call this week". She clicks "See the names" and finds a donor who gave $250 every spring and has not given this spring. She makes that call first.
+Dana Reyes, the development director at a small food bank, exports the donor list as a CSV and drops it in. The audit shows 14 donors under "Call this week". Dana clicks "See the names" and finds Margaret Chen, who gave $250 every spring and has not given this spring. That is the first call.
 
 ## What the numbers mean
 - **At risk**: what every donor past their own usual time gave in their last year of giving, across all three groups.
