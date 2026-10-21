@@ -27,6 +27,7 @@ const auditMw = require("../middleware/auditTrail");
 // this router and routes/finance.js cannot disagree about any of them.
 const DEP = require("../depositsFile");
 const DTAGS = require("../donorTags");   // FIX-33: internal flags never reach a screen as tags
+const ItemRefs = require("../itemRefs");   // THREAD-2: the things a sentence names
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
@@ -4563,8 +4564,12 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
-  if (!name) return res.status(400).json({ error: "Name required" });
+  const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
+  // THREAD-2 · A NAME IS A NAME. "   " and the word "null" (a form that joined
+  // two empty fields) were saved as names, and printed on the Thread and in
+  // the morning email as a blank or as "null". Refused here, at the source.
+  if (!(await ItemRefs.links()).realName(req.body.name)) return res.status(400).json({ error: "Name required" });
+  const name = String(req.body.name).replace(/\s+/g, " ").trim();
   // BUILD-94 Part 2 — a person added by hand can be a volunteer from the
   // start. Unknown keys are dropped by normalizeTypes, never stored.
   const types = personTypes === undefined ? ["donor"] : PT.normalizeTypes(personTypes);
@@ -6215,8 +6220,9 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
-  if (!name) return res.status(400).json({ error: "Name required" });
+  const { email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
+  if (!(await ItemRefs.links()).realName(req.body.name)) return res.status(400).json({ error: "Name required" });   // THREAD-2
+  const name = String(req.body.name).replace(/\s+/g, " ").trim();
   // FIX-1 D — DONOR IS SET BY GIVING, on this door too. Checked BEFORE any
   // write, so a refused change leaves the whole record untouched.
   if (req.body.personTypes !== undefined) {
@@ -18011,6 +18017,15 @@ app.get("/tasks/counts", requireAuth, wrap(async (req, res) => {
   res.json(await taskCounts(req.user.orgId, scope));
 }));
 
+// THREAD-2 · ONE TASK, so a link to a task opens it. This org's only: a task
+// of another org is the same 404 as a task that never existed.
+app.get("/tasks/:id", requireAuth, wrap(async (req, res) => {
+  const row = await readTask(req.user.orgId, String(req.params.id));
+  if (!row) return res.status(404).json({ error: "not_found" });
+  res.json(row);
+}));
+
+
 // Quick add: read the words, find the person, change nothing. The person
 // confirms on the screen before anything is saved.
 app.post("/tasks/parse", requireAuth, wrap(async (req, res) => {
@@ -19620,7 +19635,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   const ownerParams = ownerClause ? [userId] : [];
 
   const rows = await query(
-    `SELECT t.*, d.name AS donor_name, d.total_giving, d.gift_count,
+    `SELECT t.*, d.name AS donor_name, d.email AS donor_email, d.total_giving, d.gift_count,
             i.type AS touch_type, i.note AS touch_note, i.date AS touch_date, i.logged_by_name AS touch_actor,
             g.amount AS gift_amount, g.date AS gift_date
        FROM threads t
@@ -19648,7 +19663,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // is not a follow-up and does not belong on a donor's record.
   const taskRows = await query(
     `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name, k.calendar_event_id,
-            k.created_at, d.name AS donor_name, d.total_giving, d.gift_count,
+            k.created_at, k.source_gift_id, d.name AS donor_name, d.email AS donor_email, d.total_giving, d.gift_count,
             sg.amount AS source_gift_amount, sg.date AS source_gift_date
        FROM tasks k
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
@@ -19692,6 +19707,22 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
        FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
   majorThreshold = parseFloat(p90) || 0;
 
+  // THREAD-2 · the org's named things (events, campaigns, journeys, groups)
+  // and each thread's own task, so a step opens where it lives.
+  const links = await ItemRefs.links();
+  const catalog = rows.length || taskRows.length ? await ItemRefs.orgCatalog(query, orgId) : [];
+  const linkedTask = {}, journeyOf = {};
+  if (rows.length) {
+    for (const r of await query(`SELECT id, thread_id FROM tasks WHERE org_id = ? AND link_kind = 'next_step' AND done = 0 AND thread_id = ANY(?::text[])`,
+      [orgId, rows.map(r => r.id)]).catch(() => [])) linkedTask[r.thread_id] = r.id;
+    // A step a journey opened names that journey.
+    for (const r of await query(
+      `SELECT s.thread_id, p.template_id, COALESCE(ct.name, p.template_name) AS name
+         FROM cultivation_plan_steps s JOIN cultivation_plans p ON p.id = s.plan_id AND p.org_id = s.org_id
+         LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
+        WHERE s.org_id = ? AND s.thread_id = ANY(?::text[]) AND p.template_id IS NOT NULL`,
+      [orgId, rows.map(r => r.id)]).catch(() => [])) journeyOf[r.thread_id] = { kind: "journey", id: r.template_id, name: links.realName(r.name) };
+  }
   const list = [];
   let snoozed = 0, unowned = 0;
   for (const t of rows) {
@@ -19700,12 +19731,25 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     if (!t.owner_id) unowned++;
     const daysOpen = orgTime.daysBetween(t.opened_on, today) ?? 0;
     const lastTouch = t.opening_interaction_id
-      ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_note, actor: t.touch_actor }
+      ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_note, actor: t.touch_actor,
+          // THREAD-2: what she logged is a line on the person, and opens there.
+          ref: { kind: t.touch_type === "meeting" ? "meeting" : (t.touch_type || "note"), logged: true, id: t.opening_interaction_id, donorId: t.donor_id } }
       : t.opening_gift_id
-        ? { kind: "gift", type: "gift", date: t.gift_date ? String(t.gift_date).slice(0, 10) : t.opened_on, amount: t.gift_amount != null ? parseFloat(t.gift_amount) : null, actor: t.created_by_name || null }
+        ? { kind: "gift", type: "gift", date: t.gift_date ? String(t.gift_date).slice(0, 10) : t.opened_on, amount: t.gift_amount != null ? parseFloat(t.gift_amount) : null, actor: t.created_by_name || null,
+            ref: { kind: "gift", id: t.opening_gift_id, donorId: t.donor_id } }
         : { kind: "none", type: null, date: t.opened_on, line: null, actor: t.created_by_name || null };
+    const person = { kind: "person", id: t.donor_id, name: links.nameOrFallback(t.donor_name, t.donor_email), email: t.donor_email || null };
     list.push({
-      id: t.id, kind: "thread", donorId: t.donor_id, donorName: t.donor_name,
+      id: t.id, kind: "thread", donorId: t.donor_id, donorName: person.name,
+      // THREAD-2 · EVERY NAME IS A LINK. The person, what opened the thread,
+      // the step (its task, or its meeting) and anything the words name.
+      refs: [person, ...(lastTouch.ref ? [lastTouch.ref] : []),
+        ...(t.calendar_event_id ? [{ kind: "meeting", id: t.calendar_event_id, donorId: t.donor_id, date: t.due_date }] : []),
+        ...(journeyOf[t.id] ? [journeyOf[t.id]] : []),
+        ...ItemRefs.refsNamedIn([t.next_step_label, t.touch_note], catalog)],
+      journey: journeyOf[t.id] || null,
+      stepRef: t.calendar_event_id ? { kind: "meeting", id: t.calendar_event_id, donorId: t.donor_id, date: t.due_date }
+        : (linkedTask[t.id] ? { kind: "task", id: linkedTask[t.id], donorId: t.donor_id } : null),
       nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date, time: t.due_time || null,
                   // The day this was first promised, when a revisit has moved
                   // the due date since. Null on a thread nobody deferred.
@@ -19752,8 +19796,14 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     const due = String(k.due).slice(0, 10);
     const openedOn = k.created_at ? new Date(k.created_at).toISOString().slice(0, 10) : due;
     const daysOpen = orgTime.daysBetween(openedOn, today) ?? 0;
+    const kPerson = { kind: "person", id: k.donor_id, name: links.nameOrFallback(k.donor_name, k.donor_email), email: k.donor_email || null };
     list.push({
-      id: k.id, kind: "task", donorId: k.donor_id, donorName: k.donor_name,
+      id: k.id, kind: "task", donorId: k.donor_id, donorName: kPerson.name,
+      refs: [kPerson, { kind: "task", id: k.id, donorId: k.donor_id },
+        ...(k.source_gift_id ? [{ kind: "gift", id: k.source_gift_id, donorId: k.donor_id }] : []),
+        ...(k.calendar_event_id ? [{ kind: "meeting", id: k.calendar_event_id, donorId: k.donor_id, date: due }] : []),
+        ...ItemRefs.refsNamedIn([k.title], catalog)],
+      stepRef: k.calendar_event_id ? { kind: "meeting", id: k.calendar_event_id, donorId: k.donor_id, date: due } : { kind: "task", id: k.id, donorId: k.donor_id },
       nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
       // FIX-33: a meeting's prep and after tasks open the meeting they belong to.
       calendarEventId: k.calendar_event_id || null,
@@ -19799,7 +19849,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     for (const rs of byDonor.values()) {
       rs.sort(soon);
       const [head, ...rest] = rs;
-      head.moreSteps = rest.map(r => ({ id: r.id, kind: r.kind, label: r.nextStep.label, due: r.nextStep.due, time: r.nextStep.time || null,
+      head.moreSteps = rest.map(r => ({ id: r.id, kind: r.kind, label: r.nextStep.label, due: r.nextStep.due, time: r.nextStep.time || null, stepRef: r.stepRef || null,
         overdue: r.overdue, calendarEventId: r.calendarEventId || null }));
       shownList.push(head);
     }

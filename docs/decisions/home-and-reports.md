@@ -85,7 +85,11 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   list and a row opens the donor, so every tile goes somewhere. No tab strip. (BUILD-89, BUILD-88d)
 - **A Thread row has Drift's shape.** It shows a face, then a wrapping sentence ending "Next: <step>"
   (`lowerFirst`), then one fact on the right: how late it is. Use `min-height:64px`, never a fixed height.
-  The main region is a real `<a href="/donors/:id">`. (FIX 2026-09-18, BUILD-89)
+  The person's NAME is the real `<a href="/donors/:id">` and the row opens through `rowClick`, so
+  what opened the thread, the step and anything the words name can be links too. (FIX 2026-09-18, BUILD-89, THREAD-2)
+- **Every name is a link (THREAD-2).** A Thread item carries `refs` (and `stepRef`); render a sentence
+  with `Linked`/`RefLink`, and build a link in an email with `shared/itemLinks.js`, never by hand. A new
+  item type gets links by carrying refs. A name never prints blank, "null" or "Unknown" (`nameOrFallback`).
 - **Nothing asks her to create a task.** Logging a conversation (`POST /donors/:id/conversations`, next-step
   decision required in the same request) is the follow-up. (BUILD-81)
 - **The `threads_one_open` partial unique index decides one open thread per donor, never check-then-insert.**

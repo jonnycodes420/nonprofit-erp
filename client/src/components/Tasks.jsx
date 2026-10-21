@@ -4,6 +4,7 @@ import { useAuth } from "../main";
 import { T, PageTitle, EmptyState, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
+import { urlParam } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
@@ -76,6 +77,17 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
   }, [q, view, setData]);
   useEffect(() => { setRows(null); setSelected(new Set()); load(); }, [load]);
   useStewardTold(() => { load(); });   // VOICE-4: what Tell Steward did shows at once
+  // THREAD-2 · A LINK TO ONE TASK (/app/tasks?task=<id>, from the Thread or an
+  // email) opens that task in its sheet, on the view it lives in. Another
+  // org's task, or one that is gone, says so and shows nothing of it.
+  const [noAccess, setNoAccess] = useState(false);
+  useEffect(() => {
+    const id = urlParam("tasks", "task");
+    if (!id) return;
+    apiFetch(`/tasks/${encodeURIComponent(id)}`)
+      .then(row => { if (row && row.id) { if (VIEW_ORDER.includes(row.view)) setView(row.view); setSheet(row); } })
+      .catch(() => setNoAccess(true));
+  }, []);
   const stopSelecting = useCallback(() => { setSelecting(false); setSelected(new Set()); }, []);
   useEffect(() => {
     if (!selecting) return undefined;
@@ -199,6 +211,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
       </div>
       {viewMeta && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: -6 }}>{viewMeta.definition}</div>}
 
+      {noAccess && <div role="alert" data-testid="no-access" style={{ fontSize: 13, color: T.ink }}>You don't have access to this.</div>}
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
 
 
