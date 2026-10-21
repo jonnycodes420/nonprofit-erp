@@ -585,6 +585,10 @@ export function GlobalStyles() {
     .dash-action:hover{background:${T.bg}!important;border-color:${T.greenDk}!important;transform:translateY(-1px);}
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
+    .tell-fab{position:fixed;right:20px;bottom:24px;z-index:240;width:56px;height:56px;border-radius:14px;border:1px solid ${T.greenDk};background:${T.greenDk};color:${T.white};display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(15,26,18,.25);}
+    .tell-fab:focus-visible{outline:3px solid ${T.gold500||"#C9A84C"};outline-offset:2px;}
+    @media(max-width:768px){.tell-fab{bottom:calc(76px + env(safe-area-inset-bottom,0px));right:16px;}}
+    @media print{.tell-fab{display:none;}}
     .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.white};border-top:1px solid ${T.bg2};box-shadow:0 -4px 20px rgba(15,26,18,.06);padding-bottom:env(safe-area-inset-bottom,0px);}
     /* FIX-9 Part E, TITLE CASE. The bar shouted HOME DONORS GRANTS SETTINGS
        MORE in uppercase while every other label in the product is sentence

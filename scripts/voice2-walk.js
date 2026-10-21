@@ -82,6 +82,37 @@ async function pg(sql, args) {
     await s.tell();
     ok(`${w} a browser with speech recognition gets the microphone`, await s.page.locator('[data-testid="tell-mic"]').isVisible(), null);
     await s.shot("01-listens");
+    // Option B: the floating square mic, bottom right, at every width; the
+    // big green Home button is gone and the rail (or the phone menu) keeps
+    // its Tell Steward row.
+    await s.page.click('[aria-label="Close"]').catch(() => {});
+    await s.page.waitForSelector('[data-testid="tell-steward-sheet"]', { state: "detached", timeout: 4000 }).catch(() => {});
+    const fab = s.page.locator('[data-testid="tell-fab"]');
+    const box = await fab.boundingBox().catch(() => null);
+    ok(`${w} the square mic floats at the bottom right`, !!box && Math.abs(box.width - box.height) < 1 && w - (box.x + box.width) <= 24 && box.y + box.height <= h && box.y > h - (w < 500 ? 160 : 100), box);
+    ok(`${w} the big green Home button is gone`, await s.page.locator('[data-testid="tell-steward"], .home-tell').count() === 0, null);
+    if (w > 500) ok(`${w} the rail keeps Tell Steward`, await s.page.locator('[data-testid="sidebar-tell-steward"]').isVisible(), null);
+    await s.shot("11-mic-home");
+    if (w < 500) {
+      const bar = await s.page.locator(".mobile-bottom-bar").boundingBox();
+      ok(`${w} the mic sits above the phone's tab bar`, !!bar && box.y + box.height <= bar.y, { box, bar });
+    }
+    await fab.click();
+    await s.page.waitForSelector('[data-testid="tell-steward-sheet"]', { timeout: 5000 });
+    ok(`${w} the mic opens Tell Steward, and hides while it is open`, await s.page.locator('[data-testid="tell-fab"]').count() === 0, null);
+    await s.page.click('[aria-label="Close"]').catch(() => {});
+    await s.page.goto(APP + "/app/calendar", { waitUntil: "domcontentloaded" });
+    await s.page.waitForLoadState("networkidle").catch(() => {}); await s.page.waitForTimeout(800);
+    const fab2 = await s.page.locator('[data-testid="tell-fab"]').boundingBox().catch(() => null);
+    ok(`${w} the mic is on other screens too (Calendar)`, !!fab2, null);
+    if (w < 500) {
+      const add = await s.page.locator('[data-testid="cal-add"]').boundingBox().catch(() => null);
+      ok(`${w} Calendar's + does not sit on the mic`, !!add && !!fab2 && add.y + add.height <= fab2.y, { add, fab2 });
+    }
+    await s.shot("12-mic-calendar");
+    await s.page.goto(APP + "/dashboard", { waitUntil: "domcontentloaded" });
+    await s.page.waitForLoadState("networkidle").catch(() => {}); await s.page.waitForTimeout(800);
+    await s.tell();
     // Part 2: two shared names, picked by mouse (1440) or touch (390), then the keyboard.
     await s.page.fill('[data-testid="tell-text"]', "Lunch with Gideon and Nerissa, they loved the tour, send them the regatta date next week");
     await s.page.click('[data-testid="tell-send"]');

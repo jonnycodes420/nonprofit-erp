@@ -1081,6 +1081,11 @@ function AppShell() {
     </div>}
 
     {mobileHelp&&<HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/>}
+    {/* VOICE-2 option B: the floating square mic, bottom right, on every screen
+        and every width. It opens the same Tell Steward window; the rail keeps
+        its own Tell Steward row. */}
+    {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label="Tell Steward" title="Tell Steward"
+      onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     {tell&&<TellSteward donor={tell.donor} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>

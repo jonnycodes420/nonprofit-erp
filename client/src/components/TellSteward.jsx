@@ -34,16 +34,6 @@ export function openTellSteward(donor) {
 }
 
 // The large button, for Home and the profile.
-export function TellStewardButton({ donor, style, testId = "tell-steward" }) {
-  return (
-    <button data-testid={testId} onClick={() => openTellSteward(donor)}
-      style={{ ...btn(true), display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", padding: "14px 18px", fontSize: 15, borderRadius: 12, ...style }}>
-      <MicGlyph size={18} />
-      <span>Tell Steward{donor ? ` about ${String(donor.name || "").split(/\s+/)[0]}` : ""}</span>
-    </button>
-  );
-}
-
 export function MicGlyph({ size = 16, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
