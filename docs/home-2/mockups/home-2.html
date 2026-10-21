@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home 2 mockups</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<!-- HOME-2 Part 0. A static mockup of Home on three Harborlight days, not the app.
+     Open with ?day=1 (Tuesday, lunch in 2 hours), ?day=2 (the morning after a $7,500 gift,
+     5 gifts to confirm) or ?day=3 (15 December, year-end). Captured by capture.js. -->
+<style>
+:root{
+  --ink:#0F1A12; --white:#FFFFFF; --cream:#F0EDE6; --cream2:#E8E4DB; --line:#DCD7CC;
+  --emerald:#0D5C3A; --emerald-soft:#E3EDE7; --brass:#C9A84C; --brass-dark:#8A6D1F; --brass-soft:#F6ECCF;
+  --ink2:#2D2D2D; --ink3:#5A554F; --ink4:#8A857D;
+  --serif:'DM Serif Display',Georgia,serif; --sans:'DM Sans',-apple-system,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;position:relative;min-height:100vh;background:var(--cream);color:var(--ink);font:15px/1.5 var(--sans)}
+a{color:inherit}
+/* top bar */
+.top{position:fixed;inset:0 0 auto 0;height:52px;background:var(--ink);display:flex;align-items:center;z-index:5}
+.brand{width:240px;padding-left:20px;font:22px var(--serif);color:#fff}
+.search{flex:0 1 560px;height:33px;border:1px solid #2c4a37;border-radius:8px;background:#13281b;color:#9fb1a5;
+  font-size:13px;font-style:italic;display:flex;align-items:center;padding:0 14px}
+.top .right{margin-left:auto;display:flex;gap:14px;align-items:center;padding-right:24px;color:#fff;font-size:13px;font-weight:600}
+.av{width:28px;height:28px;border-radius:7px;background:#e8e4db;color:var(--ink);display:grid;place-items:center;font-size:12px;font-weight:700}
+.q{width:28px;height:28px;border-radius:50%;border:1px solid #445;display:grid;place-items:center;font-size:12px}
+.so{border:1px solid #445;border-radius:6px;padding:4px 11px;font-weight:500}
+/* rail */
+.side{position:absolute;top:52px;bottom:0;left:0;width:240px;background:var(--ink);color:#e7e5de;padding:12px 0;font-size:14.5px;z-index:4}
+.side .it{display:flex;align-items:center;gap:13px;padding:7px 18px;margin:0 3px;border-radius:7px}
+.side .it.on{background:var(--cream);color:var(--ink);font-weight:600}
+.side .grp{font-size:10.5px;letter-spacing:.09em;color:#9aa59d;padding:14px 18px 4px;font-weight:600}
+.ic{width:17px;height:17px;border:1.6px solid currentColor;border-radius:4px;opacity:.85}
+.badge{margin-left:auto;background:#b8593f;color:#fff;font-size:10px;font-weight:700;border-radius:9px;padding:1px 6px}
+.badge.b{background:var(--brass);color:var(--ink)}
+.side .pin{position:absolute;bottom:12px;left:0;right:0;border-top:1px solid #26352b;padding-top:10px}
+/* page */
+.main{margin-left:240px;padding:60px 24px 60px}
+.demo{background:var(--brass-dark);color:#fff;font-size:13px;padding:9px 24px;margin:-8px -24px 20px;display:flex;align-items:center}
+.demo b{margin-right:4px}
+.demo .btn{margin-left:auto;border:1px solid #fff;border-radius:7px;padding:2px 11px;font-weight:600}
+.shell{background:var(--white);border:1px solid var(--line);border-radius:18px;display:grid;grid-template-columns:1fr 340px;max-width:1150px}
+.work{padding:36px 42px 40px}
+.today{border-left:1px solid var(--line);padding:32px 26px}
+/* header */
+.hello{display:flex;font-size:14px;color:var(--ink3)}
+.hello b{color:var(--ink2);margin-right:8px;font-weight:600}
+.hello .edit{margin-left:auto;color:var(--emerald);font-weight:700;font-size:13px}
+h1{font:31px/1.15 var(--serif);margin:10px 0 22px;letter-spacing:-.01em}
+.ask{display:flex;align-items:center;border:1px solid #c9c4b9;border-radius:26px;height:50px;padding:0 6px 0 22px}
+.ask #ph{color:var(--ink4);font-style:italic;font-size:15px;flex:1}
+.ask .go{background:#8fb7a3;color:#fff;font-weight:700;border-radius:20px;padding:7px 18px;font-size:14px}
+.tries{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:13px;color:var(--ink3)}
+.tries .t{border:1px solid var(--line);border-radius:16px;padding:3px 12px;background:#faf9f6}
+.tries .lab{padding:3px 2px;color:var(--ink4)}
+/* lead slot */
+.lead{margin-top:26px}
+.eyebrow{font-size:11px;letter-spacing:.1em;font-weight:700;color:var(--ink3);text-transform:uppercase}
+.card{position:relative;border:1px solid var(--line);border-radius:14px;padding:20px 22px 18px;margin-top:12px;background:#fff}
+.card.ink{background:var(--ink);color:#f3f1ea;border-color:var(--ink)}
+.card.ink .eyebrow{color:var(--brass)}
+.card.brass{border-color:var(--brass);background:#fffdf6}
+.card h2{font:25px/1.2 var(--serif);margin:6px 0 8px;letter-spacing:-.005em}
+.card.small h2{font-size:20px}
+.why{font-size:13px;color:var(--ink3);margin:0 0 14px;padding-left:13px;position:relative}
+.why:before{content:"";position:absolute;left:0;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--brass)}
+.card.ink .why{color:#b9c2bb}
+.x{position:absolute;top:14px;right:16px;font-size:12.5px;color:var(--ink4);font-weight:600}
+.card.ink .x{color:#8d9a91}
+.facts{display:grid;grid-template-columns:118px 1fr;gap:7px 14px;font-size:14px;margin:4px 0 16px}
+.facts dt{color:#9aa79e;font-size:12.5px;padding-top:1px}
+.facts dd{margin:0}
+.card.ink .facts dd u{text-decoration-color:#56705f;text-underline-offset:3px}
+.acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.b1{background:var(--emerald);color:#fff;border-radius:9px;padding:10px 16px;font-weight:600;font-size:14px}
+.b2{border:1px solid #c9c4b9;border-radius:9px;padding:9px 15px;font-weight:600;font-size:14px;background:#fff;color:var(--ink)}
+.card.ink .b2{background:transparent;color:#fff;border-color:#4a5a4f}
+.lnk{color:var(--emerald);font-weight:600;font-size:14px;text-decoration:underline;text-underline-offset:3px}
+.draft{border-left:3px solid var(--emerald);background:#f7f6f2;padding:10px 14px;font-size:14px;color:var(--ink2);margin:0 0 14px;border-radius:0 8px 8px 0}
+.draft small{display:block;color:var(--ink4);font-size:12px;margin-bottom:3px}
+.bar{height:10px;border-radius:6px;background:var(--cream2);overflow:hidden;margin:6px 0 4px;position:relative}
+.bar i{display:block;height:100%;background:var(--emerald)}
+.bar em{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--brass)}
+.barlab{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink3);margin-bottom:14px}
+.money{font-weight:700;border-bottom:1px dotted currentColor}
+.mini{display:flex;flex-direction:column;gap:0;margin:2px 0 14px;border-top:1px solid var(--line)}
+.mini div{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.mini span{color:var(--ink3)}
+.whatcard{display:flex;align-items:center;border:1px solid var(--line);background:#f7f5ef;border-radius:12px;padding:14px 18px;margin-top:14px;gap:12px}
+.whatcard b{font:19px var(--serif);color:var(--emerald);font-weight:400}
+.whatcard span{flex:1;font-size:14px}
+.whatcard i{font-style:normal;color:var(--emerald);font-weight:700}
+.did{font-size:13.5px;color:var(--ink2);margin:18px 0 0}
+.did u{color:var(--emerald);text-underline-offset:3px;font-weight:600}
+/* thread */
+.thr{display:flex;align-items:center;gap:10px;margin:30px 0 8px}
+.thr h3{font:21px var(--serif);margin:0}
+.chev{width:22px;height:22px;border-radius:50%;border:1px solid #bbb;display:grid;place-items:center;font-size:10px}
+.seg{margin-left:auto;display:flex;border:1px solid #ccc;border-radius:12px;font-size:11.5px;overflow:hidden}
+.seg span{padding:2px 9px}.seg .on{background:var(--emerald-soft);font-weight:700}
+.pf{border:1.5px solid var(--ink);border-radius:7px;padding:2px 9px;font-size:11.5px;font-weight:700}
+.row{display:flex;gap:14px;align-items:flex-start;border-top:1px solid var(--line);padding:16px 0 16px 14px;border-left:3px solid var(--emerald);min-height:64px}
+.face{flex:none;width:38px;height:38px;border-radius:50%;background:var(--brass);display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--ink)}
+.row .tx{flex:1;font-size:14px}
+.row .tx b{display:block;font-size:15.5px;margin-bottom:2px}
+.row .tx small{display:block;color:var(--ink3);font-size:12.5px;margin-top:3px}
+.due{text-align:right;font:15px var(--serif);min-width:62px}
+.due small{display:block;font:600 9.5px var(--sans);letter-spacing:.08em;color:var(--ink3)}
+/* today rail */
+.today h3{font:21px var(--serif);margin:0 0 14px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin-bottom:14px;font-size:14px}
+.tile.hot{border-color:var(--emerald);border-width:1.5px}
+.tile.ink{background:var(--ink);color:#f3f1ea;border-color:var(--ink)}
+.tile.ink .eyebrow{color:var(--brass)}
+.tile .eyebrow{font-size:10.5px;margin-bottom:6px}
+.tile h4{font:18px/1.25 var(--serif);margin:2px 0 6px}
+.tile p{margin:0 0 6px;color:var(--ink2)}
+.tile.ink p{color:#c8cfc9}
+.tile .q2{display:inline-grid;place-items:center;width:15px;height:15px;border:1px solid #999;border-radius:50%;font-size:9.5px;color:#666;margin-left:3px;vertical-align:1px}
+.spark{display:flex;align-items:flex-end;gap:3px;height:42px;margin:8px 0 2px;border-bottom:1px dashed #ccc}
+.spark i{flex:1;background:var(--emerald);border-radius:1px}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.trio div{border:1px solid var(--line);border-radius:10px;padding:10px 8px;text-align:center;font-size:11.5px;color:var(--ink3)}
+.trio b{display:block;font:22px var(--serif);color:var(--ink);font-weight:400}
+.people div{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
+.people span{color:var(--ink3)}
+.moved{font-size:11px;color:var(--brass-dark);font-weight:700;letter-spacing:.04em;margin:0 0 6px}
+/* mic + annotations */
+.mic{position:fixed;right:22px;bottom:24px;width:56px;height:56px;border-radius:14px;background:var(--emerald);display:grid;place-items:center;
+  box-shadow:0 4px 14px rgba(13,92,58,.35);z-index:9}
+.mic svg{width:24px;height:24px}
+.tabs{display:none}
+.full .tabs{position:absolute}.full .mic{position:absolute}
+.note{max-width:1150px;margin:18px 0 0;font-size:13px;color:var(--ink3);border:1px dashed var(--brass);border-radius:10px;padding:12px 16px;background:#fffdf6}
+.note b{color:var(--ink)}
+.note ol{margin:6px 0 0;padding-left:18px}
+/* phone */
+@media (max-width:700px){
+  .side,.search,.top .right .q,.top .right .nm,.top .right .so{display:none}
+  .brand{width:auto}
+  .top .right{gap:10px;padding-right:16px}
+  .top .right:before{content:"⌕";width:34px;height:34px;border:1px solid #445;border-radius:9px;display:grid;place-items:center;color:#fff;font-size:15px}
+  .main{margin-left:0;padding:60px 16px 92px}
+  .demo{margin:-8px -16px 16px;padding:10px 16px;flex-wrap:wrap;gap:8px}
+  .shell{display:flex;flex-direction:column;border-radius:16px}
+  .work{display:contents}
+  .head{order:1;padding:26px 18px 6px}
+  .leadwrap{order:2;padding:0 18px 18px}
+  .today{order:3;border-left:0;border-top:1px solid var(--line);padding:22px 18px 8px}
+  .threadwrap{order:4;padding:0 18px 24px}
+  h1{font-size:28px}
+  .hello{flex-wrap:wrap}.hello span#greet{flex-basis:100%;order:3;margin-top:2px}
+  .card .x{position:static;float:right;margin:-4px 0 6px 10px}
+  .facts{grid-template-columns:1fr;gap:2px}.facts dd{margin-bottom:8px}
+  .card{padding:18px 16px 16px}
+  .card h2{font-size:22px;padding-right:40px}
+  .facts{grid-template-columns:96px 1fr}
+  .tries .t:nth-child(n+4){display:none}
+  .tabs{display:flex;position:fixed;bottom:0;left:0;right:0;height:62px;background:#fff;border-top:1px solid var(--line);z-index:8;font-size:11px;font-weight:600}
+  .tabs div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--ink2)}
+  .tabs div:before{content:"";width:18px;height:18px;border:1.6px solid currentColor;border-radius:5px}
+  .tabs .on{background:var(--cream);border-top:3px solid var(--emerald)}
+  .mic{bottom:76px;right:16px}
+  .seg,.pf{display:none}
+  .note{margin:16px 0 0}
+}
+</style>
+</head>
+<body>
+<div class="top"><div class="brand">Steward</div><div class="search">⌕ &nbsp;Search people, gifts, notes, meetings... ⌘K</div>
+  <div class="right"><span class="q">?</span><span class="av">D</span><span class="nm">Dana <span style="color:var(--brass)">●</span></span><span class="so">Sign out</span></div></div>
+<nav class="side">
+  <div class="it on"><i class="ic"></i>Home</div>
+  <div class="it"><i class="ic"></i>Tasks<span class="badge">6</span></div>
+  <div class="it"><i class="ic"></i>Calendar</div>
+  <div class="grp">RELATIONSHIPS</div>
+  <div class="it"><i class="ic"></i>Donors</div><div class="it"><i class="ic"></i>Groups</div><div class="it"><i class="ic"></i>Journeys</div><div class="it"><i class="ic"></i>Communications</div>
+  <div class="grp">RAISE</div>
+  <div class="it"><i class="ic"></i>Fundraising<span class="badge b" id="fundBadge">5</span></div><div class="it"><i class="ic"></i>Events</div><div class="it"><i class="ic"></i>Auctions</div><div class="it"><i class="ic"></i>Peer-to-peer</div><div class="it"><i class="ic"></i>Memberships</div><div class="it"><i class="ic"></i>Grants</div>
+  <div class="grp">VOLUNTEERS</div><div class="it"><i class="ic"></i>Volunteers</div>
+  <div class="grp">MONEY</div><div class="it"><i class="ic"></i>Finance</div>
+  <div class="pin"><div class="it"><i class="ic"></i>Agent</div><div class="it"><i class="ic"></i>Settings</div></div>
+</nav>
+
+<main class="main">
+  <div class="demo"><b>This is a demonstration organization.</b> Everything in it is invented, and Steward will not send email to anyone here. <span class="btn">Your data →</span></div>
+  <div class="shell">
+    <div class="work">
+      <div class="head">
+        <div class="hello"><b>Harborlight Youth Collective</b><span id="greet">Good morning, Dana</span><span class="edit">Edit</span></div>
+        <h1 id="date"></h1>
+        <div class="ask"><span id="ph">Ask a question, or tell Steward what to do...</span><span class="go">Ask</span></div>
+        <div class="tries" id="tries"></div>
+      </div>
+      <div class="leadwrap">
+        <div class="lead" id="lead"></div>
+        <div id="whatcard"></div>
+        <p class="did" id="did"></p>
+      </div>
+      <div class="threadwrap">
+        <div class="thr"><h3>The Thread</h3><span class="chev">⌄</span><span class="seg"><span class="on">Mine</span><span>Everyone</span></span><span class="pf">Plan a follow-up</span></div>
+        <div id="thread"></div>
+      </div>
+    </div>
+    <aside class="today"><h3>Today</h3><div id="rail"></div></aside>
+  </div>
+  <div class="note" id="note"></div>
+</main>
+<div class="tabs"><div class="on">Home</div><div>Donors</div><div>Fundraising</div><div>Agent</div><div>More</div></div>
+<div class="mic" title="Tell Steward"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+
+<script>
+const day = new URLSearchParams(location.search).get("day") || "1";
+const $ = id => document.getElementById(id);
+const spark = h => `<div class="spark">${h.map(v => `<i style="height:${v}%"></i>`).join("")}</div>`;
+const SPARK = [10,14,18,16,22,30,18,26,34,20,24,40,22,30,52,26,36,70,14,0,0,0,0,0,0,0,0,0,0,0];
+const tries = list => `<span class="lab">Try:</span>` + list.map(t => `<span class="t">${t}</span>`).join("");
+const row = (ini, name, line, due, why) => `<div class="row"><span class="face">${ini}</span><div class="tx"><b>${name}</b>${line}<small>${why}</small></div><div class="due">${due}<small>DUE ON</small></div></div>`;
+const THREAD = [
+  row("TF","Tidewater Community Foundation","Planned today. <b style='display:inline;font-size:14px'>Next:</b> site visit.","Oct 24","Top tenth of your donors by lifetime giving"),
+  row("MF","Meridian Foundation","Planned today. <b style='display:inline;font-size:14px'>Next:</b> proposal due.","Oct 28","Top tenth of your donors by lifetime giving"),
+  row("RD","Rosalind Darrowby","Gave $250 last week. <b style='display:inline;font-size:14px'>Next:</b> a thank-you call.","Oct 22","First gift"),
+].join("");
+
+const DAYS = {
+"1": {
+  date: "Tuesday, October 20", greet: "Good morning, Dana", badge: "",
+  ph: "Ask a question, or tell Steward what to do...",
+  tries: tries(["Who should I call this week?","How is the Annual Fund doing?","What did Ansel give last year?"]),
+  lead: `
+    <div class="eyebrow">For you today</div>
+    <div class="card ink">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow">In 2 hours · 12:00 · Windy Corner</div>
+      <h2>Lunch with Ansel Pendlebury</h2>
+      <p class="why">First because it is the soonest thing on your calendar, and he is one of your ten largest donors.</p>
+      <dl class="facts">
+        <dt>Last gift</dt><dd><u>$40,680</u> in February, by check to the Annual Fund</dd>
+        <dt>Open ask</dt><dd><u>$50,000</u> for Harbor Skills, asked in June, no answer yet</dd>
+        <dt>Promised last time</dt><dd>You said you'd send the pilot-year results. <u>Sent 2 Oct.</u></dd>
+        <dt>His last email</dt><dd>"Looking forward to it. Bring the numbers on the summer cohort." 14 Oct</dd>
+      </dl>
+      <div class="acts"><span class="b1">Open the full brief</span><span class="b2">Afterwards, tell Steward how it went</span></div>
+    </div>
+    <div class="card small">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow">Gone quiet</div>
+      <h2>Call Cordelia Fennimore</h2>
+      <p class="why">She gave $1,200 every October for five years and nothing yet this year. The largest of the 7 people drifting in your portfolio.</p>
+      <div class="acts"><span class="b1">Call</span><span class="b2">Draft a note</span><span class="lnk">See all 7</span></div>
+    </div>`,
+  what: "",
+  did: `Steward did 10 things for you yesterday, and 2 drafts are waiting. <u>See them</u>`,
+  rail: `
+    <p class="moved">MOVED UP · MEETING IN 2 HOURS</p>
+    <div class="tile ink"><div class="eyebrow">12:00 · Windy Corner</div><h4>Lunch with Ansel Pendlebury</h4><p>Gave $162,511 over 4 years.</p><span class="lnk" style="color:#9fd6b8">Directions</span></div>
+    <div class="tile"><div class="eyebrow">Calls to make</div>
+      <div class="people"><div>Cordelia Fennimore<span>gone quiet</span></div><div>Gideon Larkmead<span>pledge due</span></div><div>Rosalind Darrowby<span>thank-you</span></div></div></div>
+    <div class="trio"><div><b>3</b>calls</div><div><b>2</b>drafts</div><div><b>$0</b>to confirm</div></div>
+    <p class="moved" style="color:var(--ink4)">MOVED DOWN · NOTHING WAITING</p>
+    <div class="tile"><div class="eyebrow">Gift to thank-you</div><p>Last 30 days: <b>2.63 days</b><span class="q2">?</span></p><p style="color:var(--ink3);font-size:13px;margin:0">Nothing waiting to be thanked.</p></div>`,
+  note: `<b>Day 1 · Tuesday 20 October, 9:58 am. Dana, director.</b> The meeting scores highest (time pressure: 2 hours; stakes: one of the ten largest donors, an open $50,000 ask). Second card: the top drift call in her portfolio. Why and What have nothing unusual to say today, so they fold into the "Try:" suggestions under Ask. The rail lifts the meeting to the top and drops the gift-to-thank-you tile, since nothing is waiting. The Tell Steward bar is gone; the square mic floats bottom right.`
+},
+"2": {
+  date: "Wednesday, October 21", greet: "Good morning, Dana", badge: "5",
+  ph: "Ask a question, or tell Steward what to do...",
+  tries: tries(["Who gave this week?","How is the Annual Fund doing?","Who hasn't been thanked yet?"]),
+  lead: `
+    <div class="eyebrow">For you today</div>
+    <div class="card">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow" style="color:var(--emerald)">A gift arrived · 9:42 pm last night</div>
+      <h2>Halvorsen Family Foundation gave <span class="money">$7,500</span>. Thank them today.</h2>
+      <p class="why">The largest gift this month, and three times their usual. A thank-you sent today keeps your gift-to-thank-you time at under a day.</p>
+      <div class="draft"><small>Draft thank-you, waiting for your yes</small>Dear Marguerite, thank you. Your foundation's gift of $7,500 will carry the Harbor Skills cohort through the spring term...</div>
+      <div class="acts"><span class="b1">Review and send</span><span class="b2">Call Marguerite Halvorsen</span><span class="lnk">Open the gift</span></div>
+    </div>
+    <div class="card brass small">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow" style="color:var(--brass-dark)">Money waiting</div>
+      <h2>5 gifts waiting to be confirmed, <span class="money">$3,325</span></h2>
+      <p class="why">3 checks photographed on Monday and 2 pledge letters from email. None is in your totals until you confirm it.</p>
+      <div class="mini"><div>Check · Emmett Saltonstall<span>$1,000</span></div><div>Check · Philippa Rushmere<span>$750</span></div><div>3 more<span>$1,575</span></div></div>
+      <div class="acts"><span class="b1">Confirm all 5</span><span class="b2">Look at each one</span></div>
+    </div>`,
+  what: "",
+  did: `Steward did 14 things for you yesterday, including the Halvorsen draft. <u>See them</u>`,
+  rail: `
+    <p class="moved">MOVED UP · A GIFT IS WAITING</p>
+    <div class="tile hot"><div class="eyebrow">Gift to thank-you</div><p>Last 30 days: <b>2.63 days</b><span class="q2">?</span></p>${spark(SPARK)}<p style="font-size:12px;color:var(--ink4);display:flex;justify-content:space-between"><span>30 days ago</span><span>today</span></p><span class="lnk">1 gift to thank, 5 to confirm</span></div>
+    <div class="trio"><div><b>$8,240</b>this week</div><div><b>3</b>calls</div><div><b>3</b>drafts</div></div>
+    <div class="tile"><div class="eyebrow">Calls to make</div>
+      <div class="people"><div>Marguerite Halvorsen<span>thank-you</span></div><div>Cordelia Fennimore<span>gone quiet</span></div><div>Gideon Larkmead<span>pledge due</span></div></div></div>`,
+  note: `<b>Day 2 · Wednesday 21 October, 8:05 am. Dana, director.</b> Two cards because two things carry money today: the $7,500 gift (dollars at stake, unusual for this donor, the thank-you clock running) and $3,325 sitting in To confirm. The drift call drops to the rail's Calls to make. The gift-to-thank-you tile goes back to the top of the rail because something is waiting. Why and What still have nothing unusual, so they stay in the suggestions.`
+},
+"3": {
+  date: "Tuesday, December 15", greet: "Good morning, Dana", badge: "2",
+  ph: "Ask a question, or tell Steward what to do...",
+  tries: tries(["Who gave last December but not this one?","How much is left on the match?","Who should I call today?"]),
+  lead: `
+    <div class="eyebrow">For you today · Year-end</div>
+    <div class="card">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow" style="color:var(--emerald)">Year-end appeal · 16 days left</div>
+      <h2><span class="money">$41,850</span> of $60,000</h2>
+      <div class="bar"><i style="width:69.75%"></i><em style="left:76.8%"></em></div>
+      <div class="barlab"><span>69.8% raised</span><span>last year by today: $46,050</span></div>
+      <p class="why">December is your biggest month: last year 41% of the appeal arrived in its last two weeks. 38 people who gave last December haven't given this year. They gave <span class="money">$14,200</span> then.</p>
+      <div class="acts"><span class="b1">See the 38</span><span class="b2">Plan calls for the top 10</span><span class="lnk">Meridian Bank match: $18,400 of $25,000 claimed</span></div>
+    </div>
+    <div class="card small">
+      <span class="x">Not now ×</span>
+      <div class="eyebrow">The first of the 38</div>
+      <h2>Call Wilhelmina Ashenhurst</h2>
+      <p class="why">$2,500 every December for six years, the largest of the 38. Nothing yet this year, and no email opened since October.</p>
+      <div class="acts"><span class="b1">Call</span><span class="b2">Draft a note</span></div>
+    </div>`,
+  what: `<div class="whatcard"><b>Why</b><span>The year-end appeal is <span class="money">$4,200</span> behind last year at this point.</span><i>Why? ›</i></div>`,
+  did: `Steward did 22 things for you yesterday, and 6 year-end thank-yous are drafted. <u>See them</u>`,
+  rail: `
+    <p class="moved">MOVED UP · DECEMBER</p>
+    <div class="tile"><div class="eyebrow">Calls to make · year-end</div>
+      <div class="people"><div>Wilhelmina Ashenhurst<span>$2,500 last Dec</span></div><div>Thaddeus Grimsdale<span>$1,800 last Dec</span></div><div>Ondine Kirkbride<span>$1,250 last Dec</span></div></div><span class="lnk" style="display:inline-block;margin-top:6px">35 more</span></div>
+    <div class="tile"><div class="eyebrow">Gift to thank-you</div><p>Last 30 days: <b>1.4 days</b><span class="q2">?</span></p><p style="color:var(--ink3);font-size:13px;margin:0">6 thank-yous drafted, 2 gifts to confirm.</p></div>
+    <div class="trio"><div><b>$6,140</b>this week</div><div><b>31</b>gifts</div><div><b>16</b>days left</div></div>
+    <div class="tile"><div class="eyebrow">This week</div><h4>Holiday open house</h4><p>Thursday, 42 guests, 4 haven't paid.</p></div>`,
+  note: `<b>Day 3 · Tuesday 15 December, 8:10 am. Dana, director.</b> In November and December the season card leads: progress against the goal, the gap against last year at the same date (the brass mark), and who gave last December but not this one, in dollars. Its top person is the second card. Why shows as a card because there is something to say ($4,200 behind last year). The rail's Calls to make becomes the year-end call list; the open house sits lower because it is two days away.`
+}};
+const d = DAYS[day];
+$("date").textContent = d.date; $("greet").textContent = d.greet; $("ph").textContent = innerWidth < 700 ? "Ask, or tell Steward..." : d.ph;
+$("tries").innerHTML = d.tries;
+$("lead").innerHTML = d.lead; $("whatcard").innerHTML = d.what; $("did").innerHTML = d.did;
+$("thread").innerHTML = THREAD; $("rail").innerHTML = d.rail; $("note").innerHTML = d.note;
+$("fundBadge").textContent = d.badge || "0"; if (!d.badge) $("fundBadge").remove();
+</script>
+</body>
+</html>

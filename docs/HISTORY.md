@@ -25,6 +25,16 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## HOME-2 · Home changes with the day (2026-10-21)
+
+Jonathan, 20 Oct: Home looked the same every morning. A lead slot under Ask now holds the one or two things that
+matter most today for the person signed in, each with its reason (shared/homeLead.js, routes/homeLead.js, the
+approved mockups in docs/home-2/mockups/). Why and What fold into Ask's suggestions unless there is something to
+say; the rail reorders; "Not now" learns per person. Two traps: the query helper turns a `?` inside a SQL string
+literal into a placeholder (`'year.?end'` silently matched nothing; write `{0,1}`), and campaign dates come back as
+Date objects, so read them with to_char. Seed: the lunch with Ansel moves to today at noon, Halvorsen's $7,500
+moves to last night with its thank-you drafted, and Priya gets her own coffee (scripts/seed/home2-days.js).
+
 ## NUMBERS-1 · Every number adds up, and we can prove it (2026-10-21)
 
 Jonathan added a $25,000 gift to Margaret Chen on prod: Lifetime, This year and Last gift moved, Average stayed "$14,423.08 of 13 gifts", Largest $15,000, and the gift counted toward GivingTuesday 2026, which had not started. The header drew First, Largest and Average from a second read (/status) that a gift from another door (the voice card, a capture) never refreshed; the server's numbers were right. Now all seven tiles come from GET /donors/:id (`numbers.donorGlance`). No campaign total looked at the campaign's dates: `campaignMatch.CAMPAIGN_GIFT_MATCH` is now the one rule (by id, or by name only with no id; donor not deleted; inside start and end) for every campaign, goal, page and portal total, and a write that chooses an out-of-window campaign is refused with the sentence.

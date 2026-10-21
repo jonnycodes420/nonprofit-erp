@@ -8334,6 +8334,20 @@ async function runSchemaInit(pool) {
       undone_at TIMESTAMPTZ,
       purged_at TIMESTAMPTZ)`);
 
+  // HOME-2 · "Not now" on a Home lead card. One row per press, per person:
+  // that card stays aside for the day, and after three of a kind that kind
+  // ranks lower for that person only (shared/homeLead.js DISMISS_RUN).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS home_lead_dismissals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      card_key TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

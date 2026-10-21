@@ -30,6 +30,7 @@ let sharedProcessEmailMarketing = null;
 // FIX-12 Part 7a — set by mount() to the composer behind Home's morning brief,
 // so the optional morning email is built from the very same rows.
 let sharedComposeTodayMeetings = null;
+let sharedMeetingBrief = null;   // HOME-2: the brief before a meeting, for Home's lead slot (routes/homeLead.js)
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
@@ -1627,6 +1628,7 @@ async function composeTodayMeetings(orgId, userId, { withLogged = false } = {}) 
   return { today, tz, meetings: out };
 }
 sharedComposeTodayMeetings = composeTodayMeetings;
+sharedMeetingBrief = meetingBrief;
 
 app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -4688,6 +4690,10 @@ module.exports = {
   routers, mount,
   // The daily pull, published to routes/jobs.js. It rides the existing tick;
   // INT-3 adds no second scheduler.
+  meetingBrief: (...args) => {
+    if (!sharedMeetingBrief) throw new Error("meetingBrief called before routes/finance mount()");
+    return sharedMeetingBrief(...args);
+  },
   composeTodayMeetings: (...args) => {
     if (!sharedComposeTodayMeetings) throw new Error("composeTodayMeetings called before routes/finance mount()");
     return sharedComposeTodayMeetings(...args);
