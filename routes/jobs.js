@@ -17,7 +17,7 @@ const {
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
-  processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
+  processTrackedSequences, processTrialReminders, processRecordBands, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,
@@ -388,6 +388,11 @@ if (!backgroundTicksDisabled()) {
 
 if (!backgroundTicksDisabled()) {
   every("processTrialReminders", 6 * 60 * 60 * 1000, () => processTrialReminders(), 45000);
+}
+// PRICING-1: once a day, measure each banded org's records and apply only the
+// band moves an owner agreed to. Never a price change on its own.
+if (!backgroundTicksDisabled()) {
+  every("processRecordBands", 24 * 60 * 60 * 1000, () => recordTick("processRecordBands", processRecordBands), 60000);
 }
 
 // INT-BUILD-1 — THE TICK READ THE WRONG TABLE. Since INT-4 every connection

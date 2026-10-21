@@ -59,9 +59,9 @@ async function seed() {
   console.log("— §1 · it is not in anything a stranger can read —");
   ok("it is not a public tier", !PRICING.publicTierIds().includes(ID), PRICING.publicTierIds());
   ok("…and TIERS itself does not contain it", !PRICING.TIERS.some(t => t.id === ID));
-  ok("…so no donor count ever resolves to it",
-     [0, 1, 999, 1000, 4999, 5000, 9999, 10000, 10001, 5000000]
-       .every(n => (PRICING.tierForDonorCount(n) || {}).id !== ID));
+  ok("…so no record count ever resolves to it",
+     [0, 1, 500, 501, 2500, 2501, 10000, 10001, 25000, 25001, 5000000]
+       .every(n => (PRICING.tierForRecordCount(n) || {}).id !== ID));
   ok("its own record says it is not publicly offerable", PRICING.INTERNAL_TEST.publiclyOfferable === false);
 
   const pub = await api("GET", "/public/pricing", null);
@@ -69,8 +69,8 @@ async function seed() {
   ok("…and nothing in what it serves names the $1 price",
      !JSON.stringify(pub.body).includes(ID) && !JSON.stringify(pub.body.tiers).includes("\"monthlyUsd\":1,"),
      JSON.stringify(pub.body.tiers));
-  ok("…and the bands it serves are exactly the three that are on sale",
-     pub.body.tiers.map(t => t.id).join(",") === "t1000,t5000,t10000", pub.body.tiers.map(t => t.id));
+  ok("…and the bands it serves are exactly the four that are on sale",
+     pub.body.tiers.map(t => t.id).join(",") === "r500,r2500,r10000,r25000", pub.body.tiers.map(t => t.id));
 
   // The client bundles shared/pricing.js. A price that is only kept out of a
   // ROUTE is still shipped to every browser if it is in the catalogue the

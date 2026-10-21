@@ -48,7 +48,7 @@ export const ROUTES = [
   // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
   // UpgradeModal and Settings is unchanged.
-  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Everything is included and nothing is sold separately. No platform fee on gifts, your whole team, thirty days free, then month to month." },
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Everything is included and nothing is sold separately. No platform fee on gifts, your whole team, month to month." },
 
   { path: "/why", page: "why", title: T("Imagine never losing track of a single person who believes in what you do."), description: VISION },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
@@ -56,7 +56,7 @@ export const ROUTES = [
   { path: "/move/spreadsheet", page: "moveSpreadsheet", title: T("Moving from a spreadsheet, column by column."), description: "Which columns to bring from Excel or Google Sheets, how gifts and households map, and a starter CSV template to download. Steward checks the totals before you rely on them." },
   { path: "/move/crm", page: "moveCrm", title: T("Moving from your old donor system."), description: "Export two files from almost any donor system, contacts and gifts. Steward joins them on the donor ID and the Move Report checks every dollar to the cent." },
   { path: "/move/giving-platform", page: "moveGivingPlatform", title: T("Starting from your giving platform."), description: "If your donor list lives in Stripe, PayPal, Givebutter or Square, connect it with your own account and Steward reads your past gifts in. Anything older comes in from an export." },
-  { path: "/for", page: "for", title: T("Built for the organizations doing the work."), description: "Steward is made for nonprofits with a development team of one to five, a few hundred to ten thousand active donors and no time to babysit software." },
+  { path: "/for", page: "for", title: T("Built for the organizations doing the work."), description: "Steward is made for nonprofits with a development team of one to five, a list of people who believe in the work and no time to babysit software." },
   ...AUDIENCE_SLUGS.map(s => ({ path: "/for/" + s, page: "audience", slug: s, title: T(AUD[s].h), description: AUD[s].l })),
   { path: "/security", page: "security", title: T("Built like it's holding someone else's money."), description: "Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so." },
   // TRUST-2: status, subprocessors, your data, and the DPA (a draft until an attorney has read it).
@@ -80,7 +80,7 @@ export const ROUTES = [
   { path: "/research", page: "research", title: T("Every number, and where it came from."), description: "Every statistic on the Steward site, with the source's own words, a link to the report and the date we last checked it." },
   { path: "/glossary", page: "glossary", title: T("Fundraising terms, in plain words."), description: "The words you will hear in board meetings and on software demos, explained without jargon." },
   ...GLOSSARY.map(g => ({ path: "/glossary/" + g.slug, page: "glossaryTerm", slug: g.slug, title: "Steward · " + g.term + ": " + (g.calc ? "definition, formula and example" : "what it means and why it matters"), description: clip(g.def), lastmod: GLOSSARY_UPDATED, kind: "term" })),
-  { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
+  { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, whether there is a setup fee, whether Steward takes a cut of donations, and who to call for help." },
   { path: "/help", page: "help", title: T("How do I do this in Steward?"), description: "An article for every screen in Steward and for the jobs people come for, searchable. If it is not here, a person answers." },
   ...HELP_ARTICLES.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),
   ...HELP_DOCS.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),

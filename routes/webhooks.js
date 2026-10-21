@@ -1942,11 +1942,30 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         );
         if (subMrrCents != null) await recordBillingMrr(orgId, subMrrCents);
       }
+      // PRICING-1 · THE SETUP FEE, ONCE. Checkout charged it on the first
+      // invoice; Steward records that it was paid so Billing can say so. The
+      // event id is reserved above, and the WHERE makes a second completion
+      // for the same org a no-op either way.
+      const setupUsd = Number(obj.metadata?.setupFeeUsd);
+      if (setupUsd > 0 && obj.payment_status === "paid") {
+        const payer = orgId || ((await query("SELECT id FROM orgs WHERE close_link_id=?", [obj.metadata?.closeLinkId || ""]))[0] || {}).id;
+        if (payer) await run(`UPDATE orgs SET setup_fee_cents=?, setup_fee_paid_at=NOW() WHERE id=? AND setup_fee_paid_at IS NULL`,
+          [Math.round(setupUsd * 100), payer]);
+      }
     } else if (event.type === "invoice.payment_succeeded") {
       // FIX-32: the $0 invoice Stripe issues when a trial STARTS is not a
       // payment. Reading it as one flipped a brand-new org from trialing to
       // active a quarter of a second after it was born.
-      if (orgId && !(Number(obj.amount_paid) === 0 && obj.billing_reason === "subscription_create")) {
+      //
+      // PRICING-1: the first invoice is never the first monthly charge. With a
+      // setup fee it is NOT $0 (it carries the fee), and reading it as the
+      // first charge flipped a new org out of its thirty days at signing.
+      // checkout.session.completed already set the status from the
+      // subscription itself, so a subscription_create invoice is recorded as
+      // a payment and changes nothing else.
+      if (orgId && obj.billing_reason === "subscription_create") {
+        if (Number(obj.amount_paid) > 0) await recordPlatformPayment(orgId, obj);
+      } else if (orgId) {
         const periodEnd = obj.lines?.data?.[0]?.period?.end
           ? new Date(obj.lines.data[0].period.end * 1000).toISOString()
           : null;

@@ -29,6 +29,18 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 `shared/itemLinks.js` is the one place a named thing becomes its page (`refPath`, `linkSegments`, the email helpers); `itemRefs.js` finds the org's own events, campaigns, journeys and groups named in a sentence. `composeThreads` gives every item `refs` and a `stepRef`; Home's Thread row, the stopped-card row and Tell Steward's "Done for you" render through `Linked`/`RefLink`. The morning email, the timed step reminder, the task-assignment, gift, portal-drift and quiet-connection emails link every name and end with one button. `GET /tasks/:id` and `/app/tasks?task=` open one task; another org's record says "You don't have access to this". Blank names: `POST`/`PUT /donors` saved `"   "` and the word `"null"` as names, which printed as an empty link in the morning email; refused at the write, and old rows show the email. Two `" Not set "` strings left by an em-dash codemod (portal-drift email, stopped-card age) fixed. Test `thread2-links` (37; 25 fail on main).
 
+## PRICING-1 · Record-banded pricing and setup fees (2026-10-21)
+
+Jonathan, 21 Oct: one plan, priced by records (people with at least one gift), four bands with a
+one-time setup fee, every number in `pricing.json`. The server serves the file at /public/pricing so
+signup, Billing and the plan picker change without a client build. A band moves only with the
+owner's yes, after two months running over and thirty days' notice; custom prices never move.
+The trap: the setup fee makes Stripe's first invoice non-zero, and the webhook read any paid
+`subscription_create` invoice as the first monthly charge, ending a new org's thirty days at
+signing (planted, red, fixed). The admin MRR also read the first priced line, which can be the
+one-time fee. The live prices are Jonathan's to create (`scripts/stripe-live-prices.js --live`).
+Seed unchanged.
+
 ## HOME-2 · Home changes with the day (2026-10-21)
 
 Jonathan, 20 Oct: Home looked the same every morning. A lead slot under Ask now holds the one or two things that

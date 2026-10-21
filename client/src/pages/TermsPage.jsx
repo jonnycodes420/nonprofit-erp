@@ -1,5 +1,8 @@
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
+import PRICING from "../../../pricing.json";   // PRICING-1: the band table is the price list, not a copy of it
+
+const usd = n => "$" + Number(n).toLocaleString("en-US");
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -99,13 +102,26 @@ export default function TermsPage() {
         <p style={S.p}>You must be at least 18 years old to use the Service. Accounts may not be shared between organizations.</p>
 
         <h2 style={S.h2}>4. Payment and Billing</h2>
-        <p style={S.p}><strong>Free Trial.</strong> Your first thirty days are free. The first charge is made thirty days after you sign up, on the date shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and you will pay nothing. Nothing that happens inside those thirty days, importing your data, importing it again, or rescheduling onboarding, changes the date.</p>
+        <p style={S.p}><strong>One Plan.</strong> There is one plan, and everything is included: the CRM, Fundraising, Volunteers and the Agent. There is no per-user charge, no platform fee on gifts, and no contract; it is month to month.</p>
+        <p style={S.p}><strong>Price by Records.</strong> Your price is set by your records. A record is a person or organization with at least one gift in Steward. Prospects, volunteers and contacts with no gift never count. Prices are in USD. Paying yearly is ten times the monthly price, so two months are free.</p>
+        <div style={S.tableWrap}><table style={S.table} data-testid="terms-bands">
+          <thead><tr><th style={S.th}>Records</th><th style={S.th}>Monthly</th><th style={S.th}>Yearly</th><th style={S.th}>One-time setup</th></tr></thead>
+          <tbody>
+            {PRICING.tiers.map(t => (
+              <tr key={t.id}><td style={S.td}>{t.band.replace(/ records$/, "")}</td><td style={S.td}>{usd(t.monthlyUsd)}</td><td style={S.td}>{usd(t.yearlyUsd)}</td><td style={S.td}>{usd(t.setupUsd)}</td></tr>
+            ))}
+            <tr><td style={S.td}>{PRICING.talkToUs.band.replace(/ records$/, "")}</td><td style={S.td}>Talk to us</td><td style={S.td}>Talk to us</td><td style={S.td}>{PRICING.talkToUs.setup}</td></tr>
+          </tbody>
+        </table></div>
+        <p style={S.p}><strong>Setup Fee.</strong> The one-time setup fee for your band is charged when you sign up. It covers moving your data in and setting Steward up with you. It is charged once, and it is not refunded once setup has started.</p>
+        <p style={S.p}><strong>First Charge.</strong> Your monthly or yearly price starts on the first charge date, thirty days after you sign up, shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and no subscription charge is made. Nothing that happens inside those thirty days, importing your data, importing it again, or rescheduling onboarding, changes the date.</p>
         <p style={S.p}><strong>Reminder before the first charge.</strong> Seven days before the first charge we email your account administrator the date, the amount, the last four digits of the card on file, and a link that cancels the subscription in one click.</p>
-        <p style={S.p}><strong>Subscription Plans.</strong> After your trial, continued use requires a paid subscription. Current plans and pricing are displayed at <a href="/pricing" style={S.a}>stewardapp.dev/pricing</a>. Prices are in USD and billed monthly.</p>
-        <p style={S.p}><strong>Billing.</strong> Subscriptions are billed in advance on a monthly basis. You authorize us to charge your payment method for all fees incurred. All fees are non-refundable except as required by law or expressly stated herein.</p>
+        <p style={S.p}><strong>Moving Bands.</strong> Steward counts your records each month. If you are over your band two months running, the owner of the account gets a note in the product and by email. Any change waits at least thirty days after that note and happens only if the owner agrees. Moving down to a smaller band happens at your next renewal, at the owner's request.</p>
+        <p style={S.p}><strong>Earlier and Custom Prices.</strong> An organization on an earlier plan or a custom price agreed with Steward keeps that price until the end date stated for it, and is never moved to a band price automatically.</p>
+        <p style={S.p}><strong>Billing.</strong> Subscriptions are billed in advance for the period you chose. You authorize us to charge your payment method for all fees incurred. All fees, including the setup fee once setup has started, are non-refundable except as required by law or expressly stated herein.</p>
         <p style={S.p}><strong>Cancellation.</strong> You may cancel your subscription at any time through the billing portal in Settings. Cancellation takes effect at the end of the current billing period. You retain access to the Service until that date.</p>
         <p style={S.p}><strong>Failed Payments.</strong> If payment fails, we will attempt to retry. If payment is not resolved within 7 days, your account may be suspended. Your data is retained for 30 days after suspension before deletion.</p>
-        <p style={S.p}><strong>Price Changes.</strong> We may change pricing with 30 days' advance notice. Continued use after the effective date constitutes acceptance of new pricing.</p>
+        <p style={S.p}><strong>Price Changes.</strong> We may change the price of the plan with 30 days' written notice. A change never applies to a period you have already paid for, and continued use after the notice period is acceptance of the new price.</p>
 
         <h2 style={S.h2}>5. Data Ownership</h2>
         <p style={S.p}>You retain full ownership of all data you import, enter, or generate within the Service, including donor records, financial data, and documents ("Your Data").</p>

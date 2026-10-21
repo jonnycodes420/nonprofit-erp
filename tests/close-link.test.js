@@ -59,6 +59,11 @@ let PRICES = {
   price_test_team:     { unit_amount: 49900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
   // FIX-32: the battery now sets STRIPE_PRICE_T1000_MONTHLY (golden journey J11).
   price_test_t1000m:   { unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
+  // PRICING-1: the record bands the battery configures (tests/shard.sh), each at its own amount.
+  ...Object.fromEntries(require("../pricing.json").tiers.flatMap(t => [
+    [`price_test_${t.id}m`, { unit_amount: t.monthlyUsd * 100, currency: "usd", recurring: { interval: "month", interval_count: 1 } }],
+    [`price_test_${t.id}y`, { unit_amount: t.yearlyUsd * 100, currency: "usd", recurring: { interval: "year", interval_count: 1 } }],
+  ])),
 };
 function startBillingMock(port = BILLING_MOCK_PORT) {
   return new Promise(resolve => {
@@ -134,10 +139,16 @@ async function reset() {
   ok("the three legacy plans are untouched, and they are the live prices",
      LEGACY_CLOSE_PLANS.map(p => `${p.id}:${p.monthlyUsd}`).join(",") === "founding:199,core:249,team:499",
      LEGACY_CLOSE_PLANS);
-  ok("…and the tier plans are the three bands, monthly and yearly",
-     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}`).join(",")
-       === "t1000_monthly:199,t1000_yearly:1990,t5000_monthly:299,t5000_yearly:2990,t10000_monthly:499,t10000_yearly:4990",
-     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}`));
+  // PRICING-1: four record bands, each with a one-time setup fee.
+  ok("…and the tier plans are the four record bands, monthly and yearly, each with its setup fee",
+     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}+${p.setupUsd}`).join(",")
+       === "r500_monthly:199+250,r500_yearly:1990+250,r2500_monthly:299+500,r2500_yearly:2990+500,"
+         + "r10000_monthly:449+1000,r10000_yearly:4490+1000,r25000_monthly:649+1500,r25000_yearly:6490+1500",
+     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}+${p.setupUsd}`));
+  ok("…and the GTM-1a bands are still recognised, never sold",
+     CLOSE_PLANS.filter(p => p.legacy).map(p => `${p.id}:${p.amountUsd}`).join(",")
+       === "t1000_monthly:199,t1000_yearly:1990,t5000_monthly:299,t5000_yearly:2990,t10000_monthly:499,t10000_yearly:4990"
+       && !require("../closeLink").SELLABLE_CLOSE_PLANS.some(p => p.legacy));
   ok("…and a yearly plan's first charge names the YEARLY figure, not the monthly one",
      /\$2,990/.test(checkoutNotice({ monthlyUsd: 2990, firstChargeAt: Date.parse("2026-10-20T12:00:00Z"), tz: "America/New_York" })));
   ok("an unknown plan is refused", validateCloseLink({ orgName: "X", contactEmail: "a@b.org", plan: "enterprise" }).error === "invalid_plan");

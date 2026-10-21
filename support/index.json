@@ -3153,11 +3153,11 @@
    "id": "faq:5",
    "source": "faq",
    "title": "FAQ",
-   "heading": "What counts as an active donor?",
+   "heading": "Is there a setup fee?",
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "Anyone with a gift or recorded activity in the last 24 months. Older records stay in Steward and do not count toward your plan."
+   "text": "Yes, once, when you sign up. It covers moving your data in and setting Steward up with you, and signup shows it before you pay."
   },
   {
    "id": "faq:6",
@@ -3183,11 +3183,11 @@
    "id": "faq:8",
    "source": "faq",
    "title": "FAQ",
-   "heading": "Is there a free trial?",
+   "heading": "When is the first charge?",
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "Yes. Thirty days free while you settle in."
+   "text": "The one-time setup fee is charged when you sign up. Your plan's first charge is thirty days later."
   },
   {
    "id": "faq:9",
@@ -3217,7 +3217,7 @@
    "link": "/faq",
    "route": null,
    "screen": null,
-   "text": "Organizations with a few hundred to ten thousand active donors, such as food pantries, pregnancy centers, rescues, riding programs and youth mentoring."
+   "text": "Small nonprofits with a development team of one to five, such as food pantries, pregnancy centers, rescues, riding programs and youth mentoring."
   },
   {
    "id": "faq:12",

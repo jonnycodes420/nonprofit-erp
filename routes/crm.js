@@ -67,7 +67,7 @@ const {
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkActiveDonorBand, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkRecordBand, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
@@ -5069,7 +5069,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   // AFTER the response: the import's own summary must not wait on it, and a
   // failure here must never turn a successful import into an error. It never
   // touches the subscription — it records one notice and tells the admin.
-  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
+  checkRecordBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
@@ -6184,7 +6184,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // AFTER the response: the import's own summary must not wait on it, and a
   // failure here must never turn a successful import into an error. It never
   // touches the subscription — it records one notice and tells the admin.
-  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
+  checkRecordBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 // AGENT-2: CHANGE HOW TO REACH SOMEBODY, AND ONLY THAT. PUT /donors/:id
@@ -8288,7 +8288,7 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   // AFTER the response: the import's own summary must not wait on it, and a
   // failure here must never turn a successful import into an error. It never
   // touches the subscription — it records one notice and tells the admin.
-  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
+  checkRecordBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 // ── BUILD-87 PART 1 — NAMED IMPORTS AND HISTORY ────────────────────────────

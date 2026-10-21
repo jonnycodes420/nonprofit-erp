@@ -862,14 +862,15 @@ function AppShell() {
     {donorBand?.notice&&!donorBand.notice.dismissedAt&&(
       <div data-testid="band-notice" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
         <span style={{flex:1,minWidth:240}}>
-          <strong style={{color:T.gold50}}>You have {Number(donorBand.notice.count||0).toLocaleString()} active donors</strong>
-          {" more than your current plan's band. "}
+          {/* PRICING-1: the count is the TOTAL records, over the band two months running. */}
+          <strong style={{color:T.gold50}}>You have {Number(donorBand.notice.count||0).toLocaleString()} records</strong>
+          {", more than your plan's band for two months running. "}
           {donorBand.notice.nextMonthlyUsd
-            ? <>The next plan, {donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}), is ${donorBand.notice.nextMonthlyUsd} a month. </>
-            : <>{donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}) is a conversation rather than a price. </>}
-          <strong style={{color:T.gold50}}>Nothing has changed</strong>
+            ? <>The next band, {String(donorBand.notice.nextBandLabel||"").toLowerCase()}, is ${donorBand.notice.nextMonthlyUsd} a month. </>
+            : <>Above {String(donorBand.notice.nextBandLabel||"").replace(/ records$/,"").toLowerCase()} records is a conversation rather than a price. </>}
+          <strong style={{color:T.gold50}}>Nothing changes without your yes</strong>
           {donorBand.notice.effectiveAt
-            ? <>, and nothing will before {new Date(donorBand.notice.effectiveAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.</>
+            ? <>, and not before {new Date(donorBand.notice.effectiveAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.</>
             : <>.</>}
         </span>
         <button onClick={()=>navigateTo("settings",{section:"billing"})}

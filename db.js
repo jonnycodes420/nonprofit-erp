@@ -4863,6 +4863,33 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_count INTEGER`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_dismissed_at TIMESTAMPTZ`);
 
+  // ── PRICING-1 · RECORDS, TWO MONTHS RUNNING, AND THE OWNER'S YES ────────
+  // One row per org per calendar month: the record count Steward measured and
+  // whether it was over the band the org pays for. A note goes out only when
+  // this month AND last month were over; one month over changes nothing.
+  // The notice still lives in orgs.tier_notice_*; the owner's yes is
+  // tier_notice_agreed_at, and without it the price never moves. A request to
+  // move DOWN waits for renewal in band_down_to.
+  await pool.query(`CREATE TABLE IF NOT EXISTS org_record_months (
+    org_id TEXT NOT NULL, month TEXT NOT NULL, record_count INTEGER NOT NULL,
+    band_id TEXT, over BOOLEAN NOT NULL DEFAULT false, measured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (org_id, month))`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_agreed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_agreed_by TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS band_down_to TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS band_down_requested_at TIMESTAMPTZ`);
+  // The setup fee: charged once, at signup, by Checkout. Recorded from the
+  // completed session so Billing can say it was paid and a replayed webhook
+  // can never make it look paid twice.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_fee_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_fee_paid_at TIMESTAMPTZ`);
+  // Existing deals hold. An org with a custom price (CKRH at $149, a beta org
+  // free until its date) is never measured against a band and never moved to
+  // a band price automatically. Set by a super-admin only.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS custom_price_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS custom_price_ends_on DATE`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS custom_price_note TEXT`);
+
   // ── GTM-1b 4 · A FOUNDING ORG KEEPS ITS $50, ON ANY BAND ────────────────
   // The discount used to be a PRICE (STRIPE_PRICE_FOUNDING, $199). A price
   // cannot follow an org that grows: the day a founding partner moved off it

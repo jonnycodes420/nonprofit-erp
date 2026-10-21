@@ -20,16 +20,18 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Return typed billing errors, never a raw 500:** `plan_not_configured`, `plan_mode_mismatch`,
   `portal_not_configured` via `billingConfigError`. The client shows them through `billingErrorMessage`.
   (BUILD-24)
-- **`pricing.json` is the one price list, and it is the only place a number lives.** One plan,
-  everything included, unlimited users, month to month; three bands on ACTIVE donors — $199 up to
-  1,000, $299 up to 5,000, $499 up to 10,000, and above that a conversation. Yearly is two months
-  free ($1,990 / $2,990 / $4,990). It is JSON, not a module, because the server needs it
-  synchronously at require time and the client needs it in the bundle, and a root CommonJS file
-  cannot be bundled (Rollup's CommonJS transform covers only node_modules). `pricing.js` adds the
-  lookups; `closeLink.js` builds `TIER_CLOSE_PLANS` from it; the client imports the JSON. (GTM-1a)
-- **An active donor is one sentence, and it is `activeDonorSentence`.** A gift OR a logged
-  conversation in the last 24 months. The pricing page, the signup page and the over-band notice
-  all render that constant. (GTM-1a)
+- **`pricing.json` is the one price list, and every number lives there** (PRICING-1). One plan,
+  everything included, unlimited users, no platform fee, month to month. Four bands by RECORDS:
+  $199 up to 500, $299 up to 2,500, $449 up to 10,000, $649 up to 25,000, then a conversation.
+  Yearly is ten times monthly; each band has a one-time setup fee ($250 / $500 / $1,000 / $1,500).
+  The server reads it at boot and serves it at `GET /public/pricing`; signup, Billing and the plan
+  picker read that, so a number changed in the file needs a server deploy and no client build. The
+  client bundle's copy is only the first paint (and the prerendered site line). `pricing.js` adds
+  the lookups; `closeLink.js` builds the plans from it. `legacyTiers` (the GTM-1a t-bands) are
+  recognised for ever and never offered.
+- **A record is one sentence, `recordSentence`, and `countRecords` is that sentence in SQL.** A
+  non-deleted person or organization with at least one gift, any date. Prospects, volunteers and
+  contacts with no gift never count; four gifts from one person is one record. (PRICING-1)
 - **A plan id is `<band>_<cadence>`** (`t5000_yearly`). A yearly plan's first charge is the YEARLY
   figure: read it with `planAmountUsd(plan)`, never `plan.monthlyUsd`, which is still the monthly
   number on purpose. `planInterval(plan)` is what the Stripe price-check compares cadence against.
@@ -54,16 +56,22 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   whose `termsVersion` is stale is refused rather than recorded. The document lives in `legal/`,
   not `claude/`, because `.railwayignore` excludes `claude/` — the product must have the document
   it serves. (GTM-1a)
-- **An org is never moved between bands silently.** `checkActiveDonorBand` counts, records ONE
-  open notice (`orgs.tier_notice_*`), tells the admin in-app and by email, and dates the change at
-  least `TIER_NOTICE_DAYS` = 30 out. It never writes `orgs.plan`, never calls Stripe, and never
-  changes an amount. A second check that finds the same band is the same notice and does not
-  restart the clock; falling back inside the band withdraws it. Dismissing hides the banner and
-  keeps the notice. A legacy plan (core/team/founding) has no band and is never measured against
-  one. `tests/gtm1b-band-notice.test.js`. (GTM-1b)
-- **The active-donor count is the pricing page's sentence, in SQL.** A DISTINCT non-deleted donor
-  with a gift OR a conversation inside `activeDonorMonths`. Four gifts from one person is one
-  person. Changing the sentence changes the count. (GTM-1b)
+- **A band moves only with the owner's yes** (PRICING-1). `checkRecordBand` records one row per org
+  per month in `org_record_months`; ONE month over changes nothing, `bandMove.monthsOverBeforeNote`
+  (2) months running raises ONE notice (`orgs.tier_notice_*`, in-app and by email) dated
+  `noticeDays` (30) out. `applyAgreedBandMoves` is the only code that changes a band price: up only
+  when `tier_notice_agreed_at` is set AND the date has passed; down only when the owner asked
+  (`band_down_to`) AND the subscription reached renewal. Both swap the Stripe price with
+  `proration_behavior: none`. Daily job `processRecordBands`. `tests/pricing1-bands.test.js`.
+- **Existing deals hold.** An org with `custom_price_cents` (set in super-admin with its end date,
+  `custom_price_ends_on`) is never measured against a band and never moved automatically, before
+  or after that date; when it ends, a person decides. Legacy plans have no band either. (PRICING-1)
+- **The setup fee is charged once, at signup, by Checkout.** A one-time price line beside the
+  subscription's price, while the subscription's first charge waits for the thirty days. The
+  webhook records `setup_fee_cents` / `setup_fee_paid_at` once. The first invoice
+  (`billing_reason: subscription_create`) is never the first monthly charge: it carries the setup
+  fee, and reading it as one ended a new org's thirty days at signing. MRR counts only recurring
+  invoice lines. (PRICING-1)
 - **The founding discount is a COUPON, not a price.** `Gv9E1KkK` ($50 off, code `STEWARD50`) is
   applied at checkout for any org with `orgs.founding_partner`, on whichever band they pick — a
   price could not follow an org that grew, and a founding partner would have lost what they were

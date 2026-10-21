@@ -191,6 +191,19 @@ jobs:
       STRIPE_PRICE_CORE: price_test_core
       STRIPE_PRICE_TEAM: price_test_team
       STRIPE_PRICE_T1000_MONTHLY: price_test_t1000m   # FIX-32: J11 signs up through public signup
+      # PRICING-1: the record bands, monthly, yearly and the one-time setup fee
+      STRIPE_PRICE_R500_MONTHLY: price_test_r500m
+      STRIPE_PRICE_R500_YEARLY: price_test_r500y
+      STRIPE_PRICE_R500_SETUP: price_test_r500s
+      STRIPE_PRICE_R2500_MONTHLY: price_test_r2500m
+      STRIPE_PRICE_R2500_YEARLY: price_test_r2500y
+      STRIPE_PRICE_R2500_SETUP: price_test_r2500s
+      STRIPE_PRICE_R10000_MONTHLY: price_test_r10000m
+      STRIPE_PRICE_R10000_YEARLY: price_test_r10000y
+      STRIPE_PRICE_R10000_SETUP: price_test_r10000s
+      STRIPE_PRICE_R25000_MONTHLY: price_test_r25000m
+      STRIPE_PRICE_R25000_YEARLY: price_test_r25000y
+      STRIPE_PRICE_R25000_SETUP: price_test_r25000s
       FOUNDER_EMAIL: jonathan@stewardapp.dev   # From on the close-link welcome + the 7-day reminder
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.

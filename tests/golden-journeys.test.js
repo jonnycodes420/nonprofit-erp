@@ -114,7 +114,7 @@ function billingMock() {
   const sessions = {};
   const SUB = { id: "sub_gj11", object: "subscription", status: "trialing",
     trial_start: Math.floor(Date.now() / 1000), trial_end: Math.floor(Date.now() / 1000) + 30 * 86400,
-    items: { data: [{ price: { id: "price_test_t1000m" } }] } };
+    items: { data: [{ price: { id: "price_test_r500m" } }] } };
   const srv = http.createServer((req, res) => {
     let b = ""; req.on("data", c => b += c);
     req.on("end", () => {
@@ -130,6 +130,15 @@ function billingMock() {
       const cs = req.url.match(/^\/v1\/checkout\/sessions\/([^/?]+)/);
       if (req.method === "GET" && cs && sessions[cs[1]]) return res.end(JSON.stringify(sessions[cs[1]]));
       if (req.method === "GET" && /^\/v1\/subscriptions\//.test(req.url)) return res.end(JSON.stringify(SUB));
+      // PRICING-1: each test price id answers with its own amount and cadence,
+      // read from pricing.json, and a setup price is one-time.
+      const pm = req.url.match(/^\/v1\/prices\/price_test_r(\d+)([mys])/);
+      if (req.method === "GET" && pm) {
+        const t = require("../pricing.json").tiers.find(x => x.id === "r" + pm[1]);
+        const usd = pm[2] === "m" ? t.monthlyUsd : pm[2] === "y" ? t.yearlyUsd : t.setupUsd;
+        return res.end(JSON.stringify({ id: req.url.split("/")[3], object: "price", unit_amount: usd * 100, currency: "usd",
+          ...(pm[2] === "s" ? { recurring: null } : { recurring: { interval: pm[2] === "y" ? "year" : "month", interval_count: 1 } }) }));
+      }
       if (req.method === "GET" && /^\/v1\/prices\//.test(req.url))
         return res.end(JSON.stringify({ id: "price_test_t1000m", object: "price", unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } }));
       if (req.method === "GET" && /^\/v1\/(payment_methods|customers)/.test(req.url)) return res.end(JSON.stringify({ id: "pm_gj11", object: "payment_method", card: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 } }));

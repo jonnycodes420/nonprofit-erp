@@ -44,6 +44,7 @@ const JOB_WRITES = {
   processWorkflowSweeps:             "runs the workflow recipes that are due",
   deliverWebhooks:                   "delivers a queued webhook to the org's endpoint",
   retryFailedNotifications:          "retries a notification that failed to send",
+  processRecordBands:                "notes an org over its band two months running, and moves a band price only with the owner's yes",
 };
 
 // Jobs that only read, compute or clean up after themselves. Nothing here

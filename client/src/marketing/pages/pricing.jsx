@@ -76,10 +76,10 @@ export function Pricing() {
 
     <FaqS h="Pricing <b>questions.</b>" items={[
       ["Is there a contract?", "No. Month to month, or yearly with two months free. Cancel any time."],
-      ["What does the price depend on?", "The size of your donor file. We'll tell you the number on the call, and before anything ever changes."],
-      ["Are there setup fees?", "No. The move and setup are included."],
+      ["What does the price depend on?", "The size of your organization. Signup shows your price before you pay, and it never changes without your agreement."],
+      ["Is there a setup fee?", "Yes, once, when you sign up. It covers moving your data in and setting Steward up with you, and signup shows it before you pay."],
       ["Does Steward take a percentage of donations?", "No. Your processor's card fee is the only fee on a gift."],
-      ["Is there a free trial?", "Yes. Thirty days free, with the move done with you."]]} />
+      ["When is the first charge?", "The one-time setup fee is charged when you sign up. Your plan's first charge is thirty days later, and you can cancel before then."]]} />
     <FinalCta />
   </>;
 }
