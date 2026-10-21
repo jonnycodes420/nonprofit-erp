@@ -1,8 +1,8 @@
 # Steward Customer Agreement
 
 **Steward Software LLC**, 101 W Main St Apt 3, Wilmore, KY 40390
-Version 2026-09-27. Effective for any organization that signs on or after
-27 September 2026. Earlier versions govern organizations that signed before
+Version 2026-10-21. Effective for any organization that signs on or after
+21 October 2026. Earlier versions govern organizations that signed before
 that date; which version an organization accepted, and when, is recorded in
 `terms_acceptances` with the sha256 of the exact text that was on the screen.
 
@@ -27,39 +27,53 @@ never asks your donors for a tip.
 
 ---
 
-## 2. Price, the first charge, and cancellation
+## 2. Price, the setup fee, the first charge, and cancellation
 
 **The plan.** There is one plan. Everything is in it: the donor CRM,
-Volunteers, the Agent, online giving, receipts, grants, major gifts and
-reports. There is no per-user charge and no limit on how many people from your
-organization use it. Steward takes no percentage of any gift and adds no tip
-prompt to any donation page.
+Fundraising, Volunteers and the Agent, along with online giving, receipts,
+grants, major gifts and reports. There is no per-user charge and no limit on
+how many people from your organization use it. Steward takes no percentage of
+any gift and adds no tip prompt to any donation page.
 
-What you pay depends only on how many **active donors** you work. An active
-donor is a person or organization that has given a gift or had a conversation
-logged in the last 24 months.
+What you pay depends only on how many **records** you have. A record is a
+person or organization with at least one gift in Steward. Prospects,
+volunteers and contacts with no gift never count.
 
-| Active donors | Monthly | Yearly |
-| --- | --- | --- |
-| Up to 1,000 | $199 | $1,990 |
-| Up to 5,000 | $299 | $2,990 |
-| Up to 10,000 | $499 | $4,990 |
-| More than 10,000 | Talk to us | Talk to us |
+| Records | Monthly | Yearly | One-time setup |
+| --- | --- | --- | --- |
+| Up to 500 | $199 | $1,990 | $250 |
+| Up to 2,500 | $299 | $2,990 | $500 |
+| Up to 10,000 | $449 | $4,490 | $1,000 |
+| Up to 25,000 | $649 | $6,490 | $1,500 |
+| Over 25,000 | Talk to us | Talk to us | Quoted |
 
-Paying yearly is two months free. Prices are in US dollars and are charged in
-advance for the period you chose. It is month to month: there is no term and
-no minimum.
+Paying yearly is ten times the monthly price, so two months are free. Prices
+are in US dollars and are charged in advance for the period you chose. It is
+month to month: there is no term and no minimum.
 
-**If you grow past your band.** Steward counts your active donors and tells
-you, in the product and by email, before anything changes, and the new price
-does not take effect for at least thirty days. Steward never changes what you
-pay without telling you first.
+**The setup fee.** The one-time setup fee for your band is charged when you
+sign up, together with the card going in. It pays for moving your data in and
+setting Steward up with you. It is charged once, never again, and it is not
+refunded once setup has started.
 
-Organizations on a plan named in an earlier version of this agreement
-(Founding, Core or Team) keep that price until they choose to move.
+**If you grow past your band.** Steward counts your records each month. If you
+are over your band two months running, Steward tells the owner of the account,
+in the product and by email. The new price does not take effect for at least
+thirty days after that note, and it takes effect only if the owner agrees.
+Steward never changes what you pay without your agreement.
 
-**The first charge is thirty days after signing.** Signing is the moment you
-complete checkout — the moment the card goes in. Nothing is charged that day.
+**If you shrink.** Moving down to a smaller band happens at your next renewal,
+when the owner asks for it.
+
+**Earlier and custom prices.** Organizations on a plan named in an earlier
+version of this agreement, or on a custom price agreed with Steward, keep that
+price until the end date stated for it, and are never moved to a band price
+automatically.
+
+**The first subscription charge is thirty days after signing.** Signing is the
+moment you complete checkout, the moment the card goes in. The setup fee is
+the only thing charged that day; your monthly or yearly price starts on the
+first charge date.
 The exact date is shown to you on the checkout page before you press the
 button, and it is shown again in Settings → Billing for as long as it is in
 the future.
@@ -69,8 +83,8 @@ second time, not rescheduling onboarding, not a delay on Steward's side. The
 date is fixed at signing and it is the same date on every screen and in every
 email you receive about it.
 
-**Cancel before it and you pay nothing.** At any point in those thirty days you
-may cancel and no charge is ever made. There is no fee, no minimum, and no
+**Cancel before it and you pay nothing more.** At any point in those thirty
+days you may cancel and no subscription charge is ever made. There is no fee, no minimum, and no
 conversation required: there is a button in Settings → Billing, and a one-click
 cancel link in the email described below.
 
@@ -82,11 +96,12 @@ subscription in one click.
 **After the first charge it is month to month.** You may cancel at any time.
 Cancellation takes effect at the end of the month you have already paid for;
 you keep full access until then, and you are not charged again. Payments
-already made are not refunded except where the law requires it.
+already made, including the setup fee once setup has started, are not refunded
+except where the law requires it.
 
 **Failed payments.** If a charge fails, Steward retries and emails you. If it
 is unresolved after seven days the account may be suspended. Suspension is not
-deletion — see §3.
+deletion; see §3.
 
 **Price changes.** Steward may change the price of a plan with thirty days'
 written notice to the address on the account. A change never applies to a

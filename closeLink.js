@@ -40,15 +40,15 @@ const LEGACY_CLOSE_PLANS = [
 // `t5000_yearly`, and that string is what lands in orgs.plan and in the
 // subscription metadata.
 const TIER_CLOSE_PLANS = [];
-for (const t of PRICING.TIERS) {
+const tierPlans = (t, legacy) => {
   // FIX-4 6 — THE PLAN HAS A NAME. `name` reaches the welcome email's
   // subject line, the founder notification and every admin refusal, and it
   // read "Steward · Up to 5,000 active donors" — a specification where a
   // name belongs. Seed / Sapling / Orchard, with the size after it.
   TIER_CLOSE_PLANS.push({
     id: `${t.id}_monthly`, name: `${t.name} · ${t.band.toLowerCase()}`, tierId: t.id, interval: "month",
-    tierName: t.name, band: t.band,
-    monthlyUsd: t.monthlyUsd, amountUsd: t.monthlyUsd, env: t.envMonthly,
+    tierName: t.name, band: t.band, setupUsd: t.setupUsd ?? null, setupEnv: t.envSetup || null,
+    monthlyUsd: t.monthlyUsd, amountUsd: t.monthlyUsd, env: t.envMonthly, ...(legacy ? { legacy: true } : {}),
   });
   TIER_CLOSE_PLANS.push({
     id: `${t.id}_yearly`, name: `${t.name} · ${t.band.toLowerCase()}, yearly`, tierId: t.id, interval: "year",
@@ -56,9 +56,17 @@ for (const t of PRICING.TIERS) {
     // `monthlyUsd` stays the MONTHLY figure because that is what it has always
     // meant; `amountUsd` is what Stripe actually charges on the first charge,
     // and it is what the sentence she reads must say.
-    monthlyUsd: t.monthlyUsd, amountUsd: t.yearlyUsd, env: t.envYearly,
+    setupUsd: t.setupUsd ?? null, setupEnv: t.envSetup || null,
+    monthlyUsd: t.monthlyUsd, amountUsd: t.yearlyUsd, env: t.envYearly, ...(legacy ? { legacy: true } : {}),
   });
-}
+};
+// PRICING-1: the four record bands are on sale. The GTM-1a t-bands are not,
+// but an org may be on one, so their plans stay in the catalogue as legacy:
+// the webhook still recognises them and nothing offers them.
+const LEGACY_TIER_PLANS = [];
+{ const before = TIER_CLOSE_PLANS.length; for (const t of PRICING.LEGACY_TIERS) tierPlans(t, true);
+  LEGACY_TIER_PLANS.push(...TIER_CLOSE_PLANS.splice(before)); }
+for (const t of PRICING.TIERS) tierPlans(t, false);
 
 // The $1 internal price. In this catalogue because the checkout machinery is
 // the same; NEVER in the list any public surface renders, and the only route
@@ -69,13 +77,13 @@ const INTERNAL_CLOSE_PLAN = {
   env: PRICING.INTERNAL_TEST.env, internal: true,
 };
 
-const CLOSE_PLANS = [...LEGACY_CLOSE_PLANS, ...TIER_CLOSE_PLANS, INTERNAL_CLOSE_PLAN];
+const CLOSE_PLANS = [...LEGACY_CLOSE_PLANS, ...LEGACY_TIER_PLANS, ...TIER_CLOSE_PLANS, INTERNAL_CLOSE_PLAN];
 
 // Every plan a close link may sell. The internal $1 price is NOT one of them:
 // a close link is a thing Jonathan hands to a customer, and the $1 price is
 // not for sale at any door. It is reachable only through the super-admin
 // control that moves an org already in the product onto it.
-const SELLABLE_CLOSE_PLANS = CLOSE_PLANS.filter(p => !p.internal);
+const SELLABLE_CLOSE_PLANS = CLOSE_PLANS.filter(p => !p.internal && !p.legacy);
 
 const closePlan = id => CLOSE_PLANS.find(p => p.id === id) || null;
 
@@ -112,7 +120,14 @@ function firstChargeSentence({ monthlyUsd, firstChargeAt, tz = DEFAULT_TZ }) {
 
 // What Checkout says above the "Subscribe" button. Two sentences: when, and
 // the promise that makes putting a card in today safe.
-function checkoutNotice({ monthlyUsd, firstChargeAt, tz = DEFAULT_TZ }) {
+// PRICING-1: with a setup fee, today's charge comes first, and the promise
+// changes: the setup fee is not refunded once setup has started.
+function checkoutNotice({ monthlyUsd, firstChargeAt, tz = DEFAULT_TZ, setupUsd = null }) {
+  if (setupUsd) {
+    return `Today you pay the one-time setup fee of ${usd(setupUsd)}. `
+      + firstChargeSentence({ monthlyUsd, firstChargeAt, tz })
+      + " Cancel any time before then and you pay nothing more.";
+  }
   return firstChargeSentence({ monthlyUsd, firstChargeAt, tz })
     + " Cancel any time before then and you pay nothing.";
 }
@@ -175,18 +190,23 @@ function validateOrgClose(body = {}) {
 function checkoutSessionParams({
   plan, orgName, contactEmail, closeLinkId,
   priceId, successUrl, cancelUrl, now = Date.now(), tz = DEFAULT_TZ,
-  customerId = null, targetOrgId = null,
+  customerId = null, targetOrgId = null, setupPriceId = null,
 }) {
   const firstChargeAt = computeTrialEnd(now);
   // `orgId` rides the metadata whenever the link targets an org that already
   // exists, so a customer minted by Checkout can be traced back to it in the
   // Stripe dashboard. A NEW-org link has no org id to give yet - the org does
   // not exist until this session completes.
+  // The setup fee rides Checkout as a one-time line: Stripe charges it on the
+  // first invoice, at signup, while the subscription's own first charge waits
+  // for the end of the thirty days. It is on the session ONCE, by construction.
+  const setupUsd = setupPriceId && plan.setupUsd ? plan.setupUsd : null;
   const metadata = { closeLinkId, plan: plan.id, orgName, contactEmail,
+                     ...(setupUsd ? { setupFeeUsd: String(setupUsd) } : {}),
                      ...(targetOrgId ? { orgId: targetOrgId } : {}) };
   return {
     mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }, ...(setupUsd ? [{ price: setupPriceId, quantity: 1 }] : [])],
     // ONE ORGANISATION, ONE STRIPE CUSTOMER.
     //
     // `customer_email` makes Checkout MINT A NEW CUSTOMER every time. For a new
@@ -207,7 +227,7 @@ function checkoutSessionParams({
     },
     metadata,
     custom_text: {
-      submit: { message: checkoutNotice({ monthlyUsd: planAmountUsd(plan), firstChargeAt, tz }) },
+      submit: { message: checkoutNotice({ monthlyUsd: planAmountUsd(plan), firstChargeAt, tz, setupUsd }) },
     },
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -215,7 +235,7 @@ function checkoutSessionParams({
 }
 
 module.exports = {
-  CLOSE_PLANS, LEGACY_CLOSE_PLANS, TIER_CLOSE_PLANS, SELLABLE_CLOSE_PLANS, INTERNAL_CLOSE_PLAN,
+  CLOSE_PLANS, LEGACY_CLOSE_PLANS, LEGACY_TIER_PLANS, TIER_CLOSE_PLANS, SELLABLE_CLOSE_PLANS, INTERNAL_CLOSE_PLAN,
   planAmountUsd, planInterval,
   closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
   checkoutNotice, firstChargeSentence, formatChargeDate, usd,

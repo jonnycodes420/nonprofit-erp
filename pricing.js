@@ -1,9 +1,9 @@
-// pricing.js — GTM-1a · ONE PLAN, PRICED BY HOW MANY DONORS YOU WORK.
+// pricing.js — ONE PLAN, PRICED BY RECORDS (GTM-1a, re-banded by PRICING-1).
 //
 // Steward stopped selling features. There is ONE plan, everything is in it —
 // the CRM, Volunteers and the Agent — with unlimited users, no platform fee
-// and no contract. What changes with size is the price, and size is measured
-// in ACTIVE donors, which is a number the org can check for itself.
+// and no contract. What changes with size is the price, and since PRICING-1
+// size is RECORDS (people with at least one gift), a number the org can check.
 //
 // THE NUMBERS ARE IN `pricing.json`, NOT HERE. That file is the one source,
 // and it is JSON rather than JavaScript for a build reason worth writing
@@ -30,16 +30,27 @@
 
 const DATA = require("./pricing.json");
 
-// ── THE THREE BANDS ────────────────────────────────────────────────────────
-// `maxDonors` is inclusive: exactly 1,000 active donors is the first band.
-// Yearly is two months free, which is 10 × the monthly figure, and it is
-// written out in the JSON rather than computed so nobody has to trust
-// arithmetic on a page that takes a card.
+// ── PRICING-1 · FOUR BANDS BY RECORDS ──────────────────────────────────────
+// A record is a person or organization with at least one gift. `maxRecords`
+// is inclusive: exactly 500 records is the first band, 501 the second. Yearly
+// is ten times the monthly figure (two months free) and is written out in the
+// JSON rather than computed. Every band carries a one-time setup fee.
 const TIERS = DATA.tiers;
 
 // Above the top band there is no price, there is a conversation. A real
 // state, not a missing tier, so it has a name the code can carry around.
 const TALK_TO_US = DATA.talkToUs;
+
+// The GTM-1a bands (t1000/t5000/t10000, by active donors). Organisations may
+// be on those Stripe prices, so they are recognised for ever (names, the
+// webhook's price map) and never offered, and never measured against a band.
+const LEGACY_TIERS = DATA.legacyTiers || [];
+
+// When an org has passed its band, and what happens then. Two months running
+// over the band sends the owner a note; the change waits `noticeDays` and
+// needs the owner's yes. Moving down happens at renewal, on request.
+const BAND_MOVE = DATA.bandMove;
+const SETUP_NOTE = DATA.setupNote;
 
 // ── THE $1 PRICE ───────────────────────────────────────────────────────────
 // Internal only, and that is enforced rather than intended: it is not in
@@ -65,14 +76,10 @@ const FOUNDING_COUPON = {
   offUsdPerMonth: 50,
 };
 
-// ── WHAT "ACTIVE DONOR" MEANS, IN ONE SENTENCE ─────────────────────────────
-// On the pricing page, on the signup page, and in the over-tier notice, and
-// it is the same sentence in all three because it is this constant. The
-// window is TWENTY-FOUR months and the two things that count are a gift and a
-// logged conversation — the same two events the donor profile's Lifetime and
-// Last contact figures are built from, so an org can count its own.
-const ACTIVE_DONOR_MONTHS = DATA.activeDonorMonths;
-const ACTIVE_DONOR_SENTENCE = DATA.activeDonorSentence;
+// ── WHAT A RECORD IS, IN ONE SENTENCE ──────────────────────────────────────
+// On signup, on Billing and in the band note, the same sentence because it is
+// this constant, and countRecords (server.js) is this sentence in SQL.
+const RECORD_SENTENCE = DATA.recordSentence;
 
 const INCLUDED = DATA.included;
 const TERMS_STRIP = DATA.termsStrip;
@@ -93,21 +100,24 @@ const EXTRAS = DATA.extras;
 const publicTierIds = () => TIERS.map(t => t.id);
 
 const tierById = id => TIERS.find(t => t.id === id) || null;
+const legacyTierById = id => LEGACY_TIERS.find(t => t.id === id) || null;
 
 // The band an estimate falls in. Above the top band this returns null and the
 // caller must show TALK_TO_US — never silently sell the biggest tier to an
 // org that is larger than it.
-function tierForDonorCount(n) {
+function tierForRecordCount(n) {
   const count = Number(n);
   if (!Number.isFinite(count) || count < 0) return null;
-  return TIERS.find(t => count <= t.maxDonors) || null;
+  return TIERS.find(t => count <= t.maxRecords) || null;
 }
 
-// The env var that carries a tier's Stripe price for one cadence.
+// The env var that carries a tier's Stripe price for one cadence, or its
+// one-time setup fee (`interval` "setup"). Legacy tiers have no setup price.
 function priceEnvFor(tierId, interval) {
-  const t = tierById(tierId);
+  const t = tierById(tierId) || legacyTierById(tierId);
   if (!t) return null;
-  return interval === "yearly" ? t.envYearly : interval === "monthly" ? t.envMonthly : null;
+  return interval === "yearly" ? t.envYearly : interval === "monthly" ? t.envMonthly
+    : interval === "setup" ? (t.envSetup || null) : null;
 }
 
 function priceIdFor(tierId, interval, env) {
@@ -117,10 +127,14 @@ function priceIdFor(tierId, interval, env) {
 
 // What a tier costs for one cadence, in whole dollars.
 function amountUsdFor(tierId, interval) {
-  const t = tierById(tierId);
+  const t = tierById(tierId) || legacyTierById(tierId);
   if (!t) return null;
-  return interval === "yearly" ? t.yearlyUsd : interval === "monthly" ? t.monthlyUsd : null;
+  return interval === "yearly" ? t.yearlyUsd : interval === "monthly" ? t.monthlyUsd
+    : interval === "setup" ? (t.setupUsd ?? null) : null;
 }
+
+// The lowest monthly price, the one number the marketing site says.
+const fromMonthlyUsd = () => Math.min(...TIERS.map(t => t.monthlyUsd));
 
 // ── FIX-4 6 · THE NAME A CUSTOMER AND AN ADMIN SEE ────────────────────────
 // Seed, Sapling, Orchard, Forest. ONE function, because the plan value on an
@@ -144,7 +158,8 @@ const LEGACY_PLAN_NAMES = {
 function tierForPlanValue(plan) {
   const s = String(plan || "");
   if (!s) return null;
-  return tierById(s.includes("_") ? s.split("_")[0] : s);
+  const id = s.includes("_") ? s.split("_")[0] : s;
+  return tierById(id) || legacyTierById(id);
 }
 
 // The one answer to "what is this plan called?". Returns null for a plan
@@ -170,16 +185,17 @@ function planDisplayBand(plan) {
 // can report which ones are set without duplicating the list.
 function allPriceEnvNames() {
   const names = [];
-  for (const t of TIERS) names.push(t.envMonthly, t.envYearly);
+  for (const t of TIERS) names.push(t.envMonthly, t.envYearly, t.envSetup);
+  for (const t of LEGACY_TIERS) names.push(t.envMonthly, t.envYearly);
   names.push(INTERNAL_TEST.env);
   return names;
 }
 
 module.exports = {
   TIERS, TALK_TO_US, INTERNAL_TEST, FOUNDING_COUPON,
-  ACTIVE_DONOR_MONTHS, ACTIVE_DONOR_SENTENCE, INCLUDED, TERMS_STRIP,
+  LEGACY_TIERS, BAND_MOVE, SETUP_NOTE, RECORD_SENTENCE, INCLUDED, TERMS_STRIP,
   BILLING_INTERVALS, YEARLY_NOTE, COPY, INCLUDED_GROUPS, EXTRAS,
   LEGACY_PLAN_NAMES,
-  publicTierIds, tierById, tierForDonorCount, priceEnvFor, priceIdFor,
-  amountUsdFor, allPriceEnvNames, tierForPlanValue, planDisplayName, planDisplayBand,
+  publicTierIds, tierById, legacyTierById, tierForRecordCount, priceEnvFor, priceIdFor,
+  amountUsdFor, fromMonthlyUsd, allPriceEnvNames, tierForPlanValue, planDisplayName, planDisplayBand,
 };

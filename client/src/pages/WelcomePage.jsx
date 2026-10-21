@@ -494,7 +494,7 @@ export default function WelcomePage() {
             {error && <div style={{ ...errBox, marginTop: 14 }}>{error}</div>}
 
             <div style={{ textAlign: "center", marginTop: 18, fontSize: 12.5, color: ink3 }}>
-              Nothing is charged for thirty days, and cancelling takes two clicks.
+              Your plan's first charge is thirty days after you signed, and cancelling takes two clicks.
             </div>
           </div>
         )}

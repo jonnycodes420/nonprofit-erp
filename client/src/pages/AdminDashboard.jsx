@@ -461,6 +461,44 @@ function OrgSetup({ orgId, PSH, PBTN }) {
   );
 }
 
+// PRICING-1 · EXISTING DEALS HOLD. "Custom price, ends on": an org with one
+// (CKRH at $149, a beta org free until its date) is never measured against a
+// band and never moved to a band price automatically.
+function CustomPrice({ orgId, detail, INP, PBTN, onSaved }) {
+  const has = detail.custom_price_cents != null;
+  const [usd, setUsd] = useState(has ? String(detail.custom_price_cents / 100) : "");
+  const [ends, setEnds] = useState(detail.custom_price_ends_on ? String(detail.custom_price_ends_on).slice(0, 10) : "");
+  const [note, setNote] = useState(detail.custom_price_note || "");
+  const [msg, setMsg] = useState("");
+  async function save(clear) {
+    setMsg("");
+    try {
+      await adminFetch("/admin/orgs/" + orgId + "/custom-price", { method: "POST",
+        body: JSON.stringify(clear ? { clear: true } : { monthlyUsd: Number(usd), endsOn: ends || null, note }) });
+      onSaved(clear ? { custom_price_cents: null, custom_price_ends_on: null, custom_price_note: null }
+        : { custom_price_cents: Math.round(Number(usd) * 100), custom_price_ends_on: ends || null, custom_price_note: note });
+      if (clear) { setUsd(""); setEnds(""); setNote(""); }
+      setMsg(clear ? "Back to band pricing." : "Saved. This org is never moved to a band price automatically.");
+    } catch (e) { setMsg(errorMessage(e)); }
+  }
+  return (
+    <div data-testid="admin-custom-price" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ fontSize: 12, color: A.secondary }}>Custom price $</label>
+        <input data-testid="admin-custom-price-usd" type="number" min={0} value={usd} onChange={e => setUsd(e.target.value)} placeholder="149" style={{ ...INP, width: 80 }} />
+        <span style={{ fontSize: 12, color: A.secondary }}>/mo, ends on</span>
+        <input data-testid="admin-custom-price-ends" type="date" value={ends} onChange={e => setEnds(e.target.value)} style={{ ...INP, width: 150 }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Why (e.g. first customer, beta until launch)" style={{ ...INP, flex: 1 }} />
+        <button data-testid="admin-custom-price-save" onClick={() => save(false)} disabled={usd === ""} style={{ ...PBTN }}>Save</button>
+        {has && <button onClick={() => save(true)} style={{ ...PBTN }}>Remove</button>}
+      </div>
+      {msg && <div style={{ fontSize: 11, color: A.muted }}>{msg}</div>}
+    </div>
+  );
+}
+
 function OrgPanel({ org, onClose, onRefresh }) {
   const [detail, setDetail] = useState(null);
   const [extDays, setExtDays] = useState("14");
@@ -723,6 +761,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
                   Change Plan
                 </button>
               </div>
+              {detail && <CustomPrice orgId={org.id} detail={detail} INP={INP} PBTN={PBTN} onSaved={d => setDetail(dd => ({ ...dd, ...d }))} />}
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => navigator.clipboard.writeText(org.id)} style={{ ...PBTN, flex: 1 }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = A.green; e.currentTarget.style.color = A.green; }}
@@ -1407,7 +1446,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
         <div style={{ fontSize: 13, color: A.secondary, lineHeight: 1.6, marginBottom: 18, maxWidth: 560 }}>
           {target
             ? "This puts an organization that is already in Steward onto a plan. They put a card in, nothing is charged today, and the first charge is thirty days from the moment they sign."
-            : "This creates the one link that opens an organization. She puts a card in, nothing is charged today, and the first charge is thirty days from the moment she signs."}
+            : "This creates the one link that opens an organization. She puts a card in, pays the band's one-time setup fee today, and the plan's first charge is thirty days from the moment she signs."}
         </div>
 
         {target && (

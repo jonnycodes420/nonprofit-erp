@@ -54,8 +54,10 @@ for (const [label, re] of BANNED) {
 }
 // The plan picker offers pricing.json's bands and nothing else.
 const picker = read("client/src/components/PlanPicker.jsx");
-ok(/import PRICING from "\.\.\/\.\.\/\.\.\/pricing\.json"/.test(picker) && /PRICING\.tiers\.map/.test(picker),
-   "PlanPicker renders pricing.json's tiers");
+// PRICING-1: the bundled list is the first paint and /public/pricing replaces it.
+ok(/import PRICING from "\.\.\/\.\.\/\.\.\/pricing\.json"/.test(picker) && /useState\(PRICING\.tiers\)/.test(picker)
+   && /\/public\/pricing/.test(picker) && /tiers\.map/.test(picker),
+   "PlanPicker renders pricing.json's tiers, as the server serves them");
 ok(!/\b(Core|Team)\b/.test(picker) && !/\b249\b/.test(picker), "PlanPicker names no Core, no Team and no $249");
 // Server: no route is gated on a tier any more (only the Portal tier, which is
 // not the CRM, is refused the CRM).
@@ -97,7 +99,7 @@ ok(/Choose\s*" \+ t\.name|Choose \$\{t\.name\}|"Choose " \+ t\.name/.test(pricin
 // defines the thing the price is charged on.
 ok(/data-testid="pricing-start"/.test(pricing) && /Start now/.test(pricing), "the page's primary action is Start now");
 ok(/data-testid="pricing-book"/.test(pricing) && /Book a call/.test(pricing), "…beside Book a call");
-ok(/activeDonorSentence/.test(pricing), "…and the page renders the one sentence that defines an active donor");
+ok(/recordSentence/.test(pricing), "…and the page renders the one sentence that defines a record");
 
 // ── Founding stays off-menu (never rendered on the public pricing page) ────
 ok(!/id:\s*"founding"/.test(pricing), "the founding-partner plan is NOT surfaced on the pricing page");

@@ -6,9 +6,13 @@ import { apiFetch } from "../api";
 // The same catalogue the server prices against (pricing.js says why JSON).
 import PRICING from "../../../pricing.json";
 
+// PRICING-1: the bundled list is only the first paint. The page reads the
+// server's /public/pricing on load, so a price changed in pricing.json reaches
+// signup without a client build, and the page and the route that takes the
+// money read the same list.
 const TIERS = PRICING.tiers;
 const TALK_TO_US = PRICING.talkToUs;
-const ACTIVE_DONOR_SENTENCE = PRICING.activeDonorSentence;
+const RECORD_SENTENCE = PRICING.recordSentence;
 const YEARLY_NOTE = PRICING.yearlyNote;
 const TERMS_STRIP = PRICING.termsStrip;
 
@@ -30,7 +34,7 @@ const TERMS_STRIP = PRICING.termsStrip;
 //   · the organisation's name  — it goes on the agreement and on the org
 //   · your name                — the agreement records WHO accepted it
 //   · your email               — it becomes the first admin account
-//   · how many active donors   — it picks the band, and it is an ESTIMATE:
+//   · how many records         — it picks the band, and it is an ESTIMATE:
 //     Steward counts for itself after the import and says so if it differs
 //     (GTM-1b 1). Nobody is punished for guessing.
 //   · monthly or yearly
@@ -50,15 +54,15 @@ const SERIF = "'DM Serif Display',Georgia,serif";
 const CAL = "https://calendly.com/xjca2006/new-meeting";
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 
-function bandFor(n) {
+function bandFor(n, tiers = TIERS) {
   const c = Number(n);
   if (!Number.isFinite(c) || c < 0) return null;
-  return TIERS.find(t => c <= t.maxDonors) || null;
+  return tiers.find(t => c <= t.maxRecords) || null;
 }
 
 const labelStyle = { fontSize: 14.5, fontWeight: 600, color: INK, display: "block", marginBottom: 7 };
 const inputStyle = { width: "100%", padding: "12px 14px", fontSize: 15.5, borderRadius: 12, border: `1.5px solid ${LINE}`, background: WHITE, color: INK, fontFamily: "inherit" };
-const TICKS = ["Thirty days free, then month to month", "Your whole team and every feature", "No platform fee on any gift", "Your move done with you"];
+const TICKS = ["Thirty days before your first monthly charge", "Your whole team and every feature", "No platform fee on any gift", "Your move done with you"];
 const Tick = () => (
   <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true" style={{ flex: "none", marginTop: 2 }}><path d="M3 8.5l3 3 7-7" fill="none" stroke={EMERALD} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
@@ -73,8 +77,9 @@ export default function SignupPage() {
   const [params] = useSearchParams();
   const [donors, setDonors] = useState(() => {
     const t = TIERS.find(x => x.id === params.get("plan"));
-    return t ? String(t.maxDonors) : "";
+    return t ? String(t.maxRecords) : "";
   });
+  const [tiers, setTiers] = useState(TIERS);
   // FIX-13 · …and ?interval=yearly when the yearly toggle was on, so the
   // price she saw on the card is the price this page opens on.
   const [interval, setIntervalChoice] = useState(() => (params.get("interval") === "yearly" ? "yearly" : "monthly"));
@@ -89,6 +94,9 @@ export default function SignupPage() {
   // the words the server is about to record the sha256 of.
   useEffect(() => {
     let live = true;
+    apiFetch("/public/pricing")
+      .then(p => { if (live && Array.isArray(p?.tiers) && p.tiers.length) setTiers(p.tiers); })
+      .catch(() => {});
     apiFetch("/public/agreement")
       .then(a => { if (live) setAgreement(a); })
       .catch(() => { if (live) setAgreement({ error: true }); });
@@ -96,7 +104,7 @@ export default function SignupPage() {
   }, []);
 
   const estimate = donors === "" ? null : Number(donors);
-  const band = estimate === null ? null : bandFor(estimate);
+  const band = estimate === null ? null : bandFor(estimate, tiers);
   const overTop = estimate !== null && Number.isFinite(estimate) && estimate >= 0 && !band;
   const amount = band ? (interval === "yearly" ? band.yearlyUsd : band.monthlyUsd) : null;
 
@@ -113,7 +121,7 @@ export default function SignupPage() {
         body: JSON.stringify({
           orgName: orgName.trim(), contactName: contactName.trim(),
           contactEmail: contactEmail.trim().toLowerCase(),
-          estimatedDonors: Math.round(estimate), interval,
+          estimatedRecords: Math.round(estimate), interval,
           acceptTerms: true, termsVersion: agreement.version,
         }),
       });
@@ -148,8 +156,8 @@ export default function SignupPage() {
             Raise more from the people who <em style={{ fontStyle: "italic" }}>already believe in you.</em>
           </h1>
           <p style={{ fontSize: 19, color: SAGE_GREY, lineHeight: 1.6, margin: "22px 0 0", maxWidth: 520 }}>
-            Your card goes in now and <strong style={{ color: INK }}>nothing is charged for thirty days</strong>.
-            We email you a week before the first charge, with a link to cancel.
+            Your card goes in now. <strong style={{ color: INK }}>Today you pay only the one-time setup fee</strong>, and
+            your plan's first charge is thirty days later. We email you a week before it, with a link to cancel.
           </p>
           <ul style={{ listStyle: "none", padding: 0, margin: "30px 0 0", display: "grid", gap: 12, fontSize: 18 }}>
             {TICKS.map(t => <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><Tick />{t}</li>)}
@@ -182,12 +190,12 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label style={labelStyle} htmlFor="su-donors">Roughly how many active donors?</label>
+              <label style={labelStyle} htmlFor="su-donors">Roughly how many records?</label>
               <input id="su-donors" data-testid="signup-donors" type="number" min="0" step="1" style={inputStyle}
                 value={donors} onChange={e => setDonors(e.target.value)} placeholder="850" />
               <p data-testid="signup-active-donor-sentence" style={{ fontSize: 12.5, color: SAGE_GREY, lineHeight: 1.55, margin: "7px 0 0" }}>
-                {ACTIVE_DONOR_SENTENCE} An estimate is fine. Steward counts for itself after your import and tells you
-                before anything about your price changes.
+                {RECORD_SENTENCE} An estimate is fine. Steward counts for itself after your import, and your price never
+                changes without your yes.
               </p>
             </div>
 
@@ -210,7 +218,7 @@ export default function SignupPage() {
             {!band && !overTop && (
               <div data-testid="signup-quote-resting" style={{ background: "#dcebe2", borderRadius: 16, padding: "16px 20px", display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 14, color: SAGE_GREY }}>Your plan</span>
-                <span style={{ fontSize: 16, color: INK }}>Enter your donor count above and it appears here.</span>
+                <span style={{ fontSize: 16, color: INK }}>Enter your record count above and it appears here.</span>
               </div>
             )}
             {band && (
@@ -220,16 +228,19 @@ export default function SignupPage() {
                       quote named the band and not the plan, so the one screen
                       that takes a card never said what she was buying. */}
                   <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <span data-testid="signup-plan-name" style={{ fontSize: 19, fontWeight: 700, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{band.name}</span>
-                    <span style={{ fontSize: 13, color: SAGE_GREY }}>{band.band}</span>
+                    <span data-testid="signup-plan-name" style={{ fontSize: 19, fontWeight: 700, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{band.band}</span>
+                    <span style={{ fontSize: 13, color: SAGE_GREY }}>{interval === "yearly" ? `${usd(band.monthlyUsd)}/month, or yearly with two months free` : `Or ${usd(band.yearlyUsd)}/year, two months free`}</span>
                   </span>
                   <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                     <span style={{ fontSize: 24, fontWeight: 800, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{usd(amount)}</span>
                     <span style={{ fontSize: 13, color: SAGE_GREY }}>{interval === "yearly" ? "/year" : "/month"}</span>
                   </span>
                 </div>
+                <div data-testid="signup-setup" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", borderTop: "1px solid rgba(15,26,18,.12)", marginTop: 10, paddingTop: 10, fontSize: 14, color: INK }}>
+                  <span>One-time setup, charged today</span><strong>{usd(band.setupUsd)}</strong>
+                </div>
                 <div style={{ fontSize: 12.5, color: SAGE_GREY, marginTop: 6, lineHeight: 1.5 }}>
-                  Everything is included and there is {USERS_PHRASE}. Nothing is charged for thirty days.
+                  Everything is included and there is {USERS_PHRASE}. Your {interval === "yearly" ? "yearly" : "monthly"} price starts on your first charge date, thirty days from today.
                 </div>
               </div>
             )}
@@ -285,7 +296,7 @@ export default function SignupPage() {
                        cursor: ready ? "pointer" : "not-allowed", justifySelf: "stretch" }}>
               {busy ? "Opening checkout\u2026" : "Continue to card details"}
             </button>
-            <p style={{ textAlign: "center", fontSize: 14, color: SAGE_GREY, margin: 0 }}>Nothing is charged for 30 days.</p>
+            <p style={{ textAlign: "center", fontSize: 14, color: SAGE_GREY, margin: 0 }}>{band ? `Today: the ${usd(band.setupUsd)} setup fee. Your plan's first charge is in 30 days.` : "Today: the one-time setup fee. Your plan's first charge is in 30 days."}</p>
           </div>
         </form>
 

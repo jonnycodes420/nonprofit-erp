@@ -193,7 +193,7 @@ export function InvitationSection({ headline }) {
             </button>
             <p style={{ fontSize: 14, color: C.sage, textAlign: "center", marginTop: 18, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
               I read every one of these myself, Jonathan. Or{" "}
-              <a href="/signup" style={{ color: C.cream, textDecoration: "underline", textUnderlineOffset: 3 }}>start 30 days free</a>{" "}
+              <a href="/signup" style={{ color: C.cream, textDecoration: "underline", textUnderlineOffset: 3 }}>get started</a>{" "}
               now, and skip the wait.
             </p>
           </form>
@@ -216,7 +216,7 @@ export default function InvitationPage() {
           <a href="/login" style={{ fontSize: 13, color: C.sage, textDecoration: "none" }}>Log in</a>
           {/* FIX-10 F — nobody has to wait for a reply to start. This page is
               for somebody who wants to talk first, not the only door. */}
-          <a href="/signup" style={{ fontSize: 13, color: C.cream, fontWeight: 700, textDecoration: "none" }}>Start 30 days free</a>
+          <a href="/signup" style={{ fontSize: 13, color: C.cream, fontWeight: 700, textDecoration: "none" }}>Get started</a>
         </div>
       </nav>
       <div style={{ flex: 1 }}>

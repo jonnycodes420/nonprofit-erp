@@ -224,7 +224,7 @@ CORE=(
   fix2-a-footing
   reports3-board-pack
   gtm1a-internal-price
-  gtm1b-band-notice
+  pricing1-bands
   thread2a-no-send
   journeys3-triggers
   journeys4-triggers

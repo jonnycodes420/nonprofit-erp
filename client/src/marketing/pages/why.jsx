@@ -184,7 +184,7 @@ export function MoveGivingPlatform() {
 export function For() {
   return <>
     <Hero eyebrow="Who it's for" pillar={PILLAR[3]} crumbs={[["Who it's for"]]} h="Built for the organizations <b>doing the work.</b>"
-      lede="Steward is made for nonprofits with a development team of one to five, a few hundred to ten thousand active donors and no time to babysit software." photo="steps-group" />
+      lede="Steward is made for nonprofits with a development team of one to five, a list of people who believe in the work and no time to babysit software." photo="steps-group" />
     <Cards list={AUDIENCE_SLUGS.map(k => ["/for/" + k, AUD[k].n, AUD[k].l.split(".")[0] + ".", "people"])} />
     <FinalCta />
   </>;
@@ -281,7 +281,7 @@ export function About() {
       <div className="eyebrow">Our promises to customers</div>
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What you can <b>hold us to.</b></h2>
       <div className="incl">
-        {["A real person answers your email", "Your move done with you, checked to the cent", "Thirty days free, then month to month",
+        {["A real person answers your email", "Your move done with you, checked to the cent", "Thirty days before the first monthly charge, then month to month",
           "Your whole team on every plan", "Every feature on every plan", "No platform fee on any gift",
           "Export everything, any time", "Plain warning before any price change", "We never sell or share donor data"]
           .map(x => <span key={x}><Tick />{x}</span>)}
@@ -395,7 +395,7 @@ export function Demo() {
             <label htmlFor="demo-name">Your name<input id="demo-name" required name="name" autoComplete="name" value={f.name} onChange={set("name")} /></label>
             <label htmlFor="demo-email">Work email<input id="demo-email" type="email" required name="email" autoComplete="email" value={f.email} onChange={set("email")} /></label>
             <label htmlFor="demo-organization">Organization<input id="demo-organization" required name="organization" autoComplete="organization" value={f.organization} onChange={set("organization")} /></label>
-            <label htmlFor="demo-org-size">Active donors<select id="demo-org-size" name="orgSize" autoComplete="off" value={f.band} onChange={set("band")}><option>Under 1,000</option><option>1,000 to 5,000</option><option>5,000 to 10,000</option><option>Over 10,000</option></select></label>
+            <label htmlFor="demo-org-size">Donors<select id="demo-org-size" name="orgSize" autoComplete="off" value={f.band} onChange={set("band")}><option>Under 1,000</option><option>1,000 to 5,000</option><option>5,000 to 10,000</option><option>Over 10,000</option></select></label>
             <label htmlFor="demo-current-system">Where are your donors today?<input id="demo-current-system" name="currentSystem" autoComplete="off" placeholder="A spreadsheet, another donor system, not sure" value={f.today} onChange={set("today")} /></label>
             {err && <p className="form-err" role="alert">{err}</p>}
             <button className="pill pill-ink" type="submit" disabled={state === "sending"}><i></i>{state === "sending" ? "Sending…" : "Request a time"}</button>

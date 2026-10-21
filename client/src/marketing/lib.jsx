@@ -12,6 +12,7 @@ import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { LEADERSHIP_SHOWN } from "./data/team";
 import { CREW, CREW_NEVER } from "./data/crew";
 import PRICING from "../../../pricing.json";
+import { API } from "../api";
 
 // ── Rich strings ───────────────────────────────────────────────────────────
 // Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
@@ -223,16 +224,31 @@ export function PillarBand({ p, tint = "cream", flip, link, children }) {
   );
 }
 
-// LANDING-5 · the one price block, on Home and /pricing. The tier table is
-// gone from the marketing site; the starting price is the lowest monthly
-// price in pricing.json, so the page and the signup route cannot disagree.
+// LANDING-5 · the one price block, on Home and /pricing. No band table on the
+// site and no record counts in its copy (PRICING-1): one line, "Everything
+// included, from $199/mo.", where the number is the lowest monthly price.
+// The prerendered page paints it from pricing.json; on load it is read again
+// from GET /public/pricing, so a price changed on the server shows without a
+// frontend build.
+const lowestMonthly = tiers => {
+  const n = (tiers || []).map(t => Number(t && t.monthlyUsd)).filter(Number.isFinite);
+  return n.length ? Math.min(...n) : null;
+};
+export const priceLine = from => PRICING.marketing.line.replace("{from}", String(from));
 export function PriceBlock({ h1 }) {
-  const from = Math.min(...PRICING.tiers.map(t => t.monthlyUsd));
+  const [from, setFrom] = useState(() => lowestMonthly(PRICING.tiers));
+  useEffect(() => {
+    let live = true;
+    fetch(API + "/public/pricing").then(r => (r.ok ? r.json() : null))
+      .then(j => { const n = j && lowestMonthly(j.tiers); if (live && n != null) setFrom(n); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
   const H = h1 ? "h1" : "h2";
   return (
     <section className="price-block" data-testid="price-block"><div className="wrap">
       <div className="eyebrow">Pricing</div>
-      <H className="mix h-l">Starting at ${from} a month. <b>{PRICING.marketing.included}</b></H>
+      <H className="mix h-l">{priceLine(from)} <b>{PRICING.marketing.included}</b></H>
       <div className="ctas"><Pill href="/demo">Book a call</Pill></div>
     </div></section>
   );

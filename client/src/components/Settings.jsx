@@ -27,6 +27,7 @@ import { fmtInZone } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
+import { BillingBand } from "./BillingBand";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -4000,6 +4001,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 </div>
               )}
             </div>
+            {/* PRICING-1 — band, records and how they are counted, price, next
+                charge, setup fee; the band note waits here for the owner's yes. */}
+            <BillingBand billing={billing} isAdmin={isAdmin} onChanged={()=>apiFetch("/billing/status").then(setBilling).catch(()=>{})}/>
             {billing.trialCanceled&&(
               <div data-testid="settings-trial-canceled" style={{fontSize:13,color:T.ink,lineHeight:1.55,background:T.bg,border:`1px solid ${T.bg2}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                 <span style={{flex:1,minWidth:200}}><strong>{billing.trialCanceledSentence}</strong> Everything stays open until then.</span>
@@ -4008,7 +4012,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             )}
             {billing.firstChargeSentence&&(
               <div style={{fontSize:13,color:T.ink,lineHeight:1.55,background:T.bg,border:`1px solid ${T.bg2}`,borderRadius:10,padding:"12px 14px"}}>
-                <strong>{billing.firstChargeSentence}</strong> Cancel any time before then and you pay nothing.
+                <strong>{billing.firstChargeSentence}</strong> Cancel any time before then and you pay nothing{billing.setupFee?.paid?" more":""}.
               </div>
             )}
             {/* ROI / impact line. BUILD-73 Part 3: it leads with what is AT RISK

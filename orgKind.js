@@ -126,7 +126,13 @@ function perMonth(cents, interval, count = 1) {
 }
 // One invoice line -> monthly cents (an invoice's own amount, normalised).
 function monthlyCentsFromInvoice(inv) {
-  const line = (inv?.lines?.data || []).find(l => l.price || l.plan) || null;
+  // PRICING-1: an invoice can carry the one-time setup fee beside the
+  // subscription's line. Only a RECURRING line is monthly money; an invoice
+  // whose priced lines are all one-time adds nothing to MRR.
+  const lines = (inv?.lines?.data || []).filter(l => l.price || l.plan);
+  const isRecurring = l => !!((l.price && l.price.recurring) || l.plan);
+  const line = lines.find(isRecurring) || null;
+  if (!line && lines.length) return 0;
   if (line) {
     const price = line.price || line.plan || {};
     return Math.round(perMonth(Number(line.amount ?? inv.amount_paid), price.recurring?.interval || price.interval, price.recurring?.interval_count || price.interval_count));

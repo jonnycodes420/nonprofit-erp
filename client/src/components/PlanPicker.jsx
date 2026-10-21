@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch, billingErrorMessage } from "../api";
 import { T, Modal } from "./shared";
 import PRICING from "../../../pricing.json";
@@ -15,6 +15,13 @@ import PRICING from "../../../pricing.json";
 export default function PlanPicker({ open, onClose }) {
   const [loading, setLoading] = useState(null);
   const [interval, setInterval] = useState("monthly");
+  // PRICING-1: the server's list, so a price changed in pricing.json shows here
+  // without a client build. The bundled copy is the first paint.
+  const [tiers, setTiers] = useState(PRICING.tiers);
+  useEffect(() => {
+    if (!open) return;
+    apiFetch("/public/pricing").then(p => { if (Array.isArray(p?.tiers) && p.tiers.length) setTiers(p.tiers); }).catch(() => {});
+  }, [open]);
 
   if (!open) return null;
 
@@ -48,9 +55,9 @@ export default function PlanPicker({ open, onClose }) {
             Start Steward again
           </div>
           <div style={{ fontSize:14,color:T.ink3,maxWidth:480,margin:"0 auto",lineHeight:1.5 }}>
-            One plan, everything included. The price follows how many active donors you work. Your donors, gifts and history are exactly as you left them.
+            One plan, everything included. The price follows how many records you have. Your donors, gifts and history are exactly as you left them.
           </div>
-          <div style={{ fontSize:12,color:T.ink3,maxWidth:480,margin:"8px auto 0",lineHeight:1.5 }}>{PRICING.activeDonorSentence}</div>
+          <div style={{ fontSize:12,color:T.ink3,maxWidth:480,margin:"8px auto 0",lineHeight:1.5 }}>{PRICING.recordSentence}</div>
           <div role="group" aria-label="Billing interval" style={{ display:"inline-flex",gap:4,marginTop:16,background:T.bg2,borderRadius:99,padding:4 }}>
             {["monthly","yearly"].map(iv => (
               <button key={iv} onClick={() => setInterval(iv)} aria-pressed={interval === iv}
@@ -62,7 +69,7 @@ export default function PlanPicker({ open, onClose }) {
         </div>
 
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:16 }}>
-          {PRICING.tiers.map(tier => {
+          {tiers.map(tier => {
             const planId = `${tier.id}_${interval}`;
             return (
               <div key={tier.id} data-plan={planId} style={{

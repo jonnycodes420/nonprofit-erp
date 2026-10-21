@@ -157,7 +157,7 @@ export default function LoginPage() {
             in the product. /invitation stays, for somebody who wants to talk
             first, and its own page offers this door too. */}
         <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Start 30 days free</span>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Get started</span>
         </Link>
       </nav>
 
