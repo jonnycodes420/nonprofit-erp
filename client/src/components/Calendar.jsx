@@ -230,7 +230,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
         </div>
       </div>
       {narrow && !isReadOnly && <button type="button" data-testid="cal-add" aria-label="Add" onClick={() => setAdding({ date: anchor, time: null })}
-        style={{ position: "fixed", right: 18, bottom: 84, width: 52, height: 52, borderRadius: 99, background: T.greenDk, color: T.white, border: "none", fontSize: 28, lineHeight: 1, boxShadow: "0 6px 18px rgba(15,26,18,0.25)", zIndex: 260 }}>+</button>}
+        style={{ position: "fixed", right: 18, bottom: "calc(148px + env(safe-area-inset-bottom, 0px))", width: 52, height: 52, borderRadius: 99, background: T.greenDk, color: T.white, border: "none", fontSize: 28, lineHeight: 1, boxShadow: "0 6px 18px rgba(15,26,18,0.25)", zIndex: 260 }}>+</button>}
       {card && <ItemCard card={card} today={today} onMove={move} isReadOnly={isReadOnly} onClose={() => setCard(null)} onNavigate={onNavigate} onChanged={m => { setCard(null); setNote(m || ""); load(); }}
         onEditShift={it => { setCard(null); setForm({ kind: "shift", item: it }); }} />}
       {adding && <AddMenu at={adding} onClose={() => setAdding(null)} onPick={kind => { setForm({ kind, date: adding.date, time: adding.time }); setAdding(null); }} />}

@@ -52,9 +52,9 @@ const FAKE_SR = `(() => {
     const shot = name => page.screenshot({ path: path.join(OUT, `${String(name)}-${w}.png`) });
     const settle = (ms = 700) => page.waitForLoadState("networkidle").catch(() => {}).then(() => page.waitForTimeout(ms));
     await page.goto(APP + "/dashboard", { waitUntil: "domcontentloaded" }); await settle(1500);
-    ok("Home shows Tell Steward", await page.locator('[data-testid="tell-steward"]').isVisible(), null);
+    ok("Home shows Tell Steward", await page.locator('[data-testid="tell-fab"]').isVisible(), null);
     await shot("01-home");
-    await page.click('[data-testid="tell-steward"]'); await settle(500);
+    await page.click('[data-testid="tell-fab"]'); await settle(500);
     ok("the sheet opens", await page.locator('[data-testid="tell-steward-sheet"]').isVisible(), null);
     if (w < 500) {
       ok("a phone with speech gets the microphone", await page.locator('[data-testid="tell-mic"]').isVisible(), null);
