@@ -62,6 +62,13 @@ const DECAYING_STEP_TYPES = new Set(["thank", "thank_you_note"]);
 const DECAYING_LABEL = /thank[- ]?you|thanks/i;
 const isDecaying = t => DECAYING_STEP_TYPES.has(t.stepType) || DECAYING_LABEL.test(t.stepLabel || "");
 
+// "Oct 21", for a gift a task is about.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function dayShort(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ""));
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : "";
+}
+
 export const RANK_SIGNALS = [
   {
     key: "recurring_risk",
@@ -74,6 +81,15 @@ export const RANK_SIGNALS = [
     points: t => Math.min(t.overdueDays || 0, OVERDUE_CAP_DAYS) * 3,
     applies: t => (t.overdueDays || 0) > 0,
     why: t => `${t.overdueDays} day${t.overdueDays === 1 ? "" : "s"} late`,
+  },
+  {
+    // VOICE-4: a task made for a gift ("Send Margaret the receipt") says the
+    // gift it is for, and leads with it.
+    key: "about_gift",
+    points: () => 0,
+    applies: t => (t.giftAmount || 0) > 0,
+    lead: true,
+    why: t => `${money(t.giftAmount)} gift${t.giftDate ? `, ${dayShort(t.giftDate)}` : ""}`,
   },
   {
     key: "ask_open",

@@ -21,6 +21,7 @@
 "use strict";
 const express = require("express");
 const { anthropicFor, recordAiFallback } = require("../aiClient");
+const orgTime = require("../orgTime");
 
 const routers = { r0: express.Router() };
 const MEMO_MIN = 4, MEMO_MAX = 4000;
@@ -30,6 +31,7 @@ function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL } = ctx;
 const app = routers.r0;
 const VM = () => import("../shared/voiceMemo.js");
+const VT = () => import("../shared/voiceTalk.js");
 const AS = () => import("../shared/agentShape.js");
 const PS = () => import("../shared/agentPersonas.js");
 const engine = () => require("./agent").routers.engine;
@@ -106,10 +108,68 @@ async function memoOut(orgId, m) {
   };
 }
 
+// ── VOICE-4 PART 2 · A MEETING SHE SAYS HAPPENED IS MARKED HAPPENED ─────────
+// The memo's conversation is matched to that person's meeting today, else the
+// most recent in the last two days that nobody has written up. Her words
+// stay her words: a "lunch" still matches the 10 AM coffee when it is the only
+// meeting with her that day. The match is what the calendar's own "how did it
+// go" does (routes/finance.js /calendar/events/:id/log): the event is logged
+// and linked to the conversation, its prep and after tasks are done, and the
+// step it holds is answered (meetingEffects.meetingLogged). The Thread step
+// and tasks due that day for her are done too ("Coffee tomorrow. Bring Lily's
+// class schedule."). What it changed is kept, so Undo puts it back.
+async function closeMeeting(req, { donorId, date, how, today, interactionId }) {
+  const orgId = req.user.orgId;
+  const tz = (await orgTz(orgId)).timezone || "America/New_York";
+  const rows = await query(
+    `SELECT id, title, starts_at, ((starts_at AT TIME ZONE ?)::date)::text AS day
+       FROM calendar_events
+      WHERE org_id=? AND ?=ANY(person_ids) AND logged_at IS NULL AND dismissed_at IS NULL
+        AND (starts_at AT TIME ZONE ?)::date BETWEEN (?::date - 2) AND ?::date
+      ORDER BY starts_at DESC`, [tz, orgId, donorId, tz, date, date > today ? date : today]);
+  if (!rows.length) return null;
+  const sameDay = rows.filter(r => r.day === date || r.day === today);
+  const pool = sameDay.length ? sameDay : rows.filter(r => r.day < date).slice(0, 1);
+  const word = new RegExp(`\\b${String(how || "").replace(/[^a-z]/gi, "")}\\b`, "i");
+  const ev = pool.length === 1 ? pool[0] : (pool.find(r => how && word.test(r.title)) || null);
+  if (!ev) return null;
+  const who = actor(req);
+  await run(`UPDATE calendar_events SET logged_at=NOW(), logged_by=?, interaction_id=?, updated_at=NOW() WHERE id=? AND org_id=? AND logged_at IS NULL`,
+    [who.id, interactionId, ev.id, orgId]);
+  await run(`UPDATE interactions SET metadata = COALESCE(metadata,'{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
+    [JSON.stringify({ calendar_event_id: ev.id, meeting_title: ev.title }), interactionId, orgId]);
+  const effects = await query(`SELECT * FROM meeting_effects WHERE calendar_event_id=? AND org_id=?`, [ev.id, orgId]);
+  await require("../meetingEffects").meetingLogged(ev.id, interactionId);
+  // The step and tasks that were waiting on this meeting: tied to it, or due
+  // that day (or the day before) and naming it ("Coffee tomorrow. Bring Lily's
+  // class schedule." for the coffee). Another task due that day stays open.
+  const MEET = new Set(["coffee", "lunch", "breakfast", "dinner", "drinks", "tea", "visit", "tour", "meeting", "meet", "walkthrough"]);
+  const evWords = String(ev.title || "").toLowerCase().match(/[a-z]{3,}/g) || [];
+  const names = new Set([...evWords.filter(w => MEET.has(w)), ...(MEET.has(String(how || "").toLowerCase()) ? [String(how).toLowerCase()] : [])]);
+  const namesIt = label => (String(label || "").toLowerCase().match(/[a-z]{3,}/g) || []).some(w => names.has(w));
+  const near = d => { const x = String(d || "").slice(0, 10); return x && x <= ev.day && x >= orgTime.addDays(ev.day, -1); };
+  const openThreads = await query(`SELECT id, next_step_label, due_date, calendar_event_id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL`, [orgId, donorId]);
+  const threadIds = openThreads.filter(t => t.calendar_event_id === ev.id || (near(t.due_date) && namesIt(t.next_step_label))).map(t => t.id);
+  if (threadIds.length) await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=? WHERE org_id=? AND id = ANY(?::text[]) AND closed_at IS NULL`,
+    [interactionId, orgId, threadIds]);
+  const openTasks = await query(`SELECT id, title, due, calendar_event_id, thread_id FROM tasks WHERE org_id=? AND donor_id=? AND done=0 AND voided_at IS NULL`, [orgId, donorId]);
+  const taskIds = openTasks.filter(t => t.calendar_event_id === ev.id || threadIds.includes(t.thread_id) || (near(t.due) && namesIt(t.title))).map(t => t.id);
+  if (taskIds.length) await run(`UPDATE tasks SET done=1, completed_at=COALESCE(completed_at,NOW()), completed_by_name=?, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`,
+    [who.name, orgId, taskIds]);
+  return { eventId: ev.id, title: ev.title, day: ev.day, interactionId, threadIds, taskIds,
+    effects: effects.map(e => e.id) };
+}
+async function reopenMeeting(orgId, mt) {
+  if (!mt || !mt.eventId) return;
+  await run(`UPDATE calendar_events SET logged_at=NULL, logged_by=NULL, interaction_id=NULL, updated_at=NOW() WHERE id=? AND org_id=? AND interaction_id=?`, [mt.eventId, orgId, mt.interactionId]);
+  if ((mt.threadIds || []).length) await run(`UPDATE threads SET closed_at=NULL, close_kind=NULL, closing_interaction_id=NULL WHERE org_id=? AND id = ANY(?::text[])`, [orgId, mt.threadIds]);
+  if ((mt.taskIds || []).length) await run(`UPDATE tasks SET done=0, completed_at=NULL, completed_by_name=NULL, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`, [orgId, mt.taskIds]);
+}
+
 // ── BUILD THE PLAN AND RUN IT ──────────────────────────────────────────────
 async function finish(req, m, ids, read) {
   const orgId = req.user.orgId;
-  const V = await VM(), A = await AS(), P = await PS();
+  const V = await VM(), A = await AS(), P = await PS(), T = await VT();
   const E = engine();
   const people = await E.agentReadPeople(orgId, { ids });
   const byId = new Map(people.map(p => [p.id, p]));
@@ -137,11 +197,25 @@ async function finish(req, m, ids, read) {
         memoId: m.id, linkedDonorIds: others, citesRows: cite(id),
         line: `${howLabel} logged on ${byId.get(id).name}, ${day(read.date)}${others.length ? `, linked to ${others.map(first).join(" and ")}` : ""}` });
     }
-    read.followUps.forEach((f, i) => {
-      const line = `${f.label}, on the Thread for ${day(f.due)}${f.exact ? "" : " (you named no date, so two weeks)"}`;
-      if (i === 0) steps.push({ tool: "set_next_step", donorId: primary, label: f.label, due: f.due, citesRows: cite(primary), line });
-      else steps.push({ tool: "create_task", donorId: primary, title: f.label, due: f.due, citesRows: cite(primary), line: `${f.label}, a task for ${day(f.due)}` });
-    });
+    // VOICE-4 Part 3: a memo only CREATES tasks. The first follow-up became
+    // the Thread's next step through set_next_step, which REWRITES the open
+    // step when there is one: "Log the gift" took over Sep 19's "Coffee
+    // tomorrow" with its old note and "Edited by Dana". Now the next step is
+    // set only when nothing is open; otherwise each follow-up is a new task.
+    // "Log the gift" is never a task (the money is the card), and "send her
+    // the receipt" is readied with the gift as one Confirm, so neither is one.
+    const [openStep] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [orgId, primary]);
+    const hasGift = (read.money || []).some(mo => mo.kind === "gift");
+    let firstStep = !openStep;
+    for (const f of read.followUps) {
+      if (T.isMoneyChore(f.label)) continue;
+      if (hasGift && T.isReceiptChore(f.label)) { read.receiptAsked = true; continue; }
+      if (firstStep) {
+        firstStep = false;
+        steps.push({ tool: "set_next_step", donorId: primary, label: f.label, due: f.due, citesRows: cite(primary),
+          line: `${f.label}, on the Thread for ${day(f.due)}${f.exact ? "" : " (you named no date, so two weeks)"}` });
+      } else steps.push({ tool: "create_task", donorId: primary, title: f.label, due: f.due, citesRows: cite(primary), line: `${f.label}, a task for ${day(f.due)}` });
+    }
     for (const it of read.interests) {
       if (it.fundName) steps.push({ tool: "add_tag", donorId: primary, tag: `Interest: ${it.fundName}`.slice(0, 60), citesRows: cite(primary),
         line: `Interest in the ${it.fundName} noted on ${first(primary)} ("${it.words}")` });
@@ -168,6 +242,14 @@ async function finish(req, m, ids, read) {
   const result = await E.agentRunPlan(orgId, { id: insId, text: m.text, plan, authorization: A.AUTH_DRAFT, grounded: m.text },
     { userId: req.user.userId, auth: req.headers.authorization || null });
 
+  // VOICE-4 Part 2: the meeting closes itself.
+  let meeting = null;
+  if (!read.noteOnly && read.kind === "meeting") {
+    const conv = (result.steps || []).find(st => st.tool === "log_conversation" && st.donorId === primary && st.entityId);
+    if (conv) meeting = await closeMeeting(req, { donorId: primary, date: read.date, how: read.how, today, interactionId: conv.entityId }).catch(e => {
+      console.error("[voice] meeting match:", String(e && e.message || e).slice(0, 160)); return null; });
+  }
+
   // The yes column.
   const cards = [];
   const cardId = () => "vc_" + uuid().slice(0, 8);
@@ -190,7 +272,7 @@ async function finish(req, m, ids, read) {
 
   await run(`UPDATE voice_memos SET status=?, donor_ids=?, cards=?, instruction_id=?, run_ids=?, read=? WHERE id=? AND org_id=?`,
     [read.noteOnly ? "note" : "done", JSON.stringify(order), JSON.stringify(cards), insId, JSON.stringify([result.runId]),
-     JSON.stringify({ ...read, sensitive: read.sensitive.map(s => ({ category: s.category, neutral: s.neutral })), pending: null }), m.id, orgId]);
+     JSON.stringify({ ...read, sensitive: read.sensitive.map(s => ({ category: s.category, neutral: s.neutral })), pending: null, meeting }), m.id, orgId]);
   if (req.audit) req.audit.summary(`Tell Steward: ${result.done || 0} done, ${cards.length} waiting for a yes`, { count: (result.steps || []).length });
   return { body: { memo: await memoOut(orgId, await memoRow(orgId, m.id)) } };
 }
@@ -357,6 +439,81 @@ app.get("/voice/memos/:id", requireAuth, wrap(async (req, res) => {
   res.json({ memo: await memoOut(req.user.orgId, m) });
 }));
 
+// ── VOICE-4 PART 1 · AFTER HER YES ON A GIFT ────────────────────────────────
+// The gift is in. Tasks that only said to log it are done ("Log the gift" is
+// the card, never a chore), a receipt task she asked for is tied to THIS gift
+// so it shows "$5,000 gift, Oct 21" rather than whatever else is open, and the
+// receipt and thank-you wait as one card: one Confirm sends both.
+const dayWords = d => { const x = new Date(String(d).slice(0, 10) + "T12:00:00Z"); return x.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }); };
+async function giftFollowOn(req, m, card, gift, today) {
+  const orgId = req.user.orgId, T = await VT(), V = await VM();
+  const open = await query(`SELECT id, title, source_gift_id, created_at FROM tasks WHERE org_id=? AND donor_id=? AND done=0 AND voided_at IS NULL AND COALESCE(link_kind,'') <> 'next_step'`, [orgId, card.donorId]);
+  const chores = open.filter(t => T.isMoneyChore(t.title)).map(t => t.id);
+  if (chores.length) await run(`UPDATE tasks SET done=1, completed_at=COALESCE(completed_at,NOW()), completed_by_name=?, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`,
+    [actor(req).name, orgId, chores]);
+  const receiptTasks = open.filter(t => !t.source_gift_id && T.isReceiptChore(t.title) && new Date(t.created_at) >= new Date(m.created_at)).map(t => t.id);
+  if (receiptTasks.length) await run(`UPDATE tasks SET source_gift_id=? WHERE org_id=? AND id = ANY(?::text[])`, [gift.id, orgId, receiptTasks]);
+  const cards = j(m.cards) || [];
+  if (cards.some(c => c.kind === "thanks" && c.giftId === gift.id)) return;
+  const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [card.donorId, orgId]);
+  const first = String((d && d.name) || "").split(/\s+/)[0] || "them";
+  const cents = Math.round(Number(gift.amount) * 100);
+  cards.push({ id: "vc_" + uuid().slice(0, 8), kind: "thanks", giftId: gift.id, donorId: card.donorId, cents, state: "waiting",
+    title: `Send ${first} the receipt and thank-you`, detail: `${V.cents$(cents)} gift, ${dayWords(gift.date || today)}`,
+    closedTaskIds: chores, taskIds: receiptTasks });
+  await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify(cards), m.id, orgId]);
+}
+
+// ONE CONFIRM, TWO SENDS, BOTH HERS: the receipt through the receipt route
+// (a transactional send, the org's own setting), and the drafted thank-you
+// through a thank-you task's own Send (the one draft sender: every mail rule
+// applied at the press). The task closes as it sends.
+async function sendThanks(req, m, card) {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, donor_id, amount, date FROM gifts WHERE id=? AND org_id=?", [card.giftId, orgId]);
+  if (!g) return { status: 404, error: "gift_gone", sentence: "That gift is no longer on the record." };
+  const [org] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);
+  let receiptSent = false;
+  if (org && org.receipts_enabled) {
+    const r = await asHer(req, "POST", `/gifts/${g.id}/receipt`, {});
+    if (r.status >= 300) return { status: r.status, error: "receipt_failed", sentence: (r.body && (r.body.sentence || r.body.error)) || "The receipt could not be sent." };
+    receiptSent = !!(r.body && (r.body.emailSent || r.body.receipt));
+  }
+  const drafts = await asHer(req, "GET", "/thank-yous");
+  const draft = ((drafts.body && drafts.body.drafts) || []).find(x => x.giftId === g.id);
+  let [task] = await query(`SELECT id FROM tasks WHERE org_id=? AND source_gift_id=? AND done=0 AND voided_at IS NULL ORDER BY created_at LIMIT 1`, [orgId, g.id]);
+  if (!task) {
+    const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, orgId]);
+    const t = await asHer(req, "POST", "/tasks", { title: `Thank ${String((d && d.name) || "them").split(/\s+/)[0]} for the ${(await VM()).cents$(Math.round(Number(g.amount) * 100))} gift`,
+      due: orgToday(await orgTz(orgId)), donorId: g.donor_id, type: "thank" });
+    if (t.status >= 300 || !t.body || !t.body.id) return { status: 409, error: "task_failed", sentence: "Steward could not ready the thank-you." };
+    await run("UPDATE tasks SET source_gift_id=? WHERE id=? AND org_id=?", [g.id, t.body.id, orgId]);
+    task = { id: t.body.id };
+  }
+  const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, orgId]);
+  const first = String((d && d.name) || "").split(/\s+/)[0];
+  const body = draft ? draft.body : `Dear ${first},\n\nThank you for your gift.`;
+  const sent = await asHer(req, "POST", `/tasks/${task.id}/thank`, { mode: "send", giftId: g.id, subject: `Thank you, ${first}`, body });
+  if (sent.status >= 300) return { status: sent.status, error: "thanks_failed", sentence: (sent.body && (sent.body.sentence || sent.body.error)) || "The thank-you could not be sent." };
+  return { receiptSent, thankYouSent: true, taskId: task.id };
+}
+
+// Two things the Agent has no tool for, done on her tap and undone exactly.
+async function applyDirect(req, card) {
+  const orgId = req.user.orgId;
+  if (card.kind === "flag") {
+    const [was] = await query("SELECT do_not_email FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [card.donorId, orgId]);
+    if (!was) return { status: 404, error: "not_found", sentence: "That person is not on file." };
+    await run("UPDATE donors SET do_not_email=?, updated_at=NOW() WHERE id=? AND org_id=?", [card.value !== false, card.donorId, orgId]);
+    return { before: { do_not_email: was.do_not_email === true } };
+  }
+  const [op] = await query(`SELECT id, target_amount FROM opportunities WHERE org_id=? AND donor_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`, [orgId, card.donorId]);
+  if (!op) return { status: 409, error: "no_open_ask", sentence: "There is no open ask on file to change. Add one under Asks & pipeline." };
+  const r = await asHer(req, "PUT", `/opportunities/${op.id}`, { targetAmount: card.cents / 100 });
+  if (r.status >= 300) return { status: r.status, error: "ask_failed", sentence: (r.body && (r.body.sentence || r.body.error)) || "The ask could not be changed." };
+  return { before: { target_amount: Number(op.target_amount) }, entityId: op.id };
+}
+
 // ── YES OR NO ON A CARD ─────────────────────────────────────────────────────
 async function setCard(orgId, m, cardId, patch) {
   const cards = (j(m.cards) || []).map(c => (c.id === cardId ? { ...c, ...patch } : c));
@@ -379,12 +536,16 @@ app.post("/voice/memos/:id/cards/:cardId/yes", requireAuth, checkWriteAccess, wr
     let r, made = {};
     const amount = (card.cents / 100).toFixed(2);
     if (card.moneyKind === "gift") {
-      const w = await recordGift({ orgId, donorId: card.donorId, amount: card.cents / 100, date: today, type: "cash", notes: `From Tell Steward: "${String(card.quote).slice(0, 200)}"`,
-        fundId: card.fundId && !String(card.fundId).startsWith("cmp") ? card.fundId : undefined,
-        idempotencyKey: `voice:${m.id}:${card.id}`, conflict: "idempotency", actorId: actor(req).id, actorName: actor(req).name, source: "voice_memo" });
-      if (!w || !w.gift) return res.status(409).json({ error: "not_recorded", sentence: "That gift was already recorded." });
-      made = { giftId: w.gift.id };
-      await require("../afterChange").afterChange(orgId, [card.donorId], { door: "gift_form" }).catch(() => {});
+      // VOICE-4: through the SAME route the Add Gift form calls, as her, so
+      // the gift is everything a hand-entered one is (one gift path, its
+      // hooks, the thank-you draft, the header's figures) and nothing more.
+      const g = await asHer(req, "POST", `/donors/${card.donorId}/gifts`, { amount: Number(amount), date: today, type: "cash",
+        notes: `From Tell Steward: "${String(card.quote).slice(0, 200)}"`,
+        ...(card.fundId && (await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [card.fundId, orgId])).length ? { fund_id: card.fundId } : {}),
+        idempotencyKey: `voice:${m.id}:${card.id}` });
+      if (g.status >= 300 || !g.body || !g.body.gift) return res.status(g.status >= 400 ? g.status : 409).json(g.body || { error: "not_recorded" });
+      if (g.body.duplicate) return res.status(409).json({ error: "not_recorded", sentence: "That gift was already recorded." });
+      made = { giftId: g.body.gift.id, gift: g.body.gift };
     } else if (card.moneyKind === "pledge") {
       const read = j(m.read) || {};
       const due = (read.followUps && read.followUps[0] && read.followUps[0].due) || today;
@@ -402,7 +563,17 @@ app.post("/voice/memos/:id/cards/:cardId/yes", requireAuth, checkWriteAccess, wr
         made = { interactionId: n.body && n.body.id };
       }
     }
+    const gift = made.gift; delete made.gift;
     await setCard(orgId, m, card.id, { state: "saved", ...made, by: actor(req).name });
+    if (gift) await giftFollowOn(req, await memoRow(orgId, m.id), card, gift, today);
+  } else if (card.kind === "thanks") {
+    const r = await sendThanks(req, m, card);
+    if (r.error) return res.status(r.status || 409).json({ error: r.error, sentence: r.sentence });
+    await setCard(orgId, await memoRow(orgId, m.id), card.id, { state: "saved", by: actor(req).name, receiptSent: r.receiptSent, thankYouSent: r.thankYouSent, taskId: r.taskId });
+  } else if (card.kind === "flag" || card.kind === "ask") {
+    const r = await applyDirect(req, card);
+    if (r.error) return res.status(r.status || 409).json({ error: r.error, sentence: r.sentence });
+    await setCard(orgId, m, card.id, { state: "saved", by: actor(req).name, before: r.before, entityId: r.entityId || null });
   } else if (card.kind === "contact" || card.kind === "sensitive") {
     // Through the Agent's runner, so the memo's Undo reaches it too.
     const step = card.kind === "contact"
@@ -437,6 +608,52 @@ app.post("/voice/memos/:id/cards/:cardId/no", requireAuth, checkWriteAccess, wra
   res.json({ memo: await memoOut(orgId, await memoRow(orgId, m.id)) });
 }));
 
+// ── VOICE-4 · DO ALL OF THIS ────────────────────────────────────────────────
+// One tap does every card that is hers to say yes to, in order (the gift
+// before its receipt), each through its own card's yes, and confirms the
+// plan she was shown with it. A personal detail and an email draft are never
+// part of it: each still takes its own tap.
+const ALL_KINDS = ["money", "thanks", "contact", "flag", "ask"];
+app.post("/voice/memos/:id/all", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  let m = await memoRow(orgId, req.params.id);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  if (m.undone_at) return res.status(409).json({ error: "memo_undone", sentence: "This memo was undone." });
+  const failed = [];
+  const tried = new Set();
+  for (let i = 0; i < 12; i++) {
+    const card = (j(m.cards) || []).find(c => c.state === "waiting" && ALL_KINDS.includes(c.kind) && !tried.has(c.id));
+    if (!card) break;
+    tried.add(card.id);
+    const r = await asHer(req, "POST", `/voice/memos/${m.id}/cards/${card.id}/yes`, {});
+    if (r.status >= 300) failed.push({ id: card.id, title: card.title, sentence: (r.body && (r.body.sentence || r.body.error)) || "it did not run" });
+    m = await memoRow(orgId, m.id);
+  }
+  let ran = null;
+  const insId = req.body && req.body.instructionId ? String(req.body.instructionId) : null;
+  if (insId) {
+    const r = await asHer(req, "POST", `/agent/instructions/${encodeURIComponent(insId)}/confirm`, {});
+    if (r.status < 300 && r.body) {
+      ran = r.body;
+      if (r.body.runId) await run("UPDATE voice_memos SET run_ids = run_ids || ?::jsonb WHERE id=? AND org_id=?", [JSON.stringify([r.body.runId]), m.id, orgId]);
+    } else failed.push({ id: insId, title: "The plan", sentence: (r.body && (r.body.sentence || r.body.error)) || "it did not run" });
+  }
+  res.json({ memo: await memoOut(orgId, await memoRow(orgId, m.id)), ran, failed });
+}));
+
+// A plan that ran on its own (low stakes) or was confirmed beside a memo is
+// part of that memo, so the memo's one Undo reaches it too.
+app.post("/voice/memos/:id/runs", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const m = await memoRow(orgId, req.params.id);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const runId = String((req.body && req.body.runId) || "");
+  const [r] = runId ? await query("SELECT id FROM agent_runs WHERE id=? AND org_id=?", [runId, orgId]) : [];
+  if (!r) return res.status(404).json({ error: "run_not_found" });
+  if (!(j(m.run_ids) || []).includes(r.id)) await run("UPDATE voice_memos SET run_ids = run_ids || ?::jsonb WHERE id=? AND org_id=?", [JSON.stringify([r.id]), m.id, orgId]);
+  res.json({ memo: await memoOut(orgId, await memoRow(orgId, m.id)) });
+}));
+
 // ── UNDO: EVERYTHING THE MEMO DID ───────────────────────────────────────────
 app.post("/voice/memos/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -457,12 +674,30 @@ app.post("/voice/memos/:id/undo", requireAuth, checkWriteAccess, wrap(async (req
     if (r.ok) { undone++; await run("UPDATE agent_writes SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?", [actor(req).id, actor(req).name, w.id, orgId]); }
     else failed.push(w.tool);
   }
-  const cards = (j(m.cards) || []).map(c => (c.state === "waiting" ? { ...c, state: "discarded", quote: c.kind === "sensitive" ? null : c.quote } : c));
+  // VOICE-4: the one Undo covers the whole memo, her yeses included. The gift
+  // she confirmed comes off through the gift's own delete, a changed flag or
+  // ask goes back to what it was, and the meeting it marked happened is open
+  // again. What was SENT cannot be unsent, and the sentence says so.
+  let sentStays = false;
+  for (const c of (j(m.cards) || []).filter(x => x.state === "saved")) {
+    let ok = true;
+    if (c.kind === "money" && c.giftId) ok = (await asHer(req, "DELETE", `/gifts/${c.giftId}`)).status < 300;
+    else if (c.kind === "money" && c.pledgeId) ok = (await asHer(req, "DELETE", `/pledges/${c.pledgeId}`)).status < 300;
+    else if (c.kind === "flag" && c.before) await run("UPDATE donors SET do_not_email=?, updated_at=NOW() WHERE id=? AND org_id=?", [c.before.do_not_email === true, c.donorId, orgId]);
+    else if (c.kind === "ask" && c.before && c.entityId) ok = (await asHer(req, "PUT", `/opportunities/${c.entityId}`, { targetAmount: c.before.target_amount })).status < 300;
+    else if (c.kind === "thanks") sentStays = true;
+    if (ok && c.kind !== "thanks") undone++; else if (!ok) failed.push(c.kind);
+    if (c.kind === "thanks" && (c.closedTaskIds || []).length)
+      await run(`UPDATE tasks SET done=0, completed_at=NULL, completed_by_name=NULL, updated_at=NOW() WHERE org_id=? AND id = ANY(?::text[])`, [orgId, c.closedTaskIds]);
+  }
+  const read = j(m.read) || {};
+  if (read.meeting) { await reopenMeeting(orgId, read.meeting); undone++; }
+  const cards = (j(m.cards) || []).map(c => (c.state === "waiting" ? { ...c, state: "discarded", quote: c.kind === "sensitive" ? null : c.quote }
+    : c.state === "saved" && c.kind !== "thanks" ? { ...c, state: "undone" } : c));
   await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify(cards), m.id, orgId]);
-  const kept = cards.filter(c => c.kind === "money" && c.state === "saved");
   res.json({ ok: true, undone, failed, memo: await memoOut(orgId, await memoRow(orgId, m.id)),
     sentence: `Undone: ${undone} ${undone === 1 ? "change" : "changes"} taken back.`
-      + (kept.length ? ` The ${kept.length === 1 ? "amount" : "amounts"} you confirmed yourself ${kept.length === 1 ? "stays" : "stay"} on the record; remove ${kept.length === 1 ? "it" : "them"} from the person's giving if ${kept.length === 1 ? "it was" : "they were"} wrong.` : "") });
+      + (sentStays ? " The receipt and thank-you already sent are not taken back." : "") });
 }));
 
 // ── VOICE-3 · TALK TO STEWARD ───────────────────────────────────────────────
@@ -472,7 +707,6 @@ app.post("/voice/memos/:id/undo", requireAuth, checkWriteAccess, wrap(async (req
 // (/agent/instructions/:id/confirm, her click). A question goes to Ask, which
 // reads and writes nothing. A memo that holds more than one is split, and each
 // part goes its own way (shared/voiceTalk.js decides, in code first).
-const VT = () => import("../shared/voiceTalk.js");
 
 // fileMemo answers through res; catch its answer so the talk can add to it.
 function captured(fn) {
@@ -500,6 +734,33 @@ async function modelSplit(orgId, text, T) {
     await recordAiFallback(orgId, "voice_talk", e).catch(() => {});
     return { kind: null };
   }
+}
+
+// A "do" with no memo of its own gets one, so what it did is listed with the
+// one Undo like everything else Tell Steward does.
+async function memoFor(req, memo, text, source, person, instructionId = null) {
+  if (memo && memo.id) return memo.id;
+  const id = "vm_" + uuid().slice(0, 10);
+  await run(`INSERT INTO voice_memos (id,org_id,text,source,status,ai,donor_ids,read,cards,run_ids,instruction_id,created_by,created_by_name)
+             VALUES (?,?,?,?,'done','on',?,?,'[]','[]',?,?,?)`,
+    [id, req.user.orgId, text, source, JSON.stringify(person ? [person.id] : []), JSON.stringify({ kind: "do" }), instructionId, actor(req).id, actor(req).name]);
+  return id;
+}
+async function addCards(orgId, memoId, more) {
+  const m = await memoRow(orgId, memoId);
+  await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify([...(j(m.cards) || []), ...more]), memoId, orgId]);
+}
+function directCard(d, person) {
+  const first = String(person.name || "").split(/\s+/)[0];
+  const usd = c => "$" + (c / 100).toLocaleString("en-US");
+  return d.kind === "flag"
+    ? { id: "vc_" + uuid().slice(0, 8), kind: "flag", field: d.field, value: d.value, donorId: person.id, state: "waiting", title: `Mark ${first} as do not email?` }
+    : { id: "vc_" + uuid().slice(0, 8), kind: "ask", cents: d.cents, donorId: person.id, state: "waiting", title: `Change ${first}'s ask to ${usd(d.cents)}?` };
+}
+async function markReceiptAsked(orgId, memoId) {
+  const m = await memoRow(orgId, memoId);
+  const read = j(m.read) || {};
+  await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, receiptAsked: true }), memoId, orgId]);
 }
 
 app.post("/voice/talk", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -539,17 +800,57 @@ app.post("/voice/talk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
     }
   }
 
-  // DO: the Agent's plan. It waits for her Confirm and writes nothing before it.
+  // DO: the Agent's plan. Low-stakes steps (a group, a journey, a reminder, a
+  // tag) run at once and are listed with Undo; anything else waits for her
+  // Confirm and writes nothing before it.
   if (parts.do) {
     let doText = parts.do;
     if (!person && donorId) [person] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]);
+    const named = await engine().agentNamedIn(orgId, doText, null);
     if (person) {
       // "send her the boat photos", after a memo about Margaret: the plan is on Margaret.
-      const named = await engine().agentNamedIn(orgId, doText, null);
       if (!(named.scope || []).length && !named.ambiguous.length) doText = T.namePronouns(doText, person.name);
+    } else if ((named.scope || []).length === 1 && !named.ambiguous.length) {
+      [person] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [named.scope[0], orgId]);
     }
-    const r = await asHer(req, "POST", "/agent/instructions", { text: doText, ...(req.body.personId ? { personId: String(req.body.personId) } : {}) });
-    out.plan = { status: r.status, text: doText, ...(r.body || {}) };
+    const memoGift = out.memo && (out.memo.waiting || []).find(c => c.kind === "money" && c.moneyKind === "gift");
+    const direct = person ? T.directCards(doText) : [];
+    if (memoGift && T.isReceiptChore(doText) && !T.targetIn(doText)) {
+      // "then send her the receipt": readied with the gift, one Confirm for both.
+      out.receiptReadied = true;
+      await markReceiptAsked(orgId, out.memo.id);
+      out.memo = await memoOut(orgId, await memoRow(orgId, out.memo.id));
+    } else if (direct.length) {
+      const memoId = await memoFor(req, out.memo, doText, source, person);
+      await addCards(orgId, memoId, direct.map(d => directCard(d, person)));
+      out.memo = await memoOut(orgId, await memoRow(orgId, memoId));
+    } else {
+      const t = T.targetIn(doText);
+      let choose = null;
+      if (t) {
+        const rows = t.kind === "journey" ? await query("SELECT id, name FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name", [orgId])
+          : t.kind === "event" ? await query("SELECT id, name FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 100", [orgId])
+          : await query("SELECT id, name FROM audiences WHERE org_id=? AND kind='static' ORDER BY name", [orgId]);
+        const mt = T.matchName(t.heard, rows);
+        if (mt.exact) { if (mt.exact.name !== t.heard) doText = doText.replace(t.heard, mt.exact.name); }
+        else choose = { kind: t.kind, heard: t.heard, text: doText, options: mt.options.map(o => ({ id: o.id, name: o.name })),
+          sentence: `There is no ${t.kind === "event" ? "guest list" : t.kind} called "${t.heard}". Did you mean one of these? Steward never makes a new one without asking.` };
+      }
+      if (choose) out.plan = { choose };
+      else {
+        const r = await asHer(req, "POST", "/agent/instructions", { text: doText, ...(req.body.personId ? { personId: String(req.body.personId) } : person ? { personId: person.id } : {}) });
+        out.plan = { status: r.status, text: doText, ...(r.body || {}) };
+        if (r.status < 300 && r.body && r.body.id && r.body.plan && T.planRunsAlone(r.body.plan)) {
+          const c = await asHer(req, "POST", `/agent/instructions/${encodeURIComponent(r.body.id)}/confirm`, {});
+          if (c.status < 300 && c.body && c.body.runId) {
+            const memoId = await memoFor(req, out.memo, doText, source, person, r.body.id);
+            await run("UPDATE voice_memos SET run_ids = run_ids || ?::jsonb WHERE id=? AND org_id=?", [JSON.stringify([c.body.runId]), memoId, orgId]);
+            out.plan = { ...out.plan, ran: c.body, ranAlone: true, memoId };
+            out.memo = await memoOut(orgId, await memoRow(orgId, memoId));
+          }
+        }
+      }
+    }
   }
   res.status(out.memo ? 201 : 200).json(out);
 }));

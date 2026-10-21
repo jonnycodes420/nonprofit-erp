@@ -19219,9 +19219,11 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // is not a follow-up and does not belong on a donor's record.
   const taskRows = await query(
     `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name, k.calendar_event_id,
-            k.created_at, d.name AS donor_name, d.total_giving, d.gift_count
+            k.created_at, d.name AS donor_name, d.total_giving, d.gift_count,
+            sg.amount AS source_gift_amount, sg.date AS source_gift_date
        FROM tasks k
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
+       LEFT JOIN gifts sg ON sg.id = k.source_gift_id AND sg.org_id = k.org_id
       WHERE k.org_id = ? AND k.done = 0 AND k.voided_at IS NULL AND k.donor_id IS NOT NULL AND d.deleted_at IS NULL
         AND k.due IS NOT NULL AND k.due <> ''
         -- FIX-31: a next step's own task IS the thread row above, and a deadline
@@ -19338,7 +19340,12 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       snoozedUntil: null, followon: null,
       signals: {
         dueDate: due, stepType: k.type || "task", stepLabel: k.title, daysOpen: Math.max(0, daysOpen),
-        openAskAmount: asks[k.donor_id] || 0,
+        // VOICE-4: a task shows only what belongs to it. The donor's open ask
+        // is context for a task about the ask, never for "Send Margaret the
+        // receipt"; a task made for a gift leads with that gift.
+        openAskAmount: /\b(ask|asks|proposal|pledge|solicit)\b/i.test(String(k.title || "")) ? (asks[k.donor_id] || 0) : 0,
+        giftAmount: k.source_gift_amount != null ? parseFloat(k.source_gift_amount) || 0 : 0,
+        giftDate: k.source_gift_date ? String(k.source_gift_date).slice(0, 10) : null,
         recurringAtRisk: atRisk.has(k.donor_id),
         isFirstGift: false,
         lifetimeGiving: parseFloat(k.total_giving) || 0,
