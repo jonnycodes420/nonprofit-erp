@@ -840,8 +840,11 @@ app.post("/voice/talk", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       [person] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [named.scope[0], orgId]);
     }
     const memoGift = out.memo && (out.memo.waiting || []).find(c => c.kind === "money" && c.moneyKind === "gift");
-    const direct = person ? T.directCards(doText) : [];
-    if (memoGift && T.isReceiptChore(doText) && !T.targetIn(doText)) {
+    const direct = T.directCards(doText);
+    if (direct.length && !person) {
+      // "Mark her as do not email" with nobody in view: ask who, never a task.
+      out.plan = { sentence: "Who is this about? Say their name (\"Mark Margaret Chen as do not email\"), or say it from their profile." };
+    } else if (memoGift && T.isReceiptChore(doText) && !T.targetIn(doText)) {
       // "then send her the receipt": readied with the gift, one Confirm for both.
       out.receiptReadied = true;
       await markReceiptAsked(orgId, out.memo.id);

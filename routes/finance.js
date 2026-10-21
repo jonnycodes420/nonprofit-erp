@@ -1474,8 +1474,11 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   // FIX-14 Part 1 — each calendar event carries its org-local day, so the
   // screen never dates it by UTC.
   const civilOf = e => orgToday(tzOrg, new Date(e.starts_at));   // ORG_TZ_SEAM_OK
-  const calUpcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
-  const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  // VOICE-4: a meeting already written up has happened, even if its hour has
+  // not come yet ("lunch with Margaret went well" before the 10 AM coffee's slot).
+  const happened = e => new Date(e.starts_at).getTime() <= now || !!e.interaction_id;
+  const calUpcoming = events.filter(e => !happened(e)).reverse().map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  const past = events.filter(happened).map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
   const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 30 * 864e5) || null;   // FIX-33: a booked visit shows its card from the day it is booked
 
   // THE ONE SOURCE (meetings.js): every meeting with this person, calendar

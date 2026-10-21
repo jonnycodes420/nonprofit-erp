@@ -33,8 +33,8 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 
 const PORT = Number(process.env.MATRIX_PORT || 5698);
-const MOCK = Number(process.env.VOICE4_MOCK_PORT || 5619);
-const SINK = Number(process.env.VOICE4_SINK_PORT || 5617);
+const MOCK = Number(process.env.CALENDAR_MOCK_PORT || 5619);   // a shard's mocks share this port; suites in a shard run one at a time
+const SINK = Number(process.env.SINK_PORT || 5617);
 process.env.PORT = String(PORT);
 process.env.BASE = `http://localhost:${PORT}`;
 process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
@@ -182,6 +182,8 @@ async function reset() {
   ok("§1 his words are kept (\"Lunch\")", !!conv && /^Lunch/.test(conv.note), conv);
   const bm1 = await api("GET", "/donors/d_v4_mc/before-meeting", tok);
   ok("§1 the \"Before your meeting\" card closes", bm1.status === 200 && !bm1.body.meeting, bm1.body);
+  const rel1 = await api("GET", "/donors/d_v4_mc/relationship", tok);
+  ok("§1 and the profile's meeting card no longer shows it as coming up", rel1.status === 200 && !(rel1.body.nextMeeting && rel1.body.nextMeeting.id === "ce_v4_coffee"), rel1.body.nextMeeting);
   const [step] = await q(`SELECT closed_at FROM threads WHERE org_id=$1 AND next_step_label LIKE 'Coffee tomorrow%'`, [ORG]);
   ok("§1 the coffee's step (Bring Lily's class schedule) is done", !!(step && step.closed_at), step);
   const [boat] = await q(`SELECT done FROM tasks WHERE org_id=$1 AND title LIKE 'Send Margaret photos%'`, [ORG]);

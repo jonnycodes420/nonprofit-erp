@@ -184,6 +184,17 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
 - **Before your meeting (VOICE-3).** `GET /donors/:id/before-meeting`: the next meeting with the person today or
   tomorrow on the org's day (a calendar meeting until it ends, a hand-logged one dated ahead), with `meetingBrief`.
   The profile, the calendar's meeting card and Home's lead slot all draw `BeforeYourMeeting.jsx`. Clients never.
+- **Tell Steward does it all (VOICE-4).** A memo only CREATES tasks or finishes the ones tied to its meeting; it never
+  rewrites another task or step (`set_next_step` only when no step is open). "Log the gift" is never a task: the money
+  is the card. The gift card's Yes goes through `POST /donors/:id/gifts`, the Add Gift route, as her; "send her the
+  receipt" becomes one card that sends the receipt and the drafted thank-you on one Confirm (thank-you first, through
+  a thank-you task's own Send). A meeting she says happened is matched to that person's calendar meeting today (or the
+  latest in two days, the only one that day even if the words differ) and logged, linked and closed with its step and
+  tasks (`closeMeeting`). Low-stakes plans (`LOW_STAKES_TOOLS`) run at once inside a memo; money and personal details
+  wait. "Do all of this" (`/voice/memos/:id/all`) never includes a personal detail or an email draft. One Undo
+  reverses the whole memo, her yeses too (a receipt it issued is voided first); what was sent stays sent. A group or
+  journey name that is not one offers the closest two (`matchName`) and never makes a new one. After any of it the
+  sheet calls `told()` (`client/src/lib/stewardTold.js`) and the profile, Thread, Tasks and Calendar re-read.
 - **The person she chose answers "which one".** A memo from Margaret Chen's profile that
   says "Margaret" never asks which Margaret, and a pick list's answers build up (`picks`), never replace each other.
 
