@@ -21,7 +21,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, SINK_PORT, waitFor } = require("./helpers");
 const { civilDay } = require("./clock");
 
 const ORG = "org_auto1", DEMO = "org_auto1demo";
@@ -132,7 +132,12 @@ function nextWeekdayAfter(day) { let d = addDays(day, 1); while ([0, 6].includes
     !!st0 && /Thank you for/.test(st0.words.subject) && /^About \d+ (person|people) will get this in the next 7 days\.$/.test(st0.sentence), st0);
   const on = await api("POST", "/journeys/ct_a1/steps/0/auto", tok, { on: true, confirm: true });
   ok("§1 an admin turns it on", on.status === 200 && on.body.step.on === true, on.body);
-  const aud = await q(`SELECT summary FROM fin_audit_log WHERE org_id=$1 AND summary LIKE 'Turned on automatic sending%' AND created_at > NOW() - INTERVAL '2 minutes'`, [ORG]);
+  // The audit row is written on the response's "finish" (middleware/auditTrail.js),
+  // a moment after the answer arrives; read it until it lands (CI lost this race once).
+  const aud = (await waitFor(async () => {
+    const r = await q(`SELECT summary FROM fin_audit_log WHERE org_id=$1 AND summary LIKE 'Turned on automatic sending%' AND created_at > NOW() - INTERVAL '2 minutes'`, [ORG]);
+    return r.length ? r : null;
+  }, { timeout: 5000 })) || [];
   ok("§1 turning it on writes an audit row", aud.length >= 1, aud);
 
   // Everyone joins; each step opens and is scheduled for the next weekday.
