@@ -267,6 +267,11 @@ async function finish(req, m, ids, read) {
         title: mo.kind === "pledge" ? `${what} ${V.cents$(mo.cents)}${mo.fundName ? ` to the ${mo.fundName}` : ""} from ${first(primary)}?`
           : `${what} ${V.cents$(mo.cents)} gift${mo.fundName ? ` to the ${mo.fundName}` : ""}${mo.kind === "gift" ? ` from ${first(primary)}` : ""}?` });
     }
+    // "then send her the receipt": its card waits beside the gift's, and goes
+    // with it (it cannot go before the gift is recorded).
+    const giftCard = cards.find(c => c.kind === "money" && c.moneyKind === "gift");
+    if (giftCard && read.receiptAsked) cards.push({ id: cardId(), kind: "thanks", afterCard: giftCard.id, giftId: null, donorId: primary, cents: giftCard.cents,
+      state: "waiting", title: `Send ${first(primary)} the receipt and thank-you`, detail: `For the ${V.cents$(giftCard.cents)} gift, once it is recorded` });
     for (const c of read.contact) cards.push({ id: cardId(), kind: "contact", field: c.field, value: c.value, donorId: primary, quote: c.quote, state: "waiting",
       title: `Change ${first(primary)}'s ${c.field} to ${c.value}?` });
   }
@@ -458,12 +463,14 @@ async function giftFollowOn(req, m, card, gift, today) {
   if (receiptTasks.length) await run(`UPDATE tasks SET source_gift_id=? WHERE org_id=? AND id = ANY(?::text[])`, [gift.id, orgId, receiptTasks]);
   const cards = j(m.cards) || [];
   if (cards.some(c => c.kind === "thanks" && c.giftId === gift.id)) return;
+  const waitingFor = cards.find(c => c.kind === "thanks" && c.afterCard === card.id && !c.giftId);
   const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [card.donorId, orgId]);
   const first = String((d && d.name) || "").split(/\s+/)[0] || "them";
   const cents = Math.round(Number(gift.amount) * 100);
-  cards.push({ id: "vc_" + uuid().slice(0, 8), kind: "thanks", giftId: gift.id, donorId: card.donorId, cents, state: "waiting",
-    title: `Send ${first} the receipt and thank-you`, detail: `${V.cents$(cents)} gift, ${dayWords(gift.date || today)}`,
-    closedTaskIds: chores, taskIds: receiptTasks });
+  const ready = { giftId: gift.id, donorId: card.donorId, cents, title: `Send ${first} the receipt and thank-you`,
+    detail: `${V.cents$(cents)} gift, ${dayWords(gift.date || today)}`, closedTaskIds: chores, taskIds: receiptTasks };
+  if (waitingFor) Object.assign(waitingFor, ready);
+  else cards.push({ id: "vc_" + uuid().slice(0, 8), kind: "thanks", state: "waiting", ...ready });
   await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify(cards), m.id, orgId]);
 }
 
@@ -473,6 +480,7 @@ async function giftFollowOn(req, m, card, gift, today) {
 // applied at the press). The task closes as it sends.
 async function sendThanks(req, m, card) {
   const orgId = req.user.orgId;
+  if (!card.giftId) return { status: 409, error: "gift_first", sentence: "Record the gift first, then the receipt and thank-you can go." };
   const [g] = await query("SELECT id, donor_id, amount, date FROM gifts WHERE id=? AND org_id=?", [card.giftId, orgId]);
   if (!g) return { status: 404, error: "gift_gone", sentence: "That gift is no longer on the record." };
   const drafts = await asHer(req, "GET", "/thank-yous");

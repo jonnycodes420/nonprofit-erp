@@ -18,6 +18,7 @@ import { T, Modal } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { AskBox } from "./AskPanel";
+import { useStewardTold } from "../lib/stewardTold";
 import { ShiftEditor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
 import { tabHref, urlParam } from "../lib/appUrls";
@@ -107,6 +108,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
     const qs = new URLSearchParams({ from: range.from, to: range.to, scope, types: types.join(","), ...(staff ? { staff } : {}) });
     apiFetch(`/calendar/items?${qs}`).then(d => { setData(d); setErr(""); }).catch(e => setErr(errorMessage(e, "The calendar did not load just now.")));
   }, [range && range.from, range && range.to, scope, staff, types && types.join(",")]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useStewardTold(() => { load(); });   // VOICE-4: a meeting Tell Steward marked happened shows at once
 
   // The first read learns the org's today and default types.
   useEffect(() => {

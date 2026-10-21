@@ -168,6 +168,7 @@ async function reset() {
   ok("§1 the receipt is readied with the gift, not made a task or a plan", !t1.body.plan
     && !(await q(`SELECT 1 FROM tasks WHERE org_id=$1 AND title ILIKE '%receipt%'`, [ORG])).length, { plan: t1.body.plan });
   const gift = (memo.waiting || []).find(c => c.kind === "money");
+  ok("§1 the receipt and thank-you wait beside it, as one card", (memo.waiting || []).filter(c => c.kind === "thanks").length === 1, memo.waiting);
   ok("§1 the gift waits for her yes", !!gift && gift.state === "waiting" && gift.amount === "$5,000", memo.waiting);
   const after1 = { tasks: await q(`SELECT id, title, notes FROM tasks WHERE org_id=$1 ORDER BY id`, [ORG]), threads: await q(`SELECT id, next_step_label FROM threads WHERE org_id=$1`, [ORG]) };
   const rewritten = [...before.tasks.filter(b => { const a = after1.tasks.find(x => x.id === b.id); return !a || a.title !== b.title || a.notes !== b.notes; }),
@@ -230,7 +231,6 @@ async function reset() {
   const j1 = await api("POST", "/voice/talk", tok, { text: "Put her in the Major donor journey", donorId: "d_v4_mc", as: "do" });
   const [pl] = await q(`SELECT id, status FROM cultivation_plans WHERE org_id=$1 AND donor_id='d_v4_mc' AND template_id='ct_v4_major'`, [ORG]);
   ok("§4 \"Put her in the Major donor journey\" enrolls her at once", j1.body.plan && j1.body.plan.ranAlone === true && pl && pl.status === "active", { plan: j1.body.plan, pl });
-  console.log("DBG j1", JSON.stringify({ ranAlone: j1.body.plan && j1.body.plan.ranAlone, ran: j1.body.plan && j1.body.plan.ran && j1.body.plan.ran.steps, pl }));
   const u4 = await api("POST", `/voice/memos/${j1.body.memo.id}/undo`, tok, {});
   const [pl2] = await q(`SELECT status FROM cultivation_plans WHERE id=$1`, [pl && pl.id]);
   ok("§4 Undo takes her out again", u4.status === 200 && (!pl2 || pl2.status !== "active"), { u4: u4.body, pl2 });
@@ -262,9 +262,7 @@ async function reset() {
   const [d5] = await q(`SELECT do_not_email FROM donors WHERE id='d_v4_mc'`);
   ok("§5 one tap does every card", all.status === 200 && all5.status === 200 && !!g5 && d5.do_not_email === true, { all: all.body.failed, all5: all5.body.failed });
   ok("§5 the receipt card it readied was sent with it (one Confirm)", ((all5.body.memo && all5.body.memo.waiting) || []).some(c => c.kind === "thanks" && c.state === "saved"), all5.body.memo && all5.body.memo.waiting);
-  console.log("DBG all5", JSON.stringify(all5.body.failed), JSON.stringify(j1.body.plan && j1.body.plan.plan && j1.body.plan.plan.steps.map(x => x.state)));
   const u5 = await api("POST", `/voice/memos/${m5.id}/undo`, tok, {});
-  console.log("DBG u5", JSON.stringify(u5.body));
   const u5b = await api("POST", `/voice/memos/${extra.body.memo.id}/undo`, tok, {});
   const [g5b] = await q(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id='d_v4_mc' AND amount=1000`, [ORG]);
   const [d5b] = await q(`SELECT do_not_email FROM donors WHERE id='d_v4_mc'`);
@@ -290,7 +288,8 @@ async function reset() {
   // ── §7 THE SCREEN RE-READS ───────────────────────────────────────────────
   console.log("\n§7 the screen keeps up");
   const src = p => fs.readFileSync(path.join(ROOT, "client/src/components", p), "utf8");
-  const listeners = ["DonorProfile.jsx", "Tasks.jsx", "Calendar.jsx", "Thread.jsx"].filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(/.test(src(p)));
+  const listeners = ["DonorProfile.jsx", "Tasks.jsx", "Calendar.jsx", "Dashboard.jsx"]   // Home's Thread is in Dashboard.jsx
+   .filter(p => fs.existsSync(path.join(ROOT, "client/src/components", p)) && /useStewardTold\(/.test(src(p)));
   ok("§7 the profile, Thread, Tasks and Calendar re-read when Tell Steward acts", listeners.length === 4, listeners);
   ok("§7 the sheet says so after every change, not only on close", (src("TellSteward.jsx").match(/told\(/g) || []).length >= 3, null);
   ok("§7 the profile's status re-reads with it", /useDonorStatus\(donor\.id,\s*figs,\s*`\$\{stepNonce\}:\$\{toldNonce\}`\)/.test(src("DonorProfile.jsx")), null);

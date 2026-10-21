@@ -17,14 +17,14 @@ import { displayDate } from "../../../shared/displayDate.js";
 const LABEL = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
 const time = iso => (iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "");
 
-export function useBeforeMeeting(donorId) {
+export function useBeforeMeeting(donorId, refreshKey = 0) {
   const [data, setData] = useState(null);
   useEffect(() => {
     if (!donorId) { setData(null); return undefined; }
     let live = true;
     apiFetch(`/donors/${encodeURIComponent(donorId)}/before-meeting`).then(r => { if (live) setData(r && r.meeting ? r : null); }).catch(() => { if (live) setData(null); });
     return () => { live = false; };
-  }, [donorId]);
+  }, [donorId, refreshKey]);
   return data;
 }
 
