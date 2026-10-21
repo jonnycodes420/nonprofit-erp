@@ -19,7 +19,7 @@ const routers = { r0: express.Router() };
 // The reads Home makes when it opens (Dashboard.jsx and the panels inside it),
 // by path. A query string is allowed; the path must be one of these.
 const HOME_READS = new Set([
-  "/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
+  "/data-health/notice", "/gift-starts/notice", "/journey-sends/notice", "/recurring/exceptions", "/readouts/latest", "/move",
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout",
   "/tasks/counts", "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact",
   "/fundraising/overview", "/goals/active", "/drift", "/threads", "/calendar/today", "/calendar/to-log",

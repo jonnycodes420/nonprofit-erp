@@ -247,6 +247,10 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status)
            VALUES ($1,$2,$3,1,'send',$4,$5,'pending')`,
     [`cs_${o}`, o, `cp_${o}`, `${mark} Step`, TODAY]);
+  // AUTO-1 — an email waiting to send itself is org B's: org A may not skip it.
+  await q(`INSERT INTO journey_sends (id,org_id,template_id,plan_id,step_id,seq,donor_id,email_template_id,auto_step_id,send_on,status,created_by,created_by_name)
+           VALUES ($1,$2,$3,$4,$5,0,$6,'et_none','jauto_none',$7,'scheduled','system:test','test')`,
+    [`js_${o}`, o, `ct_${o}`, `cp_${o}`, `cs_${o}`, `d_${o}`, TODAY]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ($1,$2,$3,500,$4,'open')`,
     [`pl_${o}`, o, `d_${o}`, TODAY]);
   await q(`INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value) VALUES ($1,$2,$3,'bequest',10000)`,
@@ -450,6 +454,7 @@ function bResolver(routePath, param) {
   }
   const byParam = {
     qid: "q1",   // PARITY-3: a question on an application
+    seq: "0",    // AUTO-1: a journey step's place; the :id beside it is org B's journey
     vid: `gpv_${B}`,   // GIVE-EDIT-1: a kept version of a giving page
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",
@@ -591,6 +596,7 @@ function bResolver(routePath, param) {
   // row-shaped param in this build is a dashboard's own id.
   if (routePath.startsWith("/saved-dashboards/")) return `sdash_${B}`;
   if (routePath.startsWith("/journeys/")) return `ct_${B}`;
+  if (routePath.startsWith("/journey-sends/")) return `js_${B}`;   // AUTO-1
   if (routePath.startsWith("/plan-steps/")) return `cs_${B}`;
   if (routePath.startsWith("/plans/")) return `cp_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;

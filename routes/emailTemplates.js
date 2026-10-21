@@ -379,6 +379,13 @@ async function saveTemplate(req, res, row, b) {
   }
   await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, draft=NULL, draft_saved_at=NULL, draft_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?`,
     [name, subject, preheader, JSON.stringify(blocks), row.id, orgId]);
+  // AUTO-1: these words were saved by a person on this org's staff. A
+  // super-admin's save does not count, and nothing else ever sets this.
+  if (!req.user.isSuperAdmin && !req.headers["x-steward-agent"]) {
+    const who = actor(req);
+    const [u] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [who.id, orgId]).catch(() => []);
+    await run(`UPDATE email_templates SET words_saved_by=?, words_saved_by_name=?, words_saved_at=NOW() WHERE id=? AND org_id=?`, [who.id, (u && u.name) || who.name, row.id, orgId]);
+  }
   if (personKind) {
     const who = actor(req);
     await run(`INSERT INTO message_templates (id,org_id,kind,subject,body,reviewed_at,reviewed_by_name,created_by,created_by_name)

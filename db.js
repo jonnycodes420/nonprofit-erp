@@ -7349,6 +7349,60 @@ async function runSchemaInit(pool) {
   // back exactly. The plan remembers its timeline line for the same reason.
   await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS exclusive BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS journey_touch_gap_days INTEGER NOT NULL DEFAULT 7`);
+  // AUTO-1 · A JOURNEY EMAIL STEP THAT SENDS ITSELF. Off unless an owner or
+  // admin turns it on for one step, and only for words a person on staff saved.
+  // `words_saved_*` is stamped by a person's own Save or Publish of a template
+  // (never by a starter copy, an AI proposal or a super-admin), and the switch
+  // keeps a fingerprint of the words it was turned on for: new words hold the
+  // sends until somebody turns it on again for them.
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS words_saved_by TEXT`);
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS words_saved_by_name TEXT`);
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS words_saved_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS auto_send_paused_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS auto_send_paused_by_name TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS auto_send_cap_noted_on TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS journey_auto_steps (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      template_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      email_template_id TEXT NOT NULL,
+      words_hash TEXT NOT NULL,
+      turned_on_by TEXT NOT NULL, turned_on_by_name TEXT, turned_on_at TIMESTAMPTZ DEFAULT NOW(),
+      turned_off_at TIMESTAMPTZ, turned_off_by_name TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS journey_auto_steps_one_on ON journey_auto_steps (template_id, seq) WHERE turned_off_at IS NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS journey_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      template_id TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      donor_id TEXT NOT NULL,
+      email_template_id TEXT NOT NULL,
+      auto_step_id TEXT NOT NULL,
+      send_on TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      reason TEXT,
+      subject TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      sent_at TIMESTAMPTZ,
+      sent_day TEXT,
+      decided_by_name TEXT,
+      interaction_id TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT journey_sends_status CHECK (status IN ('scheduled','claimed','sent','failed','skipped','held'))
+    )`);
+  // One send per person per step, ever: the row IS the idempotency key.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS journey_sends_one_per_step ON journey_sends (step_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_journey_sends_due ON journey_sends (org_id, status, send_on)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_journey_sends_donor ON journey_sends (org_id, donor_id, sent_at)`);
   await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_from TEXT`);
   await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_reason TEXT`);
   await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_by_plan_id TEXT`);

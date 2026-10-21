@@ -236,6 +236,10 @@ const LOOPBACK_HARDCODED = [
   // else and NODE_ENV production); it files memos, records and removes a gift,
   // and puts her back as she was, on the LOCAL scratch Harborlight.
   "voice4-walk",
+  // AUTO-1: the journey auto-send walk. Loopback only (refuses anything else and
+  // NODE_ENV production); it turns switches on the LOCAL scratch Harborlight,
+  // a demonstration org, which never sends.
+  "auto1-walk",
   // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
   // it drafts and saves on the LOCAL scratch database it is pointed at.
   "fix30-walk",

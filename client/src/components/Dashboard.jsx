@@ -46,7 +46,7 @@ const todayCivil=()=>new Date().toISOString().split("T")[0];
 // SCALE-2: what Home reads when it opens, and what it reads once it knows the
 // scope (GET /home/bundle answers each list in one request; routes/homeBundle.js
 // holds the same paths). Keep in step with the effects below.
-const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/recurring/exceptions","/readouts/latest","/move",
+const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/journey-sends/notice","/recurring/exceptions","/readouts/latest","/move",
   "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
   "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
   "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins",
@@ -338,10 +338,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // possible duplicates. It opens Donors, Data health; it changes nothing.
   const [dhNotice,setDhNotice]=useState(null);
   const [gsNotice,setGsNotice]=useState(null);   // PARITY-4 Part 2
+  const [jsNotice,setJsNotice]=useState(null);   // AUTO-1: what Steward sends on its own next morning
   useEffect(()=>{
     if(surface!=="home")return;
     apiFetch("/data-health/notice").then(r=>setDhNotice(r.notice||null)).catch(()=>setDhNotice(null));
     apiFetch("/gift-starts/notice").then(r=>setGsNotice(r.notice||null)).catch(()=>setGsNotice(null));
+    apiFetch("/journey-sends/notice").then(r=>setJsNotice(r.notice||null)).catch(()=>setJsNotice(null));
   },[surface]);
   // IT ASKS, IT DOES NOT WALL. The brief puts the five questions in the import
   // moment; this build does not touch the receipt, so Home offers them instead.
@@ -2377,6 +2379,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 <button aria-label="Hide this" disabled={isReadOnly}
                   onClick={()=>apiFetch("/gift-starts/notice/seen",{method:"POST",body:"{}"}).then(()=>setGsNotice(null)).catch(()=>{})}
                   style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
+              </div>)}
+            {/* AUTO-1: the night before, the one line saying what goes out on its own. */}
+            {surface==="home"&&jsNotice&&(
+              <div data-testid="home-auto-send-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{jsNotice.sentence}</span>
+                <button onClick={()=>onNavigate&&onNavigate("journeys",{})}
+                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{jsNotice.step}</button>
               </div>)}
             {homeCalm&&homeRows.length>0&&!homeFold.thread&&(<>
               <ul data-testid="home-thread-list" style={{listStyle:"none",margin:0,padding:0}}>
