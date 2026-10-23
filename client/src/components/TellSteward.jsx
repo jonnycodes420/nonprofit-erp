@@ -26,6 +26,8 @@ import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, 
 import { told } from "../lib/stewardTold";
 import { RefLink } from "./Linked";
 import { linkSegments } from "../../../shared/itemLinks.js";
+import { Camera } from "lucide-react";
+import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 // VOICE-4: ONE recognizer for the page. A new one per press (and per opening
@@ -144,6 +146,9 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
   const startedNow = useRef(false);
   const onDown = e => { e.preventDefault(); downAt.current = Date.now(); startedNow.current = !listening; if (!listening) start(); };
   const onUp = () => { if (!startedNow.current || Date.now() - downAt.current > HOLD_MS) stop(); };
+  // CHECK-2: the check window, for the person this window is about if any.
+  // Opened inside the tap, so a phone's camera is allowed to open.
+  const snapCheck = () => { if (listening) stop(); openCheckSnap({ donor: donor ? { id: donor.id, name: donor.name } : null, camera: true }); onClose(); };
 
   // ── SENDING ───────────────────────────────────────────────────────────────
   // Every "which one?" answer so far rides along, so a memo naming two shared
@@ -240,14 +245,28 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
         {micTip && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
         {!step && <>
+          {/* CHECK-2: a check, beside the mic. The camera opens on a phone. */}
+          {!speech && (
+            <button type="button" data-testid="tell-snap-check" onClick={snapCheck}
+              style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, background: T.white, border: "1px solid " + T.ink, borderRadius: 10, padding: "8px 14px", color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              <Camera size={18} /> Snap a check
+            </button>
+          )}
           {speech && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+              <span style={{ width: 56 }} aria-hidden="true" />
               <button data-testid="tell-mic" aria-pressed={listening} aria-label={listening ? "Stop listening" : "Start listening"}
                 onPointerDown={onDown} onPointerUp={onUp} onContextMenu={e => e.preventDefault()}
                 style={{ width: 96, height: 96, borderRadius: "50%", border: "none", background: listening ? T.gold500 || "#C9A84C" : T.greenDk, color: T.white,
                   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", touchAction: "none", boxShadow: listening ? "0 0 0 8px rgba(201,168,76,0.25)" : "none" }}>
                 <MicGlyph size={38} />
               </button>
+              <button type="button" data-testid="tell-snap-check" onClick={snapCheck} aria-label="Snap a check" title="Snap a check"
+                style={{ width: 56, height: 56, borderRadius: "50%", border: "1px solid " + T.ink, background: T.white, color: T.ink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <Camera size={24} />
+              </button>
+              </div>
               <div style={{ fontSize: 13, color: T.ink3 }}>{listening ? `Listening. Release, or ${phone ? "tap" : "click"} Stop, when you are done.` : phone ? "Hold to talk, or tap and talk." : "Hold to talk, or click and talk."}</div>
               {listening && <button onClick={stop} style={btn(false)}>Stop</button>}
             </div>

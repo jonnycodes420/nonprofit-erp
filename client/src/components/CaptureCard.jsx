@@ -254,7 +254,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
           </div>
         )}
         {done.thankYouDraftId && onOpenThanks && (
-          <div><button type="button" style={linkBtn} data-testid="capture-open-thanks" onClick={onOpenThanks}>Read and send it from your thank-you list</button></div>
+          <div><button type="button" style={linkBtn} data-testid="capture-open-thanks" onClick={() => onOpenThanks(done.thankYouDraftId)}>Read and send it</button></div>
         )}
       </div>
     );
