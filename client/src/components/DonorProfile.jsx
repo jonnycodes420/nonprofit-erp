@@ -52,6 +52,8 @@ import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import { told, useStewardTold } from "../lib/stewardTold";
 import { ProfileGroups } from "./Groups";
+import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
+import { openCheckSnap } from "./CheckSnap";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
@@ -2601,6 +2603,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     Year-end statement
                   </button>
                 )}
+                {!isReadOnly&&<button type="button" data-testid="dp-snap-check" onClick={()=>openCheckSnap({donor:{id:donor.id,name:donor.name},camera:true})} style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Snap a check</button>}
                 <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
               </div>
             </div>
@@ -3167,7 +3170,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             )}
             </>}
             {dpTab==="conversations"&&<InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>}
-            {dpTab==="emails"&&<EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/>}
+            {dpTab==="emails"&&<><ThankYouDrafts donorId={donor.id} hideWhenEmpty testid="dp-ty-drafts"/><EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/></>}
             {rel?<ProfileTimeline key={dpTab} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
             {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
               <h2 style={{margin:0,fontSize:13,letterSpacing:"0.12em",fontWeight:600,textTransform:"uppercase"}}>History</h2>

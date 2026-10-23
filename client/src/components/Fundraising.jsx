@@ -26,6 +26,7 @@ import { useLocation } from "react-router-dom";
 import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 import RemoveMenu from "./RemoveMenu";
+import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -244,7 +245,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
           itself. */}
       {/* CAPTURE-1: reloads itself, for the deposit sheet's reason below. */}
       {!loading && subtab === "toconfirm" && (
-        <CaptureInbox isReadOnly={isReadOnly} onOpenThanks={onNavigate ? () => onNavigate("dashboard") : null} />
+        <CaptureInbox isReadOnly={isReadOnly} onOpenThanks={onNavigate ? id => onNavigate("communications", { subtab: "milestones", highlightDraftId: id }) : null} />
       )}
 
       {!loading && subtab === "deposits" && (
@@ -275,7 +276,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       )}
 
       {!loading && subtab === "acknowledgments" && (
-        <AcknowledgmentsView isReadOnly={isReadOnly} roTip={roTip} />
+        <AcknowledgmentsView isReadOnly={isReadOnly} roTip={roTip} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "campaigns" && (
@@ -1331,7 +1332,7 @@ function ThankClock() {
 // print one letter per donor (window-envelope address block), print labels,
 // then mark them sent. Printing changes nothing; marking is its own press,
 // because a printed letter still in the tray has not been sent.
-function AcknowledgmentsView({ isReadOnly, roTip }) {
+function AcknowledgmentsView({ isReadOnly, roTip, onNavigate }) {
   const [data, setData] = useState(null);
   const [tpls, setTpls] = useState([]);
   const [tplId, setTplId] = useState("");
@@ -1386,6 +1387,7 @@ function AcknowledgmentsView({ isReadOnly, roTip }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="ack-view">
       <ThankClock />
+      <ThankYouDrafts testid="ack-ty-drafts" onNavigate={onNavigate} />
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, maxWidth: 620 }}>{data.sentence}</div>
         <label style={{ fontSize: 12, color: T.ink3, display: "flex", alignItems: "center", gap: 6 }}>
