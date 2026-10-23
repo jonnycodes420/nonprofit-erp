@@ -147,11 +147,13 @@ async function seedCapture1(q, ORG) {
   await item("check3", { kind: "check", stakes: "money", source: "photo", batch: BATCH, file: "check-3.png", minutesAgo: 46,
     read: checkRead(f3),
     proposal: { amount: settled(f3), date: "2026-10-14",
-      donor: { state: "new", selectedId: null, choices: [], by: null,
+      // FIX-48: CHECK-2's words. Nobody is chosen; "New donor" is a choice she
+      // makes, prefilled from the check, exactly as a real read of it says.
+      donor: { state: "none", selectedId: null, choices: [], by: null, sentence: `Nobody in Steward matches ${f3.payer}.`, joint: [], credit: null,
         prefill: { name: f3.payer, email: "", line1: "302 Fore Street Apt 4", city: "Portland", state: "ME", postal: "04101" } },
       fund: { id: defaultFund.id, name: defaultFund.name, unsure: true, why: "the memo line is blank, so this is your default fund" } },
-    headline: `Log ${usd(f3.cents)} check from ${f3.payer} (new person), ${defaultFund.name}?`,
-    sentence: `Check ${f3.number} from ${f3.payer} for ${usd(f3.cents)}. Steward has nobody by this name, so confirming adds them with the address on the check.` });
+    headline: `Log ${usd(f3.cents)} check from ${f3.payer}, ${defaultFund.name}?`,
+    sentence: `Check ${f3.number} from ${f3.payer} for ${usd(f3.cents)}. Nobody in Steward matches ${f3.payer}; choose who it is from, or add them as a new donor with the address on the check.` });
   await item("pledge", { kind: "pledge", stakes: "money", source: "email", file: "pledge-form.pdf", page: 1, minutesAgo: 190,
     read: { donorName: pf.donorName, email: pf.email, fundName: pf.fundName, frequency: pf.frequency, installments: pf.installments, startDate: pf.startDate,
       amountDigits: "5,000.00" },

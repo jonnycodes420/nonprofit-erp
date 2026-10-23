@@ -267,6 +267,20 @@ const upload = (tok, item) => { queued.push([item]); return api("POST", "/captur
   const sweep = await api("POST", "/pledges/process-reminders", dtok);
   ok("§9 the pledge-reminder sweep picks nothing in a demo org", sweep.status === 200 && sweep.body.picked === 0, sweep.body);
 
+  // ── §10 FIX-48: the demo's "new person" check says what a real read says ──
+  console.log("\n§10 the seeded Hollis Tran card");
+  const hol = await upload(tok, check({ payer: "HOLLIS TRAN", amountDigits: "75.00", amountWords: "Seventy five and 00/100", memo: "",
+    sentence: "A check from HOLLIS TRAN." }));
+  const real = hol.body && hol.body.cards && hol.body.cards[0];
+  const seedSrc = require("fs").readFileSync(require("path").join(__dirname, "../scripts/seed/capture1-inbox.js"), "utf8");
+  const card3 = seedSrc.slice(seedSrc.indexOf('item("check3"'), seedSrc.indexOf('item("pledge"'));
+  const seedState = (card3.match(/donor: \{ state: "(\w+)"/) || [])[1];
+  ok("§10 a real check from someone new chooses nobody, and the seeded card is in the same state",
+    !!real && real.donor.state === "none" && !real.donor.selectedId && seedState === real.donor.state, { real: real && real.donor.state, seed: seedState });
+  ok("§10 the seeded card uses CHECK-2's words: no \"(new person)\", no \"confirming adds them\"",
+    !!real && /Nobody in Steward matches Hollis Tran\./.test(real.donor.sentence || "") && card3.includes("Nobody in Steward matches ${f3.payer}.")
+    && !/new person|confirming adds/.test(card3.replace(/\/\/.*$/gm, "")), real && real.donor.sentence);
+
   mock.close();
   await reset();
   await closeDb();
