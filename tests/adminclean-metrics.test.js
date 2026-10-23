@@ -12,6 +12,9 @@
 //   · the cleanup script writing on a dry run                     → §4 fails
 //   · archive not hiding the org, or restore not bringing it back → §5 fails
 //   · billing mail allowed for an internal test org               → §6 fails
+//   · Kind changed off Demo while the old demo flag stays set, so
+//     the Email section still says "demonstration organization"   → §7 fails
+//   · the panel not re-reading its Email section after a Kind save → §7 fails
 //
 // Run on the scratch stack: BASE, DATABASE_URL (see tests/run-all.sh).
 
@@ -25,7 +28,8 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 
 const HQ = "org_acm_hq", PAY = "org_acm_paying", DEMO = "org_acm_demo", EMPTY = "org_acm_empty", JUNK = "org_acm_junk";
-const ORGS = [HQ, PAY, DEMO, EMPTY, JUNK];
+const FLAG = "org_acm_flag";
+const ORGS = [HQ, PAY, DEMO, EMPTY, JUNK, FLAG];
 const SUPER = "acm-super@t.local", PW = "loadtest1234";
 
 async function reset() {
@@ -60,6 +64,10 @@ async function seed() {
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_acm_empty',$1,'office@hillcrest-choir.org',$2,'Hal','admin')`, [EMPTY, hash]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan)
            VALUES ($1,'ACM-9 Walk (fixture)','acm-walk',1,'trialing','trial')`, [JUNK]);
+  // Justin's Place on prod (23 Oct): a real org carrying the old demo flag,
+  // donor mail on, onboarded. Kind is the one control the console shows.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,is_demo_org,org_kind,emails_enabled,onboarded_at)
+           VALUES ($1,'Corner House Ministries','acm-corner',1,'trialing','trial',true,'demo',true,NOW())`, [FLAG]);
 }
 
 async function fireBilling(id, type, object) {
@@ -201,6 +209,31 @@ const snapshot = async () => JSON.stringify(await q(
   const l3 = await api("GET", "/admin/orgs", supr);
   ok("a kind set in /admin wins over the guess", kindSet.status === 200 && l3.body.find(o => o.id === EMPTY).kind_source === "set"
      && l3.body.find(o => o.id === EMPTY).kind === "fixture");
+
+  // §7 · KIND AND THE DEMO FLAG ARE ONE THING. Turning an org's Kind off Demo
+  // must unlock its Email section; the old is_demo_org flag cannot keep it
+  // locked behind the operator's back, and the mail it reads is read again.
+  const s7m0 = await api("GET", `/admin/orgs/${FLAG}/mail`, supr);
+  ok("§7 a demo-flagged org starts locked", s7m0.status === 200 && s7m0.body.locked === true);
+  const toCustomer = await api("POST", `/admin/orgs/${FLAG}/kind`, supr, { kind: "customer" });
+  const s7m1 = await api("GET", `/admin/orgs/${FLAG}/mail`, supr);
+  ok("§7 Kind set to Customer unlocks the Email section", toCustomer.status === 200 && s7m1.body.locked === false && s7m1.body.demo === false,
+     JSON.stringify({ locked: s7m1.body.locked, sentence: s7m1.body.lockedSentence }));
+  const [f1] = await q(`SELECT is_demo_org, emails_enabled FROM orgs WHERE id=$1`, [FLAG]);
+  ok("§7 …and clears the old demo flag", f1.is_demo_org === false);
+  ok("§7 …but donor mail waits for the switch: it does not turn on by itself", f1.emails_enabled === false
+     && s7m1.body.donorMailOn === false && s7m1.body.families.donor.sends === false);
+  ok("§7 the /kind answer carries the Email section, so the panel can show it", toCustomer.body.mail && toCustomer.body.mail.locked === false);
+  await api("POST", `/admin/orgs/${FLAG}/kind`, supr, { kind: "demo" });
+  const [f2] = await q(`SELECT is_demo_org FROM orgs WHERE id=$1`, [FLAG]);
+  const s7m2 = await api("GET", `/admin/orgs/${FLAG}/mail`, supr);
+  ok("§7 Kind set back to Demo locks it again and sets the flag", f2.is_demo_org === true && s7m2.body.locked === true);
+  await api("POST", `/admin/orgs/${FLAG}/kind`, supr, { kind: null });
+  const s7m3 = await api("GET", `/admin/orgs/${FLAG}/mail`, supr);
+  ok("§7 Steward's guess on a flagged org stays Demo, and says so", s7m3.body.locked === true);
+  const panel = require("fs").readFileSync(path.join(__dirname, "../client/src/pages/AdminDashboard.jsx"), "utf8");
+  const saveKind = (panel.match(/async function saveKind\([\s\S]*?\n  \}\n/) || [""])[0];
+  ok("§7 the panel re-reads its Email section after a Kind save", /setMail\(/.test(saveKind) && /\/mail/.test(saveKind));
 
   await reset();
   await closeDb();

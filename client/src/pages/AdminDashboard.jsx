@@ -571,6 +571,9 @@ function OrgPanel({ org, onClose, onRefresh }) {
     try {
       await adminFetch("/admin/orgs/" + org.id + "/kind", { method: "POST", body: JSON.stringify({ kind: next || null }) });
       setKind(next); setKindNote(next ? "Saved." : "Back to Steward's guess.");
+      // Kind decides whether this org is a demonstration, so the Email
+      // section below is read again rather than left saying what it said.
+      setMail(await adminFetch("/admin/orgs/" + org.id + "/mail"));
       onRefresh(false);
     } catch (e) { setKindNote(errorMessage(e)); }
     setWorking(false);
