@@ -91,9 +91,14 @@ const settled = (keys) => waitFor(async () => {
   // no web process runs any of them. (A copy that arrives while the job RUNS
   // is new work and runs after it: §2.)
   const keys = Array.from({ length: 40 }, (_, i) => `scale1q:one:${i}`);
-  await enqueue(keys.flatMap(k => [{ key: k, org: k.endsWith("0") ? ORG_A : ORG_B, delayMs: 1500 }, { key: k, delayMs: 1500 }, { key: k, delayMs: 1500 }]));
+  // FIX-48: held an hour out while all 120 enqueues land, then released at
+  // once. A 1.5s hold was a race with the runner: when the 120 inserts took
+  // longer than that, the worker started a key before its last copy arrived,
+  // and that copy was (rightly) new work: 41 rows, 41 runs.
+  await enqueue(keys.flatMap(k => [{ key: k, org: k.endsWith("0") ? ORG_A : ORG_B, delayMs: 3600000 }, { key: k, delayMs: 3600000 }, { key: k, delayMs: 3600000 }]));
   const [w] = await q(`SELECT COUNT(*)::int n FROM job_queue WHERE key = ANY($1)`, [keys]);
   ok("§1 three enqueues of the same key leave one row", w.n === 40, `rows=${w.n}`);
+  await q(`UPDATE job_queue SET run_after = NOW() WHERE key = ANY($1) AND status = 'waiting'`, [keys]);
   ok("§1 every job finished", !!await settled(keys));
   let r1 = (await runs()).filter(r => keys.includes(r.key));
   const perKey = new Map(); r1.forEach(r => perKey.set(r.key, (perKey.get(r.key) || 0) + 1));
@@ -101,9 +106,11 @@ const settled = (keys) => waitFor(async () => {
   ok("§1 no web process ran a job", r1.every(r => !webPids.has(r.pid)));
   ok("§1 the worker ran jobs", r1.some(r => r.pid === worker.pid));
 
-  // §2 One key, a slow run, and more work arriving while it runs.
+  // §2 One key, a slow run, and more work arriving while it runs. (FIX-48:
+  // the run is 2.5s, not 0.8s, so both copies land while it is running even
+  // on a slow runner; a copy landing after it ended would be a third run.)
   await reset();
-  await enqueue([{ key: "scale1q:same", org: ORG_A, payload: { sleepMs: 800 } }]);
+  await enqueue([{ key: "scale1q:same", org: ORG_A, payload: { sleepMs: 2500 } }]);
   await waitFor(async () => (await q(`SELECT 1 FROM job_queue WHERE key='scale1q:same' AND status='running'`)).length > 0, { timeout: 10000 });
   await enqueue([{ key: "scale1q:same", org: ORG_A, payload: { sleepMs: 200 } }, { key: "scale1q:same", org: ORG_A, payload: { sleepMs: 200 } }]);
   await settled(["scale1q:same"]);
