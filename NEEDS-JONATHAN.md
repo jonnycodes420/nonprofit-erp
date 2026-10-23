@@ -21,6 +21,10 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-DEPLOY · THE BACKEND HAS NOT DEPLOYED SINCE NUMBERS-1 (2026-10-23)
+
+1. **Railway token:** CI's "Deploy to Railway" says `Invalid RAILWAY_TOKEN`, so prod's API is still `b0549d4` (NUMBERS-1, #225) while the site is on main. In Railway, project nonprofit-erp, Settings, Tokens, create a project token for production; then GitHub, repo settings, Secrets and variables, Actions, update the secret `RAILWAY_TOKEN` with it, and re-run the latest CI run on main. `GET /health` `buildSha` should then match main.
+
 ## 0-PRICING-1 · THE RECORD-BAND PRICES IN STRIPE, AND TWO EXISTING DEALS (2026-10-21)
 
 Until step 2 is done, public signup answers "That plan is not available to buy online yet. Write to us" (nothing breaks, nothing is charged).
