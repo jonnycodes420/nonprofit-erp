@@ -2,7 +2,7 @@
 //
 // Donor data, money and email in one suite, on Jonathan's own memo from prod
 // (21 Oct): "Lunch with Margaret went well, she gave $5000, log that, then
-// send her the receipt", with a 10 AM coffee on her calendar today and Sep
+// send her the receipt", with a coffee on her calendar today and Sep
 // 19's "Coffee tomorrow. Bring Lily's class schedule." open on her Thread.
 //   §1 the memo: the conversation is filed, the coffee is marked happened and
 //      linked to it, its brief closes and the step waiting on it is done;
@@ -52,6 +52,7 @@ process.env.ANTHROPIC_API_KEY = "sk-ant-voice4-standin";
 process.env.ANTHROPIC_BASE_URL = `http://localhost:${MOCK}`;
 
 const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { testNow, earlierToday } = require("./clock");
 
 const ORG = "org_voice4", SLUG = "voice4-test", ADMIN = "voice4-admin@example.org", USER = "u_voice4";
 const DONOR_MAIL = "jonathan@stewardapp.dev";   // the only address a test may mail, and it only reaches the sink
@@ -141,10 +142,14 @@ async function reset() {
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,acknowledgement_sent,created_by,created_by_name) VALUES ($1,$2,'d_v4_mc',$3,$4,'cash',true,${sys})`, [`g_v4_${i}`, ORG, a, d]);
   await q(`UPDATE donors SET total_giving=187500, gift_count=13, first_gift_date=$2, last_gift_amount=15000, last_gift_date=$3 WHERE id='d_v4_mc' AND org_id=$1`,
     [ORG, `${Number(year) - 10}-03-01`, `${year}-08-24`]);
-  // Her 10 AM coffee today, Sep 19's step, an open $25,000 ask, a journey, a group, an upcoming campaign.
-  const at = hm => `((('${today}')::date + '${hm}'::time)::timestamp AT TIME ZONE 'America/New_York')`;
+  // Her coffee today, Sep 19's step, an open $25,000 ask, a journey, a group, an upcoming campaign.
+  // The coffee is on NOW, by the run's clock: it began earlier today (never
+  // before her midnight) and ends after now, so it is "upcoming" at any hour.
+  // A fixed 10 AM slot went red every afternoon (before-meeting drops a meeting
+  // once its end has passed).
+  const coffeeStart = new Date(earlierToday(0.5)).toISOString(), coffeeEnd = new Date(testNow() + 90 * 60e3).toISOString();
   await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,created_by,created_by_name) VALUES
-    ('ce_v4_coffee',$1,$2,'steward','ce_v4_coffee','Coffee at Magee''s on Main',${at("10:00")},${at("11:00")},'Magee''s',ARRAY['d_v4_mc'],$2,'Dana Reyes')`, [ORG, USER]);
+    ('ce_v4_coffee',$1,$2,'steward','ce_v4_coffee','Coffee at Magee''s on Main',$3,$4,'Magee''s',ARRAY['d_v4_mc'],$2,'Dana Reyes')`, [ORG, USER, coffeeStart, coffeeEnd]);
   const st = await api("POST", "/donors/d_v4_mc/threads", tok, { label: "Coffee tomorrow. Bring Lily's class schedule.", due: today });
   ok("fixture: Sep 19's step is open on her Thread", st.status < 300, st.body);
   await q(`UPDATE threads SET opened_on=$2 WHERE org_id=$1 AND donor_id='d_v4_mc'`, [ORG, plus(-32)]);
@@ -178,7 +183,7 @@ async function reset() {
     && !(await q(`SELECT 1 FROM threads WHERE org_id=$1 AND next_step_label ILIKE 'log the gift%'`, [ORG])).length, null);
   const [ev] = await q(`SELECT logged_at, interaction_id FROM calendar_events WHERE id='ce_v4_coffee'`);
   const [conv] = await q(`SELECT id, note, metadata FROM interactions WHERE org_id=$1 AND donor_id='d_v4_mc' AND type='meeting' ORDER BY created_at DESC LIMIT 1`, [ORG]);
-  ok("§1 the 10 AM coffee is marked happened and linked to the conversation", !!(ev && ev.logged_at && conv && ev.interaction_id === conv.id), { ev, conv });
+  ok("§1 the coffee is marked happened and linked to the conversation", !!(ev && ev.logged_at && conv && ev.interaction_id === conv.id), { ev, conv });
   ok("§1 his words are kept (\"Lunch\")", !!conv && /^Lunch/.test(conv.note), conv);
   const bm1 = await api("GET", "/donors/d_v4_mc/before-meeting", tok);
   ok("§1 the \"Before your meeting\" card closes", bm1.status === 200 && !bm1.body.meeting, bm1.body);
