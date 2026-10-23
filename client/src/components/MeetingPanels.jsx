@@ -21,12 +21,12 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
-import { displayDate } from "../../../shared/displayDate.js";
+import { displayDate, humanDates } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
 import BeforeYourMeeting from "./BeforeYourMeeting";   // VOICE-3
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
-import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
+import { civilDaysAgo, civilDayOf, orgTodayPlus, orgTodayCivil } from "../lib/orgToday";
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
   TimelineListView, AttachmentChips, AttachButton, stageMoveOf } from "./ProfileTimelineParts";
@@ -346,7 +346,8 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       // WIRE-1: a line Steward wrote for an act ("Registered for the Gala."):
       // the sentence is the title, never "Meeting".
       const i = it.logged;
-      title = String(i.note || "").replace(/\.$/, "");
+      // CHECK-2: a line written before dates were said in words still reads "Fri, Oct 23".
+      title = humanDates(String(i.note || ""), orgTodayCivil()).replace(/\.$/, "");
       by = i.logged_by_name || i.created_by_name || "";
       meta = by ? `By ${by}` : null;
       type = i.type === "event" ? "Event" : "Activity";

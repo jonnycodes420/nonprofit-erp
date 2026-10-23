@@ -71,3 +71,24 @@ export function civilDateIn(tz, instant) {
     .formatToParts(at).map(x => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }
+
+// CHECK-2 item 12 · "due Fri, Oct 23", the way a person writes a date in a
+// sentence: the weekday, the month and the day, and the year only when it is
+// not today's. The weekday is the civil date's own (read in UTC from the
+// parts, so no zone can move it a day).
+const WDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+export function displayDay(value, today) {
+  const p = parts(value);
+  if (!p) return "";
+  const w = WDAY[new Date(Date.UTC(p.y, p.mo - 1, p.d)).getUTCDay()];
+  return `${w}, ${displayDateShort(value, today)}`;
+}
+
+// A sentence Steward wrote with an ISO date in it ("Journey step: Call,
+// due 2026-10-23 (New donor).") reads with displayDay instead. A date with a
+// time after it ("2026-10-23T09:00") is a moment, not a day, and is left alone.
+const ISO_DAY = /\b(\d{4}-\d{2}-\d{2})(?![T\d:])\b/g;
+export function humanDates(text, today) {
+  if (text == null) return text;
+  return String(text).replace(ISO_DAY, (m, d) => displayDay(d, today) || m);
+}

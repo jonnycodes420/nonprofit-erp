@@ -32,6 +32,7 @@
 // Standard scratch stack (tests/README.md).
 
 const bcrypt = require("bcryptjs");
+const { testNow } = require("./clock");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { readSource } = require("../scripts/lib/readSource");
 
@@ -39,13 +40,14 @@ const ORG = "org_inc01";          // ordinary org, mail on
 const DEMO = "org_inc02";         // marked as fiction
 const OFF = "org_inc03";          // real org, mail switched off
 const HQ = "org_inc04";           // where the super-admin lives
+const NAMED = "org_inc05";        // CHECK-2: a demo only by its name, "(Demo)"
 const PW = "loadtest1234";
 
 const ADMIN = "inc-admin@example.org";
 const SUPER = "inc-super@example.org";
 
 async function reset() {
-  for (const o of [ORG, DEMO, OFF, HQ]) {
+  for (const o of [ORG, DEMO, OFF, HQ, NAMED]) {
     for (const t of ["interactions", "pledges", "recurring_subscriptions", "gifts", "sequence_enrollments",
                      "sequence_steps", "sequences", "digest_sends", "donors",
                      "users", "accounts", "fin_funds", "orgs"]) {
@@ -166,6 +168,23 @@ const mkDonor = async (id, org, email, isSample) =>
   const mp = require("../mailPolicy");
   ok("one rule for the gate and the sweeps: every demo org orgKind.js names is a demo org to the gate",
     require("../orgKind").DEMO_ORG_IDS.every(id => mp.isDemoOrg({ id })) && mp.isDemoOrg({ id: "x", org_kind: "demo" }), null);
+
+  // CHECK-2 (Jonathan, 21 Oct): a demo org's pledge reminders still reached
+  // Resend every hour, at @example.com people. An org that is a demo only by
+  // its name ("(Demo)", no flag, no kind) was picked by the sweep and passed
+  // the gate. It must be neither picked nor sent, and "Demo Day Fund" is real.
+  await mkOrg(NAMED, "Lakeside Arts Center (Demo)", true, false);
+  await mkUser("u_inc_named", NAMED, "inc-named@example.org");
+  await mkDonor("d_inc_named", NAMED, "named.person@example.com", false);
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,first_overdue_at,next_reminder_at)
+           VALUES ('pl_inc_named',$1,'d_inc_named',500,$2,'open',NOW() - INTERVAL '2 days',NOW() - INTERVAL '1 hour')`, [NAMED, overdue]);
+  const namedPick = await api("POST", "/pledges/process-reminders", await login("inc-named@example.org", PW));
+  ok("CHECK-2: the pledge-reminder sweep picks nothing in an org named \"(Demo)\"",
+    namedPick.status === 200 && namedPick.body.picked === 0, namedPick.body);
+  ok("CHECK-2: …and the gate refuses it as a demo org, while \"Demo Day Fund\" and a kind set by hand still send",
+    mp.orgMailDecision({ id: NAMED, name: "Lakeside Arts Center (Demo)", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).reason === "demo_org"
+    && mp.orgMailDecision({ id: "x", name: "Demo Day Fund", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).send === true
+    && !mp.isDemoOrg({ id: "x", name: "Old Name (Demo)", org_kind: "customer" }), null);
 
   // ── §3 · PROVISIONING IS NOT A SIGNUP ────────────────────────────────────
   console.log("\n— §3 · provisioning an org is not a signup —");

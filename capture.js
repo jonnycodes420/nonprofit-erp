@@ -24,6 +24,7 @@
 const crypto = require("crypto");
 const personPhoto = require("./personPhoto");
 const { matchPerson } = require("./personMatch");
+const DM = require("./donorMatch");
 
 let D = null;                        // server.js hands its helpers over at boot
 function configure(deps) { D = deps; }
@@ -197,29 +198,86 @@ async function amountFor(item) {
     : { cents: null, settled: false, sentence: item.amountStated ? `Steward read "${item.amountStated}" and couldn't make an amount of it. Type it in.` : null };
 }
 
-// Email, then name plus address, then the name printed on the check. One exact
-// match is selected; several are choices; none is a New person, prefilled.
+// CHECK-2: who the item is from is donorMatch.js's answer (email, every name
+// on it with nicknames and initials, the household, the address). One strong
+// match is selected with its reasons; several are choices; none is never a
+// silent new person: "New donor" is a choice she makes, with the name in
+// proper case when the check printed it in capitals.
+const JOINT_RULES = ["first_named", "primary"];
 async function donorFor(orgId, item) {
-  const name = item.kind === "check" ? (item.payer || item.donorName) : (item.donorName || item.payer);
-  const prefill = { name: name || "", email: item.email || "", line1: item.line1 || "", city: item.city || "", state: item.state || "", postal: item.postal || "" };
-  const tries = [];
-  if (item.email) tries.push({ email: item.email });
-  if (name && (item.line1 || item.postal)) tries.push({ name, line1: item.line1, postal: item.postal });
-  if (name) tries.push({ name });
-  for (const t of tries) {
-    const m = await matchPerson(orgId, t, D.query);
-    if (m.status === "matched") {
-      const [d] = await D.query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [m.id, orgId]);
-      const by = t.email ? "email" : t.line1 || t.postal ? "name_address" : item.kind === "check" ? "printed_name" : "name";
-      const why = by === "email" ? `same email as ${d.name}` : by === "name_address" ? `same name and address` : item.kind === "check" ? `the name printed on the check` : `the same name`;
-      return { state: "matched", selectedId: m.id, choices: [{ id: m.id, name: d.name, why }], prefill, by };
-    }
-    if (m.status === "ambiguous") {
-      return { state: "choices", selectedId: null, prefill, by: null,
-        choices: m.candidates.map(c => ({ id: c.id, name: c.name, why: [c.email, c.address].filter(Boolean).join(", ") || "same name" })) };
+  const raw = item.kind === "check" ? (item.payer || item.donorName) : (item.donorName || item.payer);
+  const names = DM.splitNames(raw);
+  const prefill = { name: names.length ? DM.properCase(names[0].text) : DM.properCase(raw || ""), email: item.email || "",
+    line1: item.line1 || "", city: item.city || "", state: item.state || "", postal: item.postal || "" };
+  const m = await DM.matchDonor(orgId, { name: raw, email: item.email, line1: item.line1, postal: item.postal }, D.query);
+  // `by` keeps CAPTURE-1's words: a check matched on its name is "printed_name".
+  const by = m.by === "name" && item.kind === "check" ? "printed_name" : m.by || null;
+  const out = { state: m.state, selectedId: m.selectedId, choices: m.choices, prefill, by, sentence: m.sentence, joint: [], credit: null };
+  if (m.state === "matched" && m.joint.length) Object.assign(out, await jointCredit(orgId, m));
+  return out;
+}
+
+// THE HOUSEHOLD RULE (orgs.joint_gift_credit). A joint check is one gift, and
+// hard credit never moves (BUILD-14): it goes to ONE person, the first name on
+// the check ("first_named", the default) or the household's primary contact
+// ("primary"). The other name is credited as the record allows: a member of the
+// same household shares it through the household (derived, nothing stored);
+// another record gets a soft credit row; a spouse on file is greeted in the
+// letter; somebody not in Steward is named and left out. The card says which.
+async function jointCredit(orgId, m) {
+  const [o] = await D.query("SELECT joint_gift_credit FROM orgs WHERE id=?", [orgId]);
+  const rule = JOINT_RULES.includes(o && o.joint_gift_credit) ? o.joint_gift_credit : "first_named";
+  let selectedId = m.selectedId, choices = m.choices, joint = m.joint;
+  const [p] = await D.query("SELECT id, name, household_id FROM donors WHERE id=? AND org_id=?", [selectedId, orgId]);
+  if (rule === "primary" && p && p.household_id) {
+    const [h] = await D.query("SELECT primary_donor_id FROM households WHERE id=? AND org_id=?", [p.household_id, orgId]);
+    const primary = h && h.primary_donor_id && joint.find(j => j.id === h.primary_donor_id);
+    if (primary) {
+      const [pp] = await D.query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [primary.id, orgId]);
+      joint = [...joint.filter(j => j !== primary), { name: p.name, id: p.id, relation: "household", recordName: p.name }];
+      selectedId = pp.id;
+      choices = [{ ...choices[0], id: pp.id, name: pp.name, why: "the household's primary contact" }];
     }
   }
-  return { state: "new", selectedId: null, choices: [], prefill, by: null };
+  const who = choices[0].name;
+  const bits = joint.map(j => j.relation === "household" ? `${j.recordName || j.name} shares it through the household`
+    : j.relation === "other_record" ? `${j.recordName || j.name} gets soft credit`
+    : j.relation === "spouse_on_file" ? `${j.name} is the spouse on file, so the thank-you greets them both`
+    : `${j.name} isn't in Steward, so the whole gift is ${who}'s`);
+  const ruleWords = rule === "primary" ? "your rule credits the household's primary contact" : "your rule credits the first name on the check";
+  return { selectedId, choices, joint, credit: { rule, sentence: `A joint check: ${who} gets the gift (${ruleWords}). ${bits.join(". ")}.` } };
+}
+
+// CHECK-2 · WHAT ELSE THE MEMO SAYS. A tribute ("in memory of Walter", "IHO
+// Grace", "IMO Dad") becomes the gift's tribute; "pledge pmt 2 of 4" offers
+// the matching open pledge payment. The memo itself is saved as written.
+const TRIBUTE_RE = /\b(in\s+(?:loving\s+)?memory\s+of|in\s+hono(?:u)?r\s+of|imo|iho)\b[\s:.-]*([A-Za-z][A-Za-z .'’-]{0,60})/i;
+function tributeFrom(memo) {
+  const m = String(memo || "").match(TRIBUTE_RE);
+  if (!m) return null;
+  const type = /memory|imo/i.test(m[1]) ? "memory" : "honor";
+  const name = DM.properCase(m[2].replace(/[\s.,;-]+$/, "").trim());
+  if (!name) return null;
+  return { type, name, sentence: `The memo says this gift is ${type === "memory" ? "in memory of" : "in honor of"} ${name}.` };
+}
+const PLEDGE_RE = /\bpledge\b\s*(?:pmt|pymt|payment|pay|instal+ment|#)?\.?\s*(\d{1,2})\s*(?:of|\/)\s*(\d{1,2})\b/i;
+async function pledgeFor(orgId, donorId, memo) {
+  const m = String(memo || "").match(PLEDGE_RE);
+  if (!m || !donorId) return null;
+  const seq = Number(m[1]), of = Number(m[2]);
+  const rows = await D.query(
+    `SELECT p.id, p.amount::float AS amount, i.id AS inst_id, i.seq, i.amount::float AS inst_amount, i.due_date,
+            (SELECT COUNT(*)::int FROM pledge_installments x WHERE x.pledge_id = p.id AND x.org_id = p.org_id) AS n
+       FROM pledges p LEFT JOIN pledge_installments i ON i.pledge_id = p.id AND i.org_id = p.org_id AND i.seq = ? AND i.paid_gift_id IS NULL
+      WHERE p.org_id=? AND p.donor_id=? AND p.status='open' AND COALESCE(p.is_match,false)=false
+      ORDER BY p.created_at`, [seq, orgId, donorId]);
+  const fit = rows.filter(r => r.inst_id && r.n === of);
+  const pick = fit.length === 1 ? fit[0] : rows.length === 1 && !rows[0].n ? rows[0] : null;
+  if (!pick) return { seq, of, pledgeId: null, installmentId: null,
+    sentence: `The memo says pledge payment ${seq} of ${of}, but Steward found no open pledge of ${of} payments to put it on.` };
+  return { seq, of, pledgeId: pick.id, installmentId: pick.inst_id || null,
+    sentence: pick.inst_id ? `The memo says pledge payment ${seq} of ${of}. Apply it to payment ${seq} of her ${cents$(Math.round(pick.amount * 100))} pledge?`
+      : `The memo says pledge payment ${seq} of ${of}. Apply it to her open ${cents$(Math.round(pick.amount * 100))} pledge?` };
 }
 
 async function defaultFund(orgId) {
@@ -344,11 +402,11 @@ function headlineFor(kind, amount, donorName, fundName, read) {
 
 function templateSentence(kind, read, amount) {
   if (kind === "check") {
-    const bits = [read.payer ? `printed name ${read.payer}` : null, read.chequeNumber ? `check ${read.chequeNumber}` : null,
+    const bits = [read.payer ? `printed name ${DM.properCase(read.payer)}` : null, read.chequeNumber ? `check ${read.chequeNumber}` : null,
       read.date ? `dated ${read.date}` : null, read.memo ? `memo "${read.memo}"` : null].filter(Boolean);
     return `A check${bits.length ? ": " + bits.join(", ") : ""}.${amount.sentence ? " " + amount.sentence : ""}`;
   }
-  return `A ${KIND_WORD[kind] || "document"}${read.donorName || read.payer ? " from " + (read.donorName || read.payer) : ""}.`;
+  return `A ${KIND_WORD[kind] || "document"}${read.donorName || read.payer ? " from " + DM.properCase(read.donorName || read.payer) : ""}.`;
 }
 const AI_OFF_SENTENCE = "Steward didn't read this one because AI is off. Fill it in from the image.";
 const AI_FAILED_SENTENCE = "Steward couldn't read this one just now. Fill it in from the image.";
@@ -358,6 +416,17 @@ async function orgNamesFor(orgId) {
   const [o] = await D.query(`SELECT o.name, o.legal_name, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.id=?`, [orgId]);
   if (!o) return [];
   return [...new Set([o.display_name, o.name, o.legal_name].map(n => String(n || "").replace(/\s*\(demo\)\s*$/i, "").trim()).filter(Boolean))];
+}
+
+// The model's sentence repeats the printed name as printed; a name in capitals
+// reads in proper case wherever Steward shows it.
+function properNames(sentence, read) {
+  let out = String(sentence || "");
+  for (const n of [read.payer, read.donorName]) {
+    if (!n) continue;
+    for (const part of [n, ...DM.splitNames(n).map(x => x.text)]) if (part && out.includes(part)) out = out.split(part).join(DM.properCase(part));
+  }
+  return out;
 }
 
 // One read item, as a card row (not yet inserted).
@@ -379,8 +448,14 @@ async function cardFromItem(orgId, item, ai) {
     const mis = (await import("./shared/chequeRead.js")).payeeMismatch(read.payee, await orgNamesFor(orgId));
     if (mis) extra.payee = { ...mis, mismatch: true };
   }
+  if (MONEY_KINDS.includes(kind) && kind !== "pledge" && read.memo) {
+    const t = tributeFrom(read.memo);
+    if (t) extra.tribute = t;
+    const pl = donor.state === "matched" ? await pledgeFor(orgId, donor.selectedId, read.memo) : null;
+    if (pl) extra.pledge = pl;
+  }
   const dName = donor.state === "matched" ? donor.choices[0].name : (donor.prefill.name || null);
-  const sentence = ai === "read" ? (scrubBank(read.sentence) || templateSentence(kind, read, amount)) + (amount.sentence && !String(read.sentence || "").includes(amount.sentence) ? " " + amount.sentence : "")
+  const sentence = ai === "read" ? (properNames(scrubBank(read.sentence), read) || templateSentence(kind, read, amount)) + (amount.sentence && !String(read.sentence || "").includes(amount.sentence) ? " " + amount.sentence : "")
     : ai === "off" ? AI_OFF_SENTENCE : AI_FAILED_SENTENCE;
   return {
     kind, stakes: MONEY_KINDS.includes(kind) ? "money" : "low",
@@ -449,7 +524,7 @@ async function cardsFromFile(orgId, buffer, fileName, from, batchId = null) {
     const c = await cardFromItem(orgId, it, r.ai);
     // Emailed by a person Steward knows: when the page names nobody Steward
     // can find, the sender is the likeliest person, and the card says so.
-    if (from.senderDonorId && c.proposal.donor.state === "new") {
+    if (from.senderDonorId && (c.proposal.donor.state === "none" || c.proposal.donor.state === "new")) {
       const [d] = await D.query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [from.senderDonorId, orgId]);
       if (d) c.proposal.donor = { ...c.proposal.donor, state: "matched", selectedId: d.id, by: "email", choices: [{ id: d.id, name: d.name, why: "sent it by email" }] };
     }
@@ -634,6 +709,6 @@ module.exports = {
   fromMailboxMessage, captureSlug, prepareFile,
   clockSql, clock, CLOCK_SENTENCE, CLOCK_DAYS,
   configure, scrubBank, readDocument, storeFile, decodeDataUrl, sniff, cardsFromFile, cardFromItem, insertCard,
-  applyLow, undoLow, receivedAtFor, orgNamesFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, defaultFund, fileUrl,
+  applyLow, undoLow, receivedAtFor, orgNamesFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, tributeFrom, pledgeFor, jointCredit, JOINT_RULES, defaultFund, fileUrl,
   MAX_BYTES, UNDO_DAYS, MONEY_KINDS, LOW_KINDS, KINDS, READ_SCHEMA, READ_PROMPT, AI_OFF_SENTENCE, cents$,
 };

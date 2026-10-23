@@ -446,7 +446,8 @@ async function demoDoor(browser) {
     campaign: await ids("/fundraising/overview", b => b.goals),
     fund: await ids("/finance/funds-detail", b => b.funds),
     journey: await ids("/journeys", b => b.journeys),
-    gift: await ids("/acknowledgments/backlog", b => b.gifts),
+    // CHECK-2: Acknowledgments also lists the thank-you drafts, each amount a link to its gift.
+    gift: new Set([...await ids("/acknowledgments/backlog", b => b.gifts), ...await ids("/thank-yous", b => b.drafts.map(d => ({ id: d.giftId })))]),
     grant: await ids("/grants", b => b),
     volunteer: await ids("/volunteer-hub/roster", b => b.people),
     household: await ids("/households", b => b),

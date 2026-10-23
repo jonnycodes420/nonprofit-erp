@@ -25,6 +25,7 @@ function cardOut(orgId, c) {
     read: c.read || {}, amount: (c.proposal || {}).amount || null, donor: (c.proposal || {}).donor || null,
     fund: (c.proposal || {}).fund || null, advisor: (c.proposal || {}).advisor || null, matches: (c.proposal || {}).matches || null,
     payee: (c.proposal || {}).payee || null,
+    tribute: (c.proposal || {}).tribute || null, pledge: (c.proposal || {}).pledge || null,
     headline: c.headline, sentence: c.sentence, ai: c.ai,
     giftId: c.gift_id, pledgeId: c.pledge_id, donorId: c.donor_id, skipReason: c.skip_reason,
     appliedSummary: (c.applied || {}).summary || null, undoUntil: c.undo_until,
@@ -84,7 +85,7 @@ app.get("/capture", requireAuth, wrap(async (req, res) => {
   const done = await query(
     `SELECT * FROM capture_items WHERE org_id=? AND status IN ('applied','undone') AND decided_at > NOW() - INTERVAL '${K.UNDO_DAYS} days'
       ORDER BY decided_at DESC LIMIT 100`, [orgId]);
-  const [o] = await query("SELECT major_gift_line_cents FROM orgs WHERE id=?", [orgId]);
+  const [o] = await query("SELECT major_gift_line_cents, joint_gift_credit FROM orgs WHERE id=?", [orgId]);
   const gate = await ctx.aiGate(orgId);
   const batchIds = [...new Set(waiting.map(c => c.batch_id).filter(Boolean))];
   const batches = [];
@@ -93,6 +94,7 @@ app.get("/capture", requireAuth, wrap(async (req, res) => {
     waiting: waiting.map(c => cardOut(orgId, c)), doneForYou: done.map(c => cardOut(orgId, c)), batches: batches.filter(Boolean),
     counts: { waiting: waiting.length }, address: await captureAddress(orgId),
     majorGiftLineCents: Number(o && o.major_gift_line_cents) || 100000, ai: { on: gate.ok, reason: gate.reason },
+    jointGiftCredit: (o && o.joint_gift_credit) || "first_named",
     capBytes: K.MAX_BYTES,
   });
 }));
@@ -143,10 +145,21 @@ app.get("/capture/:id/file", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/capture/settings", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const c = Math.round(Number(req.body && req.body.majorGiftLineCents));
-  if (!Number.isFinite(c) || c < 0) return res.status(400).json({ error: "bad_amount", sentence: "The major-gift line is an amount of zero or more." });
-  await run("UPDATE orgs SET major_gift_line_cents=? WHERE id=?", [c, req.user.orgId]);
-  res.json({ majorGiftLineCents: c });
+  const b = req.body || {};
+  const out = {};
+  // CHECK-2: the household rule for a joint check (see capture.js jointCredit).
+  if (b.jointGiftCredit !== undefined) {
+    if (!K.JOINT_RULES.includes(b.jointGiftCredit)) return res.status(400).json({ error: "bad_rule", sentence: "Choose the first name on the check or the household's primary contact." });
+    await run("UPDATE orgs SET joint_gift_credit=? WHERE id=?", [b.jointGiftCredit, req.user.orgId]);
+    out.jointGiftCredit = b.jointGiftCredit;
+  }
+  if (b.majorGiftLineCents !== undefined || b.jointGiftCredit === undefined) {
+    const c = Math.round(Number(b.majorGiftLineCents));
+    if (!Number.isFinite(c) || c < 0) return res.status(400).json({ error: "bad_amount", sentence: "The major-gift line is an amount of zero or more." });
+    await run("UPDATE orgs SET major_gift_line_cents=? WHERE id=?", [c, req.user.orgId]);
+    out.majorGiftLineCents = c;
+  }
+  res.json(out);
 }));
 
 app.post("/capture/:id/skip", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -290,20 +303,36 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
         sentence = `This gift is already in Steward from QuickBooks, so it wasn't counted again. The image is attached to it.`;
       } else {
         const advisorId = kind === "daf_grant" && b.advisorDonorId ? String(b.advisorDonorId) : null;
+        const P = c.proposal || {};
+        // CHECK-2: the tribute the memo named, unless she took it off (tribute: null).
+        const tribute = b.tribute === null ? null : (b.tribute && typeof b.tribute === "object" ? b.tribute : P.tribute || null);
+        // A joint check's other name, when it is another record and she kept
+        // the person Steward matched: a soft credit for the whole gift (hard
+        // credit never moves). A household member shares it already.
+        const jointSoft = (P.donor && P.donor.selectedId === donorId && Array.isArray(P.donor.joint) ? P.donor.joint : [])
+          .filter(j => j.relation === "other_record" && j.id && j.id !== donorId)
+          .map(j => ({ donorId: j.id, role: "household", pct: 100 }));
         // Checked BEFORE the gift is written, exactly as the gift form does:
         // recordGift writes extras that checkGiftExtras has normalised.
         let extras;
-        if (advisorId && advisorId !== donorId) {
-          const ck = await checkGiftExtras(orgId, donorId, cents, { softCredits: [{ donorId: advisorId, role: "recommender" }] });
-          if (ck.notFound) { await release(); return res.status(404).json({ error: "advisor_not_found" }); }
+        const soft = [...(advisorId && advisorId !== donorId ? [{ donorId: advisorId, role: "recommender" }] : []), ...jointSoft];
+        if (soft.length || tribute) {
+          const ck = await checkGiftExtras(orgId, donorId, cents, { ...(soft.length ? { softCredits: soft } : {}),
+            ...(tribute ? { tribute: { type: tribute.type, name: tribute.name } } : {}) });
+          if (ck.notFound) { await release(); return res.status(404).json({ error: advisorId ? "advisor_not_found" : "donor_not_found" }); }
           if (ck.errors) { await release(); return res.status(400).json({ error: "extras", sentence: ck.errors.join("; ") }); }
           extras = ck.extras;
         }
+        // "pledge pmt 2 of 4": applied to the payment it named, unless she said no.
+        const pl = b.applyPledge === false || !P.pledge || !P.pledge.pledgeId || !(P.donor && P.donor.selectedId === donorId) ? null : P.pledge;
         const w = await recordGift({
           orgId, donorId, amount: cents / 100, date, fundId, paymentMethod: METHOD[kind] || "Check",
           type: kind === "stock_gift" ? "stock" : "cash",
           checkNumber: kind === "check" ? (c.read && c.read.chequeNumber) || null : null,
           chequeAssetId: c.asset_id || null, receivedAt: c.received_at,
+          // As written, less what the bank-number scrub took out.
+          memo: String((c.read && c.read.memo) || "").replace(/\s*\[bank number not kept\]/g, "").replace(/\s{2,}/g, " ").trim() || null,
+          ...(pl ? { pledgeId: pl.pledgeId, ...(pl.installmentId ? { applyToInstallmentId: pl.installmentId } : { applyInstallment: false }) } : {}),
           idempotencyKey: "capture:" + c.id, conflict: "idempotency",
           notes: kind === "daf_grant" ? "Donor-advised fund grant, from To confirm." : "",
           actorId: who.id, actorName: who.name, source: "capture", door: "capture", extras,
@@ -316,7 +345,10 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]);
           giftId = g ? g.id : null;
         } else giftId = w.gift.id;
-        sentence = `Logged ${K.cents$(cents)}${kind === "daf_grant" && extras ? ", with soft credit to the advisor" : ""}.`;
+        sentence = `Logged ${K.cents$(cents)}${kind === "daf_grant" && advisorId && extras ? ", with soft credit to the advisor" : ""}.`
+          + (extras && extras.tribute ? ` It is ${extras.tribute.type === "memory" ? "in memory of" : "in honor of"} ${extras.tribute.name}.` : "")
+          + (pl ? ` Applied to pledge payment ${pl.seq} of ${pl.of}.` : "")
+          + (P.donor && P.donor.credit && P.donor.selectedId === donorId ? ` ${P.donor.credit.sentence}` : "");
       }
     }
 

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { Figure } from "./Figure";
+import { openCheckSnap } from "./CheckSnap";
 
 const BAR_H = 56;
 
@@ -14,10 +15,30 @@ export function HomeThankClock({ onNavigate }) {
   const [c, setC] = useState(null);
   useEffect(() => {
     let alive = true;
-    apiFetch("/thank-yous/clock").then(r => { if (alive) setC(r); }).catch(() => {});
-    return () => { alive = false; };
+    const load = () => apiFetch("/thank-yous/clock").then(r => { if (alive) setC(r); }).catch(() => {});
+    load();
+    // CHECK-2: a check read from anywhere moves the waiting line at once.
+    window.addEventListener("steward:capture-changed", load);
+    return () => { alive = false; window.removeEventListener("steward:capture-changed", load); };
   }, []);
-  if (!c || (!c.count && !c.waiting)) return null;
+  if (!c) return null;
+  // CHECK-2: the tile's own way in. A check snapped here (the camera on a
+  // phone) becomes a card in the same window as anywhere else.
+  const snap = (
+    <button type="button" data-testid="home-snap-check" onClick={() => openCheckSnap({ camera: true })}
+      style={{ marginTop: 12, background: T.white, color: T.ink, border: "1px solid " + T.ink, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+      Snap a check
+    </button>
+  );
+  if (!c.count && !c.waiting) {
+    return (
+      <div data-testid="home-thank-clock" style={{ border: "1px solid " + T.bg3, borderRadius: 14, padding: "14px 16px", background: T.white }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>To confirm</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.45, color: T.ink2 }}>A check that arrives can be read from a photo. Nothing is logged until you confirm it.</div>
+        {snap}
+      </div>
+    );
+  }
   const trend = Array.isArray(c.trend) ? c.trend : [];
   const top = Math.max(1, ...trend.map(d => d.days || 0));
   const openWaiting = () => onNavigate && onNavigate("fundraising", { frSection: "toconfirm" });
@@ -56,6 +77,7 @@ export function HomeThankClock({ onNavigate }) {
           {c.waiting} {c.waiting === 1 ? "gift" : "gifts"} waiting to be confirmed
         </button>
       )}
+      {snap}
       <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5, color: T.ink3 }}>
         From when a gift arrives (the check date or the email) to when its thank-you is sent, or marked thanked by a call or a note. The number opens its gifts, slowest first.
       </div>

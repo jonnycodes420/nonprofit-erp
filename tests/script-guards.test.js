@@ -240,6 +240,10 @@ const LOOPBACK_HARDCODED = [
   // NODE_ENV production); it turns switches on the LOCAL scratch Harborlight,
   // a demonstration org, which never sends.
   "auto1-walk",
+  // CHECK-2: the Henrietta Duffield check walk. Loopback API, APP and
+  // DATABASE_URL only (refuses anything else and NODE_ENV production); it
+  // uploads and confirms a check on the LOCAL scratch Harborlight.
+  "check2-walk",
   // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
   // it drafts and saves on the LOCAL scratch database it is pointed at.
   "fix30-walk",

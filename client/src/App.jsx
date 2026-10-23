@@ -5,6 +5,8 @@ import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import { HelpPanel } from "./components/HelpPanel";
 import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
+import { CheckSnapHost, openCheckSnap } from "./components/CheckSnap";   // CHECK-2
+import { Camera } from "lucide-react";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
 import { CAPTURE_CHANGED } from "./components/CaptureInbox";
@@ -1087,6 +1089,7 @@ function AppShell() {
         its own Tell Steward row. */}
     {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label="Tell Steward" title="Tell Steward"
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
+    <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
     {tell&&<TellSteward donor={tell.donor} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
@@ -1103,6 +1106,9 @@ function AppShell() {
           {t.label}
         </RecordLink>
       ))}
+      {!isReadOnly&&!isPortalTier&&<button type="button" data-testid="mobile-snap-check" onClick={()=>{setMoreOpen(false);openCheckSnap({camera:true});}} className="mobile-bottom-tab">
+        <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><Camera size={19}/></span>{"Check"}
+      </button>}
       <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===navCurrent)||moreOpen?" active":""}`}>
         <span className="mob-icon">⋯</span>
         More

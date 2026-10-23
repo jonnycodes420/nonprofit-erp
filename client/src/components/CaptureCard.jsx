@@ -96,29 +96,42 @@ function DonorPicker({ card, value, onChange, isReadOnly }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 100%" }}>
       <span style={label}>From</span>
       {d.state === "matched" && value.mode === "existing" && (
-        <div style={{ fontSize: 14, color: T.ink }}>
+        <div data-testid="capture-match" style={{ fontSize: 14, color: T.ink }}>
           <strong>{(d.choices.find(c => c.id === value.donorId) || d.choices[0] || {}).name || "A person in Steward"}</strong>
-          {(d.choices.find(c => c.id === value.donorId) || d.choices[0] || {}).why && (
+          {d.sentence && value.donorId === d.selectedId ? (
+            <div style={{ color: T.ink3, fontSize: 12.5, marginTop: 2 }}>{d.sentence}</div>
+          ) : (d.choices.find(c => c.id === value.donorId) || d.choices[0] || {}).why && (
             <span style={{ color: T.ink3, fontSize: 12.5 }}> · {(d.choices.find(c => c.id === value.donorId) || d.choices[0]).why}</span>
+          )}
+          {d.credit && value.donorId === d.selectedId && (
+            <div data-testid="capture-joint" style={{ fontSize: 12.5, color: T.ink, marginTop: 4, lineHeight: 1.5 }}>{d.credit.sentence}</div>
           )}
         </div>
       )}
-      {d.state === "choices" && value.mode === "existing" && (
-        <div role="radiogroup" aria-label="Which person is this?" style={{ display: "flex", flexDirection: "column", gap: 4, padding: 8, borderRadius: 8, ...(value.donorId ? {} : attention) }}>
-          <div style={{ fontSize: 12.5, color: T.ink }}>More than one person in Steward could be this. Pick one.</div>
+      {d.state !== "matched" && value.mode !== "new" && (
+        <div role="radiogroup" aria-label="Which person is this?" data-testid="capture-choices"
+          style={{ display: "flex", flexDirection: "column", gap: 4, padding: 8, borderRadius: 8, ...(value.donorId ? {} : attention) }}>
+          <div style={{ fontSize: 12.5, color: T.ink }}>
+            {d.sentence || (d.state === "choices" ? "More than one person in Steward could be this. Pick one." : "Nobody in Steward matches. Pick who this is from.")}
+          </div>
           {d.choices.map(c => (
             <label key={c.id} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13.5, color: T.ink, cursor: "pointer" }}>
               <input type="radio" name={`donor-${card.id}`} checked={value.donorId === c.id} disabled={isReadOnly}
-                onChange={() => onChange({ ...value, donorId: c.id })} />
-              <span>{c.name}{c.why ? <span style={{ color: T.ink3, fontSize: 12 }}> · {c.why}</span> : null}</span>
+                onChange={() => onChange({ ...value, mode: "existing", donorId: c.id })} />
+              <span>{c.name}{c.why || c.history ? <span style={{ color: T.ink3, fontSize: 12 }}> · {[c.why, c.history].filter(Boolean).join(", ")}</span> : null}</span>
             </label>
           ))}
+          <label style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13.5, color: T.ink, cursor: "pointer" }}>
+            <input type="radio" name={`donor-${card.id}`} checked={false} disabled={isReadOnly} data-testid="capture-new-donor"
+              onChange={() => onChange({ ...value, mode: "new", donorId: null })} />
+            <span>New donor{p.name ? `: ${p.name}` : ""}</span>
+          </label>
         </div>
       )}
       {value.mode === "new" && (
         <div data-testid="capture-new-person" style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: 10, borderRadius: 8, background: T.bg }}>
           <div style={{ flex: "1 1 100%", fontSize: 12.5, color: T.ink }}>
-            {d.state === "new" ? "Nobody in Steward matches. Confirming adds this person." : "A new person, added when you confirm."}
+            A new donor, added when you log it.
           </div>
           <Field title="Name" wide><input style={input} value={p.name || ""} disabled={isReadOnly} onChange={e => setNew("name", e.target.value)} /></Field>
           <Field title="Email"><input style={input} type="email" value={p.email || ""} disabled={isReadOnly} onChange={e => setNew("email", e.target.value)} /></Field>
@@ -129,13 +142,13 @@ function DonorPicker({ card, value, onChange, isReadOnly }) {
         </div>
       )}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        {value.mode === "existing" && (
+        {value.mode === "existing" && d.state === "matched" && (
           <button type="button" style={linkBtn} disabled={isReadOnly} onClick={() => onChange({ ...value, mode: "new" })}>It's someone new</button>
         )}
-        {value.mode === "new" && d.choices.length > 0 && (
+        {value.mode === "new" && (
           <button type="button" style={linkBtn} disabled={isReadOnly}
-            onClick={() => onChange({ ...value, mode: "existing", donorId: d.state === "matched" ? (d.selectedId || d.choices[0].id) : value.donorId })}>
-            Use a person already in Steward
+            onClick={() => onChange({ ...value, mode: d.state === "matched" ? "existing" : "pick", donorId: d.state === "matched" ? (d.selectedId || d.choices[0].id) : null })}>
+            {d.choices.length ? "Use a person already in Steward" : "Back"}
           </button>
         )}
       </div>
@@ -147,8 +160,9 @@ function initialDonor(card) {
   const d = card.donor || { state: "new", choices: [], prefill: {} };
   const prefill = { name: "", email: "", line1: "", city: "", state: "", postal: "", ...(d.prefill || {}) };
   if (d.state === "matched") return { mode: "existing", donorId: d.selectedId || (d.choices[0] && d.choices[0].id) || null, newPerson: prefill };
-  if (d.state === "choices") return { mode: "existing", donorId: null, newPerson: prefill };
-  return { mode: "new", donorId: null, newPerson: prefill };
+  // CHECK-2: with no clear match, nobody is chosen. "New donor" is a choice
+  // she makes, never the silent default.
+  return { mode: "pick", donorId: null, newPerson: prefill };
 }
 
 export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }) {
@@ -177,6 +191,9 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
   // VOICE-2: a check made out to somebody else waits for "Log it anyway".
   const payeeOff = isMoney && card.payee && card.payee.mismatch;
   const [logAnyway, setLogAnyway] = useState(false);
+  // CHECK-2: what the memo said, offered and kept unless she unticks it.
+  const [tributeOn, setTributeOn] = useState(!!card.tribute);
+  const [pledgeOn, setPledgeOn] = useState(!!(card.pledge && card.pledge.pledgeId));
 
   const cents = toCents(amount);
   const amountBlank = cents == null;
@@ -192,6 +209,8 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
     setBusy(true); setErr("");
     const body = { kind: card.kind, amountCents: cents, date, fundId: fundId || null };
     if (payeeOff && logAnyway) body.logAnyway = true;
+    if (card.tribute && !tributeOn) body.tribute = null;
+    if (card.pledge && !pledgeOn) body.applyPledge = false;
     if (donor.mode === "new") body.newPerson = donor.newPerson; else body.donorId = donor.donorId;
     if (card.kind === "pledge") { body.frequency = frequency; body.installments = installments ? Number(installments) : null; body.startDate = startDate || null; }
     if (card.kind === "matching_gift" && matchesGiftId) body.matchesGiftId = matchesGiftId;
@@ -235,7 +254,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
           </div>
         )}
         {done.thankYouDraftId && onOpenThanks && (
-          <div><button type="button" style={linkBtn} data-testid="capture-open-thanks" onClick={onOpenThanks}>Read and send it from your thank-you list</button></div>
+          <div><button type="button" style={linkBtn} data-testid="capture-open-thanks" onClick={() => onOpenThanks(done.thankYouDraftId)}>Read and send it</button></div>
         )}
       </div>
     );
@@ -289,6 +308,20 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
           {isMoney && fundUnsure && card.fund.why && (
             <div style={{ fontSize: 12.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, lineHeight: 1.5 }}>{card.fund.why}</div>
           )}
+          {isMoney && card.tribute && (
+            <label data-testid="capture-tribute" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: isReadOnly ? "default" : "pointer", minHeight: 32 }}>
+              <input type="checkbox" checked={tributeOn} disabled={isReadOnly || busy} onChange={e => setTributeOn(e.target.checked)} />
+              {card.tribute.sentence} Keep it on the gift.
+            </label>
+          )}
+          {isMoney && card.pledge && (card.pledge.pledgeId ? (
+            <label data-testid="capture-pledge" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: isReadOnly ? "default" : "pointer", minHeight: 32 }}>
+              <input type="checkbox" checked={pledgeOn} disabled={isReadOnly || busy || donor.donorId !== (card.donor && card.donor.selectedId)} onChange={e => setPledgeOn(e.target.checked)} />
+              {card.pledge.sentence}
+            </label>
+          ) : (
+            <div data-testid="capture-pledge" style={{ fontSize: 12.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, lineHeight: 1.5 }}>{card.pledge.sentence}</div>
+          ))}
           {card.kind === "pledge" && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
               <Field title="Paid">

@@ -5431,6 +5431,11 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_type TEXT`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_donor_id TEXT`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_name TEXT`);
+  // CHECK-2: the memo line of a check, saved on the gift exactly as written
+  // (after the bank-number scrub), and the org's rule for a joint check:
+  // hard credit to the first name on it, or to the household's primary contact.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS memo TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS joint_gift_credit TEXT NOT NULL DEFAULT 'first_named'`);
   // Matching: the employee's gift names the employer and the pledge that holds
   // the expected match; the employer's pledge names the gift it matches.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS match_employer_id TEXT`);

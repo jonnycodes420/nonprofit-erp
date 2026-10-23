@@ -24,6 +24,7 @@ import { AudienceTab, SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpe
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
+import { ThankYouDrafts } from "./ThankYouDrafts";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -1163,6 +1164,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
           Emails Steward drafted for a milestone, an anniversary or a workflow you turned on. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
         <AgentDraftsWaiting />
+        <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" /></div>
         {reviewedCount > 0 && (
           <button data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
             style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
@@ -1408,6 +1410,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // Sidebar nav
   const [nav, setNav] = useState(() => commsNavOf(initialNav));
+  // CHECK-2: the draft a link names is held here, because the intent that
+  // carried it is cleared on mount, before the drafts panel has loaded.
+  const [heldDraftId] = useState(highlightDraftId || null);
   // BUILD-97 — the hub's single read. One request, so the landing screen does
   // not assemble itself in a different order on every visit.
   const [hub, setHub] = useState(null);
@@ -2735,7 +2740,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "emailtool" && <EmailToolPanel onNavigate={onNavigate} />}
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
-        {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId} onEditTemplate={id => openTemplateEditor(id, () => setNav("milestones"))}/>}
+        {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId || heldDraftId} onEditTemplate={id => openTemplateEditor(id, () => setNav("milestones"))}/>}
         {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>

@@ -260,6 +260,7 @@ CORE=(
   fix41-remove-and-pictures
   reconcile1-checks
   capture1-zero-day
+  check2-match
   home2-living
   onboard1-setup
   voice1-tell-steward

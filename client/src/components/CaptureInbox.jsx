@@ -207,6 +207,21 @@ export function CaptureInbox({ isReadOnly, onOpenThanks }) {
             AI is off, so Steward will not read the images. Each card still shows the image beside an empty form for you to fill in.
           </div>
         )}
+        {/* CHECK-2: the household rule for a check signed by two people. */}
+        <label data-testid="capture-joint-rule" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
+          A check from two people goes to
+          <select value={data.jointGiftCredit || "first_named"} disabled={isReadOnly}
+            style={{ fontSize: 12.5, padding: "4px 6px", borderRadius: 6, border: "1px solid " + T.bg2, background: T.bgCard, color: T.ink }}
+            onChange={e => {
+              const v = e.target.value;
+              setData({ ...data, jointGiftCredit: v });
+              apiFetch("/capture/settings", { method: "POST", body: JSON.stringify({ jointGiftCredit: v }) }).catch(() => load());
+            }}>
+            <option value="first_named">the first name on the check</option>
+            <option value="primary">the household's primary contact</option>
+          </select>
+          and the other person shares it through the household.
+        </label>
       </div>
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "stretch" }}>
