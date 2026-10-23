@@ -2448,10 +2448,22 @@ app.post("/admin/orgs/:id/kind", requireAuth, requireSuperAdmin, wrap(async (req
   const kind = req.body?.kind;
   if (kind !== null && !ORG_KIND.KINDS.includes(kind))
     return res.status(400).json({ error: "bad_kind", message: `Kind is one of: ${ORG_KIND.KINDS.map(k => ORG_KIND.KIND_LABEL[k]).join(", ")}.` });
-  const r = await run("UPDATE orgs SET org_kind=?, org_kind_set_at=NOW(), org_kind_set_by=? WHERE id=?",
-    [kind, req.user.userId, req.params.id]);
-  if (!r.changes) return res.status(404).json({ error: "Org not found" });
-  res.json({ ok: true, kind });
+  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.params.id]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  // Justin's Place (23 Oct): Kind is the only demo control the console shows,
+  // but the mail gate also reads the older is_demo_org flag, so turning Kind
+  // off Demo left the org locked as a demonstration. Kind now sets the flag.
+  // Clearing it turns donor mail OFF too: an org that was fiction does not
+  // start mailing until somebody ticks the switch (INCIDENT 2026-09-22).
+  // "Steward's guess" (null) leaves the flag alone, so the guess still reads it.
+  const sets = ["org_kind=?", "org_kind_set_at=NOW()", "org_kind_set_by=?"];
+  const params = [kind, req.user.userId];
+  if (kind === "demo") sets.push("is_demo_org=TRUE");
+  else if (kind !== null && org.is_demo_org === true) sets.push("is_demo_org=FALSE", "emails_enabled=FALSE");
+  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...params, req.params.id]);
+  clearOrgMailGate(req.params.id);
+  console.log(`[kind] ${req.params.id} kind=${kind} is_demo_org ${org.is_demo_org === true ? "was" : "was not"} set, by ${req.user.email || req.user.userId}`);
+  res.json({ ok: true, kind, mail: await adminMailPayload(req.params.id) });
 }));
 
 app.post("/admin/orgs/:id/archive", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
