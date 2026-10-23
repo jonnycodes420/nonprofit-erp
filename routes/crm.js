@@ -9408,8 +9408,8 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // undoes as a whole too. Its gifts carry the run id and the people it created
 // carry it as `created_import_id`, which is everything the undo needs, and
 // what it now starts (thank-you drafts, journeys, a readout) is undone with it.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7 };
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -9522,6 +9522,21 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     const drop = new Set((t.tags || []).map(x => String(x).toLowerCase()));
     await run("UPDATE donors SET tags=? WHERE org_id=? AND id=?", [JSON.stringify(tags.filter(x => !drop.has(String(x).toLowerCase()))), orgId, t.donorId]);
   }
+  // IMPORT-3: a spreadsheet import also made pledges, households and perhaps
+  // the event its gifts were given at. Each goes, and what it changed on a
+  // person who was already here (a household, the monthly-giver flag) is put back.
+  let pledgesRemoved = 0;
+  if (imp.shape === "sheet") {
+    const pl = await query("SELECT id, donor_id FROM pledges WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    if (pl.length) {
+      await run("UPDATE gifts SET pledge_id=NULL WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
+      await run("DELETE FROM pledges WHERE org_id=? AND id = ANY(?)", [orgId, pl.map(p => p.id)]);
+      for (const p of pl) if (!donorIds.includes(p.donor_id)) donorIds.push(p.donor_id);
+    }
+    pledgesRemoved = pl.length;
+    for (const id of (sj.householdAssigned || [])) await run("UPDATE donors SET household_id=NULL WHERE org_id=? AND id=?", [orgId, id]);
+    for (const id of (sj.sustainerFlagged || [])) await run("UPDATE donors SET imported_sustainer=false, imported_sustainer_amount=NULL WHERE org_id=? AND id=?", [orgId, id]);
+  }
   const orphans = await query(
     `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
@@ -9540,6 +9555,11 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
       }
     }
   }
+  if (imp.shape === "sheet") {
+    await run(`DELETE FROM households h WHERE h.org_id=? AND h.import_id=? AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.household_id=h.id)`, [orgId, req.params.id]);
+    await run(`DELETE FROM events e WHERE e.org_id=? AND e.import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.event_id=e.id)
+                 AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.event_id=e.id)`, [orgId, req.params.id]);
+  }
   // Totals RECOMPUTED from what remains, never decremented.
   for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
   for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
@@ -9554,7 +9574,9 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
   await require("../afterChange").afterChange(orgId, donorIds.filter(d => !orphansRemoved.some(o => o.id === d)), { door: "csv_import", history: true });
   res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphansRemoved.length, journeysStopped: plansStopped,
-    sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"} removed`
+    pledgesRemoved,
+    sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"}`
+      + (pledgesRemoved ? ` and ${pledgesRemoved} ${pledgesRemoved === 1 ? "pledge" : "pledges"}` : "") + ` removed`
       + (plansStopped ? `, ${plansStopped} ${plansStopped === 1 ? "journey" : "journeys"} it started stopped` : "")
       + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
       + `. Nothing else was touched.` });

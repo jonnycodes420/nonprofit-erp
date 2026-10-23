@@ -1,0 +1,377 @@
+{
+  "01-event-gifts-sheet.xlsx": {
+    "expect": {
+      "people": 135,
+      "households": 29,
+      "organizations": 0,
+      "gifts": 63,
+      "giftCents": 4534000,
+      "pledges": 43,
+      "pledgeCents": 10405000,
+      "aside": 0,
+      "totalsMatch": 2,
+      "monthly": 1
+    },
+    "answers": {
+      "date": "2026-10-22",
+      "eventName": "Finding Joy Dinner",
+      "linkEvent": true,
+      "rows": {
+        "Sheet1:26": "gift"
+      }
+    }
+  },
+  "02-salesforce-npsp-opportunities.csv": {
+    "expect": {
+      "people": 11,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 9,
+      "giftCents": 181000,
+      "pledges": 2,
+      "pledgeCents": 80000,
+      "aside": 1
+    },
+    "answers": {}
+  },
+  "03-bloomerang-transactions.csv": {
+    "expect": {
+      "people": 10,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 10,
+      "giftCents": 446000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "04-donorperfect-gifts.csv": {
+    "expect": {
+      "people": 9,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 9,
+      "giftCents": 441000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "05-little-green-light-gifts.csv": {
+    "expect": {
+      "people": 8,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 8,
+      "giftCents": 418500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "06-quickbooks-deposit-detail.xlsx": {
+    "expect": {
+      "people": 7,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 7,
+      "giftCents": 271000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 1,
+      "totalsMatch": 2
+    },
+    "answers": {}
+  },
+  "07-paypal-activity.csv": {
+    "expect": {
+      "people": 8,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 8,
+      "giftCents": 431000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 2
+    },
+    "answers": {}
+  },
+  "08-venmo-statement.csv": {
+    "expect": {
+      "people": 6,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 6,
+      "giftCents": 192500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 1
+    },
+    "answers": {}
+  },
+  "09-givebutter-transactions.csv": {
+    "expect": {
+      "people": 7,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 7,
+      "giftCents": 368500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "10-title-row-header-on-row-4.xlsx": {
+    "expect": {
+      "people": 6,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 6,
+      "giftCents": 263500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "11-subtotals-per-month.xlsx": {
+    "expect": {
+      "people": 9,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 9,
+      "giftCents": 218500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0,
+      "totalsMatch": 4
+    },
+    "answers": {}
+  },
+  "12-last-first-one-column.csv": {
+    "expect": {
+      "people": 7,
+      "households": 1,
+      "organizations": 0,
+      "gifts": 6,
+      "giftCents": 142500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "13-mr-and-mrs-names.csv": {
+    "expect": {
+      "people": 6,
+      "households": 3,
+      "organizations": 0,
+      "gifts": 5,
+      "giftCents": 98500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "14-amounts-as-text.csv": {
+    "expect": {
+      "people": 5,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 5,
+      "giftCents": 357550,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "15-excel-serial-dates.csv": {
+    "expect": {
+      "people": 6,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 6,
+      "giftCents": 207500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0,
+      "dates": [
+        "2026-02-03",
+        "2026-02-04",
+        "2026-02-05",
+        "2026-02-06",
+        "2026-02-07",
+        "2026-02-08"
+      ]
+    },
+    "answers": {}
+  },
+  "16-dates-without-years.csv": {
+    "expect": {
+      "people": 4,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 4,
+      "giftCents": 44000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "17-two-tables-side-by-side.xlsx": {
+    "expect": {
+      "people": 10,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 10,
+      "giftCents": 418500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "18-one-tab-per-year.xlsx": {
+    "expect": {
+      "people": 4,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 12,
+      "giftCents": 461000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "19-mailing-list-no-gifts.csv": {
+    "expect": {
+      "people": 10,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 0,
+      "giftCents": 0,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0,
+      "kind": "people"
+    },
+    "answers": {}
+  },
+  "20-pledge-list.csv": {
+    "expect": {
+      "people": 5,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 0,
+      "giftCents": 0,
+      "pledges": 5,
+      "pledgeCents": 250000,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "21-one-person-monthly-gifts.csv": {
+    "expect": {
+      "people": 1,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 10,
+      "giftCents": 50000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "22-tab-separated.tsv": {
+    "expect": {
+      "people": 5,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 5,
+      "giftCents": 197500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "23-merged-name-cells.xls": {
+    "expect": {
+      "people": 3,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 4,
+      "giftCents": 42500,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "24-blank-rows-and-margin-notes.xlsx": {
+    "expect": {
+      "people": 3,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 3,
+      "giftCents": 53000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "25-organizations-and-families.csv": {
+    "expect": {
+      "people": 6,
+      "households": 0,
+      "organizations": 3,
+      "gifts": 6,
+      "giftCents": 691000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "26-google-sheets-form.csv": {
+    "expect": {
+      "people": 5,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 5,
+      "giftCents": 190000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0
+    },
+    "answers": {}
+  },
+  "27-unknown-column-needs-help.csv": {
+    "expect": {
+      "people": 0,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 0,
+      "giftCents": 0,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0,
+      "stopsAtHelp": true,
+      "helpColumns": [
+        "Code"
+      ]
+    },
+    "answers": {}
+  }
+}

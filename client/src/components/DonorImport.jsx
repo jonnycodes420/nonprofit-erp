@@ -22,6 +22,8 @@ import { coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan
 import { T, activeMark, fmt, fmtFull, Spin, Modal } from "./shared";
 import { detectImportShape, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytesDetailed, analyzeCsvText, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, buildGiftItemsFromLedger, buildTransactionRows, buildProposalRows, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
+import SpreadsheetImport from "./SpreadsheetImport";
+import { gridsFromWorkbook, gridFromText, wantsAdaptiveReading } from "../../../shared/sheetRead";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { NEGATOR_PHRASES, STAGE_COLORS, inferStage, normalizeStage } from "./donorShared";
 import { displayDate } from "../../../shared/displayDate";
@@ -245,7 +247,11 @@ function reportFromAnalysis(a) {
 
 // ── Shared file-parsing helper ────────────────────────────────────────────
 // Replaces the identical ~45-line xlsx/CSV block duplicated in each importer.
-async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError }) {
+// IMPORT-3: `onAdaptive(file)`: a file the column mapper would dead-end on
+// (no date column, a paid or pledge column, several tables, an unclear sheet)
+// is handed to the reader that adapts to any spreadsheet instead.
+// `preferAdaptive` sends every file there (an org with nobody to attach to).
+async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError, onAdaptive, preferAdaptive = false }) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
     try {
@@ -267,6 +273,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError 
         return { name:s.name, ...a, rowCount:a.records, meta:s.meta, formulaCellRatio:s.formulaCellRatio };
       });
       const roled = classifyWorkbookSheets(sheets);
+      if (onAdaptive && (preferAdaptive || wantsAdaptiveReading(gridsFromWorkbook(XLSX.read(new Uint8Array(buf), { type:"array", cellDates:true }), XLSX), roled))) { onAdaptive(file); return; }
       if (!roled.some(s => s.rowCount > 0)) { onError("No data rows found in this file."); return; }
       onWorkbook({ roled });
     } catch(ex) { onError(isProgrammerError(ex) ? errorMessage(ex) : "Could not read Excel file: " + ex.message); }
@@ -280,6 +287,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError 
     try {
       const buf = await file.arrayBuffer();
       const dec = decodeSpreadsheetBytesDetailed(new Uint8Array(buf));
+      if (onAdaptive && (preferAdaptive || wantsAdaptiveReading([{ name:"Sheet1", grid:gridFromText(dec.text) }]))) { onAdaptive(file); return; }
       const analysis = analyzeCsvText(dec.text);
       if (!analysis.rows.length) { onError("No rows found."); return; }
       onSingle(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: dec.cp1252Lines, mojibakeRepaired: dec.mojibakeRepaired || 0, mojibakeRepairs: dec.mojibakeRepairs || [] });
@@ -929,6 +937,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null (legacy multi-sheet path — CSV only now)
   const [workbook,   setWorkbook]   = useState(null);       // BUILD-82 — the one-import workbook flow ({roled})
+  const [adaptiveFile, setAdaptiveFile] = useState(null);   // IMPORT-3: a file read by the adaptive reader
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
   const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"",externalId:"" });
   // LIVE-1 — files map themselves (the saved answer for these headers and the
@@ -1171,7 +1180,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg) });
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg), onAdaptive:f=>setAdaptiveFile(f) });
   };
 
   // ── Paste flow ──
@@ -2726,6 +2735,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           </div>
         )}
 
+        {adaptiveFile && <SpreadsheetImport file={adaptiveFile} onClose={()=>{setAdaptiveFile(null);setSrcFile(null);}} onImported={()=>{setAdaptiveFile(null);onImported&&onImported();}}/>}
         {/* ── BUILD-82: a workbook is ONE import (all xlsx land here) ── */}
         {workbook && (
           <WorkbookImport workbook={workbook} fileName={srcFile?.name}
@@ -3652,6 +3662,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
   const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
   const [xlsxSheets, setXlsxSheets] = useState(null);
   const [workbook, setWorkbook]     = useState(null); // BUILD-82 — xlsx goes through the workbook flow (gift-alone links by Donor ID)
+  const [adaptiveFile, setAdaptiveFile] = useState(null); // IMPORT-3: nobody to attach to: the import that creates them
   const [parsed, setParsed]         = useState(null);
   const [ghThanks, setGhThanks]     = useState(null);   // FIX-37: her answer; null = the default
   const [ghPreview, setGhPreview]   = useState(null);
@@ -3682,7 +3693,10 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg) });
+    // IMPORT-3 item 10: an org with no donors has nobody to attach a gift to,
+    // so the file goes to the import that creates the people with their gifts.
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg),
+      onAdaptive:f=>setAdaptiveFile(f), preferAdaptive: !!donorsReady && donorsReady.length === 0 });
   };
 
   const doPaste = () => {
@@ -4016,6 +4030,13 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
           </div>
         )}
 
+        {adaptiveFile && <SpreadsheetImport file={adaptiveFile} onClose={()=>{setAdaptiveFile(null);setSrcFile(null);}} onImported={()=>{setAdaptiveFile(null);onImported&&onImported();}}/>}
+        {/* IMPORT-3 item 10: said plainly, never "0 donors + 0 gift rows" */}
+        {step === "upload" && !workbook && donorsReady && donorsReady.length === 0 && (
+          <div data-testid="gi-no-donors" style={{background:T.gold100,border:"1px solid "+T.gold300,borderRadius:12,padding:"12px 14px",marginBottom:14,fontSize:13,color:T.ink,lineHeight:1.5}}>
+            <strong>There are no donors here yet, so there is nobody to attach giving history to.</strong> Drop your file anyway: Steward will read it as a new import and create the people together with their gifts.
+          </div>
+        )}
         {/* BUILD-82: xlsx routes through the workbook flow — a gift sheet with
             only an ID column links to existing donors by Donor ID */}
         {workbook && (
@@ -4195,6 +4216,13 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
             </div>
           )}
 
+          {/* IMPORT-3 item 10: no name in the file matches anybody here */}
+          {stats.high+stats.medium+stats.low===0 && srcFile && (
+            <div data-testid="gi-no-matches" style={{background:T.gold100,border:"1px solid "+T.gold300,borderRadius:12,padding:"12px 14px",marginBottom:14,fontSize:13,color:T.ink,lineHeight:1.5}}>
+              <strong>None of the names in this file match anyone in Steward yet.</strong> Giving history attaches to people already here. Read it as a new import instead, and Steward will create the people together with their gifts.
+              <div style={{marginTop:8}}><button data-testid="gi-read-as-new" onClick={()=>setAdaptiveFile(srcFile)} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:9,padding:"8px 14px",fontWeight:800,fontSize:13,cursor:"pointer"}}>Read it as a new import</button></div>
+            </div>
+          )}
           {/* Summary card */}
           <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:8}}>

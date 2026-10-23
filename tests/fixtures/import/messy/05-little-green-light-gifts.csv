@@ -1,0 +1,9 @@
+LGL Constituent ID,First name,Last name,Email address,Gift date,Gift amount,Gift type,Payment type,Campaign,Fund
+88000,Omar,Garner,omar.garner@example.org,2026-07-03,500,Gift,Check,Annual Fund 2026,Operations
+88001,Beatrice,Nakamura,beatrice.nakamura@example.org,2026-07-04,1000,Gift,Credit card,Annual Fund 2026,Operations
+88002,Felix,Ellison,felix.ellison@example.org,2026-07-05,75,Gift,Cash,Annual Fund 2026,Operations
+88003,Harriet,Langford,harriet.langford@example.org,2026-07-06,150,Gift,Stock,Annual Fund 2026,Operations
+88004,Marcus,Castillo,marcus.castillo@example.org,2026-07-07,35,Gift,Check,Annual Fund 2026,Operations
+88005,Ines,Jennings,ines.jennings@example.org,2026-07-08,2000,Gift,Credit card,Annual Fund 2026,Operations
+88006,Gordon,Arnold,gordon.arnold@example.org,2026-07-09,300,Gift,Cash,Annual Fund 2026,Operations
+88007,Tamsin,Holloway,tamsin.holloway@example.org,2026-07-10,125,Gift,Stock,Annual Fund 2026,Operations

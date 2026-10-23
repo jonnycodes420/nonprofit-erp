@@ -1,0 +1,13 @@
+Opportunity ID,Opportunity Name,Contact: First Name,Contact: Last Name,Contact: Email,Amount,Close Date,Stage,Payment Method
+0065e00000100AbC,Dawson Donation 3/1/2026,Alma,Dawson,alma.dawson@example.org,25,2026-03-01,Closed Won,Credit Card
+0065e00000101AbC,Kowalski Donation 3/2/2026,Theo,Kowalski,theo.kowalski@example.org,50,2026-03-02,Closed Won,Check
+0065e00000102AbC,Bennett Donation 3/3/2026,Priya,Bennett,priya.bennett@example.org,100,2026-03-03,Closed Won,Credit Card
+0065e00000103AbC,Ibarra Donation 3/4/2026,Jonah,Ibarra,jonah.ibarra@example.org,250,2026-03-04,Closed Won,Check
+0065e00000104AbC,Prescott Donation 3/5/2026,Lucinda,Prescott,lucinda.prescott@example.org,500,2026-03-05,Pledged,Credit Card
+0065e00000105AbC,Garner Donation 3/6/2026,Omar,Garner,omar.garner@example.org,1000,2026-03-06,Closed Won,Check
+0065e00000106AbC,Nakamura Donation 3/7/2026,Beatrice,Nakamura,beatrice.nakamura@example.org,75,2026-03-07,Closed Won,Credit Card
+0065e00000107AbC,Ellison Donation 3/8/2026,Felix,Ellison,felix.ellison@example.org,150,2026-03-08,Closed Won,Check
+0065e00000108AbC,Langford Donation 3/9/2026,Harriet,Langford,harriet.langford@example.org,35,2026-03-09,Closed Won,Credit Card
+0065e00000109AbC,Castillo Donation 3/10/2026,Marcus,Castillo,marcus.castillo@example.org,2000,2026-03-10,Closed Lost,Check
+0065e00000110AbC,Jennings Donation 3/11/2026,Ines,Jennings,ines.jennings@example.org,300,2026-03-11,Pledged,Credit Card
+0065e00000111AbC,Arnold Donation 3/12/2026,Gordon,Arnold,gordon.arnold@example.org,125,2026-03-12,Closed Won,Check
