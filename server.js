@@ -1158,7 +1158,9 @@ async function recordGift(o) {
                 // CAPTURE-1: when the gift came in (the check's date or the
                 // email's arrival), for the gift-to-thanked clock. Only capture
                 // states it; the clock reads created_at for every other door.
-                "received_at"];
+                "received_at",
+                // CHECK-2: the check's memo line, as written.
+                "memo"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -1177,7 +1179,7 @@ async function recordGift(o) {
                 o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
                 o.utmSource || null, o.utmMedium || null, o.utmCampaign || null,
                 o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null,
-                o.receivedAt || null];
+                o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -1267,7 +1269,16 @@ async function recordGift(o) {
   let appliedInstallment = null;
   if (o.installmentId === undefined && o.applyInstallment !== false) {
     try {
-      const [inst] = await query(
+      // CHECK-2: a check whose memo named the payment ("pledge pmt 2 of 4")
+      // and that she confirmed onto it names the instalment; the amount may
+      // differ from the schedule, because she said which one it is.
+      const [inst] = o.applyToInstallmentId
+        ? await query(
+          `SELECT i.id, i.pledge_id FROM pledge_installments i
+             JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+            WHERE i.org_id=? AND p.donor_id=? AND i.id=? AND i.paid_gift_id IS NULL AND p.status='open'`,
+          [orgId, o.donorId, String(o.applyToInstallmentId)]).catch(() => [])
+        : await query(
         `SELECT i.id, i.pledge_id FROM pledge_installments i
            JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
           WHERE i.org_id=? AND p.donor_id=? AND i.paid_gift_id IS NULL
@@ -1312,7 +1323,8 @@ async function recordGift(o) {
   // floor never applied to the very payments it exists for.
   if (o.thankYou !== false && !oldHistory && !thankedElsewhere) {
     await queueThankYouDraft(orgId, { giftId, donorId: o.donorId, cents: Math.round(amount * 100),
-                                      fundId, type: appliedInstallment ? "pledge payment" : (o.type || "cash") })
+                                      fundId, type: appliedInstallment ? "pledge payment" : (o.type || "cash"),
+                                      tribute: o.extras && o.extras.tribute ? o.extras.tribute : null })
       .catch(e => console.error("[thank-you] draft:", e.message));
   }
 
@@ -2755,7 +2767,7 @@ function sourceErrorSentence(e, source) {
 // path, and this is a letter.
 const THANK_YOU_PLEDGE_FLOOR_CENTS = 10000;
 
-async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null, type = "cash", reason = "gift", force = false, replace = false }) {
+async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null, type = "cash", reason = "gift", force = false, replace = false, tribute = null }) {
   const [d] = await query(
     `SELECT id, name, kind, salutation, spouse_name, deceased, do_not_contact, is_sample FROM donors
       WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
@@ -2809,6 +2821,8 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     isRecurring: thisGift ? !!thisGift.recurring_subscription_id : null,
     monthsSinceLastGift: monthsSince,
     campaignName: (thisGift && thisGift.campaign) || null,
+    // CHECK-2: the tribute the gift carries ("in memory of Walter"), said gently.
+    tribute: tribute && tribute.type && tribute.name ? { type: tribute.type, name: tribute.name } : null,
   };
   // FIX-45: the greeting reads the record's salutation or both names on it.
   const person = { salutation: d.salutation, spouseName: d.spouse_name, kind: d.kind };

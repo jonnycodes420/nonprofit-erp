@@ -123,6 +123,7 @@ export function thankYouDraft({
   giftCountBefore = null,      // how many gifts they had before this one
   campaignName = null,         // the appeal it came to, when it came to one
   person = null,               // FIX-45: { salutation, spouseName, kind } for the greeting
+  tribute = null,              // CHECK-2: { type: "memory" | "honor", name } from the gift
 } = {}) {
   const first = firstName(donorName) || "friend";
   const amt = money(giftCents);
@@ -158,6 +159,12 @@ export function thankYouDraft({
     middle = `Thank you for your gift of ${amt}${to}. It is a real help, and we are grateful you thought of us.`;
   }
 
+  // A tribute is mentioned once, gently, and only by the name she wrote.
+  if (tribute && tribute.name && (tribute.type === "memory" || tribute.type === "honor")) {
+    middle += tribute.type === "memory"
+      ? ` We are honored that you chose to remember ${tribute.name} this way.`
+      : ` It is a lovely way to honor ${tribute.name}, and we are glad to be part of it.`;
+  }
   const body = wrap(voice, donorName, middle, orgName, person);
   return { body, voice: voice.ready ? "org_samples" : "default", first, amount: amt,
            fundName: fundName || null, date, tier,
