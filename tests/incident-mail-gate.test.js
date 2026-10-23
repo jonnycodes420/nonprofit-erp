@@ -32,6 +32,7 @@
 // Standard scratch stack (tests/README.md).
 
 const bcrypt = require("bcryptjs");
+const { testNow } = require("./clock");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { readSource } = require("../scripts/lib/readSource");
 
@@ -181,8 +182,8 @@ const mkDonor = async (id, org, email, isSample) =>
   ok("CHECK-2: the pledge-reminder sweep picks nothing in an org named \"(Demo)\"",
     namedPick.status === 200 && namedPick.body.picked === 0, namedPick.body);
   ok("CHECK-2: …and the gate refuses it as a demo org, while \"Demo Day Fund\" and a kind set by hand still send",
-    mp.orgMailDecision({ id: NAMED, name: "Lakeside Arts Center (Demo)", emails_enabled: true, onboarded_at: new Date() }, mp.CATEGORY.DONOR).reason === "demo_org"
-    && mp.orgMailDecision({ id: "x", name: "Demo Day Fund", emails_enabled: true, onboarded_at: new Date() }, mp.CATEGORY.DONOR).send === true
+    mp.orgMailDecision({ id: NAMED, name: "Lakeside Arts Center (Demo)", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).reason === "demo_org"
+    && mp.orgMailDecision({ id: "x", name: "Demo Day Fund", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).send === true
     && !mp.isDemoOrg({ id: "x", name: "Old Name (Demo)", org_kind: "customer" }), null);
 
   // ── §3 · PROVISIONING IS NOT A SIGNUP ────────────────────────────────────

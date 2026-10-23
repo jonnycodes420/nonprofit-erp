@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from "react";
 import { T, fmtFull, PersonMark } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink } from "./RecordLink";
+import { giftHref } from "../lib/appUrls";
 import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
 
@@ -87,7 +88,11 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
                     <DonorLink id={d.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: d.donorId }) : undefined}
                       style={{ background: "none", border: "none", padding: 0, font: "inherit", fontSize: 14, fontWeight: 700, color: T.ink, cursor: "pointer", textAlign: "left" }}>{displayName(d.donorName)}</DonorLink>
                   )}
-                  <span style={{ fontSize: 13, color: T.ink2, fontVariantNumeric: "tabular-nums" }}>{fmtFull(d.amount)}{d.fundName ? ` · ${d.fundName}` : ""}</span>
+                  <span style={{ fontSize: 13, color: T.ink2, fontVariantNumeric: "tabular-nums" }}>
+                    <RecordLink to={giftHref(d.donorId, d.giftId)} data-record-link="gift" title="Open the gift"
+                      onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: d.donorId, anchor: "gift-" + d.giftId }) : undefined}
+                      style={{ color: "inherit" }}>{fmtFull(d.amount)}</RecordLink>{d.fundName ? ` · ${d.fundName}` : ""}
+                  </span>
                   {d.giftDate && <span style={{ fontSize: 12.5, color: T.ink3 }}>{displayDateShort(String(d.giftDate).slice(0, 10), new Date())}</span>}
                   {d.opened && <span style={{ fontSize: 11.5, color: T.ink3 }}>opened</span>}
                 </div>

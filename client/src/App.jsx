@@ -1107,8 +1107,7 @@ function AppShell() {
         </RecordLink>
       ))}
       {!isReadOnly&&!isPortalTier&&<button type="button" data-testid="mobile-snap-check" onClick={()=>{setMoreOpen(false);openCheckSnap({camera:true});}} className="mobile-bottom-tab">
-        <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><Camera size={19}/></span>
-        Check
+        <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><Camera size={19}/></span>{"Check"}
       </button>}
       <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===navCurrent)||moreOpen?" active":""}`}>
         <span className="mob-icon">⋯</span>
