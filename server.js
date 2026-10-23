@@ -1160,7 +1160,10 @@ async function recordGift(o) {
                 // states it; the clock reads created_at for every other door.
                 "received_at",
                 // CHECK-2: the check's memo line, as written.
-                "memo"];
+                "memo",
+                // IMPORT-3: the event a gift was given at (an event night's
+                // sheet). In THIS insert, for the same reason as every column above.
+                "event_id"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -1179,7 +1182,7 @@ async function recordGift(o) {
                 o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
                 o.utmSource || null, o.utmMedium || null, o.utmCampaign || null,
                 o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null,
-                o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null];
+                o.receivedAt || null, o.memo ? String(o.memo).slice(0, 300) : null, o.eventId || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -4287,6 +4290,7 @@ app.use(require("./routes/readouts").routers.r0);     // LIVE-1: what this told 
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/search").routers.r0);        // WIRE-1 the one search
 app.use(require("./routes/historyImport").routers.r0); // IMPORT-2 notes and history
+app.use(require("./routes/sheetImport").routers.r0);   // IMPORT-3 any spreadsheet
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 app.use(require("./routes/removal").routers.r0);       // FIX-41 the one remove
 
@@ -12163,6 +12167,8 @@ require("./routes/donorLookups").mount({ query, requireAuth, wrap });
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });
+require("./routes/sheetImport").mount({ query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recalcPledgePayment,
+  withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, orgToday, orgTz });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

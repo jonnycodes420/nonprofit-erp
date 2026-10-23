@@ -38,6 +38,9 @@ export function ColumnTargetSelect({
   // (that would put them where every staff user can read them), so the
   // screening mapper turns the new-field option off.
   allowNew = true,
+  // IMPORT-3: an unanswered column shows this instead of the first field, so
+  // a question never looks answered (value "").
+  placeholder = null,
 }) {
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -89,6 +92,7 @@ export function ColumnTargetSelect({
         style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7,
                  padding: compact ? "4px 6px" : "5px 8px", color: T.ink, fontSize: compact ? 11.5 : 12.5,
                  cursor: disabled ? "not-allowed" : "pointer", maxWidth: compact ? 200 : 320, outline: "none" }}>
+        {placeholder && <option value="" disabled>{placeholder}</option>}
         <optgroup label="Standard fields">
           {standardFields.filter(f => !f.flag).map(f => {
             const v = `std:${f.key}`;

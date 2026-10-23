@@ -152,6 +152,7 @@ CORE=(
   mailchimp1-sync
   connect2-sources
   import2-history
+  import3
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof

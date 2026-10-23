@@ -71,6 +71,7 @@ function count(schema) {
     { name: "memo_actions (VOICE-1 Tell Steward)", strict: true, schema: (await imp("shared/voiceMemo.js")).MEMO_TOOL.input_schema },
     { name: "talk_intent (VOICE-3 log, do or ask)", strict: true, schema: (await imp("shared/voiceTalk.js")).INTENT_TOOL.input_schema },
     { name: "health_details (CLIENT-SAFE-1)", strict: true, schema: (await imp("shared/clientSafe.js")).HEALTH_TOOL.input_schema },
+    { name: "propose_column_roles (IMPORT-3 any spreadsheet)", strict: true, schema: (await imp("shared/sheetRead.js")).MAPPING_TOOL.input_schema },
   ];
 
   for (const t of TOOLS) {
@@ -100,7 +101,8 @@ function count(schema) {
   const EXPECTED = { "askQuery.js": 1, "shared/meetingNote.js": 2, "shared/askCatalog.js": 1, "shared/showMe.js": 1,
     "routes/crm.js": 3, "routes/agent.js": 3, "scripts/build95-cheque-drill.js": 1, "capture.js": 2,   // FIX-45: the fund pick   // AGENT-3: the batched plan call is PLAN_SCHEMA again
     "shared/voiceMemo.js": 1, "routes/voice.js": 2, "shared/voiceTalk.js": 1,   // VOICE-3: the log/do/ask sort, defined in shared and sent by the route (meeting mode's two went with it)
-    "shared/clientSafe.js": 1, "clientSafe.js": 1 };   // CLIENT-SAFE-1: the health read, defined once and sent by clientSafe.js   // VOICE-1: the memo read, defined once and sent by the route
+    "shared/clientSafe.js": 1, "clientSafe.js": 1,
+    "shared/sheetRead.js": 1, "routes/sheetImport.js": 1 };   // IMPORT-3: the column-role proposal, defined in shared and sent by the route   // CLIENT-SAFE-1: the health read, defined once and sent by clientSafe.js   // VOICE-1: the memo read, defined once and sent by the route
   const found = {};
   const scan = dir => {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {

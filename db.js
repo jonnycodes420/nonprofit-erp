@@ -5626,6 +5626,13 @@ async function runSchemaInit(pool) {
   // a FALLBACK for rows written before this column existed; nothing is
   // rewritten behind anybody's back.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  // IMPORT-3: what one spreadsheet import made, so Undo removes the whole file:
+  // its pledges, the households and the event it created. A pledge made at an
+  // event remembers which.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  await pool.query(`ALTER TABLE households ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS import_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_event ON gifts (org_id, event_id) WHERE event_id IS NOT NULL`);
   // The campaign an event raises into, so an event and its appeal are one
   // total rather than two.

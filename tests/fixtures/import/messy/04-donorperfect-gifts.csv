@@ -1,0 +1,10 @@
+donor_id,first_name,last_name,email,gift_date,amount,gl_code,solicit_code,gift_type
+500,Jonah,Ibarra,jonah.ibarra@example.org,8/2/2026,100.00,UNR,SPRING26,CC
+501,Lucinda,Prescott,lucinda.prescott@example.org,8/3/2026,250.00,UNR,SPRING26,CK
+502,Omar,Garner,omar.garner@example.org,8/4/2026,500.00,UNR,SPRING26,CASH
+503,Beatrice,Nakamura,beatrice.nakamura@example.org,8/5/2026,1000.00,UNR,SPRING26,CC
+504,Felix,Ellison,felix.ellison@example.org,8/6/2026,75.00,UNR,SPRING26,CK
+505,Harriet,Langford,harriet.langford@example.org,8/7/2026,150.00,UNR,SPRING26,CASH
+506,Marcus,Castillo,marcus.castillo@example.org,8/8/2026,35.00,UNR,SPRING26,CC
+507,Ines,Jennings,ines.jennings@example.org,8/9/2026,2000.00,UNR,SPRING26,CK
+508,Gordon,Arnold,gordon.arnold@example.org,8/10/2026,300.00,UNR,SPRING26,CASH

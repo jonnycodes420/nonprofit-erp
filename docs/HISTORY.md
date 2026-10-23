@@ -25,6 +25,9 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## IMPORT-3 · Import adapts to any spreadsheet (2026-10-23)
+
+Allie (Justin's Place) sent her real event-night file from Oct 22: Last, First, Amount, Method, Frequency, Completed, 3 Yr Total, no date, a total row, a stray note in column K. Steward said "Sheet1, 106 rows, shape unclear, pick its role" and offered "Continue, one import: 0 donors + 0 gift rows". The column mapper assumed a header on row 1, a date column, and one person per name cell; an event sheet has none of those. `shared/sheetRead.js` is a second reader in front of it: it finds the table wherever it sits (titles, blank rows, side-by-side tables, one tab per year, margin notes, subtotals), reads columns by contents as well as names, and builds one plan the review screen and the write both walk (`routes/sheetImport.js`, money through `recordGift`). A row with no name is a total only when it says so or foots to the cent; otherwise it is listed. People are made only when the file gives them a gift or pledge (a refunded PayPal line alone makes nobody). Proven on 27 fake-name files whose answer key `make.cjs` computes from its own rows, never from the reader (the BUILD-77 lesson). The mapper keeps dated vendor exports and donor files; `wantsAdaptiveReading` hands over only what the mapper dead-ends on or misreads. Its first walk overwrote SHEETS-1's `SheetImport.jsx` (same name, grants and board reports); restored, and the new screen is `SpreadsheetImport.jsx`.
 ## CHECK-2 · Checks land on the right donor, from anywhere (2026-10-23)
 
 Jonathan, prod, 21 Oct: a joint check from "HENRIETTA M. DUFFIELD / GEORGE A. DUFFIELD" for $2,500, memo "Gala - in

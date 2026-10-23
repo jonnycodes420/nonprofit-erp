@@ -1,0 +1,8 @@
+Transaction ID,First Name,Last Name,Email,Phone,Address 1,City,State,Zip Code,Amount,Fee,Fee Covered,Date,Campaign Title,Method,Status
+GB7000,Beatrice,Nakamura,beatrice.nakamura@example.org,(504) 555-0110,100 Magnolia St,Mobile,AL,36602,1000,1.20,Yes,2026-09-10 18:00:00,Back to School,card,succeeded
+GB7001,Felix,Ellison,felix.ellison@example.org,(504) 555-0111,101 Magnolia St,Mobile,AL,36602,75,1.20,Yes,2026-09-11 18:00:00,Back to School,ach,succeeded
+GB7002,Harriet,Langford,harriet.langford@example.org,(504) 555-0112,102 Magnolia St,Mobile,AL,36602,150,1.20,Yes,2026-09-12 18:00:00,Back to School,paypal,succeeded
+GB7003,Marcus,Castillo,marcus.castillo@example.org,(504) 555-0113,103 Magnolia St,Mobile,AL,36602,35,1.20,Yes,2026-09-13 18:00:00,Back to School,card,succeeded
+GB7004,Ines,Jennings,ines.jennings@example.org,(504) 555-0114,104 Magnolia St,Mobile,AL,36602,2000,1.20,Yes,2026-09-14 18:00:00,Back to School,ach,succeeded
+GB7005,Gordon,Arnold,gordon.arnold@example.org,(504) 555-0115,105 Magnolia St,Mobile,AL,36602,300,1.20,Yes,2026-09-15 18:00:00,Back to School,paypal,succeeded
+GB7006,Tamsin,Holloway,tamsin.holloway@example.org,(504) 555-0116,106 Magnolia St,Mobile,AL,36602,125,1.20,Yes,2026-09-16 18:00:00,Back to School,card,succeeded

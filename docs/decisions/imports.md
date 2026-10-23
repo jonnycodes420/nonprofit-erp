@@ -109,6 +109,19 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **A trailing currency code is money** ("125.00 USD"), like a leading one. Headers are matched as written and as
   tokens, so "E-mail Address", "Phone #", "ST" and "Fund/Designation" reach their standard homes. (FIX-33)
 
+- **A file the mapper would dead-end on goes to the adaptive reader, never to "shape unclear" (IMPORT-3).**
+  `shared/sheetRead.js` finds the table anywhere and reads columns by contents; `wantsAdaptiveReading` sends it
+  files with no date column (unless one row per donor with totals), a paid/pledge-total column, a pledge list,
+  couples with no email, subtotals, yearless dates, several tables on a sheet, or an unknown sheet. The preview
+  and the write are one plan (`/sheet-import/understand` writes nothing, `/sheet-import/commit` writes it through
+  `recordGift`, shape `sheet` undoes whole). A model may only propose a column's role; the cells decide amounts.
+- **A row with no name is a total only when it says "total" or foots to the cent.** Otherwise it is a row set
+  aside by line ("no name"), never a gift and never a silent drop. (IMPORT-3)
+- **A person is created only when the file gives them a gift or a pledge, or the file is a list of people.**
+  A refunded or withdrawn line alone makes nobody a record. (IMPORT-3)
+- **The messy-file set grades the reader, so its answer key never comes from the reader.**
+  `tests/fixtures/import/messy/make.cjs` computes each key from the rows it writes. (IMPORT-3, after BUILD-77)
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)
@@ -131,7 +144,13 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **New org-child tables (for example `import_merges`) must join every suite's org-reset DELETE list.** Clear
   `fin_transactions`, `budgets`, `accounts` and `fin_funds` before deleting orgs. (BUILD-58, BUILD-80)
 
+- **Two components were both called SheetImport for an hour.** `SheetImport.jsx` is SHEETS-1 (grants and board
+  reports, on Grants and Reports); the any-spreadsheet screen is `SpreadsheetImport.jsx`. Check a name with
+  `git ls-files` before creating a component. (IMPORT-3)
+
 ## Where the code is
+- `shared/sheetRead.js` + `routes/sheetImport.js` + `client/src/components/SpreadsheetImport.jsx`: the adaptive
+  reader for any spreadsheet (IMPORT-3); `tests/import3.test.js` with `tests/fixtures/import/messy/`
 - `shared/importShape.js` — the whole pure layer: header tokens, shape detection, `analyzeCsvText`,
   `decodeSpreadsheetBytes`, money/date/id normalisers, `classifyColumns`, the workbook reader and builder,
   `resolveDonorIdentity`, `IMPORT_PROMISE_FIELDS`
