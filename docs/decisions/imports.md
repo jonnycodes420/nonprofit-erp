@@ -3,6 +3,14 @@
 Read this when you touch file import (CSV, xlsx, workbooks), shape detection, the column mapper, money or date parsing, dedupe on import, exclusions, or export files.
 
 ## Rules
+- **Who a row or a check is from is `donorMatch.js`'s answer (CHECK-2).** `matchDonor(orgId, { name | names,
+  email, line1, postal })` returns matched (with the reasons and history in one sentence), choices, or none.
+  Signals in order: email; every name on it against records of the SAME last name only (same first name with
+  or without a middle initial, a nickname, or a first initial that points at one person; a different middle
+  initial is somebody else; a first name alone never matches); the spouse on file or a household member for a
+  joint name; the street number and street, or the ZIP. None is never a silent new person: a person chooses
+  "New donor". IMPORT-3 and capture call this; do not write a second matcher. `properCase` is for names read
+  off paper in capitals only; a name a person typed keeps its capitals.
 - **An old spreadsheet comes in through one door (SHEETS-1).** `POST /sheets/read` says what a sheet is
   and writes nothing: grants (a funder column and an amount column, read by shared/grantImport.js) or a
   table of numbers (a column mostly numbers). Neither is refused, never guessed. Grants go through

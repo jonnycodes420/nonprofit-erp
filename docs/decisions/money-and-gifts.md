@@ -3,6 +3,17 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **A check's memo is read, never lost (CHECK-2).** `gifts.memo` holds the memo as written (less the
+  bank-number scrub). "in memory of", "in honor of", "IMO", "IHO" become the gift's tribute through
+  `checkGiftExtras`, and the thank-you draft mentions it once. "pledge pmt 2 of 4" offers that instalment
+  (`recordGift`'s `applyToInstallmentId`), never another one by amount.
+- **A joint check is one gift with one hard credit (CHECK-2).** `orgs.joint_gift_credit` says who: the first
+  name on the check (default) or the household's primary contact. The other name: a member of the same
+  household shares it through the household (derived, nothing stored); another record gets a
+  `gift_soft_credits` row (role household); a spouse on file is greeted; anyone else is named and left out.
+  The card and the confirm say who got what.
+- **No fingerprint of a bank account (CHECK-2).** Matching past checks by account would need the MICR line
+  read and a hash a server key can reverse by trying every account number, so it is not done.
 - **Deleting a gift voids the tasks that gift created, and only those.** `tasks.source_gift_id` is stamped where
   a gift's ARRIVAL creates a task (the workflow `create_task` and `notify_gift` actions); the delete voids by that
   column, inside the same transaction as the gift row, and writes "Gift removed, thank-you cancelled." to the

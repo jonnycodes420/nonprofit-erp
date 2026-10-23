@@ -210,7 +210,9 @@ async function donorFor(orgId, item) {
   const prefill = { name: names.length ? DM.properCase(names[0].text) : DM.properCase(raw || ""), email: item.email || "",
     line1: item.line1 || "", city: item.city || "", state: item.state || "", postal: item.postal || "" };
   const m = await DM.matchDonor(orgId, { name: raw, email: item.email, line1: item.line1, postal: item.postal }, D.query);
-  const out = { state: m.state, selectedId: m.selectedId, choices: m.choices, prefill, by: m.by || null, sentence: m.sentence, joint: [], credit: null };
+  // `by` keeps CAPTURE-1's words: a check matched on its name is "printed_name".
+  const by = m.by === "name" && item.kind === "check" ? "printed_name" : m.by || null;
+  const out = { state: m.state, selectedId: m.selectedId, choices: m.choices, prefill, by, sentence: m.sentence, joint: [], credit: null };
   if (m.state === "matched" && m.joint.length) Object.assign(out, await jointCredit(orgId, m));
   return out;
 }
