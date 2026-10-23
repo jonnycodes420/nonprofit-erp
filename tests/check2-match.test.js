@@ -20,7 +20,7 @@
 //
 // Red on main (origin/main 23a26ae): §1 (the card proposed a new person),
 // §2 (a new donor was made), §3 (no tribute, no memo), §4 ("first gift"),
-// §6 (capitals), §7 (no pledge offer).
+// §6 (capitals), §7 (no pledge offer), §9 (an org named "(Demo)" was swept).
 "use strict";
 
 const http = require("http");
@@ -57,6 +57,7 @@ const dataUrl = f => `data:image/png;base64,${fs.readFileSync(path.join(FX, f)).
 
 const ORG = "org_check2", SLUG = "check2-test", ADMIN = "check2-admin@example.org", USER = "u_check2";
 const sys = "'system:test','test'";
+const DEMO = "org_check2_demo";
 const HEN = "d_ck2_hen", GALA = "f_ck2_gala", GEN = "f_ck2_gen";
 const MICR = ` ⑆${FAKE_ROUTING}⑆ ${FAKE_ACCOUNT}⑈`;
 
@@ -91,9 +92,11 @@ const TABLES = ["group_sweep_seen", "group_crossings", "audiences", "donor_rhyth
   "thank_you_drafts", "tribute_notices", "gift_soft_credits", "pledge_installments", "threads", "interactions", "fin_transactions", "gifts", "pledges",
   "milestone_drafts", "journey_enrollments", "portal_assets", "tasks", "donors", "households", "user_sessions", "users", "fin_funds", "accounts", "budgets", "ai_usage"];
 async function reset() {
-  await q(`UPDATE gifts SET pledge_id=NULL WHERE org_id=$1`, [ORG]).catch(() => {});
-  for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
-  await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
+  for (const o of [ORG, DEMO]) {
+    await q(`UPDATE gifts SET pledge_id=NULL WHERE org_id=$1`, [o]).catch(() => {});
+    for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {});
+  }
 }
 async function settle(tok) {
   for (const c of await q(`SELECT id FROM capture_items WHERE org_id=$1 AND status='confirmed'`, [ORG])) await api("GET", `/capture/${c.id}/settled`, tok);
@@ -170,7 +173,7 @@ const upload = (tok, item) => { queued.push([item]); return api("POST", "/captur
 
   // ── §3 the tribute and the memo are on the gift ─────────────────────────
   console.log("\n§3 tribute and memo");
-  const [g] = await q(`SELECT id, donor_id, fund_id, tribute_type, tribute_name, memo FROM gifts WHERE id=$1`, [conf.body.giftId]);
+  const [g] = await q(`SELECT id, donor_id, fund_id, tribute_type, tribute_name, to_jsonb(gifts)->>'memo' AS memo FROM gifts WHERE id=$1`, [conf.body.giftId]);
   ok("§3 the gift is in memory of Walter", !!g && g.tribute_type === "memory" && g.tribute_name === "Walter", g);
   ok("§3 the memo is saved as written, without the bank numbers", !!g && /^Gala - in memory of Walter\b/.test(g.memo || "")
     && !(g.memo || "").includes(FAKE_ACCOUNT) && !(g.memo || "").includes(FAKE_ROUTING), g && g.memo);
@@ -189,7 +192,10 @@ const upload = (tok, item) => { queued.push([item]); return api("POST", "/captur
   const viewsHave = [];
   const comms = await api("GET", "/thank-yous", tok);
   if (JSON.stringify(comms.body || {}).includes(drafts[0] && drafts[0].id)) viewsHave.push("thank-yous");
-  ok("§4 the draft is in the drafts waiting to send", viewsHave.includes("thank-yous"), comms.status);
+  const seen = (JSON.stringify(comms.body || {}).match(new RegExp(drafts[0] ? drafts[0].id : "^$", "g")) || []).length;
+  // Communications, the profile (Emails tab and Thank-yous panel) and Money in,
+  // Acknowledgments all read GET /thank-yous: one draft, never three copies.
+  ok("§4 the draft is in the drafts waiting to send, once", viewsHave.includes("thank-yous") && seen === 1, { status: comms.status, seen });
 
   // ── §5 an unmatched name: "New donor" is a choice, never the default ────
   console.log("\n§5 nobody matches");
@@ -248,6 +254,18 @@ const upload = (tok, item) => { queued.push([item]); return api("POST", "/captur
   ok("§8 no log line holds them", !LOGS.some(l => l.includes(FAKE_ROUTING) || l.includes(FAKE_ACCOUNT)), LOGS.filter(l => l.includes(FAKE_ACCOUNT)).slice(0, 2));
   const modelText = sentToModel.map(b => b.replace(/"data":"[A-Za-z0-9+/=]+"/g, '"data":"<image>"')).join("\n");
   ok("§8 no request to the model holds them (the image aside)", sentToModel.length >= 4 && !modelText.includes(FAKE_ROUTING) && !modelText.includes(FAKE_ACCOUNT), sentToModel.length);
+
+  // ── §9 a demo org's pledge sends no reminder ─────────────────────────────
+  console.log("\n§9 demo org pledge reminders");
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status,emails_enabled,is_demo_org)
+           VALUES ($1,'Check Two Arts (Demo)','check2-demo',1,'core','active',true,false)`, [DEMO]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_check2_demo',$1,'check2-demo@example.org',$2,'Demo Admin','admin')`, [DEMO, pw]);
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ('d_ck2_demo',$1,'Pat Example','pat@example.com','active',${sys})`, [DEMO]);
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,first_overdue_at,next_reminder_at)
+           VALUES ('pl_ck2_demo',$1,'d_ck2_demo',500,'2026-09-01','open',NOW() - INTERVAL '2 days',NOW() - INTERVAL '1 hour')`, [DEMO]);
+  const dtok = await login("check2-demo@example.org");
+  const sweep = await api("POST", "/pledges/process-reminders", dtok);
+  ok("§9 the pledge-reminder sweep picks nothing in a demo org", sweep.status === 200 && sweep.body.picked === 0, sweep.body);
 
   mock.close();
   await reset();

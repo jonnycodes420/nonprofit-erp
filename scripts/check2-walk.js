@@ -81,7 +81,7 @@ const mock = http.createServer((req, res) => {
     await page.goto(APP + "/donors/" + row.donor_id, { waitUntil: "domcontentloaded" }); await settle(2200); await shot("03-profile");
     const emails = page.getByRole("tab", { name: /^Emails/ }).first();
     if (await emails.isVisible().catch(() => false)) { await emails.click(); await settle(1200); await shot("04-profile-emails"); }
-    await page.goto(APP + "/app/communications?subtab=thankyous" + (draft ? "&draft=" + draft.id : ""), { waitUntil: "domcontentloaded" }); await settle(1800); await shot("05-communications");
+    await page.goto(APP + "/app/communications?subtab=milestones" + (draft ? "&draft=" + draft.id : ""), { waitUntil: "domcontentloaded" }); await settle(1800); await shot("05-communications");
     await page.goto(APP + "/app/fundraising?fr=acknowledgments", { waitUntil: "domcontentloaded" }); await settle(1800); await shot("06-acknowledgments");
     await page.goto(APP + "/app/finance", { waitUntil: "domcontentloaded" }); await settle(2000);
     const line = page.getByText(/Gift from (Henrietta|HENRIETTA)/).first();
