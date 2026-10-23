@@ -56,7 +56,7 @@ async function modelOverrides(orgId, sheets, u, Rm) {
       const msg = await anthropicFor(orgId).messages.create({
         model: MAPPING_MODEL, max_tokens: 600,
         system: "You read the column headers and first rows of a nonprofit's spreadsheet and say what each listed column is. Never invent amounts.",
-        tools: [{ name: Rm.MAPPING_TOOL.name, description: Rm.MAPPING_TOOL.description, input_schema: Rm.MAPPING_TOOL.input_schema }],
+        tools: [{ name: Rm.MAPPING_TOOL.name, description: Rm.MAPPING_TOOL.description, strict: true, input_schema: Rm.MAPPING_TOOL.input_schema }],
         tool_choice: { type: "tool", name: Rm.MAPPING_TOOL.name },
         messages: [{ role: "user", content: Rm.modelPrompt(table) + `\n\nOnly these column indexes: ${mine.map(h => h.key.split("|")[1]).join(", ")}.` }],
       });
