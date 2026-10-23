@@ -95,10 +95,10 @@ async function seedOrg(orgId, tag) {
     [`ff_${orgId}`, orgId]).catch(() => {});
 }
 
-const mfetch = async (method, p, token, body) => {
+const mfetch = async (method, p, token, body, extraHeaders = {}) => {
   const r = await fetch(M + p, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...extraHeaders },
     body: body == null ? undefined : JSON.stringify(body),
   });
   const text = await r.text();
@@ -223,7 +223,10 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
     afterDup.filter(r => r.entity_type === "gift" && r.action === "created").length === 1,
     { rows: afterDup.filter(r => r.entity_type === "gift").map(r => r.action) });
 
-  const edit = await mfetch("PUT", `/gifts/${giftId}`, token, { amount: 90000 });
+  // FIX-48: the before-read is stalled 400ms (test boot only), which is what a
+  // slow CI runner did for real. The edit must wait for it, or "before" holds
+  // the $90,000 the edit just wrote.
+  const edit = await mfetch("PUT", `/gifts/${giftId}`, token, { amount: 90000 }, { "x-test-audit-stall-ms": "400" });
   ok("§2 the gift was edited to $90,000", edit.status < 300, { status: edit.status });
   const eRow = await waitForRow(ORG_A, r => r.entity_type === "gift" && r.action === "updated",
     "§2 editing a gift leaves a row");

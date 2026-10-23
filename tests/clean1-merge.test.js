@@ -281,6 +281,18 @@ async function reset() {
   const again = await fetch(BASE + `/data-health/merges/${mj.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
   ok("a second undo is refused", again.status === 409);
 
+  // §4b FIX-48 (numbers1-foot's CI 500): merge again, delete the gift whose
+  // soft credit was set aside, then undo. The credit went with its gift, so
+  // it stays gone, and the Undo still answers 200.
+  const re = await fetch(BASE + "/data-health/merge", { method: "POST", headers: H, body: JSON.stringify({ keptId: A, mergedId: B }) });
+  const rej = await re.json().catch(() => ({}));
+  const del = await fetch(BASE + "/gifts/g_c1m_a1", { method: "DELETE", headers: H });
+  const undo2 = await fetch(BASE + `/data-health/merges/${rej.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
+  ok("a merge, then its set-aside credit's gift deleted, then Undo: 200", re.status === 201 && del.status === 200 && undo2.status === 200, `${re.status} ${del.status} ${undo2.status} ${(await undo2.text()).slice(0, 200)}`);
+  const [{ n: credits }] = await q(`SELECT COUNT(*)::int AS n FROM gift_soft_credits WHERE org_id=$1 AND gift_id='g_c1m_a1'`, [ORG]);
+  const [{ n: back }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE id=$1 AND deleted_at IS NULL`, [B]);
+  ok("...the deleted gift's credit stays gone and the merged person is back", credits === 0 && back === 1, { credits, back });
+
   // §5 ─────────────────────────────────────────────────────────────────────
   for (const [id, who] of [["mem_c1m_d", D], ["mem_c1m_e", E]]) {
     const cc = await planter.connect();
