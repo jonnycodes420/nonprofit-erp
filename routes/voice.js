@@ -167,7 +167,18 @@ async function closeMeeting(req, { donorId, date, how, today, interactionId }) {
       WHERE org_id=? AND ?=ANY(person_ids) AND logged_at IS NULL AND dismissed_at IS NULL
         AND (starts_at AT TIME ZONE ?)::date BETWEEN (?::date - 2) AND ?::date
       ORDER BY starts_at DESC`, [tz, orgId, donorId, tz, date, date > today ? date : today]);
-  if (!rows.length) return null;
+  if (!rows.length) {
+    // CHECK-2: the meeting was already written up on its card ("How did it
+    // go") and she tells Steward about it too. Nothing is reopened or closed
+    // twice; the memo's conversation says which meeting it was, so the
+    // calendar draws that sitting once.
+    const [done] = await query(
+      `SELECT id, title FROM calendar_events WHERE org_id=? AND ?=ANY(person_ids) AND logged_at IS NOT NULL AND dismissed_at IS NULL
+          AND (starts_at AT TIME ZONE ?)::date = ?::date ORDER BY starts_at DESC LIMIT 1`, [orgId, donorId, tz, date]);
+    if (done) await run(`UPDATE interactions SET metadata = COALESCE(metadata,'{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
+      [JSON.stringify({ calendar_event_id: done.id, meeting_title: done.title }), interactionId, orgId]);
+    return null;
+  }
   const sameDay = rows.filter(r => r.day === date || r.day === today);
   const pool = sameDay.length ? sameDay : rows.filter(r => r.day < date).slice(0, 1);
   const word = new RegExp(`\\b${String(how || "").replace(/[^a-z]/gi, "")}\\b`, "i");

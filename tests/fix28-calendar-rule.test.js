@@ -30,7 +30,7 @@ const ORG = "org_fix28cal", ORG2 = "org_fix28cal2";
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 5618);
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 const TABLES = ["calendar_pushes", "grant_milestones", "grants", "cultivation_plan_steps", "cultivation_plans", "pledge_installments", "pledges",
-  "campaigns", "events", "volunteer_slots", "volunteer_opportunities", "tasks", "calendar_events", "mailbox_connections", "threads", "donors", "users"];
+  "campaigns", "events", "volunteer_slots", "volunteer_opportunities", "tasks", "interactions", "meeting_effects", "calendar_events", "mailbox_connections", "threads", "donors", "users"];
 
 const calls = [];
 let seq = 0;
@@ -156,6 +156,24 @@ async function reset() {
   ok("§4 another organisation sees none of it", !theirs.items.some(i => /f28/.test(i.id) || i.type === "deadline"), theirs.items.map(i => i.id));
   const steal = await api("PUT", `/grants/milestones/${adds[0].body.id}`, tok2, { dueDate: plus(1) });
   ok("§4 …and cannot move this org's deadline", steal.status === 404, steal.status);
+
+  // ── §5 · CHECK-2 · one conversation shows once ───────────────────────────
+  // Jonathan, 21 Oct: "Met Margaret C..." twice on Wed 21 for one conversation.
+  // The coffee is written up on its card ("How did it go") and then told to
+  // Steward as well, a second meeting row for the same sitting; and a person
+  // met twice on a day with no meeting on the calendar. Each is one item.
+  console.log("\n§5 · one conversation shows once (CHECK-2)");
+  const lg = await api("POST", "/calendar/events/cal_f28/log", tok, { note: "Went well." });
+  await ins(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+             VALUES ('int_f28_memo',$1,'d_f28_p','meeting','Coffee. Went well, she wants the budget.',$2,$3,'Dana','{"memoId":"vm_f28"}'::jsonb)`, [ORG, plus(0), U]);
+  await ins(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES
+             ('int_f28_a',$1,'d_f28_p','meeting','Walked the site.',$2,$3,'Dana'), ('int_f28_b',$1,'d_f28_p','meeting','Same walk, told to Steward.',$2,$3,'Dana')`, [ORG, plus(8), U]);
+  const f5 = await feed();
+  const met = day => f5.items.filter(i => i.type === "meeting" && i.donorId === "d_f28_p" && String(i.start).slice(0, 10) === day);
+  ok("§5 the coffee, written up twice, is one item on its day", lg.status < 300 && met(plus(0)).length === 1 && met(plus(0))[0].id === "meeting:cal_f28",
+    [lg.status, met(plus(0)).map(i => [i.id, i.title])]);
+  ok("§5 …and it says it happened", met(plus(0))[0] && met(plus(0))[0].happened === true, met(plus(0))[0]);
+  ok("§5 two \"Met\" lines for one person on one day are one", met(plus(8)).length === 1, met(plus(8)).map(i => [i.id, i.title]));
 
   await reset();
   mock.close();

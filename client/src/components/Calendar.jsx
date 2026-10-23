@@ -23,6 +23,7 @@ import { ShiftEditor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
+import { displayDay } from "../../../shared/displayDate.js";
 import { AddToRecord } from "./MeetingPanels";
 import { FinishSheet } from "./Tasks";
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
@@ -286,6 +287,8 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
   const [drag, setDrag] = useState(null);   // { item, mode, x0, y0, dx, dy }
   const justDragged = useRef(false);        // the click that ends a drag is not a click on the item
   const [now, setNow] = useState(() => new Date());
+  // CHECK-2: "3 more" in the all-day row opens that day's whole list, never the add form.
+  const [moreDay, setMoreDay] = useState(null);
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
   const hours = Array.from({ length: DAY_END - DAY_START }, (_, i) => DAY_START + i);
   const colW = () => { const g = gridRef.current; return g ? (g.getBoundingClientRect().width - 52) / days.length : 100; };
@@ -330,9 +333,12 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
         {days.map(d => (
           <div key={d} onClick={() => onAdd(d, null)} style={{ borderLeft: "1px solid " + T.bg2, padding: 3, display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             {allDay(d).slice(0, 4).map(it => <Block key={it.id + d} item={it} onOpen={onOpen} compact />)}
-            {allDay(d).length > 4 && <span style={{ fontSize: 11, color: T.ink3 }}>{allDay(d).length - 4} more</span>}
+            {allDay(d).length > 4 && <button type="button" data-testid="cal-allday-more" onClick={e => { e.stopPropagation(); setMoreDay(d); }}
+              style={{ background: "none", border: "none", padding: 0, fontSize: 11, color: T.greenDk, textAlign: "left", cursor: "pointer" }}>{allDay(d).length - 4} more</button>}
           </div>))}
       </div>
+      {moreDay && <DayList day={moreDay} items={[...allDay(moreDay), ...timed(moreDay).sort((a, b) => String(a.start).localeCompare(String(b.start)))]}
+        onOpen={it => { setMoreDay(null); onOpen(it); }} onClose={() => setMoreDay(null)} />}
       <div ref={gridRef} style={{ position: "relative", display: "grid", gridTemplateColumns: `52px repeat(${days.length}, minmax(0,1fr))`, maxHeight: 620, overflowY: "auto" }}>
         <div>{hours.map(h => <div key={h} style={{ height: HOUR_PX, fontSize: 10.5, color: T.ink3, textAlign: "right", paddingRight: 6, boxSizing: "border-box" }}>{t12(`${h}:00`)}</div>)}</div>
         {days.map((d, di) => (
@@ -358,6 +364,18 @@ function TimeGrid({ days, items, today, isReadOnly, onOpen, onAdd, onMove }) {
           </div>))}
       </div>
     </div>
+  );
+}
+
+// CHECK-2: everything on one day, as a list. Each line opens the item.
+function DayList({ day, items, onOpen, onClose }) {
+  return (
+    <Modal onClose={onClose} width={440} ariaLabel={`Everything on ${displayDay(day)}`} title={displayDay(day)}
+      subtitle={`${items.length} ${items.length === 1 ? "thing" : "things"} on this day.`}>
+      <div data-testid="cal-day-list" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map(it => <Block key={it.id} item={it} onOpen={onOpen} compact />)}
+      </div>
+    </Modal>
   );
 }
 

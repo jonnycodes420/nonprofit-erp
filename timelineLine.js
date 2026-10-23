@@ -35,11 +35,14 @@ async function writeTimelineLine({ orgId, donorId, note, type = "activity", date
     const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actorId, orgId]).catch(() => []);
     if (u && u.name) actorName = u.name;
   }
+  // CHECK-2: a date in a line Steward writes reads "Fri, Oct 23", never
+  // "2026-10-23", whoever the caller is.
+  const { humanDates } = await import("./shared/displayDate.js");
   const id = "i_" + uuid().slice(0, 10);
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
      VALUES (?,?,?,?,?,?,?,?,?)`,
-    [id, orgId, donorId, type, String(note), day, actorId || "system:timeline", actorName,
+    [id, orgId, donorId, type, humanDates(String(note), day), day, actorId || "system:timeline", actorName,
      JSON.stringify({ ...metadata, ...(key ? { line_key: String(key) } : {}) })]);
   return { written: true, id };
 }

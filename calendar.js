@@ -45,7 +45,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
                 WHERE cd.org_id = ce.org_id AND cd.id = ANY(ce.candidate_ids) AND cd.deleted_at IS NULL) AS candidates,
               to_char(ce.starts_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS s, to_char(ce.ends_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS e,
               to_char(ce.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS si, to_char(ce.ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ei,
-              d.id AS donor_id, d.name AS donor_name, d.last_gift_date, d.last_gift_amount
+              d.id AS donor_id, d.name AS donor_name, d.last_gift_date, d.last_gift_amount, ce.interaction_id, ce.logged_at
          FROM calendar_events ce
          LEFT JOIN users u ON u.id = ce.owner_user_id AND u.org_id = ce.org_id
          LEFT JOIN donors d ON d.org_id = ce.org_id AND d.id = ce.person_ids[1] AND d.deleted_at IS NULL
@@ -60,18 +60,21 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         detail: [r.location, r.provider && r.provider !== "steward" ? `on your ${r.provider === "microsoft" ? "Outlook" : "Google"} calendar` : null].filter(Boolean).join(" · "),
         // FIX-33 Part 3b: an event Steward is not sure about asks who it is with.
         unsure: !r.donor_id, candidates: Array.isArray(r.candidates) ? r.candidates : [],
-        editable: { move: true, resize: true }, ref: { calendarEventId: r.id, startsAt: r.si, endsAt: r.ei, provider: r.provider || null, synced: !!(r.provider && r.provider !== "steward" && !r.booked_in_steward) },
+        // CHECK-2: a meeting that has been written up carries its conversation, so the day shows it once.
+        ...(r.logged_at ? { happened: true } : {}),
+        editable: { move: true, resize: true }, ref: { calendarEventId: r.id, startsAt: r.si, endsAt: r.ei, provider: r.provider || null, synced: !!(r.provider && r.provider !== "steward" && !r.booked_in_steward),
+          ...(r.interaction_id ? { interactionId: r.interaction_id } : {}) },
       }))));
     // A meeting logged on the timeline (a conversation that happened) shows on its day.
     jobs.push(query(
-      `SELECT i.id, i.date, i.note, i.created_by, d.id AS donor_id, d.name AS donor_name
+      `SELECT i.id, i.date, i.note, i.created_by, i.metadata->>'calendar_event_id' AS calendar_event_id, d.id AS donor_id, d.name AS donor_name
          FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id AND d.deleted_at IS NULL
         WHERE i.org_id = ? AND i.type = 'meeting' AND LEFT(i.date, 10) >= ? AND LEFT(i.date, 10) <= ?
           AND (?::text IS NULL OR i.created_by = ?)`,
       [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => out.push({
         id: `logged:${r.id}`, type: "meeting", title: `Met ${r.donor_name}`, start: String(r.date).slice(0, 10), end: String(r.date).slice(0, 10), allDay: true,
         ownerId: r.created_by, donorId: r.donor_id, donorName: r.donor_name, detail: String(r.note || "").slice(0, 140), logged: true,
-        editable: { move: false, resize: false }, ref: { interactionId: r.id },
+        editable: { move: false, resize: false }, ref: { interactionId: r.id, ...(r.calendar_event_id ? { calendarEventId: r.calendar_event_id } : {}) },
       }))));
   }
   if (want.has("step")) {
@@ -333,7 +336,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       }));
   }
   await Promise.all(jobs);
-  const items = foldMeetingSteps(dedupeOpenedSteps(out));
+  const items = foldLoggedMeetings(foldMeetingSteps(dedupeOpenedSteps(out)));
   markConflicts(items);
   items.sort((a, b) => String(a.start).localeCompare(String(b.start)) || a.type.localeCompare(b.type));
   return items;
@@ -394,6 +397,42 @@ function foldMeetingSteps(items) {
   });
 }
 
+// CHECK-2 (Jonathan, 21 Oct: "Met Margaret C..." twice on Wed 21 for one
+// conversation). ONE CONVERSATION, ONCE. A conversation is written as an
+// interaction and drawn as "Met <name>"; the calendar meeting it was logged
+// against is drawn too, and when the meeting was written up twice (its card's
+// "How did it go", then Tell Steward about the same lunch) there are two
+// interactions for one sitting. The meeting is kept and the conversations
+// logged against it are dropped; for one person on one day the "Met" lines
+// with no meeting fold into one, the later notes joined to its detail.
+function foldLoggedMeetings(items) {
+  const events = new Map(), byConv = new Set(), happenedOn = new Map();
+  for (const i of items) if (i.type === "meeting" && !i.logged && i.ref && i.ref.calendarEventId) {
+    events.set(String(i.ref.calendarEventId), i);
+    if (i.ref.interactionId) byConv.add(String(i.ref.interactionId));
+    // A written-up meeting with a person is that day's sitting with them: a
+    // second write-up that was never linked to it (told to Steward after the
+    // card was filled in) is the same conversation.
+    if (i.happened && i.donorId) happenedOn.set(`${i.donorId}|${String(i.start).slice(0, 10)}`, i);
+  }
+  const seen = new Map();
+  return items.filter(i => {
+    if (!i.logged || !i.ref) return true;
+    const ev = (i.ref.calendarEventId && events.get(String(i.ref.calendarEventId)))
+      || happenedOn.get(`${i.donorId}|${String(i.start).slice(0, 10)}`) || null;
+    if (byConv.has(String(i.ref.interactionId)) || ev) {
+      const keep = ev || [...events.values()].find(e => String(e.ref.interactionId) === String(i.ref.interactionId));
+      if (keep) { keep.happened = true; if (!keep.ref.interactionId) keep.ref.interactionId = i.ref.interactionId; }
+      return false;
+    }
+    const k = `${i.donorId}|${String(i.start).slice(0, 10)}`;
+    const first = seen.get(k);
+    if (!first) { seen.set(k, i); return true; }
+    if (i.detail && i.detail !== first.detail) first.detail = [first.detail, i.detail].filter(Boolean).join(" · ").slice(0, 280);
+    return false;
+  });
+}
+
 // Two of one person's meetings at once; an event and a shift on top of each
 // other. A shift short of people already says so. Quiet markers only.
 function markConflicts(items) {
@@ -411,4 +450,4 @@ function markConflicts(items) {
   }
 }
 
-module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays, foldMeetingSteps };
+module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays, foldMeetingSteps, foldLoggedMeetings };
