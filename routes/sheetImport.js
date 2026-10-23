@@ -27,6 +27,10 @@ const { query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift
         withAdvisoryLock, aiGate, anthropicFor, recordAiFallback } = ctx;
 const app = routers.r0;
 const R = () => import("../shared/sheetRead.js");
+// CHECK-2's one matcher (email; names against the same last name, with
+// initials and nicknames; household; street or ZIP). A person is made new only
+// when it says "none".
+const DM = require("../donorMatch");
 const PM = require("../personMatch");
 
 function readBody(b) {
@@ -87,12 +91,20 @@ async function matchPeople(orgId, u, answers, privacy) {
         if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "you", isClient: d.is_client === true }); continue; }
       }
       if (pick === "new") { members.push({ name: nm, status: "new", id: null, by: "you" }); continue; }
-      const m = await PM.matchPerson(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip });
-      if (m.status === "matched") {
-        const [d] = await query("SELECT is_client FROM donors WHERE id=?", [m.id]);
-        members.push({ name: nm, status: "matched", id: m.id, by: m.by, isClient: !!(d && d.is_client === true) });
-      } else if (m.status === "ambiguous") members.push({ name: nm, status: "ambiguous", id: null, candidates: m.candidates || [] });
-      else members.push({ name: nm, status: "new", id: null });
+      const m = await DM.matchDonor(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip });
+      if (m.state === "matched" && m.selectedId) {
+        const [d] = await query("SELECT is_client FROM donors WHERE id=?", [m.selectedId]);
+        members.push({ name: nm, status: "matched", id: m.selectedId, by: m.by || "name", isClient: !!(d && d.is_client === true) });
+      } else if (m.state === "choices") members.push({ name: nm, status: "ambiguous", id: null, candidates: m.choices || [] });
+      else {
+        // A one-word name ("Arnold") is weak to CHECK-2 by design; the record
+        // with exactly that name, when there is only one, is still that record.
+        const exact = await PM.findPersonId(orgId, { email: p.email, name: nm });
+        if (exact) {
+          const [d] = await query("SELECT is_client FROM donors WHERE id=?", [exact]);
+          members.push({ name: nm, status: "matched", id: exact, by: "the same name", isClient: !!(d && d.is_client === true) });
+        } else members.push({ name: nm, status: "new", id: null });
+      }
     }
     // CLIENT-SAFE-1: a person marked as a client is never made a donor here.
     const client = privacy.on && (members.some(x => x.isClient || (x.id && privacy.clientIds.has(x.id))) || (p.email && privacy.clientEmails.has(p.email)));
