@@ -539,7 +539,7 @@ const AGENT_EXECUTORS = {
       await runTx(ctx.client,
         `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
          VALUES (?,?,?,'activity',?,?,?,?,?)`,
-        [lineId, ctx.orgId, donor.id, `Task made by Steward: "${title.slice(0, 160)}"${due ? `, due ${due}` : ""}.`,
+        [lineId, ctx.orgId, donor.id, `Task made by Steward: "${title.slice(0, 160)}"${due ? `, due ${(await import("../shared/displayDate.js")).displayDay(due, ctx.today) || due}` : ""}.`,
          ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name, JSON.stringify({ line_key: `agent_task:${id}`, taskId: id, grantId: grant ? grant.id : null })]);
       await agentWrite(ctx, { tool: "create_task", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     }

@@ -43,7 +43,15 @@
 // FIX-45: and every demo org orgKind.js names (Riverbend, Meadowbrook), and any
 // org whose kind somebody set to demo, so the two files cannot disagree.
 const DEMO_ORG_IDS = [...new Set(["org_b72demo", "org_creo", ...require("./orgKind").DEMO_ORG_IDS])];
-const isDemoOrg = org => !!org && (org.is_demo_org === true || org.org_kind === "demo" || DEMO_ORG_IDS.includes(org.id));
+// CHECK-2 (Jonathan, 21 Oct): a demo org's pledges still reached Resend every
+// hour, at @example.com people. The flag, the kind and the id list missed an org
+// that is a demo only by its name ("Lakeside Arts Center (Demo)"), which
+// orgKind.js already counts as one. "(Demo)" in the name, with no kind set by
+// hand, is a demo org here too, in JS and in SQL, so the gate and every sweep
+// agree. Only the bracketed word: "Demolition Aid" or "Demo Day Fund" is real.
+const DEMO_NAME_RE = /\(\s*demo\s*\)/i;
+const isDemoOrg = org => !!org && (org.is_demo_org === true || org.org_kind === "demo" || DEMO_ORG_IDS.includes(org.id)
+  || (org.org_kind == null && DEMO_NAME_RE.test(String(org.name || ""))));
 
 // FIX-45 (Muse, 19 Oct): THE SAME RULE, AT THE SOURCE. The gate above refused
 // twelve pledge reminders a demo org's sweep had already picked, and the sweep
@@ -54,7 +62,8 @@ const isDemoOrg = org => !!org && (org.is_demo_org === true || org.org_kind === 
 // joined. The ids are constants, never input, so inlining them is safe.
 function orgSendsSql(o = "o") {
   return `(COALESCE(${o}.is_demo_org, false) = false AND COALESCE(${o}.org_kind, '') <> 'demo'`
-    + ` AND ${o}.id NOT IN (${DEMO_ORG_IDS.map(id => `'${id}'`).join(",")}))`;
+    + ` AND ${o}.id NOT IN (${DEMO_ORG_IDS.map(id => `'${id}'`).join(",")})`
+    + ` AND NOT (${o}.org_kind IS NULL AND COALESCE(${o}.name, '') ~* '\\(\\s*demo\\s*\\)'))`;
 }
 
 const CATEGORY = {

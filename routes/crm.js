@@ -19623,6 +19623,7 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
 // arrives. `donorId` asks for one donor's thread and bypasses scope and cap —
 // a donor record shows its own thread whoever owns it.
 async function composeThreads(orgId, { donorId = null, scope = "mine", userId = null, isAdmin = false, cap = null } = {}) {
+  const DDth = await import("../shared/displayDate.js");   // CHECK-2: a line Steward wrote reads "Fri, Oct 23"
   const org = await orgTz(orgId);
   const today = orgToday(org);                         // ORG_TZ_SEAM_OK
   const rank = await threadRankMod();
@@ -19731,7 +19732,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     if (!t.owner_id) unowned++;
     const daysOpen = orgTime.daysBetween(t.opened_on, today) ?? 0;
     const lastTouch = t.opening_interaction_id
-      ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_note, actor: t.touch_actor,
+      ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_type === "activity" ? DDth.humanDates(t.touch_note, today) : t.touch_note, actor: t.touch_actor,
           // THREAD-2: what she logged is a line on the person, and opens there.
           ref: { kind: t.touch_type === "meeting" ? "meeting" : (t.touch_type || "note"), logged: true, id: t.opening_interaction_id, donorId: t.donor_id } }
       : t.opening_gift_id
@@ -20232,7 +20233,7 @@ app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (r
         actorId: who.id, actorName: who.name, openingInteractionId: i.id,
       }));
     }
-    sentence = `Next step set: ${label}, due ${due}.`;
+    sentence = `Next step set: ${label}, due ${(await import("../shared/displayDate.js")).displayDay(due, today) || due}.`;
   } else if (answer === "yes" && kind === "spouse") {
     const name = String(req.body?.name || "").trim().slice(0, 120);
     if (!name) return res.status(400).json({ error: "name is required" });
@@ -21622,7 +21623,7 @@ app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
 // "Email turns on once your donor file is in." Once it sends: the From address.
 const mailPolicy = require("../mailPolicy");
 async function hubMailState(orgId) {
-  const [org] = await query("SELECT id, emails_enabled, is_demo_org, onboarded_at FROM orgs WHERE id=?", [orgId]).catch(() => []);
+  const [org] = await query("SELECT id, name, emails_enabled, is_demo_org, onboarded_at, org_kind FROM orgs WHERE id=?", [orgId]).catch(() => []);
   const d = mailPolicy.orgMailDecision(org || null, mailPolicy.CATEGORY.DONOR);
   if (!d.send) return { sends: false, sentence: mailPolicy.REASON_SENTENCE[d.reason] || "Email is not going out from this organization right now." };
   const ident = await orgSendingIdentity(orgId).catch(() => null);
