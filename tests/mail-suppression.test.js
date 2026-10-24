@@ -31,6 +31,7 @@ const path = require("path");
 const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
+const { testNow } = require("./clock");
 const today = () => new Date().toISOString().slice(0, 10);
 
 // Capture sink on :5602 (the server's RESEND_BASE_URL). `mode` can be flipped
@@ -529,7 +530,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const MP = require("../mailPolicy");
     const sentTo = addr => to(addr).length;
     // Weeks §9 never sent, so a digest that does not arrive was refused, not deduplicated.
-    const mondayAgo = weeks => (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeks); return d.toISOString().slice(0, 10); })();
+    const mondayAgo = weeks => (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeks); return d.toISOString().slice(0, 10); })();
     const supEmail = `f48-super-${uniq()}@test.local`;
     await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName: "F48 HQ " + uniq(), userName: "F48 Super", email: supEmail, password: "loadtest1234" }) });
@@ -572,11 +573,11 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
       flip.status === 200 && sentTo(m1Admin) >= 1 && sentTo(donorAddr) === 0, { s: flip.status, admin: sentTo(m1Admin), donor: sentTo(donorAddr) });
 
     ok("§11d Billing off refuses billing mail; sign-in mail has no switch",
-      MP.orgMailDecision({ id: "x", billing_mail_enabled: false, onboarded_at: new Date() }, "billing").reason === "billing_mail_off"
+      MP.orgMailDecision({ id: "x", billing_mail_enabled: false, onboarded_at: new Date(testNow()) }, "billing").reason === "billing_mail_off"
       && MP.orgMailDecision({ id: "x", billing_mail_enabled: false, staff_mail_enabled: false, emails_enabled: false }, "account").send === true, null);
     ok("§11d a staff switch never set follows the donor switch, as staff mail always did",
-      MP.orgMailDecision({ id: "x", emails_enabled: false, onboarded_at: new Date() }, "staff").reason === "org_emails_disabled"
-      && MP.orgMailDecision({ id: "x", emails_enabled: true, onboarded_at: new Date() }, "staff").send === true, null);
+      MP.orgMailDecision({ id: "x", emails_enabled: false, onboarded_at: new Date(testNow()) }, "staff").reason === "org_emails_disabled"
+      && MP.orgMailDecision({ id: "x", emails_enabled: true, onboarded_at: new Date(testNow()) }, "staff").send === true, null);
     await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { donor: true });
   }
 
