@@ -133,7 +133,7 @@ const mkDonor = async (id, org, email, isSample) =>
   for (const [seam, re] of [
     ["donorMailDecision", /const orgGate = await orgMaySendEmail\(orgId\)/],
     ["sendDigestEmail", /const digestGate = await orgMaySendEmail\(org && org\.id, mailPolicy\.CATEGORY\.STAFF\)/],
-    ["runDigestsForOrg", /const gate = await orgMaySendEmail\(org && org\.id\)/],
+    ["runDigestsForOrg", /const gate = await orgMaySendEmail\(org && org\.id, mailPolicy\.CATEGORY\.STAFF\)/],
     ["notifyUserOnce (staff notices)", /const gate = await orgMaySendEmail\(org\.id, mailPolicy\.CATEGORY\.STAFF\)/],
   ]) ok(`${seam} consults the org gate`, re.test(src), null);
   // MAIL-1: the onboarding sequence is gone, not gated: nothing creates it.

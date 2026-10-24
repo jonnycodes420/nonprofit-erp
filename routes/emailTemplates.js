@@ -486,7 +486,7 @@ app.post("/email-templates/:id/test", requireAuth, checkWriteAccess, wrap(async 
   if (to.toLowerCase() !== String(person.email || "").toLowerCase()) return res.status(403).json({ error: "test_to_self",
     message: "A test goes to you. Sending to somebody else is a send, and it belongs on a campaign." });
   const p = await previewHtml(req, row);
-  const gate = await orgMaySendEmail(orgId, mailPolicy.categoryOf("campaign_test"));
+  const gate = await orgMaySendEmail(orgId, mailPolicy.categoryOf("campaign_test"), "campaign_test");
   if (!gate.send) {
     const demo = await demoMailNote(orgId, { what: "this test", to });
     return res.json({ sent: false, to, html: p.html, problems: p.problems, reason: gate.reason,

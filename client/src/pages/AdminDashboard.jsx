@@ -672,12 +672,32 @@ function OrgPanel({ org, onClose, onRefresh }) {
                     </button>
                   )}
                 </div>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: mail.locked ? "not-allowed" : "pointer" }}>
-                  <input type="checkbox" data-testid="admin-donor-mail-switch" checked={mail.donorMailOn && !mail.locked}
-                    disabled={working || mail.locked}
-                    onChange={e => mailAction("/email-switch", { emailsEnabled: e.target.checked })} />
-                  <span style={{ flex: 1 }}>This organization can email its donors</span>
-                </label>
+                {/* FIX-48: three switches, each saved per org and audit-logged. Sign-in mail always goes. */}
+                <div data-testid="admin-mail-switches" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    ["staff", "Staff mail", "Digests, morning emails, reminders and alerts Steward sends this organization's team on its own."],
+                    ["donor", "Donor mail", "Mail this organization sends its donors: receipts, thank-yous, campaigns and sequences it turned on."],
+                    ["billing", "Billing mail", "Steward's own billing mail to this organization."],
+                  ].map(([k, label, help]) => (
+                    <label key={k} style={{ display: "flex", gap: 8, alignItems: "flex-start", cursor: mail.locked ? "not-allowed" : "pointer" }}>
+                      <input type="checkbox" data-testid={`admin-${k}-mail-switch`}
+                        checked={!!(mail.switches && mail.switches[k]) && !mail.locked}
+                        disabled={working || mail.locked}
+                        onChange={e => mailAction("/mail-switches", { [k]: e.target.checked })} />
+                      <span style={{ flex: 1 }}>
+                        <span style={{ color: A.ink, fontWeight: 600 }}>{label}</span>
+                        <span style={{ display: "block", fontSize: 12, color: A.muted }}>{help}</span>
+                      </span>
+                    </label>
+                  ))}
+                  <div data-testid="admin-signin-mail" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <input type="checkbox" checked disabled readOnly aria-label="Sign-in mail is always on" />
+                    <span style={{ flex: 1 }}>
+                      <span style={{ color: A.ink, fontWeight: 600 }}>Sign-in mail</span>
+                      <span style={{ display: "block", fontSize: 12, color: A.muted }}>Sign-in links, password resets and invites. Always on.</span>
+                    </span>
+                  </div>
+                </div>
                 <div data-testid="admin-mail-domain">
                   Sending domain: {mail.domain.domain ? `${mail.domain.domain} (${mail.domain.status})` : "none"}.
                   {mail.domain.from ? ` From: ${mail.domain.from}.` : ""} {mail.domain.sentence}

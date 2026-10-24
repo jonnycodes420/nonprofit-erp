@@ -76,6 +76,7 @@ const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
 // email addresses in an ops table (steward-data-handling.md).
 const _rawResend = new Resend(process.env.RESEND_API_KEY);
 const mailPolicy = require("./mailPolicy");   // MAIL-1: the one mail policy, by family of mail
+const mailRefusal = require("./mailRefusal"); // FIX-48: a refused send is failed once, never retried
 const EMAIL_LOG_RETENTION_DAYS = 30;
 
 // The org this send belongs to is taken from an explicit `_stewardOrgId` on the
@@ -141,7 +142,7 @@ const resend = new Proxy(_rawResend, {
           const orgId = opts && opts._stewardOrgId;
           const category = mailPolicy.categoryOf(opts && opts._stewardKind);
           if (orgId || category === mailPolicy.CATEGORY.ONBOARDING) {
-            const gate = await orgMaySendEmail(orgId, category);
+            const gate = await orgMaySendEmail(orgId, category, opts && opts._stewardKind);
             if (!gate.send) {
               const why = "org_mail_off: " + gate.reason;
               console.warn(`[mail-gate] REFUSED at the client: org ${orgId} (${gate.reason}), kind=${opts._stewardKind || "?"}`);
@@ -5932,7 +5933,8 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
   // only and stays allowed — looking at what a digest WOULD say is how you
   // check an org is safe to re-enable.
   if (send) {
-    const gate = await orgMaySendEmail(org && org.id);
+    // FIX-48: a digest is STAFF mail, so it reads the staff switch.
+    const gate = await orgMaySendEmail(org && org.id, mailPolicy.CATEGORY.STAFF);
     if (!gate.send) {
       out.gated = gate.reason;
       return out;
@@ -8340,6 +8342,16 @@ async function reconcileStripeVsGifts() {
       if (!piId) continue;                          // donations always ride a PaymentIntent
       const giftRows = await query(
         "SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+      // FIX-48: a LOST dispute reverses the gift on purpose (the money went
+      // back to the card) but Stripe still lists the charge as succeeded with
+      // nothing refunded, so every sweep for the next 72 hours called it a
+      // charge with no gift and /health read reconciliation.unclean. The
+      // reversal is on file (dispute_reversals, the snapshot an appeal
+      // restores from), so that charge is accounted for.
+      if (!giftRows.length && ch.disputed) {
+        const [rev] = await query("SELECT 1 AS x FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+        if (rev) continue;
+      }
       if (!giftRows.length) {
         unrecorded++;
         const ageMin = Math.round((nowSec - (ch.created || nowSec)) / 60);
@@ -8893,14 +8905,38 @@ async function processPledgeReminders() {
           [p.org_id]
         );
         const org = orgRows[0];
-        if (!org || !p.donor_email) continue;
+        if (!org) continue;
         // Org turned this off — leave the cadence/step where it is (so it
         // picks back up correctly if re-enabled) but don't send.
         if (org.pledge_reminder_enabled === false) continue;
 
         // FIX-15 Part 3: no "Pledge reminder sent" line, and no step forward,
-        // for a reminder the provider refused; the next run tries again.
-        if (!(await sendPledgeReminderEmail(org, { name: p.donor_name, email: p.donor_email }, p))) continue;
+        // for a reminder that did not go.
+        // FIX-48: and a refusal is not an outage. A reminder Resend refused,
+        // or one this person will never get (a hard bounce, unsubscribed,
+        // deceased, no address), is marked failed with its reason ONCE, in the
+        // send log and on the pledge, and never tried again. Only an outage is
+        // retried, and then a day later, not on every hourly tick. The org's
+        // own mail being off is neither: the reminder waits for it.
+        const r = p.donor_email
+          ? await sendPledgeReminderEmail(org, { name: p.donor_name, email: p.donor_email }, p)
+          : { sent: false, refused: "no_email", error: null };
+        if (!r.sent) {
+          const kind = r.refused ? mailRefusal.classifyDecision(r.refused) : mailRefusal.classifyProviderError(r.error);
+          if (kind === "wait") continue;
+          const why = r.refused || mailRefusal.reasonText(r.error);
+          if (kind === "permanent") {
+            await run(`UPDATE pledges SET reminder_failed_at=NOW(), reminder_error=?, next_reminder_at=NULL, updated_at=NOW() WHERE id=?`, [why, p.id]);
+            // A provider refusal is already in the send log (the client proxy
+            // writes it); a refusal decided here never reached the provider.
+            if (r.refused) _logOutboundEmail({ to: p.donor_email || "", _stewardOrgId: p.org_id, _stewardKind: "pledge_reminder", subject: "Pledge reminder" }, null, { message: "refused: " + why }, "failed");
+            console.error(`[pledge-reminder] ${p.id} failed for good: ${why}`);
+          } else {
+            await run(`UPDATE pledges SET reminder_error=?, next_reminder_at=NOW() + INTERVAL '1 day', updated_at=NOW() WHERE id=?`, [why, p.id]);
+          }
+          continue;
+        }
+        if (p.reminder_error) await run(`UPDATE pledges SET reminder_error=NULL WHERE id=?`, [p.id]);
         await run(
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
           ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",

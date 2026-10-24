@@ -309,7 +309,12 @@ async function seed() {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
     }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
     await page.goto(`${APP}/donors/d_hf1`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(2800);
+    // FIX-48: wait for what is measured, not a fixed 2.8s. On the browser
+    // shard (every browser suite at once) 2.8s was sometimes not enough, and
+    // on a quick machine it was 2.8s wasted.
+    await page.waitForSelector('[data-testid="dp-right-rail"]', { timeout: 30000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="dp-main-column"]', { timeout: 30000 }).catch(() => {});
+    await page.waitForSelector('.dph-actions button', { timeout: 30000 }).catch(() => {});
 
     const geom = await page.evaluate(() => {
       const rail = document.querySelector('[data-testid="dp-right-rail"]');
@@ -381,7 +386,7 @@ async function seed() {
       await p2.waitForTimeout(150);
     }
     ok("§1b while the record's read is out, the gifts tab shows no count rather than 0", !early.includes("0"), early);
-    const settled = await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 8000 }).catch(() => null);
+    const settled = await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 20000 }).catch(() => null);
     ok("§1b after a failed first read, the record recovers by itself: Gifts & pledges 1", settled === "1" && held >= 2, { settled, held });
     await ctx2.close();
     // §8 FIX-45 — donor search filters as you type. The server's answer is
@@ -405,10 +410,12 @@ async function seed() {
     const before = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
     ok("§8 both donors are listed before she types", before.ash && before.yar, before);
     await page8.locator("input.donors-search").first().pressSequentially("Yarrow", { delay: 0 });
-    await page8.waitForTimeout(800);
+    // Within 1.5s of typing, while the server's answer is held for 3s.
+    await page8.waitForFunction(() => !document.body.innerText.includes("Quillon Ashgrove") && document.body.innerText.includes("Verity Yarrowdale"), null, { timeout: 1500 }).catch(() => {});
     const shown = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
     ok("§8 the list narrows as she types, before the server answers", shown.yar && !shown.ash, shown);
-    await page8.waitForTimeout(3500);
+    await page8.waitForResponse(r => /\/donors\?.*search=/.test(r.url()), { timeout: 20000 }).catch(() => {});
+    await page8.waitForTimeout(300);
     const settled8 = await page8.evaluate(() => ({ ash: document.body.innerText.includes("Quillon Ashgrove"), yar: document.body.innerText.includes("Verity Yarrowdale") }));
     ok("§8 …and the server's answer agrees when it lands", settled8.yar && !settled8.ash, settled8);
     ok("§8 the search request really was held back (the test can see it)", held8 > 0, held8);
@@ -445,11 +452,14 @@ async function seed() {
       [ORG, civilPlusDays(-400), `ff_${ORG}`]);
     await q(`UPDATE donors SET total_giving=1500, gift_count=1, last_gift_date=$2, last_gift_amount=1500 WHERE id='d_hf1c' AND org_id=$1`, [ORG, civilPlusDays(-400)]);
     await page9.locator('[data-nav-id="dashboard"]:visible').first().click();
-    await page9.waitForTimeout(1200);
+    await page9.waitForFunction(() => !document.querySelector("input.donors-search"), null, { timeout: 15000 }).catch(() => {});
     await page9.locator('[data-nav-id="donors"]:visible').first().click();
     await page9.waitForSelector("input.donors-search", { timeout: 20000 }).catch(() => {});
     await reengage();
-    await page9.waitForTimeout(1500);
+    await page9.waitForFunction(() => {
+      const el = [...document.querySelectorAll(".reEngage-row")].find(r => r.innerText.includes("Odalys Fenwright"));
+      return el && /\$1,500/.test(el.innerText);
+    }, null, { timeout: 15000 }).catch(() => {});
     const row1 = await odalys();
     ok("§9 back on Re-engage, the row carries the gift the profile shows ($1,500), not $0", !!row1 && /\$1,500/.test(row1) && !/no gift on file/.test(row1), row1);
     await ctx9.close();

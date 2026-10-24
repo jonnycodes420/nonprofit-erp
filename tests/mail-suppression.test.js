@@ -23,7 +23,7 @@
 //
 // Verify-first: committed RED against the pre-BUILD-58 server.
 
-const { ok, summary, api, q, closeDb, BASE, SINK_PORT } = require("./helpers");
+const { ok, summary, api, q, closeDb, BASE, SINK_PORT, login } = require("./helpers");
 const crypto = require("crypto");
 const http = require("http");
 const fs = require("fs");
@@ -31,6 +31,7 @@ const path = require("path");
 const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
+const { testNow } = require("./clock");
 const today = () => new Date().toISOString().slice(0, 10);
 
 // Capture sink on :5602 (the server's RESEND_BASE_URL). `mode` can be flipped
@@ -44,6 +45,8 @@ function startSink(port = SINK_PORT) {
       let parsed = {}; try { parsed = JSON.parse(b); } catch {}
       res.setHeader("Content-Type", "application/json");
       if (state.mode === "fail") { res.statusCode = 500; res.end(JSON.stringify({ error: "provider_down" })); return; }
+      // FIX-48: Resend's own shape for a message it will never take.
+      if (state.mode === "refuse") { res.statusCode = 422; res.end(JSON.stringify({ statusCode: 422, name: "validation_error", message: "Invalid `to` field: the address is not deliverable" })); return; }
       state.captured.push(parsed);
       res.end(JSON.stringify({ id: "sunk_" + state.captured.length }));
     });
@@ -448,6 +451,134 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     await fetch(BASE + "/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: demoAdmin }) });
     await settle();
     ok("§9c …but its login still gets a password reset", sentTo(demoAdmin) === 1, { n: sentTo(demoAdmin) });
+  }
+
+  // ── §10 FIX-48 · A REFUSED PLEDGE REMINDER IS FAILED ONCE, NEVER RETRIED ──
+  // A reminder Resend refused never advanced its step, so the hourly sweep
+  // sent it again every hour, forever. Now one refusal marks it failed with
+  // its reason, the send log shows it, and the next sweep does not try it. A
+  // hard-bounced address is never tried at all. An outage still retries, a
+  // day later. Red on main: the second sweep reaches the provider again and
+  // the pledge stays due.
+  console.log("\n§10 FIX-48: a refused pledge reminder is failed once and never retried");
+  {
+    const pledgeOf = async id => (await q("SELECT to_jsonb(p) AS j FROM pledges p WHERE id=$1", [id]))[0].j;
+    const mkPledge = async (donorId) => {
+      const id = "pl_f48_" + uniq();
+      await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,first_overdue_at,next_reminder_at)
+               VALUES ($1,$2,$3,250,'2026-01-15','open',NOW() - INTERVAL '2 days',NOW() - INTERVAL '1 minute')`, [id, m1Org, donorId]);
+      return id;
+    };
+    const sweep = () => api("POST", "/pledges/process-reminders", m1Tok, {});
+    // The sweep is global: only THIS run's pledges may be due (an earlier
+    // run's §10 fixtures in their own orgs would count as attempts here).
+    await q("UPDATE pledges SET next_reminder_at=NULL WHERE org_id=$1 OR id LIKE 'pl_f48_%'", [m1Org]);
+
+    // §10a Resend refuses (422)
+    const rEmail = `f48-refused-${uniq()}@test.local`;
+    const rDonor = (await api("POST", "/donors", m1Tok, { name: "Rae Refused", email: rEmail })).body.id;
+    const rPledge = await mkPledge(rDonor);
+    state.mode = "refuse";
+    const att0 = state.attempts;
+    await sweep();
+    const att1 = state.attempts;
+    const p1 = await pledgeOf(rPledge);
+    ok("§10a the sweep tried the reminder once", att1 - att0 === 1, { tries: att1 - att0 });
+    ok("§10a …and marked it failed with Resend's reason, never due again",
+      !!p1.reminder_failed_at && /not deliverable/.test(p1.reminder_error || "") && p1.next_reminder_at === null && p1.reminder_step === 0, p1);
+    const logged = await q(`SELECT status, error FROM email_log WHERE org_id=$1 AND status='failed' AND error LIKE '%not deliverable%'`, [m1Org]);
+    ok("§10a the send log shows it as failed, with the reason", logged.length === 1, logged);
+    await sweep(); await sweep();
+    ok("§10a the next sweeps do not try it again", state.attempts === att1, { more: state.attempts - att1 });
+
+    // §10b a hard bounce is never sent at all
+    state.mode = "ok";
+    const bEmail = `f48-bounced-${uniq()}@test.local`;
+    const bDonor = (await api("POST", "/donors", m1Tok, { name: "Bo Bounced", email: bEmail })).body.id;
+    await q("UPDATE donors SET email_unreachable=true WHERE id=$1", [bDonor]);
+    const bPledge = await mkPledge(bDonor);
+    const att2 = state.attempts;
+    await sweep();
+    const p2 = await pledgeOf(bPledge);
+    ok("§10b a hard-bounced address: failed with its reason, nothing reached the provider",
+      state.attempts === att2 && !!p2.reminder_failed_at && p2.reminder_error === "bounced" && p2.next_reminder_at === null, { tries: state.attempts - att2, p2 });
+    const bLog = await q(`SELECT status FROM email_log WHERE org_id=$1 AND status='failed' AND error LIKE '%bounced%'`, [m1Org]);
+    ok("§10b …and the send log says so", bLog.length === 1, bLog);
+    await sweep();
+    ok("§10b …and it is never tried again", state.attempts === att2, { tries: state.attempts - att2 });
+
+    // §10c an outage is not a refusal: it waits a day and is tried again
+    state.mode = "fail";
+    const oEmail = `f48-outage-${uniq()}@test.local`;
+    const oDonor = (await api("POST", "/donors", m1Tok, { name: "Oz Outage", email: oEmail })).body.id;
+    const oPledge = await mkPledge(oDonor);
+    await sweep();
+    const p3 = await pledgeOf(oPledge);
+    const [{ later }] = await q("SELECT next_reminder_at > NOW() + INTERVAL '20 hours' AS later FROM pledges WHERE id=$1", [oPledge]);
+    ok("§10c an outage is not marked failed and is tried again a day later, not next hour",
+      !p3.reminder_failed_at && later === true, p3);
+    state.mode = "ok";
+  }
+
+  // ── §11 FIX-48 · STAFF, DONOR AND BILLING MAIL, EACH ITS OWN SWITCH ───────
+  // Super-admin, per org, audit-logged. Staff mail off: Steward sends the
+  // org's team nothing automatic, while the org's own donor mail still goes and
+  // sign-in mail always does. Red on main: the route does not exist (404) and
+  // the digest still reaches the admin.
+  console.log("\n§11 FIX-48: the three mail switches");
+  {
+    const MP = require("../mailPolicy");
+    const sentTo = addr => to(addr).length;
+    // Weeks §9 never sent, so a digest that does not arrive was refused, not deduplicated.
+    const mondayAgo = weeks => (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeks); return d.toISOString().slice(0, 10); })();
+    const supEmail = `f48-super-${uniq()}@test.local`;
+    await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgName: "F48 HQ " + uniq(), userName: "F48 Super", email: supEmail, password: "loadtest1234" }) });
+    await q("UPDATE users SET is_super_admin=true WHERE email=$1", [supEmail]);
+    const supTok = await login(supEmail);
+    const donorAddr = `f48-donor-${uniq()}@test.local`;
+    await api("POST", "/donors", m1Tok, { name: "Dot Donor", email: donorAddr });
+
+    state.captured.length = 0;
+    const off = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { staff: false });
+    ok("§11a a super-admin turns Staff mail off; donor and billing stay on",
+      off.status === 200 && off.body?.switches?.staff === false && off.body.switches.donor === true && off.body.switches.billing === true, { s: off.status, b: off.body?.switches });
+    const [row] = await q("SELECT staff_mail_enabled, emails_enabled, billing_mail_enabled FROM orgs WHERE id=$1", [m1Org]);
+    ok("§11a …saved on the org", row && row.staff_mail_enabled === false && row.emails_enabled === true && row.billing_mail_enabled === true, row);
+    const [aud] = await q(`SELECT user_name, action, before_fields, after_fields FROM fin_audit_log
+                             WHERE org_id=$1 AND request_path LIKE '%/mail-switches' ORDER BY created_at DESC LIMIT 1`, [m1Org]);
+    ok("§11a …and audit-logged in that org's log, staff mail on to off",
+      !!aud && aud.before_fields?.staff_mail === true && aud.after_fields?.staff_mail === false, aud);
+    const notMine = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, m1Tok, { staff: true });
+    ok("§11a an org admin cannot flip it", notMine.status === 403 || notMine.status === 404, { s: notMine.status });
+
+    await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: mondayAgo(1) });
+    const camp = await api("POST", "/campaigns", m1Tok, { name: "F48 " + uniq(), subject: "F48", body: "Hi", audience: "all" });
+    await api("POST", `/campaigns/${camp.body?.id || camp.body?.campaign?.id}/send`, m1Tok, {});
+    await settle(2500);
+    ok("§11b with Staff mail off the digest does not reach the admin", sentTo(m1Admin) === 0, { n: sentTo(m1Admin) });
+    ok("§11b …and the org's own campaign still reaches its donor", sentTo(donorAddr) === 1, { n: sentTo(donorAddr) });
+    await fetch(BASE + "/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: m1Admin }) });
+    await settle();
+    ok("§11b …and sign-in mail still goes", sentTo(m1Admin) === 1, { n: sentTo(m1Admin) });
+
+    // Staff on, donor off: the switches are independent both ways.
+    state.captured.length = 0;
+    const flip = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { staff: true, donor: false });
+    await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: mondayAgo(2) });
+    const camp2 = await api("POST", "/campaigns", m1Tok, { name: "F48b " + uniq(), subject: "F48b", body: "Hi", audience: "all" });
+    await api("POST", `/campaigns/${camp2.body?.id || camp2.body?.campaign?.id}/send`, m1Tok, {});
+    await settle(2500);
+    ok("§11c Staff on and Donor off: the digest goes, the campaign does not",
+      flip.status === 200 && sentTo(m1Admin) >= 1 && sentTo(donorAddr) === 0, { s: flip.status, admin: sentTo(m1Admin), donor: sentTo(donorAddr) });
+
+    ok("§11d Billing off refuses billing mail; sign-in mail has no switch",
+      MP.orgMailDecision({ id: "x", billing_mail_enabled: false, onboarded_at: new Date(testNow()) }, "billing").reason === "billing_mail_off"
+      && MP.orgMailDecision({ id: "x", billing_mail_enabled: false, staff_mail_enabled: false, emails_enabled: false }, "account").send === true, null);
+    ok("§11d a staff switch never set follows the donor switch, as staff mail always did",
+      MP.orgMailDecision({ id: "x", emails_enabled: false, onboarded_at: new Date(testNow()) }, "staff").reason === "org_emails_disabled"
+      && MP.orgMailDecision({ id: "x", emails_enabled: true, onboarded_at: new Date(testNow()) }, "staff").send === true, null);
+    await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { donor: true });
   }
 
   sink.srv.close();

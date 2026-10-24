@@ -426,6 +426,11 @@ function auditTrail(opts = {}) {
     // reading it early can never disclose it.
     const pending = (async () => {
       if (!mutating || method === "POST") return null;   // a create has no before
+      // FIX-48: a test-boot-only stall (server.js's testMode switch), so a suite can prove the handler waits
+      // for this read (a slow CI runner did it for real: the edit landed first
+      // and "before" already held the new amount).
+      const stall = (process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1") && req.get && req.get("x-test-audit-stall") === "1";
+      if (stall) await new Promise(r => setTimeout(r, 400));
       const tables = await snapshottableTables();
       // WHICH SEGMENT IS THE ID. Read from the right, because `/gifts/:id`,
       // `/finance/funds/:id` and `/users/:id/role` all put the resource
@@ -597,7 +602,12 @@ function auditTrail(opts = {}) {
     };
 
     res.on("finish", () => { finish(); });
-    auditContext.run({ req }, next);
+    // FIX-48: the handler runs only once the before-snapshot is read. It was
+    // read alongside the handler, and when the handler's UPDATE won the race
+    // the row's "before" was the row after. A create (or a GET) has no
+    // snapshot, so `pending` is already settled and this costs nothing there.
+    if (mutating && method !== "POST") pending.then(() => auditContext.run({ req }, next));
+    else auditContext.run({ req }, next);
   };
 }
 

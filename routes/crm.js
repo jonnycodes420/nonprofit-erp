@@ -25897,7 +25897,7 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
     "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]
   );
   // FIX-15 Part 3: the provider's answer, not an assumed "Sent".
-  const sent = await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
+  const { sent } = await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
   if (!sent) return res.status(502).json({ sent: false, error: "The email provider did not accept the reminder, so it was not sent. Try again in a few minutes." });
   res.json({ sent: true });
 }));

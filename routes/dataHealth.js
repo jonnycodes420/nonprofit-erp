@@ -667,9 +667,27 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
         }
       }
       // Every row set aside comes back whole.
+      // FIX-48: unless what it hung from has gone since. A soft credit set
+      // aside on a gift that was then deleted would have gone with that gift
+      // (the delete cascades), so it stays gone; re-inserting it broke the
+      // foreign key and the whole Undo answered 500.
+      // And a soft credit that comes back is sized to its gift as the gift is
+      // NOW: a gift cut from $100.10 to $40 after the merge had its credit put
+      // back at $100.10, more than the gift (numbers1-foot, 10-run CI).
+      const resized = new Set();
       for (const s of m.set_aside || []) {
-        await runTx(client, `INSERT INTO ${s.table} SELECT * FROM jsonb_populate_record(NULL::${s.table}, ?::jsonb)`, [JSON.stringify(s.row)]);
+        await client.query("SAVEPOINT dh_aside");
+        try {
+          await runTx(client, `INSERT INTO ${s.table} SELECT * FROM jsonb_populate_record(NULL::${s.table}, ?::jsonb)`, [JSON.stringify(s.row)]);
+          await client.query("RELEASE SAVEPOINT dh_aside");
+          if (s.table === "gift_soft_credits" && s.row && s.row.gift_id) resized.add(s.row.gift_id);
+        } catch (e) {
+          if (e.code !== "23503") throw e;
+          await client.query("ROLLBACK TO SAVEPOINT dh_aside");
+        }
       }
+      for (const giftId of resized)
+        for (const sql of require("../donorSummary").SOFT_CREDIT_RESIZE) await client.query(sql, [giftId, orgId]);
       if (m.note_id) await runTx(client, "DELETE FROM interactions WHERE id=? AND org_id=?", [m.note_id, orgId]);
       // Gifts given to the kept person since the merge stay with them, and a
       // gift edited, split or refunded since changes what the snapshot says.

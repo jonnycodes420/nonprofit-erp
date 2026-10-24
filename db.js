@@ -2280,6 +2280,10 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS installment_count INTEGER`);
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS is_shell BOOLEAN DEFAULT false`);
+  // FIX-48: a reminder refused for good is marked here once, with its reason,
+  // and next_reminder_at goes NULL so the hourly sweep never picks it again.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS reminder_failed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS reminder_error TEXT`);
 
   // BUILD-72 Part 3 — a donor who OVERPAYS a pledge is a good problem, and the
   // money must still appear. The old code clamped the balance to 0 and the
@@ -2433,6 +2437,15 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS is_demo_org BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE orgs ALTER COLUMN is_demo_org SET DEFAULT false`);
   await pool.query(`UPDATE orgs SET is_demo_org = false WHERE is_demo_org IS NULL`);
+
+  // FIX-48: THE THREE MAIL SWITCHES, per org, in super-admin. Donor mail is
+  // emails_enabled above (the incident's lever, unchanged). Staff mail had no
+  // switch of its own and followed emails_enabled, so `staff_mail_enabled`
+  // NULL still means exactly that, and no org's mail changes on deploy; the
+  // first time a super-admin sets it, it is its own switch. Billing mail never
+  // read emails_enabled, so it starts ON. Sign-in mail has no switch: it always goes.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS staff_mail_enabled BOOLEAN`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mail_enabled BOOLEAN NOT NULL DEFAULT true`);
 
   // ── MAIL-1: ONBOARDED, AND THE ONBOARDING SEQUENCE OFF FOR GOOD ─────────
   // An org is onboarded once a committed import wrote at least one real

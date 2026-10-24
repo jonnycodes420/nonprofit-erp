@@ -107,21 +107,42 @@ const billingBeforeOnboarding = () => process.env.MAIL_BILLING_BEFORE_ONBOARDING
 
 // The decision for one org and one family. `org` is the orgs row (or null
 // when it could not be read: refuse). Pure, so the suite can prove each arm.
-function orgMailDecision(org, category) {
+// FIX-48 · THE THREE SWITCHES (super-admin, per org). Donor mail is
+// `emails_enabled`. Staff mail is `staff_mail_enabled`: false refuses every
+// automatic staff send, true sends whatever the donor switch says, and NULL
+// (never set) follows emails_enabled as staff mail always did. Billing mail is
+// `billing_mail_enabled`. Account (sign-in) mail has no switch. `kind` lets a
+// staff send a person asked for just now (STAFF_ON_REQUEST, "Send me a test")
+// go with automatic staff mail off: the switch is about what Steward sends on
+// its own.
+const STAFF_ON_REQUEST = new Set(["campaign_test"]);
+function orgMailDecision(org, category, kind = null) {
   if (category === CATEGORY.ONBOARDING) return { send: false, reason: "onboarding_sequence_off" };
   if (category === CATEGORY.JONATHAN) return { send: true, reason: null };
   if (!org) return { send: false, reason: "org_not_found" };
   if (category === CATEGORY.ACCOUNT) return { send: true, reason: null };
   if (isDemoOrg(org)) return { send: false, reason: "demo_org" };
   if (category === CATEGORY.BILLING) {
+    if (org.billing_mail_enabled === false) return { send: false, reason: "billing_mail_off" };
     if (NOT_BILLED_KINDS.has(org.org_kind)) return { send: false, reason: "not_a_customer" };
     if (billingBeforeOnboarding() || org.onboarded_at) return { send: true, reason: null };
     return { send: false, reason: "not_onboarded" };
   }
-  // staff and donor
-  if (org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
+  if (category === CATEGORY.STAFF) {
+    if (org.staff_mail_enabled === false && !STAFF_ON_REQUEST.has(kind)) return { send: false, reason: "staff_mail_off" };
+    if (org.staff_mail_enabled !== true && org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
+  } else if (org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
   if (waitsForOnboarding() && !org.onboarded_at) return { send: false, reason: "not_onboarded" };
   return { send: true, reason: null };
+}
+// What each switch reads as right now: staff's NULL is shown as what it does.
+function mailSwitches(org) {
+  const donor = !!org && org.emails_enabled !== false;
+  return {
+    staff: !!org && (org.staff_mail_enabled == null ? donor : org.staff_mail_enabled === true),
+    donor,
+    billing: !!org && org.billing_mail_enabled !== false,
+  };
 }
 
 // The one sentence a person reads for each refusal. No raw flags reach a screen.
@@ -133,7 +154,9 @@ const REASON_SENTENCE = {
   not_a_customer: "This organization is a demo, an internal test or a fixture, so Steward sends it no billing mail.",
   org_not_found: "This organization could not be found, so nothing was sent.",
   org_gate_unreadable: "Steward could not check this organization's email setting, so nothing was sent.",
+  staff_mail_off: "Staff mail is switched off for this organization, so Steward sends its staff nothing automatic.",
+  billing_mail_off: "Billing mail is switched off for this organization.",
 };
 
-module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding, isDemoOrg, orgSendsSql, DEMO_ORG_IDS,
+module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, mailSwitches, STAFF_ON_REQUEST, waitsForOnboarding, isDemoOrg, orgSendsSql, DEMO_ORG_IDS,
   billingBeforeOnboarding, REASON_SENTENCE, NOT_BILLED_KINDS };

@@ -69,6 +69,16 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   real donor-file import, or a super-admin's mark) and the org switch. Account and Jonathan mail always go;
   billing goes before onboarding unless `MAIL_BILLING_BEFORE_ONBOARDING=0`. Tag every new org send with
   `_stewardOrgId` and a kind, or route it through `donorSendOpts`, `notifyUserOnce` or `sendDigestEmail`.
+- **Three mail switches per org, in super-admin (FIX-48).** `POST /admin/orgs/:id/mail-switches` sets Staff
+  (`staff_mail_enabled`), Donor (`emails_enabled`, refused on a demo org) and Billing (`billing_mail_enabled`),
+  audit-logged in that org's log. Staff off: Steward sends the team nothing automatic ("Send me a test" still goes,
+  `STAFF_ON_REQUEST`). A staff switch never set (NULL) follows the donor switch, as it always did; any press writes all
+  three. Sign-in mail has no switch. A staff send asks `orgMaySendEmail(orgId, CATEGORY.STAFF)`, never the default.
+- **A refused send is failed once and never retried (FIX-48, `mailRefusal.js`).** Every "not delivered" is one of
+  three: `wait` (the org's own mail is off: not consumed, goes when it is on), `transient` (5xx, 429, network,
+  Steward's own key or From: retried, a pledge reminder a day later) or `permanent` (a 4xx about the message, a hard
+  bounce, unsubscribed, deceased, no address, the block list: marked failed with its reason, in `email_log`, never
+  tried again). Pledge reminders keep it on `pledges.reminder_failed_at`/`reminder_error`; dunning logs `dunning_skipped`.
 - **Before the real Resend key goes back on, or an org's donor mail is switched on, run
   `DATABASE_URL=<prod> node scripts/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
 - **No automated onboarding or welcome series to org staff, ever (Jonathan, 2026-10-04).** He writes and

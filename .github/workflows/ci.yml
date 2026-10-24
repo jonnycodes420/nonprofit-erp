@@ -265,7 +265,7 @@ jobs:
       # by `timeout`, and a failed or hung attempt is retried once before the
       # step fails. The job itself also has a ceiling (timeout-minutes above).
       - name: Install Playwright + Chromium
-        timeout-minutes: 14
+        timeout-minutes: 20
         run: |
           mkdir -p .playwright
           # The package.json is WRITTEN, not `npm init -y`-ed: npm derives the
@@ -284,7 +284,14 @@ jobs:
             # is NOT covered by the cache (it writes outside the workspace).
             (cd .playwright && timeout 360 npx playwright install --with-deps chromium)
           }
-          install_pw || { echo "Playwright install failed or hung; retrying once"; sleep 10; install_pw; }
+          # FIX-48: on 23 Oct the first attempt's apt-get (from --with-deps) hung
+          # on a slow mirror. `timeout` killed npx but not the sudo apt-get it
+          # had started, so the retry died at once on "Could not get lock
+          # /var/lib/dpkg/lock-frontend". apt now waits up to five minutes for
+          # that lock, and the retry first waits for the orphan to finish.
+          echo 'DPkg::Lock::Timeout "300";' | sudo tee /etc/apt/apt.conf.d/99steward-lock-wait >/dev/null
+          wait_dpkg() { for i in $(seq 1 60); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || return 0; sleep 5; done; }
+          install_pw || { echo "Playwright install failed or hung; retrying once"; wait_dpkg; install_pw; }
           node -e "console.log('playwright', require('$GITHUB_WORKSPACE/.playwright/node_modules/playwright/package.json').version)"
 
       # tests/shard.sh creates this shard's database, boots its own server on

@@ -2643,7 +2643,7 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
 const mailPolicy = require("../mailPolicy");
 async function adminMailPayload(orgId) {
   const [org] = await query(
-    `SELECT id, name, emails_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
+    `SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
             sending_domain, sending_domain_status, sending_from_email FROM orgs WHERE id=?`, [orgId]);
   if (!org) return null;
   const demo = mailPolicy.orgMailDecision(org, mailPolicy.CATEGORY.DONOR).reason === "demo_org";
@@ -2660,6 +2660,8 @@ async function adminMailPayload(orgId) {
       : String(org.onboarded_via || "").startsWith("import:") ? "Their first donor file was imported."
       : `Marked onboarded by ${org.onboarded_by_name || "a super-admin"}.`,
     donorMailOn: org.emails_enabled !== false,
+    // FIX-48: the three switches as they read now. Sign-in mail has none.
+    switches: mailPolicy.mailSwitches(org),
     demo, locked: demo,
     lockedSentence: demo ? mailPolicy.REASON_SENTENCE.demo_org + " Sign-in mail to its own logins still goes." : null,
     domain: {
@@ -2677,6 +2679,40 @@ app.get("/admin/orgs/:id/mail", requireAuth, requireSuperAdmin, wrap(async (req,
   const out = await adminMailPayload(req.params.id);
   if (!out) return res.status(404).json({ error: "Org not found" });
   res.json(out);
+}));
+// FIX-48 · STAFF, DONOR AND BILLING MAIL, EACH ITS OWN SWITCH. Super-admin
+// only, like the incident switch above, and logged by the one audit write
+// (middleware/auditTrail.js) with what each switch was and became. Donor mail
+// is emails_enabled, so turning it on for an org still marked demo is refused
+// exactly as /email-switch refuses it. Setting any switch writes all three as
+// they read now, so staff mail stops following donor mail from the first
+// click. Sign-in mail is not a switch: it always goes.
+app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const [org] = await query(`SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, org_kind FROM orgs WHERE id=?`, [req.params.id]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const body = req.body || {};
+  const asked = ["staff", "donor", "billing"].filter(k => body[k] !== undefined);
+  if (!asked.length) return res.status(400).json({ error: "staff, donor and/or billing (boolean) required" });
+  for (const k of asked) if (typeof body[k] !== "boolean") return res.status(400).json({ error: `${k} must be a boolean` });
+  const before = mailPolicy.mailSwitches(org);
+  const after = { ...before };
+  for (const k of asked) after[k] = body[k];
+  if (after.donor && !before.donor && org.is_demo_org === true) {
+    return res.status(409).json({ error: "This org is still marked as a demo org. Clear the demo mark first if its data is real now." });
+  }
+  await run(`UPDATE orgs SET staff_mail_enabled=?, emails_enabled=?, billing_mail_enabled=? WHERE id=?`,
+    [after.staff, after.donor, after.billing, org.id]);
+  clearOrgMailGate(org.id);   // takes effect now, not in five seconds
+  // Filed in THAT org's log (as CLIENT-SAFE-1's privacy switch is), with each
+  // switch before and after, so the diff names exactly what moved.
+  const named = s => ({ staff_mail: s.staff, donor_mail: s.donor, billing_mail: s.billing });
+  req.audit.forOrg(org.id);
+  req.audit.entity("org setting", org.id, `Mail switches for ${org.name}`);
+  req.audit.action("changed mail switches");
+  req.audit.before(named(before));
+  req.audit.after(named(after));
+  console.log(`[mail-switches] ${org.id} ${JSON.stringify(after)} by ${req.user.email || req.user.userId}`);
+  res.json(await adminMailPayload(org.id));
 }));
 // By hand, for an org whose donors came in some other way. Never on a demo org.
 app.post("/admin/orgs/:id/mark-onboarded", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
