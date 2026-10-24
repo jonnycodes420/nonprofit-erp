@@ -11,6 +11,7 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 
 const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
+const mailRefusal = require("../mailRefusal"); // FIX-48: refused, waiting or an outage
 // FIX-46: what a reminder calls somebody (shared/greeting.js), loaded once.
 let GREET = null;
 const GREET_READY = import("../shared/greeting.js").then(m => { GREET = m; return m; });
@@ -272,7 +273,7 @@ const ORG_MAIL_GATE_TTL_MS = 5000;
 // MAIL-1: the answer is now mailPolicy.js's, per family of mail. Every caller
 // that passes no category is asking about staff or donor mail, which is what
 // each of them sends; the client proxy passes the family of the kind it holds.
-async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
+async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR, kind = null) {
   if (category === mailPolicy.CATEGORY.ONBOARDING || category === mailPolicy.CATEGORY.JONATHAN) {
     return mailPolicy.orgMailDecision(null, category);
   }
@@ -283,7 +284,7 @@ async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
   else {
     try {
       [org] = await query(
-        "SELECT id, name, emails_enabled, is_demo_org, onboarded_at, org_kind FROM orgs WHERE id = ?", [orgId]);
+        "SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, onboarded_at, org_kind FROM orgs WHERE id = ?", [orgId]);
       org = org || null;
       orgMailGateCache.set(orgId, { at: Date.now(), org });
     } catch (err) {
@@ -294,7 +295,7 @@ async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
       return { send: false, reason: "org_gate_unreadable" };
     }
   }
-  return mailPolicy.orgMailDecision(org, category);
+  return mailPolicy.orgMailDecision(org, category, kind);
 }
 
 // ── FIX-7 Part 6.2 · WHAT WOULD HAVE BEEN SENT, AND TO WHOM ───────────────
@@ -482,7 +483,11 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
       if (sendErr) {
         // W-4 log honesty: a provider rejection is a FAILED send — callers
         // must not log dunning_sent for it. refused stays null (retryable).
+        // FIX-48: unless the provider refused THIS message for good (a 4xx
+        // about the address or the message). That is a skipped step with its
+        // reason, never a retry on every hourly tick.
         console.error("[dunning] send error:", sendErr.message);
+        if (mailRefusal.classifyProviderError(sendErr) === "permanent") return { sent: false, refused: "provider_refused: " + mailRefusal.reasonText(sendErr) };
         return { sent: false, refused: null };
       }
     } catch (e) { console.error("[dunning] resend error:", e.message); return { sent: false, refused: null }; }
@@ -685,13 +690,16 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
     .replace(/{{give_url}}/g, giveUrl);
 }
 
+// FIX-48: returns { sent, refused, error }, not a bare boolean, so the sweep
+// can tell a person who will never get it (`refused`, the decision's reason)
+// and a message the provider refused (`error`) from an outage.
 async function sendPledgeReminderEmail(org, donor, pledgeRow) {
   await GREET_READY;
   // W-4: a reminder to give is solicitation — MARKETING in the policy.
   const decision = await donorMailDecision("pledge_reminder", donor.email, org.id);
   if (!decision.send) {
     console.log(`[pledge-reminder] skipping ${donor.email} (${decision.reason})`);
-    return false;
+    return { sent: false, refused: decision.reason, error: null };
   }
   const frontendUrl = publicAppUrl();
   const giveUrl = `${frontendUrl}/give/${org.org_slug}`;
@@ -701,15 +709,15 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = await donorFromAddress(org.id); // BUILD-64: org name in the inbox
   // FIX-15 Part 3 — the provider's answer, not an assumed success.
-  if (!process.env.RESEND_API_KEY) return false;
+  if (!process.env.RESEND_API_KEY) return { sent: false, refused: null, error: { name: "no_provider", message: "No mail provider is configured" } };
   try {
     const { error: sendErr } = await resend.emails.send({
       ...(await donorSendOpts(org.id, donor.email, "campaign")),
       to: donor.email, subject, html: bodyHtml,
     });
-    if (sendErr) { console.error("[pledge-reminder] send error:", sendErr.message); return false; }
-  } catch (e) { console.error("[pledge-reminder] resend error:", e.message); return false; }
-  return true;
+    if (sendErr) { console.error("[pledge-reminder] send error:", sendErr.message); return { sent: false, refused: null, error: sendErr }; }
+  } catch (e) { console.error("[pledge-reminder] resend error:", e.message); return { sent: false, refused: null, error: { name: "network", message: e.message } }; }
+  return { sent: true, refused: null, error: null };
 }
 
 // ── The seven-day reminder ─────────────────────────────────────────────────
