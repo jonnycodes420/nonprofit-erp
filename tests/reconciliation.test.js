@@ -162,6 +162,24 @@ const healthRecon = async () => (await api("GET", "/health")).body.reconciliatio
   ok("…and /health surfaces accountsErrored so a blind guard is visible", h.accountsErrored >= 1, h);
   await q(`DELETE FROM orgs WHERE id='org_recon_blind'`, []).catch(() => {});
 
+  // ── Scenario 8 — FIX-48: a LOST dispute reversed its gift on purpose. Stripe
+  //     still lists the charge as succeeded, nothing refunded. That is not a
+  //     charge Steward failed to record, and it must not read unclean. ───────
+  await q(`DELETE FROM dispute_reversals WHERE org_id=$1`, [ORG]);
+  await q(`INSERT INTO dispute_reversals (id,org_id,stripe_payment_id,dispute_id,gift_snapshot) VALUES ('drev_recon',$1,'pi_lost','dp_recon','{}'::jsonb)`, [ORG]);
+  mockCharges = [
+    { id: "ch_recon_lost", status: "succeeded", amount: 4000, amount_refunded: 0, disputed: true, payment_intent: "pi_lost", created: nowSec() - 30 * 60 },
+    { id: "ch_recon_lost2", status: "succeeded", amount: 500, amount_refunded: 0, disputed: true, payment_intent: "pi_open_dispute", created: nowSec() - 30 * 60 },
+  ];
+  r = await runReconcile(token);
+  const lost = (r.body.divergences || []).filter(d => d.kind === "charge_without_gift").map(d => d.paymentIntent);
+  ok("Scenario 8: a charge whose gift a lost dispute reversed is accounted for, not unrecorded",
+    !lost.includes("pi_lost"), r.body.divergences);
+  ok("…while a disputed charge with no gift and no reversal on file still is (the guard can still fail)",
+    lost.includes("pi_open_dispute") && r.body.unrecordedCharges === 1, r.body);
+  await q(`DELETE FROM dispute_reversals WHERE org_id=$1`, [ORG]);
+  mockCharges = [];
+
   if (smock) smock.close();
   await closeDb();
   summary();

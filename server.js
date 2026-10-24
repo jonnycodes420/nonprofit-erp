@@ -8340,6 +8340,16 @@ async function reconcileStripeVsGifts() {
       if (!piId) continue;                          // donations always ride a PaymentIntent
       const giftRows = await query(
         "SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+      // FIX-48: a LOST dispute reverses the gift on purpose (the money went
+      // back to the card) but Stripe still lists the charge as succeeded with
+      // nothing refunded, so every sweep for the next 72 hours called it a
+      // charge with no gift and /health read reconciliation.unclean. The
+      // reversal is on file (dispute_reversals, the snapshot an appeal
+      // restores from), so that charge is accounted for.
+      if (!giftRows.length && ch.disputed) {
+        const [rev] = await query("SELECT 1 AS x FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+        if (rev) continue;
+      }
       if (!giftRows.length) {
         unrecorded++;
         const ageMin = Math.round((nowSec - (ch.created || nowSec)) / 60);
