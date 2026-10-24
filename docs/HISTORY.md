@@ -28,7 +28,7 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 ## FIX-48 · Leftovers from 23 Oct, flaky tests first (2026-10-23)
 
 - **numbers1-foot's CI 500 was not a race.** A merge set a soft credit aside, its gift was deleted, and Undo re-inserted the credit into a missing gift (foreign key). It hung on random gift ids sorting a certain way, so the same seed passed locally. Undo now skips a set-aside row whose parent is gone, and resizes a restored soft credit to its gift as it is now (the 10-run CI job found that second defect: credit $100.10 on a $40 gift).
-- **fix11-audit-trail's stale before was a real race.** The audit middleware read the before-snapshot alongside the handler; a PUT/PATCH/DELETE now waits for that read. A test-boot-only `x-test-audit-stall-ms` header forces the race.
+- **fix11-audit-trail's stale before was a real race.** The audit middleware read the before-snapshot alongside the handler; a PUT/PATCH/DELETE now waits for that read. A test-boot-only `x-test-audit-stall: 1` header (a fixed 400ms) forces the race.
 - **hotfix1-profile** read the page after fixed sleeps (2.8s and others); it waits on what it measures now (15s to 9s). **scale1-queue §1** held 120 enqueues 1.5s out, a race with a slow runner; held an hour, then released at once.
 - **Playwright install:** a hung `apt-get` (from `--with-deps`) kept the dpkg lock after `timeout` killed npx, so the retry died at once. apt now waits on the lock and the retry waits for the orphan.
 - **reconciliation.unclean:** a lost dispute reverses its gift on purpose, but Stripe still lists the charge as succeeded, so the sweep counted it unrecorded for 72 hours. A charge with a `dispute_reversals` row is accounted for.

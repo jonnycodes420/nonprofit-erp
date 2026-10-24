@@ -429,8 +429,8 @@ function auditTrail(opts = {}) {
       // FIX-48: a test-boot-only stall (server.js's testMode switch), so a suite can prove the handler waits
       // for this read (a slow CI runner did it for real: the edit landed first
       // and "before" already held the new amount).
-      const stall = (process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1") && Number(req.get && req.get("x-test-audit-stall-ms"));
-      if (stall > 0) await new Promise(r => setTimeout(r, Math.min(stall, 2000)));
+      const stall = (process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1") && req.get && req.get("x-test-audit-stall") === "1";
+      if (stall) await new Promise(r => setTimeout(r, 400));
       const tables = await snapshottableTables();
       // WHICH SEGMENT IS THE ID. Read from the right, because `/gifts/:id`,
       // `/finance/funds/:id` and `/users/:id/role` all put the resource

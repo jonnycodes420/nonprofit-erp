@@ -226,7 +226,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
   // FIX-48: the before-read is stalled 400ms (test boot only), which is what a
   // slow CI runner did for real. The edit must wait for it, or "before" holds
   // the $90,000 the edit just wrote.
-  const edit = await mfetch("PUT", `/gifts/${giftId}`, token, { amount: 90000 }, { "x-test-audit-stall-ms": "400" });
+  const edit = await mfetch("PUT", `/gifts/${giftId}`, token, { amount: 90000 }, { "x-test-audit-stall": "1" });
   ok("§2 the gift was edited to $90,000", edit.status < 300, { status: edit.status });
   const eRow = await waitForRow(ORG_A, r => r.entity_type === "gift" && r.action === "updated",
     "§2 editing a gift leaves a row");
