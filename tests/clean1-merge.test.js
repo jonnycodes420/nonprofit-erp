@@ -281,6 +281,17 @@ async function reset() {
   const again = await fetch(BASE + `/data-health/merges/${mj.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
   ok("a second undo is refused", again.status === 409);
 
+  // §4c FIX-48 (numbers1-foot, 10-run CI): merge, shrink the gift whose soft
+  // credit was set aside, then undo. The credit comes back no bigger than its
+  // gift now is (the rule every edit already keeps).
+  const rc = await fetch(BASE + "/data-health/merge", { method: "POST", headers: H, body: JSON.stringify({ keptId: A, mergedId: B }) });
+  const rcj = await rc.json().catch(() => ({}));
+  const shrink = await fetch(BASE + "/gifts/g_c1m_a1", { method: "PUT", headers: H, body: JSON.stringify({ amount: 40 }) });
+  const undo3 = await fetch(BASE + `/data-health/merges/${rcj.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
+  const [sc3] = await q(`SELECT sc.amount::text AS a, g.amount::text AS g FROM gift_soft_credits sc JOIN gifts g ON g.id=sc.gift_id WHERE sc.id='sc_c1m'`);
+  ok("a merge, its set-aside credit's gift cut to $40, then Undo: the credit is back at no more than $40",
+    rc.status === 201 && shrink.status === 200 && undo3.status === 200 && !!sc3 && Number(sc3.a) <= Number(sc3.g), { status: [rc.status, shrink.status, undo3.status], sc3 });
+
   // §4b FIX-48 (numbers1-foot's CI 500): merge again, delete the gift whose
   // soft credit was set aside, then undo. The credit went with its gift, so
   // it stays gone, and the Undo still answers 200.
