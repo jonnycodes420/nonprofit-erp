@@ -62,7 +62,7 @@ const sink = http.createServer((req, res) => {
 });
 
 // ── THE STAND-IN MODEL: her words, read into steps (no ids, no amounts it computed)
-const step = o => ({ kind: "other", who: "", target: "", amount_words: "", when_words: "", how: "", words: "", draft_subject: "", draft_body: "", ...o });
+const step = o => ({ kind: "other", who: "", target: "", amount_words: "", when_words: "", how: "", words: "", ...o });
 const READS = [
   [/^Undine went to the Harbor Run/, { steps: [
     step({ kind: "came_to_event", who: "Undine", target: "Harbor Run", words: "Undine went to the Harbor Run event" }),

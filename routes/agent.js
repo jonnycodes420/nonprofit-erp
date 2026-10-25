@@ -1825,49 +1825,9 @@ async function agentAnswerRead(A, orgId, read, named) {
   return out;
 }
 
-// WHETHER DRAFTING IS ON, AND IF NOT, WHY AND WHO CAN TURN IT ON. A read: the
-// room draws its drafting line from this, and a GET changes nothing.
-app.get("/agent/status", requireAuth, wrap(async (req, res) => {
-  const A = await agentShapeMod();
-  const orgId = req.user.orgId;
-  const [org] = await query("SELECT ai_enabled, agent_paused_at FROM orgs WHERE id=?", [orgId]);
-  if (!org) return res.status(404).json({ error: "Not found" });
-  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
-  const admins = (await query(
-    `SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 12`,
-    [orgId])).map(u => u.name || u.email).filter(Boolean);
-  const configured = !!process.env.ANTHROPIC_API_KEY;
-  const enabled = org.ai_enabled !== false;
-  const isAdmin = !!(me && me.role === "admin");
-  res.json({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins,
-    ...A.draftingState({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins }) });
-}));
-
-// ── AGENTS-1 · THE SIX, AS DATA ────────────────────────────────────────────
-// The Ask tab's cards, the badges and the Guardrails list all read THIS. The
-// client holds no persona list of its own, so a seventh persona is one entry
-// in shared/agentPersonas.js and nothing else. A read: it writes nothing and
-// touches no org row, but it stays behind requireAuth because it describes
-// what this product's agent can do.
-app.get("/agent/personas", requireAuth, wrap(async (req, res) => {
-  const PS = await agentPersonasMod();
-  res.json({
-    personas: PS.PERSONAS.map(p => ({ id: p.id, name: p.name, tagline: p.tagline,
-      description: p.description, tools: p.tools, suggestedTriggers: p.suggestedTriggers,
-      guardrailNote: p.guardrailNote })),
-    // Said once, here, so the Guardrails tab states the real mechanisms and
-    // nothing else: no thresholds, no auto-pause, no managed no-contact list.
-    guardrails: [
-      "Every instruction shows you its plan before anything runs, and nothing runs until you confirm it.",
-      "Drafts are drafts. Steward writes them into your queue and you press send.",
-      "Every write the agent makes is logged with the instruction that caused it, and can be undone for thirty days.",
-      "Anybody the record marks deceased or do-not-contact is removed before the agent sees them.",
-      "No agent can move money. There is no tool for it, not a setting that turns it off.",
-    ],
-    sentence: "Six agents, one engine. Each one can do less than the engine can, never more.",
-  });
-}));
-
+// AGENT-5: /agent/status, /agent/personas and /agent/activity were the Agent
+// page's own reads; the page is gone and so are they (Settings > Atlas reads
+// /atlas/status, and Atlas's activity is atlas_actions).
 // ── ROUTES ─────────────────────────────────────────────────────────────────
 // THE PLAN. Writes an instruction and a plan; runs NOTHING.
 // ═══ HELP-1 · ASK STEWARD, THE QUESTION LOG, AND ASK A PERSON ══════════════
@@ -2346,37 +2306,6 @@ app.post("/agent/pause-all", requireAuth, wrap(async (req, res) => {
 app.post("/agent/resume-all", requireAuth, wrap(async (req, res) => {
   await run("UPDATE orgs SET agent_paused_at=NULL, agent_paused_by=NULL WHERE id=?", [req.user.orgId]);
   res.json({ ok: true, pausedAll: false });
-}));
-
-// ── ONE ACTIVITY SCREEN ────────────────────────────────────────────────────
-// Every instruction, every run, every write with its undo. Nothing the agent
-// does is hidden from the person who asked for it.
-app.get("/agent/activity", requireAuth, wrap(async (req, res) => {
-  const A = await agentShapeMod();
-  const runs = await query(
-    `SELECT r.id, r.instruction_id, r.started_at, r.finished_at, r.status, r.read_summary,
-            r.drafted, r.sent, r.declined, r.withheld, r.withheld_reason, r.error,
-            i.text AS instruction_text, i.kind, i.persona
-       FROM agent_runs r LEFT JOIN agent_instructions i ON i.id = r.instruction_id
-      WHERE r.org_id=? ORDER BY r.started_at DESC LIMIT 50`, [req.user.orgId]);
-  const PSa = await agentPersonasMod();
-  const writes = await query(
-    `SELECT w.id, w.run_id, w.tool, w.entity_table, w.entity_id, w.cites, w.created_at,
-            w.undone_at, w.undone_by_name
-       FROM agent_writes w WHERE w.org_id=?
-      ORDER BY w.created_at DESC LIMIT 300`, [req.user.orgId]);
-  const cutoff = Date.now() - A.UNDO_DAYS * 86400000;
-  const [counts] = await query(
-    `SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM agent_drafts WHERE org_id=?`,
-    [req.user.orgId]);
-  res.json({
-    runs: runs.map(r => ({ ...r, personaName: r.persona ? PSa.getPersona(r.persona).name : null })),
-    writes: writes.map(w => ({ ...w,
-      // Undoable while it is inside the window AND has not already been undone.
-      undoable: !w.undone_at && new Date(w.created_at).getTime() >= cutoff })),
-    undoDays: A.UNDO_DAYS,
-    draftsWaiting: (counts && counts.pending) || 0,
-  });
 }));
 
 // UNDO ANY AGENT WRITE, FOR THIRTY DAYS.

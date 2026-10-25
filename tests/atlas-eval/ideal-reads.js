@@ -5,7 +5,7 @@
 // (names, places, dates, the two speeds, the notes) without a key; the real
 // model is scored in GitHub Actions.
 "use strict";
-const st = o => ({ kind: "other", who: "", target: "", amount_words: "", when_words: "", how: "", words: "", draft_subject: "", draft_body: "", ...o });
+const st = o => ({ kind: "other", who: "", target: "", amount_words: "", when_words: "", how: "", words: "", ...o });
 module.exports = {
   1: [st({ kind: "came_to_event", who: "Undine", target: "Harbor Run", words: "Undine went to the Harbor Run event" }),
     st({ kind: "gift", who: "Undine", amount_words: "$10,000", words: "She gave $10,000" }),

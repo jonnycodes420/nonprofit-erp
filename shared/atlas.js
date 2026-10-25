@@ -51,7 +51,7 @@ export const ATLAS_RULES = [
 // words, copied; the code resolves them.
 const STEP_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["kind", "who", "target", "amount_words", "when_words", "how", "words", "draft_subject", "draft_body"],
+  required: ["kind", "who", "target", "amount_words", "when_words", "how", "words"],
   properties: {
     kind: { type: "string", enum: STEP_KINDS },
     who: { type: "string", description: "The person's name exactly as she said it (\"Undine\", \"Peggy\", \"the Halvorsens\"). For her, him or them, the name it refers to. \"\" when nobody." },
@@ -60,8 +60,6 @@ const STEP_SCHEMA = {
     when_words: { type: "string", description: "When, exactly as she said it (\"in the new year\", \"after Thanksgiving\", \"yesterday\"). \"\" when she named no time." },
     how: { type: "string", description: "For log_conversation: lunch, coffee, call, meeting, visit, email. \"\" otherwise." },
     words: { type: "string", description: "Her own words for this step, copied." },
-    draft_subject: { type: "string", description: "For draft_email only: a short subject. \"\" otherwise." },
-    draft_body: { type: "string", description: "For draft_email only: the email, warm and brief, signed with no name. Use no amount, date or fact she did not say. \"\" otherwise." },
   },
 };
 export const ATLAS_TOOL = {
@@ -85,12 +83,25 @@ export const ATLAS_SYSTEM = [
   "\"Scratch that\", \"no wait\", \"actually\": they take back only the words just before them, and only when she says something in their place. A conversation she says happened (\"lunch with Margaret went well\") is still a log_conversation when \"scratch that\" follows it. Filler (\"OK yeah\", \"um\") is not a step.",
   "Someone who came by, stopped in, visited, called, emailed or met her is a log_conversation (how: visit, call, email, meeting), even in the same breath as a gift.",
   "What was said or liked in a conversation (\"he loved the tour\") belongs in that log_conversation's words, never a separate note.",
-  "\"Send it\", \"just send it\", \"don't show me\": one send_now step with the email in draft_subject and draft_body, and no draft_email beside it.",
+  "\"Send it\", \"just send it\", \"don't show me\": one send_now step, and no draft_email beside it.",
   "A meeting she wants to ask for in the email is part of draft_email (when_words is when the meeting would be). A reminder to book it is its own reminder step only if she asked for one.",
   "\"Thank her\" with nothing else is draft_email. \"Log that\" after a gift is the same gift, not a second step. \"Send her the receipt\" is send_receipt.",
   "who: a family (\"the Halvorsens\") stays as she said it. A nickname stays as she said it. A pronoun becomes the name it refers to.",
   "No em dashes.",
 ].join("\n");
+// THE EMAIL, WRITTEN ONCE THE PEOPLE ARE KNOWN. A second short call, so the
+// read stays small and fast. The model writes sentences from her words and
+// the first name; it adds no amount, date or fact she did not say.
+export const DRAFT_TOOL = {
+  name: "atlas_draft",
+  description: "Write the email she asked for.",
+  input_schema: { type: "object", additionalProperties: false, required: ["subject", "body"],
+    properties: { subject: { type: "string" }, body: { type: "string", description: "Starts \"Dear <first name>,\", 40 to 90 words, warm and plain, ends \"With gratitude,\" and no name." } } },
+};
+export const DRAFT_SYSTEM = "You write a short email for a nonprofit fundraiser to send one person. Use only what she said: no amount, date, event or fact she did not say, and no em dashes. If she asked to meet, ask for the meeting in the month given.";
+export function buildDraftPrompt({ firstName, words, month }) {
+  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}` }] };
+}
 export function buildAtlasPrompt(text, { today, onPage = null } = {}) {
   const lines = [`Today is ${today}.`];
   if (onPage) lines.push(`She is looking at ${onPage}'s record, so "her", "him" or "them" with no other name is ${onPage}.`);
@@ -122,7 +133,7 @@ export function normalizeRead(raw, text) {
   for (const st of (raw && Array.isArray(raw.steps) ? raw.steps : []).slice(0, 12)) {
     const kind = STEP_KINDS.includes(st && st.kind) ? st.kind : "other";
     const step = { kind, who: s(st.who), target: s(st.target), amountWords: s(st.amount_words), whenWords: s(st.when_words),
-      how: s(st.how).toLowerCase(), words: s(st.words), draftSubject: s(st.draft_subject), draftBody: String((st && st.draft_body) || "").trim() };
+      how: s(st.how).toLowerCase(), words: s(st.words) };
     // An amount must be one she said.
     if (step.amountWords && !said.includes(step.amountWords.toLowerCase())) {
       const c = amountFromWords(step.amountWords);
@@ -248,7 +259,7 @@ const NAME = "([A-Z][a-zA-Z'’-]+(?:\\s+[A-Z][a-zA-Z'’-]+)*)";
 // One clause -> one step, in the plain shapes code can read for certain.
 export function readClause(c) {
   const t = c.trim();
-  const blank = { who: "", target: "", amountWords: "", whenWords: "", how: "", words: t, draftSubject: "", draftBody: "" };
+  const blank = { who: "", target: "", amountWords: "", whenWords: "", how: "", words: t };
   if (/^(undo|take back|reverse)\b.*\b(that|it|last)\b|^undo$/i.test(t)) return { ...blank, kind: "undo" };
   if (/\bmerge\b/i.test(t)) { const m = t.match(new RegExp(`merge\\s+${NAME}\\s+(?:and|with|into)\\s+${NAME}`)); return { ...blank, kind: "merge", who: m ? m[1] : "", target: m ? m[2] : "" }; }
   if (/\b(monthly|recurring|subscription)\b/i.test(t) && /\b(change|cancel|pause|stop|raise|lower|bump|increase|decrease|move)\b/i.test(t)) {
@@ -317,5 +328,5 @@ export const SPOKE = {
   waiting: n => (n === 1 ? "One thing waits for your tap." : `${n} things wait for your tap.`),
 };
 
-export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, buildAtlasPrompt, normalizeRead, tidySteps,
+export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, DRAFT_TOOL, DRAFT_SYSTEM, buildDraftPrompt, buildAtlasPrompt, normalizeRead, tidySteps,
   amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, CANT_LINE, REFUSE, SPOKE };

@@ -3,6 +3,23 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **One helper, Atlas, and one door: `POST /atlas` (AGENT-5).** Home's box (a non-question), the floating mic,
+  the rail and the profile all open the same panel over the page, never a navigation. The model only READS
+  her words into steps (`shared/atlas.js` ATLAS_TOOL, strict, her words copied); code resolves every name,
+  place, amount and date (`donorMatch.js` for whole names, then first names, nicknames, a family's household,
+  and a near miss, which is always asked). Every question is asked at once, one click each, and the request is
+  kept with its steps, so an answer resumes all of them. Low-stakes steps run as their own Agent run (each its
+  own Undo); money, the receipt and a held-back detail are Tell Steward cards (one tap each, Do all of this);
+  "send it now" is a draft and a one-line refusal. The six personas' limits are rules on the tools
+  (`ATLAS_RULES`, shown in Settings > Atlas). The name is `ATLAS_NAME`, read from `/atlas/status`.
+- **One activity log: `atlas_actions` (AGENT-5).** Every line Atlas did or readied is one row: who, what (line,
+  kind, state), where (place, place_id, link) and Undo (run_id or card_id). The page notes, the bell (its count
+  is only `waits`), the profile and Recent changes read it. A note is marked seen by a POST from the page that
+  showed it. Later automatic actions (AUTO-1 sends, captured email, check photos) write the same row.
+- **The read is the faster model; the eval is the gate (AGENT-5).** `ATLAS_MODEL` (default claude-sonnet-4-6)
+  reads; `tests/atlas-eval/` holds 25 messy requests with exact results, run against the real model only in
+  GitHub Actions (`nightly-ai.yml`, suite atlas, the $2-capped proxy). 24 of 25 exactly right and every miss
+  safe (asked, or did less) is the bar. `ATLAS_EVAL_STANDIN=1` replays ideal reads locally to prove the code.
 - **The Agent reads the objects too (AGENT-3).** Under each person in a plan or a draft batch are their grants
   (and the next open milestone), memberships, open pledges, gifts to campaigns and giving pages, peer-to-peer
   pages and auction wins (`agentObjects`, org-scoped, those people only). Each row's id may be cited and each

@@ -1163,7 +1163,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
       <div>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Drafts to review</h2>
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
-          Emails Steward drafted for a milestone, an anniversary or a workflow you turned on. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
+          Emails drafted for a milestone, an anniversary, a journey step or Atlas. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
         <AgentDraftsWaiting highlightDraftId={highlightDraftId} />
         <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" /></div>
@@ -1177,7 +1177,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
 
       {drafts.length === 0 && (
         <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          Nothing waiting on you. When a donor crosses a milestone, hits a giving anniversary or sets off a workflow, the draft waits here for you. Nothing sends itself.
+          Nothing waiting on you. When a donor crosses a milestone, hits a giving anniversary or reaches a journey step, the draft waits here for you. Nothing sends itself.
         </div>
       )}
 
@@ -1192,7 +1192,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
                 ? <Figure variant="cell" kind="money" value={Number(d.donor_total_giving || 0)} label={`${d.donor_name}, lifetime giving`} source={{ key: "donor-lifetime", params: { donor: d.donor_id } }} />
                 : fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
-                {d.source && d.source.startsWith("workflow:") ? "Drafted by a workflow" : d.source === "journey" ? "From a journey step" : "Milestone draft"}
+                {d.source && d.source.startsWith("workflow:") ? "Drafted by an automatic step" : d.source === "journey" ? "From a journey step" : "Milestone draft"}
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
               </div>
             </div>

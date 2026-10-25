@@ -196,7 +196,19 @@ async function readSteps(orgId, text, { today, onPage }) {
         tool_choice: { type: "tool", name: AT_.ATLAS_TOOL.name },
       });
       const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.ATLAS_TOOL.name);
-      if (use && use.input) return { ai: "on", steps: AT_.normalizeRead(use.input, text) };
+      if (use && use.input) {
+        const steps = AT_.normalizeRead(use.input, text);
+        // A conversation code can read for certain ("lunch with Margaret went
+        // well") stays logged when the model dropped it (a "scratch that"
+        // after it took back nothing that happened). Never one still ahead.
+        const firstOf = w => String(w || "").toLowerCase().split(/\s+/)[0];
+        for (const c of AT_.readInCode(text).filter(x => x.kind === "log_conversation").reverse()) {
+          const when = AT_.whenFromWords(c.whenWords, today);
+          if (when && when.date > today) continue;
+          if (!steps.some(x => x.kind === "log_conversation" && firstOf(x.who) === firstOf(c.who))) steps.unshift(c);
+        }
+        return { ai: "on", steps };
+      }
     } catch (e) {
       console.error("[atlas] read failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 160));
       await recordAiFallback(orgId, "atlas", e).catch(() => {});
@@ -204,6 +216,31 @@ async function readSteps(orgId, text, { today, onPage }) {
     return { ai: "failed", steps: AT_.readInCode(text) };
   }
   return { ai: "off", steps: AT_.readInCode(text) };
+}
+
+// The email's words: the model when AI is on, else the template. Never a
+// fact: the run's own check refuses a draft that states one she did not say.
+async function writeDraft(orgId, { firstName, words, month, thanks, meet }) {
+  const AT_ = await AT();
+  const template = { subject: thanks ? `Thank you, ${firstName}` : `Hello from us, ${firstName}`,
+    body: [`Dear ${firstName},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
+      ...(meet ? ["", `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?`] : []), "", "With gratitude,"].join("\n") };
+  const gate = await agentGate(orgId);
+  if (!gate.ok) return template;
+  try {
+    const prompt = AT_.buildDraftPrompt({ firstName, words, month });
+    const msg = await anthropicFor(orgId).messages.create({ model: ATLAS_MODEL(), max_tokens: 400, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
+      tools: [{ name: AT_.DRAFT_TOOL.name, description: AT_.DRAFT_TOOL.description, strict: true, input_schema: AT_.DRAFT_TOOL.input_schema }],
+      tool_choice: { type: "tool", name: AT_.DRAFT_TOOL.name } });
+    const use = (msg.content || []).find(b => b.type === "tool_use" && b.name === AT_.DRAFT_TOOL.name);
+    const out = use && use.input;
+    // The month she asked to meet in must be in it; otherwise the template is.
+    if (out && out.body && out.subject && (!meet || !month || out.body.includes(month))) return { subject: String(out.subject).slice(0, 200), body: String(out.body).replace(/\s+—\s+|—/g, ", ").slice(0, 4000) };
+  } catch (e) {
+    console.error("[atlas] draft failed:", e && e.status ? e.status : "", String(e && e.message || e).slice(0, 160));
+    await recordAiFallback(orgId, "atlas.draft", e).catch(() => {});
+  }
+  return template;
 }
 
 // Every name and place in the steps, resolved; the questions it leaves.
@@ -305,6 +342,13 @@ async function execute(req, m, steps, { today, ai }) {
     await log({ kind: "held_back", state: "waiting", waits: true, cardId: c.id, line: `I held back a personal detail about ${first(nm(id))}. Keep it as a note?`, ...person(id), place: "person", placeId: id });
   };
 
+  // Every email starts writing at once, beside the other steps.
+  const drafts = new Map();
+  for (const st of steps) if ((st.kind === "draft_email" || st.kind === "send_now") && st.donorId && !(clientSafe.on && clientSafe.clientIds.has(st.donorId))) {
+    const when = AT_.whenFromWords(st.whenWords, today);
+    drafts.set(st, writeDraft(orgId, { firstName: first(nm(st.donorId)), words: st.words, month: when ? AT_.monthWord(when.date) : "",
+      thanks: /\bthank/i.test(st.words), meet: /\bmeet|meeting|lunch|coffee|visit|sit down\b/i.test(st.words) }));
+  }
   for (const st of steps) {
     const id = st.donorId;
     // A client in privacy mode: nothing about them is written, kept or read.
@@ -372,9 +416,7 @@ async function execute(req, m, steps, { today, ai }) {
         const thanks = /\bthank/i.test(st.words);
         const month = when ? AT_.monthWord(when.date) : "";
         const fn = first(nm(id));
-        const subject = st.draftSubject || (thanks ? `Thank you, ${fn}` : `Hello from us, ${fn}`);
-        const body = st.draftBody || [`Dear ${fn},`, "", thanks ? "Thank you so much for your generosity. It means a great deal to all of us." : "I wanted to reach out.",
-          meet ? `I would love to meet${month ? ` in ${month}` : ""} to share what your support makes possible. Would that work for you?` : "", "", "With gratitude,"].filter((x, k) => x !== "" || k === 1 || k === 4).join("\n");
+        const { subject, body } = await drafts.get(st);
         const r = await runStep(req, m, insId, { tool: "draft_note", donorId: id, subject, body, purpose: thanks ? "thank_you" : undefined, citesRows: [id] });
         const what = thanks ? "a thank-you" : "an email";
         if (r.ok && r.entityId) {
@@ -530,7 +572,7 @@ app.post("/atlas/:id/answer", requireAuth, checkWriteAccess, wrap(async (req, re
   const today = orgToday(await orgTz(orgId));
   const onPage = read.atlas && read.atlas.onPage ? (await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [read.atlas.onPage, orgId]))[0] : null;
   const fresh = (read.atlas.steps || []).map(s => ({ kind: s.kind, who: s.who, target: s.target, amountWords: s.amountWords, whenWords: s.whenWords, how: s.how,
-    words: s.words, draftSubject: s.draftSubject, draftBody: s.draftBody }));
+    words: s.words }));
   const { steps, questions } = await resolveAll(orgId, fresh, { today, onPage, answers });
   if (questions.length) {
     await run("UPDATE voice_memos SET read=? WHERE id=? AND org_id=?", [JSON.stringify({ ...read, atlas: { ...read.atlas, questions } }), m.id, orgId]);
