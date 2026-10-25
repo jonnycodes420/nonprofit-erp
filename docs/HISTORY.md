@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## AGENT-5 · One helper, named Atlas, that just does it (2026-10-25)
+
+- **Why the Undine run stopped (21 Oct).** Home sent his words to the Agent page, which asked "which Undine?" (20 Ondines, no Undine: a near miss) and then re-planned from scratch with only the pick: one model call whose plan had no attendance tool, and which waited for a separate Confirm on a page he had been moved to. Nothing after the pick was ever going to run on its own. Atlas keeps the request with its steps, asks every question at once, and an answer resumes all of them.
+- **One door, `POST /atlas`, over every page.** The model reads her words into steps (her words only, strict); code resolves people through `donorMatch.js` (then first names, nicknames, a family's household, near misses, which are always asked), places through `matchName`, and amounts and dates in words. Low-stakes steps run as their own Agent run, each with Undo; money, the receipt and a held-back detail wait as one tap each; "send it now" is a draft and a one-line refusal. New tool `mark_attended`.
+- **One activity log, `atlas_actions`.** The panel's checklist, a note on each page it acted (Events, Journeys, Communications, Fundraising's To confirm, the profile, Home), the header bell (count = what waits on a person) and Recent changes all read it.
+- **The Agent page is gone.** Its rail entry, `Agent.jsx`, `Workflows.jsx`, `AgentDemo.jsx` (dead already), and `/agent/status`, `/agent/personas`, `/agent/activity`. Old addresses land on Home with Atlas open; What changed is in Recent changes; Guardrails are Settings > Atlas. The Workflows recipes still run for orgs that turned them on, with no screen of their own (the next build makes them journeys).
+- **Measured, not assumed.** `tests/atlas-eval/` holds 25 messy requests with exact results; the real-model run is GitHub Actions only (`nightly-ai.yml`, suite atlas, the $2-capped proxy, about $0.35 a run). The read moved to claude-sonnet-4-6 and the email to its own short call when the first Opus run took 9 to 11 seconds for Undine's request. `ATLAS_EVAL_STANDIN=1` proves everything after the read without a key.
+
 ## FIX-48 · Leftovers from 23 Oct, flaky tests first (2026-10-23)
 
 - **numbers1-foot's CI 500 was not a race.** A merge set a soft credit aside, its gift was deleted, and Undo re-inserted the credit into a missing gift (foreign key). It hung on random gift ids sorting a certain way, so the same seed passed locally. Undo now skips a set-aside row whose parent is gone, and resizes a restored soft credit to its gift as it is now (the 10-run CI job found that second defect: credit $100.10 on a $40 gift).
