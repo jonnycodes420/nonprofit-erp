@@ -40,7 +40,7 @@ export const PERSONA_TOOLS = [
   // AGENT-2: real actions, each the route a person's click calls.
   "update_contact", "set_owner", "add_to_group", "remove_from_group", "add_to_household",
   "log_conversation", "set_next_step", "make_volunteer", "sign_up_shift", "log_hours",
-  "start_journey", "stop_journey", "register_event", "mark_gift_thanked", "propose_merge", "prepare_gift",
+  "start_journey", "stop_journey", "register_event", "mark_attended", "mark_gift_thanked", "propose_merge", "prepare_gift",
 ];
 
 // Named so the guard below can say WHY, rather than just refusing.

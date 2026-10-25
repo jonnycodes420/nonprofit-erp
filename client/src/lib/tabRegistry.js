@@ -50,10 +50,6 @@ const TABS=[
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"calendar",label:"Calendar",icon:"▦"},
-  // FIX-1 §A — Steward Agent is its own room. The Workflows recipes moved
-  // into it (Agent → Workflows); the "workflows" id still deep-links there
-  // (App.jsx navigateTo), it just has no nav entry of its own.
-  {id:"agent",label:"Agent",icon:"✦"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -72,7 +68,7 @@ const BOTTOM_TABS=[
   {id:"dashboard",label:"Home",icon:"◉"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
-  {id:"agent",label:"Agent",icon:"✦"},
+  {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 const MORE_TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
@@ -80,7 +76,6 @@ const MORE_TABS=[
   {id:"groups",label:"Groups",icon:"◌"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
-  {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -131,3 +126,10 @@ const CRM_HIDDEN_TABS=new Set(["portal"]);
 const FR_PART_TABS={auctions:"auctions",p2p:"p2p",memberships:"members"};
 
 export { FR_PART_TABS, TABS, BOTTOM_TABS, MORE_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };
+
+// AGENT-5 — THE AGENT PAGE IS GONE. Atlas lives over every page, so the old
+// Agent and Workflows addresses (a bookmark, an email, an older card) land on
+// Home with Atlas open. App.jsx navigateTo reads this.
+export function legacyTab(t) {
+  return t === "agent" || t === "workflows" ? { tab: "dashboard", atlas: true } : null;
+}

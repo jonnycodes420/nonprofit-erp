@@ -3595,6 +3595,37 @@ async function runSchemaInit(pool) {
       undone_at TIMESTAMPTZ, undone_by TEXT, undone_by_name TEXT
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_voice_memos_org ON voice_memos (org_id, created_at DESC)`);
+  // AGENT-5 · ATLAS'S ACTIVITY LOG. One row per thing Atlas did or readied:
+  // who (actor and the person it was for), what (line, kind, state), where
+  // (place, place_id, link) and Undo (run_id or card_id). The page notes, the
+  // header bell and Recent changes read only this table. `waits` is what
+  // waits on a person, and is the bell's count.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS atlas_actions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      request_id TEXT,
+      card_id TEXT,
+      run_id TEXT,
+      kind TEXT NOT NULL,
+      state TEXT NOT NULL,
+      line TEXT NOT NULL,
+      donor_id TEXT,
+      place TEXT,
+      place_id TEXT,
+      link JSONB,
+      waits BOOLEAN NOT NULL DEFAULT false,
+      undoable BOOLEAN NOT NULL DEFAULT false,
+      actor_id TEXT NOT NULL,
+      actor_name TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      seen_at TIMESTAMPTZ, undone_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_atlas_actions_org ON atlas_actions (org_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_atlas_actions_place ON atlas_actions (org_id, place, place_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_atlas_actions_request ON atlas_actions (request_id)`);
   // VOICE-3: meeting mode is gone, and so is every transcript it saved.
   // There is no screen left to read or delete one, so none is kept.
   await pool.query(`DROP TABLE IF EXISTS voice_meetings`);

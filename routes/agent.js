@@ -191,7 +191,8 @@ async function agentShapeMod() { return import("../shared/agentShape.js"); }
 // registry is data: this file names no persona id anywhere.
 async function agentPersonasMod() { return import("../shared/agentPersonas.js"); }
 
-const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
+// AGENT-5: the helper is Atlas, by one name the environment can change.
+const AGENT_ACTOR = { id: "system:agent", get name() { return String(process.env.ATLAS_NAME || "").trim() || "Atlas"; } };
 
 // ── WHAT THE AGENT IS ALLOWED TO SEE ───────────────────────────────────────
 // The model gets the instruction, the org's vocabulary, and the rows STEWARD
@@ -492,7 +493,7 @@ const AGENT_EXECUTORS = {
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
        VALUES (?,?,?,'activity',?,?,?,?,?)`,
       [lineId, ctx.orgId, donor.id,
-       `${thanks ? "Thank-you drafted" : what ? `${what} drafted` : "Note drafted"} by Steward, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
+       `${thanks ? "Thank-you drafted" : what ? `${what} drafted` : "Note drafted"} by ${AGENT_ACTOR.name}, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
        ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name,
        JSON.stringify({ line_key: `agent_draft:${id}`, agentDraftId: id, draft: true, giftIds })]);
     await agentWrite(ctx, { tool: "draft_note", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
@@ -539,7 +540,7 @@ const AGENT_EXECUTORS = {
       await runTx(ctx.client,
         `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
          VALUES (?,?,?,'activity',?,?,?,?,?)`,
-        [lineId, ctx.orgId, donor.id, `Task made by Steward: "${title.slice(0, 160)}"${due ? `, due ${(await import("../shared/displayDate.js")).displayDay(due, ctx.today) || due}` : ""}.`,
+        [lineId, ctx.orgId, donor.id, `Task made by ${AGENT_ACTOR.name}: "${title.slice(0, 160)}"${due ? `, due ${(await import("../shared/displayDate.js")).displayDay(due, ctx.today) || due}` : ""}.`,
          ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name, JSON.stringify({ line_key: `agent_task:${id}`, taskId: id, grantId: grant ? grant.id : null })]);
       await agentWrite(ctx, { tool: "create_task", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     }
@@ -878,6 +879,36 @@ const AGENT_EXECUTORS = {
     const [a] = await query("SELECT id FROM event_attendees WHERE event_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, donor.id]);
     if (!a) return { failed: "they are not on the guest list when Steward looks" };
     await agentWrite(ctx, { tool: "register_event", table: "event_attendees", entityId: a.id, before: null, after: { event_id: eid, donor_id: donor.id }, cites: step.citesRows });
+    return { donorId: donor.id, id: a.id };
+  },
+
+  // AGENT-5: through the guest list's own routes, so the timeline line, the
+  // after-change step and an attended-event journey are what a click makes.
+  // Undo takes off what this made: the row it added, or the status it changed,
+  // and the "Came to" line.
+  async mark_attended(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const eid = String(step.eventId || "");
+    const [ev] = await query("SELECT id, name, LEFT(date::text,10) AS day FROM events WHERE id=? AND org_id=?", [eid, ctx.orgId]);
+    if (!ev) return { failed: "that event is not on file" };
+    if (ev.day && ev.day > ctx.today) return { failed: `${ev.name} has not happened yet` };
+    let [a] = await query("SELECT id, status, attendance_logged_at FROM event_attendees WHERE event_id=? AND org_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, ctx.orgId, donor.id]);
+    if (a && a.status === "attended") return { skipped: "already_attended" };
+    const had = a ? { status: a.status, attendance_logged_at: a.attendance_logged_at } : null;
+    if (!a) {
+      const r = await AC.call(ctx, "POST", `/events/${encodeURIComponent(eid)}/attendees`, { donorIds: [donor.id] });
+      if (r.status >= 300) return { failed: refusal(r) };
+      [a] = await query("SELECT id FROM event_attendees WHERE event_id=? AND org_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, ctx.orgId, donor.id]);
+      if (!a) return { failed: "they are not on the guest list when Steward looks" };
+    }
+    const m = await AC.call(ctx, "POST", `/events/${encodeURIComponent(eid)}/attendance`, { attended: [a.id] });
+    if (m.status >= 300) return { failed: refusal(m) };
+    const [now] = await query("SELECT status FROM event_attendees WHERE id=? AND org_id=?", [a.id, ctx.orgId]);
+    if (!now || now.status !== "attended") return { failed: "they are not marked as came when Steward looks" };
+    await agentWrite(ctx, { tool: "mark_attended", table: "event_attendees", entityId: a.id, before: had, after: { status: "attended" }, cites: step.citesRows });
+    const lines = await query(`SELECT id FROM interactions WHERE org_id=? AND donor_id=? AND metadata->>'attendee_id'=? AND metadata->>'via'='event_attendance'`, [ctx.orgId, donor.id, a.id]);
+    for (const l of lines) await agentWrite(ctx, { tool: "mark_attended", table: "interactions", entityId: l.id, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     return { donorId: donor.id, id: a.id };
   },
 
@@ -1679,7 +1710,7 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
     already_volunteer: "they were already a volunteer", not_a_volunteer: "they are not marked as a volunteer",
     no_note: "there was nothing to note", not_in_group: "they were not in that group",
     not_in_journey: "they were not in that journey", already_thanked: "that gift was already marked thanked",
-    already_proposed: "that pair was already in the duplicate queue" };
+    already_proposed: "that pair was already in the duplicate queue", already_attended: "they were already marked as came" };
 
   let drafted = 0, done = 0, withheld = 0, declined = 0;
   const withheldReasons = [];

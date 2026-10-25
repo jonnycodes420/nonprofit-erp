@@ -7,9 +7,9 @@
 // organize this" and "make the icons make sense, like an actual house for Home."
 //
 // So: GROUPS, not a fold. Nothing is behind a disclosure any more — the rail
-// is five short lists with a small uppercase label over each, and the two
-// items that are not about the work (Agent, Settings) sit at the bottom,
-// separated. A group of four things you can read is scannable in a way that
+// is five short lists with a small uppercase label over each, and Settings,
+// which is not about the work, sits at the bottom, separated (AGENT-5: the
+// Agent entry beside it is gone; Atlas opens over any page). A group of four things you can read is scannable in a way that
 // thirteen equally loud items never were, at the same height.
 //
 // This file is the ONE place the groups and their order live. It is JSX-free
@@ -38,7 +38,7 @@ export const NAV_GROUPS = [
   // one word and nothing else on the rail is theirs.
   { id: "volunteers",    label: "Volunteers",      items: ["volunteers"] },
   { id: "money",         label: "Money",           items: ["finance", "reports"] },
-  { id: "bottom",        label: null, bottom: true, items: ["agent", "settings"] },
+  { id: "bottom",        label: null, bottom: true, items: ["settings"] },
 ];
 
 // The lucide icon for each item, one per item and no two alike. Drawn by
@@ -48,7 +48,7 @@ export const NAV_ICON_NAMES = {
   dashboard: "house", tasks: "list-checks", donors: "users", journeys: "route",
   communications: "mail", fundraising: "hand-coins", events: "calendar-days",
   grants: "file-text", volunteers: "hand-helping", finance: "wallet",
-  reports: "bar-chart-3", agent: "sparkles", settings: "settings",
+  reports: "bar-chart-3", settings: "settings",
   portal: "panels-top-left", groups: "group",
   auctions: "gavel", p2p: "flag", memberships: "id-card", calendar: "calendar-range",
 };

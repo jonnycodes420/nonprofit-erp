@@ -24,7 +24,6 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
-import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import JourneyBuilder from "./components/JourneyBuilder";
 import GroupsPage from "./components/Groups";
@@ -35,7 +34,8 @@ import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
-import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
+import { useAtlasName } from "./lib/atlas";   // AGENT-5
+import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, legacyTab } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
@@ -140,8 +140,9 @@ function AppShell() {
   const [moreOpen,setMoreOpen]=useState(false);
   // VOICE-1 — Tell Steward: one sheet, opened from Home, a profile or the menu.
   const [tell,setTell]=useState(null);
+  const atlas=useAtlasName();
   useEffect(()=>{
-    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null});
+    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send)});
     window.addEventListener("steward:tell",on);
     return()=>window.removeEventListener("steward:tell",on);
   },[]);
@@ -262,8 +263,6 @@ function AppShell() {
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
-  // FIX-1 §A — Agent opens on a view, and Home's one-line entry carries her words in.
-  const [agentIntent,setAgentIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),
@@ -287,15 +286,24 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts,how)=>{
-    // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
-    // activity (the thirty-day undo list). Every old way in lands there.
-    if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
+    // AGENT-5 — the Agent page is gone. Its old addresses land on Home with
+    // Atlas open; its "What changed" is Recent changes, and its Guardrails
+    // are Settings > Atlas.
+    if(t==="settings"&&opts?.section==="agent")opts={...opts,section:"atlas"};
+    const lg=legacyTab(t);
+    if(lg){
+      const view=opts?.agentView;
+      t=lg.tab;opts={};
+      if(how?.fromUrl)routerNavigate(tabHref("dashboard"),{replace:true,state:{internal:true}});
+      if(view==="changed")setTimeout(()=>openRecentChanges(),0);
+      else if(view==="guardrails"){t="settings";opts={section:"atlas"};}
+      else setTimeout(()=>openTellSteward(null),0);
+    }
     // NAV-1 §2 — THE DASHBOARDS FOLDED INTO REPORTS, so every way in still
     // lands on the dashboard it named: navigateTo("board") from an older card,
     // a bookmark on /dashboards, a link in an email. The `board` id is kept as
     // a synonym rather than chased through the product.
     if(t==="board"){t="reports";opts={...(opts||{}),report:"dash:"+((opts&&opts.dashKey)||"board")};}
-    if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
     // FIX-25: Auctions, Peer-to-peer and Memberships have rail entries of
     // their own and are parts of Fundraising, so each opens that part.
     if(FR_PART_TABS[t]){opts={...(opts||{}),frSection:FR_PART_TABS[t]};t="fundraising";}
@@ -323,7 +331,6 @@ function AppShell() {
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
-    setAgentIntent(t==="agent"&&(opts?.agentView||opts?.agentText)?{view:opts.agentView||null,text:opts.agentText||"",autoAsk:!!opts.autoAsk}:null);
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
@@ -725,10 +732,10 @@ function AppShell() {
             you change how the product behaves. They sit under the rail's own
             rule rather than at the end of MONEY. */}
         {/* VOICE-1 — Tell Steward, in the rail's own style, above Agent and Settings. */}
-        {!isReadOnly&&<button data-testid="sidebar-tell-steward" onClick={()=>openTellSteward(null)} title="Tell Steward what happened"
+        {!isReadOnly&&<button data-testid="sidebar-tell-steward" onClick={()=>openTellSteward(null)} title={`Tell ${atlas} what happened, what to do, or ask`}
           style={{...sideBtn(false),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
           <span aria-hidden="true" style={{width:18,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.gold500||"#C9A84C"}}><MicGlyph size={16}/></span>
-          {!sidebarCollapsed&&"Tell Steward"}
+          {!sidebarCollapsed&&atlas}
         </button>}
         <div data-nav-group="bottom">
           {navVisible.filter(g=>g.bottom).flatMap(g=>g.items).map(i=>navById[i.id]).filter(Boolean).map(navItem)}
@@ -1001,7 +1008,6 @@ function AppShell() {
       {tab==="finance"&&<Finance key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="calendar"&&<CalendarPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} isAdmin={auth?.user?.role==="admin"}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope} initialView={tasksIntent?.view}/>}
-      {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
     </ErrorBoundary>
@@ -1087,10 +1093,10 @@ function AppShell() {
     {/* VOICE-2 option B: the floating square mic, bottom right, on every screen
         and every width. It opens the same Tell Steward window; the rail keeps
         its own Tell Steward row. */}
-    {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label="Tell Steward" title="Tell Steward"
+    {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label={atlas} title={atlas}
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
-    {tell&&<TellSteward donor={tell.donor} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
+    {tell&&<TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>
