@@ -186,6 +186,9 @@ const PERIODS = ["today", "week", "month", "quarter", "year", "fiscal_year"];
 // byte-identical; a malformed value degrades to it rather than throwing.
 const FISCAL_START_MONTH_DEFAULT = 7;
 function orgFiscalStartMonth(org) {
+  // NUMBERS-2: orgTz() carries the month itself; the vocabulary is the source.
+  if (org && org.vocabulary_json == null && Number.isInteger(org.fiscal_year_start_month)
+      && org.fiscal_year_start_month >= 1 && org.fiscal_year_start_month <= 12) return org.fiscal_year_start_month;
   let v = org && org.vocabulary_json;
   if (typeof v === "string") { try { v = JSON.parse(v); } catch { v = null; } }
   const n = v && typeof v === "object" ? parseInt(v.fiscal_year_start_month, 10) : NaN;

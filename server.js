@@ -237,9 +237,13 @@ const TZ_CACHE_MS = process.env.SESSION_CACHE_TTL_MS === "0" ? 0 : 30000;
 async function orgTz(orgId) {
   const hit = TZ_CACHE_MS ? _tzCache.get(orgId) : null;
   if (hit && hit.until > Date.now()) return hit.value;
-  let tz = orgTime.DEFAULT_TZ, confirmed = null;
+  let tz = orgTime.DEFAULT_TZ, confirmed = null, fyStart = null;
   try {
-    const r = await query("SELECT timezone, timezone_confirmed_at FROM orgs WHERE id=?", [orgId]);
+    const r = await query("SELECT timezone, timezone_confirmed_at, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+    // NUMBERS-2: the org's own year rides with its clock, so every
+    // orgFiscalYearStart(await orgTz(...)) is the year the org chose in
+    // Settings, not July for everyone.
+    fyStart = orgTime.orgFiscalStartMonth({ vocabulary_json: r[0]?.vocabulary_json });
     tz = orgTime.normalizeTimezone(r[0]?.timezone);
     // BUILD-84 — the timezone column is NOT NULL with a default, so "has a
     // timezone" has always been true for every org and means nothing. This is
@@ -247,8 +251,9 @@ async function orgTz(orgId) {
     // a morning digest forgives being an hour off, a 2:00 reminder does not.
     confirmed = r[0]?.timezone_confirmed_at || null;
   } catch { /* pre-migration boot — the default is correct */ }
-  _tzCache.set(orgId, { value: { timezone: tz, timezone_confirmed_at: confirmed }, until: Date.now() + TZ_CACHE_MS });
-  return { timezone: tz, timezone_confirmed_at: confirmed };
+  const value = { timezone: tz, timezone_confirmed_at: confirmed, fiscal_year_start_month: fyStart || orgTime.FISCAL_START_MONTH_DEFAULT };
+  _tzCache.set(orgId, { value, until: Date.now() + TZ_CACHE_MS });
+  return value;
 }
 // The zone NAME alone. `orgTz` returns {timezone, timezone_confirmed_at} — a
 // caller that wants an Intl option and passes the whole object gets a
@@ -1197,12 +1202,9 @@ async function recordGift(o) {
     vals);
   if (!inserted.length) return { gift: null, duplicate: true };
 
-  // The donor's rollup, in one place. `last_gift_*` only move when this gift is
-  // at least as recent as the one on file — a back-dated gift is history, not
-  // the latest news.
-  // NULLIF guards the empty string: `''::date` throws, and a donor whose
-  // last_gift_date was never set carries '' on some legacy rows.
-  const LAST_GIFT_IS_NEWER = "COALESCE(NULLIF(last_gift_date,''),'0001-01-01')::date <= ?::date";
+  // The donor's rollup, in one place. NUMBERS-2: recomputed by the one
+  // statement (donorSummary.js), never added to, so an imported total is kept
+  // as its own figure and a gift its period already covers is not counted twice.
   // BUILD-94 Part 2 — A VOLUNTEER WHO GIVES BECOMES A DONOR TOO, on the SAME
   // record. Never a second row: the same person twice is the thing a CRM
   // exists to prevent. The `person_types` CASE below lives here, in the ONE
@@ -1211,21 +1213,19 @@ async function recordGift(o) {
   // answers that, so it is REPLACED rather than accumulated beside "donor".
   await run(
     `UPDATE donors
-        SET total_giving = total_giving + ?,
-            gift_count = gift_count + 1,
-            last_gift_amount = CASE WHEN ${LAST_GIFT_IS_NEWER} THEN ? ELSE last_gift_amount END,
-            last_gift_date   = CASE WHEN ${LAST_GIFT_IS_NEWER} THEN ? ELSE last_gift_date END,
-            status = CASE WHEN total_giving + ? > 20000 THEN 'major'
-                          WHEN total_giving + ? > 5000  THEN 'mid'
-                          ELSE status END,
-            person_types = CASE
+        SET person_types = CASE
               WHEN person_types IS NULL THEN '["donor"]'::jsonb
               WHEN person_types @> '["donor"]'::jsonb THEN person_types
               ELSE (person_types - 'other') || '["donor"]'::jsonb
             END,
             updated_at = NOW()
       WHERE id = ? AND org_id = ?`,
-    [amount, date, amount, date, date, amount, amount, o.donorId, orgId]);
+    [o.donorId, orgId]);
+  await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, o.donorId]);
+  await run(
+    `UPDATE donors SET status = CASE WHEN total_giving > 20000 THEN 'major' WHEN total_giving > 5000 THEN 'mid' ELSE status END
+      WHERE id = ? AND org_id = ? AND status IS DISTINCT FROM CASE WHEN total_giving > 20000 THEN 'major' WHEN total_giving > 5000 THEN 'mid' ELSE status END`,
+    [o.donorId, orgId]);
 
   // Rule 3 — the ledger.
   let posted = false;
@@ -5504,16 +5504,22 @@ function finPeriodBounds(yearMode, offset = 0, org = null) {
   // check — read the civil parts directly instead of dressing them as a Date.)
   const _today = orgTime.parseCivil(orgToday(org || {}));
   if (yearMode === "fiscal") {
-    const curFyStart = _today.m - 1 < 6 ? _today.y - 1 : _today.y;
+    // NUMBERS-2: the org's own start month (Settings, "When does your year
+    // start?"), carried by orgTz; July only when the org never said.
+    const sm = orgTime.orgFiscalStartMonth(org || {});
+    const curFyStart = _today.m < sm ? _today.y - 1 : _today.y;
     const fyStart = curFyStart + offset;
+    const pad = n => String(n).padStart(2, "0");
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const endY = sm === 1 ? fyStart : fyStart + 1, endM = sm === 1 ? 12 : sm - 1;
+    const endD = new Date(Date.UTC(endY, endM, 0)).getUTCDate();
     return {
-      start: `${fyStart}-07-01`,
-      end: `${fyStart + 1}-06-30`,
-      periodLabel: `Jul ${fyStart} – Jun ${fyStart + 1}`,
-      chartLabel: FISCAL ? FISCAL.fyLabelFromStart(fyStart) : `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
-      // month buckets in basis order: Jul..Dec of fyStart, then Jan..Jun of fyStart+1
-      months: [...Array(6)].map((_, i) => ({ y: fyStart, m: 6 + i }))
-        .concat([...Array(6)].map((_, i) => ({ y: fyStart + 1, m: i }))),
+      start: `${fyStart}-${pad(sm)}-01`,
+      end: `${endY}-${pad(endM)}-${pad(endD)}`,
+      periodLabel: sm === 1 ? `Jan – Dec ${fyStart}` : `${MON[sm - 1]} ${fyStart} – ${MON[endM - 1]} ${endY}`,
+      chartLabel: FISCAL ? FISCAL.fyLabelFromStart(fyStart, sm) : `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
+      // month buckets in basis order, from the start month
+      months: [...Array(12)].map((_, i) => ({ y: fyStart + Math.floor((sm - 1 + i) / 12), m: (sm - 1 + i) % 12 })),
     };
   }
   const year = _today.y + offset;
@@ -11923,20 +11929,25 @@ for (const k of Object.keys(RETENTION_FLOOR)) {
 // pattern as GET /dashboard/today) — /annual-fund never passes this, so its
 // behavior is unchanged.
 async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) {
-  // ORG_TZ_SEAM_OK (BUILD-75 A.4) — the default "this year" is the ORG's civil
-  // year, not the process clock's. From 19:00 EST every Dec 31 the UTC default
-  // bucketed by a year that hadn't started locally: retention against a
-  // nearly-empty new year, snapshotted into metric_snapshots as a cliff.
-  if (year == null) year = orgTime.parseCivil(orgToday(await orgTz(orgId))).y;
+  // NUMBERS-2 · ONE RETENTION, the Fundraising Effectiveness Project's: of the
+  // people who gave last fiscal year (the org's own year, Settings), the share
+  // who have given again this fiscal year. A gift is above zero (a refund is
+  // not giving) from a person who is not deleted, the same rows as Reports'
+  // retention-window, so every screen that shows the rate shows one number.
+  // `year` is the start year of the fiscal year (for a January year, the
+  // calendar year); it defaults to the year today is in, in the org's time.
+  const tzOrg = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const today = orgToday(tzOrg);
+  const sm = orgTime.orgFiscalStartMonth(tzOrg);
+  const pad = n => String(n).padStart(2, "0");
+  const fyOf = y => { const end = sm === 1 ? `${y}-12-31` : orgTime.addDays(`${y + 1}-${pad(sm)}-01`, -1); return { from: `${y}-${pad(sm)}-01`, to: end }; };
+  if (year == null) { const t = orgTime.parseCivil(today); year = t.m < sm ? t.y - 1 : t.y; }
   const prevYear = year - 1;
-  // Only donor_id + date are read below — SELECT * was shipping every column
-  // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
-  // year-bucketing itself deliberately stays (see comment above).
-  // SCALE-1: without a caller's gift list, the database does the bucketing:
-  // one row per donor per year for just the two years read (not every gift
-  // the org ever had, 150k rows at a large org), plus the earliest date. The
-  // regex is parseCivil's (ASCII digits, anchored), so the buckets are the
-  // same rows the JS path below would make; proven identical on a 150k-gift org.
+  const cur = fyOf(year), prev = fyOf(prevYear);
+  const curTo = cur.to < today ? cur.to : today;
+  const period = { from1: prev.from, to1: prev.to, from0: cur.from, to0: curTo,
+    label: FISCAL ? FISCAL.fyLabelFromStart(year, sm) : `FY ${year}`, prevLabel: FISCAL ? FISCAL.fyLabelFromStart(prevYear, sm) : `FY ${prevYear}`,
+    next: fyOf(year + 1).from, fiscalStartMonth: sm };
   let assignedIds = null;
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
@@ -11945,37 +11956,25 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   let thisYearDonorIds, prevYearDonorIds, firstGiftDate;
   if (!gifts) {
     const [pairs, [first]] = await Promise.all([
-      query(`SELECT donor_id, LEFT(date, 4)::int AS y FROM gifts
-              WHERE org_id = ? AND date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(date, 4) IN (?, ?)
-              GROUP BY 1, 2`, [orgId, String(year).padStart(4, "0"), String(prevYear).padStart(4, "0")]),
-      // The earliest stored date, as the JS reduce below reads it: every
-      // non-empty date, its first ten characters, compared as strings.
+      query(`SELECT g.donor_id, (g.date >= ?) AS cur FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0
+                AND ((g.date >= ? AND g.date <= ?) OR (g.date >= ? AND g.date <= ?))
+              GROUP BY 1, 2`, [cur.from, orgId, prev.from, prev.to, cur.from, curTo]),
       query(`SELECT MIN(LEFT(date, 10) COLLATE "C") AS first FROM gifts
               WHERE org_id = ? AND date IS NOT NULL AND date <> ''${userId ? " AND donor_id = ANY(?)" : ""}`,
             userId ? [orgId, [...assignedIds]] : [orgId]),
     ]);
     const kept = assignedIds ? pairs.filter(r => assignedIds.has(r.donor_id)) : pairs;
-    thisYearDonorIds = new Set(kept.filter(r => r.y === year).map(r => r.donor_id));
-    prevYearDonorIds = new Set(kept.filter(r => r.y === prevYear).map(r => r.donor_id));
+    thisYearDonorIds = new Set(kept.filter(r => r.cur).map(r => r.donor_id));
+    prevYearDonorIds = new Set(kept.filter(r => !r.cur).map(r => r.donor_id));
     firstGiftDate = first?.first || null;
   } else {
-  let allGifts = gifts;
+  let allGifts = gifts.filter(g => Number(g.amount) > 0 && !g.deleted_at);
   if (assignedIds) allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
-  // ORG_TZ_SEAM_OK (BUILD-75 A.6) — year-bucket by the stored CIVIL date's own
-  // Y, never a new Date() round-trip: `new Date("2026-01-01")` read back through
-  // a non-UTC process zone lands on Dec 31 and buckets every New Year's Day
-  // gift into the prior year. parseCivil is zone-independent and byte-identical
-  // to the old behavior on the UTC production runtime.
-  const civilYear = g => { const c = orgTime.parseCivil(g.date); return c ? c.y : null; };
-  const thisYearGifts = allGifts.filter(g => civilYear(g) === year);
-  const prevYearGifts = allGifts.filter(g => civilYear(g) === prevYear);
-  thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
-  prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
-  // BUILD-76 follow-up — the confidence floor (see RETENTION_FLOOR): a rate
-  // computed over too few prior-year donors, or too little history, is a
-  // thin-data artifact and every consumer must know it. Civil-string compare
-  // is safe for YYYY-MM-DD; span measured to the org's own today.
-  firstGiftDate = allGifts.reduce((min, g) => {
+  const d10 = g => String(g.date || "").slice(0, 10);
+  thisYearDonorIds = new Set(allGifts.filter(g => d10(g) >= cur.from && d10(g) <= curTo).map(g => g.donor_id));
+  prevYearDonorIds = new Set(allGifts.filter(g => d10(g) >= prev.from && d10(g) <= prev.to).map(g => g.donor_id));
+  firstGiftDate = gifts.reduce((min, g) => {
     const d = g.date ? String(g.date).slice(0, 10) : null;
     return d && (!min || d < min) ? d : min;
   }, null);
@@ -11991,7 +11990,7 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
     retentionRate, retained,
     thisYearDonorIds, prevYearDonorIds,
     thisYearCount: thisYearDonorIds.size, prevYearCount: prevYearDonorIds.size,
-    year, prevYear,
+    year, prevYear, period,
     thinData, historyDays,
     floor: { minPriorYearDonors: RETENTION_FLOOR.MIN_PRIOR_YEAR_DONORS, minHistoryDays: RETENTION_FLOOR.MIN_HISTORY_DAYS },
   };

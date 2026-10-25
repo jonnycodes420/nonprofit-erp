@@ -3,6 +3,19 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **An imported total is its own figure, never erased (NUMBERS-2).** A total a file (or the quick-add
+  form) states with no gifts behind it lives in `donors.imported_*`: total, count, first and last gift,
+  source, the day it came in and `imported_through`, the last day it covers. No recompute writes those
+  columns. Lifetime = `imported_total` + the gifts dated AFTER `imported_through`; a gift dated on or
+  before it is already inside the old total and is never added again. `donorSummary.DONOR_SUMMARY_UPDATE`
+  is the one statement for total, count, first and last gift; `recordGift` runs it too (it no longer adds).
+  A merge folds both imported totals so the merged Lifetime is the two added up. The checker holds this.
+- **One average gift, one retention (NUMBERS-2).** Average = the counted gifts' total (refunds off) over
+  the gifts above zero; soft and matching credit rows are not gifts (`figureSources.AVERAGE_WORDS`, measure
+  `per_gift`; the `gifts` source maps `mean` to it). Retention = FEP: last fiscal year's givers who gave
+  again this fiscal year, gifts above zero, deleted people out (`computeRetentionRate`, the org's own
+  year); the same-dates-last-year version is `figureSources.sameDatesLastYear`. The help article
+  `how-steward-counts` carries the words; change them in both places.
 - **A check's memo is read, never lost (CHECK-2).** `gifts.memo` holds the memo as written (less the
   bank-number scrub). "in memory of", "in honor of", "IMO", "IHO" become the gift's tribute through
   `checkGiftExtras`, and the thank-you draft mentions it once. "pledge pmt 2 of 4" offers that instalment
@@ -181,7 +194,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 
 ## Fiscal year (moved from the old CRITICAL WORKING RULES)
 
-- Fiscal year = July 1 boundary (reuse fyStart logic from /dashboard/my-stats). Finance has a fiscal/calendar toggle (localStorage key "steward_fin_yearmode", default fiscal).
+- NUMBERS-2: the fiscal year is the org's own (`vocabulary_json.fiscal_year_start_month`, Settings, Your
+  words; 1 means the calendar year). `orgTz()` carries it as `fiscal_year_start_month`, so every
+  `orgFiscalYearStart(await orgTz(id))` and `finPeriodBounds` honour it; July only when the org never said.
+  Year-end tax statements stay on the calendar year. Finance has a fiscal/calendar toggle (localStorage key
+  "steward_fin_yearmode", default fiscal).
 
 ## Database tables (moved from the old "Database — key tables and columns")
 

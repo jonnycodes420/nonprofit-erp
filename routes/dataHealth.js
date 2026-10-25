@@ -527,6 +527,28 @@ async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confid
     if (keptCentsAfter !== keptCentsBefore + mergedCentsBefore) {
       throw new Error(`merge did not foot: ${keptCentsBefore} + ${mergedCentsBefore} != ${keptCentsAfter}`);
     }
+    // NUMBERS-2: an imported total on either person is folded into one, so the
+    // merged Lifetime is exactly the two Lifetimes added up. The covered days
+    // end on the earlier of the two; the imported total is both Lifetimes less
+    // the gifts now on file after that day (which the recompute adds back).
+    if (kept.imported_total != null || other.imported_total != null) {
+      const throughs = [kept, other].filter(x => x.imported_total != null && x.imported_through).map(x => String(x.imported_through).slice(0, 10)).sort();
+      const through = throughs[0] || null;
+      const [aft] = (await queryTx(client,
+        `SELECT COALESCE(SUM(amount), 0)::text AS t, (COUNT(*) FILTER (WHERE amount > 0))::int AS n FROM gifts
+          WHERE org_id = $1 AND donor_id = $2 AND ($3::text IS NULL OR date > $3)`, [orgId, keptId, through]));
+      const firsts = [kept.imported_first_gift_date, other.imported_first_gift_date].filter(Boolean).sort();
+      const lasts = [kept, other].filter(x => x.imported_last_gift_date).sort((a, b) => (a.imported_last_gift_date < b.imported_last_gift_date ? 1 : -1));
+      const srcs = [...new Set([kept, other].filter(x => x.imported_total != null).map(x => x.imported_source || "your old system"))];
+      const n = (Number(kept.gift_count) || 0) + (Number(other.gift_count) || 0) - (aft ? aft.n : 0);
+      await runTx(client,
+        `UPDATE donors SET imported_total = $3, imported_gift_count = $4, imported_first_gift_date = $5, imported_last_gift_date = $6,
+                imported_last_gift_amount = $7, imported_through = $8, imported_source = $9,
+                imported_on = COALESCE(imported_on, $10) WHERE id = $1 AND org_id = $2`,
+        [keptId, orgId, (cents(kept.total_giving) + cents(other.total_giving) - cents(aft ? aft.t : 0)) / 100, n > 0 ? n : null,
+         firsts[0] || null, lasts[0] ? lasts[0].imported_last_gift_date : null, lasts[0] ? lasts[0].imported_last_gift_amount : null,
+         through, srcs.join(" and "), other.imported_on || null]);
+    }
     // NUMBERS-1: the kept person's summary by the one statement (donorSummary.js).
     await runTx(client, require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, keptId]);
 

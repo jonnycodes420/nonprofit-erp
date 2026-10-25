@@ -76,7 +76,7 @@ export function HowDidItDo({ campaignId, isReadOnly }) {
         ))}
       </div>
       <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
-        Average gift is the total divided by the number of gifts, to the dollar. New donors gave their first gift to you through this campaign.
+        Average gift is the total, refunds taken off, divided by the number of gifts, to the cent. New donors gave their first gift to you through this campaign.
       </div>
 
       {/* WHY-1 — the reasons and who to call are now Ask why's answer for

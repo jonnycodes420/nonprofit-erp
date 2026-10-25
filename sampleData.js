@@ -253,8 +253,15 @@ async function clearSampleData({ query, run }, orgId) {
   }
 
   // Gifts, then people. This order, always: a gift references a donor.
+  // NUMBERS-2: a real person who held a sample gift has their totals
+  // recomputed by the one statement, so the sample money leaves them too.
+  const held = await query("SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id WHERE g.org_id=? AND g.is_sample=true AND d.is_sample IS NOT TRUE", [orgId]).catch(() => []);
   await del("gifts", "DELETE FROM gifts WHERE org_id=? AND is_sample=true", [orgId]);
   await del("donors", "DELETE FROM donors WHERE org_id=? AND is_sample=true", [orgId]);
+  if (held.length) {
+    try { await run(require("./donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, held.map(r => r.donor_id)]); }
+    catch (e) { errors.push({ table: "donors", error: e.message }); }
+  }
 
   return { deleted, errors };
 }

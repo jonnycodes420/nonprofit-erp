@@ -308,3 +308,57 @@ Everything under "Suspected disagreements" below that is not named in the table 
 - The drift "gifted" count reads the stored `gift_count` (crm.js:18963), while the drift engine reads live gifts (server.js:7004).
 - The import-combined and import-history recalcs run after commit, and an error there is only logged (crm.js:5916, 9793). Nothing retries, so stored totals can stay behind the gifts.
 - `clearSampleData` deletes sample gifts (sampleData.js:256) with no recalc. A real donor holding a sample gift keeps it in `total_giving`.
+
+## NUMBERS-2 outcome (25 Oct 2026)
+
+The "Suspected disagreements" list above has 39 bullets (the brief called it 38). They are numbered here in the order they appear. Fixed means changed and held by `scripts/check-numbers.js` or `tests/numbers2-history.test.js`. Not real means it is not a wrong number, for the reason given. Deferred means it is still open, with the reason.
+
+Dollar figures a director would read out:
+
+1. Imported lifetime erased by the next recompute. **Fixed.** The imported total is its own figure (`donors.imported_*`), and recompute never writes it. Lifetime is the imported total plus the gifts dated after `imported_through`. `recordGift` recomputes rather than adds. A merge folds two imported totals together.
+8. Lifetime stored in some places and live in others. **Fixed.** The stored `total_giving` is now computed by the same rule as the live Lifetime, and the checker holds them equal to the cent. The household panel, Top donors, the Directory and exports read a column that agrees with the profile.
+9. Three definitions of average gift. **Fixed.** There is one: counted gifts with refunds taken off, divided by the gifts above zero. Credit rows are left out. It is used by Reports, the annual report, Ask, groups, the appeal page and the profile.
+26. Three definitions of retention. **Fixed** for every rate shown: the FEP fiscal-year rate, plus a same-dates-last-year version on Home. The per-person "Retained" tag is still calendar (see 31).
+27. Fiscal start month ignored on Home and Fundraising. **Fixed.** `orgTz()` now carries the month, and `finPeriodBounds` reads it.
+28. "This year" means four different things. **Fixed** for the profile, Home, Fundraising and the Home lead line. Statements stay calendar. **Not real** for statements: the tax year is the calendar year.
+29. Gifts YTD headline and its drill-down disagree. **Fixed.** Both now exclude deleted people and keep the cents.
+13. Credit-type rows count as money. **Partly fixed.** They are left out of averages, medians and year-end tax statements, and the type check is `LOWER(TRIM())` everywhere. **Deferred** for Lifetime and campaign totals: whether a "matching gift credit" row is the employee's money is a product decision.
+14. Cover fee is gross on one screen and net on another. **Deferred.** Both are labelled. Choosing one changes every campaign card or every Fundraising total, and needs Jonathan's call on which is right.
+22. Fund ledger drifts when a gift's fund is cleared. **Fixed.** The ledger stamp moves to the general fund, where `recordGift` puts a gift with no fund. **Deferred:** Finance still says no-fund gifts are "not counted in any fund's balance", which is a wording change.
+24. Imported pledges are never re-checked. **Fixed.** `recalcPledgePayment` runs after an import links payments. A pledge the file called fulfilled stays fulfilled.
+25. Deleted donors stay in pledge and goal totals. **Fixed** for `pledges-open` and `pledge-payments`. `goal-raised` was fixed in NUMBERS-1. **Deferred:** the `/campaigns/:id/progress` pledged clamp.
+32. Profile soft credit total is capped at 200 rows. **Fixed.** The total and "raised for" are summed over every row. The list still shows the newest 200.
+34. Merge preview disagrees with what the merge writes. **Fixed.** The merge now keeps both Lifetimes, imported totals included, so it writes the preview's sum.
+35. Board pack change on last year ignores the old system's figure. **Fixed.** When last year is the old system's figure, the change is worked out against that figure.
+39. `clearSampleData` leaves sample money on real donors. **Fixed.** Real people who held a sample gift are recomputed.
+36. Receipt and statement disagree on a lost dispute. **Not real.** A receipt records the gift on the day it was given. The statement is the year's record after the dispute was lost. They describe different moments.
+15. Campaign raised ignores campaign dates. **Fixed in NUMBERS-1.**
+16. Campaigns matched by name. **Fixed in NUMBERS-1** (by name only when there is no id). **Deferred:** a rename does not rewrite `gifts.campaign`.
+17. One giving page shows two raised totals. **Deferred.** Whether a public bar should include grants is a product choice.
+18. Org goal reads differently on Home and Fundraising. **Deferred.** Home reads the goal's own period and Fundraising reads the fiscal year (now the right one). Making them one needs a decision on which period a goal means.
+19. Parent goals drop gifts given straight to the parent. **Deferred.** The roll-up rule ("children only") is a decision, not a bug.
+38. Import recalcs run after commit and only log errors. **Deferred.** It needs a retry queue. The nightly checker counts any stored total left behind.
+
+Counts:
+
+2. Batch recalc never zeroes a donor with no gifts. **Fixed in NUMBERS-1.**
+3. `first_gift_date` is never kept up to date. **Fixed.** The one statement keeps it on every add, edit, refund, delete, merge and import, with the old system's first gift when that is older. Existing rows are backfilled from gifts above zero in their own org.
+5. Gift count includes refunds on one side only. **Fixed in NUMBERS-1.** It is now the imported count plus gifts above zero.
+6. Last gift on a same-day tie. **Fixed in NUMBERS-1.**
+10. Donor counts and "new donor". **Fixed.** `givers` no longer counts a person whose only rows are refunds, and "new" means their first gift above zero.
+11. LYBUNT treats a refund as giving. **Fixed.** `bunt` needs a gift above zero.
+12. Sample gifts are included in some places and excluded in others. **Deferred.** FIX-32 has an org clear its sample before importing, and the clear now recomputes. Filtering `is_sample` in every total is a wide change better done on its own.
+20. Campaign donor count. **Fixed in NUMBERS-1** for cards, drawers and widgets. **Deferred:** the public bar's `amount > 0`.
+23. `recipient_count` is stored once. **Deferred.** It is an email count, not money, and needs a send-path change.
+31. Six lapse rules. **Deferred.** Which rule decides "lapsed" is a product decision. The per-person "Retained" tag is in the same family.
+37. Drift "gifted" count reads the stored count. **Not real now.** The stored count is kept by the one statement on every write, and the checker holds it to the gifts.
+
+Labels and plumbing:
+
+4. Edit, delete, refund and merge skip `afterChange`. **Deferred.** Rhythm and expected next gift go stale until the next after-change step. Wiring it in fires group crossings and journeys on edits, and that needs its own test.
+7. Two giving-level rules. **Deferred.** `donors.status` (lifetime, never lowered) against the 12-month level tags is a naming decision.
+21. `campaigns.raised_amount` is a dead column. **Not real.** Nothing reads it for a total. Dropping it is housekeeping.
+30. Clocks (server or UTC instead of the org's day). **Deferred.** Each one is off by a day at most, near midnight. They are listed above.
+33. Two household groupings. **Deferred.** This is a data-model decision.
+
+Found while building, for the next brief: the profile's lifecycle tags and "Donor since" read the gifts on file only. A donor with $50,000 of imported history and one new gift reads "New: gave once this year" and "Donor since 2026" (see the after screenshot).

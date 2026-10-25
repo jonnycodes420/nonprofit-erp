@@ -63,7 +63,7 @@ async function giftSet(orgId, plan, span) {
             COALESCE(e.name, 'No event') AS event, COALESCE(NULLIF(g.payment_method, ''), 'Not recorded') AS payment_method,
             COALESCE(gs.display_name, 'Entered in Steward') AS source,
             COALESCE(NULLIF(trim(d.city), ''), 'No city') AS city, COALESCE(NULLIF(trim(d.state), ''), 'No state') AS state,
-            COALESCE(NULLIF(d.assigned_to_name, ''), 'No owner') AS owner, d.tags
+            COALESCE(NULLIF(d.assigned_to_name, ''), 'No owner') AS owner, d.tags, g.type AS gift_type
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        LEFT JOIN fin_funds fu ON fu.id = g.fund_id AND fu.org_id = g.org_id
        LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
@@ -107,6 +107,7 @@ function byDonor(rows) {
       amount, detail: `${x.n} ${x.n === 1 ? "gift" : "gifts"}` }, k: cents(amount) };
   }).sort((a, b) => b.k - a.k || String(a.row.id).localeCompare(String(b.row.id))).map(e => e.row);
 }
+const CREDIT = new Set(require("./figureSources").BOOKKEEPER_EXCLUDED_TYPES);
 async function computeGiftMetric(orgId, metric, rows, span) {
   const pos = rows.filter(r => cents(r.amount) > 0);
   switch (metric) {
@@ -117,9 +118,13 @@ async function computeGiftMetric(orgId, metric, rows, span) {
     case "gift_count": return { value: pos.length, measure: "count", rows: pos.map(r => asRow(r)) };
     case "donor_count": { const d = byDonor(pos); return { value: d.length, measure: "count", rows: d }; }
     case "average_gift": {
-      const c = pos.reduce((s, r) => s + cents(r.amount), 0);
-      const m = pos.length ? Math.round(c / pos.length) : 0;
-      return { value: dollars(m), cents: m, measure: "mean", rows: pos.map(r => asRow(r)) };
+      // NUMBERS-2: the one average (figureSources AVERAGE_WORDS): a refund
+      // comes off the total and is not a gift; credit rows are not gifts.
+      const counted = rows.filter(r => !CREDIT.has(String(r.gift_type || "").trim().toLowerCase()));
+      const n = counted.filter(r => cents(r.amount) > 0).length;
+      const c = counted.reduce((s, r) => s + cents(r.amount), 0);
+      const m = n ? Math.round(c / n) : 0;
+      return { value: dollars(m), cents: m, measure: "per_gift", rows: counted.map(r => asRow(r)) };
     }
     case "median_gift": {
       const sorted = [...pos].sort((a, b) => cents(a.amount) - cents(b.amount) || String(a.id).localeCompare(String(b.id)));

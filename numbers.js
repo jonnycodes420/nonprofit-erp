@@ -47,14 +47,36 @@ async function donorGlance(query, orgId, donorId) {
         WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL`, [orgId, donorId]),
     FS.figureValue(orgId, src("donor-lifetime"), {}),
   ]);
+  // NUMBERS-2: the imported total, its source and the last day it covers.
+  const [imp] = await query(
+    `SELECT imported_total::text AS t, imported_through, imported_source, imported_on FROM donors
+      WHERE org_id = ? AND id = ? AND imported_total IS NOT NULL`, [orgId, donorId]);
   const out = Object.fromEntries(figs);
   const lifetimeCents = lifetime.totalRows ? lifetime.cents : null;
   Object.assign(out.average, {
     refunds: r.refunds,
     refundCents: -(money.toCents(String(r.refunded)) ?? 0),
-    importedCents: lifetimeCents != null ? Math.max(0, lifetimeCents - (money.toCents(String(r.itemized)) ?? 0)) : 0,
+    importedCents: imp ? (money.toCents(imp.t) ?? 0) : 0,
   });
+  out.imported = imp ? { cents: money.toCents(imp.t) ?? 0, through: imp.imported_through, source: imp.imported_source || "your old system",
+                         on: imp.imported_on || null, words: importedWords(imp) } : null;
   return out;
+}
+
+// "Includes $50,000 from your old system (before Mar 2025)": the line under
+// Lifetime. "Before <month>" when the covered days end on a month's last day,
+// "up to <day>" otherwise, so it never claims days it does not cover.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function importedWords(imp) {
+  const cents = money.toCents(String(imp.t ?? imp.cents ?? "0")) ?? 0;
+  const t = String(imp.imported_through || imp.through || "").slice(0, 10);
+  let when = "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+    const [y, m, d] = t.split("-").map(Number);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    when = d === last ? ` (before ${MON[m % 12]} ${m === 12 ? y + 1 : y})` : ` (up to ${d} ${MON[m - 1]} ${y})`;
+  }
+  return `Includes ${money.formatCentsPlain(cents)} from your old system${when}`;
 }
 
 // Raised and donors per goal'd campaign: gift payments net of a fee the donor
@@ -76,4 +98,4 @@ function campaignGiftTotals(query, orgId) {
 // screen draws (scripts/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, screens };
+module.exports = { importedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, screens };

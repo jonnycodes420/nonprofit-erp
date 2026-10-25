@@ -1355,15 +1355,20 @@ async function runSchemaInit(pool) {
   // route get total_giving/gift_count set directly with no individual gifts
   // rows at all, so MIN(gifts.date) is NULL for them). Backfilled below.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS first_gift_date TEXT`);
-  await pool.query(`
-    UPDATE donors d
-    SET first_gift_date = COALESCE(
-      (SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id),
-      d.last_gift_date
-    )
-    WHERE d.first_gift_date IS NULL
-      AND (EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id) OR d.last_gift_date IS NOT NULL)
-  `);
+  // NUMBERS-2 · AN IMPORTED TOTAL IS ITS OWN FIGURE (donorSummary.js). What
+  // the old system stated: the total, count, first and last gift, the last day
+  // it covers (`imported_through`), the source's words and the day it came in.
+  // No recompute writes these; Lifetime is imported_total plus the gifts dated
+  // after imported_through.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_total NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_gift_count INTEGER`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_first_gift_date TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_last_gift_date TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_last_gift_amount NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_through TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_source TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_on TEXT`);
+  await keepEarlierTotals(pool);
 
   // Stores which specific milestone (threshold/anniversary) an enrollment
   // represents, so the sequences engine can tell a genuinely new milestone
@@ -8431,6 +8436,44 @@ async function backfillLinkedTasks() {
   return { made, nextSteps: t.rowCount, deadlines: m.rowCount };
 }
 
+// NUMBERS-2 · called by the schema init and after the boot seed.
+async function keepEarlierTotals(pool, orgId = null) {
+  // `orgId` narrows it to one org (the boot seed runs on every boot, prod
+  // included, and may only ever touch its own fixture org).
+  const only = orgId ? [orgId] : [];
+  // A person already carrying a stored total above their gifts (a donor file
+  // or the quick-add form, before this build) keeps exactly the Lifetime they
+  // show today: the difference becomes the imported total, covering the days
+  // before their first gift on file, so every gift on file still counts.
+  await pool.query(`
+    UPDATE donors d SET
+      imported_total = d.total_giving - COALESCE(g.t, 0),
+      imported_gift_count = NULLIF(GREATEST(COALESCE(d.gift_count, 0) - COALESCE(g.n, 0), 0), 0),
+      imported_first_gift_date = CASE WHEN NULLIF(d.first_gift_date, '') < COALESCE(g.first, '9999') THEN d.first_gift_date END,
+      imported_last_gift_date = CASE WHEN g.first IS NULL THEN NULLIF(d.last_gift_date, '') END,
+      imported_last_gift_amount = CASE WHEN g.first IS NULL AND NULLIF(d.last_gift_date, '') IS NOT NULL THEN d.last_gift_amount END,
+      imported_through = CASE WHEN g.first IS NOT NULL THEN to_char(g.first::date - 1, 'YYYY-MM-DD')
+                              ELSE COALESCE(NULLIF(d.last_gift_date, ''), to_char(d.created_at, 'YYYY-MM-DD')) END,
+      imported_source = 'an earlier import',
+      imported_on = to_char(d.created_at, 'YYYY-MM-DD')
+    FROM donors dd LEFT JOIN (SELECT donor_id, org_id, SUM(amount) AS t, COUNT(*) FILTER (WHERE amount > 0) AS n,
+                                     MIN(date) FILTER (WHERE amount > 0) AS first
+                                FROM gifts GROUP BY donor_id, org_id) g ON g.donor_id = dd.id AND g.org_id = dd.org_id
+    WHERE d.id = dd.id AND d.imported_total IS NULL AND d.is_sample IS NOT TRUE
+      AND d.total_giving > COALESCE(g.t, 0)${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
+  `, only);
+  // The first gift, from the gifts above zero in the person's own org, and the
+  // old system's first gift when it is older. Kept by the one statement since.
+  await pool.query(`
+    UPDATE donors d
+    SET first_gift_date = NULLIF(LEAST(COALESCE(NULLIF(d.imported_first_gift_date, ''), '9999-12-31'),
+      COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
+    WHERE d.first_gift_date IS DISTINCT FROM NULLIF(LEAST(COALESCE(NULLIF(d.imported_first_gift_date, ''), '9999-12-31'),
+      COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
+      AND (d.imported_total IS NOT NULL OR EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0))${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
+  `, only);
+}
+
 async function seedData() {
   const orgId = "org_creo";
   const userId = "user_admin";
@@ -9057,6 +9100,12 @@ async function seedData() {
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       [`msseed_touch_${date}`, orgId, "first_touch_delay", touchValue, date]
     );
+  }
+  // NUMBERS-2: the fixture's stated totals are kept as their own figure, on a
+  // test boot only (org_creo is never written on prod).
+  if (process.env.TEST_MODE) {
+    await keepEarlierTotals(pool, orgId);
+    await pool.query(require("./donorSummary").DONOR_SUMMARY_UPDATE(), [orgId]);
   }
 }
 

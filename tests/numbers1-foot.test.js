@@ -120,7 +120,8 @@ async function fire(evt) {
 
 // ── the things people do to gifts. Each draws its choices from its own seed,
 // so a shorter sequence replays the same choices against whatever is there. ──
-const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice"];
+// NUMBERS-2: "importTotal" brings a person with a total from an old system and no gifts.
+const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal"];
 async function live(o) {
   const donors = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY id`, [o.org])).map(r => r.id);
   const gifts = await q(`SELECT id, donor_id, amount::text AS amount, date, campaign_id, fund_id, stripe_payment_id FROM gifts WHERE org_id=$1 ORDER BY id`, [o.org]);
@@ -219,6 +220,12 @@ async function step(o, s) {
       const rows = Array.from({ length: int(r, 1, 3) }, () => ({ donorId: pick(r, donors), amount: money(r), date: dateIn(r, o) }));
       const res = expect(await api("POST", `/gifts/import-history`, o.tok, { gifts: rows, importId: `imp_${o.org}_${s.seed}` }), [200, 201], "import");
       return `import ${rows.length} gift(s) (${res.body.inserted} old, ${res.body.recentQueued || 0} recent)`;
+    }
+    case "importTotal": {
+      const total = money(r), last = civilPlusDays(-int(r, 30, 500)), k = Math.floor(r() * 1e9);
+      const res = expect(await api("POST", `/donors/import`, o.tok, { sourceName: "old-system.csv",
+        donors: [{ name: `Imported ${k}`, email: `imp-${k}-${o.org}@example.org`, total, gifts: int(r, 1, 30), lastGift: last, lastAmount: Math.min(total, 50) }] }), [200], "import a total");
+      return `import a person with $${total} through ${last} (${res.body.created} created)`;
     }
     case "voice": {
       const donor = pick(r, donors), dollars = int(r, 5, 900);

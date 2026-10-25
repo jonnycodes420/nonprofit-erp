@@ -34,7 +34,7 @@ export const METRICS = {
   donor_count:     { label: "Donors", kind: "count", base: "gifts", word: "donors", unit: ["donor", "donors"],
     sentence: "Each person with at least one gift in the period, counted once." },
   average_gift:    { label: "Average gift", kind: "money", base: "gifts", word: "average gift",
-    sentence: "The gifts in the period added up and divided by how many there are, to the cent." },
+    sentence: "Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift." },
   median_gift:     { label: "Median gift", kind: "money", base: "gifts", word: "median gift",
     sentence: "The gift in the middle when every gift in the period is put in order (the two middle gifts averaged when there is an even number)." },
   largest_gift:    { label: "Largest gift", kind: "money", base: "gifts", word: "largest gift",
@@ -44,7 +44,7 @@ export const METRICS = {
   recaptured_count: { label: "Came back", kind: "count", base: "gifts", unit: ["donor who came back", "donors who came back"],
     sentence: "Each person whose first gift in the period came after twelve months or more with no gift." },
   retention_rate:  { label: "Retention", kind: "percent", base: "source", source: "retention", noPeriod: "this_year",
-    sentence: "Of the people who gave last calendar year, the share who have given again this one." },
+    sentence: "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organisation's own year), the share who have given again this fiscal year." },
   first_year_retention: { label: "First-year retention", kind: "percent", base: "gifts", noPeriod: "this_year",
     sentence: "Of the people whose first gift ever was last calendar year, the share who have given again this one." },
   lapsed_count:    { label: "Lapsed donors", kind: "count", base: "donors", noPeriod: "today", unit: ["lapsed donor", "lapsed donors"],
@@ -599,7 +599,7 @@ export function answerSentence(a, plan, ctx = {}) {
     case "average_gift": t(`The average gift${per} was `); f("value"); break;
     case "median_gift": t(`The median gift${per} was `); f("value"); break;
     case "largest_gift": t(`The largest gift${per} was `); f("value"); if (a.largestFrom) t(`, from ${a.largestFrom}`); break;
-    case "retention_rate": t("Retention is "); f("value"); t(": of everyone who gave last calendar year, that share has given again this one"); break;
+    case "retention_rate": t("Retention is "); f("value"); t(": of everyone who gave last fiscal year, that share has given again this fiscal year"); break;
     case "first_year_retention": t("Of the "); f("part1"); t(" people whose first gift was last calendar year, "); f("part0"); t(" have given again this year, "); f("value"); break;
     case "lapsed_count": f("value"); t(` ${v.value === 1 ? "person is" : "people are"} tagged Lapsed today`); break;
     case "recurring_donors": f("value"); t(` ${v.value === 1 ? "person gives" : "people give"} monthly`); if (a.also) { t(", bringing in "); f("also"); t(" a month"); } break;

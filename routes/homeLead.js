@@ -210,7 +210,8 @@ async function readFacts(req, nowMs) {
   let compare = null;
   if (season) compare = { label: `Giving since ${season.since}`, thisYear: season.seasonThisYear, lastYear: season.lastYearByToday, question: { why: "Why is year-end giving behind last year?", what: "What is working in year-end giving?" } };
   else {
-    const y0 = `${today.slice(0, 4)}-01-01`, ly = d => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+    // NUMBERS-2: "this year" is the org's own fiscal year (orgTz carries its start month).
+    const y0 = orgTime.orgFiscalYearStart(org), ly = d => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;   // ORG_TZ_SEAM_OK
     const [[a], [b]] = await Promise.all([
       query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, y0, today]),
       query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, ly(y0), ly(today === `${today.slice(0, 4)}-02-29` ? `${today.slice(0, 4)}-02-28` : today)]),

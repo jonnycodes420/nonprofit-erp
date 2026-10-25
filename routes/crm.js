@@ -2402,7 +2402,15 @@ async function composeBoardPack(orgId, opts = {}) {
           // honour): the old report's number, labelled, never added in.
           if (f && def.key === "givingLastYear" && !(f.value > 0) && window.prev && !Object.values(filters || {}).some(Boolean)) {
             const h = await figureSources.historicalGiving(orgId, window.prev.from, window.prev.to, { baseline: true });
-            if (h) f = { ...f, label: `${f.label}, from your old system`, value: h.value, cents: h.cents, source: h.source, sentence: h.note, note: h.note, blank: null };
+            if (h) f = { ...f, label: `${f.label}, from your old system`, value: h.value, cents: h.cents, source: h.source, sentence: h.note, note: h.note, blank: null, fromHistory: true };
+          }
+          // NUMBERS-2: when last year is the old system's figure, the change is
+          // worked out against that same figure, never against Steward's empty year.
+          const lastF = figures.find(x => x && x.key === "givingLastYear");
+          const thisF = figures.find(x => x && x.key === "givingThisPeriod");
+          if (f && def.key === "givingChangePct" && lastF && lastF.fromHistory && thisF && lastF.cents > 0) {
+            const pct = Math.round(((thisF.cents || 0) - lastF.cents) / lastF.cents * 100);
+            f = { ...f, value: pct, blank: null, note: "Against the same period last year as your old system reported it." };
           }
           figures.push(f);
         }
@@ -4301,7 +4309,8 @@ async function donorProfileFigures(orgId, donorId, today) {
     ["lastMet",   { key: "donor-last-met",   params: { donor: donorId, today } }],
     ["lastEmail", { key: "donor-last-email", params: { donor: donorId, today } }],
     // PROFILE-1 (header) — This year, beside Lifetime in the header's row.
-    ["thisYear",  { key: "donor-gifts-between", params: { donor: donorId, from: `${String(today).slice(0, 4)}-01-01`, to: today } }],
+    // NUMBERS-2: the org's own fiscal year, as Home and Fundraising.
+    ["thisYear",  { key: "donor-gifts-between", params: { donor: donorId, from: orgFiscalYearStart(await orgTz(orgId)), to: today } }],   // ORG_TZ_SEAM_OK
   ];
   // PROFILE-1 (header) — the line under three of the numbers is read off the
   // figure's own first row (the same rows its drawer opens), so the date under
@@ -4333,7 +4342,7 @@ async function donorProfileFigures(orgId, donorId, today) {
   // whatever refreshes one tile refreshes all of them (they were a second read
   // that the voice card and other doors never re-asked for).
   const glance = await require("../numbers").donorGlance(query, orgId, donorId);
-  return { ...Object.fromEntries(got), first: glance.first, largest: glance.largest, average: glance.average };
+  return { ...Object.fromEntries(got), first: glance.first, largest: glance.largest, average: glance.average, imported: glance.imported };
 }
 
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
@@ -4605,6 +4614,8 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name,
      JSON.stringify(types)]
   );
+  // NUMBERS-2: a typed amount with no gift behind it is kept as its own figure.
+  if (lastAmount) await keepImportedTotals(query, req.user.orgId, [id], "an amount typed in when they were added");
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
 }));
@@ -4836,6 +4847,14 @@ function duplicateGroupsFrom(rows) {
   return groups;
 }
 
+// NUMBERS-2 · a total the file stated, with no gifts behind it, is kept as
+// its own figure (donorSummary.js KEEP_IMPORTED_TOTAL) under the file's name.
+async function keepImportedTotals(q, orgId, ids, sourceName) {
+  if (!ids || !ids.length) return;
+  const words = String(sourceName || "").replace(/\s+/g, " ").trim().slice(0, 80) || "your old system";
+  await q(require("../donorSummary").KEEP_IMPORTED_TOTAL, [orgId, ids, words, orgToday(await orgTz(orgId))]);   // ORG_TZ_SEAM_OK
+}
+
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const { donors } = req.body;
   if (!Array.isArray(donors) || donors.length === 0)
@@ -5062,6 +5081,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   // LIVE-1 · the one after-change step, once for everyone this file created.
   // `recalc: false`: a donors-only file carries the totals the old system
   // stated and no gift rows, so recomputing from gifts would zero them.
+  await keepImportedTotals(query, req.user.orgId, createdDonorIds, req.body.sourceName);
   await require("../afterChange").afterChange(req.user.orgId, createdDonorIds, { door: "csv_import", history: true, recalc: false });
   res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, unsubscribedImported, reconciliation: ledger.report() });
   // GTM-1b 1 — AFTER AN IMPORT, COUNT. The file is the thing that changes an
@@ -5934,6 +5954,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         touched: [...new Set([...affectedDonorIds, ...donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id))])] });
     recentQueued = recentGiftsToRecord.length;
   }
+
+  // NUMBERS-2: before the recompute below, a stated total the file's gifts do
+  // not reach is kept as its own figure, in this same transaction.
+  await keepImportedTotals((sql, params) => queryTx(txc, sql, params), orgId,
+    donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id)), req.body.sourceName);
 
   // ── THE ASSERTION. Before this transaction commits, the equations must hold.
   // A throw here rolls the whole import back (db.js withTransaction) and the
@@ -7282,7 +7307,10 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     await run(
       `UPDATE fin_transactions SET amount=?, date=?, fund_id=COALESCE(?, fund_id)
         WHERE gift_id=? AND org_id=?`,
-      [newAmt, newDate, fund_id !== undefined ? fund_id : null, req.params.id, req.user.orgId]
+      // NUMBERS-2: a fund cleared on the gift moves its ledger stamp to the
+      // general fund, where recordGift puts a gift with no fund (the old
+      // COALESCE kept the money in the fund that was cleared).
+      [newAmt, newDate, fund_id !== undefined ? (fund_id || (await ensureOrgLedger(req.user.orgId, { heal: true })).genFundId) : null, req.params.id, req.user.orgId]
     );
     // F-5: an amount edit on a pledge-linked payment changes the pledge's paid
     // total — recompute (may fulfill, may reopen; canceled never resurrected).
@@ -7728,7 +7756,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
 
   // COMMS-2 — the money is statementTotals.js's, in cents: deductible never
   // above what was given (a partial refund), a lost dispute off the statement.
-  const ST = require("../statementTotals").statementLines(gifts);
+  const ST = require("../statementTotals").statementLines(gifts, { year: true });
   const lineItems = ST.lines.map(l => ({
     date: l.date ? orgTime.formatCivil(l.date) : "", // civil date formatted from its own Y/M/D — never round-tripped through new Date()
     amount: toDollars(l.amountCents),
@@ -8150,6 +8178,10 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
           [ins[0].id, orgId, donor.id]);
         counts.pledgePaymentsLinked = (counts.pledgePaymentsLinked || 0) + linked.length;
       }
+      // NUMBERS-2: the linked payments decide the pledge's status (fulfilled,
+      // surplus), the same as a payment recorded by hand.
+      // A pledge the file called fulfilled stays so (its payments may be in no file).
+      if (p.status !== "fulfilled") await recalcPledgePayment(ins[0].id, orgId);
     }
   }
 
@@ -10329,16 +10361,21 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
        LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 200`, [req.user.orgId, req.params.id]);
-  const giftSoftCents = scRows.reduce((t, r) => t + Math.round(Number(r.amount) * 100), 0);
+  // NUMBERS-2: the totals are added up over EVERY soft credit, not the 200
+  // newest the list shows (a busy peer-to-peer fundraiser has more).
+  const scAgg = await query(
+    `SELECT sc.role, gp.id AS page_id, gp.title AS page_title, MAX(g.date) AS newest,
+            COALESCE(SUM(ROUND(sc.amount * 100)), 0)::bigint AS cents, COUNT(*)::int AS n
+       FROM gift_soft_credits sc
+       JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+       JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
+       LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
+      WHERE sc.org_id=? AND sc.donor_id=? GROUP BY sc.role, gp.id, gp.title`, [req.user.orgId, req.params.id]);
+  const giftSoftCents = scAgg.reduce((t, r) => t + Number(r.cents), 0);
   // One line per page they raised for, newest gift first, in cents.
-  const raisedFor = [];
-  for (const r of scRows) {
-    if (r.role !== "peer_fundraiser" || !r.page_id) continue;
-    let row = raisedFor.find(x => x.pageId === r.page_id);
-    if (!row) raisedFor.push(row = { pageId: r.page_id, pageTitle: r.page_title, amountCents: 0, giftCount: 0 });
-    row.amountCents += Math.round(Number(r.amount) * 100);
-    row.giftCount += 1;
-  }
+  const raisedFor = scAgg.filter(r => r.role === "peer_fundraiser" && r.page_id)
+    .sort((a, b) => (String(b.newest) > String(a.newest) ? 1 : -1))
+    .map(r => ({ pageId: r.page_id, pageTitle: r.page_title, amountCents: Number(r.cents), giftCount: r.n }));
   res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined, householdSources,
     giftSoftCredit: giftSoftCents / 100,
     hardPlusGiftSoft: (Math.round(hardCredit * 100) + giftSoftCents) / 100,
@@ -18635,7 +18672,8 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     // relationship, and lets GET /dashboard/my-stats/moves/breakdown below
     // return a list that actually matches what's being counted.
     query(`SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type IN ${MEANINGFUL_CONTACT_TYPES} AND date>=?`, [orgId, userId, fyStart]),
-    query("SELECT COALESCE(SUM(g.amount),0) as total FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.org_id=? AND d.assigned_to=? AND g.date>=?", [orgId, userId, fyStart]),
+    // NUMBERS-2: the drill-down's rows exactly (deleted people out, cents kept).
+    query("SELECT COALESCE(SUM(g.amount),0)::text as total FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id WHERE g.org_id=? AND d.assigned_to=? AND d.deleted_at IS NULL AND g.date>=?", [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
     // Org-wide (not user-scoped) signals for the Home dashboard's empty-state
@@ -18655,7 +18693,9 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     portfolioCount: parseInt(portfolioRows[0]?.cnt || 0),
     visitsYtd: parseInt(visitsRows[0]?.cnt || 0),
     madeYtd: parseInt(movesRows[0]?.cnt || 0),
-    giftsYtd: parseInt(giftsRows[0]?.total || 0),
+    giftsYtd: toDollars(toCents(giftsRows[0]?.total) || 0),
+    // NUMBERS-2: the year these "YTD" figures cover, shown once on Home.
+    yearLabel: finPeriodBounds("fiscal", 0, await orgTz(orgId)).periodLabel,   // ORG_TZ_SEAM_OK
     pipelineValue: parseInt(pipelineRows[0]?.total || 0),
     lapsedCount: parseInt(lapsedRows[0]?.cnt || 0),
     orgHasInteractions: parseInt(orgInteractionRows[0]?.cnt || 0) > 0,
@@ -20652,6 +20692,15 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
       // meaningless without them: 66% "above sector average" over 204
       // prior-year donors where half the file is lapsed reads as fake).
       year: retention.year, prevYear: retention.prevYear,
+      // NUMBERS-2: the fiscal years by name, the one definition, and the
+      // same-dates-last-year rate for reading "so far this year" fairly.
+      yearLabel: retention.period && retention.period.label, prevYearLabel: retention.period && retention.period.prevLabel,
+      definition: figureSources.RETENTION_WORDS,
+      sameDatesLastYear: retention.period ? await (async () => {
+        const w = figureSources.sameDatesLastYear(retention.period);
+        const f = await figureSources.figureValue(orgId, { key: "retention-window", params: w }, {});
+        return { current: f.value == null ? null : Math.round(Number(f.value)), source: { key: "retention-window", params: w }, definition: figureSources.RETENTION_SAME_POINT_WORDS };
+      })() : null,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },
   });

@@ -100,7 +100,7 @@ export const PACK_SECTIONS = [
           ...(w.filters && w.filters.fund ? { fund: w.filters.fund } : {}),
           ...(w.filters && w.filters.campaign ? { campaign: w.filters.campaign } : {}) } }) },
       { key: "retentionRate", label: "Retention", kind: "percent",
-        definition: "Of the people who gave last calendar year, the share who have given again this one. It is a calendar-year measure and does not move with the period this pack covers. Blank until there is enough history for the number to mean anything.",
+        definition: "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organisation's own year), the share who have given again this fiscal year. It does not move with the period this pack covers. Blank until there is enough history for the number to mean anything.",
         source: () => ({ key: "retention", params: {} }) },
     ],
   },
