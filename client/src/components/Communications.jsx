@@ -19,6 +19,7 @@ import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { CalendarDays } from "lucide-react";
+import { atlasName } from "../lib/atlas";   // AGENT-5
 import { AgentDraftReview, agentDraftsIn } from "./AgentDraftReview";
 import { AudienceTab, SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpens";
 import { Figure } from "./Figure";
@@ -1045,15 +1046,16 @@ function SequencesPanel({ data }) {
 // WIRE-1-ADDENDUM: the Agent's drafts are drafts to review too. They keep
 // their own queue (approving one marks its gift thanked), so this is the door
 // to it: how many are waiting, and Review all, in a row.
-function AgentDraftsWaiting() {
+function AgentDraftsWaiting({ highlightDraftId = null }) {
   const [n, setN] = useState(null);
-  const [open, setOpen] = useState(false);
+  // AGENT-5: Atlas's "Review and send" opens its draft here, ready to read.
+  const [open, setOpen] = useState(() => /^adr_/.test(String(highlightDraftId || "")));
   const load = () => apiFetch("/agent/waiting").then(w => setN(agentDraftsIn(w).length)).catch(() => setN(0));
   useEffect(() => { load(); }, []);
   if (!n) return null;
   return (
     <div data-testid="agent-drafts-waiting" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: T.bg2, borderRadius: 10, padding: "10px 14px" }}>
-      <span style={{ fontSize: 13.5, color: T.ink }}>{n === 1 ? "One note the Agent drafted is" : `${n} notes the Agent drafted are`} waiting for you.</span>
+      <span style={{ fontSize: 13.5, color: T.ink }}>{n === 1 ? `One note ${atlasName()} drafted is` : `${n} notes ${atlasName()} drafted are`} waiting for you.</span>
       <button onClick={() => setOpen(true)} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Review all {n}</button>
       {open && <AgentDraftReview onClose={() => { setOpen(false); load(); }} onChanged={load} />}
     </div>
@@ -1163,7 +1165,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
           Emails Steward drafted for a milestone, an anniversary or a workflow you turned on. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
-        <AgentDraftsWaiting />
+        <AgentDraftsWaiting highlightDraftId={highlightDraftId} />
         <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" /></div>
         {reviewedCount > 0 && (
           <button data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}

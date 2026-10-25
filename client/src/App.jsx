@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
@@ -35,6 +35,7 @@ import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
 import { useAtlasName } from "./lib/atlas";   // AGENT-5
+import { AtlasBell, AtlasNote } from "./components/AtlasNote";
 import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, legacyTab } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
@@ -140,11 +141,15 @@ function AppShell() {
   const [moreOpen,setMoreOpen]=useState(false);
   // VOICE-1 — Tell Steward: one sheet, opened from Home, a profile or the menu.
   const [tell,setTell]=useState(null);
+  const navigateRef=useRef(null);
   const atlas=useAtlasName();
   useEffect(()=>{
     const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send)});
     window.addEventListener("steward:tell",on);
-    return()=>window.removeEventListener("steward:tell",on);
+    // AGENT-5: a panel outside the page tree (Recent changes) opens a page.
+    const go=e=>e.detail&&e.detail.tab&&navigateRef.current&&navigateRef.current(e.detail.tab,e.detail.opts||{});
+    window.addEventListener("steward:go",go);
+    return()=>{window.removeEventListener("steward:tell",on);window.removeEventListener("steward:go",go);};
   },[]);
   // NAV-1 §4 — the person's own rail. `navSaved` is what the server holds
   // ([{id,visible}] or null for "never customized"); `navGroups` is that
@@ -345,6 +350,8 @@ function AppShell() {
       if(href!==window.location.pathname+window.location.search)routerNavigate(href,{state:{internal:true}});
     }
   };
+
+  navigateRef.current=navigateTo;
 
   // FIX-13 Part 6 — read the URL on load, on Back/Forward, and when a plain
   // <Link> anywhere in the app changes it. Pushes the app made itself are
@@ -789,6 +796,7 @@ function AppShell() {
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         {/* FIX-26: the same search as the desktop bar, behind an icon. */}
         <MobileSearch onNavigate={navigateTo}/>
+        <span style={{color:T.inkInverse,display:"inline-flex"}}><AtlasBell onNavigate={navigateTo}/></span>
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
             Code intact, re-enable by uncommenting.
         <button onClick={()=>setShowVoiceMemo(true)} title="Record a voice memo" style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
@@ -961,6 +969,7 @@ function AppShell() {
           usable and switching tabs (resetKey=tab) recovers — instead of a black
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
+      {tab==="dashboard"&&<AtlasNote place="home" onNavigate={navigateTo}/>}
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="home"/>}
       {/* BUILD-86 — the same component, the other surface. One Dashboard, one
           layout, one set of sections; `surface` decides which of them render.
@@ -976,12 +985,15 @@ function AppShell() {
           donor, and is removed). */}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
+      {tab==="communications"&&<AtlasNote place="communications" onNavigate={navigateTo}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
+      {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
           Settings section is untouched, so both doors open the same thing. */}
+      {tab==="journeys"&&<AtlasNote place="journey" onNavigate={navigateTo}/>}
       {tab==="journeys"&&(
         <div>
           <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontWeight:400,fontSize:32,margin:"0 0 6px",color:T.ink}}>Journeys</h1>
@@ -993,6 +1005,7 @@ function AppShell() {
       )}
       {/* PARITY-1 Part D — Groups, under Relationships. */}
       {tab==="groups"&&<GroupsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="events"&&<AtlasNote place="event" onNavigate={navigateTo}/>}
       {tab==="events"&&<Events key={navNonce} data={data} isReadOnly={isReadOnly}/>}
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not
@@ -1040,7 +1053,7 @@ function AppShell() {
         {/* VOICE-1 — Tell Steward, first in the phone's menu. */}
         {!isReadOnly&&<button data-testid="mobile-tell-steward" onClick={()=>{setMoreOpen(false);openTellSteward(null);}} className="mobile-more-row" style={{fontWeight:700}}>
           <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><MicGlyph size={18}/></span>
-          <span style={{flex:1}}>Tell Steward</span>
+          <span style={{flex:1}}>{atlas}</span>
         </button>}
         {/* NAV-1 §1/§6 — THE PHONE MENU IS THE RAIL'S GROUPS, IN THE RAIL'S
             ORDER, and it reads from the same merged layout: an item somebody

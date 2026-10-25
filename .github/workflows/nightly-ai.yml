@@ -22,6 +22,15 @@ name: Nightly AI
 
 on:
   workflow_dispatch:
+    inputs:
+      # AGENT-5: "atlas" runs tests/atlas-eval/ (25 messy requests to Atlas,
+      # scored exactly) instead of the 21 questions, through the same proxy.
+      suite:
+        description: "questions (the 21) or atlas (the Atlas eval)"
+        required: false
+        default: questions
+        type: choice
+        options: [questions, atlas]
 
 permissions:
   contents: read
@@ -125,13 +134,25 @@ jobs:
           echo "The server never became healthy."; tail -80 nightly-ai/server.log; exit 1
 
       - name: Seed the demo story into the throwaway database
+        if: inputs.suite != 'atlas'
         run: node scripts/seed-demo.js
 
       - name: Ask the questions
+        if: inputs.suite != 'atlas'
         run: node scripts/nightly-ai/run.js
 
+      # AGENT-5: its own fixture org (never the demo), 25 requests and the AI-off four.
+      - name: Run the Atlas eval
+        if: inputs.suite == 'atlas'
+        env:
+          OUT: nightly-ai/atlas-eval-summary.json
+        run: |
+          rc=0; node tests/atlas-eval/run.js || rc=$?
+          curl -s http://localhost:6524/__spend > nightly-ai/atlas-spend.json || true
+          exit $rc
+
       - name: Open an issue for the failures
-        if: failure() && steps.key.outcome == 'success'
+        if: failure() && steps.key.outcome == 'success' && inputs.suite != 'atlas'
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/nightly-ai/issue.js nightly-ai/nightly-ai-summary.json

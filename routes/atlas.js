@@ -65,7 +65,7 @@ function lev(a, b) {
   }
   return p[b.length];
 }
-const near = (a, b) => a.length >= 4 && b.length >= 4 && a[0] === b[0] ? lev(a, b) <= (a.length >= 7 ? 2 : 1) : a.length >= 5 && lev(a, b) === 1;
+const near = (a, b) => a.length >= 4 && b.length >= 4 && a[0] === b[0] ? lev(a, b) <= (a.length >= 6 ? 2 : 1) : a.length >= 5 && lev(a, b) === 1;
 async function people(orgId) {
   return query(`SELECT d.id, d.name, d.household_id, h.name AS household, h.primary_donor_id, d.total_giving
                   FROM donors d LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
@@ -177,6 +177,8 @@ async function requestOut(orgId, id) {
 const PRONOUN = /^(she|her|he|him|they|them|hers|his|their)$/i;
 const NEEDS_PERSON = new Set(["came_to_event", "register_for_event", "gift", "pledge", "add_to_journey", "remove_from_journey", "add_to_group",
   "remove_from_group", "draft_email", "log_conversation", "note", "send_receipt", "send_now", "recurring_change", "personal_detail", "find", "merge"]);
+// A reminder may name someone or nobody ("remind me to call Ingrid", "remind me to order shirts").
+const MAY_PERSON = new Set(["reminder"]);
 const TARGET_KIND = { came_to_event: "event", register_for_event: "event", add_to_journey: "journey", remove_from_journey: "journey", add_to_group: "group", remove_from_group: "group" };
 
 async function readSteps(orgId, text, { today, onPage }) {
@@ -209,7 +211,7 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
   const questions = [];
   const ask = (q) => { if (!questions.some(x => x.id === q.id)) questions.push(q); };
   for (const [i, st] of steps.entries()) {
-    if (NEEDS_PERSON.has(st.kind)) {
+    if (NEEDS_PERSON.has(st.kind) || (MAY_PERSON.has(st.kind) && st.who)) {
       if (!st.who || PRONOUN.test(st.who)) st.who = lastWho || st.who;
       if (st.who && !PRONOUN.test(st.who)) lastWho = st.who;
       const key = String(st.who || "").toLowerCase();
@@ -286,10 +288,19 @@ async function execute(req, m, steps, { today, ai }) {
   const cardId = () => "vc_" + uuid().slice(0, 8);
   const log = a => logAction(req, { ...base, ...a });
   const refusedClients = new Set();
+  const missing = new Set();
   let giftCard = null;
   const drafted = [];
   const reminders = steps.filter(s => s.kind === "reminder");
   const person = (id, extra = {}) => ({ donorId: id, link: { tab: "donor", donorId: id, ...extra } });
+  const heldFor = new Set();   // one held-back card per person and kind of detail
+  const holdBack = async (id, words) => {
+    const cat = V.sensitiveCategory(words) || "family";
+    if (heldFor.has(`${id}:${cat}`)) return;
+    heldFor.add(`${id}:${cat}`);
+    const c = await addCard(orgId, m.id, { id: cardId(), kind: "sensitive", category: cat, neutral: V.NEUTRAL[cat], quote: words, donorId: id, state: "waiting", title: V.NEUTRAL[cat].replace(/\.$/, "") });
+    await log({ kind: "held_back", state: "waiting", waits: true, cardId: c.id, line: `I held back a personal detail about ${first(nm(id))}. Keep it as a note?`, ...person(id), place: "person", placeId: id });
+  };
 
   for (const st of steps) {
     const id = st.donorId;
@@ -298,9 +309,14 @@ async function execute(req, m, steps, { today, ai }) {
       if (!refusedClients.has(id)) { refusedClients.add(id); await log({ kind: "refused", state: "refused", line: AT_.REFUSE.client(nm(id)) }); }
       continue;
     }
-    if (NEEDS_PERSON.has(st.kind) && !id) {
-      if (st.notFound) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.not_found(st.who) });
-      else if (!["merge"].includes(st.kind)) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.no_who });
+    if ((NEEDS_PERSON.has(st.kind) || (MAY_PERSON.has(st.kind) && st.notFound)) && !id) {
+      // Somebody not in Steward is said once, however many steps name them.
+      const key = String(st.who || "").toLowerCase();
+      if (!missing.has(key)) {
+        missing.add(key);
+        if (st.notFound) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.not_found(st.who) });
+        else if (!["merge"].includes(st.kind)) await log({ kind: "not_found", state: "refused", line: AT_.REFUSE.no_who });
+      }
       if (st.kind !== "merge") continue;
     }
     if (TARGET_KIND[st.kind] && !st.targetId) {
@@ -308,12 +324,7 @@ async function execute(req, m, steps, { today, ai }) {
       continue;
     }
     const held = V.sensitiveCategory(st.words) && ["note", "log_conversation", "other", "personal_detail"].includes(st.kind);
-    if (st.kind === "personal_detail" || (held && st.kind === "note")) {
-      const cat = V.sensitiveCategory(st.words) || "family";
-      const c = await addCard(orgId, m.id, { id: cardId(), kind: "sensitive", category: cat, neutral: V.NEUTRAL[cat], quote: st.words, donorId: id, state: "waiting", title: V.NEUTRAL[cat].replace(/\.$/, "") });
-      await log({ kind: "held_back", state: "waiting", waits: true, cardId: c.id, line: `I held back a personal detail about ${first(nm(id))}. Keep it as a note?`, ...person(id), place: "person", placeId: id });
-      continue;
-    }
+    if (st.kind === "personal_detail" || (held && st.kind === "note")) { await holdBack(id, st.words); continue; }
     switch (st.kind) {
       case "came_to_event":
       case "register_for_event": {
@@ -405,11 +416,7 @@ async function execute(req, m, steps, { today, ai }) {
         await log({ kind: "logged", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok,
           line: r.ok ? `Logged the ${label.toLowerCase()} with ${nm(id)}, ${AT_.dayWords(date, today)}.` : `I couldn't log that: ${r.reason}.`,
           ...person(id, { section: "timeline" }), place: "person", placeId: id });
-        for (const h of keep.held) {
-          const cat = V.sensitiveCategory(h) || "family";
-          const c = await addCard(orgId, m.id, { id: cardId(), kind: "sensitive", category: cat, neutral: V.NEUTRAL[cat], quote: h, donorId: id, state: "waiting", title: V.NEUTRAL[cat].replace(/\.$/, "") });
-          await log({ kind: "held_back", state: "waiting", waits: true, cardId: c.id, line: `I held back a personal detail about ${first(nm(id))}. Keep it as a note?`, ...person(id), place: "person", placeId: id });
-        }
+        for (const h of keep.held) await holdBack(id, h);
         break;
       }
       case "note": {
@@ -421,7 +428,7 @@ async function execute(req, m, steps, { today, ai }) {
       case "merge": {
         if (id && st.otherId && id !== st.otherId) {
           const r = await runStep(req, m, insId, { tool: "propose_merge", donorId: id, otherDonorId: st.otherId, citesRows: [id, st.otherId] });
-          await log({ kind: "refused", state: r.ok ? "done" : "refused", runId: r.runId, undoable: r.ok, line: AT_.REFUSE.merge, link: { tab: "data-health" }, place: "data_health" });
+          await log({ kind: "refused", state: "refused", runId: r.runId, line: r.ok ? AT_.REFUSE.merge : AT_.REFUSE.merge_one, link: { tab: "data-health" }, place: "data_health" });
         } else await log({ kind: "refused", state: "refused", line: AT_.REFUSE.merge_one, link: { tab: "data-health" } });
         break;
       }

@@ -25,6 +25,7 @@ import { RecordLink } from "./RecordLink";
 import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
+import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
@@ -2293,6 +2294,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             })()}
             {/* LATELY — the last three things that happened, of any kind, each
                 opening its record; "See everything" opens Conversations. */}
+            {/* AGENT-5: what Atlas did for this person, in order, with Undo. */}
+            <AtlasNote place="person" id={donor.id} onNavigate={onNavigate}/>
             {rel&&<ProfileTimeline lately={3} onSeeAll={()=>setDpTab("conversations")} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>

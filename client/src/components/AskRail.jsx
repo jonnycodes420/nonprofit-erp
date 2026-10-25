@@ -13,6 +13,7 @@
 // questions (never the answers) so Home can open it again, worked out fresh.
 // At phone width the rail is a full-screen sheet.
 import { useState, useEffect, useRef } from "react";
+import { atlasName } from "../lib/atlas";   // AGENT-5
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
@@ -197,8 +198,8 @@ export function AskHero({ isReadOnly, onStepTaken, agent, day, lead }) {
       <style>{RAIL_CSS + HERO_CSS}</style>
       <form onSubmit={submit} className="ask-hero-box">
         <input data-testid="ask-hero-input" value={text} onChange={e => setText(e.target.value)}
-          aria-label={canAgent ? "Ask a question, or tell Steward what to do" : "Ask Steward a question"}
-          placeholder={canAgent ? (narrow ? "Ask, or tell Steward…" : "Ask a question, or tell Steward what to do…") : "Ask Steward a question…"}
+          aria-label={canAgent ? `Ask a question, or tell ${atlasName()} what to do` : "Ask Steward a question"}
+          placeholder={canAgent ? (narrow ? `Ask, or tell ${atlasName()}…` : `Ask a question, or tell ${atlasName()} what to do…`) : "Ask Steward a question…"}
           style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontSize: 15.5, fontFamily: "inherit", color: T.ink, padding: "4px 2px" }} />
         <button type="submit" data-testid="ask-hero-go" disabled={!text.trim()}
           style={{ ...BTN, borderRadius: 999, padding: "9px 20px", fontSize: 14, opacity: text.trim() ? 1 : 0.45, cursor: text.trim() ? "pointer" : "not-allowed" }}>
