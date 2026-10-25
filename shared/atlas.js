@@ -82,7 +82,10 @@ export const ATLAS_SYSTEM = [
   "merge (two records are the same person), recurring_change (change, pause or cancel a monthly or recurring gift),",
   "personal_detail (health, illness, a death, divorce, a child, money trouble: put the whole sentence in words), question (she asks something), find (show or open someone),",
   "undo (undo that, take that back), other (anything else; put her words in words).",
-  "\"Scratch that\", \"no wait\", \"actually\": drop what she took back and keep the rest. Filler (\"OK yeah\", \"um\") is not a step.",
+  "\"Scratch that\", \"no wait\", \"actually\": they take back only the words just before them, and only when she says something in their place. A conversation she says happened (\"lunch with Margaret went well\") is still a log_conversation when \"scratch that\" follows it. Filler (\"OK yeah\", \"um\") is not a step.",
+  "Someone who came by, stopped in, visited, called, emailed or met her is a log_conversation (how: visit, call, email, meeting), even in the same breath as a gift.",
+  "What was said or liked in a conversation (\"he loved the tour\") belongs in that log_conversation's words, never a separate note.",
+  "\"Send it\", \"just send it\", \"don't show me\": one send_now step with the email in draft_subject and draft_body, and no draft_email beside it.",
   "A meeting she wants to ask for in the email is part of draft_email (when_words is when the meeting would be). A reminder to book it is its own reminder step only if she asked for one.",
   "\"Thank her\" with nothing else is draft_email. \"Log that\" after a gift is the same gift, not a second step. \"Send her the receipt\" is send_receipt.",
   "who: a family (\"the Halvorsens\") stays as she said it. A nickname stays as she said it. A pronoun becomes the name it refers to.",
@@ -100,6 +103,19 @@ export function buildAtlasPrompt(text, { today, onPage = null } = {}) {
 // dropped when it carries a name, amount or event (it would be a fact the
 // model supplied).
 const s = v => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
+// Two rules held in code, whatever the model returned: a note about the
+// person she just logged a conversation with is part of that conversation,
+// and "send it now" is the one draft for that person (never a second).
+export function tidySteps(steps) {
+  const key = x => String(x.who || "").toLowerCase();
+  const logs = new Map(steps.filter(x => x.kind === "log_conversation").map(x => [key(x), x]));
+  const sends = new Set(steps.filter(x => x.kind === "send_now").map(key));
+  return steps.filter(x => {
+    if (x.kind === "note" && logs.has(key(x))) { const l = logs.get(key(x)); if (!l.words.includes(x.words)) l.words = `${l.words.replace(/[.\s]+$/, "")}. ${x.words}`; return false; }
+    if (x.kind === "draft_email" && sends.has(key(x))) return false;
+    return true;
+  });
+}
 export function normalizeRead(raw, text) {
   const said = String(text || "").toLowerCase();
   const out = [];
@@ -114,7 +130,7 @@ export function normalizeRead(raw, text) {
     }
     out.push(step);
   }
-  return out;
+  return tidySteps(out);
 }
 
 // ── AMOUNTS IN WORDS ───────────────────────────────────────────────────────
@@ -258,7 +274,7 @@ export function readClause(c) {
   if (m) return { ...blank, kind: "reminder", whenWords: m[1], words: m[1] };
   return { ...blank, kind: "other" };
 }
-export function readInCode(text) { return clauses(text).map(readClause); }
+export function readInCode(text) { return tidySteps(clauses(text).map(readClause)); }
 
 // The first lines she sees, before the server answers: one spinner per clause.
 const PREVIEW = { came_to_event: "Marking attendance", register_for_event: "Adding to the guest list", gift: "Getting the gift ready for your tap",
@@ -301,5 +317,5 @@ export const SPOKE = {
   waiting: n => (n === 1 ? "One thing waits for your tap." : `${n} things wait for your tap.`),
 };
 
-export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, buildAtlasPrompt, normalizeRead,
+export default { ATLAS_DEFAULT_NAME, STEP_KINDS, RUNS, TAPS, ATLAS_RULES, ATLAS_TOOL, ATLAS_SYSTEM, buildAtlasPrompt, normalizeRead, tidySteps,
   amountFromWords, usd, whenFromWords, dayWords, monthWord, addDays, tidyTalk, readClause, readInCode, previewLines, AI_OFF_LINE, CANT_LINE, REFUSE, SPOKE };

@@ -28,9 +28,12 @@ const DM = require("../donorMatch");
 
 const routers = { r0: express.Router() };
 const TEXT_MIN = 3, TEXT_MAX = 4000;
+// The read is one short structured call; the faster model keeps a request
+// like Undine's under ten seconds. ATLAS_MODEL overrides it.
+const ATLAS_MODEL = () => process.env.ATLAS_MODEL || "claude-sonnet-4-6";
 
 function mount(ctx) {
-const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL } = ctx;
+const { query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate } = ctx;
 const app = routers.r0;
 const AT = () => import("../shared/atlas.js");
 const VM = () => import("../shared/voiceMemo.js");
@@ -188,7 +191,7 @@ async function readSteps(orgId, text, { today, onPage }) {
     const prompt = AT_.buildAtlasPrompt(text, { today, onPage });
     try {
       const msg = await anthropicFor(orgId).messages.create({
-        model: AGENT_MODEL, max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
+        model: ATLAS_MODEL(), max_tokens: 2000, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages,
         tools: [{ name: AT_.ATLAS_TOOL.name, description: AT_.ATLAS_TOOL.description, strict: true, input_schema: AT_.ATLAS_TOOL.input_schema }],
         tool_choice: { type: "tool", name: AT_.ATLAS_TOOL.name },
       });
@@ -329,10 +332,16 @@ async function execute(req, m, steps, { today, ai }) {
       case "came_to_event":
       case "register_for_event": {
         const happened = !st.targetDate || st.targetDate <= today;
-        const attend = st.kind === "came_to_event" && happened;
+        // She says they came to an event that is still ahead: it can't be marked yet.
+        if (st.kind === "came_to_event" && !happened) {
+          await log({ kind: "attended", state: "refused", line: `${st.targetName} is on ${AT_.dayWords(st.targetDate, today)} and hasn't happened yet, so I didn't mark ${first(nm(id))} as attended.`,
+            donorId: id, place: "event", placeId: st.targetId, link: { tab: "events", eventId: st.targetId } });
+          break;
+        }
+        const attend = st.kind === "came_to_event";
         const r = await runStep(req, m, insId, { tool: attend ? "mark_attended" : "register_event", donorId: id, eventId: st.targetId, eventName: st.targetName, citesRows: [id] });
-        const line = r.ok ? (attend ? `Marked ${nm(id)} as attended at ${st.targetName}.` : `Added ${nm(id)} to the ${st.targetName} guest list${st.kind === "came_to_event" ? `. It hasn't happened yet, so I'll leave attendance for the day` : ""}.`)
-          : `I couldn't mark ${nm(id)} at ${st.targetName}: ${r.reason || "it did not run"}.`;
+        const line = r.ok ? (attend ? `Marked ${nm(id)} as attended at ${st.targetName}.` : `Added ${nm(id)} to the ${st.targetName} guest list.`)
+          : `I couldn't ${attend ? "mark" : "add"} ${first(nm(id))} ${attend ? "at" : "to"} ${st.targetName}: ${r.reason || "it did not run"}.`;
         await log({ kind: attend ? "attended" : "registered", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line, donorId: id,
           place: "event", placeId: st.targetId, link: { tab: "events", eventId: st.targetId } });
         break;
