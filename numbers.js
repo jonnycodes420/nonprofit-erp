@@ -98,16 +98,27 @@ function campaignGiftTotals(query, orgId) {
 // campaigns it matches (Jonathan, 25 Oct). Rows: { pid, raised } for every
 // goal'd campaign that has a goal'd child. Grants are added by the caller:
 // each grant names one campaign, so they cannot overlap.
+// Each gift is matched to its campaigns ONCE, then paired with that campaign
+// and with the campaign's parent; UNION keeps one (parent, gift) pair, so a
+// gift matching the parent and a child counts once. (The first version asked
+// "is this gift in the set?" per gift per parent, and took 74 seconds on the
+// demo; this takes as long as campaignGiftTotals.)
 function goalRollupGiftTotals(query, orgId) {
   return query(
-    `SELECT p.id AS pid, COALESCE(SUM(g.amount), 0) AS raised
+    `WITH matched AS MATERIALIZED (
+            SELECT c.id AS cid, c.parent_goal_id AS parent, g.id AS gid, g.amount
+              FROM campaigns c JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
+             WHERE c.org_id = ? AND c.goal_amount > 0),
+          pairs AS (
+            SELECT cid AS pid, gid, amount FROM matched
+            UNION
+            SELECT parent AS pid, gid, amount FROM matched WHERE parent IS NOT NULL)
+     SELECT p.id AS pid, COALESCE(SUM(x.amount), 0) AS raised
        FROM campaigns p
-       LEFT JOIN gifts g ON g.org_id = p.org_id AND g.id IN (
-              SELECT g2.id FROM campaigns c JOIN gifts g2 ON g2.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "c")}
-               WHERE c.org_id = p.org_id AND c.goal_amount > 0 AND (c.id = p.id OR c.parent_goal_id = p.id))
+       LEFT JOIN pairs x ON x.pid = p.id
       WHERE p.org_id = ? AND p.goal_amount > 0
         AND EXISTS (SELECT 1 FROM campaigns k WHERE k.org_id = p.org_id AND k.parent_goal_id = p.id AND k.goal_amount > 0)
-      GROUP BY p.id`, [orgId]);
+      GROUP BY p.id`, [orgId, orgId]);
 }
 
 // FIX-49 · WHAT A CAMPAIGN'S PUBLIC BAR SAYS: its gifts (CAMPAIGN_GIFT_MATCH)
