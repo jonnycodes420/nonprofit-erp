@@ -118,8 +118,10 @@ const sumC = rows => rows.reduce((s, r) => s + Math.round(Number(r.amount) * 100
 function summary(gifts) {
   const donors = new Set(gifts.map(g => g.donor_id)).size;
   const total = sumC(gifts);
-  // Whole dollars, as the figure engine's average is.
-  return { totalCents: total, donors, gifts: gifts.length, averageCents: gifts.length ? Math.round(total / gifts.length / 100) * 100 : 0 };
+  // NUMBERS-2: the one average gift, to the cent: refunds come off the total
+  // and are not gifts.
+  const n = gifts.filter(g => Number(g.amount) > 0).length;
+  return { totalCents: total, donors, gifts: n, averageCents: n ? Math.round(total / n) : 0 };
 }
 
 module.exports = { campaignRow, campaignGifts, comparableFor, parts, summary, sumC };

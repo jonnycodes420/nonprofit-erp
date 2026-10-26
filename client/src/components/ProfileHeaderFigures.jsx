@@ -79,7 +79,8 @@ export function ProfileHeaderFigures({ figures, glance }) {
   return (
     <div className="dph-figures" data-testid="dp-header-figures" style={{ flexBasis: "100%", display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))",
       borderTop: "1px solid " + T.bg3, margin: "6px -24px -12px", padding: "0 8px 10px" }}>
-      <Cell first label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime">
+      <Cell first label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime"
+        under={F.imported ? <span data-testid="dp-fig-lifetime-imported" title={`From ${F.imported.source}${F.imported.on ? `, imported ${displayDate(F.imported.on)}` : ""}. Gifts in Steward dated after it are added to it; gifts dated before are already inside it.`}>{F.imported.words}</span> : null}>
         <One f={F.lifetime} kind="money" label="Lifetime" def={censusById("profile.lifetime").sentence} figureKey="profile.lifetime" />
       </Cell>
       <Cell label="This year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear">

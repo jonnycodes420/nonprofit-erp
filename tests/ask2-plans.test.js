@@ -16,7 +16,7 @@
 // stand-in's plan.
 //
 // HOW IT WOULD GO RED (proven before it was trusted, see the build report):
-//   · count refunds in average_gift → §1 "average" goes red;
+//   · NUMBERS-2: leave refunds out of average_gift's total (the old rule) → §1 "average" goes red;
 //   · take the median of every gift instead of the positive ones → §1 median;
 //   · let a breakdown cell read the whole set → §2 a group does not foot.
 //   · FIX-46: drop the "last N days/weeks/months" reading from templatePlan →
@@ -100,7 +100,8 @@ const pad = n => String(n).padStart(2, "0");
     ["01", P("raised"), { value: sumC(thisY) }],
     ["02", P("gift_count"), { value: pos(thisY).length }],
     ["03", P("donor_count"), { value: people(thisY).length }],
-    ["04", P("average_gift"), { value: Math.round(sumC(pos(thisY)) / pos(thisY).length) }],
+    // NUMBERS-2: the one average gift: a refund comes off the total and is not a gift.
+    ["04", P("average_gift"), { value: Math.round(sumC(thisY) / pos(thisY).length) }],
     ["05", P("median_gift"), { value: median }],
     ["06", P("largest_gift"), { value: posY[posY.length - 1] }],
     ["07", P("new_donor_count"), { value: Object.keys(D).filter(k => (firstOf(k) || "") >= `${Y}-01-01`).length }],
@@ -162,7 +163,8 @@ const pad = n => String(n).padStart(2, "0");
       return { body: first, rows };
     };
     const measureOf = (m, rows) => m === "sum" ? rows.reduce((s, r) => s + cents(r.amount), 0)
-      : m === "mean" ? (rows.length ? Math.round(rows.reduce((s, r) => s + cents(r.amount), 0) / rows.length) : 0) : rows.length;
+      : m === "mean" ? (rows.length ? Math.round(rows.reduce((s, r) => s + cents(r.amount), 0) / rows.length) : 0)
+      : m === "per_gift" ? (rows.filter(r => cents(r.amount) > 0).length ? Math.round(rows.reduce((s, r) => s + cents(r.amount), 0) / rows.filter(r => cents(r.amount) > 0).length) : 0) : rows.length;
     const valueC = f => (f.kind === "money" ? cents(f.value) : Number(f.value));
     const foots = async f => {
       const got = await allRows(f.source);

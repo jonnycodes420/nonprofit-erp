@@ -28,20 +28,21 @@ const money = require("../money");
 const orgTime = require("../orgTime");
 const { statementLines } = require("../statementTotals");
 
+const CREDIT = new Set(FS.BOOKKEEPER_EXCLUDED_TYPES);
 const c = v => money.toCents(String(v ?? "0")) ?? 0;
 const day = v => (v instanceof Date ? `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, "0")}-${String(v.getDate()).padStart(2, "0")}` : v == null ? null : String(v).slice(0, 10));
 
 // THE RULES. `words` is the rule; `screens` is where a broken one would show.
 const RULES = {
-  "donor-lifetime": { words: "A person's Lifetime equals the sum of their gifts, refunds taken off, plus any imported total with no gifts behind it.",
+  "donor-lifetime": { words: "A person's Lifetime equals their imported total (if any) plus their gifts dated after the last day it covers, refunds taken off. A gift dated on or before that day is inside the imported total and is never counted twice.",
     screens: "profile header, rail, donor list, Ask, the Lifetime drawer" },
-  "donor-count-average": { words: "A person's gift count is their gifts above zero, and Average is the Lifetime gifts over that count, to the cent.",
+  "donor-count-average": { words: "Average gift is the counted gifts (refunds taken off; soft and matching credit rows are not gifts) over how many gifts above zero there are, to the cent.",
     screens: "profile header Average gift, 'of N gifts'" },
   "donor-first-largest-last": { words: "First is their earliest gift above zero, Largest their biggest, and Last gift their most recent, each a real gift on file.",
     screens: "profile header First / Largest, Last gift, the rail" },
-  "donor-this-year": { words: "This year is the sum of their gifts dated from January 1 to today.",
+  "donor-this-year": { words: "This year is the sum of their gifts dated from the start of the org's fiscal year to today.",
     screens: "profile header This year" },
-  "donor-stored": { words: "The totals kept on the person (total_giving, gift_count, last gift date and amount) agree with their gifts.",
+  "donor-stored": { words: "The totals kept on the person (total_giving, gift_count, first and last gift date, last amount) agree with their gifts and imported total, and no recompute has erased an imported total.",
     screens: "donor list, groups, households, portfolios, Lost & Found, exports, staff emails" },
   "household": { words: "A household's combined giving is the sum of its members' Lifetime, and each member's household soft credit is the combined total less their own.",
     screens: "household panel, profile household total" },
@@ -57,7 +58,7 @@ const RULES = {
     screens: "Reports by fund, Finance funds" },
   "report-year": { words: "The year's giving in Reports equals the sum of the year's gifts from people who are not deleted.",
     screens: "Reports, board pack, Home this year" },
-  "statement": { words: "A year-end statement's total equals that person's real gifts dated in the year.",
+  "statement": { words: "A year-end statement's total equals that person's real gifts dated in the year; soft and matching credit rows are not on it.",
     screens: "year-end statements, receipts" },
   "removed": { words: "A deleted gift or person counts nowhere: no ledger stamp, soft credit or pledge payment points at a gift that is gone, and a deleted person's gifts are in no total.",
     screens: "Finance ledger, pledges, every total" },
@@ -77,16 +78,20 @@ async function checkOrg(orgId, opts = {}) {
   if (!org) throw new Error(`no org ${orgId}`);
   const today = await orgToday(orgId);
   const yearStart = `${today.slice(0, 4)}-01-01`;
+  // NUMBERS-2: "This year" on the profile is the org's own fiscal year.
+  const [vo] = await query(`SELECT timezone, vocabulary_json FROM orgs WHERE id = ?`, [orgId]);
+  const fyStart = orgTime.orgFiscalYearStart(vo || {});
 
   // The gift rows, once. Everything below is worked out from these.
   const gifts = await query(
-    `SELECT g.id, g.donor_id, g.amount::text AS amount, g.date, g.created_at, g.campaign_id, g.campaign, g.fund_id,
+    `SELECT g.id, g.donor_id, g.type, g.amount::text AS amount, g.date, g.created_at, g.campaign_id, g.campaign, g.fund_id,
             COALESCE(g.cover_fee_amount, 0)::text AS cover, g.is_sample, g.dispute_status, g.deductible_amount::text AS deductible_amount
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]);
   const donors = await query(
-    `SELECT id, total_giving::text AS total_giving, gift_count, last_gift_date, last_gift_amount::text AS last_gift_amount,
-            created_import_id, household_id
+    `SELECT id, total_giving::text AS total_giving, gift_count, first_gift_date, last_gift_date, last_gift_amount::text AS last_gift_amount,
+            created_import_id, household_id, imported_total::text AS imported_total, imported_gift_count,
+            imported_first_gift_date, imported_last_gift_date, imported_last_gift_amount::text AS imported_last_gift_amount, imported_through
        FROM donors WHERE org_id = ? AND deleted_at IS NULL`, [orgId]);
   const byDonor = new Map();
   for (const g of gifts) { if (!byDonor.has(g.donor_id)) byDonor.set(g.donor_id, []); byDonor.get(g.donor_id).push(g); }
@@ -100,19 +105,29 @@ async function checkOrg(orgId, opts = {}) {
     const itemized = gs.reduce((s, g) => s + c(g.amount), 0);
     const real = gs.filter(g => c(g.amount) > 0);
     const stored = c(d.total_giving);
-    const lifetime = itemized + Math.max(0, stored - itemized);
+    // NUMBERS-2: the imported total is its own figure; gifts after the last
+    // day it covers are added to it, gifts on or before it are inside it.
+    const imp = d.imported_total != null;
+    const through = imp ? day(d.imported_through) : null;
+    const after = imp && through ? gs.filter(g => day(g.date) > through) : gs;
+    const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
     const latest = [...gs].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
-    // Stored on the person.
-    // A stored total may stand above the gifts by an imported total with no
-    // gifts behind it (the Lifetime drawer shows it as its own row), and its
-    // count above theirs with it; never below them.
-    const history = stored > itemized;
-    if (stored < itemized) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: itemized });
+    // Stored on the person: exactly what the gifts and the imported figure say.
+    if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
+    const afterN = after.filter(g => c(g.amount) > 0).length;
+    const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : real.length - afterN) : 0) + afterN;
     const n = Number(d.gift_count) || 0;
-    if (history ? n < real.length : n !== real.length) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: real.length });
-    if (!history && (day(d.last_gift_date) || null) !== (latest ? day(latest.date) : null)) add("donor-stored", { donor: d.id, what: "last_gift_date", stored: day(d.last_gift_date), gifts: latest ? day(latest.date) : null });
-    else if (!history && latest && c(d.last_gift_amount) !== c(latest.amount)) add("donor-stored", { donor: d.id, what: "last_gift_amount", stored: c(d.last_gift_amount), gifts: c(latest.amount) });
-    if (!gs.length || (sample && !sample.has(d.id))) return;
+    if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
+    const firstReal = real.map(g => day(g.date)).sort()[0] || null;
+    const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date) : null].filter(Boolean).sort()[0] || null;
+    if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
+    const impLast = imp ? day(d.imported_last_gift_date) : null;
+    const rowLast = latest ? day(latest.date) : null;
+    const wantLast = rowLast && (!impLast || rowLast >= impLast) ? rowLast : impLast;
+    const wantLastAmt = rowLast && (!impLast || rowLast >= impLast) ? c(latest.amount) : impLast ? c(d.imported_last_gift_amount) : 0;
+    if ((day(d.last_gift_date) || null) !== (wantLast || null)) add("donor-stored", { donor: d.id, what: "last_gift_date", stored: day(d.last_gift_date), gifts: wantLast });
+    else if (c(d.last_gift_amount) !== wantLastAmt) add("donor-stored", { donor: d.id, what: "last_gift_amount", stored: c(d.last_gift_amount), gifts: wantLastAmt });
+    if ((!gs.length && !imp) || (sample && !sample.has(d.id))) return;
 
     // Shown on the profile: the figure sources the header and drawers read.
     const src = (key, extra = {}) => ({ key, params: { donor: d.id, ...extra } });
@@ -120,19 +135,22 @@ async function checkOrg(orgId, opts = {}) {
     const [lt, last, year] = await Promise.all([
       FS.figureValue(orgId, src("donor-lifetime"), {}),
       FS.figure(orgId, src("donor-last-gift"), {}, { pageSize: 1 }),
-      FS.figureValue(orgId, src("donor-gifts-between", { from: yearStart, to: today }), {}),
+      FS.figureValue(orgId, src("donor-gifts-between", { from: fyStart, to: today }), {}),
     ]);
     if (lt.cents !== lifetime) add("donor-lifetime", { donor: d.id, shown: lt.cents, gifts: lifetime });
-    const avgCents = real.length ? Math.round(itemized / real.length) : null;
-    if ((glance.average.count || 0) !== real.length || (real.length && glance.average.cents !== avgCents))
-      add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, real.length] });
+    // NUMBERS-2: the average is over counted gifts; a soft or matching credit row is not a gift.
+    const counted = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
+    const countedN = counted.filter(g => c(g.amount) > 0).length;
+    const avgCents = countedN ? Math.round(counted.reduce((s, g) => s + c(g.amount), 0) / countedN) : null;
+    if ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents))
+      add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
     const first = [...real].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))[0];
     const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
     if (real.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
     if (real.length && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
-    if (!last.rows[0] || last.rows[0].id !== latest.id) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
-    const yearCents = gs.filter(g => g.date >= yearStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
+    if (latest && (!last.rows[0] || last.rows[0].id !== latest.id)) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
+    const yearCents = gs.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
     if ((year.totalRows ? year.cents : 0) !== yearCents) add("donor-this-year", { donor: d.id, shown: year.cents, gifts: yearCents });
     // Each of these opens rows that must foot.
     for (const f of await Promise.all(["donor-lifetime", "donor-average-gift"].map(key => FS.footCheck(orgId, src(key), {}))))
@@ -143,8 +161,9 @@ async function checkOrg(orgId, opts = {}) {
   // ── households ───────────────────────────────────────────────────────
   const households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
   const lifeOf = new Map(donors.map(d => {
-    const it = (byDonor.get(d.id) || []).reduce((s, g) => s + c(g.amount), 0);
-    return [d.id, it + Math.max(0, c(d.total_giving) - it)];
+    const through = d.imported_total != null ? day(d.imported_through) : null;
+    const it = (byDonor.get(d.id) || []).filter(g => !through || day(g.date) > through).reduce((s, g) => s + c(g.amount), 0);
+    return [d.id, (d.imported_total != null ? c(d.imported_total) : 0) + it];
   }));
   for (const h of households) {
     const members = donors.filter(d => d.household_id === h);
@@ -222,8 +241,8 @@ async function checkOrg(orgId, opts = {}) {
       if (sample && !sample.has(donorId)) continue;
       const inYear = gs.filter(g => String(g.date).slice(0, 4) === last);
       if (!inYear.length) continue;
-      const want = inYear.filter(g => g.is_sample !== true && String(g.dispute_status || "") !== "lost").reduce((s, g) => s + c(g.amount), 0);
-      if (statementLines(inYear).totalCents !== want) add("statement", { donor: donorId, year: last });
+      const want = inYear.filter(g => g.is_sample !== true && String(g.dispute_status || "") !== "lost" && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
+      if (statementLines(inYear, { year: true }).totalCents !== want) add("statement", { donor: donorId, year: last });
     }
   }
 

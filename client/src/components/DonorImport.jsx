@@ -649,6 +649,8 @@ async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId, o
       });
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
         ...(runId ? { importId: runId } : {}),
+        // NUMBERS-2: the file's name labels a total it states (kept as its own figure).
+        ...(opts.sourceName ? { sourceName: opts.sourceName } : {}),
         // FIX-37: the thank-you answer and the headers it was decided from.
         ...(opts.thanks ? { thanks: opts.thanks } : {}),
         ...(opts.headers && opts.headers.length ? { headers: opts.headers } : {}),
@@ -659,7 +661,7 @@ async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId, o
         ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters,
                        identityResolved: extras.identityResolved === true } : {}) }) });
     } else {
-      res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors: slice }) });
+      res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors: slice, ...(opts.sourceName ? { sourceName: opts.sourceName } : {}) }) });
     }
     totals.created       += res.created       || 0;
     totals.giftsInserted += res.giftsInserted || 0;
@@ -1630,7 +1632,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       if (answers.length) await apiFetch("/import-values", { method: "POST", body: JSON.stringify({ values: answers }) }).catch(() => {});
       const thanksAnswer = thanks || (tyPreview && tyPreview.defaultAnswer) || null;   // FIX-37
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras, runId,
-        { thanks: thanksAnswer, headers: parsed?.headers || [] });
+        { thanks: thanksAnswer, headers: parsed?.headers || [], sourceName: srcFile?.name });
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
       // the file was parsed, never the count of what survived the client's
@@ -1960,7 +1962,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
-      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), undefined, undefined, { sourceName: srcFile?.name });
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
       // the file was parsed, never the count of what survived the client's
@@ -3837,7 +3839,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
       // assignPayloadDonors, which is scoped to that component.
       const ghAnswer = ghThanks || (ghPreview && ghPreview.defaultAnswer) || null;   // FIX-37
       const totals = await submitImportChunked(
-        wouldCreate.donors, wouldCreate.gifts, null, undefined, runId, { thanks: ghAnswer, headers: parsed?.headers || [] });
+        wouldCreate.donors, wouldCreate.gifts, null, undefined, runId, { thanks: ghAnswer, headers: parsed?.headers || [], sourceName: srcFile?.name });
       // The run is recorded so Settings, Imports shows it and the undo has
       // something to undo. `gift_file_with_donors` is what makes this import
       // reversible as a whole (routes/crm.js).

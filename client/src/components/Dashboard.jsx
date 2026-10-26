@@ -1440,7 +1440,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,background:T.bg2,padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
-              <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
+              <span data-testid="home-year-range" style={{fontSize:12,color:T.ink3}}>{(myStats&&myStats.yearLabel)||"This year"}</span>
             </div>
             <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
           </button>
@@ -1560,10 +1560,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       // minutes after meeting them. What the rate means is a
                       // fact ("N of M last-year donors gave again"), not a verdict.
                       const rr=stewardMetrics.retentionRate;
-                      const py=rr.prevYear, cy=rr.year;
+                      // NUMBERS-2: the org's own fiscal years, by the names the server gives them.
+                      const py=rr.prevYearLabel||(rr.prevYear?`FY ${rr.prevYear}`:null), cy=rr.yearLabel||(rr.year?`FY ${rr.year}`:null);
                       const denom=rr.prevYearCount||0, kept=rr.retained||0;
-                      const window=py&&cy?`FY ${py} → FY ${cy}`:"year over year";
-                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py?`FY ${py}`:"the prior year"} gave again (${window}).${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
+                      const window=py&&cy?`${py} → ${cy}`:"year over year";
+                      const same=rr.sameDatesLastYear&&rr.sameDatesLastYear.current!=null?` At this point last year it was ${rr.sameDatesLastYear.current}%.`:"";
+                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py||"the prior year"} gave again (${window}).${same}${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
                     })()}
                 </div>
               </div>

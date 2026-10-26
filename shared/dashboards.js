@@ -52,11 +52,9 @@ export const DASHBOARDS = [
       { key: "donorCount", label: "People who gave", kind: "count",
         definition: "Distinct givers with at least one gift this fiscal year." },
       { key: "retentionRate", label: "Retention", kind: "percent",
-        // FIX-2 A — CALENDAR, not fiscal: it is computeRetentionRate's
-        // number, which Home and the snapshots share, and it buckets by the
-        // calendar year. The sentence said "fiscal" and the rows said otherwise
-        // the moment the rows could be opened.
-        definition: "Of the people who gave last calendar year, the share who have given again this one. Blank until there is enough history for the number to mean anything, with the day it will appear." },
+        // NUMBERS-2: computeRetentionRate's number, which Home and the
+        // snapshots share: the org's fiscal years (figureSources RETENTION_WORDS).
+        definition: "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year. Blank until there is enough history for the number to mean anything, with the day it will appear." },
       { key: "byDesignation", rowsAre: "money", label: "Giving by designation", kind: "breakdown",
         definition: "This year's gifts grouped by the fund or program they were given to. Gifts with no designation are counted as unrestricted." },
       // FIX-2 A — "Monthly gifts giving" was not English. It was never composed

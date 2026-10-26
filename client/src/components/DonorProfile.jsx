@@ -2590,8 +2590,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
                   Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
                   {refundRows.length>0&&<span> · {refundRows.length===1?"a refund":`${refundRows.length} refunds`} of {fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} taken off</span>}
-                  {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
-                    <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
+                  {/* NUMBERS-2: the imported total is its own figure, with its source and the last day it covers. */}
+                  {figs&&figs.imported&&(
+                    <span className="dp-unitemized-note"> · lifetime {fmtFull(figs.lifetime&&figs.lifetime.value!=null?figs.lifetime.value:donor.total)} {figs.imported.words.replace(/^Includes/,"includes")}, from {figs.imported.source}; gifts below dated on or before then are inside it</span>
                   )}
                 </div>
               </div>

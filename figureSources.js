@@ -284,6 +284,18 @@ const ACTIVITY_SQL = {
 // and how it was paid is the detail. The amount is the gift's own amount and
 // nothing else — a refund is a gift with a negative amount and comes off the
 // total here, the same as it does in `gifts`.
+// NUMBERS-2 · THE DEFINITIONS, written once. The help panel, the "?" beside
+// each number and every screen read these words.
+const AVERAGE_WORDS = "Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.";
+const RETENTION_WORDS = "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year.";
+const RETENTION_SAME_POINT_WORDS = "Retention at the same point last year: of the people who gave the fiscal year before last, the share who had given again by this date last year. Use it to compare this year so far with last year.";
+// The retention-window params for retention at this point last year, from a
+// computeRetentionRate result: the year before last against last year up to
+// this date a year ago.
+function sameDatesLastYear(period) {
+  return { from1: addYears(period.from1, -1), to1: addYears(period.to1, -1), from0: period.from1, to0: addYears(period.to0, -1) };
+}
+const ROUND2 = v => money.toDollars(money.toCents(String(v ?? "0")) ?? 0);
 const DONOR_GIFT_SELECT = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
               ROUND(g.amount::numeric, 2) AS amount,
               COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
@@ -307,7 +319,11 @@ function giftsWhere(p, args) {
   // because Steward cannot see how it was paid.
   if (p.online === true) w += " AND " + ONLINE_GIFT_SQL;
   else if (p.online === false) w += " AND NOT " + ONLINE_GIFT_SQL;
-  if (p.bookkeeper === true) { w += " AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
+  if (p.bookkeeper === true) { w += " AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
+  // NUMBERS-2: an average or a median is over the counted gifts (AVERAGE_WORDS):
+  // soft and matching credit rows are not gifts.
+  else if (p.measure === "mean" || p.measure === "median") { w += " AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
+  if (p.measure === "median") w += " AND g.amount > 0";
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
   if (p.donor) { w += " AND g.donor_id = ?"; args.push(p.donor); }
@@ -379,14 +395,16 @@ const SOURCES = {
   // ── GIFTS ────────────────────────────────────────────────────────────────
   gifts: {
     label: "Gifts",
-    measure: p => p.measure || "sum",
+    // NUMBERS-2: "mean" is the one average gift (per_gift: refunds come off
+    // the total and are not counted as gifts), the profile's and Ask's too.
+    measure: p => (p.measure === "mean" ? "per_gift" : p.measure || "sum"),
     // REPORTS-3 — `order` is the ROW ORDER, not a filter: it changes which
     // gifts a page shows first and never which gifts the number counts, so the
     // sentence below does not mention it. It is mapped through a FIXED
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
     params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
-    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every counted" : p.measure === "median" ? "The middle amount of every counted" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
     sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
       let where = giftsWhere(p, args);
@@ -419,13 +437,15 @@ const SOURCES = {
       if (p.first && !["new", "returning"].includes(p.first)) throw new FigureParamError("first is new or returning.");
       const args = [orgId, p.from, p.to];
       let where = giftsWhere({ fund: p.fund, campaign: p.campaign }, args);
-      if (p.first) { where += ` AND (SELECT MIN(g2.date) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
+      // NUMBERS-2: a person's first gift is their first gift above zero, and a
+      // person whose only rows in the window are refunds did not give in it.
+      if (p.first) { where += ` AND (SELECT MIN(g2.date) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id AND g2.amount > 0) ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
       const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
               LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}
-             GROUP BY d.id, d.name`;
+             GROUP BY d.id, d.name HAVING COUNT(*) FILTER (WHERE g.amount > 0) > 0`;
       return {
         sql: p.top ? `SELECT * FROM (${inner}) t ORDER BY amount DESC, id LIMIT ${p.top}` : inner,
         args,
@@ -448,8 +468,8 @@ const SOURCES = {
     sql: (orgId, p) => {
       if (!["lybunt", "sybunt"].includes(p.kind)) throw new FigureParamError("kind is lybunt or sybunt.");
       const before = p.kind === "lybunt"
-        ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)"
-        : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date < ?)";
+        ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)"
+        : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date < ?)";
       return {
         sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
                      ROUND((SELECT COALESCE(SUM(g.amount), 0) FROM gifts g
@@ -457,7 +477,7 @@ const SOURCES = {
                      'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
                 FROM donors d
                WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${before}
-                 AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)`,
+                 AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date >= ? AND g.date <= ?)`,
         args: [p.prevFrom, p.prevTo, orgId, ...(p.kind === "lybunt" ? [p.prevFrom, p.prevTo] : [p.from]), p.from, p.to],
         order: "amount DESC, id",
       };
@@ -792,35 +812,35 @@ const SOURCES = {
   // lifetime on the word of a cache — and would read in the drawer as a
   // refund that nobody made. So no row is emitted and the figure is the
   // itemized sum, which is the number every gift on file can be pointed at.
+  //
+  // NUMBERS-2: the imported total is its own figure (donors.imported_*, see
+  // donorSummary.js), kept by no recompute. Lifetime is that total plus the
+  // gifts dated after the day it covers to (`imported_through`); a gift dated
+  // on or before that day is already inside the old system's total, so it is
+  // not a row here and is never counted twice.
   "donor-lifetime": {
     label: "Lifetime giving",
     measure: () => "sum",
     params: { donor: "id:required" },
-    sentence: () => "Every gift this person has ever given, added up to the cent. A refund is a gift with a negative amount and comes off the total, exactly as it does everywhere else in Steward. Giving that arrived as an imported total, with no individual gifts behind it, is one row of its own at the end.",
+    sentence: () => "Every gift this person has ever given, added up to the cent. A refund is a gift with a negative amount and comes off the total, exactly as it does everywhere else in Steward. A total brought in from an old system is one row of its own, with its source and the last day it covers; gifts in Steward dated on or before that day are already inside it, so they are not added again.",
     js: async (orgId, p) => {
-      const rows = await query(`${DONOR_GIFT_SELECT} ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, p.donor]);
       const [d] = await query(
-        `SELECT total_giving, first_gift_date FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`,
-        [orgId, p.donor]);
-      if (!d) return rows;
-      // Both sides in CENTS, by the one conversion, so the comparison is not
-      // decided by binary floating point.
-      const itemized = rows.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
-      const unitemized = (money.toCents(String(d.total_giving ?? "0")) ?? 0) - itemized;
-      if (unitemized <= 0) return rows;
-      // The date is the person's first known gift date, and only when it is
-      // genuinely older than anything itemized — otherwise this row claims a
-      // day it has no evidence for, and no date is the honest answer.
-      const oldest = rows.length ? String(rows[rows.length - 1].date || "").slice(0, 10) : null;
-      const first = d.first_gift_date ? String(d.first_gift_date).slice(0, 10) : null;
+        `SELECT imported_total, imported_through, imported_source, imported_on, imported_gift_count
+           FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`, [orgId, p.donor]);
+      if (!d) return [];
+      const through = d.imported_total != null && d.imported_through ? String(d.imported_through).slice(0, 10) : null;
+      const rows = await query(`${DONOR_GIFT_SELECT}${through ? " AND g.date > ?" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
+        through ? [orgId, p.donor, through] : [orgId, p.donor]);
+      if (d.imported_total == null) return rows;
+      const n = Number(d.imported_gift_count) || 0;
       return [...rows, {
         id: `${p.donor}:imported-total`,
         type: "imported_total",
         donor_id: p.donor,
-        name: "Giving before Steward",
-        date: first && (!oldest || first < oldest) ? first : null,
-        amount: money.toDollars(unitemized),
-        detail: "Imported as a total, with no individual gifts behind it",
+        name: `From ${d.imported_source || "your old system"}`,
+        date: through,
+        amount: ROUND2(d.imported_total),
+        detail: `${n ? `${n} gift${n === 1 ? "" : "s"}, ` : ""}imported as a total${d.imported_on ? ` on ${String(d.imported_on).slice(0, 10)}` : ""}, covering every gift to this date`,
       }];
     },
   },
@@ -1318,10 +1338,10 @@ const SOURCES = {
     label: "Average gift",
     measure: () => "per_gift",
     params: { donor: "id:required" },
-    sentence: () => "Everything this person has given, gift by gift, with any refund taken off, divided by the number of gifts, to the cent. A refund is not a gift, so it lowers the total but not the count. Soft credits and pledges are not in it.",
+    sentence: () => AVERAGE_WORDS,
     sql: (orgId, p) => ({
-      sql: DONOR_GIFT_SELECT,
-      args: [orgId, p.donor], order: "date DESC, id",
+      sql: `${DONOR_GIFT_SELECT} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])`,
+      args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC, id",
     }),
   },
   // PARITY-1 Part 1a · EACH TAG OPENS ITS DONORS. The tag's rule is
@@ -1574,12 +1594,12 @@ const SOURCES = {
   // how many there are, to the cent). With no dates it is all time.
   "group-gifts": {
     label: "Gifts from this group",
-    measure: p => (p.kind === "count" ? "count" : p.kind === "average" ? "mean" : "sum"),
+    measure: p => (p.kind === "count" ? "count" : p.kind === "average" ? "per_gift" : "sum"),
     params: { group: "id:required", from: "date", to: "date", kind: "word" },
     sentence: (p, dd) => {
       const when = p.from && p.to ? ` dated ${dd(p.from)} to ${dd(p.to)}` : p.from ? ` dated ${dd(p.from)} or later` : p.to ? ` dated up to ${dd(p.to)}` : ", ever";
       if (p.kind === "count") return `How many gifts the people in this group have given${when}. A refund is not a gift and is not counted.`;
-      if (p.kind === "average") return `Every gift the people in this group have given${when}, added up and divided by how many there are, to the cent. A refund is left out.`;
+      if (p.kind === "average") return `Every gift the people in this group have given${when}, added up and divided by how many there are, to the cent. A refund comes off the total and is not counted as a gift; soft and matching credits are not gifts.`;
       return `Every gift the people in this group have given${when}, added up to the cent, with refunds taken off.`;
     },
     sql: async (orgId, p) => {
@@ -1590,7 +1610,8 @@ const SOURCES = {
       let w = "";
       if (p.from) { w += " AND LEFT(g.date,10) >= ?"; args.push(p.from); }
       if (p.to) { w += " AND LEFT(g.date,10) <= ?"; args.push(p.to); }
-      if (p.kind === "count" || p.kind === "average") w += " AND g.amount > 0";
+      if (p.kind === "count") w += " AND g.amount > 0";
+      if (p.kind === "average") { w += " AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
       return {
         sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
                      COALESCE(f.name, 'Unrestricted') AS detail
@@ -1904,7 +1925,7 @@ const SOURCES = {
     label: "Pledged, not yet paid",
     measure: () => "sum",
     params: { campaign: "id" },
-    sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""}, at what is still to come on it. A pledge part-paid counts only the remainder.`,
+    sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""} from a person still on file, at what is still to come on it. A pledge part-paid counts only the remainder.`,
     sql: (orgId, p) => ({
       sql: `SELECT p.id, 'pledge' AS type, p.donor_id, d.name, p.due_date AS date,
                    ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
@@ -1912,7 +1933,7 @@ const SOURCES = {
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
               LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
                      ON pp.pledge_id = p.id
-             WHERE p.org_id = ? AND p.status = 'open'${p && p.campaign ? " AND p.campaign_id = ?" : ""}`,
+             WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}`,
       args: p && p.campaign ? [orgId, orgId, p.campaign] : [orgId, orgId],
       order: "date ASC NULLS LAST, id",
     }),
@@ -1926,7 +1947,7 @@ const SOURCES = {
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, 'Toward a pledge' AS detail
               FROM gifts g JOIN pledges p ON p.id = g.pledge_id AND p.org_id = g.org_id
               LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ?`,
+             WHERE g.org_id = ? AND d.deleted_at IS NULL`,
       args: [orgId],
     }),
   },
@@ -2246,7 +2267,7 @@ const SOURCES = {
     label: "The rows behind this answer",
     measure: p => (p.cell === "top" ? "sum" : ["who", "kept", "prior"].includes(p.cell) || ["lapsed_count", "recurring_donors", "volunteer_count"].includes(p.plan.metric) ? "count"
       : ({ raised: "sum", event_revenue: "sum", largest_gift: "sum", gift_count: "count", donor_count: "count",
-           new_donor_count: "count", recaptured_count: "count", average_gift: "mean", median_gift: "mean" }[p.plan.metric] || "count")),
+           new_donor_count: "count", recaptured_count: "count", average_gift: "per_gift", median_gift: "mean" }[p.plan.metric] || "count")),
     params: { plan: "plan:required", cell: "word:required" },
     sentence: p => (p.cell === "who" ? "Each person behind this answer, once, with what they gave in the period."
       : p.cell === "top" ? "The people at the top of this list, with what each gave in the period."
@@ -2257,7 +2278,7 @@ const SOURCES = {
       event_revenue: "Every gift recorded against the event, with any refund subtracted.",
       gift_count: "Each gift in the period, refunds not counted as gifts.",
       donor_count: "Each person with at least one gift in the period, counted once, with what they gave.",
-      average_gift: "Every gift in the period; the average is their total divided by how many there are, to the cent.",
+      average_gift: AVERAGE_WORDS,
       median_gift: "The gift in the middle when every gift in the period is put in order (the two middle gifts when there is an even number).",
       largest_gift: "The single largest gift in the period.",
       new_donor_count: "Each person whose first gift ever is dated in the period.",
@@ -2345,20 +2366,20 @@ const SOURCES = {
     label: "Gave last year and again this year",
     measure: () => "count",
     params: {},
-    sentence: () => "Everyone who gave last calendar year and has given again this one.",
+    sentence: () => "Everyone who gave last fiscal year (your organization's own year) and has given again this fiscal year. A refund is not a gift.",
     js: async (orgId, p, deps) => {
       const r = await retentionOf(orgId, deps);
-      return cohortRows(orgId, [...r.thisYearDonorIds].filter(id => r.prevYearDonorIds.has(id)), `Gave in ${r.prevYear} and ${r.year}`);
+      return cohortRows(orgId, [...r.thisYearDonorIds].filter(id => r.prevYearDonorIds.has(id)), `Gave in ${r.period.prevLabel} and ${r.period.label}`);
     },
   },
   "retention-prior": {
     label: "Gave last year",
     measure: () => "count",
     params: {},
-    sentence: () => "Everyone who gave last calendar year: the people retention is measured against.",
+    sentence: () => "Everyone who gave last fiscal year (your organization's own year): the people retention is measured against.",
     js: async (orgId, p, deps) => {
       const r = await retentionOf(orgId, deps);
-      return cohortRows(orgId, [...r.prevYearDonorIds], `Gave in ${r.prevYear}`);
+      return cohortRows(orgId, [...r.prevYearDonorIds], `Gave in ${r.period.prevLabel}`);
     },
   },
 
@@ -2454,7 +2475,7 @@ const SOURCES = {
     label: "Retention",
     ratio: "share",
     params: {},
-    sentence: () => "Of the people who gave last calendar year, the share who have given again this one.",
+    sentence: () => RETENTION_WORDS,
     parts: () => [
       { role: "numerator", label: "Gave again this year", key: "retention-retained", params: {} },
       { role: "denominator", label: "Gave last year", key: "retention-prior", params: {} },
@@ -2553,16 +2574,16 @@ async function retentionBlank(orgId, r, dd) {
   const floor = r.floor || { minPriorYearDonors: 20, minHistoryDays: 548 };
   const first = await firstGiftDate(orgId);
   if (!first) {
-    return "Retention compares each year's givers with the year before, and there are no gifts in Steward yet. It appears once a full calendar year of giving is in.";
+    return "Retention compares each year's givers with the year before, and there are no gifts in Steward yet. It appears once a full year of giving is in.";
   }
   const byHistory = orgTime.addDays(first, floor.minHistoryDays);
-  const nextJan = `${r.year + 1}-01-01`;
+  const nextJan = (r.period && r.period.next) || `${r.year + 1}-01-01`;
   let when, extra = "";
   if (r.prevYearCount >= floor.minPriorYearDonors) when = byHistory;
   else {
     when = byHistory > nextJan ? byHistory : nextJan;
     if (r.thisYearCount < floor.minPriorYearDonors) {
-      extra = ` It also needs at least ${floor.minPriorYearDonors} people who gave in one calendar year; ${r.thisYearCount} ${r.thisYearCount === 1 ? "has" : "have"} given so far this year.`;
+      extra = ` It also needs at least ${floor.minPriorYearDonors} people who gave in one year; ${r.thisYearCount} ${r.thisYearCount === 1 ? "has" : "have"} given so far this year.`;
     }
   }
   return `Retention compares each year's givers with the year before, and it needs a full year of giving in Steward to mean anything. It appears on ${dd(when)}.${extra}`;
@@ -2824,25 +2845,31 @@ async function groupFigureValues(orgId, m, sources) {
       const c = ["true"], own = [];
       if (p.from) { c.push("day >= ?"); own.push(p.from); }
       if (p.to) { c.push("day <= ?"); own.push(p.to); }
-      if (p.kind === "count" || p.kind === "average") c.push("raw > 0");
+      if (p.kind === "count") c.push("raw > 0");
+      // NUMBERS-2: the average is per_gift (group-gifts): refunds come off the
+      // total and are not gifts; credit rows are not gifts.
+      if (p.kind === "average") c.push("NOT credit");
       const w = c.join(" AND ");
-      // The condition is written twice, once for the count and once for the sum.
-      aggs.push(`COUNT(*) FILTER (WHERE ${w})::int AS n${i}, COALESCE(SUM(amount) FILTER (WHERE ${w}), 0)::text AS s${i}`);
-      aggArgs.push(...own, ...own);
+      // The condition is written once for the count, once for the sum and, for
+      // an average, once more for the gifts above zero.
+      aggs.push(`COUNT(*) FILTER (WHERE ${w})::int AS n${i}, COALESCE(SUM(amount) FILTER (WHERE ${w}), 0)::text AS s${i}`
+        + (p.kind === "average" ? `, COUNT(*) FILTER (WHERE ${w} AND raw > 0)::int AS g${i}` : ""));
+      aggArgs.push(...own, ...own, ...(p.kind === "average" ? own : []));
     }
     return { def, p };
   });
   const sql = `
     WITH m AS MATERIALIZED (${m.sql}),
          mem AS MATERIALIZED (SELECT d.id FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (SELECT id FROM m)),
-         gx AS MATERIALIZED (SELECT LEFT(g.date,10) AS day, g.amount AS raw, ROUND(g.amount::numeric, 2) AS amount
+         gx AS MATERIALIZED (SELECT LEFT(g.date,10) AS day, g.amount AS raw, ROUND(g.amount::numeric, 2) AS amount,
+                                    LOWER(TRIM(COALESCE(g.type,''))) = ANY(?::text[]) AS credit
                                FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id IN (SELECT id FROM m))
     SELECT ${[...scalars, "a.*"].join(", ")}
       FROM (SELECT ${aggs.length ? aggs.join(", ") : "1 AS none"} FROM gx) a`;
-  const [row] = await querySetwise(sql, [...m.args, orgId, orgId, ...scalarArgs, ...aggArgs]);
+  const [row] = await querySetwise(sql, [...m.args, orgId, BOOKKEEPER_EXCLUDED_TYPES, orgId, ...scalarArgs, ...aggArgs]);
   return plan.map(({ def, p }, i) => {
-    const agg = { n: row[`n${i}`], s: row[`s${i}`] ?? "0" };
+    const agg = { n: row[`n${i}`], s: row[`s${i}`] ?? "0", g: row[`g${i}`] };
     const { value, cents } = valueOf(def.measure(p), agg);
     return { value, cents, blank: null, blankShort: null, totalRows: Number(agg.n) || 0 };
   });
@@ -2856,4 +2883,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
+module.exports = { sameDatesLastYear, AVERAGE_WORDS, RETENTION_WORDS, RETENTION_SAME_POINT_WORDS, SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };

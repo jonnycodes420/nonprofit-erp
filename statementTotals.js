@@ -18,8 +18,14 @@ const { toCents, toDollars } = require("./money");
 
 const cents = v => toCents(String(v ?? "0")) ?? 0;
 
-function statementLines(gifts) {
-  const kept = gifts.filter(g => g.is_sample !== true && String(g.dispute_status || "") !== "lost");
+// NUMBERS-2: a year-end statement (`{ year: true }`) leaves out soft and
+// matching credit rows: they are recognition, not money this person gave, and
+// a tax statement must not print them. A single gift receipt passes nothing.
+const CREDIT_TYPES = new Set(["soft credit", "soft-credit", "soft_credit", "matching gift credit", "matched gift credit", "hard credit reversal"]);
+
+function statementLines(gifts, { year = false } = {}) {
+  const kept = gifts.filter(g => g.is_sample !== true && String(g.dispute_status || "") !== "lost"
+    && !(year && CREDIT_TYPES.has(String(g.type || "").trim().toLowerCase())));
   const lines = kept.map(g => {
     const amount = cents(g.amount);
     const stored = g.deductible_amount != null ? cents(g.deductible_amount) : amount;
@@ -31,4 +37,4 @@ function statementLines(gifts) {
   return { lines, totalCents, deductibleCents, totalAmount: toDollars(totalCents), totalDeductible: toDollars(deductibleCents) };
 }
 
-module.exports = { statementLines };
+module.exports = { statementLines, CREDIT_TYPES };

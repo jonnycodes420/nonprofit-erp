@@ -1,7 +1,7 @@
 {
  "about": "SUPPORT-1 · built by support/buildIndex.mjs from Steward's own sources. Do not edit by hand.",
  "counts": {
-  "help": 186,
+  "help": 189,
   "helpdoc": 122,
   "faq": 16,
   "feature": 40,
@@ -1420,6 +1420,36 @@
    "route": "/app/settings?section=security",
    "screen": "settings:security",
    "text": "See Set up two-factor for the step-by-step. Security also has a \"Download everything\" card for admins, which downloads all your data as JSON."
+  },
+  {
+   "id": "help:how-steward-counts:0",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "What Lifetime, Average gift, Retention, First gift and \"this year\" mean, the same on every screen, report, export and board pack."
+  },
+  {
+   "id": "help:how-steward-counts:1",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "The definitions",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.\nRetention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year.\nRetention at the same point last year: of the people who gave the fiscal year before last, the share who had given again by this date last year. Use it to compare this year so far with last year.\nFirst gift date: the earliest gift above zero on file, or the first gift your old system told us about if that is earlier. It is kept up to date whenever a gift is added, edited, refunded or deleted, two people are merged, or a file is imported.\nThis year and last year: your fiscal year, the one you set under Settings, Your words, \"When does your year start?\" (choose January for the calendar year). Home and Fundraising show the dates once at the top. Year-end tax statements stay on the calendar year, because that is the tax year."
+  },
+  {
+   "id": "help:how-steward-counts:2",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "History from your old system",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "When a file brings a person's total from your old system (with or without their gifts), Steward keeps that total as its own figure, with the file's name and the date it came in. Nothing Steward does later changes it.\nLifetime is that total plus the gifts in Steward dated after the last day it covers. The last day is the old system's last gift date, or the day of the import when the file had none. A gift dated on or before that day is already inside the old total, so it is never counted twice.\nThe profile says so under Lifetime, for example \"Includes $50,000 from your old system (before Mar 2025)\", and the Lifetime drawer shows the old total as one row."
   },
   {
    "id": "help:import-donors:0",

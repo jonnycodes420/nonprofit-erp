@@ -266,6 +266,7 @@ CORE=(
   onboard1-setup
   voice1-tell-steward
   numbers1-foot
+  numbers2-history
   voice2-everywhere
   voice3-talk
   voice4-does-it-all
