@@ -8375,6 +8375,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS hero_meta JSONB`);
   await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS image_meta JSONB`);
   await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS image_meta JSONB`);
+  // GIVE-3: how the page looks (layout, impact lines, trust panel, other ways
+  // to give), shared/givingPageDesign.js. Drafted in draft_settings.design.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS design JSONB`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS membership_cover JSONB`);
 
   // CLIENT-SAFE-1 · "We serve clients whose details are private". Off by

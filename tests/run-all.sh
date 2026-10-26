@@ -239,6 +239,7 @@ CORE=(
   give2-fee-footing
   campaign2-goal-bar
   giveedit1-pages
+  give3-pages
   trial-end
   upgrade-checkout
   close-link

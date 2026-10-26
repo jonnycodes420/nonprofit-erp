@@ -119,6 +119,9 @@ export default function GiveSteps({
   // PARITY-1 E — the "Sign in" line for a returning donor, drawn by the page
   // (it knows whether this org's portal is on). Null on an embedded form.
   signIn,
+  // GIVE-3 — the one line an amount can carry ("$50 buys a week of art
+  // supplies"), from the page's design; shown under the amounts when picked.
+  impactFor = null,
 }) {
   const { card, inp, btn, quiet } = styles;
   const [step, setStep] = useState(0);
@@ -365,6 +368,12 @@ export default function GiveSteps({
                   {fmtCents(c)}
                 </button>
               ))}
+            </div>
+          ) : null}
+
+          {impactFor && !isCustom && impactFor(amountCents) ? (
+            <div className="give-impact" data-testid="impact-line" style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.5, marginTop: -2, marginBottom: 10 }}>
+              {impactFor(amountCents)}
             </div>
           ) : null}
 

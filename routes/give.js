@@ -2406,7 +2406,8 @@ async function orgIdsFor(orgId) {
     query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT id, name FROM campaigns WHERE org_id=? ORDER BY name", [orgId]),
   ]);
-  return { funds, camps, orgFundIds: funds.map(f => String(f.id)), orgCampaignIds: camps.map(c => String(c.id)) };
+  const D = await import("../shared/givingPageDesign.js");   // GIVE-3: the page's design rules
+  return { funds, camps, D, orgFundIds: funds.map(f => String(f.id)), orgCampaignIds: camps.map(c => String(c.id)) };
 }
 async function pageSettingsPayload(pg, orgId) {
   const F = await formConfigMod();
@@ -2510,11 +2511,12 @@ app.post("/giving-pages/:id/page/history/:vid/restore", requireAuth, requireAdmi
   const widgets = Array.isArray(snap.widgets) ? snap.widgets : null;
   await run(`UPDATE giving_pages SET published = ?, draft = ?, form_position = COALESCE(?, form_position),
                title = ?, story = ?, image_url = ?, image_meta = ?::jsonb, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?, form_config = ?,
-               draft_settings = NULL, published_at = NOW(), draft_updated_at = NOW(), updated_at = NOW()
+               design = COALESCE(?::jsonb, design), draft_settings = NULL, published_at = NOW(), draft_updated_at = NOW(), updated_at = NOW()
              WHERE id = ? AND org_id = ?`,
     [widgets ? JSON.stringify(widgets) : null, widgets ? JSON.stringify(widgets) : null, snap.formPosition || null,
      st.title || pg.title, st.story || "", st.imageUrl || "", JSON.stringify(GPE.readImageMeta(st.imageMeta)), st.showGoal !== false, st.goalAmount != null ? st.goalAmount : null,
-     fundId, campaignId, st.formConfig ? JSON.stringify(st.formConfig) : null, pg.id, req.user.orgId]);
+     fundId, campaignId, st.formConfig ? JSON.stringify(st.formConfig) : null,
+     st.design ? JSON.stringify(ids.D.normalizeDesign(st.design)) : null, pg.id, req.user.orgId]);
   await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
     widgetPathsOrNull(pg.published), widgetPathsOrNull(widgets), req.user);
   const v = await addPageVersion(req.user.orgId, pg.id, snap, actor(req), ver.number);
@@ -2584,11 +2586,11 @@ app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWrite
     // form set up keeps the form it always had after a headline edit.
     const formChanged = !GPE.sameJson(live.form, next.form);
     await run(`UPDATE giving_pages SET title = ?, story = ?, image_url = ?, image_meta = ?::jsonb, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?,
-                 form_config = CASE WHEN ? THEN ?::jsonb ELSE form_config END,
+                 form_config = CASE WHEN ? THEN ?::jsonb ELSE form_config END, design = ?::jsonb,
                  draft_settings = NULL, published_at = NOW(), updated_at = NOW()
                WHERE id = ? AND org_id = ?`,
       [next.title, next.story, next.imageUrl, JSON.stringify(GPE.readImageMeta(next.imageMeta)), next.showGoal !== false, next.goalAmount, next.fundId, next.campaignId,
-       formChanged, JSON.stringify(next.form), pg.id, req.user.orgId]);
+       formChanged, JSON.stringify(next.form), JSON.stringify(ids.D.normalizeDesign(next.design)), pg.id, req.user.orgId]);
     if (live.imageUrl !== next.imageUrl) await recordAssetPointerHistory(req.user.orgId, "giving_page.image", pg.id, live.imageUrl || null, next.imageUrl || null, req.user);
   }
   const [after] = await query("SELECT * FROM giving_pages WHERE id = ? AND org_id = ?", [pg.id, req.user.orgId]);

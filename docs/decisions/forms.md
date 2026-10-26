@@ -50,6 +50,15 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   whether the form leads the page or follows the story. (BUILD-95 §5B)
 - **Keep draft and published state on `giving_pages` itself (`draft`/`published` JSONB).** A draft never
   reaches a donor, and an unbuilt page renders byte-for-byte as it always did. (BUILD-95 §5B)
+- **The editor's preview of a giving page IS `Donate.jsx`, from the draft's payload** (GIVE-3). The preview route
+  (`GET /giving-pages/:id/page/preview`) and the public read build one payload in `givingPagePublicPayload`; the
+  editor lays only the fields being typed over it. Never draw a giving page in the editor with a second component.
+  `tests/give3-pages.test.js` compares the preview's markup with the live page's at 1440 and 390.
+- **Layout, impact lines, the trust panel and other ways to give live in `shared/givingPageDesign.js`**
+  (`giving_pages.design`, drafted in `draft_settings.design`). A trust line shows only when the org's record holds
+  its fact (no EIN, no "tax-deductible"; no Stripe account, no Stripe line), and the org can hide any line. No badges.
+- **A giving page's layout is by container queries, not media queries**, so the editor's frames draw what a phone and
+  a desktop draw.
 - **Answer the draft route with `draft`, not `widgets`.** It is one contract for one editor. (BUILD-95 §5B)
 - **Let a built page replace the record's title, story and image, and lead with its hero.** The thermometer
   follows the ask. Never open a page on a bare `$0`. (BUILD-95 §5B)
