@@ -117,7 +117,11 @@ const s = v => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
 // Two rules held in code, whatever the model returned: a note about the
 // person she just logged a conversation with is part of that conversation,
 // and "send it now" is the one draft for that person (never a second).
+// A conversation is logged only when her words name one: a request to change
+// something ("cancel his monthly gift, he asked me to") is not a call.
+const CONVERSATION_WORDS = /\b(lunch|coffee|breakfast|dinner|drinks|tea|call|called|calling|phoned|rang|met|meet|meeting|visit|visited|came by|stopped by|stopped in|dropped by|tour|talked|spoke|chatted|chat|email|emailed|zoom|saw)\b/i;
 export function tidySteps(steps) {
+  steps = steps.filter(x => x.kind !== "log_conversation" || CONVERSATION_WORDS.test(`${x.how} ${x.words}`));
   const key = x => String(x.who || "").toLowerCase();
   const logs = new Map(steps.filter(x => x.kind === "log_conversation").map(x => [key(x), x]));
   const sends = new Set(steps.filter(x => x.kind === "send_now").map(key));
@@ -256,8 +260,19 @@ export function tidyTalk(text) {
 }
 const clauses = text => tidyTalk(text).split(/(?<=[.!?;])\s+|,?\s+\b(?:then|and then|also|plus)\b\s+/i).map(x => x.trim().replace(/[.!?;,]+$/, "")).filter(Boolean);
 const NAME = "([A-Z][a-zA-Z'’-]+(?:\\s+[A-Z][a-zA-Z'’-]+)*)";
+// A name is the capitalised words, even where the shape around it is read
+// without case ("lunch with Margaret went well" is Margaret).
+const capName = x => { const m = String(x || "").match(/^([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)*)/); return m ? m[1] : ""; };
 // One clause -> one step, in the plain shapes code can read for certain.
 export function readClause(c) {
+  const st = readClauseRaw(c);
+  const nm = capName(st.who);
+  // What the name swallowed is the rest of the clause ("Margaret yesterday").
+  if (nm && nm !== st.who) { st.whenWords = `${st.who.slice(nm.length)} ${st.whenWords}`.trim(); st.who = nm; }
+  if (["add_to_journey", "add_to_group", "remove_from_journey", "find", "log_conversation"].includes(st.kind) && !capName(st.who)) return { ...st, kind: "other", who: "" };
+  return st;
+}
+function readClauseRaw(c) {
   const t = c.trim();
   const blank = { who: "", target: "", amountWords: "", whenWords: "", how: "", words: t };
   if (/^(undo|take back|reverse)\b.*\b(that|it|last)\b|^undo$/i.test(t)) return { ...blank, kind: "undo" };

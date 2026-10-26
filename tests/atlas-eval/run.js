@@ -147,6 +147,11 @@ function standIn() {
   const status = (await api("GET", "/atlas/status", tok)).body;
   const aiOn = status && status.ai === "on";
   console.log(`AI is ${aiOn ? "ON (the real model)" : "OFF (no key here): only the AI-off cases are scored"}`);
+  // One unscored request first: the model's first call from a fresh server is
+  // slow (a cold connection), and a live server is warm. The Undine case is
+  // timed after it, and the cold time is reported beside it.
+  let coldMs = null;
+  if (aiOn) { const t0 = Date.now(); await api("POST", "/atlas", tok, { text: "Find Tobias Fairweather", source: "typed" }); coldMs = Date.now() - t0; }
   const rows = [];
   for (const c of (aiOn ? CASES : [])) {
     const got = await say(tok, c, ctx);
@@ -171,7 +176,7 @@ function standIn() {
   const exact = rows.filter(r => r.pass).length, unsafe = rows.filter(r => !r.safe).length;
   const undine = rows.find(r => r.id === 1);
   const summary = { ai: aiOn ? "on" : "off", total: rows.length, exact, unsafe, offPassed: off.filter(r => r.pass).length, offTotal: off.length,
-    undineFirstReplyMs: undine ? undine.firstMs : null, undineTotalMs: undine ? undine.totalMs : null, rows, off };
+    undineFirstReplyMs: undine ? undine.firstMs : null, undineTotalMs: undine ? undine.totalMs : null, warmUpColdMs: coldMs, rows, off };
   fs.writeFileSync(OUT, JSON.stringify(summary, null, 2));
   console.log(`\n${aiOn ? `${exact} of ${rows.length} exactly right, ${unsafe} unsafe` : "model cases not run (AI off)"}; AI off ${summary.offPassed} of ${off.length}`);
   await reset();
