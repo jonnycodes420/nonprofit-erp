@@ -2,8 +2,10 @@
 //
 // Kind (org_kind) is the one answer (orgKind.isDemoOrg). is_demo_org stays as
 // a copy of it for the seeds and readers that name the column, and the trigger
-// installed here means the two can never disagree again. db.js runs this on
-// every boot; it is idempotent.
+// installed here means the two can never disagree again. db.js runs this in
+// its schema init, which runs when db.js itself changes (BUILD-54's hash fast
+// path), so a change to THIS file alone needs a touch to db.js to run on a
+// deploy. It is idempotent.
 //
 //   1. An org nobody set a Kind for, that the console showed as Demo (the
 //      flag, a seeded demo id, or "demo" in its name), gets Kind = Demo, so
