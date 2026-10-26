@@ -21,7 +21,7 @@ const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file d
 const { getAssetMeta } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
-const { CAMPAIGN_GIFT_MATCH } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 
 const routers = {
   r0: express.Router(),
@@ -1653,16 +1653,15 @@ async function uniqueGivingPageSlug(orgId, base, excludeId) {
 // public page's progress bar, so the manager list never shows a number that
 // could drift from the public one.
 app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
-  // raised_amount counts what donors INTENDED for the page's ask (amount −
-  // cover_fee_amount) — the donor-covers-fees rule; the charged total lives in
-  // Reports/Finance/receipts. campaign_* expose the "counts toward" linkage
+  // raised_amount counts the full gift the donor paid (FIX-49, Jonathan 25 Oct:
+  // a covered fee is part of the gift); Finance alone works in net. campaign_* expose the "counts toward" linkage
   // (attribution FIX): a linked page's public thermometer tracks the CAMPAIGN's
   // progress (one goal concept), so the manager list carries the same figures.
   const rows = await query(
     `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
-       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
-         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
+         COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
        END AS campaign_raised
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
@@ -1848,7 +1847,7 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
     ]
   );
   const rows = await query(
-    `SELECT gp.*, COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+    `SELECT gp.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
      FROM giving_pages gp WHERE gp.id=?`,
     [req.params.id]
   );
@@ -2877,7 +2876,7 @@ app.get("/giving-pages/:id/fundraisers", requireAuth, wrap(async (req, res) => {
   if (!pageRows.length) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.org_id=? ORDER BY raised_amount DESC, pf.created_at DESC`,
     [req.params.id, req.user.orgId]
   );
@@ -3081,7 +3080,7 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   if (status !== undefined) await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=? AND org_id=?", [status, req.params.id, req.user.orgId]);
   const updated = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.id=? AND pf.org_id=?`,
     [req.params.id, req.user.orgId]
   );
@@ -6180,10 +6179,9 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       `SELECT c.id, COALESCE(c.donor_facing_name, c.name) AS name, c.donor_description, c.donor_story,
               c.hero_image_url, c.hero_crop, c.hero_focal_x, c.hero_focal_y, c.goal_progress_public, c.goal_amount,
               CASE WHEN c.goal_progress_public THEN
-                COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
+                COALESCE((SELECT SUM(g2.amount) FROM gifts g2
                           WHERE g2.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "c")}), 0)
-              + COALESCE((SELECT SUM(gr.amount) FROM grants gr
-                          WHERE gr.org_id = c.org_id AND gr.campaign_id = c.id AND gr.awarded_at IS NOT NULL), 0)
+              + ${PUBLIC_BAR_GRANTS("c")}
               END AS raised
        FROM campaigns c
        WHERE c.org_id = ?

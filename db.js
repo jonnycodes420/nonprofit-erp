@@ -6932,6 +6932,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_cents INTEGER`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_sponsor TEXT`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_started_at TIMESTAMPTZ`);
+  // FIX-49 · "Leave grants off the public bar". Awarded grants count on a
+  // campaign's public bar unless this is on; the admin cards always count them.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS grants_off_public_bar BOOLEAN NOT NULL DEFAULT false`);
 
   // THE DONOR'S OWN CHOICE ABOUT THEIR NAME, gift by gift. FALSE by default and
   // the default IS the decision (BUILD-103's rule, applied to a public page): a

@@ -2953,7 +2953,7 @@ async function main() {
     // The goal bar is a live SUM over the campaign's own gift rows. If the
     // figure and the rows ever disagree, the demonstration is of a defect.
     const [bar] = await q(
-      `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised,
+      `SELECT COALESCE(SUM(g.amount),0)::float AS raised,   -- FIX-49: the full gift, a covered fee included
               COUNT(*)::int AS n
          FROM gifts g JOIN campaigns c ON c.id=$2 AND c.org_id=g.org_id
         WHERE g.org_id=$1 AND (g.campaign_id=c.id OR g.campaign=c.name)`,
