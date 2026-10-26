@@ -11756,7 +11756,8 @@ app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
   // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
   // on the first boot that has this code (idempotent; one replica does it).
-  setTimeout(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
+  // Not on a test boot (ticks off): suites turn recipes on by hand and fire them.
+  if (!backgroundTicksDisabled()) setTimeout(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
   if (backgroundTicksDisabled()) {
     console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
   }
