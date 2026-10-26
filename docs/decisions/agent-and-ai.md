@@ -167,6 +167,11 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   `/ai/stream` via `askClaude` (= `streamAI`). (Strategic pivot)
 - **Fire workflows only on new live events; never call `fireWorkflows` from an import, backfill or migration.**
   The lapse sweep fires only when the lapse happened while the donor was live in Steward. (BUILD-25)
+- **A recipe with a journey equivalent is a journey (FIX-49).** `workflowsToJourneys.js` turns each running
+  failed-card, first-gift, major-gift and lapse recipe into the journey that does the same (or joins a running
+  journey on the same event) and switches the recipe off; turning one on through `PUT /workflows/:id` does the
+  same. The team's gift alert (`instant_gift_thanks`), `quiet_past_pattern` and `pledge_due_soon` have no journey
+  equivalent and keep running. Every outcome is a `workflow_conversions` row with its reason.
 - **Workflow recipes ship disabled.** Only `provisionNewOrgWorkflows` turns on `instant_gift_thanks`, and only
   at registration. (BUILD-13, BUILD-36)
 - **Recipes added since BUILD-76 may not email a donor, and automated transactional donor mail does not
