@@ -127,16 +127,24 @@ const TARGET_SQL = {
   journey: "SELECT id, name FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name",
   group: "SELECT id, name FROM audiences WHERE org_id=? AND kind='static' ORDER BY name",
 };
-async function resolveTarget(orgId, kind, heard, today) {
+async function resolveTarget(orgId, kind, heard, today, ahead = false) {
   const T = await VT();
   const rows = await query(TARGET_SQL[kind], [orgId]);
   const clean = String(heard || "").replace(/\b(event|journey|group|list|guest list|the|our)\b/gi, " ").replace(/\b(donors|gifts|givers)\b/gi, m => m.slice(0, -1)).replace(/\s+/g, " ").trim();
   if (!clean) return { state: "choices", options: rows.slice(0, 4) };
-  // "Harbor Run" when there is a Harbor Run each year: the latest one that has happened.
+  // "Harbor Run" when there is a Harbor Run each year. FIX-49: someone who
+  // went, came or attended was at the latest one that has happened; someone
+  // put on a guest list goes to the soonest one still ahead (`ahead`). Rows
+  // come newest first.
   if (kind === "event") {
     const words = clean.toLowerCase().split(" ");
     const all = rows.filter(r => words.every(w => ` ${String(r.name).toLowerCase()} `.includes(` ${w} `) || String(r.name).toLowerCase().includes(w)));
-    if (all.length > 1) { const past = all.filter(r => !r.date || r.date <= today); return { state: "matched", row: past[0] || all[all.length - 1] }; }
+    if (all.length > 1) {
+      const past = all.filter(r => !r.date || r.date <= today);
+      const coming = all.filter(r => r.date && r.date >= today);
+      const row = ahead ? coming[coming.length - 1] || past[0] : past[0] || all[all.length - 1];
+      return { state: "matched", row };
+    }
   }
   const m = T.matchName(clean, rows);
   if (m.exact) return { state: "matched", row: m.exact };
@@ -278,7 +286,7 @@ async function resolveAll(orgId, steps, { today, onPage, answers = {} }) {
     }
     const tk = TARGET_KIND[st.kind];
     if (tk) {
-      const r = await resolveTarget(orgId, tk, st.target, today);
+      const r = await resolveTarget(orgId, tk, st.target, today, st.kind === "register_for_event");
       const qid = `${tk}:${String(st.target || "").toLowerCase()}`;
       if (r.state === "matched") { st.targetId = r.row.id; st.targetName = r.row.name; st.targetDate = r.row.date || null; }
       else if (answers[qid] && r.options.some(o => o.id === answers[qid])) { const o = r.options.find(x => x.id === answers[qid]); st.targetId = o.id; st.targetName = o.name; st.targetDate = o.date || null; }

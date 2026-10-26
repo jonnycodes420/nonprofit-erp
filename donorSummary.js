@@ -29,6 +29,13 @@
 const { NOT_CREDIT } = require("./creditTypes");
 const LAST_GIFT_ORDER = "g.date DESC, g.created_at DESC, g.id DESC";
 
+// FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
+// gave one; when it gave only a last gift date, that date, because the person
+// was already a donor on it (a file that gave no dates at all says nothing,
+// and the day of the import is not a gift, so imported_through is never used
+// here). "Donor since", the lifecycle tags and first_gift_date all read this.
+const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
+
 // A gift on file that the imported total does not already cover.
 const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date > dd.imported_through)";
 
@@ -48,7 +55,7 @@ const DONOR_SUMMARY_UPDATE = (scope = "") => `
                (CASE WHEN x.row_last IS NOT NULL AND x.row_last >= COALESCE(NULLIF(x.imp_last, ''), '0000') THEN x.row_last_amt
                      WHEN NULLIF(x.imp_last, '') IS NOT NULL THEN COALESCE(x.imp_last_amt, 0) ELSE 0 END)::numeric(12,2) AS last_amt
           FROM (SELECT dd.id AS donor_id, dd.imported_total AS imp_total, dd.imported_gift_count AS imp_n,
-                       dd.imported_first_gift_date AS imp_first, dd.imported_last_gift_date AS imp_last,
+                       ${IMPORTED_FIRST("dd")} AS imp_first, dd.imported_last_gift_date AS imp_last,
                        dd.imported_last_gift_amount AS imp_last_amt,
                        SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_total,
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_n,
@@ -105,4 +112,4 @@ const SOFT_CREDIT_RESIZE = [
     WHERE g.id = sc.gift_id AND g.org_id = sc.org_id AND sc.gift_id = $1 AND sc.org_id = $2`,
 ];
 
-module.exports = { DONOR_SUMMARY_UPDATE, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE };
+module.exports = { DONOR_SUMMARY_UPDATE, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };

@@ -8515,12 +8515,13 @@ async function keepEarlierTotals(pool, orgId = null) {
       AND d.total_giving > COALESCE(g.t, 0)${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
   `, only);
   // The first gift, from the gifts above zero in the person's own org, and the
-  // old system's first gift when it is older. Kept by the one statement since.
+  // old system's first gift when it is older (FIX-49: its last gift date when
+  // the file gave no first one). Kept by the one statement since.
   await pool.query(`
     UPDATE donors d
-    SET first_gift_date = NULLIF(LEAST(COALESCE(NULLIF(d.imported_first_gift_date, ''), '9999-12-31'),
+    SET first_gift_date = NULLIF(LEAST(COALESCE(${require("./donorSummary").IMPORTED_FIRST("d")}, '9999-12-31'),
       COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
-    WHERE d.first_gift_date IS DISTINCT FROM NULLIF(LEAST(COALESCE(NULLIF(d.imported_first_gift_date, ''), '9999-12-31'),
+    WHERE d.first_gift_date IS DISTINCT FROM NULLIF(LEAST(COALESCE(${require("./donorSummary").IMPORTED_FIRST("d")}, '9999-12-31'),
       COALESCE((SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0), '9999-12-31')), '9999-12-31')
       AND (d.imported_total IS NOT NULL OR EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0))${orgId ? " AND d.org_id = $1" : " AND d.org_id <> 'org_creo'"}
   `, only);
