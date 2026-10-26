@@ -270,6 +270,7 @@ CORE=(
   voice2-everywhere
   voice3-talk
   voice4-does-it-all
+  agent5-atlas
   auto1-send
   thread2-links
   fix43-safe-fetch

@@ -40,6 +40,9 @@ import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
 import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
+import { openTellSteward } from "./TellSteward";   // AGENT-5: one input, Atlas over the page
+import { openRecentChanges } from "./RecentChanges";
+import { atlasName } from "../lib/atlas";
 import { HomeLead } from "./HomeLead";   // HOME-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
@@ -574,7 +577,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   function agentAsk(){
     const text=agentText.trim();
     if(!text)return;
-    onNavigate("agent",{agentText:text,autoAsk:true});
+    openTellSteward(null,{text,send:true});   // AGENT-5: Atlas, over Home
   }
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
 // TASKS-2 — Home's "Due today" is the Tasks Today count, from the one server
@@ -2208,9 +2211,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     homeRows.unshift({age:-1,el:(
       <li key={"readout-"+ro.id} className="attn-row" data-testid="home-readout-row"
         style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk}}>
-        <a href="/app/agent?view=changed" className="attn-row-main"
+        <a href="/app" className="attn-row-main"
           style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
-          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("agent",{agentView:"changed"});}}>
+          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();openRecentChanges();}}>
           <div style={{flex:1,minWidth:0}}>
             {/* Not attn-donor-name: a readout is not a person, and that class
                 is how the smoke walk finds the names that must open a profile. */}
@@ -2226,7 +2229,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         </a>
         <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>onNavigate("agent",{agentView:"changed"})}
+          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>openRecentChanges()}
             style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>See who</button>
         </div>
       </li>)});
@@ -2617,23 +2620,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <span data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
               {agentDaily.message||"Not enabled for this organization yet."}
             </span>
-            <button onClick={()=>onNavigate("agent")} style={sLink}>Open Agent →</button>
+            <button onClick={()=>openTellSteward(null)} style={sLink}>Open {atlasName()} →</button>
           </div>
         ):(<>
         {agentDaily&&agentDaily.line&&(
           <div data-testid="agent-daily-line"
-            {...interactive(()=>onNavigate("agent",{agentView:agentWaiting>0?"waiting":"guardrails"}),{label:agentDaily.line+" Open it in Agent."})}
+            {...interactive(()=>openTellSteward(null),{label:agentDaily.line+" Open "+atlasName()+"."})}
             style={{alignSelf:"flex-start",fontSize:13.5,lineHeight:1.5,color:T.ink,borderRadius:6}}>
             {agentDaily.line}
           </div>
         )}
         <form onSubmit={e=>{e.preventDefault();agentAsk();}} style={{display:"flex",gap:8,alignItems:"center"}}>
           <input data-testid="agent-input" value={agentText} onChange={e=>setAgentText(e.target.value)}
-            aria-label="Tell Steward what to do. Enter opens it in Agent."
-            placeholder="Tell Steward what to do…"
+            aria-label={`Tell ${atlasName()} what to do. Enter asks ${atlasName()}.`}
+            placeholder={`Tell ${atlasName()} what to do…`}
             style={{flex:"1 1 auto",minWidth:0,boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,background:T.white,
                     padding:"10px 12px",fontSize:14,fontFamily:"inherit",color:T.ink}}/>
-          <button data-testid="agent-ask" type="submit" disabled={agentEmpty} aria-label="Go. Open this in Agent."
+          <button data-testid="agent-ask" type="submit" disabled={agentEmpty} aria-label={`Go. ${atlasName()} does it here.`}
             style={{flexShrink:0,background:T.greenDk,border:"1px solid "+T.greenDk,borderRadius:10,padding:"10px 20px",color:T.white,
                     fontSize:14,fontWeight:700,cursor:agentEmpty?"not-allowed":"pointer"}}>
             Go
@@ -3250,9 +3253,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <div style={{padding:"0 2px"}}>
           <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay}
             lead={homeDay&&homeDay.lead&&homeDay.lead.length>0?<HomeLead lead={homeDay.lead} onNavigate={onNavigate} isReadOnly={isReadOnly} onSetAside={loadHomeDay}/>:null}
-            agent={{available:!(agentDaily&&agentDaily.available===false),line:agentDaily&&agentDaily.line,
-              onSend:t=>onNavigate("agent",{agentText:t,autoAsk:true}),
-              onOpen:()=>onNavigate("agent",{agentView:((agentDaily&&agentDaily.waiting)||0)>0?"waiting":"guardrails"})}}/>
+            agent={{available:true,line:agentDaily&&agentDaily.line,
+              onSend:t=>openTellSteward(null,{text:t,send:true}),
+              onOpen:()=>openTellSteward(null)}}/>
         </div>
       )}
       </>);

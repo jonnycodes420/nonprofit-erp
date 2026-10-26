@@ -191,7 +191,8 @@ async function agentShapeMod() { return import("../shared/agentShape.js"); }
 // registry is data: this file names no persona id anywhere.
 async function agentPersonasMod() { return import("../shared/agentPersonas.js"); }
 
-const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
+// AGENT-5: the helper is Atlas, by one name the environment can change.
+const AGENT_ACTOR = { id: "system:agent", get name() { return String(process.env.ATLAS_NAME || "").trim() || "Atlas"; } };
 
 // ── WHAT THE AGENT IS ALLOWED TO SEE ───────────────────────────────────────
 // The model gets the instruction, the org's vocabulary, and the rows STEWARD
@@ -492,7 +493,7 @@ const AGENT_EXECUTORS = {
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
        VALUES (?,?,?,'activity',?,?,?,?,?)`,
       [lineId, ctx.orgId, donor.id,
-       `${thanks ? "Thank-you drafted" : what ? `${what} drafted` : "Note drafted"} by Steward, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
+       `${thanks ? "Thank-you drafted" : what ? `${what} drafted` : "Note drafted"} by ${AGENT_ACTOR.name}, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
        ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name,
        JSON.stringify({ line_key: `agent_draft:${id}`, agentDraftId: id, draft: true, giftIds })]);
     await agentWrite(ctx, { tool: "draft_note", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
@@ -539,7 +540,7 @@ const AGENT_EXECUTORS = {
       await runTx(ctx.client,
         `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
          VALUES (?,?,?,'activity',?,?,?,?,?)`,
-        [lineId, ctx.orgId, donor.id, `Task made by Steward: "${title.slice(0, 160)}"${due ? `, due ${(await import("../shared/displayDate.js")).displayDay(due, ctx.today) || due}` : ""}.`,
+        [lineId, ctx.orgId, donor.id, `Task made by ${AGENT_ACTOR.name}: "${title.slice(0, 160)}"${due ? `, due ${(await import("../shared/displayDate.js")).displayDay(due, ctx.today) || due}` : ""}.`,
          ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name, JSON.stringify({ line_key: `agent_task:${id}`, taskId: id, grantId: grant ? grant.id : null })]);
       await agentWrite(ctx, { tool: "create_task", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     }
@@ -878,6 +879,36 @@ const AGENT_EXECUTORS = {
     const [a] = await query("SELECT id FROM event_attendees WHERE event_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, donor.id]);
     if (!a) return { failed: "they are not on the guest list when Steward looks" };
     await agentWrite(ctx, { tool: "register_event", table: "event_attendees", entityId: a.id, before: null, after: { event_id: eid, donor_id: donor.id }, cites: step.citesRows });
+    return { donorId: donor.id, id: a.id };
+  },
+
+  // AGENT-5: through the guest list's own routes, so the timeline line, the
+  // after-change step and an attended-event journey are what a click makes.
+  // Undo takes off what this made: the row it added, or the status it changed,
+  // and the "Came to" line.
+  async mark_attended(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const eid = String(step.eventId || "");
+    const [ev] = await query("SELECT id, name, LEFT(date::text,10) AS day FROM events WHERE id=? AND org_id=?", [eid, ctx.orgId]);
+    if (!ev) return { failed: "that event is not on file" };
+    if (ev.day && ev.day > ctx.today) return { failed: `${ev.name} has not happened yet` };
+    let [a] = await query("SELECT id, status, attendance_logged_at FROM event_attendees WHERE event_id=? AND org_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, ctx.orgId, donor.id]);
+    if (a && a.status === "attended") return { skipped: "already_attended" };
+    const had = a ? { status: a.status, attendance_logged_at: a.attendance_logged_at } : null;
+    if (!a) {
+      const r = await AC.call(ctx, "POST", `/events/${encodeURIComponent(eid)}/attendees`, { donorIds: [donor.id] });
+      if (r.status >= 300) return { failed: refusal(r) };
+      [a] = await query("SELECT id FROM event_attendees WHERE event_id=? AND org_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, ctx.orgId, donor.id]);
+      if (!a) return { failed: "they are not on the guest list when Steward looks" };
+    }
+    const m = await AC.call(ctx, "POST", `/events/${encodeURIComponent(eid)}/attendance`, { attended: [a.id] });
+    if (m.status >= 300) return { failed: refusal(m) };
+    const [now] = await query("SELECT status FROM event_attendees WHERE id=? AND org_id=?", [a.id, ctx.orgId]);
+    if (!now || now.status !== "attended") return { failed: "they are not marked as came when Steward looks" };
+    await agentWrite(ctx, { tool: "mark_attended", table: "event_attendees", entityId: a.id, before: had, after: { status: "attended" }, cites: step.citesRows });
+    const lines = await query(`SELECT id FROM interactions WHERE org_id=? AND donor_id=? AND metadata->>'attendee_id'=? AND metadata->>'via'='event_attendance'`, [ctx.orgId, donor.id, a.id]);
+    for (const l of lines) await agentWrite(ctx, { tool: "mark_attended", table: "interactions", entityId: l.id, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     return { donorId: donor.id, id: a.id };
   },
 
@@ -1679,7 +1710,7 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
     already_volunteer: "they were already a volunteer", not_a_volunteer: "they are not marked as a volunteer",
     no_note: "there was nothing to note", not_in_group: "they were not in that group",
     not_in_journey: "they were not in that journey", already_thanked: "that gift was already marked thanked",
-    already_proposed: "that pair was already in the duplicate queue" };
+    already_proposed: "that pair was already in the duplicate queue", already_attended: "they were already marked as came" };
 
   let drafted = 0, done = 0, withheld = 0, declined = 0;
   const withheldReasons = [];
@@ -1794,49 +1825,9 @@ async function agentAnswerRead(A, orgId, read, named) {
   return out;
 }
 
-// WHETHER DRAFTING IS ON, AND IF NOT, WHY AND WHO CAN TURN IT ON. A read: the
-// room draws its drafting line from this, and a GET changes nothing.
-app.get("/agent/status", requireAuth, wrap(async (req, res) => {
-  const A = await agentShapeMod();
-  const orgId = req.user.orgId;
-  const [org] = await query("SELECT ai_enabled, agent_paused_at FROM orgs WHERE id=?", [orgId]);
-  if (!org) return res.status(404).json({ error: "Not found" });
-  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
-  const admins = (await query(
-    `SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 12`,
-    [orgId])).map(u => u.name || u.email).filter(Boolean);
-  const configured = !!process.env.ANTHROPIC_API_KEY;
-  const enabled = org.ai_enabled !== false;
-  const isAdmin = !!(me && me.role === "admin");
-  res.json({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins,
-    ...A.draftingState({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins }) });
-}));
-
-// ── AGENTS-1 · THE SIX, AS DATA ────────────────────────────────────────────
-// The Ask tab's cards, the badges and the Guardrails list all read THIS. The
-// client holds no persona list of its own, so a seventh persona is one entry
-// in shared/agentPersonas.js and nothing else. A read: it writes nothing and
-// touches no org row, but it stays behind requireAuth because it describes
-// what this product's agent can do.
-app.get("/agent/personas", requireAuth, wrap(async (req, res) => {
-  const PS = await agentPersonasMod();
-  res.json({
-    personas: PS.PERSONAS.map(p => ({ id: p.id, name: p.name, tagline: p.tagline,
-      description: p.description, tools: p.tools, suggestedTriggers: p.suggestedTriggers,
-      guardrailNote: p.guardrailNote })),
-    // Said once, here, so the Guardrails tab states the real mechanisms and
-    // nothing else: no thresholds, no auto-pause, no managed no-contact list.
-    guardrails: [
-      "Every instruction shows you its plan before anything runs, and nothing runs until you confirm it.",
-      "Drafts are drafts. Steward writes them into your queue and you press send.",
-      "Every write the agent makes is logged with the instruction that caused it, and can be undone for thirty days.",
-      "Anybody the record marks deceased or do-not-contact is removed before the agent sees them.",
-      "No agent can move money. There is no tool for it, not a setting that turns it off.",
-    ],
-    sentence: "Six agents, one engine. Each one can do less than the engine can, never more.",
-  });
-}));
-
+// AGENT-5: /agent/status, /agent/personas and /agent/activity were the Agent
+// page's own reads; the page is gone and so are they (Settings > Atlas reads
+// /atlas/status, and Atlas's activity is atlas_actions).
 // ── ROUTES ─────────────────────────────────────────────────────────────────
 // THE PLAN. Writes an instruction and a plan; runs NOTHING.
 // ═══ HELP-1 · ASK STEWARD, THE QUESTION LOG, AND ASK A PERSON ══════════════
@@ -2315,37 +2306,6 @@ app.post("/agent/pause-all", requireAuth, wrap(async (req, res) => {
 app.post("/agent/resume-all", requireAuth, wrap(async (req, res) => {
   await run("UPDATE orgs SET agent_paused_at=NULL, agent_paused_by=NULL WHERE id=?", [req.user.orgId]);
   res.json({ ok: true, pausedAll: false });
-}));
-
-// ── ONE ACTIVITY SCREEN ────────────────────────────────────────────────────
-// Every instruction, every run, every write with its undo. Nothing the agent
-// does is hidden from the person who asked for it.
-app.get("/agent/activity", requireAuth, wrap(async (req, res) => {
-  const A = await agentShapeMod();
-  const runs = await query(
-    `SELECT r.id, r.instruction_id, r.started_at, r.finished_at, r.status, r.read_summary,
-            r.drafted, r.sent, r.declined, r.withheld, r.withheld_reason, r.error,
-            i.text AS instruction_text, i.kind, i.persona
-       FROM agent_runs r LEFT JOIN agent_instructions i ON i.id = r.instruction_id
-      WHERE r.org_id=? ORDER BY r.started_at DESC LIMIT 50`, [req.user.orgId]);
-  const PSa = await agentPersonasMod();
-  const writes = await query(
-    `SELECT w.id, w.run_id, w.tool, w.entity_table, w.entity_id, w.cites, w.created_at,
-            w.undone_at, w.undone_by_name
-       FROM agent_writes w WHERE w.org_id=?
-      ORDER BY w.created_at DESC LIMIT 300`, [req.user.orgId]);
-  const cutoff = Date.now() - A.UNDO_DAYS * 86400000;
-  const [counts] = await query(
-    `SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM agent_drafts WHERE org_id=?`,
-    [req.user.orgId]);
-  res.json({
-    runs: runs.map(r => ({ ...r, personaName: r.persona ? PSa.getPersona(r.persona).name : null })),
-    writes: writes.map(w => ({ ...w,
-      // Undoable while it is inside the window AND has not already been undone.
-      undoable: !w.undone_at && new Date(w.created_at).getTime() >= cutoff })),
-    undoDays: A.UNDO_DAYS,
-    draftsWaiting: (counts && counts.pending) || 0,
-  });
 }));
 
 // UNDO ANY AGENT WRITE, FOR THIRTY DAYS.

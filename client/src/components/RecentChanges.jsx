@@ -6,6 +6,7 @@
 // only the screen could rebuild (lib/recentUndo.js). Each Undo runs against
 // the row as it is NOW on the server, never against what a screen drew before,
 // and every screen that listens for UNDONE reloads afterwards.
+import { WhatChanged } from "./WhatChanged";   // AGENT-5: the Agent page's What changed
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { apiFetch } from "../api";
@@ -37,9 +38,14 @@ export function RecentChangesPanel({ onClose }) {
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState({});
 
-  const load = () => apiFetch("/recent-changes")
-    .then(r => {
-      const server = (r.rows || []).map(x => ({ ...x, from: "server" }));
+  const [showChanged, setShowChanged] = useState(false);
+  // AGENT-5: what Atlas did is in this list too, from its activity log, and
+  // the Agent page's "What changed" (what each import told us) sits below.
+  const load = () => Promise.all([apiFetch("/recent-changes"), apiFetch("/atlas/activity").catch(() => ({ items: [] }))])
+    .then(([r, a]) => {
+      const atlas = (a.items || []).filter(x => x.undoable).map(x => ({ id: x.id, kind: "atlas", sentence: `${x.by}: ${x.line}`, at: x.at, from: "server",
+        undo: { path: `/atlas/actions/${x.id}/undo`, method: "POST", body: {} } }));
+      const server = [...(r.rows || []).map(x => ({ ...x, from: "server" })), ...atlas];
       const tab = sessionOffers().map(o => ({ id: o.id, sentence: o.sentence, at: o.at, until: o.until, from: "tab", entry: o }));
       setRows([...tab, ...server].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 50));
       setErr("");
@@ -82,6 +88,12 @@ export function RecentChangesPanel({ onClose }) {
                   style={{ ...linkBtn, color: T.greenDk, fontWeight: 800, fontSize: 13 }}>{busy === r.id ? "Putting back…" : (r.undoLabel || "Undo")}</button>}
           </div>
         ))}
+        <div style={{ borderTop: "1px solid " + T.bg3, marginTop: 10, paddingTop: 10 }}>
+          <button type="button" data-testid="recent-what-changed" onClick={() => setShowChanged(v => !v)} style={{ ...linkBtn, color: T.greenDk, fontWeight: 800, fontSize: 13 }}>
+            {showChanged ? "Hide" : "Show"} what your imports changed</button>
+          {showChanged && <div style={{ marginTop: 10 }}><WhatChanged isReadOnly={false} wide={false}
+            onNavigate={(t, o) => { onClose(); window.dispatchEvent(new CustomEvent("steward:go", { detail: { tab: t, opts: o } })); }} /></div>}
+        </div>
       </div>
     </Modal>
   );

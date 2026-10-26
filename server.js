@@ -4280,6 +4280,7 @@ app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/capture").routers.r0);       // CAPTURE-1 To confirm
 app.use(require("./routes/setup").routers.r0);         // ONBOARD-1 Set up Steward for me
 app.use(require("./routes/voice").routers.r0);         // VOICE-1 Tell Steward
+app.use(require("./routes/atlas").routers.r0);         // AGENT-5 Atlas
 app.use(require("./routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy mode
 app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support agent
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
@@ -12294,6 +12295,7 @@ require("./clientSafe").configure({ query, run, uuid, aiGate, anthropicFor, reco
 require("./routes/clientSafe").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, actor, uuid, aiGate });
 require("./routes/support").mount({ query, run, wrap, requireAuth, requireSuperAdmin, aiGate, anthropicFor, recordAiFallback, resend, uuid, actor, AGENT_MODEL });
 require("./routes/voice").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL });
+require("./routes/atlas").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL });   // AGENT-5
 require("./routes/give").mount({
   ASSET_ID_RE, CARD_CHECK_BUDGET, DONOR_ACCOUNTS_ENABLED, DONOR_MAIL_ADDR, GIVE_MONTHLY_DEFAULT,
   GIVE_ONETIME_DEFAULT, GIVE_THEME_COLS, NETWORK_SIGNUP_ENABLED, PORTAL_CARD_STYLES,

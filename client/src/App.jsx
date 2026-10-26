@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
@@ -24,7 +24,6 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
-import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import JourneyBuilder from "./components/JourneyBuilder";
 import GroupsPage from "./components/Groups";
@@ -35,7 +34,9 @@ import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
-import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
+import { useAtlasName } from "./lib/atlas";   // AGENT-5
+import { AtlasBell, AtlasNote } from "./components/AtlasNote";
+import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, legacyTab } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
@@ -140,10 +141,15 @@ function AppShell() {
   const [moreOpen,setMoreOpen]=useState(false);
   // VOICE-1 — Tell Steward: one sheet, opened from Home, a profile or the menu.
   const [tell,setTell]=useState(null);
+  const navigateRef=useRef(null);
+  const atlas=useAtlasName();
   useEffect(()=>{
-    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null});
+    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null,text:(e.detail&&e.detail.text)||"",send:!!(e.detail&&e.detail.send)});
     window.addEventListener("steward:tell",on);
-    return()=>window.removeEventListener("steward:tell",on);
+    // AGENT-5: a panel outside the page tree (Recent changes) opens a page.
+    const go=e=>e.detail&&e.detail.tab&&navigateRef.current&&navigateRef.current(e.detail.tab,e.detail.opts||{});
+    window.addEventListener("steward:go",go);
+    return()=>{window.removeEventListener("steward:tell",on);window.removeEventListener("steward:go",go);};
   },[]);
   // NAV-1 §4 — the person's own rail. `navSaved` is what the server holds
   // ([{id,visible}] or null for "never customized"); `navGroups` is that
@@ -262,8 +268,6 @@ function AppShell() {
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
-  // FIX-1 §A — Agent opens on a view, and Home's one-line entry carries her words in.
-  const [agentIntent,setAgentIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),
@@ -287,15 +291,24 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts,how)=>{
-    // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
-    // activity (the thirty-day undo list). Every old way in lands there.
-    if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
+    // AGENT-5 — the Agent page is gone. Its old addresses land on Home with
+    // Atlas open; its "What changed" is Recent changes, and its Guardrails
+    // are Settings > Atlas.
+    if(t==="settings"&&opts?.section==="agent")opts={...opts,section:"atlas"};
+    const lg=legacyTab(t);
+    if(lg){
+      const view=opts?.agentView;
+      t=lg.tab;opts={};
+      if(how?.fromUrl)routerNavigate(tabHref("dashboard"),{replace:true,state:{internal:true}});
+      if(view==="changed")setTimeout(()=>openRecentChanges(),0);
+      else if(view==="guardrails"){t="settings";opts={section:"atlas"};}
+      else setTimeout(()=>openTellSteward(null),0);
+    }
     // NAV-1 §2 — THE DASHBOARDS FOLDED INTO REPORTS, so every way in still
     // lands on the dashboard it named: navigateTo("board") from an older card,
     // a bookmark on /dashboards, a link in an email. The `board` id is kept as
     // a synonym rather than chased through the product.
     if(t==="board"){t="reports";opts={...(opts||{}),report:"dash:"+((opts&&opts.dashKey)||"board")};}
-    if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
     // FIX-25: Auctions, Peer-to-peer and Memberships have rail entries of
     // their own and are parts of Fundraising, so each opens that part.
     if(FR_PART_TABS[t]){opts={...(opts||{}),frSection:FR_PART_TABS[t]};t="fundraising";}
@@ -323,7 +336,6 @@ function AppShell() {
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
-    setAgentIntent(t==="agent"&&(opts?.agentView||opts?.agentText)?{view:opts.agentView||null,text:opts.agentText||"",autoAsk:!!opts.autoAsk}:null);
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
@@ -338,6 +350,8 @@ function AppShell() {
       if(href!==window.location.pathname+window.location.search)routerNavigate(href,{state:{internal:true}});
     }
   };
+
+  navigateRef.current=navigateTo;
 
   // FIX-13 Part 6 — read the URL on load, on Back/Forward, and when a plain
   // <Link> anywhere in the app changes it. Pushes the app made itself are
@@ -725,10 +739,10 @@ function AppShell() {
             you change how the product behaves. They sit under the rail's own
             rule rather than at the end of MONEY. */}
         {/* VOICE-1 — Tell Steward, in the rail's own style, above Agent and Settings. */}
-        {!isReadOnly&&<button data-testid="sidebar-tell-steward" onClick={()=>openTellSteward(null)} title="Tell Steward what happened"
+        {!isReadOnly&&<button data-testid="sidebar-tell-steward" onClick={()=>openTellSteward(null)} title={`Tell ${atlas} what happened, what to do, or ask`}
           style={{...sideBtn(false),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
           <span aria-hidden="true" style={{width:18,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.gold500||"#C9A84C"}}><MicGlyph size={16}/></span>
-          {!sidebarCollapsed&&"Tell Steward"}
+          {!sidebarCollapsed&&atlas}
         </button>}
         <div data-nav-group="bottom">
           {navVisible.filter(g=>g.bottom).flatMap(g=>g.items).map(i=>navById[i.id]).filter(Boolean).map(navItem)}
@@ -782,6 +796,7 @@ function AppShell() {
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         {/* FIX-26: the same search as the desktop bar, behind an icon. */}
         <MobileSearch onNavigate={navigateTo}/>
+        <span style={{color:T.inkInverse,display:"inline-flex"}}><AtlasBell onNavigate={navigateTo}/></span>
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
             Code intact, re-enable by uncommenting.
         <button onClick={()=>setShowVoiceMemo(true)} title="Record a voice memo" style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
@@ -954,6 +969,7 @@ function AppShell() {
           usable and switching tabs (resetKey=tab) recovers — instead of a black
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
+      {tab==="dashboard"&&<AtlasNote place="home" onNavigate={navigateTo}/>}
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="home"/>}
       {/* BUILD-86 — the same component, the other surface. One Dashboard, one
           layout, one set of sections; `surface` decides which of them render.
@@ -969,12 +985,15 @@ function AppShell() {
           donor, and is removed). */}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
+      {tab==="communications"&&<AtlasNote place="communications" onNavigate={navigateTo}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
+      {tab==="fundraising"&&<AtlasNote place="gifts" onNavigate={navigateTo}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
           Settings section is untouched, so both doors open the same thing. */}
+      {tab==="journeys"&&<AtlasNote place="journey" onNavigate={navigateTo}/>}
       {tab==="journeys"&&(
         <div>
           <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontWeight:400,fontSize:32,margin:"0 0 6px",color:T.ink}}>Journeys</h1>
@@ -986,6 +1005,7 @@ function AppShell() {
       )}
       {/* PARITY-1 Part D — Groups, under Relationships. */}
       {tab==="groups"&&<GroupsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="events"&&<AtlasNote place="event" onNavigate={navigateTo}/>}
       {tab==="events"&&<Events key={navNonce} data={data} isReadOnly={isReadOnly}/>}
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not
@@ -1001,7 +1021,6 @@ function AppShell() {
       {tab==="finance"&&<Finance key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="calendar"&&<CalendarPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} isAdmin={auth?.user?.role==="admin"}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope} initialView={tasksIntent?.view}/>}
-      {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
     </ErrorBoundary>
@@ -1034,7 +1053,7 @@ function AppShell() {
         {/* VOICE-1 — Tell Steward, first in the phone's menu. */}
         {!isReadOnly&&<button data-testid="mobile-tell-steward" onClick={()=>{setMoreOpen(false);openTellSteward(null);}} className="mobile-more-row" style={{fontWeight:700}}>
           <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><MicGlyph size={18}/></span>
-          <span style={{flex:1}}>Tell Steward</span>
+          <span style={{flex:1}}>{atlas}</span>
         </button>}
         {/* NAV-1 §1/§6 — THE PHONE MENU IS THE RAIL'S GROUPS, IN THE RAIL'S
             ORDER, and it reads from the same merged layout: an item somebody
@@ -1087,10 +1106,10 @@ function AppShell() {
     {/* VOICE-2 option B: the floating square mic, bottom right, on every screen
         and every width. It opens the same Tell Steward window; the rail keeps
         its own Tell Steward row. */}
-    {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label="Tell Steward" title="Tell Steward"
+    {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label={atlas} title={atlas}
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
-    {tell&&<TellSteward donor={tell.donor} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
+    {tell&&<TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>

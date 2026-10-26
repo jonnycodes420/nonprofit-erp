@@ -1,5 +1,14 @@
-// TellSteward.jsx · VOICE-1. TALK FOR 30 SECONDS, AND THE PAPERWORK IS DONE.
+// TellSteward.jsx · VOICE-1, AGENT-5. ATLAS, OVER THE PAGE YOU ARE ON.
 //
+// AGENT-5: this sheet is Atlas. Home's Ask box, the floating mic, the rail's
+// Tell Steward and the profile all open it, over the page, never a
+// navigation. Her words go to POST /atlas; while Atlas reads them she sees
+// one spinner per thing she asked for (shared/atlas.js previewLines, drawn
+// in the browser before the server answers). Then one of two screens: every
+// question at once, one click each; or the checklist, each line a link, with
+// Undo on what ran and one tap on what waits. Do all of this taps them all.
+//
+// VOICE-1, as it was:
 // One sheet, opened from Home, from a donor profile (about that person by
 // default) and from the main menu. Wherever the browser has its own speech
 // recognition (phones, and since VOICE-2 Chrome, Edge and Safari on a
@@ -16,16 +25,14 @@
 // The answer is one screen at two speeds: Done for you, with one Undo, and
 // Waiting for your yes (the drafted email, every amount, a contact change, a
 // personal detail).
-import { Fragment, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import { Modal, T } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
-import { AskAnswer } from "./AskPanel";
-import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip, doAllLine } from "../../../shared/voiceTalk.js";
+import { listenMode, errorStopsListening, NO_LISTEN_LINE, NO_LISTEN_PHONE_LINE, SAFARI_MIC_TIP, showMicTip } from "../../../shared/voiceTalk.js";
+import { previewLines } from "../../../shared/atlas.js";
 import { told } from "../lib/stewardTold";
-import { RefLink } from "./Linked";
-import { linkSegments } from "../../../shared/itemLinks.js";
+import { atlasStatus, atlasName, linkTarget } from "../lib/atlas";
 import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
 
@@ -51,12 +58,13 @@ const isPhone = () => typeof window !== "undefined" && !!window.matchMedia && wi
 const HOLD_MS = 350;
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
   borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", minHeight: 44 });
-const said = e => (e && (e.sentence || (typeof e.error === "string" && e.error.length > 14 ? e.error : null))) || errorMessage(e, "That did not go through. Nothing was filed.");
+const said = e => (e && (e.sentence || (typeof e.error === "string" && e.error.length > 14 ? e.error : null))) || errorMessage(e, "That didn't go through. I did nothing.");
 
-// Open the sheet from anywhere: window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor } })).
-export function openTellSteward(donor) {
-  window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor: donor ? { id: donor.id, name: donor.name } : null } }));
+// Open Atlas from anywhere. `text` arrives typed; `send` asks at once (Home's box).
+export function openTellSteward(donor, { text = "", send = false } = {}) {
+  window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor: donor ? { id: donor.id, name: donor.name } : null, text, send } }));
 }
+export const openAtlas = openTellSteward;
 
 // The large button, for Home and the profile.
 export function MicGlyph({ size = 16, color = "currentColor" }) {
@@ -67,27 +75,35 @@ export function MicGlyph({ size = 16, color = "currentColor" }) {
   );
 }
 
-export default function TellSteward({ donor, onClose, onNavigate }) {
+
+const STATE_MARK = { done: "✓", waiting: "●", refused: "–", failed: "!", undone: "↺", discarded: "–", running: "" };
+const TAP_LABEL = { gift: "Record", pledge: "Record", receipt: "Send both", held_back: "Keep as a note" };
+const ALL_KINDS = new Set(["gift", "pledge", "receipt"]);
+
+export default function TellSteward({ donor, onClose, onNavigate, initialText = "", autoSend = false }) {
   const phone = isPhone();
   // VOICE-2 Part 1: detection, not the device. A browser that can listen does.
-  const [speech, setSpeech] = useState(() => listenMode(typeof window !== "undefined" ? window : {}).mode === "speech");
-  const picks = useRef([]);
+  const [speech, setSpeech] = useState(() => listenMode(typeof window !== "undefined" ? window : {}).mode === "speech" && !initialText);
   const [listening, setListening] = useState(false);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText || "");
   const [interim, setInterim] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [step, setStep] = useState(null);    // { which } | { pick } | { needsPeople } | { memo } | { plan } | { answer } | { talk: unsure }
-  const [recent, setRecent] = useState([]);
+  const [request, setRequest] = useState(null);   // the server's request: questions, lines, spoke
+  const [pending, setPending] = useState(null);   // the spinners, before the server answers
+  const [answers, setAnswers] = useState({});
   const [source, setSource] = useState("typed");
+  const [name, setName] = useState(atlasName());
   const rec = useRef(null);
   const wantOn = useRef(false);
   const downAt = useRef(0);
-  const finalText = useRef("");
+  const finalText = useRef(initialText ? initialText + " " : "");
   const [micTip, setMicTip] = useState(false);
+  const sentAt = useRef(0);
 
   useEffect(() => {
-    apiFetch(`/voice/memos${donor ? `?donorId=${encodeURIComponent(donor.id)}` : ""}`).then(r => setRecent((r.memos || []).slice(0, 3))).catch(() => {});
+    atlasStatus().then(s => setName(s.name)).catch(() => {});
+    if (autoSend && initialText) send(initialText);
     return () => {
       wantOn.current = false;
       const r = rec.current;
@@ -95,7 +111,8 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
       // The recognizer outlives this window; its answers stop coming here.
       if (r) { r.onresult = null; r.onerror = null; r.onend = null; }
     };
-  }, [donor]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── LISTENING ─────────────────────────────────────────────────────────────
   function start() {
@@ -119,16 +136,14 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     r.onerror = e => {
       if (errorStopsListening(e.error)) {
         wantOn.current = false; setSpeech(false);
-        setErr(phone ? "This browser would not let Steward listen. Type it, or use your keyboard's microphone."
-          : "This browser would not let Steward listen. Type it, or use your computer's dictation. (On a Mac, Safari listens when Dictation is on in System Settings.)");
+        setErr(phone ? "This browser won't let me listen. Type it, or use your keyboard's microphone."
+          : "This browser won't let me listen. Type it, or use your computer's dictation. (On a Mac, Safari listens when Dictation is on in System Settings.)");
       }
     };
     // iOS stops after a pause; keep listening until she says stop.
     r.onend = () => { setInterim(""); if (wantOn.current) { try { r.start(); } catch { setListening(false); } } else setListening(false); };
     rec.current = r;
     wantOn.current = true;
-    // The page's one recognizer may still be winding down from the last
-    // press: wait for it rather than give up on speech.
     try { r.start(); setListening(true); setSource("speech"); }
     catch (e) {
       if (e && e.name === "InvalidStateError") {
@@ -142,110 +157,81 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
     try { rec.current && rec.current.stop(); } catch { /* already stopped */ }
     setListening(false);
   }
-  // Hold to talk (release stops), or tap to start and tap again to stop.
   const startedNow = useRef(false);
   const onDown = e => { e.preventDefault(); downAt.current = Date.now(); startedNow.current = !listening; if (!listening) start(); };
   const onUp = () => { if (!startedNow.current || Date.now() - downAt.current > HOLD_MS) stop(); };
-  // CHECK-2: the check window, for the person this window is about if any.
-  // Opened inside the tap, so a phone's camera is allowed to open.
   const snapCheck = () => { if (listening) stop(); openCheckSnap({ donor: donor ? { id: donor.id, name: donor.name } : null, camera: true }); onClose(); };
 
-  // ── SENDING ───────────────────────────────────────────────────────────────
-  // Every "which one?" answer so far rides along, so a memo naming two shared
-  // names asks about each once (VOICE-2 Part 2: each pick used to replace the
-  // last, and the list asked again forever).
-  function pickOne(id) {
-    picks.current = [...picks.current.filter(x => x !== id), id];
-    return send({ picks: picks.current });
-  }
-  function pickPerson(id) {
-    return send({ donorId: id, picks: picks.current });
-  }
-  // The words asked about are the words answered: a pick re-sends exactly what
-  // was sent, so a name still half-heard when she pressed Send cannot drop
-  // out between the question and her click. A fresh Send starts fresh picks.
-  const sentWords = useRef("");
-  async function send(extra = {}) {
+  // ── ASKING ATLAS ──────────────────────────────────────────────────────────
+  // The spinners go up before the request leaves, so the first thing she sees
+  // comes in well under two seconds whatever the model takes.
+  async function send(words0) {
     if (listening) stop();
-    const answering = !!(extra.picks || extra.donorId) && sentWords.current;
-    const words = answering ? sentWords.current : (text + (interim ? " " + interim : "")).trim();
-    if (words.length < 4) { setErr("Tell Steward what happened first."); return; }
-    if (!answering) { picks.current = []; sentWords.current = words; finalText.current = words; setText(words); setInterim(""); }
-    setBusy(true); setErr("");
+    const words = String(words0 != null ? words0 : (text + (interim ? " " + interim : ""))).trim();
+    if (words.length < 3) { setErr("Tell me what happened, what to do, or what you want to know."); return; }
+    setText(words); setInterim(""); finalText.current = words;
+    sentAt.current = performance.now();
+    setPending({ text: words, lines: previewLines(words) });
+    setRequest(null); setAnswers({}); setBusy(true); setErr("");
     try {
-      const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined, ...extra }) });
-      setStep(r);
-      if (r.memo || (r.plan && r.plan.ranAlone)) told({ memoId: r.memo && r.memo.id });   // VOICE-4: the screen behind shows it at once
+      const r = await apiFetch("/atlas", { method: "POST", body: JSON.stringify({ text: words, source, donorId: donor ? donor.id : undefined }) });
+      setRequest(r.request);
+      if (r.request && r.request.status === "done") told({ memoId: r.request.id });   // the page behind shows it at once
     } catch (e) { setErr(said(e)); }
+    setPending(null);
     setBusy(false);
   }
-  async function people(body) {
+  async function answer(next) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(`/voice/memos/${step.needsPeople.memoId}/people`, { method: "POST", body: JSON.stringify(body) }); setStep(s => ({ ...r, then: s && s.then, answer: s && s.answer })); told(); }
-    catch (e) { setErr(said(e)); }
+    setPending({ text: request.text, lines: previewLines(request.text) });
+    try {
+      const r = await apiFetch(`/atlas/${request.id}/answer`, { method: "POST", body: JSON.stringify({ answers: next }) });
+      setRequest(r.request);
+      told({ memoId: r.request.id });
+    } catch (e) { setErr(said(e)); if (e && e.request) setRequest(e.request); }
+    setPending(null);
     setBusy(false);
+  }
+  // One click each: with one question the click is the answer; with several,
+  // the last one answered sends them all.
+  function pick(q, id) {
+    const next = { ...answers, [q.id]: id };
+    setAnswers(next);
+    if ((request.questions || []).every(x => next[x.id])) answer(next);
   }
   async function act(path) {
     setBusy(true); setErr("");
-    try { const r = await apiFetch(path, { method: "POST", body: "{}" }); setStep(s => ({ ...s, memo: r.memo, note: r.sentence || null })); told({ memoId: r.memo && r.memo.id }); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
-  }
-
-  // A mixed memo whose person had to be asked first: once it is filed, the
-  // to-do is planned on that person.
-  useEffect(() => {
-    if (!step || !step.memo || !step.then || step.plan || !(step.memo.people || [])[0]) return;
-    const then = step.then;
-    setStep(s => ({ ...s, then: null }));
-    apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text: then.do, as: "do", donorId: step.memo.people[0].id }) })
-      .then(r => setStep(s => ({ ...s, plan: r.plan })))
-      .catch(e => setErr(said(e)));
-  }, [step]);
-  // "Remind me to call Margaret", with two Margarets: she picks, and the plan is made on her.
-  async function planFor(text, personId) {
-    setBusy(true); setErr("");
-    try { const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text, as: "do", personId, donorId: donor ? donor.id : undefined }) }); setStep(s => ({ ...s, plan: r.plan })); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
-  }
-  async function ask(text) {
-    setBusy(true); setErr("");
-    try { const r = await apiFetch("/voice/talk", { method: "POST", body: JSON.stringify({ text, as: "ask" }) }); setStep({ talk: r.talk, answer: r.answer }); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
-  }
-  // VOICE-4: one tap for every card, and the plan shown with them.
-  async function doAll() {
-    const m = step && step.memo, pl = step && step.plan;
-    const pending = pl && pl.id && pl.plan && !pl.ranAlone && !pl.ran ? pl.id : null;
-    setBusy(true); setErr("");
     try {
-      const r = await apiFetch(`/voice/memos/${m.id}/all`, { method: "POST", body: JSON.stringify(pending ? { instructionId: pending } : {}) });
-      setStep(s => ({ ...s, memo: r.memo, plan: s.plan && r.ran ? { ...s.plan, ran: r.ran } : s.plan,
-        note: (r.failed || []).length ? `Not done: ${r.failed.map(f => `${f.title} (${f.sentence})`).join("; ")}` : "All of it is done." }));
-      told({ memoId: m.id });
+      const r = await apiFetch(path, { method: "POST", body: "{}" });
+      if (r.request) setRequest(r.request);
+      told({ memoId: r.request && r.request.id });
     } catch (e) { setErr(said(e)); }
     setBusy(false);
   }
-  const another = () => { picks.current = []; setStep(null); setText(""); finalText.current = ""; setSource("typed"); };
+  const go = link => { const t = linkTarget(link); if (!t || !onNavigate) return; onClose(); onNavigate(t[0], t[1]); };
+  const another = () => { setRequest(null); setPending(null); setText(""); finalText.current = ""; setSource("typed"); };
 
-  const memo = step && step.memo;
-  const plan = step && step.plan;
-  const answer = step && step.answer;
-  const unsure = step && step.talk && step.talk.kind === "unsure";
-  const asking = step && (step.which || step.pick || step.needsPeople);
-  const title = memo ? (memo.status === "undone" ? "Undone" : "Filed") : plan && !answer ? "Steward's plan" : answer && !plan ? "Steward's answer" : "Tell Steward";
-  const sub = step ? null : donor ? `Tell Steward what happened with ${donor.name}, what to do, or what you want to know. Nothing is sent.` : "Tell Steward what happened, what to do, or what you want to know. Nothing is sent.";
+  const asking = request && request.status === "needs_answers";
+  const lines = (request && request.lines) || [];
+  const taps = lines.filter(l => l.waits && ALL_KINDS.has(l.kind));
+  const sub = request || pending ? null : donor ? `Tell me what happened with ${donor.name}, what to do, or what you want to know.` : "Tell me what happened, what to do, or what you want to know.";
 
   return (
-    <Modal onClose={onClose} title={title} subtitle={sub} width={answer ? 600 : 520} align={phone ? "top" : "center"} ariaLabel="Tell Steward">
-      <div data-testid="tell-steward-sheet" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <Modal onClose={onClose} title={name} subtitle={sub} width={560} align={phone ? "top" : "center"} ariaLabel={name}>
+      <div data-testid="tell-steward-sheet" data-atlas="panel" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {err && <div role="alert" style={{ background: T.cream || "#F0EDE6", color: T.ink, borderRadius: 10, padding: "10px 12px", fontSize: 13.5, lineHeight: 1.45 }}>{err}</div>}
-        {micTip && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
+        {micTip && !request && <div data-testid="tell-mic-tip" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{SAFARI_MIC_TIP}</div>}
 
-        {!step && <>
-          {/* CHECK-2: a check, beside the mic. The camera opens on a phone. */}
+        {(request || pending) && <div data-testid="atlas-said" style={{ fontSize: 13.5, color: T.ink2, background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", lineHeight: 1.5 }}>"{(request && request.text) || pending.text}"</div>}
+
+        {pending && <ul data-testid="atlas-pending" aria-live="polite" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {pending.lines.map(l => <li key={l} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14, color: T.ink }}>
+            <span aria-hidden className="atlas-spin" style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid " + T.bg3, borderTopColor: T.greenDk, animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+            {l}</li>)}
+          <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+        </ul>}
+
+        {!request && !pending && <>
           {!speech && (
             <button type="button" data-testid="tell-snap-check" onClick={snapCheck}
               style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 8, background: T.white, border: "1px solid " + T.ink, borderRadius: 10, padding: "8px 14px", color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -267,244 +253,76 @@ export default function TellSteward({ donor, onClose, onNavigate }) {
                 <Camera size={24} />
               </button>
               </div>
-              <div style={{ fontSize: 13, color: T.ink3 }}>{listening ? `Listening. Release, or ${phone ? "tap" : "click"} Stop, when you are done.` : phone ? "Hold to talk, or tap and talk." : "Hold to talk, or click and talk."}</div>
+              <div style={{ fontSize: 13, color: T.ink3 }}>{listening ? `Listening. Release, or ${phone ? "tap" : "click"} Stop, when you're done.` : phone ? "Hold to talk, or tap and talk." : "Hold to talk, or click and talk."}</div>
               {listening && <button onClick={stop} style={btn(false)}>Stop</button>}
             </div>
           )}
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink2 }}>{speech ? "What Steward heard (change anything before you send)" : "Tell Steward what happened, what to do, or ask"}</span>
-            <textarea data-testid="tell-text" value={text + (interim ? (text ? " " : "") + interim : "")} rows={phone ? 6 : 5}
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink2 }}>{speech ? "What I heard (change anything before you send)" : "Tell me what happened, what to do, or ask"}</span>
+            <textarea data-testid="tell-text" value={text + (interim ? (text ? " " : "") + interim : "")} rows={phone ? 6 : 4}
               onChange={e => { setText(e.target.value); setInterim(""); finalText.current = e.target.value; }}
-              placeholder={donor ? `Lunch with ${String(donor.name).split(/\s+/)[0]}, loved the tour, wants to hear about the spring show, circle back in March.` : "Lunch with Margaret, loved the barn tour, wants to give to the new arena, circle back in March."}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder={donor ? `Lunch with ${String(donor.name).split(/\s+/)[0]} went well. Put her in the major donor journey and remind me to call in March.` : "Undine came to the Harbor Run and gave $10,000. Thank her and ask to meet in January."}
               style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 16, lineHeight: 1.45, fontFamily: "inherit", color: T.ink, resize: "vertical" }} />
             {!speech && <span data-testid="tell-no-listen" style={{ fontSize: 12, color: T.ink3 }}>{phone ? NO_LISTEN_PHONE_LINE : NO_LISTEN_LINE}</span>}
           </label>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {!speech && SR && <button onClick={() => setSpeech(true)} style={btn(false)}>Talk instead</button>}
-            <button data-testid="tell-send" disabled={busy} onClick={() => send()} style={{ ...btn(true), opacity: busy ? 0.6 : 1, flex: phone ? 1 : "0 0 auto" }}>{busy ? "Filing..." : "Send to Steward"}</button>
+            <button data-testid="tell-send" disabled={busy} onClick={() => send()} style={{ ...btn(true), flex: phone ? 1 : "0 0 auto" }}>Send</button>
           </div>
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>Steward never keeps a recording, only these words. Nothing is sent to anyone. Amounts and personal details wait for your yes, and anything you ask Steward to do waits for Confirm.</div>
-          {recent.length > 0 && <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Recent memos</div>
-            {recent.map(m => (
-              <button key={m.id} onClick={() => setStep({ memo: m })} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "8px 0", cursor: "pointer", borderBottom: "1px solid " + T.bg3 }}>
-                <div style={{ fontSize: 13.5, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.preview || m.text}</div>
-                <div style={{ fontSize: 12, color: T.ink3 }}>{new Date(m.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {m.people.map(p => p.name).join(", ") || "nobody"} · {m.status === "undone" ? "undone" : `${m.done.length} done, ${m.waiting.filter(c => c.state === "waiting").length} waiting`}</div>
-              </button>))}
-          </div>}
+          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>I keep no recording, only these words. I send nothing without your yes, and money waits for your tap.</div>
         </>}
 
-        {step && step.which && <WhichOne which={step.which} busy={busy} onPick={pickOne} onBack={() => { picks.current = []; setStep(null); }} />}
-        {step && step.pick && <PickPerson sentence={step.pick.sentence} busy={busy} onPick={pickPerson} onBack={() => { picks.current = []; setStep(null); }} />}
-        {step && step.needsPeople && <NeedsPeople np={step.needsPeople} busy={busy} onAnswer={people} onBack={() => setStep(null)} />}
-        {unsure && <div data-testid="tell-unsure">
-          <p style={{ margin: "0 0 10px", fontSize: 14.5, color: T.ink, lineHeight: 1.5 }}>{step.talk.sentence}</p>
-          <div style={{ fontSize: 13, color: T.ink3, marginBottom: 10, background: "#F0EDE6", borderRadius: 10, padding: "8px 12px" }}>"{sentWords.current}"</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button data-testid="tell-as-log" disabled={busy} onClick={() => send({ as: "log" })} style={btn(true)}>Log it</button>
-            <button data-testid="tell-as-do" disabled={busy} onClick={() => send({ as: "do" })} style={btn(false)}>Have Steward do it</button>
-            <button onClick={() => setStep(null)} style={{ ...btn(false), border: "none" }}>Back</button>
-          </div>
-        </div>}
-        {answer && !asking && <section data-testid="tell-answer" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {(memo || plan) && <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Your question</div>}
-          <AskAnswer answer={answer} compact isReadOnly={false} onAsk={ask} />
+        {asking && <section data-testid="atlas-questions" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 14.5, color: T.ink, fontWeight: 700 }}>{request.spoke}</div>
+          {request.questions.map((q, qi) => <div key={q.id} role="group" aria-label={q.sentence} data-testid="atlas-question">
+            <div style={{ fontSize: 14, color: T.ink, marginBottom: 8 }}>{q.sentence}{q.nearMiss ? <span style={{ color: T.ink3 }}> I didn't find that exact name; these are close.</span> : null}</div>
+            {q.options.map((o, i) => {
+              const on = answers[q.id] === o.id;
+              return <button key={o.id} type="button" data-testid="atlas-choice" autoFocus={qi === 0 && i === 0} disabled={busy} onClick={() => pick(q, o.id)} aria-pressed={on}
+                style={{ ...btn(false), display: "block", width: "100%", textAlign: "left", marginBottom: 6, borderColor: on ? T.greenDk : T.bg3, boxShadow: on ? "inset 3px 0 0 " + T.greenDk : "none" }}>
+                <div>{o.name}</div>{o.detail && <div style={{ fontSize: 12, fontWeight: 400, color: T.ink3, marginTop: 2 }}>{o.detail}</div>}
+              </button>;
+            })}
+            {q.more > 0 && <div style={{ fontSize: 12, color: T.ink3 }}>{q.more} more have a name like that. Say the whole name to narrow it.</div>}
+          </div>)}
+          <div style={{ fontSize: 12, color: T.ink3 }}>Nothing is done until you answer. Then I do all of it.</div>
         </section>}
-        {plan && !asking && !plan.ranAlone && <PlanCard plan={plan} busy={busy} setBusy={setBusy} onPick={id => planFor(plan.text, id)}
-          onChoose={name => planFor(plan.choose.text.replace(plan.choose.heard, name))} onNavigate={onNavigate} onClose={onClose} />}
-        {memo && <Results memo={memo} plan={plan} note={step.note} busy={busy} act={act} onAll={doAll} onClose={onClose} onNavigate={onNavigate} onAnother={another} />}
-        {!memo && (plan || answer) && !asking && <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
-          <button onClick={another} style={btn(false)}>Tell another</button>
-          <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
-        </div>}
+
+        {request && !asking && <section data-testid="atlas-reply" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div data-testid="atlas-spoke" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{request.undoneAt ? "Undone." : request.spoke}</div>
+          {taps.length > 1 && <div data-testid="atlas-do-all" style={{ border: "1px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>One tap does the {taps.length} things below that wait for you.</div>
+            <button data-testid="atlas-do-all-button" disabled={busy} onClick={() => act(`/atlas/${request.id}/all`)} style={btn(true)}>Do all of this</button>
+          </div>}
+          <ul data-testid="atlas-lines" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
+            {lines.map(l => <li key={l.id} data-testid="atlas-line" data-kind={l.kind} data-state={l.state}
+              style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderBottom: "1px solid " + T.bg2, fontSize: 14, lineHeight: 1.45, color: T.ink }}>
+              <span aria-hidden style={{ width: 16, flexShrink: 0, textAlign: "center", fontWeight: 800, color: l.state === "done" ? T.greenDk : l.state === "waiting" ? "#C9A84C" : T.ink3 }}>{STATE_MARK[l.state] || "·"}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {linkTarget(l.link) ? <button type="button" data-testid="atlas-line-link" onClick={() => go(l.link)}
+                  style={{ background: "none", border: "none", padding: 0, textAlign: "left", font: "inherit", color: l.state === "undone" ? T.ink3 : T.ink, textDecoration: l.state === "undone" ? "line-through" : "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3, cursor: "pointer" }}>{l.line}</button>
+                  : <span style={{ color: l.state === "refused" ? T.ink2 : T.ink }}>{l.line}</span>}
+              </span>
+              <span style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                {l.undoable && <button type="button" data-testid="atlas-undo" disabled={busy} onClick={() => act(`/atlas/actions/${l.id}/undo`)} style={{ ...btn(false), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>Undo</button>}
+                {l.waits && l.kind === "draft" && <button type="button" data-testid="atlas-review" onClick={() => go(l.link)} style={{ ...btn(true), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>Review</button>}
+                {l.waits && TAP_LABEL[l.kind] && <>
+                  <button type="button" data-testid={`atlas-tap-${l.kind}`} disabled={busy} onClick={() => act(`/atlas/actions/${l.id}/yes`)} style={{ ...btn(true), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>{TAP_LABEL[l.kind]}</button>
+                  <button type="button" disabled={busy} onClick={() => act(`/atlas/actions/${l.id}/no`)} style={{ ...btn(false), minHeight: 32, padding: "4px 10px", fontSize: 12.5 }}>{l.kind === "held_back" ? "Discard" : "Not now"}</button>
+                </>}
+              </span>
+            </li>)}
+          </ul>
+          <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
+            {!request.undoneAt && lines.some(l => l.undoable) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/atlas/${request.id}/undo`)} style={btn(false)}>Undo all of it</button> : <span />}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={another} style={btn(false)}>Tell me more</button>
+              <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
+            </div>
+          </div>
+        </section>}
       </div>
     </Modal>
   );
-}
-
-function WhichOne({ which, busy, onPick, onBack }) {
-  // Focus lands on the first choice, so the keyboard can pick straight away.
-  const first = useRef(null);
-  useEffect(() => { if (first.current) first.current.focus(); }, [which]);
-  return <div data-testid="tell-which" role="group" aria-label={`Which ${which.said || "person"}?`}>
-    <p style={{ margin: "0 0 10px", fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{which.sentence}</p>
-    {which.people.map((p, i) => (
-      <button key={p.id} type="button" ref={i === 0 ? first : null} data-testid="tell-which-choice" disabled={busy} onClick={() => onPick(p.id)}
-        style={{ ...btn(false), display: "block", width: "100%", textAlign: "left", marginBottom: 8, touchAction: "manipulation", position: "relative", zIndex: 1 }}>
-        <div>{p.name}</div><div style={{ fontSize: 12, fontWeight: 400, color: T.ink3, marginTop: 2 }}>{p.detail}</div>
-      </button>))}
-    {onBack && <button onClick={onBack} style={{ ...btn(false), border: "none" }}>Back to the memo</button>}
-  </div>;
-}
-
-function PickPerson({ sentence, busy, onPick, onBack, label = "Find the person", backLabel = "Back to the memo" }) {
-  const [q, setQ] = useState("");
-  const [hits, setHits] = useState([]);
-  useEffect(() => {
-    if (q.trim().length < 2) { setHits([]); return; }
-    const t = setTimeout(() => apiFetch(`/search?q=${encodeURIComponent(q.trim())}`).then(r => setHits((r.results || []).filter(x => x.kind === "person").slice(0, 6))).catch(() => setHits([])), 200);
-    return () => clearTimeout(t);
-  }, [q]);
-  return <div data-testid="tell-pick">
-    {sentence && <p style={{ margin: "0 0 10px", fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{sentence}</p>}
-    <input value={q} onChange={e => setQ(e.target.value)} placeholder={label} aria-label={label}
-      style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 16 }} />
-    <div style={{ marginTop: 8 }}>{hits.map(h => (
-      <button key={h.id} type="button" data-testid="tell-pick-choice" disabled={busy} onClick={() => onPick(h.id, h.title)} style={{ ...btn(false), display: "block", width: "100%", textAlign: "left", marginBottom: 6 }}>
-        {h.title}{h.email ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {h.email}</span> : null}
-      </button>))}</div>
-    {onBack && <button type="button" onClick={onBack} style={{ ...btn(false), border: "none" }}>{backLabel}</button>}
-  </div>;
-}
-
-function NeedsPeople({ np, busy, onAnswer, onBack }) {
-  const [picking, setPicking] = useState(false);
-  return <div data-testid="tell-needs-people">
-    <p style={{ margin: "0 0 10px", fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{np.sentence}</p>
-    {(np.names || []).map(n => (
-      <button key={n} disabled={busy} onClick={() => onAnswer({ add: [n] })} style={{ ...btn(true), display: "block", width: "100%", marginBottom: 8 }}>Add {n} as a new person</button>))}
-    {!picking && <button onClick={() => setPicking(true)} style={{ ...btn(false), display: "block", width: "100%", marginBottom: 8 }}>{np.names && np.names.length ? "It was somebody already on file" : "Pick the person"}</button>}
-    {picking && <PickPerson busy={busy} onPick={id => onAnswer({ pick: [id] })} />}
-    <button onClick={onBack} style={{ ...btn(false), border: "none" }}>Back to the memo</button>
-  </div>;
-}
-
-// SOMETHING TO DO: the Agent's plan, exactly as the Agent tab would show it,
-// and nothing runs until she presses Confirm (her click on the Agent's own
-// confirm route). "Not now" sets it aside.
-function PlanCard({ plan, busy, setBusy, onPick, onChoose, onNavigate, onClose }) {
-  const [ran, setRan] = useState(null);
-  const [gone, setGone] = useState(false);
-  const [err, setErr] = useState("");
-  const box = { border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenDk, borderRadius: 10, padding: "12px 14px" };
-  const head = <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>To do</div>;
-  if (plan.which) return <div style={box}>{head}<WhichOne which={plan.which} busy={busy} onPick={onPick} onBack={null} /></div>;
-  // VOICE-4: a group or journey name that is not one: the closest two, one
-  // click each. Steward never makes a new one without asking.
-  if (plan.choose) return <div data-testid="tell-plan-choose" style={box}>{head}
-    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{plan.choose.sentence}</div>
-    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-      {plan.choose.options.map(o => <button key={o.id} type="button" data-testid="tell-plan-choice" disabled={busy} onClick={() => onChoose(o.name)} style={btn(false)}>{o.name}</button>)}
-    </div></div>;
-  if (plan.read) return <div data-testid="tell-plan-read" style={box}>{head}
-    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{plan.read.sentence || plan.read.title}</div>
-    {(plan.read.people || []).length > 0 && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6 }}>{plan.read.people.map(p => p.name).join(", ")}</div>}
-    {plan.read.note && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>{plan.read.note}</div>}</div>;
-  const p = plan.plan;
-  if (!p || !plan.id) return <div data-testid="tell-plan-none" style={box}>{head}
-    <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{(plan.cannot && plan.cannot.sentence) || plan.sentence || "Steward could not plan that. Nothing was done."}</div></div>;
-  const confirm = async () => {
-    setBusy(true); setErr("");
-    try { setRan(await apiFetch(`/agent/instructions/${plan.id}/confirm`, { method: "POST", body: "{}" })); told(); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
-  };
-  const notNow = async () => {
-    setBusy(true); setErr("");
-    try { await apiFetch(`/agent/instructions/${plan.id}/discard`, { method: "POST", body: "{}" }); setGone(true); }
-    catch (e) { setErr(said(e)); }
-    setBusy(false);
-  };
-  const outcomes = ran ? (ran.steps || []) : [];
-  return <div data-testid="tell-plan" style={box}>{head}
-    <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{p.headline || plan.text}</div>
-    <div style={{ marginTop: 6 }}>{(p.steps || []).map((st, i) => {
-      const o = outcomes[i];
-      return <div key={i} data-testid="tell-plan-step" style={{ display: "flex", gap: 8, fontSize: 13.5, color: T.ink, lineHeight: 1.45, padding: "3px 0" }}>
-        <span aria-hidden style={{ color: o && o.outcome === "done" ? T.greenDk : T.ink3, fontWeight: 800 }}>{o ? (o.outcome === "done" ? "✓" : "·") : "·"}</span>
-        <span>{st.line || st.describes || st.title || st.tool}{o && o.outcome !== "done" && o.reason ? <span style={{ color: T.ink3 }}> (not done: {o.reason})</span> : null}</span>
-      </div>;
-    })}</div>
-    {err && <div role="alert" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
-    {gone ? <div style={{ fontSize: 13.5, color: T.ink3, marginTop: 8 }}>Set aside. Nothing was done.</div>
-      : ran ? <div data-testid="tell-plan-done" style={{ fontSize: 13.5, color: T.ink, marginTop: 8 }}>Done: {ran.done || 0} of {(p.steps || []).length}. {(p.sends || 0) > 0 ? "" : "Nothing was sent."} <button type="button" onClick={() => { onClose(); onNavigate && onNavigate("agent", {}); }} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontSize: 13.5 }}>See it in the Agent</button></div>
-      : <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <button data-testid="tell-plan-confirm" disabled={busy} onClick={confirm} style={btn(true)}>{p.confirmLabel || "Confirm"}</button>
-        <button data-testid="tell-plan-notnow" disabled={busy} onClick={notNow} style={btn(false)}>Not now</button>
-        <span style={{ fontSize: 12, color: T.ink3 }}>Nothing happens until you confirm.</span>
-      </div>}
-  </div>;
-}
-
-// THREAD-2 · a "Done for you" line links what it names: the person, and the
-// thing that was written ("Lunch logged" opens the conversation, a task line
-// opens the task). Opening one closes the window and goes there.
-function DoneLine({ d, goTo }) {
-  const open = (r, to) => goTo(to);
-  const segs = linkSegments(d.line, d.refs || []);
-  return <>{segs.map((sg, i) => sg.ref
-    ? <RefLink key={i} refItem={sg.ref} onOpen={open}>{sg.text}</RefLink>
-    : d.actRef ? <RefLink key={i} refItem={d.actRef} onOpen={open}>{sg.text}</RefLink>
-    : <Fragment key={i}>{sg.text}</Fragment>)}</>;
-}
-
-const CARD_LABEL = { draft: "Email draft", money: "Amount", contact: "Contact change", sensitive: "Personal detail",
-  thanks: "Receipt and thank-you", flag: "Email", ask: "The ask" };
-const YES_LABEL = { sensitive: "Save as a note", thanks: "Send both" };
-const ALL_KINDS = ["money", "thanks", "contact", "flag", "ask"];
-function Results({ memo, plan, note, busy, act, onAll, onClose, onNavigate, onAnother }) {
-  const [showMemo, setShowMemo] = useState(false);
-  const nav = useNavigate();
-  const goTo = to => { onClose(); nav(to); };
-  const waiting = memo.waiting || [];
-  const open = waiting.filter(c => c.state === "waiting");
-  const decided = waiting.filter(c => c.state !== "waiting");
-  const undone = memo.status === "undone";
-  // VOICE-4: more than one thing to say yes to: one button, and one line that
-  // says exactly what it will do. A personal detail and an email draft are
-  // never in it; each still takes its own tap.
-  const pendingPlan = plan && plan.id && plan.plan && !plan.ranAlone && !plan.ran ? plan.plan : null;
-  const forAll = open.filter(c => ALL_KINDS.includes(c.kind));
-  const allLine = !undone && forAll.length + (pendingPlan ? 1 : 0) > 1 ? doAllLine(forAll, pendingPlan) : "";
-  const saved = waiting.some(c => c.state === "saved");
-  return <div data-testid="tell-results" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    {allLine && <div data-testid="tell-do-all" style={{ border: "1px solid " + T.greenDk, borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-      <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.45, flex: "1 1 220px" }}>{allLine}.</div>
-      <button data-testid="tell-do-all-button" disabled={busy} onClick={onAll} style={btn(true)}>Do all of this</button>
-    </div>}
-    {note && <div style={{ background: "#F0EDE6", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, color: T.ink }}>{note}</div>}
-    {memo.people.length > 0 && <div style={{ fontSize: 13.5, color: T.ink2 }}>About {memo.people.map((p, i) => <Fragment key={p.id}>{i ? " and " : ""}<RefLink refItem={{ kind: "person", id: p.id, name: p.name, email: p.email }} onOpen={(r, to) => goTo(to)} /></Fragment>)}{memo.ai === "off" ? ". AI is off, so your memo was saved as a note and nothing else." : "."}</div>}
-    <section>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Done for you</div>
-      {undone ? <div style={{ fontSize: 13.5, color: T.ink3 }}>Undone by {memo.undoneByName || "you"}. Everything this memo filed was taken back.</div>
-        : memo.done.length === 0 ? <div style={{ fontSize: 13.5, color: T.ink3 }}>Nothing yet.</div>
-        : memo.done.map((d, i) => (
-          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "6px 0", fontSize: 14, color: T.ink, lineHeight: 1.45 }}>
-            <span aria-hidden style={{ color: d.outcome === "done" ? T.greenDk : T.ink3, fontWeight: 800 }}>{d.outcome === "done" ? "✓" : "·"}</span>
-            <span data-testid="tell-done-line"><DoneLine d={d} goTo={goTo} />{d.outcome !== "done" && d.reason ? <span style={{ color: T.ink3 }}> (not done: {d.reason})</span> : null}</span>
-          </div>))}
-    </section>
-    {open.length > 0 && <section>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Waiting for your yes</div>
-      {open.map(c => <div key={c.id} data-testid={`tell-card-${c.kind}`} style={{ border: "1px solid " + T.bg3, borderLeft: "3px solid " + (c.kind === "sensitive" || c.kind === "money" ? "#C9A84C" : T.greenDk), borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 3 }}>{CARD_LABEL[c.kind]}</div>
-        <div style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{c.title}</div>
-        {c.detail && <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>{c.detail}</div>}
-        {c.kind === "thanks" && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>One yes sends the receipt and the drafted thank-you to them. Nothing goes before it.</div>}
-        {c.kind === "draft" && <div style={{ fontSize: 13, color: T.ink2, marginTop: 4, lineHeight: 1.45 }}><b>{c.subject}</b><br />{String(c.body || "").slice(0, 180)}{String(c.body || "").length > 180 ? "..." : ""}</div>}
-        {c.quote && c.kind !== "draft" && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>You said: "{c.quote}"</div>}
-        {c.kind === "sensitive" && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>Steward did not file this. Save it and only the words above go on their record, as a note.</div>}
-        <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          {c.kind === "draft"
-            ? <button onClick={() => { onClose(); onNavigate && onNavigate("agent", { agentView: "waiting" }); }} style={btn(true)}>Open the draft</button>
-            : <button data-testid={`tell-card-yes-${c.kind}`} disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/cards/${c.id}/yes`)} style={btn(true)}>{YES_LABEL[c.kind] || "Yes"}</button>}
-          <button disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/cards/${c.id}/no`)} style={btn(false)}>{c.kind === "sensitive" ? "Discard" : c.kind === "draft" ? "Throw away" : "Not now"}</button>
-        </div>
-      </div>)}
-    </section>}
-    {decided.length > 0 && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6 }}>
-      {decided.map(c => <div key={c.id}>{c.state === "saved" ? (c.kind === "thanks" ? "Sent" : "Saved") : c.state === "undone" ? "Undone" : "Set aside"}: {c.title}</div>)}
-    </div>}
-    <div>
-      <button onClick={() => setShowMemo(v => !v)} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{showMemo ? "Hide" : "Show"} what you said</button>
-      {showMemo && <div style={{ marginTop: 6, fontSize: 13.5, color: T.ink2, lineHeight: 1.5, background: "#F0EDE6", borderRadius: 10, padding: "10px 12px" }}>{memo.text}</div>}
-    </div>
-    <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
-      {!undone && (memo.done.length > 0 || saved) ? <button data-testid="tell-undo" disabled={busy} onClick={() => act(`/voice/memos/${memo.id}/undo`)} style={btn(false)}>Undo this memo</button> : <span />}
-      <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={onAnother} style={btn(false)}>Tell another</button>
-        <button data-testid="tell-done" onClick={onClose} style={btn(true)}>Done</button>
-      </div>
-    </div>
-  </div>;
 }

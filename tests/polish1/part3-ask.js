@@ -143,21 +143,11 @@ async function browserLeg(h, tok, login, QUESTION) {
       }).catch(() => false);
       ok(`§5 ${label}: the answer's first quote is on screen without scrolling`, inView, null);
       if (shots) await page.screenshot({ path: path.join(shots, `part3-ask-home-${label}.png`) });
-      // The Agent's Ask tab: Enter plans, and the answer is brought into view.
+      // AGENT-5: the Agent's Ask tab is gone with the Agent page; its old
+      // address lands on Home with Atlas open over it.
       await page.goto(`${APP}/app/agent?view=ask`, { waitUntil: "domcontentloaded", timeout: 45000 });
-      const ta = page.locator('[data-testid="agent-ask-input"]');
-      const hasTa = await ta.waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
-      if (hasTa) {
-        await ta.fill(QUESTION);
-        await ta.press("Enter");
-        const aReady = await page.locator('[data-testid="agent-ready"]').waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
-        await page.waitForTimeout(900);
-        const aIn = await page.locator('[data-testid="agent-read-quote"]').first().evaluate(el => {
-          const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight;
-        }).catch(() => false);
-        ok(`§5 ${label}: Enter in the Agent's Ask tab answers and brings the answer into view`, aReady && aIn, { aReady, aIn });
-        if (shots) await page.screenshot({ path: path.join(shots, `part3-ask-agent-${label}.png`) });
-      } else ok(`§5 ${label}: the Agent's Ask tab opens`, false, page.url());
+      const atlasOpen = await page.locator('[data-atlas="panel"]').waitFor({ timeout: 20000 }).then(() => true).catch(() => false);
+      ok(`§5 ${label}: the old Agent address lands on Home with Atlas open`, atlasOpen && /\/dashboard$/.test(new URL(page.url()).pathname), page.url());
       await ctx.close();
     }
   } finally { await browser.close(); }

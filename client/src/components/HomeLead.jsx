@@ -8,6 +8,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import { openTellSteward } from "./TellSteward";
+import { atlasName } from "../lib/atlas";   // AGENT-5
 import { beforeLines } from "./BeforeYourMeeting";   // VOICE-3: the one list of what to know before a meeting
 
 const SERIF = "'DM Serif Display', Georgia, serif";
@@ -94,7 +95,7 @@ export function HomeLead({ lead, onNavigate, onSetAside, isReadOnly }) {
               {c.kind === "meeting" && <>
                 <DonorLink id={c.donorId} onOpen={() => openPerson(c.donorId)} style={B1}>Open {first(c.donorName)}'s brief</DonorLink>
                 {!isReadOnly && <button type="button" style={{ ...B2, background: "transparent", color: T.inkInverse, borderColor: T.ink3 }}
-                  onClick={() => openTellSteward({ id: c.donorId, name: c.donorName })}>Afterwards, tell Steward how it went</button>}
+                  onClick={() => openTellSteward({ id: c.donorId, name: c.donorName })}>Afterwards, tell {atlasName()} how it went</button>}
               </>}
               {c.kind === "gift" && <>
                 <button type="button" style={B1} onClick={() => onNavigate && onNavigate("donors", { selectDonorId: c.donorId })}>{c.draft ? "Review the thank-you" : "Thank them"}</button>

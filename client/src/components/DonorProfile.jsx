@@ -25,6 +25,8 @@ import { RecordLink } from "./RecordLink";
 import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
+import { AtlasNote } from "./AtlasNote";   // AGENT-5
+import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
@@ -2106,7 +2108,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
           <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward"
             style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"9px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7}}>
-            <MicGlyph size={15}/>Tell Steward
+            <MicGlyph size={15}/>{atlasName()}
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
               Code intact, re-enable by uncommenting.
@@ -2293,6 +2295,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             })()}
             {/* LATELY — the last three things that happened, of any kind, each
                 opening its record; "See everything" opens Conversations. */}
+            {/* AGENT-5: what Atlas did for this person, in order, with Undo. */}
+            <AtlasNote place="person" id={donor.id} onNavigate={onNavigate}/>
             {rel&&<ProfileTimeline lately={3} onSeeAll={()=>setDpTab("conversations")} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>

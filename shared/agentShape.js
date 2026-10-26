@@ -148,6 +148,10 @@ export const AGENT_TOOLS = [
   { name: "register_event", needsHuman: "never", writes: true, undoable: true, entity: "event_attendees",
     what: "Register somebody for a free event, or put them on its guest list (eventId, from EVENTS). Never a paid ticket.",
     why: "A name on a guest list; no money moves." },
+  // AGENT-5: "Undine went to the Harbor Run": on the guest list, marked as came.
+  { name: "mark_attended", needsHuman: "never", writes: true, undoable: true, entity: "event_attendees",
+    what: "Mark that somebody came to an event that has happened (eventId, from EVENTS). Puts them on its guest list first if they are not on it.",
+    why: "Who came is this office's own record; no money moves." },
   { name: "mark_gift_thanked", needsHuman: "never", writes: true, undoable: true, entity: "gifts",
     what: "Mark a gift as thanked (giftId, from GIFTS). It records nothing new about the money.",
     why: "Whether the thank-you happened is this office's own note on a gift." },
@@ -530,6 +534,7 @@ function clauseFor(tool, group, byId, nameIt) {
     case "start_journey": return `start ${s0.journeyName || "the journey"} for ${who || n + " people"}`;
     case "stop_journey": return `stop ${s0.journeyName || "the journey"} for ${who || n + " people"}`;
     case "register_event": return `register ${who || n + " people"} for ${s0.eventName || "the event"}`;
+    case "mark_attended": return `mark ${who || n + " people"} as came to ${s0.eventName || "the event"}`;
     case "mark_gift_thanked": return `mark ${n === 1 ? "the gift" : n + " gifts"} thanked`;
     case "propose_merge": return `propose merging two records called ${(byId.get(s0.donorId) || {}).name || "the same name"}`;
     case "note_volunteer": return n === 1 ? `note ${w ? w + "'s " : ""}${s0.availability || "availability"}` : `note ${n} volunteers' availability`;
@@ -573,6 +578,7 @@ export function describeStep(step, byId = new Map()) {
     case "start_journey": return `Start ${step.journeyName || "the journey"} for ${who}.`;
     case "stop_journey": return `Stop ${step.journeyName || "the journey"} for ${who}.`;
     case "register_event": return `Register ${who} for ${step.eventName || "the event"}.`;
+    case "mark_attended": return `Mark ${who} as attended at ${step.eventName || "the event"}.`;
     case "mark_gift_thanked": return `Mark ${who}'s gift${step.giftWords ? ` (${step.giftWords})` : ""} thanked.`;
     case "propose_merge": return `Propose that ${who} and ${nameInSentence(byId.get(step.otherDonorId))} are one person, for you to merge in Data health.`;
     case "note_volunteer": return `Note ${who}'s availability in Volunteers: ${step.availability || "as you said"}.`;

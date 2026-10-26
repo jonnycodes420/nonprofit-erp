@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { AtlasSettings } from "./AtlasSettings";   // AGENT-5
 import { removeOne } from "./RemoveMenu";
 import { BrandKitManager } from "./BrandKit";
 import { useUrlWriter } from "./RecordLink";
@@ -2668,9 +2669,9 @@ const SETTINGS_TABS=[
   // BUILD-87 Part 1 — every import run, newest first, with the receipt it
   // showed when it committed. Read only: this build does not undo an import.
   {id:"imports",label:"Imports"},
-  // FIX-1 §A — "Steward's activity" (every instruction, every run, every write
-  // with its thirty-day undo) moved to Agent → Guardrails. A deep link to the
-  // old section lands there (App.jsx navigateTo).
+  // AGENT-5 — Atlas's rules, in plain words, and its pause switch: the
+  // Agent page's Guardrails moved here when the page went.
+  {id:"atlas",label:"Atlas"},
   // FIX-11 Part 1 — EVERY CHANGE ANYONE MADE. Owners and admins only, which
   // the tab list enforces here and the route enforces again: the log names who
   // signed in, whose role changed and who downloaded a donor file.
@@ -3822,6 +3823,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>)}
 
       {section==="privacy"&&<PrivacyPanel isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {section==="atlas"&&<AtlasSettings isAdmin={isAdmin} isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
 
       {section==="data"&&<>
       {/* CLEAN-1 4d: said plainly, where an admin looks for what Steward does with addresses. */}

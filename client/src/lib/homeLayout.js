@@ -64,7 +64,7 @@ export const HOME_SECTIONS = [
   // yesterday" is the one place the agent accounts for itself on the screen she
   // actually opens, and a surface that can act on her behalf must not be
   // possible to hide from her.
-  { id: "agent", label: "Tell Steward what to do", hideable: false, surface: "home" },
+  { id: "agent", label: "Ask Atlas", hideable: false, surface: "home" },
 
   // ── the board's ──────────────────────────────────────────────────────────
   { id: "hero",             label: "Fundraising goal",      hideable: false, surface: "board" },

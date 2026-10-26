@@ -8,6 +8,7 @@ import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
+import { AtlasBell } from "./AtlasNote";   // AGENT-5
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -399,6 +400,8 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     <div style={{flex:1}}/>
 
     {/* HELP-1 — the "?" opens the article for this screen, beside the page. */}
+    {/* AGENT-5: the bell. Everything Atlas did and readied; its count is what waits. */}
+    <AtlasBell onNavigate={onNavigate}/>
     <button data-testid="topbar-help" onClick={()=>setHelpOpen(true)} title="Help for this screen" aria-label="Help for this screen"
       style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid "+T.green650,color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
     {helpOpen && <HelpPanel screen={screen} onClose={()=>setHelpOpen(false)}/>}
