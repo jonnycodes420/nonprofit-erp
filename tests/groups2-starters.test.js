@@ -135,7 +135,7 @@ const figureCount = b => Number(b && (b.value ?? b.count ?? (b.figure && b.figur
   const zero = r0.body.starters.filter(s => s.count === 0);
   ok("§2 no starter at 0 is shown", zero.length === 0, zero.map(s => s.key));
   ok("§2 a file with no board members, monthly plans or event guests hides those starters", !S.board && !S.monthly && !S.guests_never_gave, Object.keys(S));
-  ok("§2 the hidden ones are counted", r0.body.hidden === 12 - r0.body.starters.length && r0.body.hidden >= 3, r0.body.hidden);
+  ok("§2 the hidden ones are counted", r0.body.hidden === 14 - r0.body.starters.length && r0.body.hidden >= 3, r0.body.hidden);
 
   // ── §3 DO NOT SOLICIT IS RESPECTED ─────────────────────────────────────
   ok("§3 the LYBUNT starter says it leaves out the two marked do not solicit", S.lybunt && S.lybunt.leftOut >= 2, S.lybunt);

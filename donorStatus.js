@@ -10,7 +10,11 @@
 //                 used to be "no gift in the 12 months before the last 12",
 //                 so a person who gave every October read Recaptured whenever
 //                 two of their gifts fell in the last 12 months.
-//   retained      gave last calendar year and again this calendar year.
+//   retained      FIX-49: gave last fiscal year (the org's own year) and
+//                 again this fiscal year. It was the calendar year.
+//   lapsing       FIX-49: their last gift was 9 to 12 months ago. Lapsed and
+//                 lapsing are the one rule in lapseRule.js, which every other
+//                 door reads too.
 // Plus the closeness word (Close, Warm, On track, Cooling, New), which is ENGAGE-1's band
 // said in words (shared/engagementWeights.js closenessFor), so the word and the
 // score can never disagree.
@@ -22,6 +26,7 @@
 
 const { query } = require("./db");
 const orgTime = require("./orgTime");
+const lapseRule = require("./lapseRule");
 
 const DEFAULT_CUTS = Object.freeze({ midCents: 100000, majorCents: 1000000 });
 const NEW_DAYS = 90;
@@ -35,13 +40,14 @@ const LIFECYCLES = Object.freeze({
   new: { label: "New", kind: "lifecycle", sentence: "Their first gift was in the last 12 months." },
   current: { label: "Current", kind: "lifecycle", sentence: "They gave in the last 12 months, and before that without missing a calendar year." },
   recaptured: { label: "Recaptured", kind: "lifecycle", sentence: "They gave in the last 12 months after a whole calendar year with no gift." },
-  lapsed: { label: "Lapsed", kind: "lifecycle", sentence: "They have given before, but not in the last 12 months." },
+  lapsed: { label: "Lapsed", kind: "lifecycle", sentence: "They have given before, but not in the last 12 months." },   // = lapseRule.WORDS.lapsed
 });
-const RETAINED = Object.freeze({ label: "Retained", kind: "retained", sentence: "They gave last calendar year and have given again this calendar year." });
+const RETAINED = Object.freeze({ label: "Retained", kind: "retained", sentence: "They gave last fiscal year and have given again this fiscal year (your organization's own year, set in Settings)." });
+const LAPSING = Object.freeze({ label: "Lapsing", kind: "lapsing", sentence: "Their last gift was 9 to 12 months ago. At 12 months with no gift they are lapsed." });
 const CLOSENESS = Object.freeze({
   close: { label: "Close" }, warm: { label: "Warm" }, on_track: { label: "On track" }, cooling: { label: "Cooling" }, new: { label: "New" },
 });
-const TAG_KEYS = [...Object.keys(LEVELS), ...Object.keys(LIFECYCLES), "retained"];
+const TAG_KEYS = [...Object.keys(LEVELS), ...Object.keys(LIFECYCLES), "retained", "lapsing"];
 
 function dollars(cents) {
   const d = Math.round(Number(cents) || 0) / 100;
@@ -56,17 +62,20 @@ function tagSentence(key, cuts) {
   if (LEVELS[key]) return levelSentence(cuts);
   if (LIFECYCLES[key]) return LIFECYCLES[key].sentence;
   if (key === "retained") return RETAINED.sentence;
+  if (key === "lapsing") return LAPSING.sentence;
   return "";
 }
 function tagLabel(key) {
-  return (LEVELS[key] || LIFECYCLES[key] || (key === "retained" ? RETAINED : null) || {}).label || key;
+  return (LEVELS[key] || LIFECYCLES[key] || (key === "retained" ? RETAINED : key === "lapsing" ? LAPSING : null) || {}).label || key;
 }
 
 async function cutsFor(orgId) {
-  const [o] = await query("SELECT giving_level_mid_cents, giving_level_major_cents FROM orgs WHERE id=?", [orgId]);
+  const [o] = await query("SELECT giving_level_mid_cents, giving_level_major_cents, vocabulary_json FROM orgs WHERE id=?", [orgId]);
   const mid = o && o.giving_level_mid_cents != null ? Number(o.giving_level_mid_cents) : DEFAULT_CUTS.midCents;
   const major = o && o.giving_level_major_cents != null ? Number(o.giving_level_major_cents) : DEFAULT_CUTS.majorCents;
-  return { midCents: mid, majorCents: major };
+  // FIX-49: the org's fiscal start month rides with the cut points, so every
+  // caller of statusSql gets "Retained" on the org's own year.
+  return { midCents: mid, majorCents: major, fyStartMonth: orgTime.orgFiscalStartMonth(o || {}) };
 }
 async function todayFor(orgId) {
   const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
@@ -74,14 +83,21 @@ async function todayFor(orgId) {
 }
 
 // The windows, as civil dates. W0 is the last 12 months up to today, W1 the
-// 12 months before that.
-function windowsFor(today) {
-  const y = orgTime.parseCivil(today).y;
+// 12 months before that. cy/ly are the org's fiscal year and the one before
+// (FIX-49; the calendar year when the org's year starts in January).
+function windowsFor(today, cuts = null) {
+  const c = orgTime.parseCivil(today);
+  const sm = (cuts && cuts.fyStartMonth) || 1;
+  const fy = c.m >= sm ? c.y : c.y - 1;
+  const p2 = n => String(n).padStart(2, "0");
+  const cyFrom = `${fy}-${p2(sm)}-01`, lyFrom = `${fy - 1}-${p2(sm)}-01`;
+  const lb = lapseRule.bounds(today);
   return {
     today,
-    w0From: orgTime.addDays(today, -364), w1From: orgTime.addDays(today, -729), w1To: orgTime.addDays(today, -365),
-    cyFrom: `${y}-01-01`, lyFrom: `${y - 1}-01-01`, lyTo: `${y - 1}-12-31`,
+    w0From: lb.lapsingFrom, w1From: orgTime.addDays(today, -729), w1To: lb.lapsedOnOrBefore,
+    cyFrom, lyFrom, lyTo: orgTime.addDays(cyFrom, -1),
     newFrom: orgTime.addDays(today, -(NEW_DAYS - 1)),
+    lapsingFrom: lb.lapsingFrom, lapsingTo: lb.lapsingOnOrBefore,
   };
 }
 
@@ -89,13 +105,14 @@ function windowsFor(today) {
 // donor_id, last12 (dollars, net), first_date, last_date, level, lifecycle,
 // retained. `donorId` narrows it to one person.
 function statusSql(orgId, today, cuts, { donorId = null } = {}) {
-  const w = windowsFor(today);
-  const args = [cuts.majorCents, cuts.midCents,
+  const w = windowsFor(today, cuts);
+  const args = [w.lapsingFrom, w.lapsingTo, cuts.majorCents, cuts.midCents,
     w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
   const sql = `
     SELECT a.donor_id, a.last12, a.first_date, a.last_date,
+           (a.last_date::date BETWEEN ?::date AND ?::date) AS lapsing,
            CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
            CASE WHEN a.w0 AND a.prev_date IS NULL THEN 'new'
                 -- The gift that brought them back is the first in the last 12
@@ -130,7 +147,7 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
   if (!TAG_KEYS.includes(key)) return null;
   const a = alias ? alias + "." : "";
   const { sql, args } = statusSql(orgId, today, cuts);
-  const col = LEVELS[key] ? "s.level = ?" : LIFECYCLES[key] ? "s.lifecycle = ?" : "s.retained";
+  const col = LEVELS[key] ? "s.level = ?" : LIFECYCLES[key] ? "s.lifecycle = ?" : key === "lapsing" ? "s.lapsing" : "s.retained";
   return {
     sql: `${a}id IN (WITH s AS MATERIALIZED (${sql}) SELECT s.donor_id FROM s WHERE ${col})`,
     args: col.endsWith("?") ? [...args, key] : args,
@@ -179,8 +196,9 @@ async function statusFor(orgId, donorId, { today = null, cuts = null } = {}) {
   if (!row) return { today, cuts, row: null, tags: [] };
   const keys = [row.level, row.lifecycle];
   if (row.retained) keys.push("retained");
+  if (row.lapsing) keys.push("lapsing");
   const tags = keys.map(k => ({
-    key: k, label: tagLabel(k), kind: LEVELS[k] ? "level" : LIFECYCLES[k] ? "lifecycle" : "retained",
+    key: k, label: tagLabel(k), kind: LEVELS[k] ? "level" : LIFECYCLES[k] ? "lifecycle" : k,
     sentence: tagSentence(k, cuts),
     source: { key: "donors-by-status", params: { tag: k, today } },
   }));
@@ -188,7 +206,7 @@ async function statusFor(orgId, donorId, { today = null, cuts = null } = {}) {
 }
 
 module.exports = {
-  DEFAULT_CUTS, NEW_DAYS, LEVELS, LIFECYCLES, RETAINED, CLOSENESS, TAG_KEYS,
+  DEFAULT_CUTS, NEW_DAYS, LEVELS, LIFECYCLES, RETAINED, LAPSING, CLOSENESS, TAG_KEYS,
   cutsFor, todayFor, windowsFor, statusSql, tagCondition, closenessSql, closenessCondition, firstSeenSql, statusFor,
   tagLabel, tagSentence, levelSentence, dollars,
 };

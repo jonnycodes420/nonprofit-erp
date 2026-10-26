@@ -8436,6 +8436,10 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
 
+  // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
+  // become household records (the only grouping); the links themselves stay.
+  await householdsFromLinks(pool);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).
@@ -8465,6 +8469,48 @@ async function backfillLinkedTasks() {
   const made = (await count()) - before;
   if (made) console.log(`[fix-31] backfill: ${made} task(s) for ${t.rowCount} next step(s) and ${m.rowCount} deadline(s)`);
   return { made, nextSteps: t.rowCount, deadlines: m.rowCount };
+}
+
+// FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. The household record
+// (donors.household_id) is the only way Steward groups people for giving. A
+// spouse or household link (donor_relationships) used to make a second
+// "household total"; each such pair is now put in one household: the one
+// either already belongs to, or a new one named for the first person. A pair
+// already in two different households is left as it is (merging two
+// households is a person's choice) and counted. Organisations and anonymous
+// records never join a household. Safe to run again: a pair in one household
+// is skipped. `orgId` narrows it to one org.
+async function householdsFromLinks(pool, orgId = null) {
+  const q = (sql, args) => pool.query(sql, args).then(r => r.rows);
+  const pairs = await q(
+    `SELECT dr.org_id, dr.donor_id_a AS a, dr.donor_id_b AS b
+       FROM donor_relationships dr
+       JOIN donors da ON da.id = dr.donor_id_a AND da.org_id = dr.org_id AND da.deleted_at IS NULL
+       JOIN donors db ON db.id = dr.donor_id_b AND db.org_id = dr.org_id AND db.deleted_at IS NULL
+      WHERE dr.relationship_type IN ('spouse', 'household')
+        AND COALESCE(da.kind, 'person') NOT IN ('organisation', 'anonymous') AND COALESCE(db.kind, 'person') NOT IN ('organisation', 'anonymous')
+        AND (da.household_id IS NULL OR db.household_id IS NULL OR da.household_id <> db.household_id)${orgId ? " AND dr.org_id = $1" : ""}
+      ORDER BY dr.created_at, dr.id`, orgId ? [orgId] : []);
+  let joined = 0, made = 0, apart = 0;
+  for (const p of pairs) {
+    const rows = await q(`SELECT id, name, household_id FROM donors WHERE org_id = $1 AND id = ANY($2)`, [p.org_id, [p.a, p.b]]);
+    const A = rows.find(r => r.id === p.a), B = rows.find(r => r.id === p.b);
+    if (!A || !B || (A.household_id && A.household_id === B.household_id)) continue;
+    if (A.household_id && B.household_id) { apart++; continue; }
+    let hh = A.household_id || B.household_id;
+    if (!hh) {
+      hh = "hh_" + require("crypto").randomBytes(4).toString("hex");
+      const last = String(A.name || "").trim().split(/\s+/).pop();
+      await q(`INSERT INTO households (id, org_id, name, primary_donor_id, joint_acknowledgment, created_by, created_by_name)
+               VALUES ($1, $2, $3, $4, true, 'system:fix49-households', 'Steward (one household grouping)')`,
+        [hh, p.org_id, last ? `The ${last} Household` : "Household", A.id]);
+      made++;
+    }
+    await q(`UPDATE donors SET household_id = $1 WHERE org_id = $2 AND id = ANY($3) AND household_id IS NULL`, [hh, p.org_id, [p.a, p.b]]);
+    joined++;
+  }
+  if (joined || apart) console.log(`[fix-49] households: ${joined} linked pair(s) put in one household (${made} new); ${apart} pair(s) already in two different households, left as they are`);
+  return { joined, made, apart };
 }
 
 // NUMBERS-2 · called by the schema init and after the boot seed.
@@ -9197,4 +9243,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks };
+module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+  householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

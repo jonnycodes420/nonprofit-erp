@@ -27,6 +27,8 @@ const NUM = require("../numbers");
 const money = require("../money");
 const orgTime = require("../orgTime");
 const { statementLines } = require("../statementTotals");
+const DS = require("../donorStatus");
+const lapseRule = require("../lapseRule");
 
 const CREDIT = new Set(FS.BOOKKEEPER_EXCLUDED_TYPES);
 const c = v => money.toCents(String(v ?? "0")) ?? 0;
@@ -64,6 +66,13 @@ const RULES = {
     screens: "Finance ledger, pledges, every total" },
   "foots": { words: "Every number that opens its rows foots to those rows.",
     screens: "every figure drawer" },
+  // FIX-49 decisions 6 to 8 (Jonathan, 25 Oct).
+  "lapse": { words: "Lapsed is no gift in the last 12 months after giving before; lapsing is a last gift 9 to 12 months ago. The tags, the Directory's counts and every list name the same people by that one rule.",
+    screens: "profile tags, Directory and its Re-engage badge, groups, Drift, journey triggers, Lost & Found" },
+  "giving-level": { words: "A person's giving level is what they gave in the last 12 months against the org's own cut points (Settings, Giving levels), and nothing else.",
+    screens: "profile tag, Directory filter, groups, Communications Major, the Board" },
+  "household-one": { words: "The household record is the only grouping: two people linked as spouses or a household are in one household.",
+    screens: "the profile's household panel, household totals" },
 };
 
 async function orgToday(orgId) {
@@ -175,6 +184,40 @@ async function checkOrg(orgId, opts = {}) {
     if ((ex.cents || 0) !== want - lifeOf.get(m.id)) add("household", { household: h, what: "soft credit", donor: m.id, shown: ex.cents, want: want - lifeOf.get(m.id) });
   }
 
+  // ── FIX-49: one lapse rule, one set of giving levels ─────────────────
+  {
+    const cuts = await DS.cutsFor(orgId);
+    const st = DS.statusSql(orgId, today, cuts);
+    const tagged = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
+    for (const [donorId, gs] of byDonor) {
+      const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
+      if (!pos.length) continue;
+      const last = pos.map(g => day(g.date)).sort().pop();
+      const want = lapseRule.lapseState(last, today);
+      const t = tagged.get(donorId);
+      const d = donors.find(x => x.id === donorId);
+      const imported = d && d.imported_total != null;
+      // A person with imported history is judged with it (decision 9), which
+      // the gift rows here cannot see; they are held by the profile's own read.
+      if (imported) continue;
+      if (!t) { add("lapse", { donor: donorId, want, shown: null }); continue; }
+      if ((t.lifecycle === "lapsed") !== (want === "lapsed") || !!t.lapsing !== (want === "lapsing")) add("lapse", { donor: donorId, want, shown: [t.lifecycle, !!t.lapsing] });
+      const last12 = gs.filter(g => day(g.date) >= lapseRule.bounds(today).lapsingFrom && day(g.date) <= today).reduce((x, g) => x + c(g.amount), 0);
+      const lvl = last12 >= cuts.majorCents ? "major" : last12 >= cuts.midCents ? "mid" : "general";
+      if (t.level !== lvl) add("giving-level", { donor: donorId, want: lvl, shown: t.level });
+    }
+  }
+  {
+    const apart = await query(
+      `SELECT dr.id FROM donor_relationships dr
+         JOIN donors a ON a.id = dr.donor_id_a AND a.org_id = dr.org_id AND a.deleted_at IS NULL
+         JOIN donors b ON b.id = dr.donor_id_b AND b.org_id = dr.org_id AND b.deleted_at IS NULL
+        WHERE dr.org_id = ? AND dr.relationship_type IN ('spouse','household')
+          AND COALESCE(a.kind,'person') NOT IN ('organisation','anonymous') AND COALESCE(b.kind,'person') NOT IN ('organisation','anonymous')
+          AND (a.household_id IS NULL OR b.household_id IS NULL)`, [orgId]);
+    for (const r of apart) add("household-one", { relationship: r.id });
+  }
+
   // ── soft credits ─────────────────────────────────────────────────────
   const scBad = await query(
     `SELECT sc.id FROM gift_soft_credits sc LEFT JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
@@ -273,7 +316,9 @@ const UNIT = { "donor-lifetime": "donors where Lifetime disagrees", "donor-count
   "donor-stored": "stored donor totals that disagree", household: "households that disagree", "soft-credit": "soft credits that break the rule",
   campaign: "campaign totals that disagree", "campaign-window": "campaigns counting gifts outside their dates", "goal-rollup": "goal roll-ups that disagree",
   fund: "fund totals that disagree", "report-year": "year totals that disagree", statement: "statements that disagree",
-  removed: "rows pointing at removed gifts", foots: "figures that do not foot" };
+  removed: "rows pointing at removed gifts", foots: "figures that do not foot",
+  lapse: "people whose lapsed or lapsing tag disagrees", "giving-level": "people whose giving level disagrees",
+  "household-one": "linked pairs not in one household" };
 function countLine(r) {
   const n = r.problems.reduce((s, p) => s + p.count, 0);
   if (!n) return `${r.name}: 0 problems`;

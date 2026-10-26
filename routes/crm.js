@@ -41,6 +41,7 @@ const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file door
 const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../orgSummary");
+const lapseRule = require("../lapseRule");   // FIX-49: the one lapse rule
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
 const fileLimiter = rateLimit("fileLimiter", {
@@ -74,7 +75,7 @@ const {
   demoMailNote,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
-  filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
+  filterBySegment, resolveSegmentSpec, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
   // GIVE-2 — see routes/give.js's note on the same four.
   footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
@@ -6033,21 +6034,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // Gap 2: Promote donor status — same thresholds as single-gift route
   // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
   // Runs after recalcDonorSummary so total_giving is accurate before promotion.
-  if (affectedDonorIds.size > 0) {
-    try {
-      await run(
-        `UPDATE donors
-         SET status = CASE
-           WHEN total_giving > 20000 THEN 'major'
-           WHEN total_giving > 5000  THEN 'mid'
-           ELSE status
-         END,
-         updated_at = NOW()
-         WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`,
-        [orgId, [...affectedDonorIds]]
-      );
-    } catch (e) { console.error(`[combined-import] status promotion failed:`, e.message); }
-  }
+  // FIX-49 decision 7: no second giving-level rule. donors.status is no
+  // longer promoted to mid/major on lifetime totals; the level is the one
+  // rule in donorStatus.js (the org's cut points, last 12 months).
 
   // Infer pipeline stage from recalculated giving data — the authoritative
   // inference happens HERE (after gifts load + totals recalc), not on the client
@@ -6079,7 +6068,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) > 365             THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -9903,21 +9892,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // Gap 2: Promote donor status — same thresholds as single-gift route
   // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
   // Runs after recalcDonorSummary so total_giving is accurate before promotion.
-  if (affectedDonorIds.size > 0) {
-    try {
-      await run(
-        `UPDATE donors
-         SET status = CASE
-           WHEN total_giving > 20000 THEN 'major'
-           WHEN total_giving > 5000  THEN 'mid'
-           ELSE status
-         END,
-         updated_at = NOW()
-         WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`,
-        [orgId, [...affectedDonorIds]]
-      );
-    } catch (e) { console.error(`[gift-import] status promotion failed:`, e.message); }
-  }
+  // FIX-49 decision 7: no second giving-level rule. donors.status is no
+  // longer promoted to mid/major on lifetime totals; the level is the one
+  // rule in donorStatus.js (the org's cut points, last 12 months).
 
   // Infer pipeline stage — same logic as combined import (see its comment
   // for the qualify/solicit reasoning), same guardrail.
@@ -9940,7 +9917,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) > 365             THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -12949,6 +12926,23 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
                                    AND (COALESCE(m2.expires_on,'') = '' OR m2.expires_on::date >= ?::date))`,
       [orgId, today, today, w, today]);
   }
+  // FIX-49 decision 6 · THE ONE LAPSE RULE, AS TWO MOMENTS. The day a person
+  // became lapsed is their last gift plus 365 days; lapsing, plus 9 months.
+  // That day must fall inside the sweep's look-back and on or after the day
+  // their record was made (the BUILD-25 rule: a file loaded already lapsed is
+  // history). The event key is the last gift date, so each lapse fires once
+  // and a new gift starts a new episode.
+  if (key === "lapsed" || key === "lapsing") {
+    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today);
+    const crossed = key === "lapsed" ? `(LEFT(d.last_gift_date, 10)::date + ${lapseRule.LAPSED_DAYS})`
+      : `(LEFT(d.last_gift_date, 10)::date + INTERVAL '${lapseRule.LAPSING_MONTHS} months')::date`;
+    return P(`SELECT d.id AS donor_id, '${key}:' || d.id || ':' || LEFT(d.last_gift_date, 10) AS event_key
+                FROM donors d
+               WHERE d.org_id=? AND ${LIVE_PERSON} AND COALESCE(d.gift_count, 0) > 0
+                 AND d.last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${st.sql}
+                 AND ${crossed} >= d.created_at::date AND ${crossed} >= ?::date - ?::int`,
+      [orgId, ...st.args, today, w]);
+  }
   if (key === "recurring_failed") {
     return P(`SELECT rs.donor_id, 'recurring_failed:' || rs.id || ':' || COALESCE(to_char(rs.first_failed_at, 'YYYY-MM-DD'), '') AS event_key
                 FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
@@ -14938,13 +14932,13 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     relatedDonorTotalGiving: Number(donorMap[r.related_donor_id]?.total_giving) || 0,
   }));
 
-  // REPORTS-4: the household total is the `linked-household-giving` source's
-  // value, so it opens onto the people it adds up. It used to be added here,
-  // in floating point, with a deleted spouse's giving counted in.
+  // FIX-49 decision 8: the household record is the only grouping. The total
+  // is the household's combined giving (`household-giving`, the household
+  // panel's own figure), never a second sum over spouse links.
   let householdTotal = null, householdTotalSource = null;
-  const householdLinks = relationships.filter(r => HOUSEHOLD_RELATIONSHIP_TYPES.includes(r.relationshipType));
-  if (householdLinks.length) {
-    householdTotalSource = { key: "linked-household-giving", params: { donor: donorId } };
+  const [me] = await query("SELECT household_id FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
+  if (me && me.household_id) {
+    householdTotalSource = { key: "household-giving", params: { household: me.household_id } };
     householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
@@ -14984,6 +14978,9 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
     const [r] = await query("SELECT * FROM donor_relationships WHERE id = ?", [id]);
     req.audit.after(await auditShape("donor_relationships", r, orgId));
   }
+  // FIX-49 decision 8: a spouse or household link puts the two in one
+  // household record, the one grouping (db.js householdsFromLinks).
+  if (HOUSEHOLD_RELATIONSHIP_TYPES.includes(relationshipType)) await require("../db").householdsFromLinks(orgId).catch(e => console.error("[fix-49] household:", e.message));
   res.status(201).json({ id });
 }));
 
@@ -20790,9 +20787,12 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
      WHERE i.org_id=? ORDER BY i.date DESC LIMIT 10`,
     [orgId]
   );
+  // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
+  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   const lapsedDonors = await query(
-    "SELECT * FROM donors WHERE org_id=? AND status='lapsed' AND deleted_at IS NULL ORDER BY last_gift_date ASC LIMIT 5",
-    [orgId]
+    `SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count, 0) > 0
+        AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsedRule.sql} ORDER BY last_gift_date ASC LIMIT 5`,
+    [orgId, ...lapsedRule.args]
   );
   res.json({ urgentTasks, upcomingDeadlines, recentInteractions, lapsedDonors });
 }));
@@ -21591,10 +21591,13 @@ async function audienceRoster(orgId) {
     groupCounts.set(r.id, donors.filter(d => ids.has(d.id)).length);
   }
 
+  // FIX-49 decision 7: "Major" is the Major giving level, resolved once.
+  const { majorIds } = await resolveSegmentSpec({ mode: "major" }, orgId);
+  const segOf = sg => (sg && sg.mode === "major" ? { ...sg, majorIds } : sg);
   const builtins = A.BUILT_IN_AUDIENCES.map(a => ({
     id: a.id, name: a.name, description: a.description, kind: "builtin", tone: a.tone,
     mode: a.mode,
-    count: filterBySegment(donors, { mode: a.mode }).length,
+    count: filterBySegment(donors, segOf({ mode: a.mode })).length,
     // WHERE THESE PEOPLE LIVE. Allie should never have to wonder where her
     // volunteers are kept — an audience names the screen its people are on.
     // FIX-1 D/C — Donors shows donors now, so volunteers live in the
@@ -21613,7 +21616,7 @@ async function audienceRoster(orgId) {
       id: r.id, name: r.name, description: r.description || "", kind: r.kind ? "group" : "saved", tone: "greenMid",
       groupKind: r.kind || null,
       mode: r.kind ? "audience" : seg.mode, segment: r.kind ? { mode: "audience", audienceId: r.id } : seg, created_at: r.created_at,
-      count: r.kind ? groupCounts.get(r.id) : filterBySegment(donors, seg).length,
+      count: r.kind ? groupCounts.get(r.id) : filterBySegment(donors, segOf(seg)).length,
       livesOn: { tab: "donors", filter: seg.mode, label: "Donors" },
     };
   });
@@ -21724,8 +21727,8 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
   const SEGS = [
     { id: "all", label: "All donors", rows: all,
       definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
-    { id: "major", label: "Major ($10,000+)", rows: filterBySegment(all, { mode: "major" }),
-      definition: "Donors with an email address who have given $10,000 or more in total." },
+    { id: "major", label: "Major", rows: filterBySegment(all, await resolveSegmentSpec({ mode: "major" }, orgId)),
+      definition: "Donors with an email address at the Major giving level: what they gave in the last 12 months against your cut points in Settings, Giving levels." },
     { id: "lapsed", label: "Gone quiet", rows: all.filter(d => d.stage === "lapsed" || quiet.has(d.id)),
       definition: "Donors with an email address who are past their own usual gap between gifts, or marked lapsed. The same rule as Why." },
     { id: "prospect", label: "Prospects", rows: byStage("prospect"), definition: "Donors with an email address at the Prospect stage." },

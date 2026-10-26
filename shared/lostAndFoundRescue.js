@@ -5,7 +5,7 @@
 // each donor against THEIR OWN history with the same rhythm Steward uses
 // (drift.js, BUILD-76): the median gap between their gifts, month-aware for
 // a donor who gives every December, drifting past 1.25 times that gap,
-// lapsed past 2.5 times it or 24 months. This module only sorts what Drift
+// lapsed with no gift in the last 12 months (FIX-49, lapseRule.js). This module only sorts what Drift
 // says into three calls; it never changes how Drift decides.
 //
 // THE SAME RULE AS shared/lostAndFound.js: this runs in the visitor's
@@ -26,8 +26,8 @@ import { groupDonors, money } from "./lostAndFound.js";
 
 const { assessDrift, rhythmOf, median } = drift;
 
-// Between Drift's drifting line (1.25) and its lapse line (2.5): the first
-// half of the drifting band is "just late", the second half "well late".
+// Past Drift's drifting line (1.25): up to 1.75 times their gap is "just
+// late", beyond it "well late", until the lapse rule says lapsed.
 export const FURTHER_PAST = 1.75;
 // A recurring gift that stopped is a call this month while the last gift is
 // inside a year. Older than that, Drift's lapse line has the final word.
@@ -122,7 +122,7 @@ export function rescuePlan(gifts, { today }) {
       sentence: gone.length
         ? `${who(gone.length, total(gone))} ${plural(gone.length, "is", "are")} past the lapse line. ${plural(gone.length, "This one is", "They are")} here so you know, not as a call list.`
         : "Nobody on this file is past the lapse line.",
-      definition: `Quiet for more than ${drift.DRIFT.LAPSE_RATIO} times their own usual gap, or more than 24 months, whichever comes first. The same line Steward uses.` },
+      definition: "Lapsed: they have given before, but not in the last 12 months. The same rule Steward uses everywhere." },
   ];
   const atRiskCents = out.reduce((a, g) => a + g.cents, 0);
   const atRiskCount = out.reduce((a, g) => a + g.count, 0);

@@ -1047,8 +1047,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // Related donors (household/spouse/family/employer_match) — manual
   // linking only, see server.js's donor_relationships routes.
   const [relationships,setRelationships]=useState([]);
-  const [householdTotal,setHouseholdTotal]=useState(null);
-  const [householdTotalSource,setHouseholdTotalSource]=useState(null);   // REPORTS-4
   const [relLoading,setRelLoading]=useState(true);
   const [relPickerOpen,setRelPickerOpen]=useState(false);
   const [relSearch,setRelSearch]=useState("");
@@ -1058,8 +1056,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const loadRelationships=()=>{
     setRelLoading(true);
     apiFetch(`/donors/${donor.id}/relationships`)
-      .then(r=>{setRelationships(r.relationships||[]);setHouseholdTotal(r.householdTotal??null);setHouseholdTotalSource(r.householdTotalSource||null);})
-      .catch(()=>{setRelationships([]);setHouseholdTotal(null);})
+      .then(r=>{setRelationships(r.relationships||[]);})
+      .catch(()=>{setRelationships([]);})
       .finally(()=>setRelLoading(false));
   };
   useEffect(()=>{loadRelationships();},[donor.id]);
@@ -3061,12 +3059,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </>
               )}
             </div>
-            {householdTotal!=null&&(
-              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
-                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}} onClick={e=>e.stopPropagation()}>{householdTotalSource?<Figure variant="inline" kind="money" value={householdTotal} label="Household total" definition="This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted." source={householdTotalSource}/>:fmtFull(householdTotal)}</strong> household total</div>
-              </div>
-            )}
+            {/* FIX-49 decision 8: one household grouping. The "Household Giving" banner
+                summed spouse links, a second grouping; the household panel above is the one. */}
 
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked Donors</div>

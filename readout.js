@@ -17,7 +17,7 @@ const orgTime = require("./orgTime");
 
 const ACTOR = { id: "system:readout", name: "Steward (what this told us)" };
 const RECENT_DAYS = 90;          // a gift line is about gifts from the last 90 days
-const LAPSED_DAYS = 365;         // "lapsed" is a year with no gift, as everywhere in Steward
+const lapseRule = require("./lapseRule");   // FIX-49: "lapsed" is the one rule, as everywhere in Steward
 const MONTHLY_GAP_DAYS = 45;     // a monthly gift missing for more than 45 days has stopped
 const STOPPED_LOOKBACK_DAYS = 120;
 const GAVE_AFTER_DAYS = 60;
@@ -104,7 +104,7 @@ function computeLines({ gifts, newIds, names, today, medianCents, crossings = []
     const before = list.filter(g => String(g.date) < String(g0.date));
     if (before.length) {
       const prev = before[before.length - 1];
-      if (orgTime.daysBetween(String(prev.date).slice(0, 10), String(g0.date).slice(0, 10)) > LAPSED_DAYS) out.lapsed_returned.push(row(g0));
+      if (lapseRule.isLapsed(String(prev.date).slice(0, 10), String(g0.date).slice(0, 10))) out.lapsed_returned.push(row(g0));
     }
     const biggestRecent = recent.reduce((m, g) => (cents(g.amount) > cents(m.amount) ? g : m), recent[0]);
     const earlier = list.filter(g => String(g.date) < String(biggestRecent.date));
