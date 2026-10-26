@@ -8699,6 +8699,9 @@ async function fireWorkflows(orgId, trigger, ctx) {
 // dedup is per donor + their current last_gift_date so a given lapse fires once.
 // Optional onlyOrgId scopes the sweep to one org (the ops/test trigger route).
 async function processWorkflowSweeps(onlyOrgId = null) {
+  // FIX-49 · a recipe switched on since the last pass becomes its journey
+  // first, so a converted recipe never fires again from here.
+  await require("./workflowsToJourneys").convertWorkflows(onlyOrgId).catch(e => console.error("[workflows-to-journeys]", e.message));
   const orgRows = onlyOrgId
     ? await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true AND org_id=?", [onlyOrgId])
     : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
@@ -11751,6 +11754,9 @@ app.use((err, req, res, next) => {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
+  // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
+  // on the first boot that has this code (idempotent; one replica does it).
+  setTimeout(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
   if (backgroundTicksDisabled()) {
     console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
   }

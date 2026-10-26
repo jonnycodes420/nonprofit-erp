@@ -3340,6 +3340,16 @@ app.put("/workflows/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const rows = await query("SELECT * FROM workflows WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Workflow not found" });
   const { enabled, config } = req.body;
+  // FIX-49 · a recipe with a journey equivalent is a journey now. Turning one
+  // on makes (or joins) that journey and leaves the recipe off.
+  if (enabled === true && require("../workflowsToJourneys").CONVERTIBLE.includes(rows[0].recipe_key)) {
+    await run("UPDATE workflows SET enabled=true, updated_at=NOW() WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    const [conv] = await require("../workflowsToJourneys").convertWorkflows(req.user.orgId);
+    const [w] = await query("SELECT * FROM workflows WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    return res.json({ ...w, conditions: asJson(w.conditions, []), actions: asJson(w.actions, []), config: asJson(w.config, {}),
+      journeyId: conv ? conv.journey_id : asJson(w.config, {}).became_journey || null,
+      sentence: "This is a journey now. Open Journeys to see it and change its steps." });
+  }
   const sets = [], params = [];
   if (enabled !== undefined) { sets.push("enabled=?"); params.push(!!enabled); }
   if (config !== undefined && config && typeof config === "object") {

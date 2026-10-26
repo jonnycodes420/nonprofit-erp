@@ -1234,6 +1234,24 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_org_trigger ON workflows(org_id, trigger, enabled)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflow_runs_org ON workflow_runs(org_id, created_at DESC)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflows_org_recipe_uk ON workflows(org_id, recipe_key)`);
+  // FIX-49 Part 5 · each running recipe became a journey (workflowsToJourneys.js).
+  // One row per recipe: converted (a new journey), joined (an existing running
+  // journey on the same event) or kept (no journey does this), with the reason.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workflow_conversions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      workflow_id TEXT,
+      recipe_key TEXT NOT NULL,
+      journey_id TEXT,
+      outcome TEXT NOT NULL CHECK (outcome IN ('converted','joined','kept')),
+      reason TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflow_conversions_org ON workflow_conversions(org_id, created_at DESC)`);
   // BUILD-24 — platform-billing (Steward's OWN subscription) webhook idempotency.
   // Stripe redelivers/retries subscription events routinely; the /billing/webhook
   // handler reserves the event id here BEFORE mutating org plan/status, so a
