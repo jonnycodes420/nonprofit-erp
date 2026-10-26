@@ -287,7 +287,7 @@ const ACTIVITY_SQL = {
 // NUMBERS-2 · THE DEFINITIONS, written once. The help panel, the "?" beside
 // each number and every screen read these words.
 const AVERAGE_WORDS = "Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.";
-const RETENTION_WORDS = "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organisation's own year), the share who have given again this fiscal year.";
+const RETENTION_WORDS = "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year.";
 const RETENTION_SAME_POINT_WORDS = "Retention at the same point last year: of the people who gave the fiscal year before last, the share who had given again by this date last year. Use it to compare this year so far with last year.";
 // The retention-window params for retention at this point last year, from a
 // computeRetentionRate result: the year before last against last year up to
@@ -2366,7 +2366,7 @@ const SOURCES = {
     label: "Gave last year and again this year",
     measure: () => "count",
     params: {},
-    sentence: () => "Everyone who gave last fiscal year (your organisation's own year) and has given again this fiscal year. A refund is not a gift.",
+    sentence: () => "Everyone who gave last fiscal year (your organization's own year) and has given again this fiscal year. A refund is not a gift.",
     js: async (orgId, p, deps) => {
       const r = await retentionOf(orgId, deps);
       return cohortRows(orgId, [...r.thisYearDonorIds].filter(id => r.prevYearDonorIds.has(id)), `Gave in ${r.period.prevLabel} and ${r.period.label}`);
@@ -2376,7 +2376,7 @@ const SOURCES = {
     label: "Gave last year",
     measure: () => "count",
     params: {},
-    sentence: () => "Everyone who gave last fiscal year (your organisation's own year): the people retention is measured against.",
+    sentence: () => "Everyone who gave last fiscal year (your organization's own year): the people retention is measured against.",
     js: async (orgId, p, deps) => {
       const r = await retentionOf(orgId, deps);
       return cohortRows(orgId, [...r.prevYearDonorIds], `Gave in ${r.period.prevLabel}`);
@@ -2845,25 +2845,31 @@ async function groupFigureValues(orgId, m, sources) {
       const c = ["true"], own = [];
       if (p.from) { c.push("day >= ?"); own.push(p.from); }
       if (p.to) { c.push("day <= ?"); own.push(p.to); }
-      if (p.kind === "count" || p.kind === "average") c.push("raw > 0");
+      if (p.kind === "count") c.push("raw > 0");
+      // NUMBERS-2: the average is per_gift (group-gifts): refunds come off the
+      // total and are not gifts; credit rows are not gifts.
+      if (p.kind === "average") c.push("NOT credit");
       const w = c.join(" AND ");
-      // The condition is written twice, once for the count and once for the sum.
-      aggs.push(`COUNT(*) FILTER (WHERE ${w})::int AS n${i}, COALESCE(SUM(amount) FILTER (WHERE ${w}), 0)::text AS s${i}`);
-      aggArgs.push(...own, ...own);
+      // The condition is written once for the count, once for the sum and, for
+      // an average, once more for the gifts above zero.
+      aggs.push(`COUNT(*) FILTER (WHERE ${w})::int AS n${i}, COALESCE(SUM(amount) FILTER (WHERE ${w}), 0)::text AS s${i}`
+        + (p.kind === "average" ? `, COUNT(*) FILTER (WHERE ${w} AND raw > 0)::int AS g${i}` : ""));
+      aggArgs.push(...own, ...own, ...(p.kind === "average" ? own : []));
     }
     return { def, p };
   });
   const sql = `
     WITH m AS MATERIALIZED (${m.sql}),
          mem AS MATERIALIZED (SELECT d.id FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (SELECT id FROM m)),
-         gx AS MATERIALIZED (SELECT LEFT(g.date,10) AS day, g.amount AS raw, ROUND(g.amount::numeric, 2) AS amount
+         gx AS MATERIALIZED (SELECT LEFT(g.date,10) AS day, g.amount AS raw, ROUND(g.amount::numeric, 2) AS amount,
+                                    LOWER(TRIM(COALESCE(g.type,''))) = ANY(?::text[]) AS credit
                                FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id IN (SELECT id FROM m))
     SELECT ${[...scalars, "a.*"].join(", ")}
       FROM (SELECT ${aggs.length ? aggs.join(", ") : "1 AS none"} FROM gx) a`;
-  const [row] = await querySetwise(sql, [...m.args, orgId, orgId, ...scalarArgs, ...aggArgs]);
+  const [row] = await querySetwise(sql, [...m.args, orgId, BOOKKEEPER_EXCLUDED_TYPES, orgId, ...scalarArgs, ...aggArgs]);
   return plan.map(({ def, p }, i) => {
-    const agg = { n: row[`n${i}`], s: row[`s${i}`] ?? "0" };
+    const agg = { n: row[`n${i}`], s: row[`s${i}`] ?? "0", g: row[`g${i}`] };
     const { value, cents } = valueOf(def.measure(p), agg);
     return { value, cents, blank: null, blankShort: null, totalRows: Number(agg.n) || 0 };
   });

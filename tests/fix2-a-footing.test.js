@@ -154,7 +154,8 @@ async function foots(tok, fig) {
        !!extra.ack, extra.fee || 0]);
     return `g_fx2af_${n}`;
   };
-  const prevCal = `${Y - 1}-03-15`;
+  // NUMBERS-2: retention is by fiscal year, so "last year" is a day in the previous fiscal year.
+  const prevCal = orgTime.addDays(fy.start, -200);
   await gift(donors[0][0], 90, `${Y - 3}-11-02`);
   for (const [i, [id]] of donors.entries()) await gift(id, 100 + i * 10.25, prevCal, i % 3 === 0 ? "ff_fx2af_gen" : null);
   // This fiscal year, spread across its months up to today, with cents.
@@ -246,12 +247,13 @@ async function foots(tok, fig) {
     typeof val("retentionRate") === "number", val("retentionRate"));
   ok("§1 …change on last year is a percentage", typeof val("revenueChangePct") === "number", val("revenueChangePct"));
   ok("§1 …other income is its own line", cents(val("otherIncomeThisYear")) === cents(41250.75), val("otherIncomeThisYear"));
-  // Retention is by calendar year (computeRetentionRate); count it by hand.
+  // NUMBERS-2: retention is by fiscal year (computeRetentionRate, FEP); count it by hand.
+  const prevFyStart = `${Number(fy.start.slice(0, 4)) - 1}${fy.start.slice(4)}`, prevFyEnd = orgTime.addDays(fy.start, -1);
   const [{ prior: expPrior, retained: expRetained }] = await q(
-    `SELECT COUNT(DISTINCT donor_id) FILTER (WHERE LEFT(date,4)=$2)::int AS prior,
-            COUNT(DISTINCT donor_id) FILTER (WHERE LEFT(date,4)=$2 AND donor_id IN
-              (SELECT donor_id FROM gifts WHERE org_id=$1 AND LEFT(date,4)=$3))::int AS retained
-       FROM gifts WHERE org_id=$1`, [ORG, String(Y - 1), String(Y)]);
+    `SELECT COUNT(DISTINCT donor_id) FILTER (WHERE date >= $2 AND date <= $3)::int AS prior,
+            COUNT(DISTINCT donor_id) FILTER (WHERE date >= $2 AND date <= $3 AND donor_id IN
+              (SELECT donor_id FROM gifts WHERE org_id=$1 AND amount > 0 AND date >= $4 AND date <= $5))::int AS retained
+       FROM gifts WHERE org_id=$1 AND amount > 0`, [ORG, prevFyStart, prevFyEnd, fy.start, today]);
   const ret = await api("GET", `/figures/${board.metrics.find(m => m.key === "retentionRate").source.key}/rows?${qs(board.metrics.find(m => m.key === "retentionRate").source.params)}`, tok);
   ok("§1 retention opens its numerator (gave again) and its denominator (gave last year)",
     ret.body?.parts?.[0]?.role === "numerator" && ret.body?.parts?.[1]?.role === "denominator"

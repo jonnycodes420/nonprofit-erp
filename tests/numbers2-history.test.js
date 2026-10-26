@@ -18,7 +18,7 @@ const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilToday, civilPlusDays } = require("./helpers");
 const stripeLib = require("stripe");
 
-const SEED = Date.now().toString(36);
+const SEED = require("crypto").randomBytes(5).toString("hex");
 const PREFIX = "org_n2_";
 const PW = bcrypt.hashSync("loadtest1234", 4);
 const sys = "'system:test','test'";

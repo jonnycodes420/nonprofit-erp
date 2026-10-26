@@ -71,8 +71,11 @@ const BLANK = /(^|\s)(null|undefined|unknown|untitled)(\s|$)/i;
   const today = civilToday();
   const pw = bcrypt.hashSync(PW, 4);
   for (const [o, name] of [[ORG, "Thread Two Rowing"], [OTHER, "Other Harbor"]]) {
-    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,onboarded_at,subscription_status,plan,timezone,timezone_confirmed_at,receipt_address)
-             VALUES ($1,$2,$3,1,NOW(),'active','team','America/New_York',NOW(),'12 Harbor Rd, Wilmington, NC 28401')`, [o, name, o.replace(/_/g, "-")]);
+    // NUMBERS-2: the morning email leaves the Thread out on weekends unless the
+    // org turns weekends on, so on a Saturday or Sunday this suite read an
+    // email with no Thread in it. The fixture says weekends on.
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,onboarded_at,subscription_status,plan,timezone,timezone_confirmed_at,receipt_address,thread_nudge_weekends)
+             VALUES ($1,$2,$3,1,NOW(),'active','team','America/New_York',NOW(),'12 Harbor Rd, Wilmington, NC 28401',true)`, [o, name, o.replace(/_/g, "-")]);
   }
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES
      ('u_t2_admin',$1,'t2-admin@thread2.example',$3,'Dana Reyes','admin'),

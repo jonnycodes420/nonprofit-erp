@@ -44,7 +44,7 @@ export const METRICS = {
   recaptured_count: { label: "Came back", kind: "count", base: "gifts", unit: ["donor who came back", "donors who came back"],
     sentence: "Each person whose first gift in the period came after twelve months or more with no gift." },
   retention_rate:  { label: "Retention", kind: "percent", base: "source", source: "retention", noPeriod: "this_year",
-    sentence: "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organisation's own year), the share who have given again this fiscal year." },
+    sentence: "Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year." },
   first_year_retention: { label: "First-year retention", kind: "percent", base: "gifts", noPeriod: "this_year",
     sentence: "Of the people whose first gift ever was last calendar year, the share who have given again this one." },
   lapsed_count:    { label: "Lapsed donors", kind: "count", base: "donors", noPeriod: "today", unit: ["lapsed donor", "lapsed donors"],

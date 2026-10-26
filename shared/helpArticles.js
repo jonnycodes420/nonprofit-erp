@@ -746,7 +746,7 @@ export const HELP_ARTICLES = [
     sections: [
       { h: `The definitions`, p: [
         `Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.`,
-        `Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organisation's own year), the share who have given again this fiscal year.`,
+        `Retention, the Fundraising Effectiveness Project measure: of the people who gave last fiscal year (your organization's own year), the share who have given again this fiscal year.`,
         `Retention at the same point last year: of the people who gave the fiscal year before last, the share who had given again by this date last year. Use it to compare this year so far with last year.`,
         `First gift date: the earliest gift above zero on file, or the first gift your old system told us about if that is earlier. It is kept up to date whenever a gift is added, edited, refunded or deleted, two people are merged, or a file is imported.`,
         `This year and last year: your fiscal year, the one you set under Settings, Your words, "When does your year start?" (choose January for the calendar year). Home and Fundraising show the dates once at the top. Year-end tax statements stay on the calendar year, because that is the tax year.`,
