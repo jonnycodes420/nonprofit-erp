@@ -51,7 +51,10 @@ function preflightDemo(orgId) {
     { env: { ...process.env }, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   const lines = out.split("\n");
   const i = lines.findIndex(l => l.startsWith(orgId + " "));
-  const m = i >= 0 && /demo (yes|no)/.exec(lines[i + 1] || "");
+  // The org's block: its id line, then indented lines until the next org.
+  let block = "";
+  for (let j = i + 1; i >= 0 && j < lines.length && lines[j].startsWith("  "); j++) block += lines[j] + "\n";
+  const m = /\bdemo (yes|no)\b/.exec(block);
   return m ? m[1] === "yes" : null;
 }
 
