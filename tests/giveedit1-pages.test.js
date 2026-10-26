@@ -232,8 +232,13 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
         const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, w: r.width, h: r.height }; };
         return { cover: box(document.querySelector('[data-testid="page-cover"]')), form: box(document.getElementById("give-form")) };
       });
-      ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
-      ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
+      // GIVE-3: on a desktop the cover leads the left column, level with the
+      // form beside it; on a phone it is a short photo above the form. Either
+      // way it is never below the form (the FIX-45 defect).
+      if (width >= 860) ok(`§13 the cover leads the page beside the gift form at ${width}`, !!geo.cover && !!geo.form && Math.abs(geo.cover.top - geo.form.top) < 4 && geo.cover.top < 200, geo);
+      else ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
+      const want = width >= 860 ? 16 / 9 : 16 / 8;
+      ok(`§13 the cover is a ${width >= 860 ? "16:9" : "short 16:8"} box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - want) < 0.03, geo.cover);
       // FIX-46: the "Step 1 of 3" line is read to a screen reader and never
       // drawn (it printed under the progress bar), and the form fits the phone.
       const sr = await pp.evaluate(() => {

@@ -859,3 +859,10 @@ hand.
   checked against the hand-built fixture only.
 - **CLIENT-SAFE-1: re-seed so Meadowbrook Riding Center exists for the privacy-mode demo** (director@meadowbrook.demo /
   demo-meadowbrook-2026; privacy mode on, 6 clients, 2 held-back details). Same command as the earlier re-seeds.
+- **GIVE-3: re-seed the demo** so Harborlight's three giving pages carry their layouts (year-end Campaign, Spring Paddle
+  Story with a line per amount, GivingTuesday Simple). Same command as the earlier re-seeds.
+- **GIVE-3: bank transfer (ACH) on the give form is a switch in Stripe**, not in Steward. In the platform Dashboard,
+  Settings, Connect, Payment methods (for connected accounts), turn on "ACH Direct Debit"; each org's own Stripe can
+  then show it. PayPal inside Stripe Checkout is the same switch only where Stripe offers it to the org's country.
+  Cards, Apple Pay, Google Pay and Link need nothing. Venmo is not offered by Stripe.
+

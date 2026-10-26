@@ -38,13 +38,19 @@ export async function uploadPicture(file) {
 
 // The picture itself, clickable for the focal point.
 function FocalImage({ pic, ratio, onFocus, disabled, testid }) {
+  // GIVE-3: the focal point is dragged as well as clicked.
+  const dragging = useRef(false);
   const pick = e => {
     if (disabled || !onFocus) return;
     const r = e.currentTarget.getBoundingClientRect();
     onFocus(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)));
   };
   return (
-    <div data-testid={testid} onClick={pick} title={disabled ? "" : "Click the part of the photo that must always show"}
+    <div data-testid={testid} onClick={pick} title={disabled ? "" : "Click or drag to the part of the photo that must always show"}
+      onPointerDown={e => { if (disabled || !onFocus) return; dragging.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* old browser */ } }}
+      onPointerMove={e => { if (dragging.current) pick(e); }}
+      onPointerUp={() => { dragging.current = false; }}
+      onPointerCancel={() => { dragging.current = false; }}
       style={{ position: "relative", width: "100%", aspectRatio: ratio, overflow: "hidden", borderRadius: 10, background: T.bg, cursor: disabled ? "default" : "crosshair" }}>
       <img src={pictureSrc(pic, 1280)} alt={pic.alt || ""}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: focusOf(pic), display: "block" }} />
@@ -91,7 +97,7 @@ export default function PhotoField({ value, onChange, name = "", variant = "phot
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <button type="button" style={linkBtn} disabled={busy} onClick={() => replaceRef.current && replaceRef.current.click()}>{busy ? "Working…" : "Replace"}</button>
           <button type="button" style={linkBtn} disabled={busy} onClick={() => onChange(null)}>Remove</button>
-          {variant !== "small" && <span style={{ fontSize: 11.5, color: T.ink3 }}>Click the photo to choose what always shows on a phone.</span>}
+          {variant !== "small" && <span style={{ fontSize: 11.5, color: T.ink3 }}>Click or drag on the photo to choose what always shows on a phone.</span>}
           <input ref={replaceRef} type="file" accept={PHOTO_ACCEPT.join(",")} hidden
             onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) take(f); }} />
         </div>

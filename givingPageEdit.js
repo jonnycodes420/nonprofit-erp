@@ -81,6 +81,9 @@ function settingsOf(row, F, orgFundIds) {
     fundId: row.fund_id || null,
     campaignId: row.campaign_id || null,
     form: F.normalizeFormConfig(row.form_config, { orgFundIds }),
+    // GIVE-3: the layout, impact lines, trust panel and other ways to give
+    // (shared/givingPageDesign.js normalizes it).
+    design: row.design && typeof row.design === "object" && !Array.isArray(row.design) ? row.design : {},
   };
 }
 
@@ -95,7 +98,7 @@ function currentSettings(row, F, orgFundIds) {
 // Merge a partial edit onto `base` and check every field. Every bad field is
 // named, as the form editor does. `imageUrl` arrives already stored (the route
 // turns a data: URI into an asset path before calling this).
-function validateSettings(base, patch, F, { orgFundIds = [], orgCampaignIds = [] } = {}) {
+function validateSettings(base, patch, F, { orgFundIds = [], orgCampaignIds = [], D = null } = {}) {
   const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {};
   const out = { ...base };
   const errors = [];
@@ -144,6 +147,12 @@ function validateSettings(base, patch, F, { orgFundIds = [], orgCampaignIds = []
       else out.form = v.config;
     }
   }
+  if (p.design !== undefined) {
+    // GIVE-3: merged onto the current design, so one field can change alone.
+    const v = D ? D.validateDesign({ ...(base.design || {}), ...(p.design || {}) }) : { ok: false, errors: [{ field: "design", message: "The page design could not be checked." }] };
+    if (!v.ok) errors.push(...v.errors);
+    else out.design = v.design;
+  }
   return { ok: errors.length === 0, errors, settings: errors.length ? null : out };
 }
 
@@ -164,6 +173,7 @@ function snapshotOf(row) {
       showGoal: row.show_goal !== false,
       goalAmount: row.goal_amount != null ? Number(row.goal_amount) : null,
       fundId: row.fund_id || null, campaignId: row.campaign_id || null,
+      design: row.design && typeof row.design === "object" ? row.design : null,
       // The STORED config, not the normalized one, so a page that never had a
       // form configured is put back with none (its original one-step form).
       formConfig: row.form_config && typeof row.form_config === "object" && Object.keys(row.form_config).length ? row.form_config : null,

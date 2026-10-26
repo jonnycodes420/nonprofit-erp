@@ -3763,6 +3763,26 @@ async function main() {
     console.log("[assert] every demo donor's stored totals recomputed from their gifts; no campaign holds a gift dated before it starts");
   }
 
+  // GIVE-3 — ONE PAGE IN EACH LAYOUT, with the seed's own pictures (scenes,
+  // no stock faces added). Year-end leads with its goal bar, Spring Paddle
+  // tells its story beside the form with a line per amount, GivingTuesday is
+  // the form alone under the brand band. The trust panel reads the org's own
+  // legal name and EIN; "other ways" shows a check address and a DAF line.
+  {
+    const designs = {
+      gp_b72_yearend: { layout: "campaign", ways: { check: true, daf: true } },
+      gp_b72_paddle: { layout: "story", ways: { check: true },
+        impact: { 1000: "keeps one paddler in a life jacket for the season.", 2500: "buys a week of art supplies for 10 kids.",
+                  5000: "covers a month of after-school snacks for the studio.", 10000: "pays for a mentor's training day.",
+                  25000: "puts a second canoe on the water." } },
+      gp_b72_givingtuesday: { layout: "simple" },
+    };
+    for (const [id, d] of Object.entries(designs)) {
+      await q(`UPDATE giving_pages SET design = $2::jsonb WHERE id = $1 AND org_id = $3`, [id, JSON.stringify(d), ORG]);
+    }
+    console.log("[seed] giving-page layouts: year-end campaign, spring paddle story, GivingTuesday simple");
+  }
+
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took
   // 31.8 seconds on a fresh seed (0.13 after). The same list the server runs
