@@ -22103,21 +22103,16 @@ app.get("/giving-pages/:id/volunteer-data", requireAuth, wrap(async (req, res) =
   res.json(await VP.pageData(req.user.orgId, page.draft || []));
 }));
 
-app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+// GIVE-3 · ONE PAYLOAD FOR THE PAGE AND ITS PREVIEW. The public read and the
+// editor's preview (GET /giving-pages/:id/page/preview) select the same rows
+// and build the same payload in givingPagePublicPayload, so the component
+// that draws them cannot be handed two different shapes.
+const gpOrgSql = where => `SELECT o.id, o.name, o.org_slug, o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
-          ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
-  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
-  const org = orgs[0];
-  org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
-  // raised_amount counts the full gift the donor paid (FIX-49), which is
-  // the goal-progress rule; campaign_* carry the "counts toward" linkage so a
-  // linked page's thermometer tracks the CAMPAIGN's live progress (one goal
-  // concept — the page never maintains a second goal system beside it).
-  const pageRows = await query(
-    `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
+          ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
+const gpPageSql = where => `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
        to_char(c.end_date,'YYYY-MM-DD') AS campaign_end_date, c.match_cents AS campaign_match_cents,
        to_char(gp.ends_on,'YYYY-MM-DD') AS page_ends_on,
        COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
@@ -22134,15 +22129,73 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
      LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
-     WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'`,
-    [org.id, req.params.pageSlug]
-  );
+     WHERE ${where}`;
+app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
+  const orgs = await query(gpOrgSql("o.org_slug = ?"), [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+  const pageRows = await query(gpPageSql("gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'"),
+    [org.id, req.params.pageSlug]);
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
-  const page = pageRows[0];
-  // FIX-49: the bar counts the campaign's gifts and, unless the campaign says
-  // "Leave grants off the public bar", its awarded grants.
-  if (page.campaign_id) page.campaign_raised = await require("../numbers").publicBarRaised(query, org.id, page.campaign_id);
+  res.json(await givingPagePublicPayload(org, pageRows[0], req.query));
+}));
+
+// GIVE-3 · THE EDITOR'S PREVIEW: the draft, through the very same payload.
+// The page row is read by id (a draft page need not be live yet) and the
+// draft's own fields and blocks stand in for the published ones.
+app.get("/giving-pages/:id/page/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgs = await query(gpOrgSql("o.id = ?"), [req.user.orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "not_found" });
+  const [row] = await query(gpPageSql("gp.org_id = ? AND gp.id = ? AND COALESCE(gp.page_kind,'give') = 'give'"), [req.user.orgId, req.params.id]);
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const d = row.draft_settings && typeof row.draft_settings === "object" ? row.draft_settings : null;
+  const page = { ...row, published: Array.isArray(row.draft) ? row.draft : row.published };
+  if (d) {
+    Object.assign(page, {
+      title: d.title ?? row.title, story: d.story ?? row.story, image_url: d.imageUrl ?? row.image_url,
+      image_meta: d.imageMeta ?? row.image_meta, show_goal: d.showGoal ?? row.show_goal,
+      goal_amount: d.goalAmount !== undefined ? d.goalAmount : row.goal_amount,
+      fund_id: d.fundId !== undefined ? d.fundId : row.fund_id,
+      campaign_id: d.campaignId !== undefined ? d.campaignId : row.campaign_id,
+      design: d.design ?? row.design,
+    });
+    // Publish writes the form only when it changed (GIVE-EDIT-1), so the
+    // preview takes the drafted form by the same rule: an unchanged form stays
+    // the page's original one-step form here too.
+    if (d.form) {
+      const GPE = require("../givingPageEdit");
+      const F = await formConfigMod();
+      const fundIds = (await query("SELECT id FROM fin_funds WHERE org_id = ?", [req.user.orgId])).map(f => String(f.id));
+      if (!GPE.sameJson(GPE.settingsOf(row, F, fundIds).form, d.form)) page.form_config = d.form;
+    }
+  }
+  res.json(await givingPagePublicPayload(orgs[0], page, req.query));
+}));
+
+async function givingPagePublicPayload(org, page, reqQuery) {
+  const req = { query: reqQuery || {}, params: { orgSlug: org.org_slug } };
+  org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
+  // GIVE-3 · THE GOAL BAR FOOTS. A page that counts toward a campaign shows
+  // the campaign's own total from NUMBERS-1's one query (numbers.campaignGiftTotals,
+  // CAMPAIGN_GIFT_MATCH: inside the campaign's dates, deleted people out), the
+  // number Fundraising shows. Read by the page's campaign id, so a draft that
+  // points at another campaign previews that campaign's bar.
+  if (page.campaign_id) {
+    const [c] = await query("SELECT name, goal_amount, to_char(end_date,'YYYY-MM-DD') AS end_date FROM campaigns WHERE id = ? AND org_id = ?", [page.campaign_id, org.id]);
+    if (c) {
+      const tot = (await require("../numbers").campaignGiftTotals(query, org.id)).find(r => r.cid === page.campaign_id);
+      Object.assign(page, { campaign_name: c.name, campaign_goal: c.goal_amount, campaign_end_date: c.end_date });
+      if (tot) { page.campaign_raised = tot.raised; page.campaign_donors = Number(tot.donor_count) || 0; }
+      // FIX-49: the bar counts the campaign's gifts and, unless the campaign says
+      // "Leave grants off the public bar", its awarded grants.
+      page.campaign_raised = await require("../numbers").publicBarRaised(query, org.id, page.campaign_id);
+    } else page.campaign_id = null;
+  }
+  const GD = await import("../shared/givingPageDesign.js");
+  const pageToday = orgToday(await orgTz(org.id));   // ORG_TZ_SEAM_OK: days left is the org's own day
+  const daysLeft = page.campaign_end_date
+    ? Math.max(0, Math.round((Date.parse(page.campaign_end_date + "T00:00:00Z") - Date.parse(pageToday + "T00:00:00Z")) / 86400000)) : null;
 
   // BUILD-95 §5B — the built page, if she has published one.
   const { normalizeFormPosition } = await widgetMod();
@@ -22182,8 +22235,12 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const p2pToday = orgToday(await orgTz(org.id));                 // ORG_TZ_SEAM_OK: a countdown is the org's own day
   const shownDonors = page.campaign_id && page.campaign_donors != null ? Number(page.campaign_donors) : Number(page.page_donors || 0);
 
-  res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true },
+  return {
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true,
+      // GIVE-3: the org's own facts the trust panel and "other ways to give"
+      // may state (shared/givingPageDesign.js decides which lines show).
+      facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: org.ein || "",
+               contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       // FIX-41: the cover with its words and focal point (pictures.js).
@@ -22192,6 +22249,10 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       raisedAmount: parseFloat(page.raised_amount) || 0,
       // GIVE-EDIT-1: the goal bar's switch, set in the page editor.
       showGoal: page.show_goal !== false,
+      // GIVE-3: how the page looks, and the campaign figures its goal bar draws.
+      design: GD.normalizeDesign(page.design),
+      campaignDonors: page.campaign_id && page.campaign_donors != null ? Number(page.campaign_donors) : null,
+      campaignDaysLeft: daysLeft,
       fundId: page.fund_id, fundName: page.fund_name || null,
       // "Counts toward" linkage (attribution FIX) — when set, the public
       // thermometer shows the campaign's progress, not a second page-local goal.
@@ -22285,8 +22346,8 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       teams: teamBoard.slice(0, 10),
       leaderboardSentence: P2Pm.LEADERBOARD_SENTENCE,
     } : null,
-  });
-}));
+  };
+}
 
 // ── PARITY-2 Part 2 · THE PUBLIC LEADERBOARDS ────────────────────────────
 // One query per board, used by the page (top ten) and by "See all" (every

@@ -29,6 +29,22 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 Jonathan decided the eight numbers NUMBERS-2 left open (25 Oct), and each is now one rule, written in Help's "How Steward counts" and used on every screen, report, export, Ask answer and the board report. A gift is the full amount paid (fee and net beside it; Finance uses the net). Soft and matching credits are their own Soft credit figure (`creditTypes.js` is the one list) and never in Lifetime, campaigns, goals or averages. A grant counts on a campaign's public bar unless `grants_off_public_bar`. A goal's period is its own dates (`orgGoalRaised` feeds Home and Fundraising); a parent goal is its own gifts plus its children's, each once. One lapse rule (`lapseRule.js`: lapsed is no gift in 12 months after giving before, lapsing a last gift 9 to 12 months ago) replaced six, including Lost & Found, Drift, groups, two new journey triggers (`lapsed`, `lapsing`) and the tag; Retained moved to the fiscal year. Giving levels are the org's own cut points in Settings; the lifetime mid/major promotion in `recordGift` and imports is gone. The household record is the only grouping: a boot migration put spouse and household links into households. Imported history now feeds the lifecycle tags and Donor since. Ask's "$0 in all" was a one-person question always run as all time over gift rows only; Ask now reads the profile's sources and the org's year. Running Workflows recipes became journeys (`workflowsToJourneys.js`, `workflow_conversions`); the gift alert, quiet-past-pattern and pledge-due-soon have no journey and keep running. mail-preflight reads the three mail switches. Seed changed (a past Harbor Run). Built as three parallel forks plus the lead; fix49-decisions failed on main in every part (money-goals 13 failures, one-rule 24, history-ask-mail 12, workflows on a missing table).
 
+## GIVE-3 · Giving pages that look like the org, and an editor that works (2026-10-25)
+
+- **Where the preview and the page drifted apart.** The editor never drew the page. GIVE-EDIT-1's Details and
+  Design modes drew `FormPreview`, a hand-built stand-in (a logo, the title, the amount buttons, a Give bar) that
+  shared no code with `Donate.jsx`, so it showed "the header and two rows of amount buttons" whatever the page held.
+  Now `Donate.jsx` takes a `preview` payload from `GET /giving-pages/:id/page/preview`, which is built by the same
+  `givingPagePublicPayload` (routes/crm.js) as the public read, and the desktop pane renders it at 1280 wide, scaled.
+  Layout is by container queries, so a 390 frame draws the phone page.
+- **The draft's form counts only if it changed**, as Publish rules: the preview first called every unchanged
+  one-step form "configured", and the suite caught it.
+- **The logo crop was the square Uploader tile's `object-fit: cover`** ("arborl"). Square tiles are logos; they fit.
+- **Goal bar** reads `numbers.campaignGiftTotals` by the page's campaign id, plus donors and days left.
+- **Payments (Part 3):** Stripe Checkout, redirect, direct charge on the org's account, `payment_method_types` not
+  pinned. No PayPal or Venmo button exists on the form; PayPal is a read-only giving source.
+- `tests/give3-pages.test.js` is the build's one test.
+
 ## AGENT-5 · One helper, named Atlas, that just does it (2026-10-25)
 
 - **Why the Undine run stopped (21 Oct).** Home sent his words to the Agent page, which asked "which Undine?" (20 Ondines, no Undine: a near miss) and then re-planned from scratch with only the pick: one model call whose plan had no attendance tool, and which waited for a separate Confirm on a page he had been moved to. Nothing after the pick was ever going to run on its own. Atlas keeps the request with its steps, asks every question at once, and an answer resumes all of them.

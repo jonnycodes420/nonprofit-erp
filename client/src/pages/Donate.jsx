@@ -25,6 +25,9 @@ import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
 import MembershipsPage from "./MembershipsPage";
 import Picture from "../components/Picture";
+// GIVE-3 — the page's layout, trust panel, other ways to give and impact lines,
+// said once and read by this page AND the editor's preview of it.
+import { layoutFor, storyParagraphs, impactFor as designImpact, trustLines, waysLines, READ_MORE_AFTER } from "../../../shared/givingPageDesign.js";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -593,8 +596,61 @@ function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
   );
 }
 
-export default function Donate() {
-  const { orgSlug, pageSlug, fundraiserSlug } = useParams();
+// GIVE-3 — the layout of a giving page. Container queries, not media queries,
+// so the editor's 390px phone frame and its desktop pane draw exactly what a
+// phone and a desktop browser draw: the markup is the same, and the width of
+// the box it sits in decides the columns.
+const G3_CSS = `
+.g3{container-type:inline-size;width:100%;min-height:100vh;background:var(--g3-bg);color:var(--g3-ink);font-family:var(--g3-sans)}
+.g3 *{box-sizing:border-box}
+.g3-bar{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--g3-white);border-bottom:1px solid var(--g3-hair)}
+.g3-bar img{display:block;height:40px;width:auto;max-width:200px;object-fit:contain}
+.g3-bar-name{font-family:var(--g3-serif);font-size:18px;font-weight:700}
+.g3-wrap{max-width:1180px;margin:0 auto;padding:16px 16px 64px}
+.g3-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;grid-template-areas:"top" "side" "body"}
+.g3-top{grid-area:top;min-width:0}.g3-side{grid-area:side;min-width:0}.g3-body{grid-area:body;min-width:0}
+.g3-photo > [data-picture]{aspect-ratio:16 / 8 !important}
+.g3-fill{width:100%;aspect-ratio:16 / 8;border-radius:16px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
+.g3-fill img{max-height:64px;max-width:60%;object-fit:contain}
+.g3-h1{margin:18px 0 0;font-family:var(--g3-serif);font-size:30px;line-height:1.12;letter-spacing:-0.02em;font-weight:800}
+.g3-org{font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--g3-muted);margin-top:14px}
+.g3-story p{font-size:16px;line-height:1.7;margin:0 0 14px}
+.g3-more{background:none;border:none;padding:0;font:inherit;font-size:15px;font-weight:700;color:var(--g3-button);cursor:pointer;text-decoration:underline}
+.g3-impact{margin:18px 0 0;padding:0;list-style:none}
+.g3-impact li{font-size:14px;line-height:1.55;padding:8px 0;border-top:1px solid var(--g3-hair)}
+.g3-impact b{color:var(--g3-primary)}
+.g3-formcard{border-radius:18px}
+.g3-formcard form,.g3-formcard #give-form{max-width:none !important}
+.g3-trust{margin-top:14px;padding:14px 16px;border-radius:14px;background:var(--g3-white);border:1px solid var(--g3-hair)}
+.g3-trust-line{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;padding:4px 0;color:var(--g3-ink2)}
+.g3-trust-line::before{content:"";flex:0 0 8px;height:8px;margin-top:6px;border-radius:50%;background:var(--g3-primary)}
+.g3-trust a{color:var(--g3-ink2)}
+.g3-ways{margin-top:14px;padding:14px 16px}
+.g3-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--g3-muted);margin-bottom:8px}
+.g3-ways p{font-size:13.5px;line-height:1.55;margin:0 0 8px}
+.g3-band{height:140px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
+.g3-band img{max-height:72px;max-width:70%;object-fit:contain}
+.g3-simple .g3-grid{max-width:560px;margin:0 auto;grid-template-areas:"top" "side"}
+.g3-simple .g3-h1{text-align:center}
+@container (min-width: 860px){
+  .g3-wrap{padding:32px 32px 96px}
+  .g3-grid{grid-template-columns:minmax(0,1fr) 420px;gap:28px 56px;grid-template-rows:auto 1fr;grid-template-areas:"top side" "body side";align-items:start}
+  .g3-side{position:sticky;top:20px}
+  .g3-photo > [data-picture]{aspect-ratio:16 / 9 !important}
+  .g3-h1{font-size:44px}
+  .g3-simple .g3-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "side"}
+  .g3-campaign-goal{max-width:none}
+}`;
+
+export default function Donate({ preview = null }) {
+  // GIVE-3 — the editor's preview renders THIS component from the draft's
+  // payload (GET /giving-pages/:id/page/preview, the same builder as the public
+  // read). `preview` = { payload, orgSlug, pageSlug, onPick }: it fetches
+  // nothing, takes no gift, and a click on a part of the page names its field.
+  const params = useParams();
+  const orgSlug = preview ? preview.orgSlug : params.orgSlug;
+  const pageSlug = preview ? preview.pageSlug : params.pageSlug;
+  const fundraiserSlug = preview ? undefined : params.fundraiserSlug;
   // BUILD-98 (switch) Part 4 — ?event=<id> turns this page into its tickets.
   const ticketEventId = useMemo(() => new URLSearchParams(window.location.search).get("event"), []);
   // BUILD-101 Part 4 — ?membership=<levelId> turns this page into that level.
@@ -638,6 +694,8 @@ export default function Donate() {
   // page the gift just landed on. Public information (each company's own
   // published policy and its own form link): no donor, no gift, no amount.
   const [matchEmployers, setMatchEmployers] = useState(null);
+  // GIVE-3 — the story shows its first paragraphs; "Read more" opens the rest.
+  const [storyOpen, setStoryOpen] = useState(false);
 
   // BUILD-60 Part 2 — RECURRING IS THE HERO. Frequency comes first and Monthly
   // is pre-selected; the amount ladder is per-frequency; the second tier of the
@@ -767,7 +825,34 @@ export default function Donate() {
     : pageSlug ? `/give/${orgSlug}/${pageSlug}`
     : `/give/${orgSlug}`;
 
+  // The page's payload, put into state. One function for a fetched page and a
+  // preview, so the two cannot be read differently.
+  function applyPayload(d, params) {
+    setOrg(d.org);
+    setFunds(d.funds || []);
+    // Pre-select the second tier of the active (monthly) ladder now that
+    // the org's ladders are known.
+    const ladder = (d.org?.theme?.monthlyAmounts && d.org.theme.monthlyAmounts.length) ? d.org.theme.monthlyAmounts : MONTHLY_FALLBACK;
+    setPreset(ladder[defaultTierIndex(ladder)]);
+    if (d.givingPage) {
+      setGivingPage(d.givingPage);
+      if (d.givingPage.fundId) setFundId(d.givingPage.fundId);
+    }
+    // BUILD-55 — ?fund=<id> preselects a designation.
+    const qFund = params.get("fund");
+    if (qFund && !d.givingPage?.fundId && (d.funds || []).some(f => f.id === qFund)) setFundId(qFund);
+    if (d.peerFundraiser) setPeerFundraiser(d.peerFundraiser);
+    if (d.peerFundraisers) setPeerFundraisersSummary(d.peerFundraisers);
+    setP2p(d.p2p || null);
+  }
   useEffect(() => {
+    if (!preview || !preview.payload) return;
+    applyPayload(preview.payload, new URLSearchParams());
+    setPageLoading(false);
+  }, [preview && preview.payload]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (preview) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("donated") === "true") {
       setDonated(true);
@@ -841,24 +926,7 @@ export default function Donate() {
           }
         }
         if (d.error) { setPageError(d.error); }
-        else {
-          setOrg(d.org);
-          setFunds(d.funds || []);
-          // Pre-select the second tier of the active (monthly) ladder now that
-          // the org's ladders are known.
-          const ladder = (d.org?.theme?.monthlyAmounts && d.org.theme.monthlyAmounts.length) ? d.org.theme.monthlyAmounts : MONTHLY_FALLBACK;
-          setPreset(ladder[defaultTierIndex(ladder)]);
-          if (d.givingPage) {
-            setGivingPage(d.givingPage);
-            if (d.givingPage.fundId) setFundId(d.givingPage.fundId);
-          }
-          // BUILD-55 — ?fund=<id> preselects a designation.
-          const qFund = params.get("fund");
-          if (qFund && !d.givingPage?.fundId && (d.funds || []).some(f => f.id === qFund)) setFundId(qFund);
-          if (d.peerFundraiser) setPeerFundraiser(d.peerFundraiser);
-          if (d.peerFundraisers) setPeerFundraisersSummary(d.peerFundraisers);
-          if (d.p2p) setP2p(d.p2p);
-        }
+        else applyPayload(d, params);
         setPageLoading(false);
       })
       .catch(() => { setPageError("Could not load this donation page."); setPageLoading(false); });
@@ -873,7 +941,7 @@ export default function Donate() {
   // signed in; the ARRANGEMENT is still applied on the org-wide page only, since
   // a built page has its own amounts. Not asked at all when the portal is off.
   useEffect(() => {
-    if (!org || !(org.portalSignIn || membershipsMode)) return;
+    if (preview || !org || !(org.portalSignIn || membershipsMode)) return;
     let cancelled = false;
     fetch(`${PORTAL_BASE}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))
@@ -927,6 +995,7 @@ export default function Donate() {
     catch { return String(Date.now()) + String(Math.random()).slice(2, 10); }
   }, []);
   const postDonation = async (payload) => {
+    if (preview) return;   // the editor's preview takes no gift
     setSubmitting(true); setSubmitErr("");
     try {
       const r = await fetch(`${API}/donate/${orgSlug}`, {
@@ -951,6 +1020,7 @@ export default function Donate() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (preview) return;   // the editor's preview takes no gift
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
       setSubmitErr("Please fill in your name and email."); return;
     }
@@ -1251,6 +1321,219 @@ export default function Donate() {
       </>} />
   );
 
+  // The form, drawn once and placed by whichever layout the page uses.
+  const formNode = (
+    <>
+      {/* BUILD-95 §5B — THE BUILT PAGE, drawn by the SAME renderer as the
+          portal. `builtPage` is null until she publishes one, and then this
+          block is simply absent and the page reads exactly as it always did. */}
+      {/* BUILD-102 Part 2 — A CONFIGURED FORM IS THREE STEPS. An unconfigured
+          page falls through to the single form below, unchanged. `configured` is
+          the whole switch, and it is false for every giving page that existed
+          before this build. */}
+      {giveSpec && giveSpec.configured ? (
+        <div id="give-form" style={{ width: "100%", maxWidth: 480, order: formPosition === "top" ? 1 : 3,
+                      display: "flex", justifyContent: "center", scrollMarginTop: 16 }}>
+          <GiveSteps
+            key={JSON.stringify(giveSpec.amount || {})}
+            spec={giveSpec}
+            impactFor={c => designImpact(givingPage?.design, c)}
+            formId={givingPage?.id}
+            theme={th}
+            coverFeesEnabled={!!org?.coverFeesEnabled && giveSpec.showCoverFee !== false}
+            upsellThresholdCents={givingPage?.upsellThresholdCents}
+            upsellMonthlyCents={givingPage?.upsellMonthlyCents}
+            feeRateSentence={org?.feeRateSentence}
+            showsRecentGifts={!!peerFundraiser || (Array.isArray(givingPage?.page) && givingPage.page.some(w => w && w.type === "recentgifts"))}
+            grossUpCents={grossUpCents}
+            submitting={submitting}
+            submitErr={submitErr}
+            onSubmit={postDonation}
+            apiBase={API}
+            orgSlug={orgSlug}
+            startToken={startToken}
+            signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />}
+            styles={{
+              card,
+              inp,
+              btn: { width: "100%", padding: "14px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                     background: th.primary, color: th.primaryFg, fontSize: 16, fontWeight: 700, fontFamily: th.sans },
+              quiet: { background: "none", border: "none", padding: 0, cursor: "pointer",
+                       color: th.primary, fontSize: 14, fontWeight: 600, textDecoration: "underline", fontFamily: th.sans },
+            }}
+          />
+        </div>
+      ) : null}
+
+      {/* Form. FIXED — it is not a widget and cannot be removed, because a
+          giving page that stopped taking gifts says nothing on screen. She
+          chooses only whether it leads the page or follows the story. */}
+      <form id={giveSpec && giveSpec.configured ? undefined : "give-form"} onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, scrollMarginTop: 16, display: giveSpec && giveSpec.configured ? "none" : "flex",
+                                            flexDirection: "column", gap: 20,
+                                            order: formPosition === "top" ? 1 : 3 }}>
+
+        {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}
+        <div style={card}>
+          <DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>How often</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            {[["monthly", "Monthly"], ["one-time", "One-time"], ["annual", "Annual"]].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => switchFrequency(v)}
+                style={{
+                  position: "relative",
+                  background: frequency === v ? th.button : T.bg,
+                  border: `1.5px solid ${frequency === v ? th.button : T.bg3}`,
+                  borderRadius: 10, padding: "13px 8px",
+                  color: frequency === v ? th.buttonFg : T.ink2,
+                  fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.12s",
+                }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {returning ? (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+              Welcome back, we've set this to your current gift to {org.name}. Change anything you like.
+            </div>
+          ) : frequency === "monthly" && (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+              Monthly giving is the steadiest way to support {org.name} and you can change or stop it anytime.
+            </div>
+          )}
+        </div>
+
+        {/* Amount — the per-frequency ladder, second tier pre-selected. */}
+        <div style={card}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+            {frequency === "monthly" ? "Monthly amount" : frequency === "annual" ? "Annual amount" : "Donation amount"}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(activeLadder.length, 5)}, 1fr)`, gap: 8, marginBottom: 12 }}>
+            {activeLadder.map(p => ladderBtn(p, !isCustom && preset === p, () => { setPreset(p); setIsCustom(false); setCustomAmt(""); }))}
+          </div>
+          <input
+            type="number" placeholder={frequency === "monthly" ? "Custom monthly amount ($)" : "Custom amount ($)"}
+            value={customAmt}
+            onChange={e => { setCustomAmt(e.target.value); setIsCustom(true); }}
+            onFocus={() => setIsCustom(true)}
+            style={{ ...inp, border: `1.5px solid ${isCustom ? th.button : T.bg3}`, fontWeight: 700, fontSize: 16 }}
+            min="1" step="1"
+          />
+          {/* GIVE-3 — the line the picked amount carries, when the page gave it one. */}
+          {designImpact(givingPage?.design, Math.round(effectiveAmount * 100)) ? (
+            <div data-testid="impact-line" style={{ marginTop: 10, fontSize: 14, fontWeight: 600, color: T.ink, lineHeight: 1.5 }}>
+              {designImpact(givingPage?.design, Math.round(effectiveAmount * 100))}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Donor-covers-fees — optional, always unchecked by default. */}
+        {showCoverFees && (
+          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={coverFees} onChange={e => setCoverFees(e.target.checked)}
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Add <strong>{fmtFull(feeCents / 100)}</strong> to help cover card-processing costs
+              {isRecurring ? ` on each ${frequency === "monthly" ? "monthly" : "annual"} gift` : ""},
+              so {org.name} receives your full {fmtFull(effectiveAmount)}.
+            </span>
+          </label>
+        )}
+
+        {/* BUILD-103 — WHETHER THE FUNDRAISER MAY SEE YOUR FIRST NAME. Off
+            unless the donor ticks it. A gift through a friend's page is still
+            a gift to the organisation, and the friend is not entitled to a
+            list of who gave: the organisation has the record either way. */}
+        {peerFundraiser && (
+          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={showNameToFundraiser} onChange={e => setShowNameToFundraiser(e.target.checked)}
+              data-testid="show-name-to-fundraiser"
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Let {peerFundraiser.name.split(" ")[0]} see my first name, so they can thank me.
+              {" "}Leave it unticked and they see the gift without a name. {org.name} has the full record either way.
+            </span>
+          </label>
+        )}
+        {/* PARITY-2 Part 2: and whether the first name shows in this page's
+            public list of recent donors. A different audience, a different
+            answer, its own box, off unless ticked. */}
+        {peerFundraiser && (
+          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={showNamePublicly} onChange={e => setShowNamePublicly(e.target.checked)}
+              data-testid="show-name-publicly"
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Show my first name in this page&rsquo;s list of recent donors. Leave it unticked and the list says Anonymous.
+            </span>
+          </label>
+        )}
+
+        {/* Fund selector — hidden when the page already designates a fund. */}
+        {funds.length > 0 && !givingPage?.fundId && (
+          <div style={card}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Designate My Gift (optional)</div>
+            <select value={fundId} onChange={e => setFundId(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
+              <option value="">Where it's needed most</option>
+              {funds.map(f => (
+                <option key={f.id} value={f.id}>{f.name}{f.restricted ? " (Restricted)" : ""}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Contact info */}
+        <div style={card}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Your Information</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} style={inp} required />
+            <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} required />
+          </div>
+          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inp} required />
+          <div className="give-email-kept" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
+            Your email is saved when you press Give, so {th.displayName || org?.name || "this organization"} can let you know if your gift does not go through.
+          </div>
+        </div>
+
+        {submitErr && (
+          <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.terra700 }}>{submitErr}</div>
+        )}
+
+        {/* Submit — the button STATES the commitment in full. */}
+        <button type="submit" disabled={submitting}
+          style={{
+            background: submitting ? T.bg3 : th.button,
+            border: "none", borderRadius: 14, padding: "16px",
+            color: submitting ? T.ink3 : th.buttonFg, fontSize: 16, fontWeight: 800,
+            cursor: submitting ? "not-allowed" : "pointer",
+            letterSpacing: "-0.01em", transition: "background 0.15s",
+          }}>
+          {submitting
+            ? "Redirecting to Stripe…"
+            : effectiveAmount > 0
+              ? (isRecurring ? `Give ${fmtAmt(chargedAmount)} ${perLabel}` : `Give ${fmtAmt(chargedAmount)}`)
+              : "Enter an amount"}
+        </button>
+
+        {/* The recurring disclosure — immediately adjacent to the button, in
+            body text a donor actually reads. Nothing about the recurring
+            nature is smaller, lighter, or lower-contrast than the amount. */}
+        {isRecurring && effectiveAmount > 0 && (
+          <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, textAlign: "center", marginTop: -6 }}>
+            {frequency === "monthly"
+              ? <><strong>{fmtAmt(chargedAmount)} every month until you cancel, {fmtAmt(annualTotal)} a year.</strong> Cancel anytime from your donor account.</>
+              : <><strong>{fmtAmt(chargedAmount)} every year until you cancel.</strong> Cancel anytime from your donor account.</>}
+          </div>
+        )}
+
+        <div style={{ textAlign: "center", fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
+          {th.footerText ? <>{th.footerText}<br /></> : null}
+          Payments are processed securely by Stripe. {org.name} never stores your card details.
+          {th.poweredBy && <><br />Powered by Steward</>}
+        </div>
+      </form>
+    </>
+  );
+
   // The goal bar, drawn once: at the top of a campaign page, or under the
   // story on any other giving page (FIX-15 Part 6).
   const goalBar = () => {
@@ -1296,9 +1579,148 @@ export default function Donate() {
                     </div>
                   )}
                   {p2p && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>{p2p.donorCountSentence}</div>}
+                  {/* GIVE-3 — donors and days left on a campaign's bar, from the
+                      campaign's own figures (numbers.campaignGiftTotals). */}
+                  {!p2p && linked && (givingPage.campaignDonors != null || givingPage.campaignDaysLeft != null) && (
+                    <div data-testid="goal-extra" style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 10, fontSize: 13, color: T.ink2 }}>
+                      {givingPage.campaignDonors != null && <span data-testid="goal-donors"><strong style={{ color: T.ink }}>{givingPage.campaignDonors.toLocaleString("en-US")}</strong> {givingPage.campaignDonors === 1 ? "donor" : "donors"}</span>}
+                      {givingPage.campaignDaysLeft != null && <span data-testid="goal-days"><strong style={{ color: T.ink }}>{givingPage.campaignDaysLeft}</strong> {givingPage.campaignDaysLeft === 1 ? "day" : "days"} left</span>}
+                    </div>
+                  )}
                 </div>
               );
   };
+  // ── GIVE-3 · A GIVING PAGE THAT LOOKS LIKE THE ORG ──────────────────────
+  // Desktop: the photo, the promise and the story on the left, the form in a
+  // card that stays in view on the right, the trust panel under it. Phone: a
+  // short photo and the headline, then the form, then the story. Three
+  // layouts the org picks (shared/givingPageDesign.js). The editor's preview
+  // renders exactly this, so what she sees is what a donor gets.
+  if (givingPage && !peerFundraiser && !isEmbed) {
+    const design = givingPage.design || {};
+    const layout = layoutFor(design, givingPage);
+    const facts = org.facts || {};
+    const trust = trustLines(facts, design);
+    const ways = waysLines(facts, design);
+    const built = Array.isArray(givingPage.page) ? givingPage.page.filter(Boolean) : [];
+    const heroW = built.find(w => w.type === "hero") || null;
+    const bodyWidgets = built.filter(w => w !== heroW);
+    const headline = (heroW && String(heroW.heading || "").trim()) || givingPage.title;
+    const hasRichtext = bodyWidgets.some(w => w.type === "richtext");
+    const paras = hasRichtext ? [] : storyParagraphs(givingPage.story);
+    const shownParas = storyOpen ? paras : paras.slice(0, READ_MORE_AFTER);
+    const cover = givingPage.cover || givingPage.imageUrl || (heroW && heroW.image) || null;
+    const impacts = Object.entries(design.impact || {}).map(([c, line]) => [Number(c), line]).sort((x, y) => x[0] - y[0]);
+    const showGoalBar = givingPage.showGoal !== false && (layout === "campaign" || (givingPage.campaignId ? givingPage.campaignGoal > 0 : givingPage.goalAmount > 0));
+    const pick = preview && preview.onPick ? (e) => {
+      const el = e.target.closest && e.target.closest("[data-edit]");
+      if (el) { e.preventDefault(); preview.onPick(el.getAttribute("data-edit")); }
+    } : undefined;
+    const vars = {
+      "--g3-bg": th.pageBg, "--g3-white": T.white, "--g3-hair": T.bg3, "--g3-ink": T.ink, "--g3-ink2": T.ink2,
+      "--g3-muted": T.ink3, "--g3-primary": th.primary, "--g3-button": th.button, "--g3-serif": th.serif, "--g3-sans": th.sans,
+    };
+    const brandLogo = th.logo ? <img src={th.logo} alt={th.displayName || org.name} onError={e => { e.target.style.display = "none"; }} /> : null;
+    const photo = cover ? (
+      <div className="g3-photo" data-edit="photo"><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" /></div>
+    ) : (
+      <div className="g3-fill" data-edit="photo">{brandLogo}</div>
+    );
+    return (
+      <div className={"g3 g3-" + layout} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+        <style>{G3_CSS}</style>
+        {signupModal}
+        {layout === "simple" ? (
+          <div className="g3-band" data-edit="photo">{brandLogo || <span className="g3-bar-name" style={{ color: th.primaryFg }}>{th.displayName || org.name}</span>}</div>
+        ) : (
+          <div className="g3-bar">{brandLogo}{!brandLogo && <span className="g3-bar-name">{th.displayName || org.name}</span>}</div>
+        )}
+        <div className="g3-wrap">
+          {layout === "campaign" && showGoalBar && (
+            <div className="g3-campaign-goal" data-testid="campaign-top" data-edit="goal" style={{ marginBottom: 24 }}>{goalBar()}</div>
+          )}
+          <div className="g3-grid">
+            <div className="g3-top">
+              {layout !== "simple" && photo}
+              <div className="g3-org">{org.name}</div>
+              <h1 className="g3-h1" data-edit="headline">{headline}</h1>
+            </div>
+            <div className="g3-side">
+              <div className="g3-formcard" data-edit="amounts">{formNode}</div>
+              {trust.length > 0 && (
+                <div className="g3-trust" data-testid="trust-panel" data-edit="trust">
+                  {trust.map(l => (
+                    <div key={l.key} className="g3-trust-line" data-trust={l.key}>
+                      {l.href ? <a href={l.href} target={l.href.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">{l.text}</a> : <span>{l.text}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {ways.length > 0 && (
+                <div className="g3-ways" data-testid="other-ways" data-edit="ways">
+                  <div className="g3-label">Other ways to give</div>
+                  {ways.map(w => <p key={w.key} data-way={w.key}>{w.text}</p>)}
+                </div>
+              )}
+            </div>
+            {layout !== "simple" && (
+              <div className="g3-body">
+                {paras.length > 0 && (
+                  <div className="g3-story" data-edit="story">
+                    {shownParas.map((t, i) => <p key={i}>{t}</p>)}
+                    {paras.length > READ_MORE_AFTER && (
+                      <button type="button" className="g3-more" data-testid="read-more" onClick={() => setStoryOpen(o => !o)}>
+                        {storyOpen ? "Show less" : "Read more"}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {bodyWidgets.length > 0 && (
+                  <div className="pt-page" data-edit="blocks" style={{ width: "100%", marginTop: paras.length ? 18 : 0 }}>
+                    <PageRenderer page={{ widgets: bodyWidgets }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
+                  </div>
+                )}
+                {impacts.length > 0 && (
+                  <ul className="g3-impact" data-testid="impact-list" data-edit="amounts">
+                    {impacts.map(([c, line]) => <li key={c}><b>{fmtAmt(c / 100)}</b> {line}</li>)}
+                  </ul>
+                )}
+                {layout === "story" && showGoalBar && <div style={{ marginTop: 22 }} data-edit="goal">{goalBar()}</div>}
+                {p2p && (
+                  <div data-testid="p2p-entries" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "16px 20px", marginTop: 18 }}>
+                    <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5, marginBottom: 10 }}>
+                      Raise money with your own page and share it with the people you know{p2p.teamCount ? ", or join a team" : ""}.
+                      {p2p.requiresApproval ? ` ${org.name} looks at each new page before it goes live.` : ""}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" data-testid="p2p-start" onClick={() => openSignup("", false)}
+                        style={{ background: th.button, border: "none", borderRadius: 10, padding: "10px 16px", color: th.buttonFg, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                        Start a fundraiser
+                      </button>
+                      {p2p.teamCount > 0 && (
+                        <button type="button" data-testid="p2p-join" onClick={() => openSignup("", true)}
+                          style={{ background: T.white, border: "1px solid " + th.button, borderRadius: 10, padding: "10px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                          Join a team
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {p2p && (
+                  <P2PBoard orgSlug={orgSlug} pageSlug={pageSlug} th={th} card={card}
+                    individuals={peerFundraisersSummary?.leaderboard || []} individualCount={peerFundraisersSummary?.count || 0}
+                    teams={p2p.teams || []} teamCount={p2p.teamCount || 0} sentence={p2p.leaderboardSentence}
+                    onJoin={id => openSignup(id, true)} />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={BASE}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
@@ -1529,205 +1951,7 @@ export default function Donate() {
         )
       )}
 
-      {/* BUILD-95 §5B — THE BUILT PAGE, drawn by the SAME renderer as the
-          portal. `builtPage` is null until she publishes one, and then this
-          block is simply absent and the page reads exactly as it always did. */}
-      {/* BUILD-102 Part 2 — A CONFIGURED FORM IS THREE STEPS. An unconfigured
-          page falls through to the single form below, unchanged. `configured` is
-          the whole switch, and it is false for every giving page that existed
-          before this build. */}
-      {giveSpec && giveSpec.configured ? (
-        <div id="give-form" style={{ width: "100%", maxWidth: 480, order: formPosition === "top" ? 1 : 3,
-                      display: "flex", justifyContent: "center", scrollMarginTop: 16 }}>
-          <GiveSteps
-            spec={giveSpec}
-            formId={givingPage?.id}
-            theme={th}
-            coverFeesEnabled={!!org?.coverFeesEnabled && giveSpec.showCoverFee !== false}
-            upsellThresholdCents={givingPage?.upsellThresholdCents}
-            upsellMonthlyCents={givingPage?.upsellMonthlyCents}
-            feeRateSentence={org?.feeRateSentence}
-            showsRecentGifts={!!peerFundraiser || (Array.isArray(givingPage?.page) && givingPage.page.some(w => w && w.type === "recentgifts"))}
-            grossUpCents={grossUpCents}
-            submitting={submitting}
-            submitErr={submitErr}
-            onSubmit={postDonation}
-            apiBase={API}
-            orgSlug={orgSlug}
-            startToken={startToken}
-            signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />}
-            styles={{
-              card,
-              inp,
-              btn: { width: "100%", padding: "14px 0", borderRadius: 10, border: "none", cursor: "pointer",
-                     background: th.primary, color: th.primaryFg, fontSize: 16, fontWeight: 700, fontFamily: th.sans },
-              quiet: { background: "none", border: "none", padding: 0, cursor: "pointer",
-                       color: th.primary, fontSize: 14, fontWeight: 600, textDecoration: "underline", fontFamily: th.sans },
-            }}
-          />
-        </div>
-      ) : null}
-
-      {/* Form. FIXED — it is not a widget and cannot be removed, because a
-          giving page that stopped taking gifts says nothing on screen. She
-          chooses only whether it leads the page or follows the story. */}
-      <form id={giveSpec && giveSpec.configured ? undefined : "give-form"} onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, scrollMarginTop: 16, display: giveSpec && giveSpec.configured ? "none" : "flex",
-                                            flexDirection: "column", gap: 20,
-                                            order: formPosition === "top" ? 1 : 3 }}>
-
-        {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}
-        <div style={card}>
-          <DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>How often</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-            {[["monthly", "Monthly"], ["one-time", "One-time"], ["annual", "Annual"]].map(([v, l]) => (
-              <button key={v} type="button" onClick={() => switchFrequency(v)}
-                style={{
-                  position: "relative",
-                  background: frequency === v ? th.button : T.bg,
-                  border: `1.5px solid ${frequency === v ? th.button : T.bg3}`,
-                  borderRadius: 10, padding: "13px 8px",
-                  color: frequency === v ? th.buttonFg : T.ink2,
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.12s",
-                }}>
-                {l}
-              </button>
-            ))}
-          </div>
-          {returning ? (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-              Welcome back, we've set this to your current gift to {org.name}. Change anything you like.
-            </div>
-          ) : frequency === "monthly" && (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-              Monthly giving is the steadiest way to support {org.name} and you can change or stop it anytime.
-            </div>
-          )}
-        </div>
-
-        {/* Amount — the per-frequency ladder, second tier pre-selected. */}
-        <div style={card}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-            {frequency === "monthly" ? "Monthly amount" : frequency === "annual" ? "Annual amount" : "Donation amount"}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(activeLadder.length, 5)}, 1fr)`, gap: 8, marginBottom: 12 }}>
-            {activeLadder.map(p => ladderBtn(p, !isCustom && preset === p, () => { setPreset(p); setIsCustom(false); setCustomAmt(""); }))}
-          </div>
-          <input
-            type="number" placeholder={frequency === "monthly" ? "Custom monthly amount ($)" : "Custom amount ($)"}
-            value={customAmt}
-            onChange={e => { setCustomAmt(e.target.value); setIsCustom(true); }}
-            onFocus={() => setIsCustom(true)}
-            style={{ ...inp, border: `1.5px solid ${isCustom ? th.button : T.bg3}`, fontWeight: 700, fontSize: 16 }}
-            min="1" step="1"
-          />
-        </div>
-
-        {/* Donor-covers-fees — optional, always unchecked by default. */}
-        {showCoverFees && (
-          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
-            <input type="checkbox" checked={coverFees} onChange={e => setCoverFees(e.target.checked)}
-              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
-              Add <strong>{fmtFull(feeCents / 100)}</strong> to help cover card-processing costs
-              {isRecurring ? ` on each ${frequency === "monthly" ? "monthly" : "annual"} gift` : ""},
-              so {org.name} receives your full {fmtFull(effectiveAmount)}.
-            </span>
-          </label>
-        )}
-
-        {/* BUILD-103 — WHETHER THE FUNDRAISER MAY SEE YOUR FIRST NAME. Off
-            unless the donor ticks it. A gift through a friend's page is still
-            a gift to the organisation, and the friend is not entitled to a
-            list of who gave: the organisation has the record either way. */}
-        {peerFundraiser && (
-          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
-            <input type="checkbox" checked={showNameToFundraiser} onChange={e => setShowNameToFundraiser(e.target.checked)}
-              data-testid="show-name-to-fundraiser"
-              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
-              Let {peerFundraiser.name.split(" ")[0]} see my first name, so they can thank me.
-              {" "}Leave it unticked and they see the gift without a name. {org.name} has the full record either way.
-            </span>
-          </label>
-        )}
-        {/* PARITY-2 Part 2: and whether the first name shows in this page's
-            public list of recent donors. A different audience, a different
-            answer, its own box, off unless ticked. */}
-        {peerFundraiser && (
-          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
-            <input type="checkbox" checked={showNamePublicly} onChange={e => setShowNamePublicly(e.target.checked)}
-              data-testid="show-name-publicly"
-              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
-            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
-              Show my first name in this page&rsquo;s list of recent donors. Leave it unticked and the list says Anonymous.
-            </span>
-          </label>
-        )}
-
-        {/* Fund selector — hidden when the page already designates a fund. */}
-        {funds.length > 0 && !givingPage?.fundId && (
-          <div style={card}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Designate My Gift (optional)</div>
-            <select value={fundId} onChange={e => setFundId(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
-              <option value="">Where it's needed most</option>
-              {funds.map(f => (
-                <option key={f.id} value={f.id}>{f.name}{f.restricted ? " (Restricted)" : ""}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Contact info */}
-        <div style={card}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Your Information</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-            <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} style={inp} required />
-            <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} required />
-          </div>
-          <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inp} required />
-          <div className="give-email-kept" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-            Your email is saved when you press Give, so {th.displayName || org?.name || "this organization"} can let you know if your gift does not go through.
-          </div>
-        </div>
-
-        {submitErr && (
-          <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.terra700 }}>{submitErr}</div>
-        )}
-
-        {/* Submit — the button STATES the commitment in full. */}
-        <button type="submit" disabled={submitting}
-          style={{
-            background: submitting ? T.bg3 : th.button,
-            border: "none", borderRadius: 14, padding: "16px",
-            color: submitting ? T.ink3 : th.buttonFg, fontSize: 16, fontWeight: 800,
-            cursor: submitting ? "not-allowed" : "pointer",
-            letterSpacing: "-0.01em", transition: "background 0.15s",
-          }}>
-          {submitting
-            ? "Redirecting to Stripe…"
-            : effectiveAmount > 0
-              ? (isRecurring ? `Give ${fmtAmt(chargedAmount)} ${perLabel}` : `Give ${fmtAmt(chargedAmount)}`)
-              : "Enter an amount"}
-        </button>
-
-        {/* The recurring disclosure — immediately adjacent to the button, in
-            body text a donor actually reads. Nothing about the recurring
-            nature is smaller, lighter, or lower-contrast than the amount. */}
-        {isRecurring && effectiveAmount > 0 && (
-          <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, textAlign: "center", marginTop: -6 }}>
-            {frequency === "monthly"
-              ? <><strong>{fmtAmt(chargedAmount)} every month until you cancel, {fmtAmt(annualTotal)} a year.</strong> Cancel anytime from your donor account.</>
-              : <><strong>{fmtAmt(chargedAmount)} every year until you cancel.</strong> Cancel anytime from your donor account.</>}
-          </div>
-        )}
-
-        <div style={{ textAlign: "center", fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
-          {th.footerText ? <>{th.footerText}<br /></> : null}
-          Payments are processed securely by Stripe. {org.name} never stores your card details.
-          {th.poweredBy && <><br />Powered by Steward</>}
-        </div>
-      </form>
+      {formNode}
 
       {/* PARITY-2 Part 1: THE GIVE HUB. The org's other open doors, from the
           one server list (waysToGive.js), on the org-wide page only: a campaign

@@ -213,7 +213,9 @@ export default function Uploader({
     // actual crop shape. Replace/Remove appear on hover/focus-within and are
     // always visible on touch (see the @media (hover: none) rule).
     const imgStyle = shape === "square"
-      ? { display: "block", width: "100%", aspectRatio: "1 / 1", objectFit: "cover" }
+      // GIVE-3: every square tile is a logo, and a logo is shown whole (fit,
+      // never crop): cover cut Harborlight's wordmark down to "arborl".
+      ? { display: "block", width: "100%", aspectRatio: "1 / 1", objectFit: "contain", padding: 8, boxSizing: "border-box" }
       : SHAPE_RATIO[shape]
         ? { display: "block", width: "100%", aspectRatio: SHAPE_RATIO[shape], objectFit: "cover" }
         : { display: "block", width: "100%", maxHeight: 200, objectFit: "cover" };

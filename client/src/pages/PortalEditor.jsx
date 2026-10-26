@@ -15,7 +15,7 @@
 //     an explicit Publish; Revert restores the last published page.
 //   • Device toggle: phone and desktop, PHONE DEFAULT (donors arrive from
 //     email on a phone).
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { WIDGETS, typesForSurface, defaultWidget } from "../../../shared/pageWidgets";
 import { apiFetch, API } from "../api";
 import { PageRenderer } from "../components/PortalWidgets";
@@ -31,6 +31,10 @@ import { askConfirm } from "../components/ConfirmDialog";
 import MediaPicker from "../components/MediaPicker";
 import { VolunteerProvider } from "../components/VolunteerBlocks";
 import { safeBack } from "../lib/appUrls";
+// GIVE-3 — the preview IS the giving page: the same component a donor opens,
+// drawn from the draft's payload, so the two cannot drift apart again.
+import Donate from "./Donate";
+import { LAYOUTS, TRUST_KEYS, TRUST_LABELS, normalizeDesign, wayNeeds } from "../../../shared/givingPageDesign.js";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -111,6 +115,64 @@ function SampleMyGiving() {
   );
 }
 
+// GIVE-3 — the desktop preview is the page at a real desktop width (1280),
+// scaled down to fit the pane, so the two-column layout shows as a donor's
+// browser draws it rather than as a narrow pane would.
+function ScaledDesktop({ children, width = 1280 }) {
+  const outer = useRef(null);
+  const inner = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    const el = outer.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => { setScale(Math.min(1, el.clientWidth / width)); if (inner.current) setH(inner.current.offsetHeight); };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el); if (inner.current) ro.observe(inner.current);
+    measure();
+    return () => ro.disconnect();
+  }, [width]);
+  return (
+    <div ref={outer} data-testid="scaled-desktop" style={{ width: "100%", height: h ? h * scale : undefined, overflow: "hidden" }}>
+      <div ref={inner} style={{ width, transform: `scale(${scale})`, transformOrigin: "top left" }}>{children}</div>
+    </div>
+  );
+}
+
+// GIVE-3 — the draft's fields as she types them, laid over the server's
+// payload for the draft. Once a save lands the server's payload already holds
+// them, so the two agree and the preview is the page.
+function overlayPreview(pv, ds, ps, widgets) {
+  if (!pv || !pv.givingPage) return null;
+  const gp = { ...pv.givingPage };
+  if (ds) {
+    if (ds.title != null) gp.title = ds.title;
+    if (ds.story != null) gp.story = ds.story;
+    const img = ds.imageData || ds.imageUrl || "";
+    gp.imageUrl = img;
+    gp.cover = img ? { url: img, ...(ds.imageMeta || {}) } : null;
+    gp.showGoal = ds.showGoal !== false;
+    if (!gp.campaignId && ds.goalAmount !== undefined) gp.goalAmount = ds.goalAmount;
+    gp.design = normalizeDesign(ds.design);
+  }
+  if (Array.isArray(gp.page) && Array.isArray(widgets)) {
+    gp.page = gp.page.map(w => {
+      const mine = w && widgets.find(x => x.id === w.id);
+      return mine && w.type === "hero" ? { ...w, heading: mine.heading, sub: mine.sub } : w;
+    });
+  }
+  const theme = { ...((pv.org && pv.org.theme) || {}) };
+  if (ps) {
+    if (ps.display_name) theme.displayName = ps.display_name;
+    theme.logo = ps.logo_data || ps.logo_url || null;
+    if (ps.primary_color) { theme.primary = ps.primary_color; theme.buttonColor = ps.button_color || ps.primary_color; }
+    if (ps.background_tint !== undefined) theme.backgroundTint = ps.background_tint || null;
+    if (ps.type_pairing) theme.typePairing = ps.type_pairing;
+    if (ps.card_style) theme.cardStyle = ps.card_style;
+  }
+  return { ...pv, org: { ...pv.org, theme }, givingPage: gp };
+}
+
 function readImageFile(file, cb) {
   if (!file || !/^image\//.test(file.type) || file.size > IMAGE_MAX_BYTES) return;
   const r = new FileReader();
@@ -175,6 +237,14 @@ export default function PortalEditor() {
   const dsRef = useRef(null);
 
   const applyPs = useCallback((next) => { psRef.current = next; setPs(next); }, []);
+  // GIVE-3 — the giving page's own payload for the draft, from the same builder
+  // as the public page; re-read after every save so the server's word (smart
+  // amounts, adjusted colours, the goal bar) is what the preview draws.
+  const [pv, setPv] = useState(null);
+  const loadPreview = useCallback(() => {
+    if (!givingPageId) return;
+    apiFetch(`/giving-pages/${givingPageId}/page/preview`).then(d => { if (d && d.givingPage) setPv(d); }).catch(() => {});
+  }, [givingPageId]);
 
   useEffect(() => {
     apiFetch(apiBase).then(d => {
@@ -189,6 +259,7 @@ export default function PortalEditor() {
       }
     }).catch(e => setErr(errorMessage(e)));
     apiFetch("/portal-settings").then(d => { psRef.current = d; setPs(d); }).catch(() => {});
+    loadPreview();
     apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => {});
     apiFetch("/fundraising/campaigns").then(c => setCamps(Array.isArray(c) ? c : [])).catch(() => {});
     // Org content, not donor data: published impact updates render for real in
@@ -241,10 +312,11 @@ export default function PortalEditor() {
           psRef.current = row; setPs(row);
           setDesignNote(adjusted ? (message || "Adjusted slightly for legibility.") : "");
           setSaveState("saved");
+          loadPreview();
         }
       } catch (e) { setErr(errorMessage(e, "Could not save the design.")); setSaveState("error"); }
     }, 1200);
-  }, []);
+  }, [loadPreview]);
   const setDesign = (k, v) => {
     const next = { ...(psRef.current || {}), [k]: v };
     applyPs(next);
@@ -263,10 +335,10 @@ export default function PortalEditor() {
         const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets: next, formPosition: pos ?? formPosition }) });
         // Adopt the server's canonical draft (data-URI images became asset
         // paths) ONLY if nothing changed while the request was in flight.
-        if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); }
+        if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); loadPreview(); }
       } catch (e) { setErr(errorMessage(e, "Could not save the draft.")); setSaveState("error"); }
     }, 1200);
-  }, [apiBase, formPosition]);
+  }, [apiBase, formPosition, loadPreview]);
 
   // GIVE-EDIT-1 — the Details rail's draft, saved like the widgets: debounced,
   // and the server's answer adopted only if nothing changed in flight.
@@ -281,6 +353,7 @@ export default function PortalEditor() {
         if (r && r.draftSettings) { dsRef.current = r.draftSettings; setDs(r.draftSettings); }
         setMeta(m => m ? { ...m, draftSettings: r?.draftSettings || m.draftSettings } : m);
         setDsErrors([]); setDsSave("saved");
+        loadPreview();
       }
       return true;
     } catch (e) {
@@ -291,7 +364,7 @@ export default function PortalEditor() {
       }
       return false;
     }
-  }, [apiBase]);
+  }, [apiBase, loadPreview]);
   const scheduleSettingsSave = useCallback((next) => {
     setDsSave("dirty");
     if (dsTimer.current) clearTimeout(dsTimer.current);
@@ -318,6 +391,7 @@ export default function PortalEditor() {
     if (d.formPosition) setFormPosition(d.formPosition);
     const s0 = d.draftSettings || d.settings || null;
     dsRef.current = s0; setDs(s0); setDsErrors([]);
+    loadPreview();
     return d;
   };
 
@@ -389,6 +463,22 @@ export default function PortalEditor() {
       setWidgets(r.draft); setSaveState("saved");
     } catch (e) { setErr(errorMessage(e, "Could not apply the starter.")); }
   };
+
+  // What the preview draws this instant: the server's payload with the fields
+  // being typed laid over it, so a keystroke shows before its save lands.
+  const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets), [pv, ds, ps, widgets]);
+  const pickField = useCallback((field) => {
+    if (field === "blocks") { setMode("page"); return; }
+    if (field === "photo") { const el = document.querySelector("[data-testid=editor-cover]"); if (el) el.scrollIntoView({ block: "nearest" }); return; }
+    setMode("details");
+    setTimeout(() => {
+      const el = document.querySelector(`[data-field="${field}"]`);
+      if (!el) return;
+      el.scrollIntoView({ block: "start", behavior: "smooth" });
+      const input = el.matches("input,textarea") ? el : (el.nextElementSibling && el.nextElementSibling.querySelector ? (el.nextElementSibling.matches("input,textarea,select") ? el.nextElementSibling : el.nextElementSibling.querySelector("input,textarea,select")) : null);
+      if (input) input.focus({ preventScroll: true });
+    }, 60);
+  }, []);
 
   if (err && widgets === null) {
     return <div style={{ padding: 40, fontFamily: "system-ui" }}>
@@ -497,6 +587,13 @@ export default function PortalEditor() {
     </div>
   ) : null;
 
+  // GIVE-3 — outside the block arranger, a giving page's preview is the page.
+  const useRealPage = surface === "give" && mode !== "page" && !!livePayload;
+  const realPage = useRealPage ? (
+    <div data-testid="real-preview">
+      <Donate preview={{ payload: livePayload, orgSlug: ps.org_slug, pageSlug: meta?.pageSlug, onPick: pickField }} />
+    </div>
+  ) : null;
   const pageBody = surface === "orgform" ? formBlock : widgets.length === 0 ? (
     <div style={{ padding: "10px 0 30px" }}>
       {unbuiltPage}
@@ -610,7 +707,7 @@ export default function PortalEditor() {
               ? <OrgFormRail ds={ds} onSet={setSetting} errors={dsErrors} saveState={dsSave} />
               : <DetailsRail ds={ds} onSet={setSetting} onSetForm={setFormSetting} errors={dsErrors} saveState={dsSave}
                   funds={Array.isArray(meta?.funds) && meta.funds.length ? meta.funds : funds} camps={Array.isArray(meta?.campaigns) && meta.campaigns.length ? meta.campaigns : camps}
-                  hero={heroWidget} onHeroHeading={v => heroWidget && updateWidget(heroWidget.id, { heading: v })} />}
+                  hero={heroWidget} onHeroHeading={v => heroWidget && updateWidget(heroWidget.id, { heading: v })} facts={(livePayload && livePayload.org && livePayload.org.facts) || {}} />}
           </div>
         )}
         {mode === "design" && (
@@ -644,17 +741,18 @@ export default function PortalEditor() {
           <div data-testid="preview-side-by-side" style={{ flex: 1, minWidth: 0, display: "flex", gap: 0, overflow: "hidden" }}>
             <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
               <div style={{ textAlign: "center", fontSize: 11, color: E.muted, padding: "8px 0 0" }}>Desktop</div>
+              {useRealPage ? <ScaledDesktop>{realPage}</ScaledDesktop> : (
+
               <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
                 {pageHeader}
                 {pageBody}
-              </div>
+              </div>)}
             </div>
             <div style={{ flexShrink: 0, overflow: "auto", padding: "16px 18px", borderLeft: "1px solid " + E.editPanel2 }}>
               <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
                 <div style={{ width: 390, height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
-                  <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
-                    {pageHeader}
-                    {pageBody}
+                  <div style={{ flex: 1, overflowY: "auto", padding: useRealPage ? 0 : "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
+                    {useRealPage ? realPage : <>{pageHeader}{pageBody}</>}
                   </div>
                 </div>
               </div>
@@ -668,9 +766,8 @@ export default function PortalEditor() {
             <div style={{ margin: "auto", padding: 24 }}>
               <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
                 <div style={{ width: 390, maxWidth: "calc(100vw - 120px)", height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
-                  <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
-                    {pageHeader}
-                    {pageBody}
+                  <div style={{ flex: 1, overflowY: "auto", padding: useRealPage ? 0 : "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
+                    {useRealPage ? realPage : <>{pageHeader}{pageBody}</>}
                   </div>
                 </div>
               </div>
@@ -681,10 +778,12 @@ export default function PortalEditor() {
           <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
             {/* The real page: full canvas width, the published wrap ladder
                 centers the column and the ≥1280 two-track grid applies. */}
+            {useRealPage ? <ScaledDesktop>{realPage}</ScaledDesktop> : (
+
             <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
               {pageHeader}
               {pageBody}
-            </div>
+            </div>)}
           </div>
         )}
 
@@ -1124,8 +1223,12 @@ function AmountList({ valueDollars, onChange, min = 0, max = 8, whole = false, t
   );
 }
 
-function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroHeading, saveState }) {
+function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroHeading, saveState, facts = {} }) {
   const f = ds.form || {};
+  // GIVE-3 — the page's design, one field at a time onto the draft.
+  const design = normalizeDesign(ds.design);
+  const setDesign = patch => onSet("design", { ...design, ...patch });
+  const needs = wayNeeds(facts, design);
   const photo = ds.imageData || resolveAssetUrl(ds.imageUrl || "");
   const des = f.designation || { mode: "none", fundId: null, fundIds: [] };
   const choosing = des.mode === "choice";
@@ -1150,8 +1253,20 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
         </div>
       )}
 
+      {railGroup("Layout")}
+      <div data-field="layout" role="radiogroup" aria-label="Page layout" style={{ display: "grid", gap: 6 }}>
+        {LAYOUTS.map(l => (
+          <label key={l.key} data-testid={"details-layout-" + l.key} style={{ ...checkRow, marginTop: 0, border: "1px solid " + (design.layout === l.key ? E.green : E.bg3), borderRadius: 8, padding: "7px 10px", background: design.layout === l.key ? E.white : "transparent" }}>
+            <input type="radio" name="page-layout" checked={design.layout === l.key} onChange={() => setDesign({ layout: l.key })} style={{ marginTop: 2 }} />
+            <span><strong>{l.label}</strong><span style={{ display: "block", fontSize: 11.5, color: E.muted }}>{l.hint}</span></span>
+          </label>
+        ))}
+      </div>
+      {!design.layout && <div style={{ fontSize: 11.5, color: E.muted, marginTop: 4 }}>Not picked yet: the page chooses for you from what it has.</div>}
+      <FieldError errors={errors} prefix="design.layout" />
+
       {railGroup("The page")}
-      <div style={lbl}>Headline</div>
+      <div style={lbl} data-field="headline">Headline</div>
       {hero ? (
         <>
           <input data-testid="details-headline" style={inp} value={hero.heading || ""} placeholder={ds.title || "Your headline"} onChange={e => onHeroHeading(e.target.value)} />
@@ -1161,7 +1276,7 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
         <input data-testid="details-headline" style={inp} value={ds.title || ""} onChange={e => onSet("title", e.target.value)} />
       )}
       <FieldError errors={errors} prefix="title" />
-      <div style={lbl}>The story</div>
+      <div style={lbl} data-field="story">The story</div>
       <textarea data-testid="details-story" style={{ ...inp, minHeight: 120, resize: "vertical", lineHeight: 1.5 }} value={ds.story || ""} onChange={e => onSet("story", e.target.value)} placeholder="What this gift makes possible, in your own words." />
       <FieldError errors={errors} prefix="story" />
       <div style={lbl}>Photo</div>
@@ -1170,11 +1285,26 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       <div style={{ fontSize: 11.5, color: E.muted, marginTop: 8, lineHeight: 1.45 }}>Colors and logo come from your brand, in the Design tab, so every page looks like yours.</div>
 
       {railGroup("The gift")}
-      <div style={lbl}>Suggested amounts</div>
+      <div style={lbl} data-field="amounts">Suggested amounts</div>
       <AmountList testid="details-amounts" valueDollars={(f.amountsCents || []).map(c => c / 100)} max={8}
         onChange={nums => onSetForm({ amountsCents: nums.map(n => Math.round(n * 100)) })} />
       <FieldError errors={errors} prefix="form.amountsCents" />
       <FieldError errors={errors} prefix="amountsCents" />
+      {(f.amountsCents || []).length > 0 && (
+        <>
+          <div style={lbl}>What each amount does (optional)</div>
+          <div style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45, marginBottom: 4 }}>One line, shown when a donor picks that amount. Only say what is true.</div>
+          {(f.amountsCents || []).map(c => (
+            <div key={c} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+              <span style={{ width: 54, fontSize: 12.5, fontWeight: 700 }}>{money0(c / 100)}</span>
+              <input data-testid={"details-impact-" + c} style={inp} maxLength={140} value={design.impact[String(c)] || ""}
+                placeholder="buys a week of art supplies for 10 kids"
+                onChange={e => setDesign({ impact: { ...design.impact, [String(c)]: e.target.value } })} />
+            </div>
+          ))}
+          <FieldError errors={errors} prefix="design.impact" />
+        </>
+      )}
       <div style={lbl}>Opens on</div>
       <div role="radiogroup" aria-label="Which frequency is chosen first" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {["once", "monthly", "annual"].map(v => (
@@ -1209,6 +1339,7 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       </select>
       <FieldError errors={errors} prefix="campaign" />
 
+      <div data-field="goal" />
       {railGroup("Goal")}
       <label style={checkRow}><input data-testid="details-show-goal" type="checkbox" checked={ds.showGoal !== false} onChange={e => onSet("showGoal", e.target.checked)} style={{ marginTop: 2 }} />Show the goal and progress bar</label>
       {ds.showGoal !== false && !ds.campaignId && (
@@ -1220,6 +1351,40 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       )}
       {ds.showGoal !== false && ds.campaignId && <div style={{ fontSize: 11.5, color: E.muted, marginTop: 6 }}>The bar shows the campaign's own goal and what it has raised.</div>}
       <FieldError errors={errors} prefix="goal" />
+
+      {railGroup("Trust panel")}
+      <div data-field="trust" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45 }}>Under the form. Each line shows only what your records hold; untick any to hide it.</div>
+      {TRUST_KEYS.map(k => (
+        <label key={k} style={checkRow}>
+          <input data-testid={"details-trust-" + k} type="checkbox" checked={!design.hide.includes(k)} style={{ marginTop: 2 }}
+            onChange={e => setDesign({ hide: e.target.checked ? design.hide.filter(x => x !== k) : [...design.hide, k] })} />
+          <span>{TRUST_LABELS[k]}
+            {k === "stripe" && !facts.stripe && <span style={{ display: "block", fontSize: 11, color: E.muted }}>Shows once your Stripe account is connected.</span>}
+            {k === "legal" && !facts.legalName && !facts.ein && <span style={{ display: "block", fontSize: 11, color: E.muted }}>Add your legal name and EIN in Settings first.</span>}
+            {k === "tax" && !facts.ein && <span style={{ display: "block", fontSize: 11, color: E.muted }}>Shows once your EIN is in Settings.</span>}
+            {k === "contact" && !facts.contactEmail && !design.phone && <span style={{ display: "block", fontSize: 11, color: E.muted }}>Add a contact email in Design, or a phone below.</span>}
+          </span>
+        </label>
+      ))}
+      <div style={lbl}>Your privacy page (optional)</div>
+      <input data-testid="details-privacy" style={inp} value={design.privacyUrl} placeholder="https://yourorg.org/privacy (empty: Steward's)" onChange={e => setDesign({ privacyUrl: e.target.value })} />
+      <FieldError errors={errors} prefix="design.privacyUrl" />
+      <div style={lbl}>Phone (optional)</div>
+      <input data-testid="details-phone" style={inp} value={design.phone} placeholder="(978) 555-0100" onChange={e => setDesign({ phone: e.target.value })} />
+      <FieldError errors={errors} prefix="design.phone" />
+
+      {railGroup("Other ways to give")}
+      <div data-field="ways" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45 }}>One line each, under the trust panel.</div>
+      {[["check", "Mail a check"], ["phone", "By phone"], ["daf", "Donor-advised fund"], ["stock", "Stock"]].map(([k, label]) => (
+        <label key={k} style={checkRow}>
+          <input data-testid={"details-way-" + k} type="checkbox" checked={design.ways[k]} style={{ marginTop: 2 }}
+            onChange={e => setDesign({ ways: { ...design.ways, [k]: e.target.checked } })} />
+          <span>{label}{design.ways[k] && needs[k] && <span style={{ display: "block", fontSize: 11, color: E.muted }}>{needs[k]}</span>}</span>
+        </label>
+      ))}
+      <div data-testid="details-connections" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45, marginTop: 10 }}>
+        Take gifts on Zeffy, Givebutter or PayPal too? Keep them there: Steward reads those gifts in (Donorbox from its export file). <a href="/app/settings?section=connections" style={{ color: E.green }}>Connections</a>
+      </div>
 
       {railGroup("After they give")}
       <div style={lbl}>Thank-you message</div>
