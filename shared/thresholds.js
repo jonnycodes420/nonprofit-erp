@@ -36,15 +36,16 @@ export const THRESHOLDS = [
     means: "the grace after a seasonal giver's window closes" },
   { value: 30,  unit: "days",   name: "HANDLED_SNOOZE_DAYS",  source: "drift.js DRIFT",
     means: "how long a logged contact quiets the drift list" },
-  { value: 730, unit: "days",   name: "LAPSE_MAX_DAYS",       source: "drift.js DRIFT",
-    means: "the outer boundary past which a donor is lapsed, not drifting" },
   { value: 450, unit: "days",   name: "MAX_CADENCE_FOR_HIGH", source: "drift.js DRIFT",
     means: "the longest median interval that can still be called a clear cadence" },
 
-  // ── LAPSE (server.js) — the ONE lapse boundary, shared by inferStage, the
-  // auto-lapse sweep and the pipeline's Lapsed column.
-  { value: 365, unit: "days",   name: "LAPSE_DAYS",           source: "server.js",
-    means: "no gift in this long and the donor is lapsed" },
+  // ── LAPSE (lapseRule.js, FIX-49): the ONE lapse rule, read by the tags,
+  // the stage sweep, Drift, at-risk, the Directory, groups, journeys and
+  // Lost & Found.
+  { value: 365, unit: "days",   name: "LAPSED_DAYS",          source: "lapseRule.js",
+    means: "no gift in this long (the last 12 months) and the donor is lapsed" },
+  { value: 9,   unit: "months", name: "LAPSING_MONTHS",       source: "lapseRule.js",
+    means: "last gift this long ago or more, and under 12 months, and the donor is lapsing" },
 
   // ── THE FAILED-CARD CADENCE (server.js DUNNING_SCHEDULE_DAYS) ───────────
   { value: 0,   unit: "days",   name: "DUNNING_SCHEDULE_DAYS[0]", source: "server.js",

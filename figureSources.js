@@ -521,30 +521,9 @@ const SOURCES = {
       order: "amount DESC, id",
     }),
   },
-  // REPORTS-4 · The "household total" on a profile: this person and everyone
-  // linked to them as a spouse or household member, each once, with their
-  // lifetime giving. A deleted person is not counted (before REPORTS-4 they
-  // were: the banner added a deleted spouse's giving in).
-  "linked-household-giving": {
-    label: "Household total",
-    measure: () => "sum",
-    params: { donor: "id:required" },
-    sentence: () => "This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted.",
-    sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount,
-                   CASE WHEN d.id = ? THEN 'This person' ELSE 'Linked as household' END AS detail
-              FROM donors d
-             WHERE d.org_id = ? AND d.deleted_at IS NULL
-               AND (d.id = ? OR d.id IN (
-                     SELECT CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END
-                       FROM donor_relationships dr
-                      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
-                        AND dr.relationship_type IN ('spouse', 'household')))`,
-      args: [p.donor, orgId, p.donor, p.donor, orgId, p.donor, p.donor],
-      order: "amount DESC, id",
-    }),
-  },
+  // FIX-49 decision 8: "linked-household-giving" (a second household total,
+  // over spouse links) is gone. The household record is the one grouping and
+  // "household-giving" above is its total.
   // REPORTS-5 · NUMBERS FROM AN OLD SYSTEM. Each row is one historical total
   // as the old report printed it, with the file and system it came from. A
   // historical total is never a gift: it is not in `gifts`, not on anyone's
@@ -1392,7 +1371,7 @@ const SOURCES = {
       if (!DS.TAG_KEYS.includes(p.tag)) throw new FigureParamError("tag is not a tag Steward knows.");
       const cuts = await DS.cutsFor(orgId);
       const st = DS.statusSql(orgId, p.today, cuts);
-      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : "s.retained";
+      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : p.tag === "lapsing" ? "s.lapsing" : "s.retained";
       return {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
                      'Given in the last 12 months' AS detail

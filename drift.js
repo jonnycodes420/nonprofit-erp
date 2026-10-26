@@ -16,6 +16,10 @@
 // disagrees with the list is worse than no badge.
 
 const orgTime = require("./orgTime");
+// FIX-49 decision 6: Drift's "lapsed" is the one lapse rule (no gift in the
+// last 12 months after giving before). Drift still judges "drifting" by the
+// person's own rhythm; it no longer has a lapse line of its own.
+const lapseRule = require("./lapseRule");
 
 // All thresholds in ONE place. Each is overridable via a DRIFT_<NAME> env var
 // — that seam exists for tuning without a code change AND for the
@@ -23,8 +27,6 @@ const orgTime = require("./orgTime");
 // different DRIFT_THRESHOLD; the list and the badge must both move together).
 const DRIFT = {
   DRIFT_THRESHOLD: 1.25,      // × own cadence — above this, drifting
-  LAPSE_RATIO: 2.5,           // × own cadence — beyond this, lapsed (different state)
-  LAPSE_MAX_DAYS: 730,        // …or 24 months, whichever comes first
   MIN_OVERDUE_DAYS: 30,       // absolute floor past the expected date (a monthly giver 8 days over is noise)
   SEASONAL_MIN_YEARS: 3,      // distinct years giving in the same calendar month/quarter
   SEASONAL_SHARE: 0.8,        // …and that window must hold ≥80% of their giving events
@@ -158,7 +160,7 @@ function assessDrift(gifts, today, opts = {}) {
   const seasonal = detectSeasonalCluster(events);
 
   let state, overdueRatio, expectedNext, basis, driftStartDate = null;
-  const lapseBoundaryDays = Math.min(DRIFT.LAPSE_RATIO * (seasonal ? 365 : cadence), DRIFT.LAPSE_MAX_DAYS);
+  const lapsed = lapseRule.isLapsed(last.date, today);
 
   if (seasonal) {
     basis = "seasonal";
@@ -173,7 +175,7 @@ function assessDrift(gifts, today, opts = {}) {
     expectedNext = windowClose;
     const daysPastWindow = orgTime.daysBetween(windowClose, today);
     overdueRatio = Math.round((daysSinceLast / 365) * 100) / 100;
-    if (daysSinceLast > lapseBoundaryDays) state = "lapsed";
+    if (lapsed) state = "lapsed";
     else if (daysPastWindow != null && daysPastWindow > DRIFT.SEASONAL_GRACE_DAYS) state = "drifting";
     else state = "ok";
     // The first civil day the state became (or becomes) drifting — the
@@ -184,7 +186,7 @@ function assessDrift(gifts, today, opts = {}) {
     expectedNext = orgTime.addDays(last.date, Math.round(cadence));
     overdueRatio = Math.round((daysSinceLast / cadence) * 100) / 100;
     const pastExpected = daysSinceLast - cadence;
-    if (daysSinceLast > lapseBoundaryDays) state = "lapsed";
+    if (lapsed) state = "lapsed";
     else if (overdueRatio > DRIFT.DRIFT_THRESHOLD && pastExpected >= DRIFT.MIN_OVERDUE_DAYS) state = "drifting";
     else state = "ok";
     driftStartDate = orgTime.addDays(last.date,

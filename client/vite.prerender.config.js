@@ -26,6 +26,10 @@ export default defineConfig({
     outDir: "dist-prerender",
     emptyOutDir: true,
     copyPublicDir: false,
+    // FIX-49: the marketing Lost & Found reads Steward's one lapse rule
+    // (lapseRule.js, CommonJS at the repo root, with orgTime.js), as the
+    // browser build does.
+    commonjsOptions: { include: [/node_modules/, /[\\/]lapseRule\.js$/, /[\\/]orgTime\.js$/] },
     rollupOptions: { output: { format: "esm", entryFileNames: "prerender.mjs" } },
   },
 });

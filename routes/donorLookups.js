@@ -86,27 +86,26 @@ app.get("/donors/lookup", requireAuth, wrap(async (req, res) => {
   res.json(rows.map(shape));
 }));
 
-// How many people, and the two lapsed counts the screens show:
-//   lapsed        status is "lapsed" (the AI context's count)
-//   reengage      the Re-engage tab's badge: askable (not deceased, not
-//                 do-not-contact, not do-not-solicit, not an imported
-//                 sustainer) and either at the lapsed stage or last gave more
-//                 than 365 days ago. The days are counted the way the browser
-//                 counted them: a plain date on the org's calendar, a full
-//                 timestamp in whole days elapsed, anything else not at all.
+// How many people, and the lapse counts the screens show. FIX-49: one rule
+// (lapseRule.js, through donorStatus.js's tags), on the org's calendar:
+//   lapsed        gave before, no gift in the last 12 months (it read a
+//                 status nothing wrote, so it was always 0)
+//   lapsing       last gift 9 to 12 months ago
+//   reengage      the Re-engage tab's badge: the lapsed who may be asked (not
+//                 deceased, do-not-contact, do-not-solicit or an imported
+//                 sustainer), or anyone an officer moved to the lapsed stage.
 app.get("/donors/counts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const [org] = await query("SELECT timezone FROM orgs WHERE id = ?", [orgId]);
-  const today = orgToday(org || {});
-  const [r] = await query(`SELECT COUNT(*)::int AS total,
-      COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed,
+  const DS = require("../donorStatus");
+  const today = await DS.todayFor(orgId);
+  const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
+  const [r] = await query(`WITH s AS MATERIALIZED (${st.sql})
+    SELECT COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE s.lifecycle = 'lapsed')::int AS lapsed,
+      COUNT(*) FILTER (WHERE s.lapsing)::int AS lapsing,
       COUNT(*) FILTER (WHERE deceased IS NOT TRUE AND do_not_contact IS NOT TRUE AND do_not_solicit IS NOT TRUE
-        AND imported_sustainer IS NOT TRUE AND (
-          stage = 'lapsed'
-          OR (last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}$' AND (?::date - last_gift_date::date) > 365)
-          OR (last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}[T ]' AND FLOOR(EXTRACT(EPOCH FROM (NOW() - last_gift_date::timestamptz)) / 86400) > 365)
-        ))::int AS reengage
-    FROM donors WHERE ${SET}`, [today, orgId]);
+        AND imported_sustainer IS NOT TRUE AND (stage = 'lapsed' OR s.lifecycle = 'lapsed'))::int AS reengage
+    FROM donors LEFT JOIN s ON s.donor_id = donors.id WHERE ${SET}`, [...st.args, orgId]);
   res.json(r);
 }));
 

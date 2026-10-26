@@ -761,9 +761,9 @@ export const HELP_ARTICLES = [
         `A parent goal totals the gifts given to it directly plus the gifts given to its child goals, and a gift is never counted twice.`,
       ]},
       { h: `One rule each`, p: [
-        `@@LAPSE@@`,
-        `@@LEVELS@@`,
-        `@@HOUSEHOLDS@@`,
+        `Lapsed: they have given before, but not in the last 12 months. Lapsing: their last gift was 9 to 12 months ago. The tags, the Directory, groups, Drift, journeys and Lost & Found all use this one rule, on your organization's own calendar. Retained: they gave last fiscal year and have given again this fiscal year.`,
+        `Giving level is what someone gave in the last 12 months against your cut points in Settings, Giving levels. It is the only giving level Steward uses: the Directory, groups, Communications and the Board all read it.`,
+        `A household is the household record. Linking two people as spouses or as a household puts them in one household, and the household's combined giving is the one household total.`,
       ]},
       { h: `History and Ask`, p: [
         `First gift, Donor since and the New, Current and Recaptured tags count the gifts your old system told us about. If the file gave no first gift date, its last gift date is used, because the person had given by then.`,
