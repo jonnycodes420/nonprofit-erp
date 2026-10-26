@@ -182,12 +182,15 @@ const emailFor = name => name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(
 // Ondine Cinderhalt left the eleven for her own story (the failed card —
 // below): a past_due subscription EXCLUDES a donor from drift by design, so
 // she cannot be one of the eleven and be the failed-card fixture at once.
+// FIX-49: none is "seasonal" any more. A once-a-year giver drifts only after
+// their usual month has passed, more than 12 months on, and that is lapsed
+// under the one rule (lapseRule.js), not drifting.
 const DRIFTED = [
   // INT-BUILD-1 — Margaret Chen is now the inbox-and-calendar story (coffee
   // tomorrow, a $15,000 August gift), which cannot also be silent for 14
   // months. The canonical drift example keeps her numbers under a new name.
-  ["Eleanor Whitcombe", 2000, "seasonal"],      // THE canonical example
-  ["Marguerite Ashgrove", 2500, "seasonal"],
+  ["Eleanor Whitcombe", 2000, "semiannual"],      // THE canonical example
+  ["Marguerite Ashgrove", 2500, "semiannual"],
   ["Halvard Bellwether", 2000, "semiannual"],
   ["Casper Dunmoor", 1800, "semiannual"],
   ["Wilhelmina Elmsworth", 3000, "semiannual"],
@@ -195,7 +198,7 @@ const DRIFTED = [
   ["Rosalind Glasswick", 2200, "quarterly"],
   ["Emmett Hollowell", 1900, "quarterly"],
   ["Philippa Ironvale", 2600, "semiannual"],
-  ["Gideon Jessamine", 2100, "seasonal"],
+  ["Gideon Jessamine", 2100, "semiannual"],
   ["Cordelia Kettleby", 2800, "semiannual"],
 ];
 
