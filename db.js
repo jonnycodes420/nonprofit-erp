@@ -8318,6 +8318,13 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS org_kind_set_by TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS archived_by TEXT`);
+  // FIX-50 (Justin's Place, 26 Oct): an org is a demo only if its Kind is Demo.
+  // The migration and the trigger that keeps is_demo_org a copy of Kind live in
+  // orgDemoMigration.js. Once per boot, idempotent; it logs what it changed.
+  {
+    const changed = await require("./orgDemoMigration").matchDemoFlagToKind(pool);
+    console.log(`[fix50] demo flag matched to Kind: ${changed.kindsSet} unset Kind(s) set to Demo, ${changed.flagsChanged} is_demo_org flag(s) changed`);
+  }
   // The monthly amount of the org's live Stripe subscription, in cents, as the
   // billing webhook last read it. MRR is this, never a plan's list price.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mrr_cents INTEGER`);

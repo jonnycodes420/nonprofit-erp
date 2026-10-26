@@ -38,32 +38,21 @@
 // THE ONE SETTING. "Nothing until the donor file is in" will change as Steward
 // scales. It is MAIL_WAIT_FOR_ONBOARDING: anything but "0" keeps the wait.
 
-// The demonstration orgs by id, the same two twoFactor.js names: Harborlight
-// and the CREO boot fixture never send, whatever their switches say.
-// FIX-45: and every demo org orgKind.js names (Riverbend, Meadowbrook), and any
-// org whose kind somebody set to demo, so the two files cannot disagree.
-const DEMO_ORG_IDS = [...new Set(["org_b72demo", "org_creo", ...require("./orgKind").DEMO_ORG_IDS])];
-// CHECK-2 (Jonathan, 21 Oct): a demo org's pledges still reached Resend every
-// hour, at @example.com people. The flag, the kind and the id list missed an org
-// that is a demo only by its name ("Lakeside Arts Center (Demo)"), which
-// orgKind.js already counts as one. "(Demo)" in the name, with no kind set by
-// hand, is a demo org here too, in JS and in SQL, so the gate and every sweep
-// agree. Only the bracketed word: "Demolition Aid" or "Demo Day Fund" is real.
-const DEMO_NAME_RE = /\(\s*demo\s*\)/i;
-const isDemoOrg = org => !!org && (org.is_demo_org === true || org.org_kind === "demo" || DEMO_ORG_IDS.includes(org.id)
-  || (org.org_kind == null && DEMO_NAME_RE.test(String(org.name || ""))));
+// FIX-50: an org is a demo only if its Kind is Demo (orgKind.isDemoOrg). The
+// id list, the "(Demo)" name rule and the is_demo_org flag no longer decide it
+// here: each of them now becomes Kind = Demo when an org is created, and the
+// migration (orgDemoMigration.js) set Kind for every org that one of them used to catch.
+// DEMO_ORG_IDS stays exported for the scripts that name the seeded orgs.
+const ORG_KIND = require("./orgKind");
+const DEMO_ORG_IDS = [...new Set(["org_b72demo", "org_creo", ...ORG_KIND.DEMO_ORG_IDS])];
+const isDemoOrg = ORG_KIND.isDemoOrg;
 
-// FIX-45 (Muse, 19 Oct): THE SAME RULE, AT THE SOURCE. The gate above refused
-// twelve pledge reminders a demo org's sweep had already picked, and the sweep
-// picked them again every hour, because nothing upstream knew the org was
-// fiction. A sweep that chooses donor mail to send reads this in its WHERE
-// clause, so a demo org (and a sample person, which the sweep filters itself)
-// never becomes a send to refuse. `o` is the alias of the orgs row; it must be
-// joined. The ids are constants, never input, so inlining them is safe.
+// FIX-45 (Muse, 19 Oct): THE SAME RULE, AT THE SOURCE. A sweep that chooses
+// donor mail to send reads this in its WHERE clause, so a demo org (and a
+// sample person, which the sweep filters itself) never becomes a send to
+// refuse. `o` is the alias of the orgs row; it must be joined.
 function orgSendsSql(o = "o") {
-  return `(COALESCE(${o}.is_demo_org, false) = false AND COALESCE(${o}.org_kind, '') <> 'demo'`
-    + ` AND ${o}.id NOT IN (${DEMO_ORG_IDS.map(id => `'${id}'`).join(",")})`
-    + ` AND NOT (${o}.org_kind IS NULL AND COALESCE(${o}.name, '') ~* '\\(\\s*demo\\s*\\)'))`;
+  return `NOT ${ORG_KIND.demoOrgSql(o)}`;
 }
 
 const CATEGORY = {

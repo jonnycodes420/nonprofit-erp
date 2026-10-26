@@ -166,8 +166,9 @@ const mkDonor = async (id, org, email, isSample) =>
   const dun = await api("POST", "/recurring/process-dunning", demoTok);
   ok("the dunning sweep picks no demo org's failed card", dun.status === 200 && dun.body.picked === 0, dun.body);
   const mp = require("../mailPolicy");
-  ok("one rule for the gate and the sweeps: every demo org orgKind.js names is a demo org to the gate",
-    require("../orgKind").DEMO_ORG_IDS.every(id => mp.isDemoOrg({ id })) && mp.isDemoOrg({ id: "x", org_kind: "demo" }), null);
+  // FIX-50: one rule for the gate and the sweeps, and it is Kind alone.
+  ok("one rule for the gate and the sweeps: Kind = Demo is a demo org, a stale flag or a seeded id is not",
+    mp.isDemoOrg({ id: "x", org_kind: "demo" }) && !mp.isDemoOrg({ id: "org_b72demo", is_demo_org: true, org_kind: "customer" }), null);
 
   // CHECK-2 (Jonathan, 21 Oct): a demo org's pledge reminders still reached
   // Resend every hour, at @example.com people. An org that is a demo only by
@@ -182,7 +183,8 @@ const mkDonor = async (id, org, email, isSample) =>
   ok("CHECK-2: the pledge-reminder sweep picks nothing in an org named \"(Demo)\"",
     namedPick.status === 200 && namedPick.body.picked === 0, namedPick.body);
   ok("CHECK-2: …and the gate refuses it as a demo org, while \"Demo Day Fund\" and a kind set by hand still send",
-    mp.orgMailDecision({ id: NAMED, name: "Lakeside Arts Center (Demo)", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).reason === "demo_org"
+    // FIX-50: the "(Demo)" name makes the org Kind = Demo when it is created (db trigger).
+    mp.orgMailDecision({ ...(await q(`SELECT * FROM orgs WHERE id=$1`, [NAMED]))[0], emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).reason === "demo_org"
     && mp.orgMailDecision({ id: "x", name: "Demo Day Fund", emails_enabled: true, onboarded_at: new Date(testNow()) }, mp.CATEGORY.DONOR).send === true
     && !mp.isDemoOrg({ id: "x", name: "Old Name (Demo)", org_kind: "customer" }), null);
 

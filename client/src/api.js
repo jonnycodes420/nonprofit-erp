@@ -405,7 +405,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       // columns were already crossing the wire and being thrown away HERE —
       // the same shape as BUILD-89's adaptDonor defect, where assignedTo was
       // dropped on every refresh because the adapter did not name it.
-      isDemoOrg:     org.is_demo_org === true,
+      isDemoOrg:     org.demo === true,   // FIX-50: the server's one rule (orgKind.isDemoOrg)
       emailsEnabled: org.emails_enabled !== false,
     },
     donors: donors.map(adaptDonor),

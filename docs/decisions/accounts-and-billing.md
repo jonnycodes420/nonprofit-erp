@@ -171,6 +171,9 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Delete is only for an org with nothing real in it**: no Stripe subscription, no `platform_payments` row, no
   non-sample donor. Anything else is archived (`archived_at`), which is reversible. Delete asks twice.
 - **No billing mail to a demo, internal test or fixture org** (`mailPolicy.NOT_BILLED_KINDS`).
+- **An org is a demo only if its Kind is Demo (FIX-50).** Ask `orgKind.isDemoOrg(org)` (select `org_kind`) or
+  `orgKind.demoOrgSql(alias)`; never read `is_demo_org`, an id list or the name. The flag is a copy of Kind kept by
+  the trigger in `orgDemoMigration.js`. The guess (`inferKind`) never says Demo. The super-admin Demo switch sets Kind.
 - **Prod cleanup is `scripts/admin-clean.js`, run by Jonathan**, dry run first. It never merges duplicates and never
   writes `org_b72demo` or `org_creo`.
 

@@ -1245,7 +1245,7 @@ app = routers.r1;
 const TF = require("../twoFactor");
 const bcrypt = require("bcryptjs");
 const meRow = async userId => (await query(`SELECT * FROM users WHERE id=?`, [userId]))[0] || null;
-const orgOf = async orgId => (await query(`SELECT id, is_demo_org, require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [orgId]))[0] || null;
+const orgOf = async orgId => (await query(`SELECT id, org_kind, require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [orgId]))[0] || null;
 const mustKeepMfa = (u, o) => !!(u.is_super_admin || (o && o.require_mfa) || (u.role === "admin" && o && o.require_admin_mfa));
 // One check for "is this a current code of yours", whatever the method.
 async function currentCodeOk(u, code) {
@@ -1590,7 +1590,8 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
-  res.json({ ...org, accessState: getOrgAccessState(org) });
+  // FIX-50: `demo` is the one rule (orgKind.isDemoOrg); the banner reads it.
+  res.json({ ...org, demo: require("../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org) });
 }));
 
 // ── BUILD-86 C.3 — FOUR DASHBOARDS, FOUR QUESTIONS ─────────────────────────
@@ -3102,7 +3103,7 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
     // INT-BUILD-1 Part 0 — CONNECT YOUR INBOX, and it is the VIEWER'S step:
     // a mailbox is one person's, so it ticks for whoever connected their own.
     // A demo org counts it done, because its example connection is the point.
-    { key: "inbox", done: org.is_demo_org === true || ["org_b72demo", "org_creo"].includes(orgId)
+    { key: "inbox", done: require("../orgKind").isDemoOrg(org)
         || (await query(`SELECT 1 FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' LIMIT 1`,
                         [req.user.userId, orgId]).catch(() => [])).length > 0 },
     // BUILD-83 Part 5.3 — MOVE YOUR MONTHLY DONORS, after the first
@@ -12651,7 +12652,7 @@ async function autoStepState(orgId, t, seq) {
   if (!tid) return { ...out, canTurnOn: false, reason: "Only a step that sends one of your email templates can send itself." };
   const tpl = await emailCompose.templateFor(orgId, tid);
   if (!tpl) return { ...out, canTurnOn: false, reason: "This step's email template is not there any more." };
-  const [org] = await query(`SELECT timezone_confirmed_at, auto_send_paused_at, is_demo_org, org_kind FROM orgs WHERE id=?`, [orgId]);
+  const [org] = await query(`SELECT timezone_confirmed_at, auto_send_paused_at, org_kind FROM orgs WHERE id=?`, [orgId]);
   const words = await emailCompose.templateTextFor(orgId, tpl, { id: null, name: "Margaret Chen", email: "" });
   const today = orgToday(await orgTz(orgId));
   const [{ n }] = await query(
@@ -12726,7 +12727,7 @@ async function sendingNext(orgId, templateId = null) {
        LEFT JOIN email_templates et ON et.id = js.email_template_id
       WHERE js.org_id=? AND js.status='scheduled' AND js.send_on <= ? ${templateId ? "AND js.template_id = ?" : ""}
       ORDER BY d.name`, templateId ? [orgId, day, templateId] : [orgId, day]);
-  const [org] = await query(`SELECT auto_send_paused_at, auto_send_paused_by_name, is_demo_org, org_kind FROM orgs WHERE id=?`, [orgId]);
+  const [org] = await query(`SELECT auto_send_paused_at, auto_send_paused_by_name, org_kind FROM orgs WHERE id=?`, [orgId]);
   return { day, when: dayWordsAuto(day, today), time: "9 AM", paused: !!(org && org.auto_send_paused_at), pausedByName: org && org.auto_send_paused_by_name,
     demo: require("../mailPolicy").isDemoOrg(org || {}),
     sends: await Promise.all(rows.map(async (r, i) => ({ id: r.id, donorId: r.donor_id, name: r.name, journey: r.journey_name, step: Number(r.seq) + 1,
@@ -21707,7 +21708,7 @@ app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
 // "Email turns on once your donor file is in." Once it sends: the From address.
 const mailPolicy = require("../mailPolicy");
 async function hubMailState(orgId) {
-  const [org] = await query("SELECT id, name, emails_enabled, is_demo_org, onboarded_at, org_kind FROM orgs WHERE id=?", [orgId]).catch(() => []);
+  const [org] = await query("SELECT id, name, emails_enabled, onboarded_at, org_kind FROM orgs WHERE id=?", [orgId]).catch(() => []);
   const d = mailPolicy.orgMailDecision(org || null, mailPolicy.CATEGORY.DONOR);
   if (!d.send) return { sends: false, sentence: mailPolicy.REASON_SENTENCE[d.reason] || "Email is not going out from this organization right now." };
   const ident = await orgSendingIdentity(orgId).catch(() => null);
@@ -29010,7 +29011,7 @@ async function pruneCampaignAssets(orgId) {
 app.get("/settings/inbound-email", requireAuth, wrap(async (req, res) => {
   const IE = await inboundMod();
   const orgRows = await query(
-    "SELECT org_slug, inbound_email_enabled, is_demo_org FROM orgs WHERE id = ?", [req.user.orgId]);
+    "SELECT org_slug, inbound_email_enabled FROM orgs WHERE id = ?", [req.user.orgId]);
   const slug = orgRows[0]?.org_slug || "";
   const address = INBOUND_EMAIL_DOMAIN ? IE.loggingAddress(slug, INBOUND_EMAIL_DOMAIN) : "";
   const held = await query(

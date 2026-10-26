@@ -32,7 +32,7 @@ function sentenceFor(d, statusText) {
 // same row the table already has.
 function canDollarTest(org) {
   if (!org) return false;
-  if (org.is_demo_org === true) return false;
+  if (org.demo === true) return false;
   return !!org.stripe_subscription_id;
 }
 
@@ -167,6 +167,17 @@ function KindBadge({ org }) {
       data-testid={`org-kind-${org.id}`}
       style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: b.color, background: b.bg, borderRadius: 99, padding: "3px 8px", whiteSpace: "nowrap" }}>
       {org.kind_label || "Unknown"}{org.kind_source === "inferred" ? " ?" : ""}{org.archived ? " · archived" : ""}
+    </span>
+  );
+}
+// FIX-50: the small "Demo" label, from the server's one rule (orgKind.isDemoOrg),
+// so an org that acts like a demo can never hide behind another Kind.
+function DemoLabel({ org }) {
+  if (org.demo !== true) return null;
+  return (
+    <span data-testid={`org-demo-${org.id}`} title="Steward treats this org as a demo: demo banner, no mail."
+      style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: A.ink, border: `1px solid ${A.border}`, borderRadius: 99, padding: "2px 7px", marginLeft: 6, whiteSpace: "nowrap" }}>
+      Demo
     </span>
   );
 }
@@ -510,6 +521,9 @@ function OrgPanel({ org, onClose, onRefresh }) {
   const [deleteStep, setDeleteStep] = useState(0);
   const [kind, setKind] = useState(org.kind_source === "set" ? org.kind : "");
   const [kindNote, setKindNote] = useState("");
+  // FIX-50: the Demo switch. Its state is the server's one rule, read back
+  // from every answer, so the switch, the Kind and the Email section move together.
+  const [demo, setDemo] = useState(org.demo === true);
 
   // MAIL-1: this org's mail, as the policy sees it.
   const [mail, setMail] = useState(null);
@@ -569,11 +583,24 @@ function OrgPanel({ org, onClose, onRefresh }) {
   async function saveKind(next) {
     setWorking(true); setKindNote("");
     try {
-      await adminFetch("/admin/orgs/" + org.id + "/kind", { method: "POST", body: JSON.stringify({ kind: next || null }) });
+      const r = await adminFetch("/admin/orgs/" + org.id + "/kind", { method: "POST", body: JSON.stringify({ kind: next || null }) });
       setKind(next); setKindNote(next ? "Saved." : "Back to Steward's guess.");
-      // Kind decides whether this org is a demonstration, so the Email
-      // section below is read again rather than left saying what it said.
-      setMail(await adminFetch("/admin/orgs/" + org.id + "/mail"));
+      // Kind decides whether this org is a demonstration, so the switch and
+      // the Email section below take the answer rather than say what they said.
+      setDemo(r.demo === true);
+      setMail(r.mail || await adminFetch("/admin/orgs/" + org.id + "/mail"));
+      onRefresh(false);
+    } catch (e) { setKindNote(errorMessage(e)); }
+    setWorking(false);
+  }
+
+  async function flipDemo(on) {
+    setWorking(true); setKindNote("");
+    try {
+      const r = await adminFetch("/admin/orgs/" + org.id + "/demo", { method: "POST", body: JSON.stringify({ on }) });
+      setDemo(r.demo === true);
+      setKind(r.kind || "");
+      setMail(r.mail);
       onRefresh(false);
     } catch (e) { setKindNote(errorMessage(e)); }
     setWorking(false);
@@ -614,6 +641,17 @@ function OrgPanel({ org, onClose, onRefresh }) {
               <PlanBadge plan={org.plan} />
               <OrgStatus org={org} />
               <KindBadge org={org} />
+            </div>
+            <div data-testid="admin-org-demo" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: A.ink }}>Demo</span>
+              <button data-testid="admin-org-demo-switch" role="switch" aria-checked={demo} disabled={working} onClick={() => flipDemo(!demo)}
+                style={{ width: 40, height: 22, borderRadius: 99, border: "none", padding: 2, cursor: working ? "not-allowed" : "pointer",
+                  background: demo ? A.green : A.border, display: "flex", justifyContent: demo ? "flex-end" : "flex-start", transition: "background 0.15s ease" }}>
+                <span style={{ width: 18, height: 18, borderRadius: 99, background: "#FFFFFF", display: "block" }} />
+              </button>
+              <span data-testid="admin-org-demo-state" style={{ fontSize: 12, color: A.secondary }}>
+                {demo ? "On: demo banner, demo behavior, no mail." : "Off: a real organization. The mail switches below decide its mail."}
+              </span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
               <label style={{ fontSize: 12, color: A.secondary }}>Kind</label>
@@ -991,7 +1029,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</div>
                   <div style={{ fontSize: 10, color: A.muted, marginTop: 2, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.id}</div>
                 </td>
-                <td style={{ padding: "12px 16px" }}><KindBadge org={o} /></td>
+                <td style={{ padding: "12px 16px" }}><KindBadge org={o} /><DemoLabel org={o} /></td>
                 <td style={{ padding: "12px 16px" }}><PlanBadge plan={o.plan} /></td>
                 <td style={{ padding: "12px 16px" }}><OrgStatus org={o} /></td>
                 <td style={{ padding: "12px 16px", fontSize: 13, color: A.secondary, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.donor_count}</td>
@@ -1051,7 +1089,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                     {/* FIX-4 5 — the org has no subscription on file. Read
                         it back from Stripe rather than show a $1 test that
                         can only answer "no subscription". */}
-                    {!o.is_demo_org && !o.stripe_subscription_id && (
+                    {!o.demo && !o.stripe_subscription_id && (
                       <button data-testid={`org-reconcile-${o.id}`} onClick={() => reconcileSubscription(o)}
                         disabled={reconcileBusy === o.id}
                         title="Read this org's subscription back from Stripe and save it. Creates nothing, charges nothing."

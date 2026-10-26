@@ -230,7 +230,8 @@ const snapshot = async () => JSON.stringify(await q(
   ok("§7 Kind set back to Demo locks it again and sets the flag", f2.is_demo_org === true && s7m2.body.locked === true);
   await api("POST", `/admin/orgs/${FLAG}/kind`, supr, { kind: null });
   const s7m3 = await api("GET", `/admin/orgs/${FLAG}/mail`, supr);
-  ok("§7 Steward's guess on a flagged org stays Demo, and says so", s7m3.body.locked === true);
+  // FIX-50: an org is a demo only if its Kind is Demo, and a guess is never Demo.
+  ok("§7 Steward's guess on a demo org is not a demo (FIX-50: only Kind = Demo is)", s7m3.body.locked === false);
   const panel = require("fs").readFileSync(path.join(__dirname, "../client/src/pages/AdminDashboard.jsx"), "utf8");
   const saveKind = (panel.match(/async function saveKind\([\s\S]*?\n  \}\n/) || [""])[0];
   ok("§7 the panel re-reads its Email section after a Kind save", /setMail\(/.test(saveKind) && /\/mail/.test(saveKind));

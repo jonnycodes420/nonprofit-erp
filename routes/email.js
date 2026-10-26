@@ -284,7 +284,7 @@ async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR, kind
   else {
     try {
       [org] = await query(
-        "SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, onboarded_at, org_kind FROM orgs WHERE id = ?", [orgId]);
+        "SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, onboarded_at, org_kind FROM orgs WHERE id = ?", [orgId]);
       org = org || null;
       orgMailGateCache.set(orgId, { at: Date.now(), org });
     } catch (err) {

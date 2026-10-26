@@ -28,11 +28,11 @@ const TRUST_DAYS = 30;
 const EMAIL_CODE_MINUTES = 10;
 const RECOVERY_COUNT = 10;
 const TOUCH_EVERY_MS = 5 * 60 * 1000;
-const DEMO_ORG_IDS = ["org_b72demo", "org_creo"];
 const DEMO_SENTENCE = "Two-factor is turned off for the shared demo login. In your own account it takes about a minute.";
 
 const sha = s => crypto.createHash("sha256").update(String(s)).digest("hex");
-const isDemoOrg = org => !!org && (org.is_demo_org === true || DEMO_ORG_IDS.includes(org.id));
+// FIX-50: the one rule (an org is a demo only if its Kind is Demo).
+const isDemoOrg = require("./orgKind").isDemoOrg;
 
 // ── WHAT A SESSION SAYS ABOUT ITSELF ───────────────────────────────────────
 // The first three parts of an IPv4 address, or the first three groups of an
