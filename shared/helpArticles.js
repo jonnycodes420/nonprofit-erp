@@ -742,7 +742,7 @@ export const HELP_ARTICLES = [
     slug: `how-steward-counts`,
     title: `How Steward counts`,
     screens: [],
-    summary: `What Lifetime, Average gift, Retention, First gift and "this year" mean, the same on every screen, report, export and board pack.`,
+    summary: `What Lifetime, Average gift, Retention, First gift, "this year", soft credits, goals, lapsed, giving levels and households mean, the same on every screen, report, export, Ask answer and board pack.`,
     sections: [
       { h: `The definitions`, p: [
         `Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.`,
@@ -750,6 +750,24 @@ export const HELP_ARTICLES = [
         `Retention at the same point last year: of the people who gave the fiscal year before last, the share who had given again by this date last year. Use it to compare this year so far with last year.`,
         `First gift date: the earliest gift above zero on file, or the first gift your old system told us about if that is earlier. It is kept up to date whenever a gift is added, edited, refunded or deleted, two people are merged, or a file is imported.`,
         `This year and last year: your fiscal year, the one you set under Settings, Your words, "When does your year start?" (choose January for the calendar year). Home and Fundraising show the dates once at the top. Year-end tax statements stay on the calendar year, because that is the tax year.`,
+      ]},
+      { h: `Money`, p: [
+        `A gift is the full amount the donor paid, including a processing fee they chose to cover. The fee and the net show beside it on the gift. Finance uses the net for bank deposits and reconciliation. Campaigns, Lifetime and averages use the gift amount.`,
+        `Soft and matching credits are never added to Lifetime, a campaign total, a goal total or an average. They are shown as their own Soft credit figure on the profile and in reports, with the gifts behind it.`,
+        `A grant assigned to a campaign counts toward it, on the public bar too, unless the campaign has "Leave grants off the public bar" turned on.`,
+      ]},
+      { h: `Goals`, p: [
+        `A goal counts the gifts dated inside its own start and end dates, the same on Home and Fundraising.`,
+        `A parent goal totals the gifts given to it directly plus the gifts given to its child goals, and a gift is never counted twice.`,
+      ]},
+      { h: `One rule each`, p: [
+        `@@LAPSE@@`,
+        `@@LEVELS@@`,
+        `@@HOUSEHOLDS@@`,
+      ]},
+      { h: `History and Ask`, p: [
+        `First gift, Donor since and the New, Current and Recaptured tags count the gifts your old system told us about. If the file gave no first gift date, its last gift date is used, because the person had given by then.`,
+        `Ask answers with the same figures as the screens. What one person gave is their profile's figure: Lifetime for all time, This year for your year. "This year" for the whole organization is the same year Home and Fundraising show, with its dates.`,
       ]},
       { h: `History from your old system`, p: [
         `When a file brings a person's total from your old system (with or without their gifts), Steward keeps that total as its own figure, with the file's name and the date it came in. Nothing Steward does later changes it.`,
