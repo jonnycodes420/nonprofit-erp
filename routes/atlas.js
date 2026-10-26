@@ -431,7 +431,11 @@ async function execute(req, m, steps, { today, ai }) {
       }
       case "reminder": {
         const when = AT_.whenFromWords(st.whenWords || st.words, today) || { date: AT_.addDays(today, 7) };
-        const label = String(st.words || "Follow up").replace(/^remind me (to\s+)?/i, "").replace(/\s*\b(in the new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
+        // Her words without the when ("the first week of January"), and a
+        // pronoun said as the person ("thank him" is "Thank Henrik").
+        let label = String(st.words || "Follow up").replace(/^remind me (to\s+)?/i, "")
+          .replace(/\s*\b((the|in the|by the|on the)\s+)?(in the new year|new year|after thanksgiving|next week|tomorrow|in \w+ (days?|weeks?|months?)|on \w+day|(first week of |early |mid |late |end of )?(january|february|march|april|may|june|july|august|september|october|november|december)( \d+)?)\b.*$/i, "").trim() || "Follow up";
+        if (id) label = label.replace(/\b(him|her|them)\b/i, first(nm(id)));
         const lbl = label[0].toUpperCase() + label.slice(1);
         const r = await runStep(req, m, insId, { tool: "create_task", donorId: id || undefined, title: lbl, due: when.date, citesRows: id ? [id] : [] });
         await log({ kind: "reminder", state: r.ok ? "done" : "failed", runId: r.runId, undoable: r.ok, line: r.ok ? `Reminder for ${AT_.dayWords(when.date, today)}: ${lbl.replace(/\.$/, "")}.` : `I couldn't set that reminder: ${r.reason}.`,
