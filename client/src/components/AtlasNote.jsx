@@ -18,11 +18,16 @@ const TAP = { gift: "Record", pledge: "Record", receipt: "Send both", held_back:
 const small = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
   borderRadius: 8, padding: "4px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", minHeight: 30, fontFamily: "inherit" });
 
+// "Marked Undine..." reads "Atlas marked Undine..."; anything else ("Harbor
+// Run is on Dec 30...", "$10,000 gift...") keeps its words after a colon.
+const VERB = /^(Marked|Added|Drafted|Logged|Noted|Took|Recorded|Sent|Kept|Undid)\b/;
+const lower = s => { const t = String(s || ""); return VERB.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t; };
+
 function NoteLine({ n, onAct, onOpen, busy }) {
   return (
     <div data-testid="atlas-note" data-kind={n.kind} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13.5, color: T.ink, lineHeight: 1.45 }}>
       <span style={{ flex: "1 1 240px", minWidth: 0 }}>
-        <b>{n.by}</b>{" "}
+        <b>{n.by}</b>{VERB.test(String(n.line || "")) ? " " : ": "}
         {onOpen && linkTarget(n.link)
           ? <button type="button" onClick={() => onOpen(n.link)} style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, textAlign: "left", cursor: "pointer", textDecoration: "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3 }}>{lower(n.line)}</button>
           : lower(n.line)}
@@ -32,8 +37,6 @@ function NoteLine({ n, onAct, onOpen, busy }) {
     </div>
   );
 }
-// "Marked Undine..." reads "Atlas marked Undine...".
-const lower = s => { const t = String(s || ""); return /^(I |I'|\$)/.test(t) ? t : t.charAt(0).toLowerCase() + t.slice(1); };
 
 export function AtlasNote({ place, id = null, onNavigate, style }) {
   const [notes, setNotes] = useState([]);
@@ -99,7 +102,7 @@ export function AtlasBell({ onNavigate }) {
           {data.items.map(it => (
             <div key={it.id} data-testid="atlas-bell-item" style={{ padding: "8px 0", borderTop: "1px solid " + T.bg2 }}>
               <NoteLine n={it} busy={busy} onAct={act} onOpen={go} />
-              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>{new Date(it.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{it.forName ? ` · for ${it.forName}` : ""}{it.state === "undone" ? " · undone" : ""}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>{new Date(it.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}{it.state === "undone" ? " · undone" : ""}</div>
             </div>))}
         </div>
       </>}
