@@ -285,7 +285,7 @@ function readClauseRaw(c) {
   if (m) return { ...blank, kind: "find", who: m[1] };
   m = t.match(new RegExp(`^${NAME}\\s+(?:went to|came to|attended|was at|showed up (?:at|to))\\s+(?:the\\s+)?(.+?)(?:\\s+event)?$`));
   if (m) return { ...blank, kind: "came_to_event", who: m[1], target: m[2] };
-  m = t.match(new RegExp(`^(?:add|put|enroll|enrol|start)\\s+${NAME}\\s+(?:in|into|on|to)\\s+(?:the\\s+)?(.+?)\\s+journey$`, "i"));
+  m = t.match(new RegExp(`^(?:add|put|enroll?|start)\\s+${NAME}\\s+(?:in|into|on|to)\\s+(?:the\\s+)?(.+?)\\s+journey$`, "i"));
   if (m) return { ...blank, kind: "add_to_journey", who: m[1], target: m[2] };
   m = t.match(new RegExp(`^(?:add|put)\\s+${NAME}\\s+(?:in|into|on|to)\\s+(?:the\\s+)?(.+?)\\s+(?:group|list)$`, "i"));
   if (m) return { ...blank, kind: "add_to_group", who: m[1], target: m[2] };

@@ -228,7 +228,7 @@ async function agentDraftsLeg() {
     const second = await q(`SELECT COUNT(*)::int AS c FROM threads WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL`, [ORG2, P[1]]);
     ok("§10 an open thank-you step is pointed at the draft, not doubled", /draft ready/i.test(relabelled[0].next_step_label) && second[0].c === 1, { relabelled, second });
     const rec = (await call("GET", `/donors/${g}`)).body;
-    ok("§10 the draft is on their timeline", (rec.interactions || []).some(i => /thank-you drafted by steward/i.test(i.note || "")), (rec.interactions || []).map(i => i.note));
+    ok("§10 the draft is on their timeline", (rec.interactions || []).some(i => /thank-you drafted by atlas/i.test(i.note || "")), (rec.interactions || []).map(i => i.note));
 
     const plans = (await call("GET", "/agent/plans")).body.plans || [];
     const pr = (plans.find(x => x.id === p.body.id) || {}).run || {};

@@ -48,7 +48,7 @@ const routers = { r0: express.Router() };
 // person's row aside (the kept person's twin wins). Set-aside rows are kept
 // whole on the merge record and come back on undo.
 const MERGE_REFS = [
-  ["agent_drafts", "donor_id"], ["auction_bidders", "donor_id"], ["auction_items", "donor_id"],
+  ["agent_drafts", "donor_id"], ["atlas_actions", "donor_id"], ["auction_bidders", "donor_id"], ["auction_items", "donor_id"],   // AGENT-5: Atlas's lines follow the person
   ["auction_refund_flags", "donor_id"], ["bookkeeping_customers", "donor_id"], ["campaign_recipients", "donor_id"],
   ["cultivation_plans", "donor_id", "refuse"], ["custom_field_values", "donor_id"], ["donor_account_links", "donor_id"],
   ["donor_address_history", "donor_id"], ["donor_designations", "donor_id"], ["donor_materials", "donor_id"],

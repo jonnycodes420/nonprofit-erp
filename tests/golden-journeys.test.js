@@ -217,7 +217,7 @@ async function agentLeg(H) {
     const open = (th.list || []).find(t => t.donorId === H.tobias && t.kind === "thread");
     ok("J4 the draft is the next step on his record and the Thread", !!open && open.nextStep && /draft ready/i.test(open.nextStep.label), th);
     const rec = (await call("GET", `/donors/${H.tobias}`)).body;
-    ok("J4 the draft is on his timeline", (rec.interactions || []).some(i => /drafted by steward/i.test(i.note || "")), (rec.interactions || []).map(i => i.note));
+    ok("J4 the draft is on his timeline", (rec.interactions || []).some(i => /drafted by atlas/i.test(i.note || "")), (rec.interactions || []).map(i => i.note));
     const [row] = await q(`SELECT COUNT(*)::int n FROM agent_drafts WHERE org_id=$1 AND donor_id=$2 AND status='pending'`, [ORG, H.tobias]);
     ok("J4 one pending draft row, on him", row.n === 1, row);
     const dr = waiting.find(i => i.donorId === H.tobias);

@@ -68,7 +68,10 @@ const BLANK = /(^|\s)(null|undefined|unknown|untitled)(\s|$)/i;
   const L = await import("../shared/itemLinks.js");
   const sink = await startSink();
   await reset();
-  const today = civilToday();
+  // The morning email leaves the Thread out on a weekend (threadNudgeDayOk),
+  // even forced, so the fixture's day is the latest weekday: this suite was
+  // red every Saturday and Sunday (found on Sunday 25 Oct by AGENT-5's run).
+  const today = (() => { let d = civilToday(); for (let i = 0; i < 3 && [0, 6].includes(new Date(d + "T12:00:00Z").getUTCDay()); i++) { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - 1); d = t.toISOString().slice(0, 10); } return d; })();
   const pw = bcrypt.hashSync(PW, 4);
   for (const [o, name] of [[ORG, "Thread Two Rowing"], [OTHER, "Other Harbor"]]) {
     // NUMBERS-2: the morning email leaves the Thread out on weekends unless the

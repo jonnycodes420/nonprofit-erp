@@ -69,8 +69,8 @@ function routes() {
       if (id) ids.add(id[1]);
     }
   }
-  // Deep-link ids that have no nav entry of their own but must still open.
-  ids.add("workflows");
+  // AGENT-5: "workflows" deep-linked into the Agent page, which is gone; its
+  // old address lands on Home with Atlas open (agent5-atlas covers that).
   return [...ids];
 }
 
@@ -78,7 +78,7 @@ function routes() {
 const PROFILE_TABS = ["overview", "gifts", "asks", "conversations", "emails", "tasks", "notes", "funds", "related", "files"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
-const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent", p2p: "Peer-to-peer" };
+const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", p2p: "Peer-to-peer" };
 // FIX-25: rail ids that open a PART of Fundraising (tabRegistry FR_PART_TABS).
 // Each is walked like a tab and must land on its own part, not the Overview.
 const FR_PART_TABS = Object.fromEntries([...((/const FR_PART_TABS\s*=\s*\{([^}]*)\}/.exec(
