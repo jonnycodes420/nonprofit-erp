@@ -14,10 +14,10 @@
 //      recorded straight to the campaign by a staff member (a posted cheque),
 //      and §3 drops the peer-to-peer gifts, which arrive on the p2p page and
 //      not on the campaign page at all.
-//   2. Count the CHARGED amount instead of donor intent → §4 goes red by the
-//      exact fee a donor covered. (Campaign progress counts what the donor
-//      meant for the mission; receipts and the ledger keep the charged total.
-//      That is the attribution-FIX rule and this pins it.)
+//   2. Take a covered fee OFF the gift → §4 goes red by the exact fee a donor
+//      covered. (FIX-49, Jonathan 25 Oct: the gift is the full amount the
+//      donor paid, on the bar as everywhere; only Finance works in net. This
+//      replaced the attribution-FIX "intended" rule.)
 //   3. Let the match claim money that arrived before anybody promised it →
 //      §5 goes red.
 //   4. Default `show_name_publicly` on, or read the wrong column → §6 names
@@ -177,19 +177,18 @@ async function publicPage(pageSlug) {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  console.log("\n§4 a covered fee is NOT campaign progress");
+  console.log("\n§4 a covered fee is part of the gift on the bar (FIX-49)");
   // ════════════════════════════════════════════════════════════════════════
   {
-    // The donor meant $100 for the mission and was charged $103.30. The receipt
-    // and the ledger keep $103.30; the thermometer counts $100. Both are right
-    // for their own screen (attribution FIX, 2026-08-04) and this is the line.
+    // The donor gave $100 and covered $3.30 of fee: the gift is $103.30, on the
+    // receipt, the ledger and the thermometer alike (FIX-49).
     const d4 = await donor("d_c2_cover", "Fee Coverer");
     await gift({ id: "g_c2_d", donorId: d4, amount: 103.30, coverFee: 3.30, campaignId, pageId, date: lastWeek });
     const p = await publicPage(pageSlug);
-    const expected = cents(250) + cents(1000) + cents(75) + cents(100);
-    ok(`the bar moved by the intended $100, not the charged $103.30`,
+    const expected = cents(250) + cents(1000) + cents(75) + cents(103.30);
+    ok(`the bar moved by the full $103.30 the donor paid`,
       cents(p.body.givingPage.campaignRaised) === expected,
-      { bar: cents(p.body.givingPage.campaignRaised), expected, charged: expected + cents(3.30) });
+      { bar: cents(p.body.givingPage.campaignRaised), expected, intended: expected - cents(3.30) });
   }
 
   // ════════════════════════════════════════════════════════════════════════

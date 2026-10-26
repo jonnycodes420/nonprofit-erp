@@ -1454,6 +1454,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
         fund_id:g.fund_id||"",fund_name:g.fund_name||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
+        // FIX-49: the gift is the full amount paid; the processor's fee and the
+        // net (what Finance reconciles to the bank) show beside it.
+        fee:parseFloat(g.processor_fee_amount)||0,
       }));
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));
@@ -2792,7 +2795,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         ):(
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{displayDate(g.date)}</td>
-                            <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
+                            <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
+                              {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
                             <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>

@@ -168,7 +168,7 @@ const resend = new Proxy(_rawResend, {
   },
 });
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
-const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { DONOR_SUMMARY_UPDATE } = require("./donorSummary");   // NUMBERS-1: the totals kept on a person
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
@@ -11451,10 +11451,9 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
         `SELECT id, COALESCE(donor_facing_name, name) AS name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y,
                 goal_progress_public, goal_amount,
                 CASE WHEN goal_progress_public THEN
-                  COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
-                            WHERE g2.org_id = campaigns.org_id AND (g2.campaign_id = campaigns.id OR g2.campaign = campaigns.name)), 0)
-                + COALESCE((SELECT SUM(gr.amount) FROM grants gr
-                            WHERE gr.org_id = campaigns.org_id AND gr.campaign_id = campaigns.id AND gr.awarded_at IS NOT NULL), 0)
+                  COALESCE((SELECT SUM(g2.amount) FROM gifts g2
+                            WHERE g2.org_id = campaigns.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "campaigns")}), 0)
+                + ${PUBLIC_BAR_GRANTS("campaigns")}
                 END AS raised
          FROM campaigns WHERE id = ? AND org_id = ?`, [w.campaignId, org.id]);
       r.campaign = c ? {
@@ -11497,7 +11496,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
           // less any fee the donor covered), the same basis every campaign
           // thermometer in this product already uses.
           const [sum] = await query(
-            `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised
+            `SELECT COALESCE(SUM(g.amount),0)::float AS raised
                FROM gifts g JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
               WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
                 AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at,'YYYY-MM-DD'))`,
@@ -11540,7 +11539,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
       const showAmounts = w.showAmounts === true;
       r.gifts = rows.map(row => CP.publicGiftLine({
         donorName: row.donor_name,
-        amountCents: Math.round(((Number(row.amount) || 0) - (Number(row.cover_fee_amount) || 0)) * 100),
+        amountCents: Math.round((Number(row.amount) || 0) * 100),   // FIX-49: the full gift, a covered fee included
         showName: row.show_name_publicly === true,
         date: row.date,
       }, { showAmounts }));

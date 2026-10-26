@@ -35,6 +35,7 @@ const TL = require("../timelineLine");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 const { CAMPAIGN_GIFT_MATCH } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUM = require("../campaignMatch");
+const { NOT_CREDIT } = require("../creditTypes");   // FIX-49: soft and matching credits are not money
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
@@ -2447,7 +2448,7 @@ async function composeBoardPack(orgId, opts = {}) {
       // two near-identical lines per goal (eight goals printed sixteen
       // entries and a page and a half of the same two sentences).
       if (s.goals.length) {
-        addDef("Raised toward a goal", "Every gift given to the goal, less any processing fee the donor covered, and every grant awarded toward it.", null);
+        addDef("Raised toward a goal", "Every gift given to the goal, at the full amount the donor paid, and every grant awarded toward it. Soft and matching credits are not counted.", null);
         addDef("A goal's target", "The target set on the goal's own record.", null);
       }
     }
@@ -4244,6 +4245,10 @@ app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
 // means the second is lying. So an empty figure comes back with value null
 // and a sentence saying what will appear there and when.
 const PROFILE_FIGURE_BLANKS = {
+  softCredit: {
+    blank: "No one has credited a gift to this person. When someone else's gift is credited to them, or a matching gift is, it shows here and never in Lifetime.",
+    short: "No soft credit.",
+  },
   lifetime: {
     blank: "Nothing has been given on this record yet. The first gift, logged here, imported, or given online, starts this total, and it never resets.",
     short: "No giving yet.",
@@ -4311,6 +4316,8 @@ async function donorProfileFigures(orgId, donorId, today) {
     // PROFILE-1 (header) — This year, beside Lifetime in the header's row.
     // NUMBERS-2: the org's own fiscal year, as Home and Fundraising.
     ["thisYear",  { key: "donor-gifts-between", params: { donor: donorId, from: orgFiscalYearStart(await orgTz(orgId)), to: today } }],   // ORG_TZ_SEAM_OK
+    // FIX-49: soft and matching credits, their own figure, never in Lifetime.
+    ["softCredit", { key: "donor-soft-credit", params: { donor: donorId } }],
   ];
   // PROFILE-1 (header) — the line under three of the numbers is read off the
   // figure's own first row (the same rows its drawer opens), so the date under
@@ -20503,6 +20510,34 @@ app.get("/threads/health", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Fundraising goals (home screen goal banner) ─────────────────────────────
+// FIX-49 · A GOAL'S PERIOD IS ITS OWN START AND END DATES, everywhere
+// (Jonathan, 25 Oct). Home's banner and Fundraising's goal card both read this
+// one function: the gifts dated inside the goal's own period, from people who
+// are not deleted, at the full amount paid, soft and matching credits left out.
+// A recovery goal counts only the gift that brought someone back after a year.
+async function orgGoalRaised(orgId, goal) {
+  if (goal.goal_type === "lapsed_recovery") {
+    const [r] = await query(
+      `SELECT COALESCE(SUM(g.amount),0) AS total
+       FROM gifts g
+       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
+         AND ${NOT_CREDIT("g")}
+         AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date) IS NOT NULL
+         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date)::date > 365`,
+      [orgId, goal.period_start, goal.period_end]);
+    return parseFloat(r?.total) || 0;
+  }
+  const [r] = await query(
+    `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
+    [orgId, goal.period_start, goal.period_end]);
+  return parseFloat(r?.total) || 0;
+}
+
+// The checker reads the goal period rule through the function that draws it.
+require("../numbers").screens.orgGoalRaised = orgGoalRaised;
+
 app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   // Civil date: a goal's period is a range of DAYS ON A CALENDAR, so whether
   // today falls inside it is a question about the org's calendar, not UTC's.
@@ -20517,30 +20552,8 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   const goal = rows[0];
   const goalAmount = parseFloat(goal.goal_amount) || 0;
 
-  let currentAmount = 0;
-  if (goal.goal_type === "lapsed_recovery") {
-    // A gift counts toward recovery when it's a donor's most recent gift in
-    // the period AND it followed a gap of more than 365 days since their
-    // prior gift — i.e. it's the gift that actually pulled them back from
-    // lapsed, reconstructed from gift history rather than a stage-history
-    // table (which doesn't exist).
-    const rows2 = await query(
-      `SELECT COALESCE(SUM(g.amount),0) AS total
-       FROM gifts g
-       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-       WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
-         AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
-         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
-      [req.user.orgId, goal.period_start, goal.period_end]
-    );
-    currentAmount = parseFloat(rows2[0]?.total) || 0;
-  } else {
-    const rows2 = await query(
-      "SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?",
-      [req.user.orgId, goal.period_start, goal.period_end]
-    );
-    currentAmount = parseFloat(rows2[0]?.total) || 0;
-  }
+  // FIX-49: the goal's own period, the one rule (orgGoalRaised).
+  const currentAmount = await orgGoalRaised(req.user.orgId, goal);
 
   const percent = goalAmount > 0 ? Math.min(100, Math.round((currentAmount / goalAmount) * 100)) : 0;
   // Uncapped truth + overage, so the Home hero reads a beaten goal as a win
@@ -20990,11 +21003,11 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Campaign not found" });
   const c = rows[0];
   // Same raised definition as fundraisingCampaignRows (one definition):
-  // gift payments net of donor-covered fees + awarded grants; open pledges
+  // gift payments at the full amount paid (FIX-49) + awarded grants; open pledges
   // are a SEPARATE pledged figure, never summed into raised.
   const [giftSum, pledgeSum, grantSum] = await Promise.all([
     query(
-      `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0) as total, COUNT(DISTINCT g.donor_id) as donor_count
+      `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(DISTINCT g.donor_id) as donor_count
          FROM campaigns c JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
         WHERE c.org_id=? AND c.id=?`,
       [req.user.orgId, c.id]
@@ -21088,10 +21101,9 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 //
 // Attribution completeness (FIX, 2026-08-04) — what "raised" MEANS here:
 //   raised = giftRaised + grantAwarded
-//   · giftRaised   = Σ attributed gift PAYMENTS RECEIVED, net of any donor-
-//     covered fee portion (amount − cover_fee_amount): goal progress counts
-//     what the donor intended for the mission; the charged total stays in
-//     Reports/Finance/receipts.
+//   · giftRaised   = Σ attributed gift PAYMENTS RECEIVED, at the full amount
+//     the donor paid (FIX-49: a covered fee is part of the gift; only Finance
+//     works in net). Soft and matching credit rows count toward nothing.
 //   · grantAwarded = Σ attributed grants' amounts once AWARDED (awarded_at
 //     set) — a real capital campaign counts foundation money toward its
 //     target. If grant money ALSO arrives as a gift from the foundation
@@ -21105,13 +21117,13 @@ async function fundraisingCampaignRows(orgId) {
   await PACE_READY;
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
-            donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public, retired_at
+            donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public, grants_off_public_bar, retired_at
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
     [orgId]
   );
   if (!campaigns.length) return [];
-  const [sums, pledgeSums, grantSums] = await Promise.all([
+  const [sums, pledgeSums, grantSums, rollSums] = await Promise.all([
     // NUMBERS-1: the one function every campaign total and the checker read.
     require("../numbers").campaignGiftTotals(query, orgId),
     query(
@@ -21130,8 +21142,11 @@ async function fundraisingCampaignRows(orgId) {
         GROUP BY campaign_id`,
       [orgId]
     ),
+    // FIX-49: a parent goal's own gifts plus its children's, each gift once.
+    require("../numbers").goalRollupGiftTotals(query, orgId),
   ]);
   const byId = Object.fromEntries(sums.map(s => [s.cid, s]));
+  const rollById = Object.fromEntries(rollSums.map(s => [s.pid, parseFloat(s.raised) || 0]));
   const pledgeById = Object.fromEntries(pledgeSums.map(s => [s.cid, s]));
   const grantById = Object.fromEntries(grantSums.map(s => [s.cid, s]));
   return campaigns.map(c => {
@@ -21148,6 +21163,7 @@ async function fundraisingCampaignRows(orgId) {
       raised,
       giftRaised,
       grantAwarded,
+      rollupGiftRaised: rollById[c.id] ?? null,   // FIX-49: own + children's gifts, each once
       grantCount: parseInt(grantById[c.id]?.grant_count, 10) || 0,
       pledged,
       pledgeCount: parseInt(pledgeById[c.id]?.pledge_count, 10) || 0,
@@ -21166,6 +21182,7 @@ async function fundraisingCampaignRows(orgId) {
       heroCrop: parseCrop(c.hero_crop),
       heroFocal: { x: Math.min(1, Math.max(0, Number(c.hero_focal_x ?? 0.5) || 0.5)), y: Math.min(1, Math.max(0, Number(c.hero_focal_y ?? 0.5) || 0.5)) },
       goalProgressPublic: c.goal_progress_public === true,
+      grantsOffPublicBar: c.grants_off_public_bar === true,   // FIX-49
       retired: !!c.retired_at,   // FIX-41: kept on every report; the Campaigns list marks it
       ...pace,
     };
@@ -21193,10 +21210,13 @@ function fundraisingGoalsPortfolio(rows) {
     const isOverarching = kids.length > 0;
     const childRaised = kids.reduce((s, k) => s + k.raised, 0);
     const childGoal = kids.reduce((s, k) => s + k.goalAmount, 0);
-    // An overarching goal shows its children's combined progress toward its own
-    // target (the roll-up); a leaf goal shows its own SUM(gifts).
-    const rolledRaised = isOverarching ? childRaised : r.raised;
-    const rolled = isOverarching ? computeFundraisingPace(childRaised, r.goalAmount, r.startDate, r.endDate) : null;
+    // FIX-49 · An overarching goal totals the gifts given to it directly plus
+    // its children's gifts, each gift once (rollupGiftRaised), and its own and
+    // its children's awarded grants; a leaf goal shows its own SUM(gifts).
+    const rolledRaised = isOverarching
+      ? Math.round(((r.rollupGiftRaised ?? (r.giftRaised + kids.reduce((s, k) => s + (k.giftRaised || 0), 0))) + (r.grantAwarded || 0) + kids.reduce((s, k) => s + (k.grantAwarded || 0), 0)) * 100) / 100
+      : r.raised;
+    const rolled = isOverarching ? computeFundraisingPace(rolledRaised, r.goalAmount, r.startDate, r.endDate) : null;
     return {
       ...r,
       isOverarching,
@@ -21291,7 +21311,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     fundraisingCampaignRows(orgId),
     query(
       `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
-              COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
+              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
          FROM giving_pages gp WHERE gp.org_id = ? AND COALESCE(gp.page_kind,'give') = 'give' ORDER BY gp.created_at DESC`,
       [orgId]
     ),
@@ -21304,33 +21324,19 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   if (goalRows.length) {
     const gr = goalRows[0];
     const goalAmount = parseFloat(gr.goal_amount) || 0;
-    let currentAmount = 0;
-    if (gr.goal_type === "lapsed_recovery") {
-      const r2 = await query(
-        `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-          WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
-            AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
-            AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
-        [orgId, gr.period_start, gr.period_end]
-      );
-      currentAmount = parseFloat(r2[0]?.total) || 0;
-    } else {
-      // FIX-34 · ONE RAISED FIGURE. The goal bar summed its own window (the
-      // 90 days onboarding proposed) with its own query, and read "$0 of
-      // $25,000" directly above "Raised FY 2026-27 $119,737.03". With no
-      // campaign, a raised-money goal counts the same gifts as the Raised card:
-      // the same rows, the same total (curRows, computed once), and says so.
-      currentAmount = parseFloat(curRows[0]?.total) || 0;
-    }
-    const totalRaised = gr.goal_type !== "lapsed_recovery";
-    const pStart = totalRaised ? cur.start : gr.period_start, pEnd = totalRaised ? cur.end : gr.period_end;
+    // FIX-49 · A GOAL'S PERIOD IS ITS OWN DATES. FIX-34 made a raised-money
+    // goal count the fiscal year (the Raised card's window) while Home's banner
+    // counted the goal's own period, so one goal read two amounts. Both now
+    // read orgGoalRaised over the goal's own start and end.
+    const currentAmount = await orgGoalRaised(orgId, gr);
+    const pStart = gr.period_start, pEnd = gr.period_end;
     const pace = computeFundraisingPace(currentAmount, goalAmount, pStart, pEnd);
     // A label that is only the amount again ("25,000") is not a name.
     const label = /^[\s$£€\d,.]*$/.test(String(gr.label || "")) ? null : gr.label;
     goal = {
       id: gr.id, label, goalType: gr.goal_type, goalAmount, currentAmount,
       periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace,
-      ...(totalRaised ? { sourceNote: `Counts every gift dated in ${cur.chartLabel}, the same gifts as Raised below.` } : {}),
+      sourceNote: `Counts every gift dated ${pStart} to ${pEnd}, this goal's own dates.`,
     };
   }
 
@@ -21477,6 +21483,7 @@ async function parseDonorFacingCampaignFields(b, orgId) {
     sets.push(`${col} = ?`); params.push(Math.min(1, Math.max(0, nn)));
   }
   if (b.goalProgressPublic !== undefined) { sets.push("goal_progress_public = ?"); params.push(b.goalProgressPublic === true); }
+  if (b.grantsOffPublicBar !== undefined) { sets.push("grants_off_public_bar = ?"); params.push(b.grantsOffPublicBar === true); }   // FIX-49
   return { sets, params };
 }
 
@@ -22099,7 +22106,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
-  // raised_amount counts the donor-intended amount (net of covered fees) —
+  // raised_amount counts the full gift the donor paid (FIX-49), which is
   // the goal-progress rule; campaign_* carry the "counts toward" linkage so a
   // linked page's thermometer tracks the CAMPAIGN's live progress (one goal
   // concept — the page never maintains a second goal system beside it).
@@ -22107,9 +22114,9 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
     `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
        to_char(c.end_date,'YYYY-MM-DD') AS campaign_end_date, c.match_cents AS campaign_match_cents,
        to_char(gp.ends_on,'YYYY-MM-DD') AS page_ends_on,
-       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
-         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
+         0   -- FIX-49: filled below by numbers.publicBarRaised, the one public-bar rule
        END AS campaign_raised,
        -- PARITY-2 Part 2: THE DONOR COUNT BESIDE THE BAR, over the SAME rows
        -- the bar sums (the page's, or its campaign's when it counts toward
@@ -22126,6 +22133,9 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
   const page = pageRows[0];
+  // FIX-49: the bar counts the campaign's gifts and, unless the campaign says
+  // "Leave grants off the public bar", its awarded grants.
+  if (page.campaign_id) page.campaign_raised = await require("../numbers").publicBarRaised(query, org.id, page.campaign_id);
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
 
   // BUILD-95 §5B — the built page, if she has published one.
@@ -22150,7 +22160,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   // fundraiser. Live every call, never cached, same rule as raised_amount.
   const fundraiserRows = await query(
     `SELECT pf.id, pf.name, pf.slug,
-       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf
      WHERE pf.giving_page_id = ? AND pf.status = 'active'
      ORDER BY raised_amount DESC, pf.created_at ASC`,
@@ -22283,7 +22293,7 @@ async function p2pTeamBoard(orgId, pageId) {
   const rows = await query(
     `SELECT t.id, t.name, t.slug, t.goal_amount,
             (SELECT COUNT(*)::int FROM peer_fundraisers pf WHERE pf.team_id = t.id AND pf.org_id = t.org_id AND pf.status = 'active') AS members,
-            COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g
+            COALESCE((SELECT SUM(g.amount) FROM gifts g
                         JOIN peer_fundraisers pf ON pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id
                        WHERE pf.team_id = t.id AND g.org_id = t.org_id), 0)::float AS raised
        FROM p2p_teams t
@@ -22296,7 +22306,7 @@ async function p2pTeamBoard(orgId, pageId) {
 async function p2pIndividualBoard(orgId, pageId) {
   const rows = await query(
     `SELECT pf.id, pf.name, pf.slug, t.name AS team_name, t.slug AS team_slug,
-            COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id AND org_id = pf.org_id), 0)::float AS raised
+            COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND org_id = pf.org_id), 0)::float AS raised
        FROM peer_fundraisers pf
        LEFT JOIN p2p_teams t ON t.id = pf.team_id AND t.org_id = pf.org_id AND t.status = 'active'
       WHERE pf.org_id = ? AND pf.giving_page_id = ? AND pf.status = 'active'
@@ -22667,7 +22677,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const page = pageRows[0];
 
   const fRows = await query(
-    `SELECT pf.*, COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+    `SELECT pf.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.slug=? AND pf.status='active'`,
     [page.id, req.params.fundraiserSlug]
   );
@@ -22708,7 +22718,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
       team: team ? { name: team.name, slug: team.slug } : null,
       recentDonors: recentRows.map(r => CPm.publicGiftLine({
         donorName: r.donor_name,
-        amountCents: Math.round((Number(r.amount) - Number(r.cover_fee_amount || 0)) * 100),
+        amountCents: Math.round(Number(r.amount) * 100),   // FIX-49: the full gift, a covered fee included
         showName: r.show_name_publicly === true, date: r.date }, { showAmounts: true })),
       recentDonorsSentence: P2Pm.RECENT_DONORS_SENTENCE,
       share: P2Pm.shareLinks({ link: shareUrl, fundraiserSlug: f.slug,

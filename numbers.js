@@ -20,7 +20,7 @@
 const FS = require("./figureSources");
 const money = require("./money");
 
-const { CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal } = require("./campaignMatch");
+const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal } = require("./campaignMatch");
 
 // First, Largest and Average for one person: each is the figure source its
 // drawer opens, so the tile and the rows are one computation. The average also
@@ -79,13 +79,13 @@ function importedWords(imp) {
   return `Includes ${money.formatCentsPlain(cents)} from your old system${when}`;
 }
 
-// Raised and donors per goal'd campaign: gift payments net of a fee the donor
-// covered, counted by CAMPAIGN_GIFT_MATCH. Fundraising's cards, the overview's
+// Raised and donors per goal'd campaign: gift payments at the full amount the
+// donor paid (FIX-49: a covered fee is part of the gift), counted by CAMPAIGN_GIFT_MATCH. Fundraising's cards, the overview's
 // roll-up and the checker all read this one query. Rows: { cid, raised, donor_count }.
 function campaignGiftTotals(query, orgId) {
   return query(
     `SELECT c.id AS cid,
-            COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount, 0)), 0) AS raised,
+            COALESCE(SUM(g.amount), 0) AS raised,
             COUNT(DISTINCT g.donor_id) AS donor_count
        FROM campaigns c
        LEFT JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
@@ -93,9 +93,37 @@ function campaignGiftTotals(query, orgId) {
       GROUP BY c.id`, [orgId]);
 }
 
+// FIX-49 · A PARENT GOAL'S RAISED: the gifts given to it directly plus the
+// gifts given to its child goals, each gift once however many of those
+// campaigns it matches (Jonathan, 25 Oct). Rows: { pid, raised } for every
+// goal'd campaign that has a goal'd child. Grants are added by the caller:
+// each grant names one campaign, so they cannot overlap.
+function goalRollupGiftTotals(query, orgId) {
+  return query(
+    `SELECT p.id AS pid, COALESCE(SUM(g.amount), 0) AS raised
+       FROM campaigns p
+       LEFT JOIN gifts g ON g.org_id = p.org_id AND g.id IN (
+              SELECT g2.id FROM campaigns c JOIN gifts g2 ON g2.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "c")}
+               WHERE c.org_id = p.org_id AND c.goal_amount > 0 AND (c.id = p.id OR c.parent_goal_id = p.id))
+      WHERE p.org_id = ? AND p.goal_amount > 0
+        AND EXISTS (SELECT 1 FROM campaigns k WHERE k.org_id = p.org_id AND k.parent_goal_id = p.id AND k.goal_amount > 0)
+      GROUP BY p.id`, [orgId]);
+}
+
+// FIX-49 · WHAT A CAMPAIGN'S PUBLIC BAR SAYS: its gifts (CAMPAIGN_GIFT_MATCH)
+// plus its awarded grants, unless "Leave grants off the public bar" is on.
+// The giving page's bar and the checker read this one function.
+async function publicBarRaised(query, orgId, campaignId) {
+  const [r] = await query(
+    `SELECT COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
+            + ${PUBLIC_BAR_GRANTS("c")} AS raised
+       FROM campaigns c WHERE c.org_id = ? AND c.id = ?`, [orgId, campaignId]);
+  return r ? Number(r.raised) || 0 : null;
+}
+
 // The screens that live inside a route file register here when the server
 // mounts them, so the checker running in the server reads the very function a
 // screen draws (scripts/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { importedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, screens };
+module.exports = { importedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, screens };
