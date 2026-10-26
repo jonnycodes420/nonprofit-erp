@@ -468,13 +468,10 @@ function scoped(plan, scope, C) {
 // FIX-49 · WHAT ONE PERSON GAVE, IN THE PERIOD THEY SAID. "How much has
 // Margaret given this year?" was answered as all time, from gift rows only,
 // so a person whose history came from an old system read "$0 in all". The
-// period is read from the question; "this year" and "last year" are the
-// org's fiscal year, the profile's This year.
-const PERSON_YEAR = { this_year: "this_fiscal_year", last_year: "last_fiscal_year" };
+// period is read from the question; "this year" is the org's own year
+// (askCatalog resolvePeriod), the profile's This year.
 function personPeriod(C, typed, ctx) {
-  const p = typed ? C.periodIn(typed, ctx) : null;
-  if (!p) return { kind: "all_time" };
-  return PERSON_YEAR[p.kind] ? { kind: PERSON_YEAR[p.kind] } : p;
+  return (typed ? C.periodIn(typed, ctx) : null) || { kind: "all_time" };
 }
 // One person's amount is the profile's own figure: Lifetime (imported history
 // included) for all time, the profile's "Given" source for a period.
