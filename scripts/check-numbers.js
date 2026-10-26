@@ -62,6 +62,9 @@ const RULES = {
     screens: "year-end statements, receipts" },
   "removed": { words: "A deleted gift or person counts nowhere: no ledger stamp, soft credit or pledge payment points at a gift that is gone, and a deleted person's gifts are in no total.",
     screens: "Finance ledger, pledges, every total" },
+  // FIX-49 · imported history is giving: the tags and "Donor since" read it.
+  "donor-since": { words: "A person's first gift (Donor since, and the lifecycle tags) is the earlier of their first gift above zero on file and the first gift the old system told us about; someone who gave in the old system before the last 12 months is never tagged New.",
+    screens: "profile roles line (Donor since), lifecycle tags, donor list filters, groups" },
   "foots": { words: "Every number that opens its rows foots to those rows.",
     screens: "every figure drawer" },
 };
@@ -119,7 +122,7 @@ async function checkOrg(orgId, opts = {}) {
     const n = Number(d.gift_count) || 0;
     if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
     const firstReal = real.map(g => day(g.date)).sort()[0] || null;
-    const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date) : null].filter(Boolean).sort()[0] || null;
+    const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date || d.imported_last_gift_date) : null].filter(Boolean).sort()[0] || null;
     if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
     const impLast = imp ? day(d.imported_last_gift_date) : null;
     const rowLast = latest ? day(latest.date) : null;
@@ -157,6 +160,26 @@ async function checkOrg(orgId, opts = {}) {
       if (f && !f.foots) add("foots", { source: f.key, donor: d.id, value: f.value, rows: f.rowsFoot });
   };
   for (let i = 0; i < donors.length; i += 8) await Promise.all(donors.slice(i, i + 8).map(one));
+
+  // ── imported history in the tags (FIX-49) ───────────────────────────
+  {
+    const DS = require("../donorStatus");
+    const imported = donors.filter(d => d.imported_total != null && (byDonor.get(d.id) || []).some(g => c(g.amount) > 0));
+    if (imported.length) {
+      const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
+      const tag = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
+      const w0From = orgTime.addDays(today, -364);
+      for (const d of imported) {
+        const impFirst = day(d.imported_first_gift_date || d.imported_last_gift_date);
+        const t = tag.get(d.id);
+        if (!impFirst || !t) continue;
+        if (impFirst < w0From && t.lifecycle === "new") add("donor-since", { donor: d.id, what: "lifecycle", shown: "new", importedFirst: impFirst });
+        const realFirst = (byDonor.get(d.id) || []).filter(g => c(g.amount) > 0).map(g => day(g.date)).sort()[0];
+        const want = [realFirst, impFirst].filter(Boolean).sort()[0];
+        if (day(t.first_date) !== want) add("donor-since", { donor: d.id, what: "first", shown: day(t.first_date), want });
+      }
+    }
+  }
 
   // ── households ───────────────────────────────────────────────────────
   const households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
@@ -273,7 +296,8 @@ const UNIT = { "donor-lifetime": "donors where Lifetime disagrees", "donor-count
   "donor-stored": "stored donor totals that disagree", household: "households that disagree", "soft-credit": "soft credits that break the rule",
   campaign: "campaign totals that disagree", "campaign-window": "campaigns counting gifts outside their dates", "goal-rollup": "goal roll-ups that disagree",
   fund: "fund totals that disagree", "report-year": "year totals that disagree", statement: "statements that disagree",
-  removed: "rows pointing at removed gifts", foots: "figures that do not foot" };
+  removed: "rows pointing at removed gifts", foots: "figures that do not foot",
+  "donor-since": "people whose imported history is missing from Donor since or the lifecycle tags" };
 function countLine(r) {
   const n = r.problems.reduce((s, p) => s + p.count, 0);
   if (!n) return `${r.name}: 0 problems`;

@@ -12,6 +12,11 @@
 // ONLY transaction, so even a mistake in this file cannot change a row.
 //
 // It prints no email address and no donor name: counts and org names only.
+//
+// FIX-49 · it reads all three per-org switches (FIX-48): Staff mail
+// (`staff_mail_enabled`), Donor mail (`emails_enabled`) and Billing mail
+// (`billing_mail_enabled`), and `org_kind`, so the decision it prints for each
+// family is the one the server makes. `--org <id>` limits it to one org.
 
 const { Client } = require("pg");
 const mailPolicy = require("../mailPolicy");
@@ -21,6 +26,8 @@ if (!url) { console.error("Set DATABASE_URL. This script only reads."); process.
 const local = /localhost|127\.0\.0\.1/.test(url);
 
 const FAMILIES = ["staff", "donor", "account", "billing"];
+const orgArg = (() => { const i = process.argv.indexOf("--org"); return i > 0 ? process.argv[i + 1] : null; })();
+const onOff = v => (v ? "on" : "off");
 const word = d => (d.send ? "SENDS" : "held: " + d.reason);
 
 (async () => {
@@ -34,15 +41,18 @@ const word = d => (d.send ? "SENDS" : "held: " + d.reason);
                 "(as set in THIS shell; the server reads its own env)\n");
 
     const { rows: orgs } = await db.query(
-      `SELECT o.id, o.name, o.emails_enabled, o.is_demo_org, o.onboarded_at, o.onboarded_via,
+      `SELECT o.id, o.name, o.emails_enabled, o.staff_mail_enabled, o.billing_mail_enabled, o.org_kind,
+              o.is_demo_org, o.onboarded_at, o.onboarded_via,
               o.sending_domain, o.sending_domain_status,
               (SELECT COUNT(*)::int FROM donors d WHERE d.org_id=o.id AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE) AS real_people,
               (SELECT COUNT(*)::int FROM imports i WHERE i.org_id=o.id) AS imports
-         FROM orgs o ORDER BY o.created_at`);
+         FROM orgs o WHERE ($1::text IS NULL OR o.id = $1) ORDER BY o.created_at`, [orgArg]);
     for (const o of orgs) {
       const fam = FAMILIES.map(f => `${f} ${word(mailPolicy.orgMailDecision(o, f))}`).join(" · ");
       console.log(`${o.id}  ${o.name}`);
-      console.log(`  switch ${o.emails_enabled === false ? "off" : "on"} · demo ${mailPolicy.isDemoOrg(o) ? "yes" : "no"} · ` +
+      const sw = mailPolicy.mailSwitches(o);
+      console.log(`  switches: staff ${onOff(sw.staff)}${o.staff_mail_enabled == null ? " (follows donor)" : ""} · donor ${onOff(sw.donor)} · billing ${onOff(sw.billing)}`);
+      console.log(`  demo ${mailPolicy.isDemoOrg(o) ? "yes" : "no"} · ` +
                   `onboarded ${o.onboarded_at ? new Date(o.onboarded_at).toISOString().slice(0, 10) + " (" + o.onboarded_via + ")" : "not yet"} · ` +
                   `${o.real_people} real people, ${o.imports} imports · domain ${o.sending_domain ? o.sending_domain + " " + o.sending_domain_status : "none"}`);
       console.log(`  ${fam}`);

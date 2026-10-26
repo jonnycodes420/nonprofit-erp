@@ -465,8 +465,36 @@ function scoped(plan, scope, C) {
   return Object.keys(f).length ? { ...plan, filters: f } : plan;
 }
 
+// FIX-49 · WHAT ONE PERSON GAVE, IN THE PERIOD THEY SAID. "How much has
+// Margaret given this year?" was answered as all time, from gift rows only,
+// so a person whose history came from an old system read "$0 in all". The
+// period is read from the question; "this year" and "last year" are the
+// org's fiscal year, the profile's This year.
+const PERSON_YEAR = { this_year: "this_fiscal_year", last_year: "last_fiscal_year" };
+function personPeriod(C, typed, ctx) {
+  const p = typed ? C.periodIn(typed, ctx) : null;
+  if (!p) return { kind: "all_time" };
+  return PERSON_YEAR[p.kind] ? { kind: PERSON_YEAR[p.kind] } : p;
+}
+// One person's amount is the profile's own figure: Lifetime (imported history
+// included) for all time, the profile's "Given" source for a period.
+async function personFigure(orgId, plan, ctx, C, a) {
+  const f = plan.filters || {};
+  if (plan.metric !== "raised" || !f.donor || Object.keys(f).length !== 1 || !a.value) return;
+  const r = C.resolvePeriod(plan.period, ctx);
+  const src = plan.period && plan.period.kind === "all_time"
+    ? { key: "donor-lifetime", params: { donor: f.donor } }
+    : { key: "donor-gifts-between", params: { donor: f.donor, from: r.from, to: r.to } };
+  const v = await FS.figureValue(orgId, src, {});
+  a.value = { ...a.value, value: (v.cents || 0) / 100, cents: v.cents || 0, source: src,
+    definition: src.key === "donor-lifetime"
+      ? "Their Lifetime, the same figure as on their profile, with any history from your old system included."
+      : "Every gift they gave in the period, refunds taken off, the same figure as on their profile." };
+}
+
 async function askAnswer(orgId, plan, ctx, C) {
   const a = await AE.runPlan(orgId, plan, ctx, { computeRetentionRate, computeDriftForDonors });
+  await personFigure(orgId, plan, ctx, C, a);
   if (plan.also) {
     const b = await AE.runPlan(orgId, { kind: "metric", metric: plan.also, period: { kind: "today" } }, ctx, { computeRetentionRate, computeDriftForDonors });
     a.also = b; a.alsoFig = b.value;
@@ -901,7 +929,7 @@ async function askHandler(req, res) {
     const campaign = body.person.campaign ? String(body.person.campaign) : null;
     if (["ask", "next", "changed", "stopped", "done", "talked"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
     if (intent !== "given") return askRefuse(req, res, typed || "(person)", "that question about one person", C);
-    raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: d.id } };
+    raw = { kind: "metric", metric: "raised", period: personPeriod(C, typed, ctx), groupBy: "campaign", filters: { donor: d.id } };
     source = "guided"; person = { id: d.id, name: d.name, intent };
   }
   // ASK-3: a typed question about one person, read against the thread.
@@ -927,7 +955,7 @@ async function askHandler(req, res) {
       if (who && !intent) intent = (context && context.lastPerson && context.lastPerson.intent) || "ask";
       const campaign = context && context.campaign ? String(context.campaign) : null;
       if (who && who.kind === "one") {
-        if (intent === "given") { raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: who.donor.id } }; source = "guided"; person = { id: who.donor.id, name: who.donor.name, intent }; }
+        if (intent === "given") { raw = { kind: "metric", metric: "raised", period: personPeriod(C, typed, ctx), groupBy: "campaign", filters: { donor: who.donor.id } }; source = "guided"; person = { id: who.donor.id, name: who.donor.name, intent }; }
         else return personAnswer(req, res, { donor: who.donor.id, intent, campaign, typed });
       } else if (who && who.kind === "many") {
         await logQuestion(orgId, typed, "person: which one", false);

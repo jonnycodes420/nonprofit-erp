@@ -23,6 +23,9 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 
+const { IMPORTED_FIRST } = require("./donorSummary");
+
+const IMP_FIRST = IMPORTED_FIRST("d");
 const DEFAULT_CUTS = Object.freeze({ midCents: 100000, majorCents: 1000000 });
 const NEW_DAYS = 90;
 
@@ -91,17 +94,17 @@ function windowsFor(today) {
 function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   const w = windowsFor(today);
   const args = [cuts.majorCents, cuts.midCents,
-    w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
+    w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.w0From, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
   const sql = `
-    SELECT a.donor_id, a.last12, a.first_date, a.last_date,
+    SELECT a.donor_id, a.last12, LEAST(a.first_date, a.imp_first) AS first_date, GREATEST(a.last_date, a.imp_last) AS last_date,
            CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
-           CASE WHEN a.w0 AND a.prev_date IS NULL THEN 'new'
+           CASE WHEN a.w0 AND a.prev_date IS NULL AND a.imp_prev IS NULL THEN 'new'
                 -- The gift that brought them back is the first in the last 12
                 -- months; the one before it is the latest before the window.
                 -- A whole calendar year between them is a return.
-                WHEN a.w0 AND LEFT(a.first_w0, 4)::int - LEFT(a.prev_date, 4)::int >= 2 THEN 'recaptured'
+                WHEN a.w0 AND LEFT(a.first_w0, 4)::int - LEFT(GREATEST(a.prev_date, a.imp_prev), 4)::int >= 2 THEN 'recaptured'
                 WHEN a.w0 THEN 'current'
                 ELSE 'lapsed' END AS lifecycle,
            (a.this_cy AND a.last_cy) AS retained
@@ -113,6 +116,13 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
                MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,
                MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) < ?) AS prev_date,
+               -- FIX-49: the old system's gifts count as giving before. A person
+               -- whose imported history starts before the window is not New;
+               -- the imported first and last gift dates are dates they gave.
+               MAX(GREATEST(CASE WHEN LEFT(${IMP_FIRST}, 10) < ? THEN LEFT(${IMP_FIRST}, 10) END,
+                            CASE WHEN LEFT(NULLIF(d.imported_last_gift_date, ''), 10) < ? THEN LEFT(d.imported_last_gift_date, 10) END)) AS imp_prev,
+               MIN(LEFT(${IMP_FIRST}, 10)) AS imp_first,
+               MAX(LEFT(NULLIF(d.imported_last_gift_date, ''), 10)) AS imp_last,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS this_cy,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS last_cy
           FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL

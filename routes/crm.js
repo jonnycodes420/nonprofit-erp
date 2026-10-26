@@ -4853,6 +4853,9 @@ async function keepImportedTotals(q, orgId, ids, sourceName) {
   if (!ids || !ids.length) return;
   const words = String(sourceName || "").replace(/\s+/g, " ").trim().slice(0, 80) || "your old system";
   await q(require("../donorSummary").KEEP_IMPORTED_TOTAL, [orgId, ids, words, orgToday(await orgTz(orgId))]);   // ORG_TZ_SEAM_OK
+  // FIX-49: and the one statement, so first_gift_date reads the old system's
+  // first (or last) gift the moment the file is in, not at the next gift.
+  await q(require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, ids]);
 }
 
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
