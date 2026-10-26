@@ -81,6 +81,33 @@ module.exports = async function run() {
   const a3 = await ask(A, "How much has Helen Ward given this year?");
   ok("§10 Helen this year is $500", a3.figures && a3.figures.value && a3.figures.value.cents === 50000, a3.sentence);
 
+  // An org with an October year and gifts on both sides of Jan 1: Ask's
+  // "this year" is the org's year, the window Fundraising (and Home) read.
+  console.log("\n§10 Ask's org \"this year\" is the org's own year, as on Fundraising");
+  const Y = await makeOrg();
+  await q(`UPDATE orgs SET vocabulary_json=$2 WHERE id=$1`, [Y.org, JSON.stringify({ fiscal_year_start_month: 10 })]);
+  const y0 = Number(today.slice(0, 4)), m0 = Number(today.slice(5, 7));
+  const fyFrom = `${m0 >= 10 ? y0 : y0 - 1}-10-01`;
+  const giver = await person(Y, "Rosa Lindqvist");
+  // One gift in this org year, one after Jan 1 but before the year began
+  // (or, early in the calendar year, one before Jan 1 inside the org year).
+  const other = m0 >= 10 ? `${y0}-03-15` : `${y0 - 1}-11-15`;
+  for (const [amount, date] of [[400, today], [900, other]]) {
+    const r = await api("POST", `/donors/${giver}/gifts`, Y.tok, { amount, date });
+    ok(`§10 a $${amount} gift on ${date} is recorded`, r.status === 201, r.body);
+  }
+  const ov = ((await api("GET", "/fundraising/overview", Y.tok)).body || {}).period || {};
+  const wantCents = (m0 >= 10 ? 400 : 1300) * 100;
+  const a4 = await ask(Y, "How much have we raised this year?");
+  const v4 = a4.figures && a4.figures.value;
+  ok("§10 Fundraising's year starts Oct 1", ov.start === fyFrom && Math.round(Number(ov.raised) * 100) === wantCents, ov);
+  ok("§10 Ask's org \"this year\" equals Fundraising's this-year figure", !!v4 && v4.cents === Math.round(Number(ov.raised) * 100), { sentence: a4.sentence, v4, ov });
+  const range = m0 >= 10 ? `Oct ${y0} – Sep ${y0 + 1}` : `Oct ${y0 - 1} – Sep ${y0}`;
+  ok("§10 ...labelled with the org's year range, as Home labels it", !!v4 && v4.label.includes(range) && !/so far/.test(v4.label) && (a4.sentence || "").includes(range), { label: v4 && v4.label, sentence: a4.sentence });
+  const a5 = await ask(Y, "How much has Rosa Lindqvist given this year?");
+  const fy = (((await api("GET", `/donors/${giver}`, Y.tok)).body || {}).figures || {}).thisYear;
+  ok("§10 and one person's this year equals her profile's This year", a5.figures && a5.figures.value && fy && a5.figures.value.cents === fy.cents && fy.cents === wantCents, { a5: a5.sentence, fy });
+
   // ── §12 the Harbor Run that happened ─────────────────────────────────
   console.log("\n§12 \"went to the Harbor Run\" marks the one that happened");
   const B = await makeOrg();

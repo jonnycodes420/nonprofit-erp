@@ -43,7 +43,10 @@ const pad = n => String(n).padStart(2, "0");
   for (const t of ["question_log", "recurring_subscriptions", "gifts", "events", "campaigns", "fin_funds", "donors", "user_sessions", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,ai_enabled) VALUES ($1,'Ask Plans Fixture','ask2-plans',1,'active','team','UTC',true)`, [ORG]);
+  // FIX-49: Ask's "this year" and "last year" are the org's own year. The
+  // ledger below is worked out by calendar years, so this org's year starts
+  // in January (an org that never says gets July).
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,ai_enabled,vocabulary_json) VALUES ($1,'Ask Plans Fixture','ask2-plans',1,'active','team','UTC',true,'{"fiscal_year_start_month":1}')`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_ask2plans',$1,'staff@ask2plans.local',$2,'Ask Staff','admin')`, [ORG, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('ff_a2_sch',$1,'Scholarship Fund',true),('ff_a2_gen',$1,'General Operating',false)`, [ORG]);
   await q(`INSERT INTO campaigns (id,org_id,name,goal_amount,status,start_date,end_date) VALUES ('c_a2_push',$1,'Spring Push',5000,'active',$2,$3)`, [ORG, `${Y - 1}-01-01`, `${Y}-12-31`]);

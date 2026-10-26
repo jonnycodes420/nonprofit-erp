@@ -114,6 +114,13 @@ function recentSpan(n, unit, today) {
   return { kind: "custom", from, to: today, words: `the last ${k} ${k === 1 ? u : u + "s"}` };
 }
 
+// The org's year as Home labels it (server.js finPeriodBounds periodLabel):
+// "Jan – Dec 2026", or "Jul 2026 – Jun 2027".
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fyRange(y, m) {
+  return m === 1 ? `Jan – Dec ${y}` : `${MON_SHORT[m - 1]} ${y} – ${MON_SHORT[(m + 10) % 12]} ${y + 1}`;
+}
+
 // A period in the org's calendar: { from, to, label, toDate }. `toDate` is
 // true when the period runs to today (so a comparison stops at the same day).
 export function resolvePeriod(period, ctx) {
@@ -133,8 +140,11 @@ export function resolvePeriod(period, ctx) {
     }
     case "this_quarter": { const q = Math.floor((t.m - 1) / 3); return { from: ymd(t.y, q * 3 + 1, 1), to: ctx.today, label: `Q${q + 1} ${t.y}`, toDate: true }; }
     case "last_quarter": { let q = Math.floor((t.m - 1) / 3) - 1, y = t.y; if (q < 0) { q = 3; y--; } return { from: ymd(y, q * 3 + 1, 1), to: ymd(y, q * 3 + 3, lastDay(y, q * 3 + 3)), label: `Q${q + 1} ${y}` }; }
-    case "this_year": return { from: ymd(t.y, 1, 1), to: ctx.today, label: `${t.y} so far`, toDate: true };
-    case "last_year": return { from: ymd(t.y - 1, 1, 1), to: ymd(t.y - 1, 12, 31), label: String(t.y - 1) };
+    // FIX-49: "this year" and "last year" are the org's own year, the window
+    // Home and Fundraising read (server.js finPeriodBounds), with its range
+    // said the way Home says it. "In 2026" is still the calendar year.
+    case "this_year": return { from: ymd(fyStartYear, fyM, 1), to: ctx.today, label: `this year (${fyRange(fyStartYear, fyM)})`, toDate: true };
+    case "last_year": return { from: ymd(fyStartYear - 1, fyM, 1), to: addDays(ymd(fyStartYear, fyM, 1), -1), label: `last year (${fyRange(fyStartYear - 1, fyM)})` };
     case "year": { const y = Number(p.year); return y === t.y ? { from: ymd(y, 1, 1), to: ctx.today, label: `${y} so far`, toDate: true } : { from: ymd(y, 1, 1), to: ymd(y, 12, 31), label: String(y) }; }
     case "this_fiscal_year": return { from: ymd(fyStartYear, fyM, 1), to: ctx.today, label: `this fiscal year (from ${monthName(fyStartYear, fyM)})`, toDate: true };
     case "last_fiscal_year": return { from: ymd(fyStartYear - 1, fyM, 1), to: addDays(ymd(fyStartYear, fyM, 1), -1), label: `last fiscal year (from ${monthName(fyStartYear - 1, fyM)})` };
@@ -152,7 +162,8 @@ export function resolveCompare(kind, cur) {
   if (!kind || !cur) return null;
   if (kind === "last_year") {
     const from = minusYear(cur.from), to = minusYear(cur.to);
-    const lbl = /^\d{4}$/.test(cur.label) ? String(+cur.label - 1)
+    const lbl = /^this year \(/.test(cur.label) ? "last year to the same day"
+      : /^\d{4}$/.test(cur.label) ? String(+cur.label - 1)
       : /^\d{4} so far$/.test(cur.label) ? `${+cur.label.slice(0, 4) - 1} to the same day`
       : /^(\w+) (\d{4})( so far)?$/.test(cur.label) ? cur.label.replace(/(\d{4})/, y => String(+y - 1)).replace(" so far", " to the same day")
       : `the same dates a year earlier`;
