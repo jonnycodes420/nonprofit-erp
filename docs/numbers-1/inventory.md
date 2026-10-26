@@ -362,3 +362,15 @@ Labels and plumbing:
 33. Two household groupings. **Deferred.** This is a data-model decision.
 
 Found while building, for the next brief: the profile's lifecycle tags and "Donor since" read the gifts on file only. A donor with $50,000 of imported history and one new gift reads "New: gave once this year" and "Donor since 2026" (see the after screenshot).
+
+## FIX-49 outcome (26 Oct 2026, Jonathan's decisions of 25 Oct)
+
+- 13. Credit rows in Lifetime and campaign totals. **Fixed.** Soft and matching credits are never in Lifetime, campaign, goal or average; they are the profile's Soft credit figure.
+- 14. Cover fee gross or net. **Fixed.** Gross (the full amount paid) everywhere except Finance, which uses net.
+- 17. A public bar without grants. **Fixed.** Grants count unless the campaign turns on "Leave grants off the public bar".
+- 18. Org goal on Home and Fundraising. **Fixed.** The goal's own start and end, one function.
+- 19. Parent goals drop direct gifts. **Fixed.** Direct gifts plus children's, each gift once.
+- 31. Six lapse rules. **Fixed.** One rule (`lapseRule.js`); Retained is on the fiscal year.
+- 7. Two giving-level rules. **Fixed.** The org's cut points in Settings; `donors.status` mid/major is no longer written.
+- 33. Two household groupings. **Fixed.** The household record only; links migrated into households.
+- NUMBERS-2's found-while-building (imported donor tagged New, Donor since 2026). **Fixed.**

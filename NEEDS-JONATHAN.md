@@ -21,6 +21,10 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-FIX-49 · RE-SEED THE PROD DEMO (2026-10-26)
+
+- **Re-seed Harborlight.** The seed changed: a past Harbor Run (last year's, 12 people marked attended) now sits beside next year's, so "I went to the Harbor Run" marks attendance. Same command as the earlier re-seeds.
+
 ## 0-PRICING-1 · THE RECORD-BAND PRICES IN STRIPE, AND TWO EXISTING DEALS (2026-10-21)
 
 Until step 2 is done, public signup answers "That plan is not available to buy online yet. Write to us" (nothing breaks, nothing is charged).
