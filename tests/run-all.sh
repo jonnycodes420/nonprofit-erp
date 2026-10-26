@@ -210,6 +210,7 @@ CORE=(
   fix15-two-worktrees
   build96-ai-gate
   incident-mail-gate
+  fix50-demo-one-rule
   mail-block
   mail-suppression
   email-footer

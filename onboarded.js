@@ -27,7 +27,7 @@ async function stampOnboardedFromImport(query, orgId, importId) {
   const rows = await query(
     `UPDATE orgs o SET onboarded_at = NOW(), onboarded_via = 'import:' || ?,
                        onboarded_by = 'system:import', onboarded_by_name = 'Steward (first donor file)'
-      WHERE o.id = ? AND o.onboarded_at IS NULL AND o.is_demo_org IS NOT TRUE AND o.id NOT IN ('org_b72demo','org_creo')
+      WHERE o.id = ? AND o.onboarded_at IS NULL AND NOT ${require("./orgKind").demoOrgSql("o")}
         AND EXISTS (SELECT 1 FROM imports i WHERE i.id = ? AND i.org_id = o.id AND ${DONOR_FILE_IMPORT})
       RETURNING o.id`,
     [importId, orgId, importId]);
@@ -44,7 +44,7 @@ async function backfillOnboarded(query) {
        FROM (SELECT DISTINCT ON (i.org_id) i.org_id, i.id AS import_id, i.committed_at AS at
                FROM imports i WHERE ${DONOR_FILE_IMPORT}
               ORDER BY i.org_id, i.committed_at) first
-      WHERE o.id = first.org_id AND o.onboarded_at IS NULL AND o.is_demo_org IS NOT TRUE AND o.id NOT IN ('org_b72demo','org_creo')`);
+      WHERE o.id = first.org_id AND o.onboarded_at IS NULL AND NOT ${require("./orgKind").demoOrgSql("o")}`);
 }
 
 module.exports = { stampOnboardedFromImport, backfillOnboarded };

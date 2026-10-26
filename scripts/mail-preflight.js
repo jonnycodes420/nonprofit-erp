@@ -41,8 +41,7 @@ const word = d => (d.send ? "SENDS" : "held: " + d.reason);
                 "(as set in THIS shell; the server reads its own env)\n");
 
     const { rows: orgs } = await db.query(
-      `SELECT o.id, o.name, o.emails_enabled, o.staff_mail_enabled, o.billing_mail_enabled, o.org_kind,
-              o.is_demo_org, o.onboarded_at, o.onboarded_via,
+      `SELECT o.id, o.name, o.emails_enabled, o.staff_mail_enabled, o.billing_mail_enabled, o.org_kind, o.onboarded_at, o.onboarded_via,
               o.sending_domain, o.sending_domain_status,
               (SELECT COUNT(*)::int FROM donors d WHERE d.org_id=o.id AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE) AS real_people,
               (SELECT COUNT(*)::int FROM imports i WHERE i.org_id=o.id) AS imports

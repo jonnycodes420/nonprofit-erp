@@ -1507,12 +1507,12 @@ app.post("/volunteer-hub/run-reminders", requireAuth, requireAdmin, wrap(async (
 // thing that turns it on: an org deciding that Steward may write to its
 // volunteers is an org's decision, and a default of ON would make it for them.
 app.get("/volunteer-hub/settings", requireAuth, wrap(async (req, res) => {
-  const [o] = await query("SELECT volunteer_reminders_enabled, volunteer_waiver_text, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  const [o] = await query("SELECT volunteer_reminders_enabled, volunteer_waiver_text, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
   res.json({
     remindersEnabled: !!(o && o.volunteer_reminders_enabled),
     waiverText: (o && o.volunteer_waiver_text) || null,
     defaultWaiverText: DEFAULT_WAIVER,
-    canSend: !(o && o.is_demo_org === true),
+    canSend: !require("../orgKind").isDemoOrg(o),
     sentence: "The day before a shift, Steward drafts a reminder for each person confirmed on it. "
       + "Nothing reaches a volunteer until somebody here presses Send.",
   });
@@ -1529,10 +1529,10 @@ app.patch("/volunteer-hub/settings", requireAuth, requireAdmin, checkWriteAccess
   if (!sets.length) return res.status(400).json({ error: "nothing_to_change" });
   params.push(req.user.orgId);
   await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
-  const [o] = await query("SELECT volunteer_reminders_enabled, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  const [o] = await query("SELECT volunteer_reminders_enabled, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
   res.json({ ok: true, remindersEnabled: !!o.volunteer_reminders_enabled,
     message: o.volunteer_reminders_enabled
-      ? (o.is_demo_org === true
+      ? (require("../orgKind").isDemoOrg(o)
           ? "Turned on, and nothing will be sent: this is the demonstration organization and it never mails anybody."
           : "Turned on. A reminder goes out the day before a shift, to the people confirmed on it, once each.")
       : "Turned off. Steward will not write to your volunteers." });

@@ -623,7 +623,7 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
   // INT-BUILD-1 Part 0 — a demo org shows the buttons and connects nothing.
   if (O.PROVIDERS[key].kind === "mailbox") {
     const ML = await mailboxMod();
-    const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+    const [org] = await query("SELECT id, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
     if (ML.isDemoMailboxOrg(org))
       return res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE });
   }
@@ -1193,7 +1193,7 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
     [req.user.userId, req.user.orgId]);
   const never = await query(
     `SELECT id, pattern, kind FROM mailbox_never_log WHERE user_id=? ORDER BY pattern`, [req.user.userId]);
-  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  const [org] = await query("SELECT id, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
   const demo = ML.isDemoMailboxOrg(org);
   // A demo's "connected" Gmail is built here, never stored: no row, no token,
   // and the sync tick has nothing to find.
@@ -1548,8 +1548,8 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const boxOf = new Map(boxRows.map(b => [b.user_id + "|" + b.provider, b]));
   // FIX-25: a demo org's emails were seeded, never sent, so there is no
   // message in any mailbox to open. It says so instead of linking to an inbox.
-  const [orgRow] = await query(`SELECT is_demo_org FROM orgs WHERE id=?`, [orgId]);
-  const demoOrg = orgRow?.is_demo_org === true;
+  const [orgRow] = await query(`SELECT org_kind FROM orgs WHERE id=?`, [orgId]);
+  const demoOrg = require("../orgKind").isDemoOrg(orgRow);
   const mailFileOf = (m, meta) => {
     const n = Number(meta.attachments) || 0;
     if (!n || !meta.provider || !meta.message_id) return null;
@@ -1821,7 +1821,7 @@ async function bookingCalendars(userId, orgId) {
 }
 async function myCalendarConn(req, res, { provider = null } = {}) {
   const ML = await mailboxMod();
-  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  const [org] = await query("SELECT id, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
   if (ML.isDemoMailboxOrg(org)) { res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE }); return null; }
   const cals = await bookingCalendars(req.user.userId, req.user.orgId);
   const want = provider || cals.defaultProvider;
@@ -2105,8 +2105,8 @@ async function audienceMembership(orgId, audienceIds) {
   // `is_sample`; the 1,000-donor demonstration file carries the tag
   // `demo-file` instead (scripts/build89-demo-seed.js), and a demonstration
   // org is demonstration through and through. All three are sample here.
-  const [orgFlags] = await query(`SELECT is_demo_org FROM orgs WHERE id=?`, [orgId]);
-  const demoOrg = orgFlags?.is_demo_org === true;
+  const [orgFlags] = await query(`SELECT org_kind FROM orgs WHERE id=?`, [orgId]);
+  const demoOrg = require("../orgKind").isDemoOrg(orgFlags);
   const isDemoTagged = t => {
     try { const a = Array.isArray(t) ? t : JSON.parse(t || "[]"); return Array.isArray(a) && a.includes("demo-file"); }
     catch { return false; }
@@ -3272,7 +3272,7 @@ async function qboConnection(orgId) {
   return c || null;
 }
 async function qboEnabled(orgId) {
-  const [o] = await query("SELECT qbo_sync_enabled, qbo_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  const [o] = await query("SELECT qbo_sync_enabled, qbo_auto_sync, org_kind FROM orgs WHERE id=?", [orgId]);
   return o || null;
 }
 const qboOff = res => res.status(403).json({ error: "qbo_not_enabled",
@@ -3291,7 +3291,7 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
   const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? ORDER BY name`, [orgId]);
   const campaigns = await query(
     `SELECT id, name, type FROM campaigns WHERE org_id=? ORDER BY created_at DESC LIMIT 300`, [orgId]);
-  const demo = org.is_demo_org === true || map.demo;
+  const demo = require("../orgKind").isDemoOrg(org) || map.demo;
   // FIX-20 Part 2 · A DIFFERENT COMPANY. Said once, before the first sync to
   // it: what was sent to the other company is not in this one's books, so
   // this company's sent list starts empty.
@@ -3426,7 +3426,7 @@ app.post("/qbo/lists", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!c) return res.status(409).json({ error: "not_connected", fallback: true, sentence: "Connect QuickBooks first, and its accounts appear here to choose from." });
   const map = QS.readMapping(c);
   // The demo has no company to ask: its lists are the names already mapped.
-  if (org.is_demo_org === true || map.demo) {
+  if (require("../orgKind").isDemoOrg(org) || map.demo) {
     const accts = new Map(), classes = new Map();
     for (const m of [...Object.values(map.funds), ...Object.values(map.campaigns)]) {
       if (m.accountId) accts.set(m.accountId, { id: m.accountId, name: m.accountName || m.accountId, type: "Income" });
@@ -3456,7 +3456,7 @@ app.post("/qbo/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
   const c = await qboConnection(orgId);
   if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first, and its company appears here." });
-  if (org.is_demo_org === true || QS.readMapping(c).demo)
+  if (require("../orgKind").isDemoOrg(org) || QS.readMapping(c).demo)
     return res.json({ ok: true, demo: true, sentence: "The demonstration file has no QuickBooks company to read." });
   if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
     return res.status(409).json({ error: "not_signed_in", sentence: "QuickBooks is not signed in yet, so Steward cannot read it. Connect it again." });
@@ -3547,7 +3547,7 @@ sharedProcessQboAutoSync = async function processQboAutoSync(onlyOrgId = null) {
   const orgs = await query(
     `SELECT o.id FROM orgs o
        JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='quickbooks' AND c.status <> 'disconnected'
-      WHERE o.qbo_sync_enabled = true AND o.qbo_auto_sync = true AND COALESCE(o.is_demo_org, false) = false
+      WHERE o.qbo_sync_enabled = true AND o.qbo_auto_sync = true AND NOT ${require("../orgKind").demoOrgSql("o")}
         AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
   const touched = [];
   let sent = 0, waiting = 0;
@@ -3581,7 +3581,7 @@ async function qboReadGate(req, res) {
   if (!org || org.qbo_sync_enabled !== true) { qboOff(res); return null; }
   const c = await qboConnection(orgId);
   if (!c) { res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first, and its gifts can be read here." }); return null; }
-  const demo = org.is_demo_org === true || QS.readMapping(c).demo;
+  const demo = require("../orgKind").isDemoOrg(org) || QS.readMapping(c).demo;
   return { orgId, c, demo, today: orgToday(await orgTz(orgId)) };
 }
 const QBO_READ_DEMO = "This is the demonstration file's example connection. It reads nothing from QuickBooks; the example below shows what a read looks like.";
@@ -3719,7 +3719,7 @@ sharedProcessQboAutoRead = async function processQboAutoRead(onlyOrgId = null) {
   const orgs = await query(
     `SELECT o.id, c.id AS conn_id FROM orgs o
        JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='quickbooks' AND c.status <> 'disconnected'
-      WHERE o.qbo_sync_enabled = true AND COALESCE(o.is_demo_org, false) = false
+      WHERE o.qbo_sync_enabled = true AND NOT ${require("../orgKind").demoOrgSql("o")}
         AND c.mapping->'qbo'->'read'->>'auto' = 'true' AND (c.mapping->'qbo'->'read'->>'firstSavedAt') IS NOT NULL
         AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
   const who = { id: "system:qbo/auto-read", name: "Steward (QuickBooks read)" };
@@ -3772,7 +3772,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
   const XS = xeroSyncMod();
   const orgId = req.user.orgId;
   const c = await XS.connection(orgId);
-  const [org] = await query("SELECT xero_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  const [org] = await query("SELECT xero_auto_sync, org_kind FROM orgs WHERE id=?", [orgId]);
   const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
   if (!c) return res.json({ connected: false, autoSync: false, funds: [],
     sentence: "Xero is not connected. Connect it, choose the organization, and nothing is sent until you press Sync." });
@@ -3785,7 +3785,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
   const pendingCents = pending.reduce((t, r) => t + Number(r.cents), 0);
   res.json({
     connected: true, id: c.id, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
-    tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: !!(org && org.is_demo_org === true),
+    tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: require("../orgKind").isDemoOrg(org),
     mappingReady: gaps.ok, canSync: !!gaps.canSync && !!c.realm_id,
     mappingGaps: gaps.ok ? null : { funds: gaps.funds, bankAccount: gaps.bankAccount, sentence: gaps.sentence },
     mappingOtherTenant: map.otherTenant,
@@ -3895,7 +3895,7 @@ sharedProcessXeroAutoSync = async function processXeroAutoSync(onlyOrgId = null)
   const orgs = await query(
     `SELECT o.id FROM orgs o
        JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='xero' AND c.status <> 'disconnected'
-      WHERE o.xero_auto_sync = true AND COALESCE(o.is_demo_org, false) = false
+      WHERE o.xero_auto_sync = true AND NOT ${require("../orgKind").demoOrgSql("o")}
         AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
   let sent = 0, waiting = 0;
   for (const { id } of orgs) {

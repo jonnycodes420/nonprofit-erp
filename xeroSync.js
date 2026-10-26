@@ -322,11 +322,11 @@ async function connection(orgId) {
 }
 async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, everyFundMapped = false }) {
   const refuse = (error, sentence, status = 409) => ({ ok: false, status, error, sentence });
-  const [org] = await query(`SELECT id, is_demo_org FROM orgs WHERE id=?`, [orgId]);
+  const [org] = await query(`SELECT id, org_kind FROM orgs WHERE id=?`, [orgId]);
   if (!org) return refuse("not_found", "Steward has no such organisation.", 404);
   const conn = await connection(orgId);
   if (!conn) return refuse("not_connected", "Xero is not connected. Connect it from this card, and nothing is sent until you press Sync.");
-  if (org.is_demo_org === true)
+  if (require("./orgKind").isDemoOrg(org))
     return refuse("demo", "This is the demonstration file. It sends nothing to Xero.");
   if (!conn.credentials_sealed && process.env.TEST_MODE !== "1")
     return refuse("not_signed_in", "Xero is not signed in yet. Connect it from this card, then press Sync.");

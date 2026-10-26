@@ -71,10 +71,7 @@ function inferKind(org, facts = {}, env = process.env) {
   const list = internalEmails(env);
   const why = reason => reason;
 
-  if (org.is_demo_org === true || DEMO_ORG_IDS.includes(org.id))
-    return { kind: "demo", source: "inferred", reason: why("marked as a demo org") };
-  if (/\(demo\)|\bdemo\b/i.test(name))
-    return { kind: "demo", source: "inferred", reason: why(`name says demo ("${name}")`) };
+  // FIX-50: a guess is never Demo. Demo is only ever set (isDemoOrg below).
   if (FIXTURE_NAME_RE.test(name))
     return { kind: "fixture", source: "inferred", reason: why(`name reads as a walk or test fixture ("${name}")`) };
   if (users.length && users.every(u => FIXTURE_EMAIL_RE.test(u.email)))
@@ -94,6 +91,16 @@ function inferKind(org, facts = {}, env = process.env) {
     ? `Stripe subscription, ${org.subscription_status || "no status"}, nothing paid yet`
     : "no Stripe subscription and no payment" };
 }
+
+// FIX-50 (Justin's Place, 26 Oct): THE ONE ANSWER TO "IS THIS ORG A DEMO?"
+// An org is a demo only if its Kind is Demo. Nothing else decides it: not the
+// older is_demo_org flag (a trigger in orgDemoMigration.js keeps it a copy of this), not an
+// id list, not a name, not onboarding, not sample data. Every gate, banner,
+// sweep and script calls isDemoOrg, or demoOrgSql in SQL. A new org that a
+// seed or provisioning marks as demo gets Kind = Demo when it is created
+// (orgDemoMigration.js, steward_org_demo_sync).
+const isDemoOrg = org => !!org && org.org_kind === "demo";
+const demoOrgSql = (alias = "orgs") => `(COALESCE(${alias}.org_kind, '') = 'demo')`;
 
 // What an org pays Steward a month, in cents. Only a counted kind with a live
 // subscription and a real Stripe amount: never a plan's list price.
@@ -166,7 +173,7 @@ function targetFor(month, target = DEFAULT_TARGET) {
 }
 
 module.exports = {
-  KINDS, KIND_LABEL, COUNTED_KINDS, countsAsCustomer, DEMO_ORG_IDS,
+  KINDS, KIND_LABEL, COUNTED_KINDS, countsAsCustomer, DEMO_ORG_IDS, isDemoOrg, demoOrgSql,
   inferKind, isInternalEmail, baseEmail, internalEmails, orgMrrCents,
   monthlyCentsFromSubscription, monthlyCentsFromInvoice, perMonth,
   DEFAULT_TARGET, targetFor, LIVE_STATUSES, ENDED_STATUSES, JUNK_NAME_RE, FIXTURE_NAME_RE,

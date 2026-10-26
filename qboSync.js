@@ -607,14 +607,14 @@ async function syncPayout(ctx, payoutRef, gifts) {
 // `who` is stamped on every row either way.
 async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null, everyFundMapped = false }) {
   const refuse = (error, sentence, status = 409) => ({ ok: false, status, error, sentence });
-  const [org] = await query(`SELECT id, is_demo_org, qbo_sync_enabled FROM orgs WHERE id=?`, [orgId]);
+  const [org] = await query(`SELECT id, org_kind, qbo_sync_enabled FROM orgs WHERE id=?`, [orgId]);
   if (!org || org.qbo_sync_enabled !== true)
     return refuse("not_enabled", "QuickBooks sync is not turned on for this organisation yet.", 403);
   const [conn] = await query(
     `SELECT * FROM bookkeeping_connections WHERE org_id=? AND vendor=? AND status <> 'disconnected'`, [orgId, VENDOR]);
   if (!conn) return refuse("not_connected", "QuickBooks is not connected. Connect it from this card, and nothing is sent until you press Sync.");
   const map = readMapping(conn);
-  if (org.is_demo_org === true || map.demo)
+  if (require("./orgKind").isDemoOrg(org) || map.demo)
     return refuse("demo", "This is the demonstration file's example connection. It shows what would be sent, and sends nothing.");
   if (!conn.credentials_sealed && process.env.TEST_MODE !== "1")
     return refuse("not_signed_in", "QuickBooks is not signed in yet. Connect it from this card, then press Sync.");

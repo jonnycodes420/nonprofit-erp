@@ -36,9 +36,9 @@
 // stay (a prospect has to SEE where this lives) and the server refuses the
 // handshake with this sentence. The "connected" example a demo shows is built
 // at read time and stores no row and no token.
-export const DEMO_MAILBOX_ORG_IDS = ["org_b72demo", "org_creo"];
-export const isDemoMailboxOrg = org =>
-  !!org && (org.is_demo_org === true || DEMO_MAILBOX_ORG_IDS.includes(org.id));
+// FIX-50: the one rule, orgKind.isDemoOrg (an org is a demo only if its Kind is Demo).
+import { createRequire } from "module";
+export const isDemoMailboxOrg = createRequire(import.meta.url)("../orgKind.js").isDemoOrg;
 export const DEMO_CONNECT_SENTENCE =
   "In the demo, connecting is turned off so no real mailbox sits behind a public login. In your own account this connects Gmail or Outlook in about a minute.";
 // Before Google verifies the app, Google shows its own warning screen first.

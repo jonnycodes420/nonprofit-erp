@@ -3863,7 +3863,7 @@ app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
   if (!subject || !body) return res.status(400).json({ error: "Write a subject and a message first." });
   const decision = await donorMailDecision("gift_unfinished", r.email, orgId);
   if (!decision.send) return res.status(409).json({ error: "mail_refused", reason: decision.reason,
-    sentence: decision.reason === "demo_org" || (decision.reason === "org_emails_disabled" && (await query("SELECT is_demo_org FROM orgs WHERE id=?", [orgId]))[0]?.is_demo_org)
+    sentence: decision.reason === "demo_org" || (decision.reason === "org_emails_disabled" && require("../orgKind").isDemoOrg((await query("SELECT org_kind FROM orgs WHERE id=?", [orgId]))[0]))
       ? "This is a demonstration organization, so Steward emails nobody. On a real account this note would go to them now."
       : decision.reason === "org_emails_disabled" ? "Email is turned off for your organization, so nothing was sent. An admin can turn it on in Settings."
       : decision.reason === "not_onboarded" ? "Nothing was sent. Email turns on once your donor file is in."

@@ -18,6 +18,7 @@ const express = require("express");
 // FIX-4 5 — the price→plan lookup, so the reconcile below names the plan the
 // live subscription is actually on rather than trusting a stale column.
 const { planFromSubscription } = require("../billingPlans");
+const ORG_KIND = require("../orgKind");
 
 const routers = {
   r0: express.Router(),
@@ -405,12 +406,13 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   // point of arming it. A self-serve signup is unchanged and still onboards.
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
-                       signed_at, trial_ends_at, emails_enabled, is_demo_org)
+                       signed_at, trial_ends_at, emails_enabled, org_kind)
      VALUES (?,?,?,?,'trial','trialing',?,?,?,?)`,
     // 2026-09-24 — mail OFF for every new org (opt-in, super-admin only);
-    // `provisioned` still marks the org as fiction.
+    // `provisioned` still marks the org as fiction. FIX-50: by its Kind, the
+    // one thing that makes an org a demo (the trigger copies it to the flag).
     [orgId, orgName, isProvisioned ? 1 : 0, orgSlug, signedAt.toISOString(), trialEndsAt,
-     false, isDemoData]
+     false, isDemoData ? "demo" : null]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -632,7 +634,7 @@ async function checkDemoOrgSends() {
        FROM email_log e JOIN orgs o ON o.id = e.org_id
       WHERE e.created_at >= NOW() - INTERVAL '1 hour'
         AND e.status = 'sent'
-        AND (o.is_demo_org = TRUE OR o.emails_enabled = FALSE)
+        AND (${ORG_KIND.demoOrgSql("o")} OR o.emails_enabled = FALSE)
       GROUP BY e.org_id, o.name, e.recipient_domain`);
   const { reachesARealMailbox } = await reservedDomains();
   const bad = rows.filter(r => r.recipient_domain && reachesARealMailbox(r.recipient_domain));
@@ -648,7 +650,7 @@ app.get("/admin/observability", requireAuth, requireSuperAdmin, wrap(async (req,
   const [emails, ticks, sources, agent, demoSends] = await Promise.all([
     // Every outbound email in the last 7 days: org, recipient DOMAIN, template
     // and status. Never the address.
-    query(`SELECT e.id, e.org_id, o.name AS org_name, o.is_demo_org, o.emails_enabled,
+    query(`SELECT e.id, e.org_id, o.name AS org_name, o.org_kind, o.emails_enabled,
                   e.recipient_domain, e.kind, e.subject, e.status, e.error, e.created_at
              FROM email_log e LEFT JOIN orgs o ON o.id = e.org_id
             WHERE e.created_at >= NOW() - INTERVAL '7 days'
@@ -669,14 +671,14 @@ app.get("/admin/observability", requireAuth, requireSuperAdmin, wrap(async (req,
             ORDER BY r.started_at DESC LIMIT 200`).catch(() => []),
     query(`SELECT COUNT(*)::int AS n FROM email_log e JOIN orgs o ON o.id = e.org_id
             WHERE e.created_at >= NOW() - INTERVAL '7 days' AND e.status='sent'
-              AND (o.is_demo_org = TRUE OR o.emails_enabled = FALSE)`),
+              AND (${ORG_KIND.demoOrgSql("o")} OR o.emails_enabled = FALSE)`),
   ]);
 
   // THE ONE LINE THAT WOULD HAVE ENDED THE INCIDENT ON DAY ONE.
   const { reachesARealMailbox } = await reservedDomains();
   const realProviderFromDemo = emails.filter(e =>
     e.status === "sent" && e.recipient_domain && reachesARealMailbox(e.recipient_domain)
-    && (e.is_demo_org === true || e.emails_enabled === false));
+    && (ORG_KIND.isDemoOrg(e) || e.emails_enabled === false));
 
   res.json({
     window: "7 days",
@@ -2165,7 +2167,7 @@ app.post("/billing/trial-reminders/run", requireAuth, requireSuperAdmin, wrap(as
 // every org has a kind (orgKind.js), only customers and prospect trials count,
 // and MRR is the amount on the org's live Stripe subscription
 // (`billing_mrr_cents`, written by the billing webhook), never a list price.
-const ORG_KIND = require("../orgKind");
+// (ORG_KIND is required at the top of the file.)
 
 // Facts orgKind.inferKind reads, for every org at once: one grouped query each.
 async function orgKindFacts() {
@@ -2194,6 +2196,7 @@ function withKind(org, facts) {
   return {
     ...org,
     kind: k.kind, kind_label: ORG_KIND.KIND_LABEL[k.kind], kind_source: k.source, kind_reason: k.reason,
+    demo: ORG_KIND.isDemoOrg(org),   // FIX-50: the one rule, so the console's "Demo" label cannot disagree
     counted: ORG_KIND.countsAsCustomer(k.kind) && !org.archived_at,
     archived: !!org.archived_at,
     payment_count: facts.payments, paid_cents: facts.paidCents, real_donor_count: facts.realDonors,
@@ -2444,26 +2447,49 @@ app.post("/admin/metrics/target", requireAuth, requireSuperAdmin, wrap(async (re
 }));
 
 // Kind, archive and undo. Each is one POST; the audit trail records it.
+// FIX-50: Kind is the only thing that makes an org a demo (orgKind.isDemoOrg);
+// the trigger in db.js copies it to is_demo_org. Leaving Demo turns donor mail
+// OFF: an org that was fiction does not start mailing until somebody ticks the
+// switch (INCIDENT 2026-09-22). Going into Demo remembers the Kind it left, so
+// the Demo switch turned off again puts it back.
+async function setOrgKind(req, orgId, kind) {
+  const [org] = await query("SELECT id, name, org_kind, org_kind_before_demo FROM orgs WHERE id=?", [orgId]);
+  if (!org) return null;
+  const wasDemo = ORG_KIND.isDemoOrg(org);
+  const sets = ["org_kind=?", "org_kind_set_at=NOW()", "org_kind_set_by=?"];
+  const params = [kind, req.user.userId];
+  if (kind === "demo" && !wasDemo) { sets.push("org_kind_before_demo=?"); params.push(org.org_kind); }
+  if (kind !== "demo" && wasDemo) sets.push("emails_enabled=FALSE", "org_kind_before_demo=NULL");
+  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...params, orgId]);
+  clearOrgMailGate(orgId);
+  req.audit.forOrg(orgId);
+  req.audit.entity("org setting", orgId, `Kind for ${org.name}`);
+  req.audit.before({ kind: org.org_kind || null, demo: wasDemo });
+  req.audit.after({ kind, demo: kind === "demo" });
+  console.log(`[kind] ${orgId} kind ${org.org_kind || "unset"} -> ${kind || "unset"}, by ${req.user.email || req.user.userId}`);
+  return org;
+}
 app.post("/admin/orgs/:id/kind", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const kind = req.body?.kind;
   if (kind !== null && !ORG_KIND.KINDS.includes(kind))
     return res.status(400).json({ error: "bad_kind", message: `Kind is one of: ${ORG_KIND.KINDS.map(k => ORG_KIND.KIND_LABEL[k]).join(", ")}.` });
-  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.params.id]);
+  req.audit.action("set kind");
+  if (!await setOrgKind(req, req.params.id, kind)) return res.status(404).json({ error: "Org not found" });
+  res.json({ ok: true, kind, demo: kind === "demo", mail: await adminMailPayload(req.params.id) });
+}));
+// FIX-50 · THE DEMO SWITCH. On sets Kind to Demo; off puts back the Kind the
+// org had before (or Steward's guess, which is never Demo).
+app.post("/admin/orgs/:id/demo", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const on = req.body?.on;
+  if (typeof on !== "boolean") return res.status(400).json({ error: "on (boolean) required" });
+  const [org] = await query("SELECT id, org_kind, org_kind_before_demo FROM orgs WHERE id=?", [req.params.id]);
   if (!org) return res.status(404).json({ error: "Org not found" });
-  // Justin's Place (23 Oct): Kind is the only demo control the console shows,
-  // but the mail gate also reads the older is_demo_org flag, so turning Kind
-  // off Demo left the org locked as a demonstration. Kind now sets the flag.
-  // Clearing it turns donor mail OFF too: an org that was fiction does not
-  // start mailing until somebody ticks the switch (INCIDENT 2026-09-22).
-  // "Steward's guess" (null) leaves the flag alone, so the guess still reads it.
-  const sets = ["org_kind=?", "org_kind_set_at=NOW()", "org_kind_set_by=?"];
-  const params = [kind, req.user.userId];
-  if (kind === "demo") sets.push("is_demo_org=TRUE");
-  else if (kind !== null && org.is_demo_org === true) sets.push("is_demo_org=FALSE", "emails_enabled=FALSE");
-  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...params, req.params.id]);
-  clearOrgMailGate(req.params.id);
-  console.log(`[kind] ${req.params.id} kind=${kind} is_demo_org ${org.is_demo_org === true ? "was" : "was not"} set, by ${req.user.email || req.user.userId}`);
-  res.json({ ok: true, kind, mail: await adminMailPayload(req.params.id) });
+  const kind = on ? "demo"
+    : ORG_KIND.isDemoOrg(org) ? (org.org_kind_before_demo && org.org_kind_before_demo !== "demo" ? org.org_kind_before_demo : null)
+    : org.org_kind;
+  req.audit.action(on ? "turned demo on" : "turned demo off");
+  if (ORG_KIND.isDemoOrg(org) !== on) await setOrgKind(req, org.id, kind);
+  res.json({ ok: true, demo: on, kind, mail: await adminMailPayload(org.id) });
 }));
 
 app.post("/admin/orgs/:id/archive", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -2595,7 +2621,7 @@ app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(asy
 // organisation can contact its donors is not something to do without a trace.
 app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const orgId = req.params.id;
-  const [org] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  const [org] = await query("SELECT id, name, emails_enabled, org_kind FROM orgs WHERE id=?", [orgId]);
   if (!org) return res.status(404).json({ error: "Org not found" });
 
   const { emailsEnabled, isDemoOrg } = req.body || {};
@@ -2610,11 +2636,11 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
   }
 
   // Turning mail ON for an org still marked as fiction is refused rather than
-  // silently obeyed. The two flags disagreeing is how the incident would
-  // repeat: somebody flips the switch to unblock a real customer and does not
-  // notice the org is still full of invented donors. Clear the mark first,
-  // which forces a look at what is actually in there.
-  const willBeDemo  = isDemoOrg  !== undefined ? isDemoOrg  : org.is_demo_org === true;
+  // silently obeyed. Clear the mark first, which forces a look at what is
+  // actually in there. FIX-50: "marked as fiction" is Kind = Demo, and
+  // isDemoOrg here sets Kind, through the same step as the Demo switch.
+  const wasDemo = ORG_KIND.isDemoOrg(org);
+  const willBeDemo  = isDemoOrg  !== undefined ? isDemoOrg  : wasDemo;
   const willBeOn    = emailsEnabled !== undefined ? emailsEnabled : org.emails_enabled !== false;
   if (willBeOn && willBeDemo) {
     return res.status(409).json({
@@ -2622,14 +2648,11 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
     });
   }
 
-  const sets = [], params = [];
-  if (emailsEnabled !== undefined) { sets.push("emails_enabled=?"); params.push(emailsEnabled); }
-  if (isDemoOrg     !== undefined) { sets.push("is_demo_org=?");    params.push(isDemoOrg); }
-  params.push(orgId);
-  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
+  if (willBeDemo !== wasDemo) await setOrgKind(req, orgId, willBeDemo ? "demo" : null);
+  if (emailsEnabled !== undefined) await run(`UPDATE orgs SET emails_enabled=? WHERE id=?`, [emailsEnabled, orgId]);
 
   clearOrgMailGate(orgId);   // an operator flip takes effect now, not in five seconds
-  console.log(`[mail-switch] ${orgId} (${org.name}) emails_enabled=${willBeOn} is_demo_org=${willBeDemo} ` +
+  console.log(`[mail-switch] ${orgId} (${org.name}) emails_enabled=${willBeOn} demo=${willBeDemo} ` +
               `by ${req.user.email || req.user.userId}`);
 
   const [after] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
@@ -2643,7 +2666,7 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
 const mailPolicy = require("../mailPolicy");
 async function adminMailPayload(orgId) {
   const [org] = await query(
-    `SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
+    `SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
             sending_domain, sending_domain_status, sending_from_email FROM orgs WHERE id=?`, [orgId]);
   if (!org) return null;
   const demo = mailPolicy.orgMailDecision(org, mailPolicy.CATEGORY.DONOR).reason === "demo_org";
@@ -2688,7 +2711,7 @@ app.get("/admin/orgs/:id/mail", requireAuth, requireSuperAdmin, wrap(async (req,
 // they read now, so staff mail stops following donor mail from the first
 // click. Sign-in mail is not a switch: it always goes.
 app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const [org] = await query(`SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, is_demo_org, org_kind FROM orgs WHERE id=?`, [req.params.id]);
+  const [org] = await query(`SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, org_kind FROM orgs WHERE id=?`, [req.params.id]);
   if (!org) return res.status(404).json({ error: "Org not found" });
   const body = req.body || {};
   const asked = ["staff", "donor", "billing"].filter(k => body[k] !== undefined);
@@ -2697,7 +2720,7 @@ app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(a
   const before = mailPolicy.mailSwitches(org);
   const after = { ...before };
   for (const k of asked) after[k] = body[k];
-  if (after.donor && !before.donor && org.is_demo_org === true) {
+  if (after.donor && !before.donor && ORG_KIND.isDemoOrg(org)) {
     return res.status(409).json({ error: "This org is still marked as a demo org. Clear the demo mark first if its data is real now." });
   }
   await run(`UPDATE orgs SET staff_mail_enabled=?, emails_enabled=?, billing_mail_enabled=? WHERE id=?`,
