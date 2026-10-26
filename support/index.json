@@ -1,7 +1,7 @@
 {
  "about": "SUPPORT-1 · built by support/buildIndex.mjs from Steward's own sources. Do not edit by hand.",
  "counts": {
-  "help": 189,
+  "help": 193,
   "helpdoc": 122,
   "faq": 16,
   "feature": 40,
@@ -1429,7 +1429,7 @@
    "link": "/help/how-steward-counts",
    "route": null,
    "screen": null,
-   "text": "What Lifetime, Average gift, Retention, First gift and \"this year\" mean, the same on every screen, report, export and board pack."
+   "text": "What Lifetime, Average gift, Retention, First gift, \"this year\", soft credits, goals, lapsed, giving levels and households mean, the same on every screen, report, export, Ask answer and board pack."
   },
   {
    "id": "help:how-steward-counts:1",
@@ -1443,6 +1443,46 @@
   },
   {
    "id": "help:how-steward-counts:2",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "Money",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "A gift is the full amount the donor paid, including a processing fee they chose to cover. The fee and the net show beside it on the gift. Finance uses the net for bank deposits and reconciliation. Campaigns, Lifetime and averages use the gift amount.\nSoft and matching credits are never added to Lifetime, a campaign total, a goal total or an average. They are shown as their own Soft credit figure on the profile and in reports, with the gifts behind it.\nA grant assigned to a campaign counts toward it, on the public bar too, unless the campaign has \"Leave grants off the public bar\" turned on."
+  },
+  {
+   "id": "help:how-steward-counts:3",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "Goals",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "A goal counts the gifts dated inside its own start and end dates, the same on Home and Fundraising.\nA parent goal totals the gifts given to it directly plus the gifts given to its child goals, and a gift is never counted twice."
+  },
+  {
+   "id": "help:how-steward-counts:4",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "One rule each",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "Lapsed: they have given before, but not in the last 12 months. Lapsing: their last gift was 9 to 12 months ago. The tags, the Directory, groups, Drift, journeys and Lost & Found all use this one rule, on your organization's own calendar. Retained: they gave last fiscal year and have given again this fiscal year.\nGiving level is what someone gave in the last 12 months against your cut points in Settings, Giving levels. It is the only giving level Steward uses: the Directory, groups, Communications and the Board all read it.\nA household is the household record. Linking two people as spouses or as a household puts them in one household, and the household's combined giving is the one household total."
+  },
+  {
+   "id": "help:how-steward-counts:5",
+   "source": "help",
+   "title": "How Steward counts",
+   "heading": "History and Ask",
+   "link": "/help/how-steward-counts",
+   "route": null,
+   "screen": null,
+   "text": "First gift, Donor since and the New, Current and Recaptured tags count the gifts your old system told us about. If the file gave no first gift date, its last gift date is used, because the person had given by then.\nAsk answers with the same figures as the screens. What one person gave is their profile's figure: Lifetime for all time, This year for your year. \"This year\" for the whole organization is the same year Home and Fundraising show, with its dates."
+  },
+  {
+   "id": "help:how-steward-counts:6",
    "source": "help",
    "title": "How Steward counts",
    "heading": "History from your old system",
