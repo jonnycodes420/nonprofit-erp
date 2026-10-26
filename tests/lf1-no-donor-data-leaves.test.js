@@ -95,12 +95,17 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
   // is what the first version of this test got wrong: a donor can be in two
   // of these lists, and the lists are five ways of looking at the same
   // people rather than a partition of them.
-  ok("§1 the fixture's 55 lapsed donors are found (45 plus the 10 who stopped)",
-     sec("lapsed").count === 55, sec("lapsed").count);
+  // FIX-49 decision 6: lapsed and lapsing are Steward's one rule, from each
+  // person's last gift (no gift in the 12 months to 2026-09-28; a last gift 9
+  // to 12 months before it), not "gave in 2025 and not 2026".
+  ok("§1 the fixture's 60 lapsed donors are found (no gift in the last 12 months)",
+     sec("lapsed").count === 60, sec("lapsed").count);
+  ok("§1 …and its 10 lapsing donors (last gift 9 to 12 months ago)",
+     sec("lapsing").count === 10, sec("lapsing").count);
   ok("§1 …its 12 drifting donors are found", sec("drifting").count === 12, sec("drifting").count);
   ok("§1 …its 10 stopped sustainers are found", sec("stopped").count === 10, sec("stopped").count);
-  ok("§1 …quiet is a superset of lapsed (70 = 55 + the 15 who last gave in 2023/24)",
-     sec("quiet").count === 70, sec("quiet").count);
+  ok("§1 …quiet is lapsed and lapsing together (70 = 60 + 10)",
+     sec("quiet").count === 70 && sec("quiet").count === sec("lapsed").count + sec("lapsing").count, sec("quiet").count);
   ok("§1 …somebody who stopped entirely is quiet, NOT drifting",
      sec("drifting").count === 12 && sec("quiet").count > sec("drifting").count);
   ok("§1 …the top-at-risk list is capped at 25", sec("atRisk").count === 25, sec("atRisk").count);
@@ -117,7 +122,8 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
   // The fixture is built for a pinned today of 2026-10-18: three donors per
   // group, two with one gift, two still on time.
   // WHAT WOULD MAKE THIS FAIL: judging by calendar year instead of the
-  // donor's own gap (the February and March givers fall out of "this week"),
+  // donor's own gap (Odette Marsh falls out of "this week"), a lapse line of
+  // Drift's own instead of Steward's one rule (the once-a-year givers leave "gone"),
   // a recurring gift that stopped left to Drift's lapse line (Wren Albury
   // lands in "probably gone"), a fact line that guesses, a total that counts
   // a lifetime instead of a year, or a fetch added to any module the worker
@@ -138,14 +144,18 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
     const plan = R.rescuePlan(rgifts, { today: "2026-10-18" });
     const g = k => plan.groups.find(x => x.key === k) || { rows: [], cents: -1 };
     const names = k => g(k).rows.map(r => r.name).join(", ");
+    // FIX-49 decision 6: "probably gone" is Steward's one lapse rule (no gift
+    // in the last 12 months). The once-a-year givers who missed their month
+    // (Imogen Hale, Bertram Quill, Cyrus Fenwick) have now gone a year with
+    // nothing, so they are lapsed, not "past their usual time".
     ok("§6 call this week: past their own usual time, ranked by a year of giving",
-       names("week") === "Imogen Hale, Bertram Quill, Odette Marsh", names("week"));
+       names("week") === "Odette Marsh", names("week"));
     ok("§6 call this month: further past, or a recurring gift that stopped",
-       names("month") === "Leopold Danvers, Cyrus Fenwick, Wren Albury", names("month"));
-    ok("§6 probably gone: past the lapse line",
-       names("gone") === "Sabine Thorne, Agnes Pyle, Rupert Gale", names("gone"));
-    ok("§6 the dollars per group are a year of giving: $7,200, $3,800, $5,600",
-       g("week").cents === 720000 && g("month").cents === 380000 && g("gone").cents === 560000,
+       names("month") === "Leopold Danvers, Wren Albury", names("month"));
+    ok("§6 probably gone: lapsed, no gift in the last 12 months",
+       names("gone") === "Imogen Hale, Sabine Thorne, Bertram Quill, Cyrus Fenwick, Agnes Pyle, Rupert Gale", names("gone"));
+    ok("§6 the dollars per group are a year of giving: $1,000, $2,600, $13,000",
+       g("week").cents === 100000 && g("month").cents === 260000 && g("gone").cents === 1300000,
        [g("week").cents, g("month").cents, g("gone").cents]);
     ok("§6 …and the overall figure foots to the three groups, $16,600 across 9 donors",
        plan.atRiskCents === 1660000 && plan.atRiskCount === 9 && plan.atRisk === "$16,600", plan.atRisk);
@@ -165,7 +175,7 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
       ["Rupert Gale", "Two gifts on record, a year apart. Nothing for 3 years."],
     ]) ok(`§6 the fact for ${n} is read off the file`, fact(n) === want, fact(n));
     ok("§6 each group says it in one sentence, with its count and dollars",
-       g("week").sentence === "3 donors who gave $7,200 in their last year of giving are past their usual time. Call these this week.",
+       g("week").sentence === "1 donor who gave $1,000 in their last year of giving is past their usual time. Call this one this week.",
        g("week").sentence);
   }
 

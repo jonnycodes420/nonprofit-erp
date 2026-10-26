@@ -119,6 +119,17 @@ export const NUMBER_CENSUS = [
     testid: "dp-tile-def-This year",
   },
 
+  // FIX-49: soft and matching credits, their own figure under Lifetime.
+  {
+    id: "profile.softCredit",
+    surface: "Donor profile",
+    label: "Soft credit",
+    computation: "figureSources donor-soft-credit: SUM of gift_soft_credits.amount crediting this donor plus this donor's own soft or matching credit rows (creditTypes.js); never added to Lifetime",
+    sentence: "Gifts this person is credited with but did not give themselves: someone else's gift credited to them, and soft or matching credits. It is never added to Lifetime, a campaign, a goal or an average. Click it for the gifts behind it.",
+    where: HOVER,
+    testid: "dp-tile-def-Soft credit",
+  },
+
   // INT-BUILD-1 — the two figures a calendar and an inbox make possible.
   {
     id: "profile.lastMet",

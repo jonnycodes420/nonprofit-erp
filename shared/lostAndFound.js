@@ -20,7 +20,8 @@
 // ── WHAT AN AUDIT IS ─────────────────────────────────────────────────────
 // Five questions a development director cannot answer from a spreadsheet
 // without a day of pivot tables:
-//   1. who has gone quiet          gave in an earlier year, not this one
+//   1. who has lapsed or is lapsing   Steward's one rule: no gift in the last
+//                                   12 months, or a last gift 9 to 12 months ago
 //   2. who is drifting             giving down 40% or more year on year
 //   3. recurring gifts that stopped
 //   4. the top 25 at risk, by dollars
@@ -33,6 +34,10 @@
 
 import { displayDate as dateWords } from "./displayDate.js";
 import { normalizeDate, normalizeMoney, normalizeName, normalizeEmail } from "./importShape.js";
+// FIX-49 decision 6: lapsed and lapsing are Steward's one rule (lapseRule.js,
+// pure, bundled into the worker beside drift.js), judged from `today`.
+import lapseRuleMod from "../lapseRule.js";
+const { lapseState } = lapseRuleMod;
 
 // ── THE THRESHOLDS, AND WHY THEY ARE THESE ───────────────────────────────
 // DRIFT_DROP 40%: the figure fundraising literature uses for a "significant
@@ -160,13 +165,13 @@ export function audit(gifts, { today }) {
 
   const gaveLastYear = donors.filter(d => (d.byYear.get(lastYear) || 0) > 0);
   const gaveThisYear = donors.filter(d => (d.byYear.get(thisYear) || 0) > 0);
-  const gaveLastNotThis = gaveLastYear.filter(d => !(d.byYear.get(thisYear) > 0));
-
-  // QUIET: gave in SOME earlier year and not this one. A superset of the
-  // lapsed-last-year list, and the two are reported separately because they
-  // are two different conversations.
-  const quiet = donors.filter(d =>
-    !(d.byYear.get(thisYear) > 0) && [...d.byYear.keys()].some(y => y < thisYear));
+  // FIX-49: LAPSED and LAPSING are the one rule, from each person's latest
+  // gift above zero. QUIET is both together: everybody the rule names.
+  const lastPositive = d => d.gifts.filter(g => g.cents > 0).reduce((m, g) => (!m || g.date > m ? g.date : m), null);
+  const stateOf = new Map(donors.map(d => [d, lapseState(lastPositive(d), today)]));
+  const lapsed = donors.filter(d => stateOf.get(d) === "lapsed");
+  const lapsing = donors.filter(d => stateOf.get(d) === "lapsing");
+  const quiet = [...lapsed, ...lapsing];
 
   // DRIFTING: gave in both years, and this year is 40% or more down. Only
   // people who ARE still giving can drift; somebody who stopped is quiet,
@@ -211,7 +216,8 @@ export function audit(gifts, { today }) {
   const retained = gaveLastYear.filter(d => d.byYear.get(thisYear) > 0).length;
   const retentionRate = gaveLastYear.length ? retained / gaveLastYear.length : null;
 
-  const lastYearLostCents = gaveLastNotThis.reduce((a, d) => a + (d.byYear.get(lastYear) || 0), 0);
+  const lapsedCents = lapsed.reduce((a, d) => a + bestYearCents(d), 0);
+  const lapsingCents = lapsing.reduce((a, d) => a + bestYearCents(d), 0);
 
   return {
     today, thisYear, lastYear,
@@ -222,19 +228,26 @@ export function audit(gifts, { today }) {
       lastGiftDate: gifts.length ? gifts.reduce((m, g) => (g.date > m ? g.date : m), gifts[0].date) : null,
     },
     sections: [
-      { key: "lapsed", label: "Gave last year, not this year",
-        count: gaveLastNotThis.length, cents: lastYearLostCents,
-        sentence: gaveLastNotThis.length
-          ? `${gaveLastNotThis.length} ${gaveLastNotThis.length === 1 ? "donor who gave" : "donors who gave"} ${money(lastYearLostCents)} last year have not given this year.`
-          : `Everybody who gave in ${lastYear} has given again in ${thisYear}.`,
-        definition: `Donors with at least one gift dated in ${lastYear} and none dated in ${thisYear}.`,
-        rows: gaveLastNotThis.map(d => row(d, { cents: d.byYear.get(lastYear) || 0, note: `gave ${money(d.byYear.get(lastYear) || 0)} in ${lastYear}` })) },
+      { key: "lapsed", label: "Lapsed",
+        count: lapsed.length, cents: lapsedCents,
+        sentence: lapsed.length
+          ? `${lapsed.length} ${lapsed.length === 1 ? "donor has" : "donors have"} given before but not in the last 12 months. Their best year was worth ${money(lapsedCents)}.`
+          : "Nobody on this file has gone 12 months without a gift.",
+        definition: "Lapsed: they have given before, but not in the last 12 months. The same rule Steward uses everywhere.",
+        rows: lapsed.map(d => row(d, { cents: bestYearCents(d), note: `last gave ${dateWords(d.last.date) || d.last.date}` })) },
+      { key: "lapsing", label: "Lapsing",
+        count: lapsing.length, cents: lapsingCents,
+        sentence: lapsing.length
+          ? `${lapsing.length} ${lapsing.length === 1 ? "donor last gave" : "donors last gave"} 9 to 12 months ago. Their best year was worth ${money(lapsingCents)}.`
+          : "Nobody on this file last gave 9 to 12 months ago.",
+        definition: "Lapsing: their last gift was 9 to 12 months ago. The same rule Steward uses everywhere.",
+        rows: lapsing.map(d => row(d, { cents: bestYearCents(d), note: `last gave ${dateWords(d.last.date) || d.last.date}` })) },
       { key: "quiet", label: "Gone quiet",
         count: quiet.length, cents: quiet.reduce((a, d) => a + bestYearCents(d), 0),
         sentence: quiet.length
-          ? `${quiet.length} ${quiet.length === 1 ? "donor has" : "donors have"} given in some year and not in ${thisYear}. Their best year was worth ${money(quiet.reduce((a, d) => a + bestYearCents(d), 0))}.`
+          ? `${quiet.length} ${quiet.length === 1 ? "donor has" : "donors have"} lapsed or ${quiet.length === 1 ? "is" : "are"} lapsing. Their best year was worth ${money(quiet.reduce((a, d) => a + bestYearCents(d), 0))}.`
           : `Nobody on this file has gone quiet.`,
-        definition: `Donors with at least one gift in any year before ${thisYear}, and none in ${thisYear}. A superset of the list above.`,
+        definition: "Everybody lapsed or lapsing, the two lists above together.",
         rows: quiet.map(d => row(d, { cents: bestYearCents(d), note: `last gave ${dateWords(d.last.date) || d.last.date}` })) },
       { key: "drifting", label: "Giving down 40% or more",
         count: drifting.length, cents: drifting.reduce((a, d) => a + (d.fromCents - d.toCents), 0),

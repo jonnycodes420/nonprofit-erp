@@ -34,6 +34,7 @@
 const { query, querySetwise } = require("./db");
 const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { LAST_GIFT_ORDER } = require("./donorSummary");
+const { CREDIT_TYPES, NOT_CREDIT, IS_CREDIT } = require("./creditTypes");   // FIX-49: credits are not money
 const orgTime = require("./orgTime");
 const money = require("./money");
 const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
@@ -107,8 +108,9 @@ function funderTypeWords(t) {
 // gift alias is g and person alias is d.
 // The bookkeeper's file leaves these gift types out: they are credit
 // records, not money that reached the bank (BUILD-87 Part 4).
-const BOOKKEEPER_EXCLUDED_TYPES = ["soft credit", "soft-credit", "soft_credit",
-  "matching gift credit", "matched gift credit", "hard credit reversal"];
+// FIX-49: the one list, in creditTypes.js; soft and matching credits are not
+// money anywhere (Lifetime, campaigns, goals, averages), not only here.
+const BOOKKEEPER_EXCLUDED_TYPES = CREDIT_TYPES;
 const FIRST_GIFT_IN = (from, to) => `AND (SELECT MIN(LEFT(g2.date,10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) BETWEEN ${from} AND ${to}`;
 // The one definition of a lapsed MEMBER (BUILD-101 Part 3): their latest
 // membership lapsed and they hold none now. Memberships' list and counts and
@@ -519,30 +521,9 @@ const SOURCES = {
       order: "amount DESC, id",
     }),
   },
-  // REPORTS-4 · The "household total" on a profile: this person and everyone
-  // linked to them as a spouse or household member, each once, with their
-  // lifetime giving. A deleted person is not counted (before REPORTS-4 they
-  // were: the banner added a deleted spouse's giving in).
-  "linked-household-giving": {
-    label: "Household total",
-    measure: () => "sum",
-    params: { donor: "id:required" },
-    sentence: () => "This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted.",
-    sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount,
-                   CASE WHEN d.id = ? THEN 'This person' ELSE 'Linked as household' END AS detail
-              FROM donors d
-             WHERE d.org_id = ? AND d.deleted_at IS NULL
-               AND (d.id = ? OR d.id IN (
-                     SELECT CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END
-                       FROM donor_relationships dr
-                      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
-                        AND dr.relationship_type IN ('spouse', 'household')))`,
-      args: [p.donor, orgId, p.donor, p.donor, orgId, p.donor, p.donor],
-      order: "amount DESC, id",
-    }),
-  },
+  // FIX-49 decision 8: "linked-household-giving" (a second household total,
+  // over spouse links) is gone. The household record is the one grouping and
+  // "household-giving" above is its total.
   // REPORTS-5 · NUMBERS FROM AN OLD SYSTEM. Each row is one historical total
   // as the old report printed it, with the file and system it came from. A
   // historical total is never a gift: it is not in `gifts`, not on anyone's
@@ -575,11 +556,11 @@ const SOURCES = {
     label: "Raised on this page",
     measure: () => "sum",
     params: { page: "id:required" },
-    sentence: () => "Every gift given through this page, less any processing fee the donor chose to cover, which is what the page's own progress bar shows.",
+    sentence: () => "Every gift given through this page, at the full amount the donor paid (a processing fee they chose to cover is part of the gift), which is what the page's own progress bar shows.",
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(d.name, 'Someone no longer in Steward') AS name, g.date,
-                   ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount,
-                   CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Fee they covered left out' ELSE 'Gift' END AS detail
+                   ROUND(g.amount::numeric, 2) AS amount,
+                   CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Gift, fee covered' ELSE 'Gift' END AS detail
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND g.giving_page_id = ?`,
       args: [orgId, p.page],
@@ -822,14 +803,14 @@ const SOURCES = {
     label: "Lifetime giving",
     measure: () => "sum",
     params: { donor: "id:required" },
-    sentence: () => "Every gift this person has ever given, added up to the cent. A refund is a gift with a negative amount and comes off the total, exactly as it does everywhere else in Steward. A total brought in from an old system is one row of its own, with its source and the last day it covers; gifts in Steward dated on or before that day are already inside it, so they are not added again.",
+    sentence: () => "Every gift this person has ever given, added up to the cent. A refund is a gift with a negative amount and comes off the total, exactly as it does everywhere else in Steward. A fee the donor chose to cover is part of the gift. Soft and matching credits are not gifts and are shown as Soft credit instead. A total brought in from an old system is one row of its own, with its source and the last day it covers; gifts in Steward dated on or before that day are already inside it, so they are not added again.",
     js: async (orgId, p) => {
       const [d] = await query(
         `SELECT imported_total, imported_through, imported_source, imported_on, imported_gift_count
            FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`, [orgId, p.donor]);
       if (!d) return [];
       const through = d.imported_total != null && d.imported_through ? String(d.imported_through).slice(0, 10) : null;
-      const rows = await query(`${DONOR_GIFT_SELECT}${through ? " AND g.date > ?" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
+      const rows = await query(`${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")}${through ? " AND g.date > ?" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
         through ? [orgId, p.donor, through] : [orgId, p.donor]);
       if (d.imported_total == null) return rows;
       const n = Number(d.imported_gift_count) || 0;
@@ -843,6 +824,32 @@ const SOURCES = {
         detail: `${n ? `${n} gift${n === 1 ? "" : "s"}, ` : ""}imported as a total${d.imported_on ? ` on ${String(d.imported_on).slice(0, 10)}` : ""}, covering every gift to this date`,
       }];
     },
+  },
+  // FIX-49 · SOFT CREDIT, ITS OWN FIGURE (Jonathan, 25 Oct). Soft and
+  // matching credits are never in Lifetime, a campaign, a goal or an average;
+  // they are shown as this one figure, with the gifts behind it: every gift
+  // someone else gave that credits this person (gift_soft_credits, at the
+  // credited amount) and every soft or matching credit row on their own record.
+  "donor-soft-credit": {
+    label: "Soft credit",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "Gifts this person is credited with but did not give themselves: someone else's gift credited to them, and soft or matching credit records. Soft credit is never added to Lifetime, a campaign, a goal or an average.",
+    sql: (orgId, p) => ({
+      sql: `SELECT sc.id, 'soft_credit' AS type, g.donor_id, COALESCE(gd.name, 'Someone no longer in Steward') AS name, g.date,
+                   ROUND(sc.amount::numeric, 2) AS amount, 'Credited from their gift' AS detail
+              FROM gift_soft_credits sc
+              JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+              JOIN donors d ON d.id = sc.donor_id AND d.org_id = sc.org_id AND d.deleted_at IS NULL
+              LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+             WHERE sc.org_id = ? AND sc.donor_id = ?
+            UNION ALL
+            SELECT g.id, 'gift', g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2), INITCAP(TRIM(g.type))
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
+             WHERE g.org_id = ? AND g.donor_id = ? AND ${IS_CREDIT("g")}`,
+      args: [orgId, p.donor, orgId, p.donor],
+      order: "date DESC NULLS LAST, id",
+    }),
   },
   // ENGAGE-1 — EACH PART OF A SCORE OPENS THE ROWS IT COUNTED. The rows come
   // from engagement.js's one row builder, the same call the compute made, so
@@ -1364,7 +1371,7 @@ const SOURCES = {
       if (!DS.TAG_KEYS.includes(p.tag)) throw new FigureParamError("tag is not a tag Steward knows.");
       const cuts = await DS.cutsFor(orgId);
       const st = DS.statusSql(orgId, p.today, cuts);
-      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : "s.retained";
+      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : p.tag === "lapsing" ? "s.lapsing" : "s.retained";
       return {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
                      'Given in the last 12 months' AS detail
@@ -1955,10 +1962,10 @@ const SOURCES = {
     label: "Raised toward the goal",
     measure: () => "sum",
     params: { campaign: "id:required" },
-    sentence: () => "Every gift given to this goal, less any processing fee the donor covered, and every grant awarded toward it.",
+    sentence: () => "Every gift given to this goal, at the full amount the donor paid, and every grant awarded toward it. Soft and matching credits are not counted.",
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date,
-                   ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, 'Gift' AS detail
+                   ROUND(g.amount::numeric, 2) AS amount, 'Gift' AS detail
               FROM campaigns c
               JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
@@ -2019,7 +2026,7 @@ const SOURCES = {
     sentence: () => "Each person who gave to this campaign, once, with what they gave to it in all.",
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date,
-                   ROUND(SUM(g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, 'Gave to this campaign' AS detail
+                   ROUND(SUM(g.amount)::numeric, 2) AS amount, 'Gave to this campaign' AS detail
               FROM campaigns c
               JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
@@ -2213,32 +2220,35 @@ const SOURCES = {
       order: "date ASC NULLS LAST, id",
     }),
   },
-  // An umbrella goal's raised is the sum of its children's (the roll-up).
+  // An umbrella goal's raised: its own gifts plus its children's, each once (FIX-49).
   "goal-rollup-raised": {
     label: "Raised across its goals",
     measure: () => "sum",
     params: { campaign: "id:required" },
-    sentence: () => "Every gift and awarded grant given to the goals this one rolls up, less any processing fee the donor covered.",
+    sentence: () => "Every gift and awarded grant given to this goal directly and to the goals it rolls up, each once, at the full amount the donor paid.",
     sql: (orgId, p) => ({
-      sql: `SELECT g.id || ':' || c.id AS id, 'gift' AS type, g.donor_id, d.name, g.date,
-                   ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, c.name AS detail
+      // FIX-49: the parent's own gifts and its children's, each gift ONCE
+      // (DISTINCT ON the gift) even when it matches two of those campaigns.
+      sql: `SELECT * FROM (SELECT DISTINCT ON (g.id) g.id, 'gift' AS type, g.donor_id, d.name, g.date,
+                   ROUND(g.amount::numeric, 2) AS amount, c.name AS detail
               FROM campaigns c
               JOIN gifts g ON g.org_id = c.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
               LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE c.org_id = ? AND c.parent_goal_id = ? AND c.goal_amount > 0
+             WHERE c.org_id = ? AND c.goal_amount > 0 AND (c.id = ? OR c.parent_goal_id = ?)
+             ORDER BY g.id, (c.id = ?) DESC) gg
             UNION ALL
             SELECT gr.id, 'grant', gr.funder_donor_id, gr.funder, TO_CHAR(gr.awarded_at, 'YYYY-MM-DD'),
                    ROUND(COALESCE(gr.amount, 0)::numeric, 2), 'Grant awarded'
               FROM grants gr JOIN campaigns c ON c.id = gr.campaign_id AND c.org_id = gr.org_id
-             WHERE gr.org_id = ? AND c.parent_goal_id = ? AND c.goal_amount > 0 AND gr.awarded_at IS NOT NULL`,
-      args: [orgId, p.campaign, orgId, p.campaign],
+             WHERE gr.org_id = ? AND c.goal_amount > 0 AND (c.id = ? OR c.parent_goal_id = ?) AND gr.awarded_at IS NOT NULL`,
+      args: [orgId, p.campaign, p.campaign, p.campaign, orgId, p.campaign, p.campaign],
     }),
   },
   "goal-rollup-progress": {
     label: "Progress across its goals",
     ratio: "share",
     params: { campaign: "id:required" },
-    sentence: () => "What has been raised across the goals this one rolls up, as a share of its own target.",
+    sentence: () => "What has been raised for this goal directly and across the goals it rolls up, each gift once, as a share of its own target.",
     parts: p => [
       { role: "numerator", label: "Raised", key: "goal-rollup-raised", params: { campaign: p.campaign } },
       { role: "denominator", label: "The goal", key: "campaign-goal", params: { campaign: p.campaign } },

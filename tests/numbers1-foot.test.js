@@ -121,7 +121,10 @@ async function fire(evt) {
 // ── the things people do to gifts. Each draws its choices from its own seed,
 // so a shorter sequence replays the same choices against whatever is there. ──
 // NUMBERS-2: "importTotal" brings a person with a total from an old system and no gifts.
-const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal"];
+// FIX-49: "coverFee" marks a gift as one where the donor covered the fee (the
+// gift stays the full amount everywhere but Finance), "creditRow" records a
+// matching gift credit, which is never money in Lifetime, a campaign or an average.
+const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal", "coverFee", "creditRow"];
 async function live(o) {
   const donors = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY id`, [o.org])).map(r => r.id);
   const gifts = await q(`SELECT id, donor_id, amount::text AS amount, date, campaign_id, fund_id, stripe_payment_id FROM gifts WHERE org_id=$1 ORDER BY id`, [o.org]);
@@ -150,6 +153,18 @@ async function step(o, s) {
       const want = (await windowOk(o, campaignId, date)) ? 201 : 400;
       if (res.status !== want) throw new Error(`add ${amount} on ${date} to ${campaignId} answered ${res.status}, expected ${want}`);
       return `add $${amount} to ${donor.slice(-1)} dated ${date}${campaignId ? ` for ${campaignId.split("_").pop()}` : ""}${want === 400 ? " (refused: outside the campaign's dates)" : ""}`;
+    }
+    case "coverFee": {
+      if (!g || Number(g.amount) < 1) return "cover fee: no gift";
+      const fee = Math.min(Number(g.amount) - 0.01, Math.round(Number(g.amount) * 2.9 + 30) / 100);
+      await q(`UPDATE gifts SET cover_fee_amount=$1, processor_fee_amount=$1 WHERE id=$2 AND org_id=$3`, [fee.toFixed(2), g.id, o.org]);
+      return `the donor covered $${fee.toFixed(2)} of fee on ${g.id}`;
+    }
+    case "creditRow": {
+      const donor = pick(r, donors), date = dateIn(r, o), campaignId = campaignOf(r, o), amount = money(r);
+      const res = await api("POST", `/donors/${donor}/gifts`, o.tok, { amount, date, type: "matching gift credit", campaignId: campaignId || undefined });
+      expect(res, [201, 400], "credit row");
+      return `matching gift credit $${amount} to ${donor.slice(-1)} dated ${date}${res.status === 400 ? " (refused)" : ""}`;
     }
     case "editAmount": {
       if (!g || Number(g.amount) <= 0) return "edit amount: no gift";

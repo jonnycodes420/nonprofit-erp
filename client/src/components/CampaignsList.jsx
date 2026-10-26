@@ -54,7 +54,7 @@ export function CategoryBadge({ g, style }) {
 }
 
 const SENT = {
-  raised: "Every gift given to this goal, less any processing fee the donor covered, and every grant awarded toward it.",
+  raised: "Every gift given to this goal, at the full amount the donor paid, and every grant awarded toward it. Soft and matching credits are not counted.",
   goal: "The target set on this goal's record.",
   percent: "What has been raised toward this goal, as a share of its target.",
   donors: "Each person who gave to this campaign, once, with what they gave to it in all.",

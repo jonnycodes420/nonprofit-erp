@@ -213,7 +213,7 @@ const SEG_MODES  = [
   { id: "volunteers",  label: "Volunteers" },
   { id: "staff_board", label: "Staff and board" },
   { id: "donors",      label: "Donors" },
-  { id: "major",       label: "Major ($10,000+)" },
+  { id: "major",       label: "Major" },
   { id: "lapsed",      label: "Lapsed" },
   { id: "byStage",     label: "By stage" },
   { id: "byTier",      label: "By tier" },

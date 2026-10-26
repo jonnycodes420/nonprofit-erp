@@ -143,7 +143,6 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | hh-add | + Group into household | modal → `POST /households` | "+ Group into household" || overview · `[data-testid=dp-household-add]` · dialog |
 | hh-member | a member row | `onSelectRelatedDonor(id)` | `[data-testid=dp-household]` rows || related · `onSelectRelatedDonor(m.id)` · code |
 | hh-figs | Hard credit / Soft credit / Household combined / member totals | Figures → `softCredit.householdSources.*`, `household.combined_source`, `m.source` | household figures || related · `householdSources` · code |
-| hh-total | Household total line (when linked) | click → Related tab; figure → `householdTotalSource` | "See who's linked →" || related · `householdTotalSource` · code |
 | soft-credit | Soft credit panel (when soft credits) | text, hover titles (census `profile.creditHard` / `creditWithSoft`) | `[data-testid=soft-credit-panel]` || gifts · `[data-testid=soft-credit-panel]` · exists |
 | pg-note | + Note planned giving | opens the designation toggles | `[data-testid=dp-planned-giving]` "+ Note planned giving" || overview · `[data-testid=dp-planned-giving-add]` · exists |
 | pg-toggle | each designation toggle | `POST`/`DELETE /donors/:id/designations[/:kind]` | `[data-designation]` || overview · `data-designation` · code |

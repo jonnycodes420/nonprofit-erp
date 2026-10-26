@@ -23,8 +23,18 @@
 //   · a person with no gifts and no imported total has a zero total and no
 //     first or last gift.
 // `$1` is the org; `scope` narrows it (e.g. "AND d.id = ANY($2)").
-// No requires, so server.js, afterChange.js and the seed all load it.
+// FIX-49: soft and matching credit rows are not money, so they are in neither
+// the total nor the count (creditTypes.js).
+// Only creditTypes.js is required, so server.js, afterChange.js and the seed all load it.
+const { NOT_CREDIT } = require("./creditTypes");
 const LAST_GIFT_ORDER = "g.date DESC, g.created_at DESC, g.id DESC";
+
+// FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
+// gave one; when it gave only a last gift date, that date, because the person
+// was already a donor on it (a file that gave no dates at all says nothing,
+// and the day of the import is not a gift, so imported_through is never used
+// here). "Donor since", the lifecycle tags and first_gift_date all read this.
+const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
 
 // A gift on file that the imported total does not already cover.
 const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date > dd.imported_through)";
@@ -45,11 +55,11 @@ const DONOR_SUMMARY_UPDATE = (scope = "") => `
                (CASE WHEN x.row_last IS NOT NULL AND x.row_last >= COALESCE(NULLIF(x.imp_last, ''), '0000') THEN x.row_last_amt
                      WHEN NULLIF(x.imp_last, '') IS NOT NULL THEN COALESCE(x.imp_last_amt, 0) ELSE 0 END)::numeric(12,2) AS last_amt
           FROM (SELECT dd.id AS donor_id, dd.imported_total AS imp_total, dd.imported_gift_count AS imp_n,
-                       dd.imported_first_gift_date AS imp_first, dd.imported_last_gift_date AS imp_last,
+                       ${IMPORTED_FIRST("dd")} AS imp_first, dd.imported_last_gift_date AS imp_last,
                        dd.imported_last_gift_amount AS imp_last_amt,
-                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT}) AS after_total,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT}) AS after_n,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT}) AS before_n,
+                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_total,
+                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_n,
+                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS before_n,
                        MIN(g.date) FILTER (WHERE g.amount > 0) AS row_first,
                        MAX(g.date) AS row_last,
                        (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}))[1] AS row_last_amt
@@ -83,7 +93,7 @@ const KEEP_IMPORTED_TOTAL = `
     imported_source = $3,
     imported_on = $4
   FROM donors dd LEFT JOIN (SELECT donor_id, SUM(amount) AS t, COUNT(*) FILTER (WHERE amount > 0) AS n
-                              FROM gifts WHERE org_id = $1 AND donor_id = ANY($2) GROUP BY donor_id) gs ON gs.donor_id = dd.id
+                              FROM gifts g WHERE g.org_id = $1 AND g.donor_id = ANY($2) AND ${NOT_CREDIT("g")} GROUP BY g.donor_id) gs ON gs.donor_id = dd.id
   WHERE d.id = dd.id AND d.org_id = $1 AND dd.org_id = $1 AND d.id = ANY($2)
     AND d.imported_total IS NULL AND d.total_giving > COALESCE(gs.t, 0)`;
 
@@ -102,4 +112,4 @@ const SOFT_CREDIT_RESIZE = [
     WHERE g.id = sc.gift_id AND g.org_id = sc.org_id AND sc.gift_id = $1 AND sc.org_id = $2`,
 ];
 
-module.exports = { DONOR_SUMMARY_UPDATE, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE };
+module.exports = { DONOR_SUMMARY_UPDATE, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };

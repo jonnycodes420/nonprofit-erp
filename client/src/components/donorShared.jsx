@@ -25,7 +25,7 @@ function inferStage(total, lastGiftStr, hasContactInfo) {
   const d = lastGiftStr ? new Date(lastGiftStr) : null;
   const days = d && !isNaN(d) ? Math.floor((Date.now() - d) / 86400000) : null;
   if (!amount && days === null) return hasContactInfo ? "qualify" : "prospect";
-  if (days !== null && days > 365) return "lapsed";
+  if (days !== null && days >= 365) return "lapsed";   // FIX-49: lapseRule.js, a year with no gift
   if (days !== null && days < 90 && amount > 0) return "steward";
   // A substantial gift 90–180 days ago reads as "ready for a follow-up ask"
   // rather than folding into the generic "cultivate" bucket.
@@ -90,7 +90,7 @@ const PATTERN_META=[
   {id:"one-time", label:"One-time"},
   {id:"recurring",label:"Recurring (2+ gifts)"},
   {id:"major",    label:"Major gift (>$10k)"},
-  {id:"lapsed",   label:"Lapsed (>365d)"},
+  {id:"lapsed",   label:"Lapsed (no gift in 12 months)"},
 ];
 
 export { DESIGNATION_OPTS, NEGATOR_PHRASES, PATTERN_META, STAGE_COLORS, TIER_META, inferStage, normalizeStage };

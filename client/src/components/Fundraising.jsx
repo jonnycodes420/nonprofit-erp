@@ -828,6 +828,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const [dfHero, setDfHero] = useState(campaign?.heroImageUrl || "");   // stored path OR fresh data URI
   const [dfHeroCrop, setDfHeroCrop] = useState(campaign?.heroCrop || null); // BUILD-65 Part 3 — non-destructive crop
   const [goalPublic, setGoalPublic] = useState(campaign?.goalProgressPublic === true);
+  const [grantsOff, setGrantsOff] = useState(campaign?.grantsOffPublicBar === true);   // FIX-49
   // FIX-7 Part 4 — peer-to-peer lives on a giving page, and until now the only
   // way to find that out was to make a campaign, then go and make a page, then
   // find the switch. On a NEW campaign it is one line here.
@@ -855,7 +856,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
         name: name.trim(), goalAmount: g, goalCategory: category, parentGoalId: parentId || null, startDate: start || null, endDate: end || null,
         donorFacingName: dfName.trim(), donorDescription: dfDesc.trim(),
         donorStory: textToStory(dfStory), heroImageData: dfHero || "", heroCrop: dfHero ? dfHeroCrop : "",
-        goalProgressPublic: goalPublic,
+        goalProgressPublic: goalPublic, grantsOffPublicBar: grantsOff,
       };
       if (mode === "edit") { await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) }); onSaved(); return; }
       const made = await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
@@ -988,6 +989,16 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
               <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>
                 Off by default. When on, donors who gave to this campaign see the goal, amount raised, and percent,
                 never donor counts and never anyone else's gifts.
+              </span>
+            </span>
+          </label>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer" }}>
+            <input type="checkbox" checked={grantsOff} onChange={e => setGrantsOff(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <strong>Leave grants off the public bar</strong>
+              <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>
+                Off by default, so a grant awarded toward this campaign counts on its public bar as it does here.
+                Turn it on to show donors only what people gave.
               </span>
             </span>
           </label>

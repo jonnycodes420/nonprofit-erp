@@ -20,7 +20,7 @@ export default defineConfig({
     // AUDIT-2 · Lost & Found's worker bundles Drift (drift.js + orgTime.js,
     // CommonJS at the repo root) so the free audit judges donors the way
     // Steward does. Rollup converts only what this names.
-    commonjsOptions: { include: [/node_modules/, /[\\/]drift\.js$/, /[\\/]orgTime\.js$/] },
+    commonjsOptions: { include: [/node_modules/, /[\\/]drift\.js$/, /[\\/]orgTime\.js$/, /[\\/]lapseRule\.js$/] },
     // Gated on the same token that drives the Sentry plugin below, not just
     // "true" — if SENTRY_AUTH_TOKEN is unset (local dev, a PR preview build
     // missing the secret), no maps are generated at all, so there's never a
@@ -53,7 +53,7 @@ export default defineConfig({
       apply: "serve",
       transform(code, id) {
         const file = id.split("?")[0];
-        if (!/[\\/](drift|orgTime)\.js$/.test(file) || /node_modules/.test(file)) return null;
+        if (!/[\\/](drift|orgTime|lapseRule)\.js$/.test(file) || /node_modules/.test(file)) return null;
         if (new URL("../", import.meta.url).pathname !== file.replace(/[^\\/]+$/, "")) return null;
         const imports = [];
         const body = code.replace(/require\((["'])(\.\/[^"']+)\1\)/g, (m, q, p) => {

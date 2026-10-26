@@ -33,7 +33,7 @@ const quiet = { background: "transparent", color: T.ink, border: "1px solid " + 
 const RULE_FIELDS = [
   { key: "role", label: "Role", options: [["", "Anyone"], ["donor", "Donors"], ["volunteer", "Volunteers"], ["staff_board", "Staff and board"]] },
   { key: "level", label: "Giving level", options: [["", "Any level"], ["general", "General"], ["mid", "Mid"], ["major", "Major"]] },
-  { key: "lifecycle", label: "Lifecycle", options: [["", "Any"], ["new", "New"], ["current", "Current"], ["recaptured", "Recaptured"], ["lapsed", "Lapsed"]] },
+  { key: "lifecycle", label: "Lifecycle", options: [["", "Any"], ["new", "New"], ["current", "Current"], ["recaptured", "Recaptured"], ["lapsing", "Lapsing"], ["lapsed", "Lapsed"]] },
   { key: "closeness", label: "Closeness", options: [["", "Any"], ["close", "Close"], ["warm", "Warm"], ["on_track", "On track"], ["cooling", "Cooling"], ["new", "New"]] },
   { key: "given", label: "Has given", options: [["", "Either"], ["ever", "Has given"], ["never", "Has never given"]] },
   { key: "stage", label: "Stage", options: [["", "Any stage"], ["prospect", "Prospect"], ["qualify", "Qualify"], ["cultivate", "Cultivate"], ["solicit", "Solicit"], ["steward", "Ongoing care"], ["lapsed", "Lapsed"]] },

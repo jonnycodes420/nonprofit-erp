@@ -27,6 +27,8 @@ const NUM = require("../numbers");
 const money = require("../money");
 const orgTime = require("../orgTime");
 const { statementLines } = require("../statementTotals");
+const DS = require("../donorStatus");
+const lapseRule = require("../lapseRule");
 
 const CREDIT = new Set(FS.BOOKKEEPER_EXCLUDED_TYPES);
 const c = v => money.toCents(String(v ?? "0")) ?? 0;
@@ -34,7 +36,7 @@ const day = v => (v instanceof Date ? `${v.getFullYear()}-${String(v.getMonth() 
 
 // THE RULES. `words` is the rule; `screens` is where a broken one would show.
 const RULES = {
-  "donor-lifetime": { words: "A person's Lifetime equals their imported total (if any) plus their gifts dated after the last day it covers, refunds taken off. A gift dated on or before that day is inside the imported total and is never counted twice.",
+  "donor-lifetime": { words: "A person's Lifetime equals their imported total (if any) plus their gifts dated after the last day it covers, refunds taken off, at the full amount paid (a fee they covered included). A gift dated on or before that day is inside the imported total and is never counted twice. Soft and matching credit rows are not in it.",
     screens: "profile header, rail, donor list, Ask, the Lifetime drawer" },
   "donor-count-average": { words: "Average gift is the counted gifts (refunds taken off; soft and matching credit rows are not gifts) over how many gifts above zero there are, to the cent.",
     screens: "profile header Average gift, 'of N gifts'" },
@@ -46,14 +48,18 @@ const RULES = {
     screens: "donor list, groups, households, portfolios, Lost & Found, exports, staff emails" },
   "household": { words: "A household's combined giving is the sum of its members' Lifetime, and each member's household soft credit is the combined total less their own.",
     screens: "household panel, profile household total" },
-  "soft-credit": { words: "A soft credit is never counted as money: it never adds to anyone's Lifetime, and it is never more than the gift it points at.",
-    screens: "profile soft credits, reports with soft credit" },
-  "campaign": { words: "A campaign's raised is the gifts attributed to it, dated inside its start and end, less fees the donor covered, from people who are not deleted; its donor count is those givers, once each.",
+  "soft-credit": { words: "A soft credit is never counted as money: it never adds to anyone's Lifetime, a campaign, a goal or an average, it is never more than the gift it points at, and the profile's Soft credit figure is exactly the credits and credit rows behind it.",
+    screens: "profile Soft credit, profile soft credits, reports with soft credit" },
+  "campaign": { words: "A campaign's raised is the gifts attributed to it, dated inside its start and end, at the full amount the donor paid (a covered fee included), from people who are not deleted, soft and matching credit rows left out; its donor count is those givers, once each.",
     screens: "Fundraising cards, campaign pages, thermometers, goal drawers" },
   "campaign-window": { words: "No gift dated outside a campaign's start and end counts toward it.",
     screens: "every campaign total" },
-  "goal-rollup": { words: "The Fundraising overview's combined goal total equals the sum of its top-level active goals.",
-    screens: "Fundraising overview header" },
+  "goal-rollup": { words: "The Fundraising overview's combined goal total equals the sum of its top-level active goals, and a parent goal's raised is its own gifts plus its child goals' gifts, each gift once, plus their awarded grants.",
+    screens: "Fundraising overview header, parent goal cards" },
+  "goal-period": { words: "An organization goal counts the gifts dated inside its own start and end, the same on Home and Fundraising, from people who are not deleted, soft and matching credits left out.",
+    screens: "Home goal banner, Fundraising goal card" },
+  "public-bar": { words: "A campaign's public bar is its gifts plus its awarded grants, unless the campaign leaves grants off the public bar.",
+    screens: "giving page bar" },
   "fund": { words: "A fund's total equals the gifts designated to it.",
     screens: "Reports by fund, Finance funds" },
   "report-year": { words: "The year's giving in Reports equals the sum of the year's gifts from people who are not deleted.",
@@ -62,8 +68,18 @@ const RULES = {
     screens: "year-end statements, receipts" },
   "removed": { words: "A deleted gift or person counts nowhere: no ledger stamp, soft credit or pledge payment points at a gift that is gone, and a deleted person's gifts are in no total.",
     screens: "Finance ledger, pledges, every total" },
+  // FIX-49 · imported history is giving: the tags and "Donor since" read it.
+  "donor-since": { words: "A person's first gift (Donor since, and the lifecycle tags) is the earlier of their first gift above zero on file and the first gift the old system told us about; someone who gave in the old system before the last 12 months is never tagged New.",
+    screens: "profile roles line (Donor since), lifecycle tags, donor list filters, groups" },
   "foots": { words: "Every number that opens its rows foots to those rows.",
     screens: "every figure drawer" },
+  // FIX-49 decisions 6 to 8 (Jonathan, 25 Oct).
+  "lapse": { words: "Lapsed is no gift in the last 12 months after giving before; lapsing is a last gift 9 to 12 months ago. The tags, the Directory's counts and every list name the same people by that one rule.",
+    screens: "profile tags, Directory and its Re-engage badge, groups, Drift, journey triggers, Lost & Found" },
+  "giving-level": { words: "A person's giving level is what they gave in the last 12 months against the org's own cut points (Settings, Giving levels), and nothing else.",
+    screens: "profile tag, Directory filter, groups, Communications Major, the Board" },
+  "household-one": { words: "The household record is the only grouping: two people linked as spouses or a household are in one household.",
+    screens: "the profile's household panel, household totals" },
 };
 
 async function orgToday(orgId) {
@@ -102,24 +118,26 @@ async function checkOrg(orgId, opts = {}) {
   // one round trip's time and a large one does not open a connection per person.
   const one = async d => {
     const gs = byDonor.get(d.id) || [];
-    const itemized = gs.reduce((s, g) => s + c(g.amount), 0);
+    // FIX-49: soft and matching credit rows are not money: not in Lifetime or the count.
+    const cash = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
     const real = gs.filter(g => c(g.amount) > 0);
+    const realCash = cash.filter(g => c(g.amount) > 0);
     const stored = c(d.total_giving);
     // NUMBERS-2: the imported total is its own figure; gifts after the last
     // day it covers are added to it, gifts on or before it are inside it.
     const imp = d.imported_total != null;
     const through = imp ? day(d.imported_through) : null;
-    const after = imp && through ? gs.filter(g => day(g.date) > through) : gs;
+    const after = imp && through ? cash.filter(g => day(g.date) > through) : cash;
     const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
     const latest = [...gs].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
     // Stored on the person: exactly what the gifts and the imported figure say.
     if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
     const afterN = after.filter(g => c(g.amount) > 0).length;
-    const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : real.length - afterN) : 0) + afterN;
+    const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : realCash.length - afterN) : 0) + afterN;
     const n = Number(d.gift_count) || 0;
     if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
     const firstReal = real.map(g => day(g.date)).sort()[0] || null;
-    const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date) : null].filter(Boolean).sort()[0] || null;
+    const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date || d.imported_last_gift_date) : null].filter(Boolean).sort()[0] || null;
     if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
     const impLast = imp ? day(d.imported_last_gift_date) : null;
     const rowLast = latest ? day(latest.date) : null;
@@ -158,11 +176,31 @@ async function checkOrg(orgId, opts = {}) {
   };
   for (let i = 0; i < donors.length; i += 8) await Promise.all(donors.slice(i, i + 8).map(one));
 
+  // ── imported history in the tags (FIX-49) ───────────────────────────
+  {
+    const DS = require("../donorStatus");
+    const imported = donors.filter(d => d.imported_total != null && (byDonor.get(d.id) || []).some(g => c(g.amount) > 0));
+    if (imported.length) {
+      const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
+      const tag = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
+      const w0From = orgTime.addDays(today, -364);
+      for (const d of imported) {
+        const impFirst = day(d.imported_first_gift_date || d.imported_last_gift_date);
+        const t = tag.get(d.id);
+        if (!impFirst || !t) continue;
+        if (impFirst < w0From && t.lifecycle === "new") add("donor-since", { donor: d.id, what: "lifecycle", shown: "new", importedFirst: impFirst });
+        const realFirst = (byDonor.get(d.id) || []).filter(g => c(g.amount) > 0).map(g => day(g.date)).sort()[0];
+        const want = [realFirst, impFirst].filter(Boolean).sort()[0];
+        if (day(t.first_date) !== want) add("donor-since", { donor: d.id, what: "first", shown: day(t.first_date), want });
+      }
+    }
+  }
+
   // ── households ───────────────────────────────────────────────────────
   const households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
   const lifeOf = new Map(donors.map(d => {
     const through = d.imported_total != null ? day(d.imported_through) : null;
-    const it = (byDonor.get(d.id) || []).filter(g => !through || day(g.date) > through).reduce((s, g) => s + c(g.amount), 0);
+    const it = (byDonor.get(d.id) || []).filter(g => (!through || day(g.date) > through) && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
     return [d.id, (d.imported_total != null ? c(d.imported_total) : 0) + it];
   }));
   for (const h of households) {
@@ -175,21 +213,66 @@ async function checkOrg(orgId, opts = {}) {
     if ((ex.cents || 0) !== want - lifeOf.get(m.id)) add("household", { household: h, what: "soft credit", donor: m.id, shown: ex.cents, want: want - lifeOf.get(m.id) });
   }
 
+  // ── FIX-49: one lapse rule, one set of giving levels ─────────────────
+  {
+    const cuts = await DS.cutsFor(orgId);
+    const st = DS.statusSql(orgId, today, cuts);
+    const tagged = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
+    for (const [donorId, gs] of byDonor) {
+      const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
+      if (!pos.length) continue;
+      const last = pos.map(g => day(g.date)).sort().pop();
+      const want = lapseRule.lapseState(last, today);
+      const t = tagged.get(donorId);
+      const d = donors.find(x => x.id === donorId);
+      const imported = d && d.imported_total != null;
+      // A person with imported history is judged with it (decision 9), which
+      // the gift rows here cannot see; they are held by the profile's own read.
+      if (imported) continue;
+      if (!t) { add("lapse", { donor: donorId, want, shown: null }); continue; }
+      if ((t.lifecycle === "lapsed") !== (want === "lapsed") || !!t.lapsing !== (want === "lapsing")) add("lapse", { donor: donorId, want, shown: [t.lifecycle, !!t.lapsing] });
+      const last12 = gs.filter(g => day(g.date) >= lapseRule.bounds(today).lapsingFrom && day(g.date) <= today).reduce((x, g) => x + c(g.amount), 0);
+      const lvl = last12 >= cuts.majorCents ? "major" : last12 >= cuts.midCents ? "mid" : "general";
+      if (t.level !== lvl) add("giving-level", { donor: donorId, want: lvl, shown: t.level });
+    }
+  }
+  {
+    const apart = await query(
+      `SELECT dr.id FROM donor_relationships dr
+         JOIN donors a ON a.id = dr.donor_id_a AND a.org_id = dr.org_id AND a.deleted_at IS NULL
+         JOIN donors b ON b.id = dr.donor_id_b AND b.org_id = dr.org_id AND b.deleted_at IS NULL
+        WHERE dr.org_id = ? AND dr.relationship_type IN ('spouse','household')
+          AND COALESCE(a.kind,'person') NOT IN ('organisation','anonymous') AND COALESCE(b.kind,'person') NOT IN ('organisation','anonymous')
+          AND (a.household_id IS NULL OR b.household_id IS NULL)`, [orgId]);
+    for (const r of apart) add("household-one", { relationship: r.id });
+  }
+
   // ── soft credits ─────────────────────────────────────────────────────
   const scBad = await query(
     `SELECT sc.id FROM gift_soft_credits sc LEFT JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
       WHERE sc.org_id = ? AND (g.id IS NULL OR sc.amount > g.amount OR sc.donor_id = g.donor_id)`, [orgId]);
   for (const r of scBad) add("soft-credit", { softCredit: r.id });
+  // FIX-49: the profile's Soft credit figure is the credits and credit rows behind it.
+  const scSum = await query(`SELECT sc.donor_id, SUM(sc.amount)::text AS t FROM gift_soft_credits sc JOIN donors d ON d.id = sc.donor_id AND d.org_id = sc.org_id
+                               WHERE sc.org_id = ? AND d.deleted_at IS NULL GROUP BY sc.donor_id`, [orgId]);
+  const scWant = new Map(scSum.map(r => [r.donor_id, c(r.t)]));
+  for (const g of gifts) if (CREDIT.has(String(g.type || "").trim().toLowerCase())) scWant.set(g.donor_id, (scWant.get(g.donor_id) || 0) + c(g.amount));
+  for (const [donorId, want] of scWant) {
+    if (sample && !sample.has(donorId)) continue;
+    const f = await FS.figureValue(orgId, { key: "donor-soft-credit", params: { donor: donorId } }, {});
+    if ((f.totalRows ? f.cents : 0) !== want) add("soft-credit", { donor: donorId, what: "figure", shown: f.cents, want });
+  }
 
   // ── campaigns ────────────────────────────────────────────────────────
-  const camps = await query(`SELECT id, name, start_date, end_date, goal_amount FROM campaigns WHERE org_id = ?`, [orgId]);
+  const camps = await query(`SELECT id, name, start_date, end_date, goal_amount, parent_goal_id, grants_off_public_bar FROM campaigns WHERE org_id = ?`, [orgId]);
   const shownCamp = new Map((await NUM.campaignGiftTotals(query, orgId)).map(r => [r.cid, r]));
   const grants = await query(`SELECT campaign_id, COALESCE(SUM(amount),0)::text AS t FROM grants WHERE org_id = ? AND campaign_id IS NOT NULL AND awarded_at IS NOT NULL GROUP BY campaign_id`, [orgId]);
   const grantOf = new Map(grants.map(r => [r.campaign_id, c(r.t)]));
   for (const k of camps) {
-    const attributed = gifts.filter(g => g.campaign_id === k.id || (!g.campaign_id && g.campaign && g.campaign === k.name));
+    const attributed = gifts.filter(g => (g.campaign_id === k.id || (!g.campaign_id && g.campaign && g.campaign === k.name))
+      && !CREDIT.has(String(g.type || "").trim().toLowerCase()));   // FIX-49: credits count toward no campaign
     const counted = attributed.filter(g => NUM.inWindow(g.date, k.start_date, k.end_date));
-    const want = counted.reduce((s, g) => s + c(g.amount) - c(g.cover), 0);
+    const want = counted.reduce((s, g) => s + c(g.amount), 0);   // FIX-49: the full gift, a covered fee included
     const wantDonors = new Set(counted.map(g => g.donor_id)).size;
     const outside = attributed.length - counted.length;
     if (Number(k.goal_amount) > 0) {
@@ -200,11 +283,19 @@ async function checkOrg(orgId, opts = {}) {
       const ft = await FS.footCheck(orgId, { key: "goal-raised", params: { campaign: k.id } }, {});
       if (ft && !ft.foots) add("foots", { source: "goal-raised", campaign: k.id });
       // The total took in the gifts dated outside the window.
-      const withOutside = attributed.reduce((x, g) => x + c(g.amount) - c(g.cover), 0);
+      const withOutside = attributed.reduce((x, g) => x + c(g.amount), 0);
       if (outside && c(s.raised) !== want && c(s.raised) === withOutside) add("campaign-window", { campaign: k.id, gifts: outside });
     }
     if (outside) (problems._outside = problems._outside || []).push({ campaign: k.id, gifts: outside });
+    // FIX-49: the public bar adds awarded grants unless the campaign leaves them off.
+    const bar = await NUM.publicBarRaised(query, orgId, k.id);
+    const wantBar = want + (k.grants_off_public_bar ? 0 : (grantOf.get(k.id) || 0));
+    if (c(bar) !== wantBar) add("public-bar", { campaign: k.id, shown: c(bar), want: wantBar });
   }
+  // FIX-49: what each goal'd campaign counts, for the parent roll-up below.
+  const giftIdsOf = new Map(camps.map(k => [k.id, new Set(gifts.filter(g => (g.campaign_id === k.id || (!g.campaign_id && g.campaign && g.campaign === k.name))
+    && !CREDIT.has(String(g.type || "").trim().toLowerCase()) && NUM.inWindow(g.date, k.start_date, k.end_date)).map(g => g.id))]));
+  const giftById = new Map(gifts.map(g => [g.id, g]));
 
   // ── the Fundraising overview's combined goal ─────────────────────────
   if (opts.screens && opts.screens.fundraisingPortfolio) {
@@ -214,10 +305,25 @@ async function checkOrg(orgId, opts = {}) {
       const want = top.reduce((s, g) => s + c(g.rolledRaised), 0);
       const wantGoal = top.reduce((s, g) => s + c(g.goalAmount), 0);
       if (c(p.rollup.totalRaised) !== want || c(p.rollup.totalGoal) !== wantGoal) add("goal-rollup", { shown: [c(p.rollup.totalRaised), c(p.rollup.totalGoal)], goals: [want, wantGoal] });
+      // FIX-49: a parent is its own gifts plus its children's, each gift once, plus their grants.
       for (const g of p.goals.filter(x => x.isOverarching)) {
-        const kids = p.goals.filter(x => x.parentGoalId === g.id).reduce((s, k) => s + c(k.raised), 0);
-        if (c(g.rolledRaised) !== kids) add("goal-rollup", { goal: g.id, shown: c(g.rolledRaised), children: kids });
+        const kids = p.goals.filter(x => x.parentGoalId === g.id);
+        const ids = new Set([g.id, ...kids.map(k => k.id)].flatMap(id => [...(giftIdsOf.get(id) || [])]));
+        const want = [...ids].reduce((s, id) => s + c(giftById.get(id).amount), 0)
+          + [g.id, ...kids.map(k => k.id)].reduce((s, id) => s + (grantOf.get(id) || 0), 0);
+        if (c(g.rolledRaised) !== want) add("goal-rollup", { goal: g.id, shown: c(g.rolledRaised), want });
       }
+    }
+  }
+
+  // ── FIX-49: an organization goal reads its own start and end ──────────
+  if (opts.screens && opts.screens.orgGoalRaised) {
+    const goals = await query(`SELECT * FROM fundraising_goals WHERE org_id = ? AND goal_type <> 'lapsed_recovery'`, [orgId]);
+    for (const gl of goals) {
+      const want = gifts.filter(g => day(g.date) >= gl.period_start && day(g.date) <= gl.period_end && !CREDIT.has(String(g.type || "").trim().toLowerCase()))
+        .reduce((s, g) => s + c(g.amount), 0);
+      const shown = c(await opts.screens.orgGoalRaised(orgId, gl));
+      if (shown !== want) add("goal-period", { goal: gl.id, shown, gifts: want });
     }
   }
 
@@ -273,7 +379,10 @@ const UNIT = { "donor-lifetime": "donors where Lifetime disagrees", "donor-count
   "donor-stored": "stored donor totals that disagree", household: "households that disagree", "soft-credit": "soft credits that break the rule",
   campaign: "campaign totals that disagree", "campaign-window": "campaigns counting gifts outside their dates", "goal-rollup": "goal roll-ups that disagree",
   fund: "fund totals that disagree", "report-year": "year totals that disagree", statement: "statements that disagree",
-  removed: "rows pointing at removed gifts", foots: "figures that do not foot" };
+  removed: "rows pointing at removed gifts", foots: "figures that do not foot",
+  "donor-since": "people whose imported history is missing from Donor since or the lifecycle tags",
+  lapse: "people whose lapsed or lapsing tag disagrees", "giving-level": "people whose giving level disagrees",
+  "household-one": "linked pairs not in one household" };
 function countLine(r) {
   const n = r.problems.reduce((s, p) => s + p.count, 0);
   if (!n) return `${r.name}: 0 problems`;

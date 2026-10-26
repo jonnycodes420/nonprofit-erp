@@ -168,7 +168,7 @@ const resend = new Proxy(_rawResend, {
   },
 });
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
-const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { DONOR_SUMMARY_UPDATE } = require("./donorSummary");   // NUMBERS-1: the totals kept on a person
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
@@ -1222,10 +1222,9 @@ async function recordGift(o) {
       WHERE id = ? AND org_id = ?`,
     [o.donorId, orgId]);
   await run(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [orgId, o.donorId]);
-  await run(
-    `UPDATE donors SET status = CASE WHEN total_giving > 20000 THEN 'major' WHEN total_giving > 5000 THEN 'mid' ELSE status END
-      WHERE id = ? AND org_id = ? AND status IS DISTINCT FROM CASE WHEN total_giving > 20000 THEN 'major' WHEN total_giving > 5000 THEN 'mid' ELSE status END`,
-    [o.donorId, orgId]);
+  // FIX-49 decision 7: the giving level is one rule (donorStatus.js, the
+  // org's cut points over the last 12 months), read live. The lifetime
+  // mid/major promotion that used to run here was a second rule.
 
   // Rule 3 — the ledger.
   let posted = false;
@@ -3366,10 +3365,11 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
 // Jonathan's rule: the officer owns stage. The software SUGGESTS every stage
 // move and never auto-advances a judgment stage — with ONE exception. Lapsed is
 // a fact about giving recency, not a judgment, so it's set automatically (and
-// stays editable). LAPSE_DAYS is the SINGLE lapse definition, matching
-// inferStage's `> 365` band and the pipeline "Lapsed" column — do not invent a
-// second lapse rule.
-const LAPSE_DAYS = 365;
+// stays editable). FIX-49: the one lapse rule is lapseRule.js (no gift in the
+// last 12 months after giving before, on the org's own calendar); every door
+// reads it. LAPSE_DAYS is its day count, kept for the callers that import it.
+const lapseRule = require("./lapseRule");
+const LAPSE_DAYS = lapseRule.LAPSED_DAYS;
 // System-authored moves (auto-lapse / auto-unlapse) carry a null officer_id and
 // this name, so they're visibly automatic in the timeline and distinguishable
 // from human moves (the override-wins guard keys off officer_id IS NOT NULL).
@@ -3395,14 +3395,15 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
 // has deliberately placed forward SINCE their last gift (officer override
 // wins). Returns the count moved. Editable afterward regardless.
 async function autoLapseOrg(orgId) {
-  const cutoff = new Date(Date.now() - LAPSE_DAYS * 86400000).toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-49: the org's day, not the server's)
+  const cutoff = lapseRule.bounds(today).lapsedOnOrBefore;
   const rows = await query(
     `SELECT d.id, d.stage, d.last_gift_date FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL
         AND d.imported_sustainer IS NOT TRUE
         AND d.gift_count > 0
         AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
-        AND d.last_gift_date::date < ?::date
+        AND d.last_gift_date::date <= ?::date
         AND d.stage NOT IN ('lapsed','solicit')
         AND NOT EXISTS (SELECT 1 FROM opportunities o
                           WHERE o.org_id=d.org_id AND o.donor_id=d.id AND o.status='open')
@@ -3421,7 +3422,7 @@ async function autoLapseOrg(orgId) {
       "UPDATE donors SET stage='lapsed', updated_at=NOW() WHERE id=? AND org_id=? AND stage=? RETURNING id",
       [d.id, orgId, d.stage]);
     if (!upd.length) continue;
-    await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed: no gift in ${months} months`);
+    await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed: no gift in the last ${months} months`);
     moved++;
   }
   return moved;
@@ -5111,7 +5112,20 @@ async function agentGate(orgId) {
 // implementation below. Deliberately NOT recursive: an audience cannot be
 // built on another audience, so there is no cycle to guard and no chain of
 // indirection between "the screen said Sponsors" and who actually got mail.
+// FIX-49 decision 7: a "Major" audience is the Major giving level, the one
+// rule (donorStatus.js: the org's cut points over the last 12 months), not
+// $10,000 lifetime. The ids are worked out here so filterBySegment stays pure.
 async function resolveSegmentSpec(segment, orgId) {
+  const r = await resolveSegmentSpecInner(segment, orgId);
+  if (r && r.mode === "major") {
+    const DS = require("./donorStatus");
+    const c = DS.tagCondition("major", orgId, await DS.todayFor(orgId), await DS.cutsFor(orgId));
+    const ids = (await query(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND ${c.sql}`, [orgId, ...c.args])).map(x => x.id);
+    return { ...r, majorIds: ids };
+  }
+  return r;
+}
+async function resolveSegmentSpecInner(segment, orgId) {
   if (segment && segment.mode === "audience") {
     const [row] = await query("SELECT segment, kind FROM audiences WHERE id=? AND org_id=?",
       [segment.audienceId, orgId]).catch(() => [null]);
@@ -5136,7 +5150,10 @@ function filterBySegment(allDonors, segment) {
   let donors = allDonors;
   const mode = segment.mode || "legacy";
   if (mode === "major") {
-    donors = donors.filter(d => Number(d.total_giving) >= 10000);
+    // FIX-49: the Major giving level, resolved by resolveSegmentSpec. A segment
+    // that skipped it names nobody, never everybody.
+    const ids = new Set(segment.majorIds || []);
+    donors = donors.filter(d => ids.has(d.id));
   } else if (mode === "lapsed") {
     donors = donors.filter(d => d.stage === "lapsed");
   // AN EMPTY SELECTION SELECTS NOBODY. Each of these three used to fall
@@ -6970,7 +6987,11 @@ async function computeMilestoneCandidates(orgId) {
 // /dashboard/today already used — not org-configurable yet. Requires an
 // email on file (like computeMilestoneCandidates) since the output feeds an
 // AI-drafted email, not just an in-app nudge.
+// FIX-49 decision 6: "at risk" is the one lapsing rule (lapseRule.js: last
+// gift 9 to 12 months ago, on the org's calendar), not its own 300 days on
+// the server clock. The $5,000 floor is who is worth the email, not a lapse rule.
 async function computeAtRiskCandidates(orgId) {
+  const lapsing = lapseRule.sql("lapsing", "LEFT(d.last_gift_date, 10)", orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   return query(
     `SELECT id, name, email, total_giving, last_gift_date, last_gift_amount
      FROM donors d
@@ -6979,9 +7000,9 @@ async function computeAtRiskCandidates(orgId) {
        AND email IS NOT NULL AND email != ''
        AND ${solicitableSql("d")} AND ${donorOnly("d")}
        AND d.imported_sustainer IS NOT TRUE
-       AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '300 days'
+       AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsing.sql}
        AND total_giving >= 5000`,
-    [orgId]
+    [orgId, ...lapsing.args]
   );
 }
 
@@ -8699,6 +8720,9 @@ async function fireWorkflows(orgId, trigger, ctx) {
 // dedup is per donor + their current last_gift_date so a given lapse fires once.
 // Optional onlyOrgId scopes the sweep to one org (the ops/test trigger route).
 async function processWorkflowSweeps(onlyOrgId = null) {
+  // FIX-49 · a recipe switched on since the last pass becomes its journey
+  // first, so a converted recipe never fires again from here.
+  await require("./workflowsToJourneys").convertWorkflows(onlyOrgId).catch(e => console.error("[workflows-to-journeys]", e.message));
   const orgRows = onlyOrgId
     ? await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true AND org_id=?", [onlyOrgId])
     : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
@@ -11448,10 +11472,9 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
         `SELECT id, COALESCE(donor_facing_name, name) AS name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y,
                 goal_progress_public, goal_amount,
                 CASE WHEN goal_progress_public THEN
-                  COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
-                            WHERE g2.org_id = campaigns.org_id AND (g2.campaign_id = campaigns.id OR g2.campaign = campaigns.name)), 0)
-                + COALESCE((SELECT SUM(gr.amount) FROM grants gr
-                            WHERE gr.org_id = campaigns.org_id AND gr.campaign_id = campaigns.id AND gr.awarded_at IS NOT NULL), 0)
+                  COALESCE((SELECT SUM(g2.amount) FROM gifts g2
+                            WHERE g2.org_id = campaigns.org_id AND ${CAMPAIGN_GIFT_MATCH("g2", "campaigns")}), 0)
+                + ${PUBLIC_BAR_GRANTS("campaigns")}
                 END AS raised
          FROM campaigns WHERE id = ? AND org_id = ?`, [w.campaignId, org.id]);
       r.campaign = c ? {
@@ -11494,7 +11517,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
           // less any fee the donor covered), the same basis every campaign
           // thermometer in this product already uses.
           const [sum] = await query(
-            `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised
+            `SELECT COALESCE(SUM(g.amount),0)::float AS raised
                FROM gifts g JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
               WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
                 AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at,'YYYY-MM-DD'))`,
@@ -11537,7 +11560,7 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
       const showAmounts = w.showAmounts === true;
       r.gifts = rows.map(row => CP.publicGiftLine({
         donorName: row.donor_name,
-        amountCents: Math.round(((Number(row.amount) || 0) - (Number(row.cover_fee_amount) || 0)) * 100),
+        amountCents: Math.round((Number(row.amount) || 0) * 100),   // FIX-49: the full gift, a covered fee included
         showName: row.show_name_publicly === true,
         date: row.date,
       }, { showAmounts }));
@@ -11751,6 +11774,10 @@ app.use((err, req, res, next) => {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
+  // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
+  // on the first boot that has this code (idempotent; one replica does it).
+  // Not on a test boot (ticks off): suites turn recipes on by hand and fire them.
+  if (!backgroundTicksDisabled()) setTimeout(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
   if (backgroundTicksDisabled()) {
     console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
   }
@@ -12341,7 +12368,7 @@ require("./routes/crm").mount({
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
-  filterBySegment, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
+  filterBySegment, resolveSegmentSpec, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
   ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod, geocode, getOrgAccessState,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,

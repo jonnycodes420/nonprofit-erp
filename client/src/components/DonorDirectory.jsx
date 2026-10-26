@@ -21,6 +21,10 @@ import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
 import { displayDate } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
+// FIX-49: the one lapse rule, on the org's own calendar.
+import lapseRuleMod from "../../../lapseRule.js";
+import { orgTodayCivil } from "../lib/orgToday";
+const { isLapsed } = lapseRuleMod;
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -92,7 +96,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // unlinked imported sustainer belongs to the recurring reconnect list —
   // their card stopped, they did not choose to leave.
   const askable=d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer;
-  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).sort((a,b)=>b.total-a.total);
+  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||isLapsed(d.lastGift,orgTodayCivil()))).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
@@ -431,7 +435,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         {setStatusFilter&&<select data-testid="dir-status-filter" aria-label="Tag or closeness" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={filterSel}>
           <option value="">Any tag</option>
           <optgroup label="Giving level">{[["general","General"],["mid","Mid"],["major","Major"]].map(([k,l])=><option key={k} value={"level:"+k}>{l}</option>)}</optgroup>
-          <optgroup label="Lifecycle">{[["new","New"],["current","Current"],["recaptured","Recaptured"],["lapsed","Lapsed"]].map(([k,l])=><option key={k} value={"lifecycle:"+k}>{l}</option>)}<option value="retained:1">Retained</option></optgroup>
+          <optgroup label="Lifecycle">{[["new","New"],["current","Current"],["recaptured","Recaptured"],["lapsing","Lapsing"],["lapsed","Lapsed"]].map(([k,l])=><option key={k} value={"lifecycle:"+k}>{l}</option>)}<option value="retained:1">Retained</option></optgroup>
           <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["on_track","On track"],["cooling","Cooling"],["new","New"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Giving"><option value="given:never">Has never given</option></optgroup>
         </select>}

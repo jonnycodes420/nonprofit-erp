@@ -82,7 +82,10 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     if (phone) params.push("%" + digits + "%", "%" + digits + "%");
   }
   if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
-  if (status)     { where.push("status = ?");      params.push(String(status)); }
+  // FIX-49 decision 7: a giving level asked as a status (status=mid, the
+  // Board's majors) is the one level rule, not the old stored column.
+  const levelAsStatus = status && DS.LEVELS[String(status)] ? String(status) : null;
+  if (status && !levelAsStatus) { where.push("status = ?"); params.push(String(status)); }
   if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
   // Designation filter (BUILD-14) — planned-giving / estate segments are
   // first-class and filterable everywhere the donor list is. EXISTS keeps it
@@ -96,7 +99,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   if (household === "none")      { where.push("household_id IS NULL"); }
   else if (household === "any")  { where.push("household_id IS NOT NULL"); }
   else if (household)            { where.push("household_id = ?"); params.push(String(household)); }
-  const statusTags = [q.level, q.lifecycle, q.retained === "1" ? "retained" : null].filter(Boolean).map(String);
+  const statusTags = [q.level, levelAsStatus, q.lifecycle, q.retained === "1" ? "retained" : null, q.lapsing === "1" ? "lapsing" : null].filter(Boolean).map(String);
   if (statusTags.length) {
     const cuts = await DS.cutsFor(orgId);
     for (const t of statusTags) {
@@ -524,7 +527,7 @@ function normalizeRules(raw) {
   }
   if (rules.role && !PEOPLE_ROLES.includes(rules.role)) errors.push("A role is Donor, Volunteer, or Staff and board.");
   if (rules.level && !DS.LEVELS[rules.level]) errors.push("A giving level is General, Mid or Major.");
-  if (rules.lifecycle && !DS.LIFECYCLES[rules.lifecycle]) errors.push("A lifecycle is New, Current, Recaptured or Lapsed.");
+  if (rules.lifecycle && !DS.LIFECYCLES[rules.lifecycle] && rules.lifecycle !== "lapsing") errors.push("A lifecycle is New, Current, Recaptured, Lapsing or Lapsed.");
   if (rules.closeness && !DS.CLOSENESS[rules.closeness]) errors.push("Closeness is Close, Warm, On track, Cooling or New.");
   if (rules.retained !== undefined) {
     if (rules.retained === "true") rules.retained = "1";
@@ -706,6 +709,9 @@ async function memberCounts(orgId, groups) {
 const STARTERS = [
   { key: "lybunt", name: "Gave last year, not yet this year", term: "LYBUNT", rules: { bunt: "lybunt", solicitable: "1" }, asking: true },
   { key: "sybunt", name: "Gave some year before, not last year or this year", term: "SYBUNT", rules: { bunt: "sybunt", solicitable: "1" }, asking: true },
+  // FIX-49 decision 6: the one lapse rule (lapseRule.js), as the tags read it.
+  { key: "lapsing", name: "Lapsing: last gift 9 to 12 months ago", rules: { lifecycle: "lapsing", solicitable: "1" }, asking: true },
+  { key: "lapsed", name: "Lapsed: no gift in the last 12 months", rules: { lifecycle: "lapsed", solicitable: "1" }, asking: true },
   { key: "first_gift", name: "First gift this year", rules: { firstGiftThisYear: "1" } },
   { key: "monthly", name: "Monthly givers", rules: { monthly: "1" } },
   { key: "gave_more", name: "Gave more this year than last", rules: { gaveMore: "1" } },

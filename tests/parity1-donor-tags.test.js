@@ -45,7 +45,9 @@ const id = k => `d_par1t_${k}`;
   for (const t of ["gifts", "donor_scores", "imports", "donors", "user_sessions", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Parity One Fixture','parity-one-t',1,'active','team','America/New_York')`, [ORG]);
+  // FIX-49: "Retained" is the org's own fiscal year. This fixture's year
+  // starts in January, so its fiscal year is the calendar year the table uses.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,vocabulary_json) VALUES ($1,'Parity One Fixture','parity-one-t',1,'active','team','America/New_York','{"fiscal_year_start_month":1}')`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_par1t',$1,$2,$3,'Parity Admin','admin')`, [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
   let n = 0;
   for (const [k, [gifts]] of Object.entries(F)) {

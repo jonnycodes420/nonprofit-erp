@@ -28,6 +28,10 @@ import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
+// FIX-49: the one lapse rule, on the org's own calendar.
+import lapseRuleMod from "../../../lapseRule.js";
+import { orgTodayCivil } from "../lib/orgToday";
+const { isLapsed } = lapseRuleMod;
 import { useNavigate } from "react-router-dom";
 import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 export { DonorImport } from "./DonorImport";
@@ -203,7 +207,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(filters.pattern==="one-time"&&d.gifts!==1)return false;
     if(filters.pattern==="recurring"&&d.gifts<2)return false;
     if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)))return false;
+    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||isLapsed(d.lastGift,orgTodayCivil())))return false;
     if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
     if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
     if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;

@@ -182,12 +182,15 @@ const emailFor = name => name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(
 // Ondine Cinderhalt left the eleven for her own story (the failed card —
 // below): a past_due subscription EXCLUDES a donor from drift by design, so
 // she cannot be one of the eleven and be the failed-card fixture at once.
+// FIX-49: none is "seasonal" any more. A once-a-year giver drifts only after
+// their usual month has passed, more than 12 months on, and that is lapsed
+// under the one rule (lapseRule.js), not drifting.
 const DRIFTED = [
   // INT-BUILD-1 — Margaret Chen is now the inbox-and-calendar story (coffee
   // tomorrow, a $15,000 August gift), which cannot also be silent for 14
   // months. The canonical drift example keeps her numbers under a new name.
-  ["Eleanor Whitcombe", 2000, "seasonal"],      // THE canonical example
-  ["Marguerite Ashgrove", 2500, "seasonal"],
+  ["Eleanor Whitcombe", 2000, "semiannual"],      // THE canonical example
+  ["Marguerite Ashgrove", 2500, "semiannual"],
   ["Halvard Bellwether", 2000, "semiannual"],
   ["Casper Dunmoor", 1800, "semiannual"],
   ["Wilhelmina Elmsworth", 3000, "semiannual"],
@@ -195,7 +198,7 @@ const DRIFTED = [
   ["Rosalind Glasswick", 2200, "quarterly"],
   ["Emmett Hollowell", 1900, "quarterly"],
   ["Philippa Ironvale", 2600, "semiannual"],
-  ["Gideon Jessamine", 2100, "seasonal"],
+  ["Gideon Jessamine", 2100, "semiannual"],
   ["Cordelia Kettleby", 2800, "semiannual"],
 ];
 
@@ -1043,6 +1046,27 @@ async function main() {
       ["ewl_b72_run1", ORG, run5k.id, waiter.name, waiter.email]);
   }
   console.log(`[assert] the 5K is open: ${RUN_LEVELS.length} levels (members pay $28 and $72), ${runEntrants.length} entered, ${waiter ? "1 waiting" : "nobody waiting"} · /e/harbor-run, with /e/harbour-run redirecting`);
+
+  // FIX-49 · LAST YEAR'S HARBOR RUN, ALREADY RUN. The Harbor Run is every
+  // year, so beside the one ahead there is the one that happened, on the same
+  // day of last year, with the people who ran it marked as attended. "Undine
+  // went to the Harbor Run" then marks her at this one; with only the run still
+  // ahead, Atlas could only say it hadn't happened yet. No campaign and no
+  // gifts, so no total on the demo moves.
+  const runPast = { id: "ev_b72_5k_past", date: orgTime.addDays(run5k.date, -364) };
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,goal_amount,created_by,created_by_name)
+           VALUES ($1,$2,$3,'other',$4,$4,$5,$6,400,'completed',0,2900,NULL,'u_b72demo','Dana Reyes')`,
+          [runPast.id, ORG, `Harbor Run ${runPast.date.slice(0, 4)}`, runPast.date, "North Shore Path, Harborlight",
+           "A five kilometre run and walk along the shore. Families welcome, and every runner raises for the scholarship fund."]);
+  const pastRunners = await q(
+    `SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL
+       AND email IS NOT NULL AND email <> '' ORDER BY total_giving DESC OFFSET 70 LIMIT 12`, [ORG]);
+  for (const [i, p] of pastRunners.entries())
+    await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,quantity,source,checked_in_at)
+             VALUES ($1,$2,$3,$4,$5,$6,'attended',1,'staff',($7::date + TIME '08:00') + ($8 * INTERVAL '3 minutes'))
+             ON CONFLICT (event_id, donor_id) DO NOTHING`,
+      [`att_b72_runpast${i}`, runPast.id, ORG, p.id, p.name, p.email, runPast.date, i]);
+  console.log(`[assert] last year's Harbor Run happened on ${runPast.date}: ${pastRunners.length} ran it, beside the one on ${run5k.date}`);
 
   // ── Derived state: totals, stages, ledger stamps ───────────────────────
   console.log("[seed] recomputing donor summaries…");
@@ -2953,7 +2977,7 @@ async function main() {
     // The goal bar is a live SUM over the campaign's own gift rows. If the
     // figure and the rows ever disagree, the demonstration is of a defect.
     const [bar] = await q(
-      `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised,
+      `SELECT COALESCE(SUM(g.amount),0)::float AS raised,   -- FIX-49: the full gift, a covered fee included
               COUNT(*)::int AS n
          FROM gifts g JOIN campaigns c ON c.id=$2 AND c.org_id=g.org_id
         WHERE g.org_id=$1 AND (g.campaign_id=c.id OR g.campaign=c.name)`,

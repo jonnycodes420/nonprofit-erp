@@ -114,6 +114,13 @@ function recentSpan(n, unit, today) {
   return { kind: "custom", from, to: today, words: `the last ${k} ${k === 1 ? u : u + "s"}` };
 }
 
+// The org's year as Home labels it (server.js finPeriodBounds periodLabel):
+// "Jan – Dec 2026", or "Jul 2026 – Jun 2027".
+const MON_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fyRange(y, m) {
+  return m === 1 ? `Jan – Dec ${y}` : `${MON_SHORT[m - 1]} ${y} – ${MON_SHORT[(m + 10) % 12]} ${y + 1}`;
+}
+
 // A period in the org's calendar: { from, to, label, toDate }. `toDate` is
 // true when the period runs to today (so a comparison stops at the same day).
 export function resolvePeriod(period, ctx) {
@@ -133,8 +140,11 @@ export function resolvePeriod(period, ctx) {
     }
     case "this_quarter": { const q = Math.floor((t.m - 1) / 3); return { from: ymd(t.y, q * 3 + 1, 1), to: ctx.today, label: `Q${q + 1} ${t.y}`, toDate: true }; }
     case "last_quarter": { let q = Math.floor((t.m - 1) / 3) - 1, y = t.y; if (q < 0) { q = 3; y--; } return { from: ymd(y, q * 3 + 1, 1), to: ymd(y, q * 3 + 3, lastDay(y, q * 3 + 3)), label: `Q${q + 1} ${y}` }; }
-    case "this_year": return { from: ymd(t.y, 1, 1), to: ctx.today, label: `${t.y} so far`, toDate: true };
-    case "last_year": return { from: ymd(t.y - 1, 1, 1), to: ymd(t.y - 1, 12, 31), label: String(t.y - 1) };
+    // FIX-49: "this year" and "last year" are the org's own year, the window
+    // Home and Fundraising read (server.js finPeriodBounds), with its range
+    // said the way Home says it. "In 2026" is still the calendar year.
+    case "this_year": return { from: ymd(fyStartYear, fyM, 1), to: ctx.today, label: `this year (${fyRange(fyStartYear, fyM)})`, toDate: true };
+    case "last_year": return { from: ymd(fyStartYear - 1, fyM, 1), to: addDays(ymd(fyStartYear, fyM, 1), -1), label: `last year (${fyRange(fyStartYear - 1, fyM)})` };
     case "year": { const y = Number(p.year); return y === t.y ? { from: ymd(y, 1, 1), to: ctx.today, label: `${y} so far`, toDate: true } : { from: ymd(y, 1, 1), to: ymd(y, 12, 31), label: String(y) }; }
     case "this_fiscal_year": return { from: ymd(fyStartYear, fyM, 1), to: ctx.today, label: `this fiscal year (from ${monthName(fyStartYear, fyM)})`, toDate: true };
     case "last_fiscal_year": return { from: ymd(fyStartYear - 1, fyM, 1), to: addDays(ymd(fyStartYear, fyM, 1), -1), label: `last fiscal year (from ${monthName(fyStartYear - 1, fyM)})` };
@@ -152,7 +162,8 @@ export function resolveCompare(kind, cur) {
   if (!kind || !cur) return null;
   if (kind === "last_year") {
     const from = minusYear(cur.from), to = minusYear(cur.to);
-    const lbl = /^\d{4}$/.test(cur.label) ? String(+cur.label - 1)
+    const lbl = /^this year \(/.test(cur.label) ? "last year to the same day"
+      : /^\d{4}$/.test(cur.label) ? String(+cur.label - 1)
       : /^\d{4} so far$/.test(cur.label) ? `${+cur.label.slice(0, 4) - 1} to the same day`
       : /^(\w+) (\d{4})( so far)?$/.test(cur.label) ? cur.label.replace(/(\d{4})/, y => String(+y - 1)).replace(" so far", " to the same day")
       : `the same dates a year earlier`;
@@ -266,6 +277,40 @@ const FILLER = new Set(("how what what's whats is are was were did do does we ou
 const MONTH_RE = new RegExp(`\\b(in |for |during )?(${MONTHS.join("|")}|${MON3.join("|")})\\b( (19|20)\\d{2})?`);
 
 // ctx: { today, funds, campaigns, events, cities }
+// FIX-49 · THE PERIOD WORDS, READ ONCE. `take` is the caller's recogniser,
+// `P` keeps the first period said, `back` gives words back to the question.
+function periodTakes(take, P, ctx, back) {
+  take(/\b(so far )?this fiscal year\b|\bfiscal year to date\b|\bthis fy\b/g, () => P({ kind: "this_fiscal_year" }));
+  take(/\blast fiscal year\b/g, () => P({ kind: "last_fiscal_year" }));
+  take(/\b(so far )?this year( so far)?\b|\byear to date\b|\bytd\b/g, () => P({ kind: "this_year" }));
+  take(/\blast year\b/g, () => P({ kind: "last_year" }));
+  take(/\bthis month\b/g, () => P({ kind: "this_month" }));
+  take(/\blast month\b/g, () => P({ kind: "last_month" }));
+  take(/\bthis quarter\b/g, () => P({ kind: "this_quarter" }));
+  take(/\blast quarter\b/g, () => P({ kind: "last_quarter" }));
+  take(/\bthis week\b/g, () => P({ kind: "this_week" }));
+  take(/\b(in the )?(last|past) (12|twelve) months\b/g, () => P({ kind: "last_12_months" }));
+  // FIX-46: any recent window, "in the last 90 days", "over the past 6 weeks",
+  // "within the last three months". The span ends today and counts today.
+  take(/\b((in|over|during|within) )?(the )?(last|past) (\d{1,4}|[a-z]+) (days?|weeks?|months?)\b/g, (m, a, b, the, c, n, unit) => {
+    const span = recentSpan(n, unit, ctx.today);
+    if (span) P(span); else back(m);
+  });
+  take(/\b(ever|all time|of all time)\b/g, () => P({ kind: "all_time" }));
+  take(MONTH_RE, (m, a, mon, y) => { const i = MONTHS.indexOf(mon) >= 0 ? MONTHS.indexOf(mon) : MON3.indexOf(mon); P({ kind: "month", month: i + 1, ...(y ? { year: Number(y) } : {}) }); });
+  take(/\b(in |during )?((19|20)\d{2})\b/g, (m, a, y) => P({ kind: "year", year: Number(y) }));
+}
+// The period a question names, or null. "How much has Margaret given this
+// year?" is about one person; the person reading never saw "this year", so
+// it read as all time ("$0 in all" for someone whose history is imported).
+export function periodIn(text, ctx = {}) {
+  let s = " " + String(text || "").toLowerCase().replace(/[‘’]/g, "'").replace(/[?.!]+/g, " ").replace(/\s+/g, " ") + " ";
+  let period = null;
+  const take = (re, fn) => { re.lastIndex = 0; const hit = re.test(s); re.lastIndex = 0; if (hit) s = s.replace(re, (...a) => { fn(...a); return " "; }); return hit; };
+  periodTakes(take, v => { if (!period) period = v; }, ctx, () => {});
+  return period;
+}
+
 export function templatePlan(text, ctx = {}) {
   let s = " " + String(text || "").toLowerCase().replace(/[‘’]/g, "'").replace(/[?.!]+/g, " ").replace(/\s+/g, " ") + " ";
   const out = { kind: "metric", filters: {} };
@@ -359,27 +404,10 @@ export function templatePlan(text, ctx = {}) {
     if (ev && /\b(do|bring|revenue|night)\b/.test(String(text).toLowerCase())) { out.filters.event = ev.id; delete out.filters.campaign; }
   }
 
-  // Periods.
+  // Periods. FIX-49: one reader (periodTakes), which a question about one
+  // person ("how much has Margaret given this year?") reads too.
   const P = v => { if (!out.period) { out.period = v; out._periodSaid = true; } };
-  take(/\b(so far )?this fiscal year\b|\bfiscal year to date\b|\bthis fy\b/g, () => P({ kind: "this_fiscal_year" }));
-  take(/\blast fiscal year\b/g, () => P({ kind: "last_fiscal_year" }));
-  take(/\b(so far )?this year( so far)?\b|\byear to date\b|\bytd\b/g, () => P({ kind: "this_year" }));
-  take(/\blast year\b/g, () => P({ kind: "last_year" }));
-  take(/\bthis month\b/g, () => P({ kind: "this_month" }));
-  take(/\blast month\b/g, () => P({ kind: "last_month" }));
-  take(/\bthis quarter\b/g, () => P({ kind: "this_quarter" }));
-  take(/\blast quarter\b/g, () => P({ kind: "last_quarter" }));
-  take(/\bthis week\b/g, () => P({ kind: "this_week" }));
-  take(/\b(in the )?(last|past) (12|twelve) months\b/g, () => P({ kind: "last_12_months" }));
-  // FIX-46: any recent window, "in the last 90 days", "over the past 6 weeks",
-  // "within the last three months". The span ends today and counts today.
-  take(/\b((in|over|during|within) )?(the )?(last|past) (\d{1,4}|[a-z]+) (days?|weeks?|months?)\b/g, (m, a, b, the, c, n, unit) => {
-    const span = recentSpan(n, unit, ctx.today);
-    if (span) P(span); else putBack += ` ${m} `;
-  });
-  take(/\b(ever|all time|of all time)\b/g, () => P({ kind: "all_time" }));
-  take(MONTH_RE, (m, a, mon, y) => { const i = MONTHS.indexOf(mon) >= 0 ? MONTHS.indexOf(mon) : MON3.indexOf(mon); P({ kind: "month", month: i + 1, ...(y ? { year: Number(y) } : {}) }); });
-  take(/\b(in |during )?((19|20)\d{2})\b/g, (m, a, y) => P({ kind: "year", year: Number(y) }));
+  periodTakes(take, P, ctx, m => { putBack += ` ${m} `; });
 
   // People filters (the one shared filter's rules).
   take(/\b(monthly|recurring) (donors?|givers?)\b|\bonly monthly\b|\bmonthly ones\b/g, () => { rules.monthly = "1"; out._who = "monthly"; });

@@ -127,6 +127,14 @@ export const TRIGGERS = [
     sentence: "Starts when a call or meeting task with somebody is finished with the outcome you pick. Once per task." },
   { key: "email_engaged_no_gift", label: "They open or click an appeal but don't give", sweep: true, needsOpenData: true,
     sentence: "Starts 14 days after somebody opened or clicked an appeal, from Steward or Mailchimp, if they have not given since. Once per appeal." },
+  // FIX-49 decision 6: the one lapse rule (lapseRule.js) as two moments.
+  // Each starts once per lapse (a new gift starts a new episode), and only for
+  // a lapse that happened while the person was in Steward: a file imported
+  // already lapsed is history, not something that just happened.
+  { key: "lapsed", label: "They stop giving", sweep: true,
+    sentence: "Starts when somebody who has given before goes 12 months without a gift, checked every hour. Once each time they lapse." },
+  { key: "lapsing", label: "They are lapsing", sweep: true,
+    sentence: "Starts when somebody's last gift was 9 months ago and nothing has come since, checked every hour. Once each time." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own, you choose who goes in it." },
 ];
