@@ -41,7 +41,13 @@ async function reset() {
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]);
   }
 }
-const orgDay = (n = 0) => { const d = new Date(Date.now() + n * 864e5); return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" }); };
+// Calendar days, not 24-hour steps: n*24h from 00:30 EDT the week before the
+// clock goes back lands on the previous evening, a day short.
+const orgDay = (n = 0) => {
+  const d = new Date(new Date(Date.now()).toLocaleDateString("en-CA", { timeZone: "America/New_York" }) + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 (async () => {
   await reset();
