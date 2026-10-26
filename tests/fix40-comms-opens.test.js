@@ -96,6 +96,10 @@ async function fixture() {
            ('ema_fix40_2',$1,'emc_fix40',$3,'ben@fix40.test',true,true,$4)`, [ORG, D.ada, D.ben, emcSent]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
            VALUES ('g_fix40_1',$1,$2,250,$3,'check','Check',true,$4,$5)`, [ORG, D.ada, iso(daysAgo(15)), ...who]);
+  // FIX-49: Major is the giving level, the last 12 months against the cut
+  // points, so Ada's $12,500 is gifts in the year, not a stored total alone.
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
+           VALUES ('g_fix40_0',$1,$2,12250,$3,'check','Check',true,$4,$5)`, [ORG, D.ada, iso(daysAgo(200)), ...who]);
   // A journey email Ada was sent, and a thank-you for her gift.
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,sent_at,created_by,created_by_name)
            VALUES ('md_fix40',$1,$2,'journey-step:s_fix40','Ada, a note from the studio','Dear Ada, the students finished the mural.','sent','journey',$3,$4,$5)`,
@@ -159,7 +163,7 @@ async function main() {
       seg("all").count === 2 && JSON.stringify((seg("all").rows || []).map(r => r.id).sort()) === JSON.stringify([D.ada, D.ben]), seg("all"));
     ok("§counts …and it says how many donors Donors counts", aud.body.donorTotal === 3, aud.body.donorTotal);
     ok("§counts Gone quiet is the Why rule: Drift says Ben is past his gap", seg("lapsed").count === 1 && seg("lapsed").rows[0].id === D.ben, seg("lapsed"));
-    ok("§counts the words: \"Major ($10,000+)\"", seg("major").label === "Major ($10,000+)" && seg("major").count === 1, seg("major"));
+    ok("§counts the words: \"Major\" (FIX-49: the Major giving level)", seg("major").label === "Major" && seg("major").count === 1, seg("major"));
     ok("§counts each segment carries its one-line definition", (aud.body.segments || []).every(s => s.definition && s.definition.length > 20));
     const audOther = await api("GET", "/communications/audience", otherTok);
     ok("§tenant another org's Audience names nobody from this one", !JSON.stringify(audOther.body).includes("Fortyworth"));

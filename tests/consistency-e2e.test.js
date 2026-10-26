@@ -259,7 +259,10 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     ok("workflows provisioned", Array.isArray(list.body) && list.body.length > 0, list.status);
     const welcome = (list.body || []).find(w => w.recipe_key === "new_donor_welcome");
     ok("new_donor_welcome recipe exists (disabled by default)", welcome && !welcome.enabled, welcome?.enabled);
-    await api("PUT", `/workflows/${welcome.id}`, tA, { enabled: true });
+    // FIX-49: turning a recipe on through PUT now makes its journey (and
+    // leaves the recipe off), so the engine's own once-only rule is proven
+    // on the row directly, the way fix12-recipe-drafts does.
+    await q(`UPDATE workflows SET enabled=true WHERE id=$1`, [welcome.id]);
     const dedup = "gift:ce2e_wf_test";
     const s1 = await api("POST", "/workflows/simulate", tA, { trigger: "gift_received", donorId: "ce_d1", amount: 250, isFirstGift: true, dedupKey: dedup });
     ok("simulate gift_received → recipe ran once", (s1.body?.ran || []).some(r => r.recipeKey === "new_donor_welcome"), s1.body);

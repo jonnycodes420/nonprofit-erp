@@ -766,7 +766,7 @@ export const HELP_ARTICLES = [
         `A household is the household record. Linking two people as spouses or as a household puts them in one household, and the household's combined giving is the one household total.`,
       ]},
       { h: `History and Ask`, p: [
-        `First gift, Donor since and the New, Current and Recaptured tags count the gifts your old system told us about. If the file gave no first gift date, its last gift date is used, because the person had given by then.`,
+        `First gift, Donor since and the lifecycle tags (New, Current and the rest) count the gifts your old system told us about. If the file gave no first gift date, its last gift date is used, because the person had given by then.`,
         `Ask answers with the same figures as the screens. What one person gave is their profile's figure: Lifetime for all time, This year for your year. "This year" for the whole organization is the same year Home and Fundraising show, with its dates.`,
       ]},
       { h: `History from your old system`, p: [

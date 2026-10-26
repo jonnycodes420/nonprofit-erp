@@ -7,7 +7,8 @@
 //    (GET /donors/:id .drift), the closeness line (GET /donors/:id/status) and
 //    the score card's band word (GET /donors/:id/scores).
 // G. The goal bar read "$0 of $25,000" above "Raised FY 2026-27 $119,737.03".
-//    With no campaign, the goal bar counts the same gifts as the Raised card.
+//    FIX-34 made the bar count the Raised card's gifts; FIX-49 (Jonathan's
+//    decision) makes it count the goal's own dates, so $0 here is right.
 //
 // Fails before the fix: the badge says drifting while the closeness line says
 // On track, the band word says Distant, and the goal bar sums its own 90-day
@@ -94,9 +95,12 @@ async function run() {
   const g = ov.body && ov.body.goal, period = ov.body && ov.body.period;
   ok("G · the overview answers with a goal and a Raised figure", ov.status === 200 && !!g && !!period, ov.body);
   ok("G · the Raised card counts this year's gifts", period && Math.round(period.raised * 100) === 11973703, period);
-  ok("G · the goal bar shows the same raised figure as the Raised card", g && period && Math.round(g.currentAmount * 100) === Math.round(period.raised * 100),
+  // FIX-49 (Jonathan, 25 Oct): a goal's period is its own start and end, on
+  // Home and Fundraising alike. These gifts are dated before this goal starts,
+  // so they are in the Raised card and not in the goal.
+  ok("G · the goal bar counts only the gifts inside the goal's own dates", g && Number(g.currentAmount) === 0,
     { goal: g && g.currentAmount, raised: period && period.raised });
-  ok("G · and says which gifts it counts", g && /same gifts as Raised/.test(g.sourceNote || ""), g && g.sourceNote);
+  ok("G · and says which gifts it counts", g && /this goal's own dates/.test(g.sourceNote || ""), g && g.sourceNote);
   ok("G · a bare amount is not shown as the goal's name", g && g.label == null, g && g.label);
   ok("G · 'On pace' never rides a bar at $0", !(g && Number(g.currentAmount) <= 0 && (g.paceState === "on_track" || g.paceState === "ahead")), g);
 
