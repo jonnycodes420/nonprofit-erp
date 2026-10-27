@@ -9568,6 +9568,23 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     pledgesRemoved = pl.length;
     for (const id of (sj.householdAssigned || [])) await run("UPDATE donors SET household_id=NULL WHERE org_id=? AND id=?", [orgId, id]);
     for (const id of (sj.sustainerFlagged || [])) await run("UPDATE donors SET imported_sustainer=false, imported_sustainer_amount=NULL WHERE org_id=? AND id=?", [orgId, id]);
+    // IMPORT-4: attendance, communication choices, kept columns and the
+    // timeline lines that said where they came from go too, and a person who
+    // was already here is put back exactly as they were.
+    await run("DELETE FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
+    const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
+      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased"]);
+    for (const pc of (sj.personChanges || [])) {
+      const cols = Object.keys(pc.before || {}).filter(k => SAFE_COLS.has(k));
+      if (!cols.length) continue;
+      await run(`UPDATE donors SET ${cols.map(k => k === "person_types" ? `${k}=?::jsonb` : `${k}=?`).join(", ")} WHERE org_id=? AND id=?`,
+        [...cols.map(k => k === "person_types" ? JSON.stringify(pc.before[k]) : pc.before[k]), orgId, pc.id]);
+    }
+    for (const cv of (sj.customValuesSet || [])) {
+      for (const k of cv.keys || []) await run("UPDATE donors SET custom_fields = custom_fields - ? WHERE org_id=? AND id=?", [k, orgId, cv.donorId]);
+    }
   }
   const orphans = await query(
     `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
@@ -9590,7 +9607,19 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   if (imp.shape === "sheet") {
     await run(`DELETE FROM households h WHERE h.org_id=? AND h.import_id=? AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.household_id=h.id)`, [orgId, req.params.id]);
     await run(`DELETE FROM events e WHERE e.org_id=? AND e.import_id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.event_id=e.id)
-                 AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.event_id=e.id)`, [orgId, req.params.id]);
+                 AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.event_id=e.id)
+                 AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.event_id=e.id)`, [orgId, req.params.id]);
+    // a custom field this import made, once no one holds a value in it
+    for (const fid of (sj.customFieldsCreated || [])) {
+      const [def] = await query("SELECT key FROM custom_field_defs WHERE org_id=? AND id=?", [orgId, fid]);
+      if (!def) continue;
+      const [held] = await query("SELECT 1 FROM donors WHERE org_id=? AND (custom_fields ->> ?) IS NOT NULL LIMIT 1", [orgId, def.key]);
+      if (!held) await run("DELETE FROM custom_field_defs WHERE org_id=? AND id=?", [orgId, fid]);
+    }
+    for (const fid of (sj.fundsCreated || [])) {
+      await run(`DELETE FROM fin_funds f WHERE f.org_id=? AND f.id=? AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.fund_id=f.id)
+                   AND NOT EXISTS (SELECT 1 FROM fin_transactions t WHERE t.fund_id=f.id)`, [orgId, fid]).catch(() => {});
+    }
   }
   // Totals RECOMPUTED from what remains, never decremented.
   for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
