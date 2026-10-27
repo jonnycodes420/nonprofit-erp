@@ -8,8 +8,8 @@ const ORG = `org_f49w_${SEED}`;
 module.exports = async function run() {
   console.log("\n§W workflows become journeys");
   const email = `f49w-${SEED}@example.org`;
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled)
-           VALUES ($1,'Fix 49 Workflows',$2,1,'active','team','America/New_York',NOW(),false)`, [ORG, `f49w-${SEED}`]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'Fix 49 Workflows',$2,1,'active','team','America/New_York',NOW(),false,true,NULL)`, [ORG, `f49w-${SEED}`]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`,
     [`u_${ORG}`, ORG, email, bcrypt.hashSync("loadtest1234", 4)]);
   const tok = await login(email);

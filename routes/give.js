@@ -8010,8 +8010,8 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
   const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "org";
   const orgSlug = `${slugBase}-${uuid().slice(0, 4)}`;
   await run(
-    `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein, emails_enabled)
-     VALUES (?,?,?,?,?,1,?,false)`,
+    `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein, emails_enabled, staff_mail_enabled)
+     VALUES (?,?,?,?,?,1,?,false,false)`,
     [orgId, name, orgSlug, "portal", "active", ein]);
   // BUILD-58 W-3: /network/signup mints onboarding_complete=1 and never runs
   // the onboarding step that used to (incidentally) provision the chart of

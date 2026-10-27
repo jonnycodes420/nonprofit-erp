@@ -47,8 +47,8 @@ async function wipe() {
   console.log("parity4-started");
   const sink = await startSink();
   await wipe();
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_account_id,stripe_connected)
-           VALUES ($1,'Started Org','p4gs',1,'active','team','America/New_York',$2,true)`, [ORG, ACCT]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_account_id,stripe_connected,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'Started Org','p4gs',1,'active','team','America/New_York',$2,true,true,NULL)`, [ORG, ACCT]);
   // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
   await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_p4gs',$1,$2,$3,'Dana Director','admin')`, [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);

@@ -28,8 +28,8 @@ module.exports = async function run() {
   const today = civilToday();
   const org = `${PREFIX}${SEED}`, email = `f49a-${SEED}@example.org`, slug = `f49a-${SEED}`;
   // A January year, so a gift forty days ago is inside "this year" but outside the goal's own dates.
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,stripe_account_id,stripe_connected,vocabulary_json)
-           VALUES ($1,'Fix49 money',$2,1,'active','team','America/New_York',NOW(),false,$3,true,'{"fiscal_year_start_month":1}')`, [org, slug, `acct_${org}`]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,stripe_account_id,stripe_connected,vocabulary_json,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'Fix49 money',$2,1,'active','team','America/New_York',NOW(),false,$3,true,'{"fiscal_year_start_month":1}',true,NULL)`, [org, slug, `acct_${org}`]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`, [`u_${org}`, org, email, PW]);
   const tok = await login(email);
   const person = async name => {

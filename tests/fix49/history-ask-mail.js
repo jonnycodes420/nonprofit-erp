@@ -27,8 +27,8 @@ async function wipe(like) {
 let n = 0;
 async function makeOrg() {
   const org = `${PREFIX}${SEED}_${++n}`, email = `f49c-${SEED}-${n}@example.org`;
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,vocabulary_json,onboarded_at,onboarded_via)
-           VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),false,$4,NOW(),'test')`,
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,vocabulary_json,onboarded_at,onboarded_via,emails_enabled,staff_mail_enabled)
+           VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),false,$4,NOW(),'test',true,NULL)`,
     [org, `Fix forty-nine ${n}`, `f49c-${SEED}-${n}`, JSON.stringify({ fiscal_year_start_month: 7 })]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`,
     [`u_${org}`, org, email, bcrypt.hashSync("loadtest1234", 4)]);

@@ -227,8 +227,8 @@ function logoDataUri() {
   console.log(`  email         ${OWNER_EMAIL}`);
   if (created) console.log(`  password      ${password}`);
   console.log(`  first charge  ${trialEndsAt}`);
-  console.log(`\n  Mail is OFF for this org. Turn it on deliberately when her data is in:`);
-  console.log(`      POST /admin/orgs/${orgId}/email-switch  {"emailsEnabled":true,"isDemoOrg":false}`);
+  console.log(`\n  Mail is OFF for this org. A super-admin turns it on when her data is in:`);
+  console.log(`      admin console, this org, Email, Mail switches (it asks to confirm)`);
   if (problems.length) {
     console.log(`\n  ${problems.length} STEP(S) DID NOT LAND — the org and her login are fine, re-run to finish:`);
     for (const p of problems) console.log(`    · ${p}`);

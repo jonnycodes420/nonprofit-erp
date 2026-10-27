@@ -262,6 +262,11 @@ async function reset() {
   ok("…named what the room agreed", org.name === "Sparrow Ministries", org.name);
   ok("…on the plan that was sold", org.plan === "core", org.plan);
   ok("…and it is TRIALING, not active", org.subscription_status === "trialing", org.subscription_status);
+  // FIX-53: Close a deal and its paid checkout start the org with Staff mail
+  // and Donor mail both off, each its own switch (a NULL Staff mail would
+  // follow Donor mail on the day Donor mail is turned on).
+  ok("…with Staff mail and Donor mail both OFF (FIX-53)",
+     org.emails_enabled === false && org.staff_mail_enabled === false, { donor: org.emails_enabled, staff: org.staff_mail_enabled });
 
   const admins = await q(`SELECT * FROM users WHERE org_id=$1`, [org.id]);
   ok("ONE user, and she is the admin", admins.length === 1 && admins[0].role === "admin", admins.map(u => [u.email, u.role]));

@@ -23,7 +23,7 @@
 //
 // Verify-first: committed RED against the pre-BUILD-58 server.
 
-const { ok, summary, api: helperApi, q, closeDb, BASE, SINK_PORT, login } = require("./helpers");
+const { ok, summary, api: helperApi, q, closeDb, BASE, SINK_PORT, login, waitFor } = require("./helpers");
 // SEND-GATE-1: the people this suite mails are people the org turned
 // automatic email on for (every person starts off). It tests the other rules.
 const api = async (...a) => {
@@ -84,7 +84,8 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
   // OFF. This suite is about what a mail-ON org does, so it opts in first,
   // standing in for POST /admin/orgs/:id/email-switch.
   // MAIL-1: and it has onboarded (its donor file is in), or nothing sends.
-  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [orgId]);
+  // FIX-53: both switches, as the console toggle would leave them.
+  await q("UPDATE orgs SET emails_enabled=true, staff_mail_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [orgId]);
   // MAIL-1 §9's org: mail switched ON by a super-admin, but NO donor file yet.
   const m1Admin = `mail1-admin-${uniq()}@test.local`;
   const m1 = await fetch(BASE + "/auth/register-org", {
@@ -92,7 +93,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     body: JSON.stringify({ orgName: "MAIL-1 Not Yet " + uniq(), userName: "M1 Admin", email: m1Admin, password: "loadtest1234" }),
   }).then(r => r.json());
   const m1Tok = m1.token, m1Org = m1.org.id;
-  await q(`UPDATE orgs SET emails_enabled=true, receipts_enabled=true, legal_name='MAIL-1 Org, Inc.', ein='12-3456789',
+  await q(`UPDATE orgs SET emails_enabled=true, staff_mail_enabled=true, receipts_enabled=true, legal_name='MAIL-1 Org, Inc.', ein='12-3456789',
            receipt_address='1 Test Way, Testville, TS 00000' WHERE id=$1`, [m1Org]);
   // §9's demo org: every switch on and even stamped onboarded. It still sends only sign-in mail.
   const demoAdmin = `mail1-demo-${uniq()}@test.local`;
@@ -101,7 +102,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     body: JSON.stringify({ orgName: "MAIL-1 Demo " + uniq(), userName: "Demo Admin", email: demoAdmin, password: "loadtest1234", provisioned: true }),
   }).then(r => r.json());
   const dmTok = dm.token, dmOrg = dm.org.id;
-  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW() WHERE id=$1", [dmOrg]);
+  await q("UPDATE orgs SET emails_enabled=true, staff_mail_enabled=true, onboarded_at=NOW() WHERE id=$1", [dmOrg]);
   // …and waits out the 5s mail-gate cache the signup's own gate check filled
   // (the real switch route clears it; SQL can't).
   await new Promise(r => setTimeout(r, 5100));
@@ -554,8 +555,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
       off.status === 200 && off.body?.switches?.staff === false && off.body.switches.donor === true && off.body.switches.billing === true, { s: off.status, b: off.body?.switches });
     const [row] = await q("SELECT staff_mail_enabled, emails_enabled, billing_mail_enabled FROM orgs WHERE id=$1", [m1Org]);
     ok("§11a …saved on the org", row && row.staff_mail_enabled === false && row.emails_enabled === true && row.billing_mail_enabled === true, row);
-    const [aud] = await q(`SELECT user_name, action, before_fields, after_fields FROM fin_audit_log
-                             WHERE org_id=$1 AND request_path LIKE '%/mail-switches' ORDER BY created_at DESC LIMIT 1`, [m1Org]);
+    // The audit row is written when the response finishes, so it is waited for.
+    const aud = await waitFor(async () => (await q(`SELECT user_name, action, before_fields, after_fields FROM fin_audit_log
+                             WHERE org_id=$1 AND request_path LIKE '%/mail-switches' ORDER BY created_at DESC LIMIT 1`, [m1Org]))[0]);
     ok("§11a …and audit-logged in that org's log, staff mail on to off",
       !!aud && aud.before_fields?.staff_mail === true && aud.after_fields?.staff_mail === false, aud);
     const notMine = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, m1Tok, { staff: true });
@@ -573,7 +575,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
 
     // Staff on, donor off: the switches are independent both ways.
     state.captured.length = 0;
-    const flip = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { staff: true, donor: false });
+    const flip = await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { staff: true, donor: false, confirm: true });
     await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: mondayAgo(2) });
     const camp2 = await api("POST", "/campaigns", m1Tok, { name: "F48b " + uniq(), subject: "F48b", body: "Hi", audience: "all" });
     await api("POST", `/campaigns/${camp2.body?.id || camp2.body?.campaign?.id}/send`, m1Tok, {});
@@ -587,7 +589,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§11d a staff switch never set follows the donor switch, as staff mail always did",
       MP.orgMailDecision({ id: "x", emails_enabled: false, onboarded_at: new Date(testNow()) }, "staff").reason === "org_emails_disabled"
       && MP.orgMailDecision({ id: "x", emails_enabled: true, onboarded_at: new Date(testNow()) }, "staff").send === true, null);
-    await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { donor: true });
+    await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { donor: true, confirm: true });
   }
 
   sink.srv.close();
