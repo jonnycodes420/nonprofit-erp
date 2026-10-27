@@ -349,6 +349,12 @@ async function main() {
   const sp = await api("GET", `/insights?asOf=${AS_OF}&view=first`, tokB);
   const ms8 = Math.round(performance.now() - t0);
   ok(`§8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds (${ms8} ms)`, sp.status === 200 && sp.body.cards.length > 0 && ms8 < 3000, ms8);
+  // the speed org's rows were written straight in (no totals): it goes, so no other suite reads it
+  const allT = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
+  for (let pass = 0; pass < 5; pass++) {
+    for (const t of allT) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [BIG]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [BIG]).then(() => true).catch(() => false)) break;
+  }
 
   if (WAITING.length) {
     ok(`§M ${WAITING.length} checks wait on the memo-kept gift file (NEEDS-JONATHAN): ${WAITING.join("; ")}`, false, "fixture");
