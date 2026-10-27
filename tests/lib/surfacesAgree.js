@@ -13,11 +13,13 @@
 // ctx (every field optional except a way to sign in):
 //   token     a Bearer token for an ADMIN of orgId (preferred: no extra login)
 //   email     with `password` (default "loadtest1234"): signed in with
-//             helpers.login when there is no token
+//             helpers.login when there is no token. With neither, the org's
+//             first admin user is signed in (once per process) with that password
 //   q         (sql, params) => rows, a direct DB handle for the ground truth;
 //             defaults to helpers.q (the scratch DATABASE_URL)
 //   label     a word for the messages ("after the undo"), so a red run says
-//             where in the suite it went red
+//             where in the suite it went red (`step` is read the same way)
+//   importId  accepted and ignored: every import's Move Report is checked
 //   soft      true: return { ok, diffs, facts, ms } and do not throw
 //   skip      [names] of checks to leave out, e.g. ["atlas"] for a suite
 //             whose org pauses Atlas. Names: people, gifts, thisYear,
@@ -88,11 +90,22 @@ function* leaves(v, path = "") {
   else yield [path, v];
 }
 
+const TOKENS = new Map();   // orgId|email -> token, so repeated checks sign in once
 async function assertSurfacesAgree(orgId, ctx = {}) {
   const t0 = Date.now();
   const q = ctx.q || H.q;
+  const label = ctx.label || ctx.step || "";
   const skip = new Set(ctx.skip || []);
-  const token = ctx.token || await H.login(ctx.email, ctx.password || "loadtest1234");
+  // No token or email: the org's first admin, signed in once per process.
+  let email = ctx.email;
+  if (!ctx.token && !email) {
+    const [u] = await q(`SELECT email FROM users WHERE org_id = $1 AND role = 'admin' ORDER BY created_at ASC NULLS LAST, id LIMIT 1`, [orgId]);
+    if (!u) throw new Error(`assertSurfacesAgree: ${orgId} has no admin to ask as; pass ctx.token`);
+    email = u.email;
+  }
+  const key = `${orgId}|${email}`;
+  const token = ctx.token || TOKENS.get(key) || await H.login(email, ctx.password || "loadtest1234");
+  if (!ctx.token) TOKENS.set(key, token);
   const get = (path) => H.api("GET", path, token).then(r => r.body);
   const raw = (path) => fetch(H.BASE + path, { headers: { Authorization: "Bearer " + token } })
     .then(async r => ({ status: r.status, buf: Buffer.from(await r.arrayBuffer()) }));
@@ -403,7 +416,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
 
   const out = { ok: diffs.length === 0, diffs, facts, ms: Date.now() - t0 };
   if (!out.ok && !ctx.soft) {
-    const e = new Error(`surfaces disagree${ctx.label ? ` (${ctx.label})` : ""} in ${orgId}:\n  - ${diffs.join("\n  - ")}`);
+    const e = new Error(`surfaces disagree${label ? ` (${label})` : ""} in ${orgId}:\n  - ${diffs.join("\n  - ")}`);
     e.diffs = diffs; e.facts = facts;
     throw e;
   }

@@ -31,7 +31,7 @@ const { assertSurfacesAgree } = require("./lib/surfacesAgree");
 const orgTime = require("../orgTime");
 
 const PASSWORD = "loadtest1234";
-const STAMP = Date.now().toString(36);
+const STAMP = require("crypto").randomBytes(5).toString("hex");
 const ORG_A = "org_hs1sa_" + STAMP, ORG_B = "org_hs1sb_" + STAMP;
 
 async function freshOrg(id) {
