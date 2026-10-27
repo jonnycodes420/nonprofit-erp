@@ -165,7 +165,7 @@ function inventory() {
     await goTo(A);
 
     // §3 — the old boxes and the chip row are gone.
-    ok("§3 the seven numbers are in the header", await page.locator('.donor-profile-header [data-testid=dp-header-figures]').count() === 1);
+    ok("§3 the header numbers are in the header", await page.locator('.donor-profile-header [data-testid=dp-header-figures]').count() === 1);
     ok("§3 the old number boxes are gone", await page.locator('[data-testid=dp-figures], [data-testid=dp-glance], .donor-stat-grid').count() === 0);
     ok("§3 the \"Everything with\" chip row is gone", await page.locator('[data-filter=all]').count() === 0 && !(await page.locator("text=/^Everything with/i").count()));
     ok("§3 one row of ten tabs, directly under the header", await page.locator('[data-testid=dp-tabs] [role=tab]').count() === 10);

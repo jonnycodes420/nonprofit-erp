@@ -308,7 +308,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 // FIX-8 Part E — `label` draws the trigger as a named button ("Not today")
 // rather than the quiet "…", for the one place on Home where this menu IS the
 // third action rather than a row's overflow. What it opens is unchanged.
-export function ThreadDismissMenu({ thread, onDone, label }) {
+// POLISH-3 · `extra` puts the record's own verbs (Edit, Delete) at the top of
+// the same menu, and `footer` its "Edited by" line, so a row carries one "…"
+// rather than a menu plus a row of underlined words.
+export function ThreadDismissMenu({ thread, onDone, label, extra, footer }) {
   const [open, setOpen] = useState(false);
   const [revisitOpen, setRevisitOpen] = useState(false);
   const [revisitOn, setRevisitOn] = useState(addCivilDays(todayLocal(), 30));
@@ -317,8 +320,10 @@ export function ThreadDismissMenu({ thread, onDone, label }) {
   useEffect(() => {
     if (!open) return;
     const close = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setRevisitOpen(false); } };
+    const esc = e => { if (e.key === "Escape") { setOpen(false); setRevisitOpen(false); } };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
 
   const dismiss = async (reason, on) => {
@@ -347,7 +352,16 @@ export function ThreadDismissMenu({ thread, onDone, label }) {
         {label ? label : <span aria-hidden>{"\u2026"}</span>}
       </button>
       {open && (
-        <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 28px rgba(15,26,18,0.14)", padding: 6, zIndex: 50, minWidth: 220 }}>
+        <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 28px rgba(15,26,18,0.14)", padding: 6, zIndex: 50, minWidth: 220 }}>
+          {extra && extra.length > 0 && <>
+            {extra.map(x => (
+              <button key={x.label} type="button" role="menuitem" data-testid={x.testid} onClick={() => { setOpen(false); x.onClick(); }}
+                style={{ background: "transparent", border: "none", padding: "8px 12px", width: "100%", textAlign: "left", color: T.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                {x.label}
+              </button>
+            ))}
+            <div style={{ borderTop: "1px solid " + T.bg2, margin: "4px 6px" }} />
+          </>}
           {DISMISS_REASONS.map(r => r.key === "revisit" ? (
             <div key={r.key} style={{ padding: "4px 6px" }}>
               {!revisitOpen ? (
@@ -369,6 +383,7 @@ export function ThreadDismissMenu({ thread, onDone, label }) {
               {r.label}
             </button>
           ))}
+          {footer && <div style={{ borderTop: "1px solid " + T.bg2, margin: "4px 6px 0", padding: "6px 6px 2px" }}>{footer}</div>}
         </div>
       )}
     </span>

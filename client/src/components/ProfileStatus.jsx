@@ -53,6 +53,19 @@ const TAG_TONE = {
   retained: { background: T.white, color: T.greenDk, border: `1px solid ${T.green200}` },
 };
 
+// POLISH-3 · the tags as separate chips, so the header can put them on one
+// line with the record's tags and groups and fold the extras into "+3".
+export function statusTagItems(status, onOpenDonor) {
+  if (!status || !status.tags || !status.tags.length) return [];
+  return status.tags.map(t => (
+    <Opens key={"st:" + t.key} source={t.source} title={`Donors tagged ${t.label}`} explanation={t.sentence} testid={`dp-tag-${t.key}`} onSelectDonor={onOpenDonor}
+      style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap",
+        ...(t.key === "lapsed" ? { background: T.gold100, color: T.gold700, border: `1px solid ${T.gold300}` } : TAG_TONE[t.kind]) }}>
+      {t.label}
+    </Opens>
+  ));
+}
+
 export function StatusTags({ status, onOpenDonor }) {
   if (!status || !status.tags || !status.tags.length) return null;
   return (

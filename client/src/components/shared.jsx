@@ -762,6 +762,7 @@ export function GlobalStyles() {
       .dph-figures{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin:6px -14px -10px!important;padding:0 0 8px!important;}
       .dph-fig{border-left:none!important;border-top:1px solid ${T.bg3};padding:9px 14px 4px!important;}
       .dph-fig:nth-child(-n+2){border-top:none;}
+      .dp-more-numbers{margin:0 0 14px!important;padding:0 0 6px!important;}
       .dp-about-grid{grid-template-columns:1fr!important;}
       .dp-about-grid>div{border-left:none!important;border-top:1px solid ${T.bg3}!important;}
       .dp-about-grid>div:first-child{border-top:none!important;}
