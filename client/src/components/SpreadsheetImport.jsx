@@ -25,7 +25,7 @@ const btn = primary => ({ background: primary ? T.greenDk : T.white, color: prim
   border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9, padding: "9px 14px", fontWeight: 800, fontSize: 13,
   cursor: "pointer", fontFamily: "inherit" });
 const STD_ROLES = SHEET_ROLES.filter(r => r.key !== "ignore");
-const money = c => "$" + (Math.round(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const money = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const n = (k, one, many) => `${Number(k).toLocaleString("en-US")} ${k === 1 ? one : (many || one + "s")}`;
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -242,31 +242,32 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
-            <div style={box} data-testid="sheet-review">
+            <div style={{ ...box, counterReset: "layer" }} data-testid="sheet-review">
+              <style>{".sheet-layer-n::before{content:counter(layer)}"}</style>
               <div style={h3}>Before anything is written</div>
-              <Layer n={1} title="People" testId="layer-people"
+              <Layer title="People" testId="layer-people"
                 main={`${n(c.persons ?? c.people, "person", "people")}${c.households ? `, ${n(c.households, "household")}` : ""}${c.organizations ? `, ${n(c.organizations, "organization")}` : ""}`}
                 sub={`${u.newPeople} new, ${u.matchedPeople} already in Steward. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
                 notes={[...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
                         ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)]} />
-              <Layer n={2} title="Roles" testId="layer-roles"
+              <Layer title="Roles" testId="layer-roles"
                 main={[c.donors && n(c.donors, "donor"), c.pledgers && n(c.pledgers, "pledger"), c.guests && n(c.guests, "event guest"), c.volunteers && n(c.volunteers, "volunteer"),
                        c.board && `${c.board} board`, c.staff && `${c.staff} staff`, c.prospects && n(c.prospects, "prospect"), c.contacts && n(c.contacts, "contact")].filter(Boolean).join(" · ") || "Contacts"}
                 sub="From the data: a donor gave, a pledger promised, a prospect was invited and never gave. Someone with no gift comes in as a contact, never a donor." />
               {u.fileKind !== "people" && (
-                <Layer n={3} title="Money" testId="layer-money"
+                <Layer title="Money" testId="layer-money"
                   main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")} ${money(c.pledgeOpenCents)} open` : ""}`}
                   sub={c.undatedGifts ? "A gift with no date still lands on its person, marked No date. It counts in Lifetime and the event's total, and not in This year, a goal or retention until it has a date." : "Every gift on its person, through the one gift path."}
                   notes={[c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
                           ...u.pledges.slice(0, 3).map(p => `Row ${p.line}: ${p.who}, ${money(p.pledgeCents)}${p.openCents !== p.pledgeCents ? `, ${money(p.openCents)} to go` : ""}. ${p.why}.`)].filter(Boolean)} />
               )}
               {(u.event || c.optOuts || c.doNotContact || c.doNotMail || c.doNotCall) ? (
-                <Layer n={4} title="Engagement" testId="layer-engagement"
+                <Layer title="Engagement" testId="layer-engagement"
                   main={[u.event && `${eventName || u.event.name || "The event"}: ${c.invited.toLocaleString("en-US")} invited, ${c.rsvp.toLocaleString("en-US")} RSVP'd, ${c.attended.toLocaleString("en-US")} attended`,
                          c.optOuts && n(c.optOuts, "opt-out"), c.doNotContact && `${c.doNotContact} do not contact`, c.doNotMail && `${c.doNotMail} do not mail`, c.doNotCall && `${c.doNotCall} do not call`].filter(Boolean).join(" · ")}
                   sub="Attendance, table and party size go on each person's event. Every communication choice keeps where it came from." />
               ) : null}
-              <Layer n={5} title="Everything else" testId="layer-kept"
+              <Layer title="Everything else" testId="layer-kept"
                 main={(u.keptHeaders || []).length ? `${n(u.keptHeaders.length, "column")} kept on each person: ${u.keptHeaders.map(k => k.header).join(", ")}` : "Nothing left over"}
                 sub="A column Steward has no field for is kept under its own header, as a custom field on the person. Nothing is lost." />
               {u.aside.length > 0 && (
@@ -362,10 +363,12 @@ function fileSentence(u, tablesRead, eventName) {
   return `A list of people with no gifts: ${tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")}`).join("; ")}.`;
 }
 
-function Layer({ n: num, title, main, sub, notes, testId }) {
+// The layers are numbered by CSS counter, so a layer with nothing to say
+// leaves no gap in the numbers.
+function Layer({ title, main, sub, notes, testId }) {
   return (
-    <div data-testid={testId} style={{ display: "flex", gap: 10, borderTop: "1px solid " + T.bg2, padding: "9px 0", minWidth: 0 }}>
-      <div style={{ flex: "0 0 22px", height: 22, borderRadius: 11, background: T.bg, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink3 }}>{num}</div>
+    <div data-testid={testId} className="sheet-layer" style={{ display: "flex", gap: 10, borderTop: "1px solid " + T.bg2, padding: "9px 0", minWidth: 0, counterIncrement: "layer" }}>
+      <div className="sheet-layer-n" style={{ flex: "0 0 22px", height: 22, borderRadius: 11, background: T.bg, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink3 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", color: T.ink3 }}>{title}</div>
         <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>{main}</div>

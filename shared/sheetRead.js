@@ -163,7 +163,7 @@ const s = v => (v == null ? "" : String(v)).replace(/\s+/g, " ").trim();
 const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
-const fmt$ = c => "$" + (Math.round(c) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
+const fmt$ = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
 const plural = (n, a, b) => `${n.toLocaleString("en-US")} ${n === 1 ? a : (b || a + "s")}`;
 
 function moneyOf(v) {

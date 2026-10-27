@@ -144,7 +144,7 @@ async function combined() {
      JSON.stringify(acct));
   const cols = U.columns || [];
   ok("§1 no column with data is skipped without a reason", cols.every(c => c.disposition !== "skipped" || (c.reason && c.reason.length > 8)), JSON.stringify(cols.filter(c => c.disposition === "skipped")));
-  const byHdr = h => cols.find(c => c.header === h && c.sheet === "People");
+  const byHdr = h => cols.find(c => c.header === h && c.sheet === "People") || {};
   ok("§1 Invited, RSVP, Attended, Table and Mailing List are mapped, never left out",
      ["Invited", "RSVP", "Attended", "Table", "Mailing List", "Party Size", "Do Not Contact", "Volunteer"].every(h => byHdr(h) && byHdr(h).disposition === "mapped"),
      JSON.stringify(["Invited", "RSVP", "Attended", "Table", "Mailing List"].map(byHdr)));
@@ -159,7 +159,7 @@ async function combined() {
   ok("§1 the shared phone is flagged as a placeholder on 30 people", (U.placeholders || []).some(p => p.kind === "phone" && p.people === E.placeholderPeople), JSON.stringify(U.placeholders));
   ok("§1 the event is named from the title row; the date question is optional", U.event && U.event.name === E.eventName
      && (U.questions || []).filter(x => ["date", "event"].includes(x.id)).every(x => x.optional), JSON.stringify([U.event, (U.questions || []).map(x => [x.id, x.optional])]));
-  ok("§1 the sample person shows the most layers", U.sample && U.sample.roles.includes("donor") && U.sample.attendance && U.sample.attendance.attended, JSON.stringify(U.sample).slice(0, 300));
+  ok("§1 the sample person shows the most layers", U.sample && U.sample.roles.includes("donor") && U.sample.attendance && U.sample.attendance.attended, String(JSON.stringify(U.sample)).slice(0, 300));
   ok("§1 understand wrote nothing", (await one("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [ORG])).n === 0);
 
   // §2 the commit
@@ -183,7 +183,7 @@ async function combined() {
   ok("§3 Lifetime counts the undated gift", f.lifetime && f.lifetime.cents === E.sample.gaveCents, JSON.stringify(f.lifetime));
   ok("§3 This year does not", !f.thisYear || !f.thisYear.cents, JSON.stringify(f.thisYear));
   ok("§3 and the profile says why", JSON.stringify(prof.body).includes("no date not counted"), JSON.stringify(f.thisYear));
-  const ev = await q("SELECT id, name, date_unknown FROM events WHERE org_id=$1", [ORG]);
+  const ev = await q("SELECT * FROM events WHERE org_id=$1", [ORG]);
   ok("§4 the event is created once, by its name, its date not known", ev.length === 1 && ev[0].name === E.eventName && ev[0].date_unknown === true, JSON.stringify(ev));
   const evId = ev[0] && ev[0].id;
   const evg = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND event_id=$2", [ORG, evId]);
@@ -255,7 +255,7 @@ async function combined() {
   ok("§9 \"Use the event date\" dates all 106 in one call", d1.status === 200 && d1.body.dated === E.gifts && g9.n === E.gifts && g9.undated === 0, JSON.stringify({ s: d1.status, b: d1.body, g9 }));
   const prof9 = await api("GET", `/donors/${sample.id}`, tok);
   ok("§9 and This year then counts them", prof9.body.figures.thisYear && prof9.body.figures.thisYear.cents === E.sample.gaveCents, JSON.stringify(prof9.body.figures.thisYear));
-  ok("§9 the event has its date now", (await one("SELECT date::text AS d, date_unknown FROM events WHERE id=$1", [evId])).d === "2026-10-22");
+  ok("§9 the event has its date now", (await one("SELECT date::text AS d FROM events WHERE id=$1", [evId])).d === "2026-10-22");
   const probs9 = await numbersCheck(ORG);
   ok("§9 the checker still passes", probs9.length === 0, JSON.stringify(probs9).slice(0, 600));
 
