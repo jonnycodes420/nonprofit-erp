@@ -133,6 +133,12 @@ const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
 // gets a fresh answer. A write forgets them like `kept`.
 const parked = new Map();
 const PARKED_TTL_MS = 30000;
+// HARDEN-2: writes that only record that something was looked at, and change
+// no answer any read here is holding, so they forget nothing. Home's cards
+// marked seen the moment they drew, and that threw away Home's own reads
+// still parked for it, which then went out again. A seen-write whose own read
+// is kept or re-read (/org/welcome/seen, /gift-starts/notice/seen) is NOT here.
+const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/];
 export function forgetReads() { kept.clear(); parked.clear(); }
 
 // ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
@@ -186,6 +192,7 @@ export async function apiFetch(path, options = {}) {
   // write must not be handed the answer to a read that left before it, or a
   // list re-read after "Approve all" comes back as it was before the approval.
   // FIX-46: and the lists held for the session, before and after the write.
+  if (method !== "GET" && SEEN_ONLY.some(r => r.test(path))) return apiFetchNow(path, options);
   if (method !== "GET") { kept.clear(); parked.clear(); inFlight.clear(); forgetLists(); return apiFetchNow(path, options).finally(forgetLists); }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
