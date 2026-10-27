@@ -9584,6 +9584,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     }
     for (const cv of (sj.customValuesSet || [])) {
       for (const k of cv.keys || []) await run("UPDATE donors SET custom_fields = custom_fields - ? WHERE org_id=? AND id=?", [k, orgId, cv.donorId]);
+      if (cv.wasNull) await run("UPDATE donors SET custom_fields = NULL WHERE org_id=? AND id=? AND custom_fields = '{}'::jsonb", [orgId, cv.donorId]);
     }
   }
   const orphans = await query(

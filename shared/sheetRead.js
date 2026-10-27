@@ -1128,7 +1128,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const suggestedEventName = eventNameFromTitles(tables) || eventNameFromFile(fileName);
   const eventWanted = hasEngagement || (answers.linkEvent && answers.eventName);
   if (hasEngagement) {
-    questions.push({ id: "event", kind: "event", optional: true, text: "What was this event called, and when?",
+    // a name Steward cannot guess is a real question: attendance needs an event
+    questions.push({ id: "event", kind: "event", optional: !!(answers.eventName || suggestedEventName), text: "What was this event called, and when?",
                      hint: "Steward found who was invited and who came. The date is optional.",
                      suggestedEventName: answers.eventName || suggestedEventName, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
   }
@@ -1174,7 +1175,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // the column account: every column is mapped, kept, or skipped with a reason
   const columnList = [];
   for (const t of tables) for (const c of t.cols) columnList.push({ table: t.key, sheet: t.sheet, index: c.index, header: c.header || `(column ${c.index + 1})`,
-    disposition: c.disposition, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, reason: c.disposition === "skipped" ? c.skipReason : c.reason, sample: c.profile.sample.slice(0, 3) });
+    disposition: c.disposition, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, reason: c.disposition === "skipped" ? c.skipReason : c.reason,
+    links: !!c.links, sample: c.profile.sample.slice(0, 3) });
   const columnAccount = { total: columnList.length, mapped: 0, kept: 0, skipped: 0, question: 0 };
   for (const c of columnList) columnAccount[c.disposition] = (columnAccount[c.disposition] || 0) + 1;
   const att = peopleList.filter(p => p.attendance);

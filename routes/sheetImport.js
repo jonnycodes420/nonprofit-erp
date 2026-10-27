@@ -91,6 +91,13 @@ async function matchPeople(orgId, u, answers, privacy) {
         if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "you", isClient: d.is_client === true }); continue; }
       }
       if (pick === "new") { members.push({ name: nm, status: "new", id: null, by: "you" }); continue; }
+      // TRANS-1: the old system's own id matches first, for the record it names
+      if (p.externalId && nm === names[0]) {
+        const [d] = await query(`SELECT id, is_client FROM donors WHERE org_id=? AND deleted_at IS NULL
+                                    AND (LOWER(external_donor_id)=LOWER(?) OR COALESCE(external_donor_ids,'[]'::jsonb) @> ?::jsonb) LIMIT 2`,
+          [orgId, p.externalId, JSON.stringify([p.externalId])]);
+        if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "the ID in your file", isClient: d.is_client === true }); continue; }
+      }
       const m = await DM.matchDonor(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip });
       if (m.state === "matched" && m.selectedId) {
         const [d] = await query("SELECT is_client FROM donors WHERE id=?", [m.selectedId]);
@@ -211,7 +218,7 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
           const fresh = Object.fromEntries(Object.entries(ok).filter(([k]) => have[k] == null || have[k] === ""));
           if (Object.keys(fresh).length) {
             await run("UPDATE donors SET custom_fields = ?::jsonb || COALESCE(custom_fields, '{}'::jsonb) WHERE id=? AND org_id=?", [JSON.stringify(fresh), id, orgId]);
-            summary.customValuesSet.push({ donorId: id, keys: Object.keys(fresh) });
+            summary.customValuesSet.push({ donorId: id, keys: Object.keys(fresh), wasNull: !(cur && cur.custom_fields) });
           }
         }
       }

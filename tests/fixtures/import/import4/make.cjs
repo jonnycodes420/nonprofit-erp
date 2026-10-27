@@ -118,10 +118,11 @@ const expected = {};
     pledges: A.length + B.length, pledgeOpenCents: c(2 * sum(A) + sum(B)),
     pledgeTotalCents: c(3 * sum(A) + sum(B)),
     fileCents: c(fileMoney), notYetCents: c(sum(notYet.map(g => g.amount))), totalsRowCents: c(fileMoney),
-    eventName: "Finding Joy Dinner", invited: people.filter(p => p.invited).length, rsvp: people.filter(p => p.rsvp).length,
+    // attendance is one row per person: a couple's row is two people
+    eventName: "Finding Joy Dinner", invited: sum(people.filter(p => p.invited).map(p => (p.couple ? 2 : 1))), rsvp: sum(people.filter(p => p.rsvp).map(p => (p.couple ? 2 : 1))),
     attended: people.filter(p => p.attended).length, optOuts: 4, doNotContact: 1, volunteers: people.filter(p => p.volunteer).length,
     placeholderPhone: PLACEHOLDER, placeholderPeople: people.filter(p => p.phone === PLACEHOLDER).length,
-    zipsFixed: people.filter(p => p.zip.length === 4).length,
+    zipsFixed: sum(people.filter(p => p.zip.length === 4).map(p => (p.couple ? 2 : 1))),
     columns: { total: 21 + 8 + 2, mapped: 18 + 7, kept: 2, skipped: 1 + 1 + 2 },
     kept: ["Shirt Size", "Dietary"],
     aside: 0,
@@ -142,12 +143,14 @@ const expected = {};
   const guests = [];
   let persons = 0;
   for (const r of rows) {
-    const first = String(r[1]).trim(), last = String(r[0]).trim();
+    const first = String(r[1] == null ? "" : r[1]).trim(), last = String(r[0]).trim();
     persons += /&/.test(first) ? 2 : 1;
-    guests.push({ name: `${first} ${last}`, email: /&/.test(first) ? null : `${first}.${last}@example.net`.toLowerCase(), attended: true });
+    // a one-word name ("Treadwell") stays one word, and gets no made-up email
+    guests.push({ name: `${first} ${last}`.trim(), email: /&/.test(first) || !first ? null : `${first}.${last}@example.net`.toLowerCase(), attended: true });
   }
   for (let k = 0; k < 60; k++) {
-    const first = FIRST[(k * 3 + 1) % FIRST.length], last = LAST[(k * 7 + 2) % LAST.length] + "e";   // never a gift-sheet last name
+    // never a gift-sheet last name, and never the same name twice
+    const first = FIRST[k % FIRST.length], last = LAST[(k + 3 * Math.floor(k / FIRST.length)) % LAST.length] + "e";
     guests.push({ name: `${first} ${last}`, email: `${first}.${last}${k}@example.net`.toLowerCase(), attended: k < 30 });
     persons += 1;
   }
@@ -155,9 +158,12 @@ const expected = {};
     ...guests.map((g, j) => [g.name, g.email, "Yes", g.attended ? "Yes" : "No", g.attended ? "Yes" : "No", g.attended ? String(1 + (j % 14)) : null,
       g.attended ? 1 + (j % 2) : null, g.attended ? "Printed" : null])];
   writeBook(path.join(OUT, "..", "event-guest-list-scrubbed.xlsx"), [{ name: "Guests", aoa }]);
-  expected["event-guest-list-scrubbed.xlsx"] = { records: guests.length, persons, attended: guests.filter(g => g.attended).length,
-    invited: guests.length, gifts: 0, giftCents: 0, columns: { total: 8, mapped: 8, kept: 0, skipped: 0 },
-    giftSheetPersons: persons - 60 };
+  const attendedPersons = sum(guests.filter(g => g.attended).map(g => (/&/.test(g.name) ? 2 : 1)));
+  expected["event-guest-list-scrubbed.xlsx"] = { records: guests.length, persons, attended: attendedPersons,
+    invited: persons, gifts: 0, giftCents: 0, columns: { total: 8, mapped: 8, kept: 0, skipped: 0 },
+    giftSheetPersons: persons - 60,
+    // its file name names no event, so Steward asks; the answer is the event's name
+    answers: { eventName: "Finding Joy Dinner" } };
 }
 
 // ── 3 · Volunteers.xlsx: hours and roles ──────────────────────────────────

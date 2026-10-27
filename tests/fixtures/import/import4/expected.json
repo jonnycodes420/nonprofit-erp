@@ -14,15 +14,15 @@
     "notYetCents": 5395000,
     "totalsRowCents": 17824000,
     "eventName": "Finding Joy Dinner",
-    "invited": 400,
-    "rsvp": 190,
+    "invited": 406,
+    "rsvp": 191,
     "attended": 172,
     "optOuts": 4,
     "doNotContact": 1,
     "volunteers": 26,
     "placeholderPhone": "(555) 010-0000",
     "placeholderPeople": 30,
-    "zipsFixed": 9,
+    "zipsFixed": 10,
     "columns": {
       "total": 31,
       "mapped": 25,
@@ -50,8 +50,8 @@
   "event-guest-list-scrubbed.xlsx": {
     "records": 166,
     "persons": 195,
-    "attended": 136,
-    "invited": 166,
+    "attended": 165,
+    "invited": 195,
     "gifts": 0,
     "giftCents": 0,
     "columns": {
@@ -60,7 +60,10 @@
       "kept": 0,
       "skipped": 0
     },
-    "giftSheetPersons": 135
+    "giftSheetPersons": 135,
+    "answers": {
+      "eventName": "Finding Joy Dinner"
+    }
   },
   "Volunteers.xlsx": {
     "records": 26,
