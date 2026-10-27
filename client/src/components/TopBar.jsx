@@ -9,6 +9,7 @@ import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
 import { AtlasBell } from "./AtlasNote";   // AGENT-5
+import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -383,6 +384,9 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   // name, so a seeded "Admin User" sat at the top of every screen in the
   // product. It is how a colleague is addressed, not how a row is keyed.
   const userName = firstNameOf(auth?.user?.name) || "You";
+  // HARDEN-1 item 6: a super admin, or a browser that has been signed in to
+  // more than one org, always sees which org this tab is in.
+  const orgLabel = (auth?.user?.isSuperAdmin || orgsSeenCount() > 1) ? (auth?.org?.name || "") : "";
 
   return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 
@@ -398,6 +402,10 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
       style={{position:"relative",flex:"0 1 560px",minWidth:0}}/>
 
     <div style={{flex:1}}/>
+
+    {orgLabel && <div data-testid="topbar-org" title={"You are in " + orgLabel}
+      style={{maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.inkInverse,fontSize:13.5,fontWeight:700,
+              padding:"4px 10px",border:"1px solid "+T.green650,borderRadius:8}}>{orgLabel}</div>}
 
     {/* HELP-1 — the "?" opens the article for this screen, beside the page. */}
     {/* AGENT-5: the bell. Everything Atlas did and readied; its count is what waits. */}

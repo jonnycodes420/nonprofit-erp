@@ -145,7 +145,7 @@ export default function HistoryImport({ onClose, onDone }) {
 
   const c = preview?.counts;
   return (
-    <Modal onClose={onClose} title="Bring your notes and history" width={860} ariaLabel="Bring your notes and history"
+    <Modal className="commit-screen" onClose={onClose} title="Bring your notes and history" width={860} ariaLabel="Bring your notes and history"
       subtitle="Notes, calls, meetings, open tasks and attached letters from your old system, each on the right person's timeline with its original date and author.">
       <div data-testid="history-import" style={{ display: "flex", flexDirection: "column", gap: 12, color: T.ink }}>
         {msg && <div role="alert" style={{ ...box, borderColor: T.gold500, fontSize: 13 }}>{msg}</div>}
@@ -276,7 +276,7 @@ export default function HistoryImport({ onClose, onDone }) {
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <button type="button" style={btn(false)} onClick={() => runPreview(file, mapping)} disabled={!!busy}>Check again</button>
-              <button type="button" data-testid="history-commit" style={btn(true)} onClick={commit} disabled={!!busy}>
+              <button type="button" data-commit data-testid="history-commit" style={btn(true)} onClick={commit} disabled={!!busy}>
                 {busy === "commit" ? "Bringing it in…" : `Bring it in`}
               </button>
             </div>
@@ -311,7 +311,7 @@ export default function HistoryImport({ onClose, onDone }) {
                 Engagement for the people it touched, before and after: {Object.entries(result.engagement?.before || {}).map(([k, n]) => `${n} ${k === "no_history" ? "with no history yet" : k}`).join(", ") || "none"} → {Object.entries(result.engagement?.after || {}).map(([k, n]) => `${n} ${k === "no_history" ? "with no history yet" : k}`).join(", ")}.
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <button type="button" style={btn(false)} data-testid="history-undo" onClick={undo} disabled={!!busy}>{busy === "undo" ? "Undoing…" : "Undo all of it"}</button>
+                <button type="button" data-commit style={btn(false)} data-testid="history-undo" onClick={undo} disabled={!!busy}>{busy === "undo" ? "Undoing…" : "Undo all of it"}</button>
                 <button type="button" style={btn(true)} onClick={onClose}>Done</button>
               </div>
             </>}

@@ -577,6 +577,9 @@ const invitationLimiter = rateLimit("invitationLimiter", {
 // Everything about WHAT a row says lives in auditTrail.js and
 // middleware/auditTrail.js. Nothing about it lives in a route.
 app.use(require("./middleware/auditTrail").auditTrail());
+// HARDEN-1: a write from a page painted for one org never lands in another
+// (middleware/orgBound.js). Beside the audit write, above every router.
+app.use(require("./middleware/orgBound").orgBound());
 // JOURNEYS-4: after a staff write succeeds, the journey triggers that read
 // rows (an auction win, a no-show, a pledge, a finished call) are checked for
 // that org at once, rather than waiting for the hourly sweep. routes/crm.js
