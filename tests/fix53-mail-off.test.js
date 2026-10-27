@@ -19,7 +19,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
 
 const uniq = () => require("crypto").randomBytes(5).toString("hex");
 const PW = "loadtest1234";
@@ -213,8 +213,10 @@ function handlerRange(src) {
   ok("§3 …it records who and when", !!s.donor_mail_set_at && s.donor_mail_set_by_name === "Jonathan" && s.staff_mail_set_at === null, s);
   ok("§3 …and the console label says so; Staff mail reads off since created",
     /^Turned on by Jonathan, /.test(on.body.switchSince?.donor || "") && on.body.switchSince?.staff === "Off since created.", on.body.switchSince);
-  const aud = await q(`SELECT user_id, created_at, before_fields, after_fields FROM fin_audit_log
-                        WHERE org_id=$1 AND request_path LIKE '%/mail-switches' ORDER BY created_at`, [org]);
+  // The audit row is written when the response finishes, so it is waited for.
+  const audRows = () => q(`SELECT user_id, created_at, before_fields, after_fields FROM fin_audit_log
+                            WHERE org_id=$1 AND request_path LIKE '%/mail-switches' ORDER BY created_at`, [org]);
+  const aud = (await waitFor(async () => { const r = await audRows(); return r.length > before ? r : null; })) || await audRows();
   ok("§3 one audit row, with who and when, donor mail off to on",
     aud.length === before + 1 && !!aud[aud.length - 1].user_id && !!aud[aud.length - 1].created_at
       && aud[aud.length - 1].before_fields?.donor_mail === false && aud[aud.length - 1].after_fields?.donor_mail === true,
