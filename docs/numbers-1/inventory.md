@@ -374,3 +374,10 @@ Found while building, for the next brief: the profile's lifecycle tags and "Dono
 - 7. Two giving-level rules. **Fixed.** The org's cut points in Settings; `donors.status` mid/major is no longer written.
 - 33. Two household groupings. **Fixed.** The household record only; links migrated into households.
 - NUMBERS-2's found-while-building (imported donor tagged New, Donor since 2026). **Fixed.**
+
+## FIX-51 outcome (26 Oct 2026)
+
+- Profile This year leaves soft and matching credit rows out, like Lifetime. **Fixed.**
+- The census hard and soft credit lines are `creditTotals.js`: Lifetime and the Soft credit figure. **Fixed.**
+- "Quiet" is the one lapse rule: Communications' Lapsing or lapsed segment, the going-quiet suggestion and Home's re-engage list. The 180-day clock is gone. **Fixed.**
+- check-numbers learns `credit-totals` and `quiet`, and `donor-this-year` leaves credit rows out; numbers1-foot gains the `goQuiet` step.

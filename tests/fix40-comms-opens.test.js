@@ -7,7 +7,7 @@
 //   §counts   Overview's Emails sent counts every sent campaign (it summed the
 //             six newest rows, so six drafts made 180 read 0); Audience counts
 //             by the server's rules: All donors is donors with an email, not
-//             everyone with an email, and Gone quiet is the Why rule (stage
+//             everyone with an email, and Lapsing or lapsed is the one lapse rule (FIX-51; was stage
 //             lapsed or Drift past their gap), not a status nothing sets.
 //   §rows     the new figure sources foot: emails-sent (all, one campaign, one
 //             month), email-tool-gifts (the "1 gift, $X" cell), officer-portfolio.
@@ -74,9 +74,9 @@ async function fixture() {
   await person(D.ben, "Ben Quietley", "ben@fix40.test", "cultivate", ["donor"], 800);
   await person(D.vol, "Vera Helpwell", "vera@fix40.test", null, ["volunteer"], 0);
   await person(D.noe, "Noel Nomail", null, "cultivate", ["donor"], 50);
-  // Ben is past his own gap, by Drift.
-  await q(`INSERT INTO donor_drift (org_id,donor_id,assessment,computed_for,computed_at) VALUES ($1,$2,$3,CURRENT_DATE,NOW())`,
-    [ORG, D.ben, JSON.stringify({ state: "lapsed" })]).catch(e => ok("§counts drift fixture", false, e.message));
+  // Ben is lapsing: his last gift was ten months ago (FIX-51: the one lapse rule).
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
+           VALUES ('g_fix40_ben',$1,$2,50,$3,'donation','check',true,$4,$5)`, [ORG, D.ben, daysAgo(300).toISOString().slice(0, 10), ...who]);
   // One sent campaign to Ada and Ben in April, then six newer drafts.
   const sent = SENT;
   await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,sent_at,recipient_count,open_count)
@@ -162,7 +162,7 @@ async function main() {
     ok("§counts All donors is donors with an email (Ada, Ben), not the volunteer or the donor with no email",
       seg("all").count === 2 && JSON.stringify((seg("all").rows || []).map(r => r.id).sort()) === JSON.stringify([D.ada, D.ben]), seg("all"));
     ok("§counts …and it says how many donors Donors counts", aud.body.donorTotal === 3, aud.body.donorTotal);
-    ok("§counts Gone quiet is the Why rule: Drift says Ben is past his gap", seg("lapsed").count === 1 && seg("lapsed").rows[0].id === D.ben, seg("lapsed"));
+    ok("§counts Lapsing or lapsed is the one lapse rule: Ben's last gift was ten months ago", seg("lapsed").label === "Lapsing or lapsed" && seg("lapsed").count === 1 && seg("lapsed").rows[0].id === D.ben, seg("lapsed"));
     ok("§counts the words: \"Major\" (FIX-49: the Major giving level)", seg("major").label === "Major" && seg("major").count === 1, seg("major"));
     ok("§counts each segment carries its one-line definition", (aud.body.segments || []).every(s => s.definition && s.definition.length > 20));
     const audOther = await api("GET", "/communications/audience", otherTok);

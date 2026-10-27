@@ -75,6 +75,25 @@ async function s3Put(cfg, objectKey, buffer, contentType) {
   const r = await fetch(url, { method: "PUT", headers: { ...headers, "content-type": contentType }, body: buffer });
   if (!r.ok) throw new Error(`s3 put ${r.status}: ${(await r.text()).slice(0, 300)}`);
 }
+// FIX-51 · A PUT IS TRIED THREE TIMES. One failed S3 put used to send the
+// upload to Postgres for good (s3_fallback), which held /health guardsOk false
+// on prod: a single reset connection or a 5xx from the bucket was enough. A
+// bucket that answers on the second or third try now keeps the bytes. Only
+// a put that fails every time falls back, and the sweep below moves it later.
+const S3_PUT_TRIES = 3;
+const S3_RETRY_MS = 250;
+async function s3PutWithRetry(cfg, objectKey, buffer, contentType, { tries = S3_PUT_TRIES, waitMs = S3_RETRY_MS } = {}) {
+  let last = null;
+  for (let i = 0; i < tries; i++) {
+    try { await s3Put(cfg, objectKey, buffer, contentType); return; }
+    catch (e) {
+      last = e;
+      console.warn(`[assetStore] S3 put try ${i + 1} of ${tries} failed: ${e.message}`);
+      if (i < tries - 1) await new Promise(r => setTimeout(r, waitMs * (i + 1)));
+    }
+  }
+  throw last;
+}
 async function s3Get(cfg, objectKey) {
   const { url, headers } = signedS3Request(cfg, "GET", objectKey, "");
   const r = await fetch(url, { headers });
@@ -127,7 +146,7 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
   if (cfg) {
     try {
       s3Key = `${orgId}/${kind}/${id}`;
-      await s3Put(cfg, s3Key, buffer, contentType);
+      await s3PutWithRetry(cfg, s3Key, buffer, contentType);
       storage = "s3";
     } catch (e) {
       // BUILD-51b — this fallback must never be silent: bytes quietly
@@ -436,13 +455,69 @@ async function refreshRetentionCounts() {
   softDeletedRows = r ? r.n : 0;
   return softDeletedRows;
 }
+// FIX-51 · THE ROWS A FAILED PUT LEFT IN POSTGRES GO TO S3. Each asset that
+// fell back (s3_fallback, not deleted) is put to the bucket at the key a
+// first-time put would have used, read back, and only when the bytes read back
+// are the same is the row switched to S3 and its Postgres copy cleared. The
+// id and URL never change, so no page, email or pointer moves. A row whose
+// put still fails stays exactly as it is and is tried on the next pass.
+// org_creo (the boot-seed fixture) is never touched. Returns counts by kind
+// and the oldest and newest day moved, never a name or an id.
+const ASSET_MOVE_SKIP_ORGS = ["org_creo"];
+async function moveFallbackAssetsToS3({ limit = 50, skipOrgs = ASSET_MOVE_SKIP_ORGS } = {}) {
+  const cfg = s3Config();
+  if (!cfg) return { configured: false, moved: 0, failed: 0, byKind: {}, orgs: [] };
+  let rows;
+  try {
+    rows = await query(
+      `SELECT id, org_id, kind, content_type, data, created_at FROM portal_assets
+        WHERE storage = 'db' AND s3_fallback AND deleted_at IS NULL AND NOT (org_id = ANY(?))
+        ORDER BY created_at LIMIT ?`, [skipOrgs, limit]);
+  } catch (e) {
+    if (e && e.code === "42P01") return { configured: true, moved: 0, failed: 0, byKind: {}, orgs: [] };
+    throw e;
+  }
+  const out = { configured: true, moved: 0, failed: 0, byKind: {}, orgs: [], oldest: null, newest: null };
+  const orgs = new Set();
+  for (const r of rows) {
+    const buffer = Buffer.from(r.data || "", "base64");
+    if (!buffer.length) { out.failed++; continue; }
+    const key = `${r.org_id}/${r.kind}/${r.id}`;
+    try {
+      await s3PutWithRetry(cfg, key, buffer, r.content_type);
+      const back = await s3Get(cfg, key);
+      if (!back || !back.equals(buffer)) throw new Error("the bytes read back from S3 are not the bytes stored");
+      const done = await run(
+        `UPDATE portal_assets SET storage = 's3', s3_key = ?, data = NULL, s3_fallback = FALSE
+          WHERE id = ? AND storage = 'db' AND s3_fallback`, [key, r.id]);
+      if (done && done.changes === 0) continue;
+      out.moved++;
+      out.byKind[r.kind] = (out.byKind[r.kind] || 0) + 1;
+      orgs.add(r.org_id);
+      const day = new Date(r.created_at).toISOString().slice(0, 10);
+      if (!out.oldest || day < out.oldest) out.oldest = day;
+      if (!out.newest || day > out.newest) out.newest = day;
+    } catch (e) {
+      out.failed++;
+      console.error(`[assetStore] moving a fallback asset to S3 failed (kind=${r.kind}): ${e.message}`);
+    }
+  }
+  out.orgs = [...orgs];
+  if (out.moved || out.failed) {
+    console.log(`[assetStore] fallback assets moved to S3: ${out.moved} (${Object.entries(out.byKind).map(([k, n]) => `${k} ${n}`).join(", ") || "none"}), `
+      + `uploaded ${out.oldest || "-"} to ${out.newest || "-"}, orgs ${out.orgs.join(", ") || "none"}; still in Postgres after a failed try: ${out.failed}`);
+    await refreshAssetFallbackCount().catch(() => {});
+  }
+  return out;
+}
+
 function assetHealth() {
   return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, softDeleted: softDeletedRows };
 }
 
 module.exports = {
   s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
-  refreshAssetFallbackCount, refreshRetentionCounts, assetHealth,
+  refreshAssetFallbackCount, refreshRetentionCounts, assetHealth, moveFallbackAssetsToS3, ASSET_MOVE_SKIP_ORGS,
   restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
   assetIdFor, assetPath, ASSET_ID_RE,
   _signedS3Request: signedS3Request, // exported for the suite's determinism checks

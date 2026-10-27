@@ -1270,9 +1270,10 @@ const SOURCES = {
     label: "Given",
     measure: () => "sum",
     params: { donor: "id:required", from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total.`,
+    sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total. Soft and matching credits are not gifts and are shown as Soft credit instead.`,
+    // FIX-51: credit rows are not money here either, as in Lifetime.
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.date >= ? AND g.date <= ?`,
+      sql: `${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND g.date >= ? AND g.date <= ?`,
       args: [orgId, p.donor, p.from, p.to], order: "date DESC, id",
     }),
   },

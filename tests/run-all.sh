@@ -211,6 +211,7 @@ CORE=(
   build96-ai-gate
   incident-mail-gate
   fix50-demo-one-rule
+  fix51-leftovers
   mail-block
   mail-suppression
   email-footer

@@ -3458,7 +3458,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         open={reengBreakdownOpen}
         onClose={()=>setReengBreakdownOpen(false)}
         title="Money at risk"
-        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)} the same going-quiet threshold the pipeline's move suggestions use. These donors are drifting, not yet lapsed, which is exactly when there is still something to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
+        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)}: lapsing or lapsed, the one lapse rule the pipeline's move suggestions and Communications use. Lapsing is the moment there is still the most to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
         loading={false}
         total={impact?.atRiskAmount!=null?fmtFull(impact.atRiskAmount):"Not set"}
         totalLabel="At risk"
