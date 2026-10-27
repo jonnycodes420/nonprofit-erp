@@ -1170,7 +1170,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
         <AgentDraftsWaiting highlightDraftId={highlightDraftId} />
         <div style={{ marginTop: 14 }}><ThankYouDrafts highlightId={highlightDraftId} testid="comms-ty-drafts" /></div>
         {reviewedCount > 0 && (
-          <button data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
+          <button type="button" data-commit data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
             style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
             {busyId === "all" ? "Sending…" : `Send all reviewed (${reviewedCount})`}
           </button>
@@ -1951,7 +1951,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             )}
             {isAdmin && ((showSchedule || form.scheduledAt)
               ? <button onClick={scheduleIt} style={S.btn("send")}>Schedule</button>
-              : <button onClick={() => sendNow(null)} disabled={sending || recipCount == null} data-testid="campaign-send"
+              : <button type="button" data-commit onClick={() => sendNow(null)} disabled={sending || recipCount == null} data-testid="campaign-send"
                   style={{ ...S.btn("send"), opacity: (sending || recipCount == null) ? 0.6 : 1, cursor: (sending || recipCount == null) ? "not-allowed" : "pointer" }}>
                   {sending ? <><Spin /> Sending…</> : recipCount == null ? "Counting…" : `↑ Send to ${recipCount.toLocaleString()}`}
                 </button>)}

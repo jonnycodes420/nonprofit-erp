@@ -66,7 +66,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
           </button>
         )}
         {(step === "confirm" || step === "undoing") && preview && preview.canUndo && (
-          <button type="button" data-testid="import-undo-yes" style={btn("danger")} disabled={step === "undoing"} onClick={undo}>
+          <button type="button" data-commit data-testid="import-undo-yes" style={btn("danger")} disabled={step === "undoing"} onClick={undo}>
             {step === "undoing" ? "Undoing…" : "Yes, undo it"}
           </button>
         )}
