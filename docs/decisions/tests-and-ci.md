@@ -111,6 +111,12 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **Parallel worktrees need their own port block, database and `SUITE_LOG_DIR`.** Examples are
   5661/4203 and 5671/4213. Avoid 5631, which `drift.test.js` hardcodes. Two sessions in one
   working tree cost a build two reverts. (BUILD-92, BUILD-98, BUILD-99)
+- **One battery that boots servers at a time, per machine (HARDEN-1).** `run-all.sh` takes
+  `/tmp/steward-battery-<uid>.lock` (atomic `mkdir`, holding the pid and who) for every run that
+  boots its own servers: the sharded battery and any `SHARD_SELF=1` selection, even one suite. A
+  second such run prints who holds it and waits; a lock whose pid is gone is taken over. A serial
+  run against an already-booted `$BASE` (pre-push, `affected.sh`) boots nothing and takes none.
+  CI is unaffected (one runner, one machine). `BATTERY_LOCK=0` skips it.
 - **A suite that spawns a child server must pass `DATABASE_URL` explicitly.** `run-all.sh` does
   not export it, so the child falls back to :5432. On a non-default port, also match `SINK_PORT`,
   `STRIPE_MOCK_PORT` and `BILLING_MOCK_PORT`. (BUILD-92, BUILD-98)
