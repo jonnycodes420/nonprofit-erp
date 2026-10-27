@@ -142,7 +142,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
     tasks: {
       sql: `SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name FROM tasks t
          LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-        WHERE t.org_id = ? AND COALESCE(t.done,0) = 0 AND t.voided_at IS NULL AND t.title ILIKE ? ${E}
+        WHERE t.org_id = ? AND COALESCE(t.done,0) = 0 AND t.voided_at IS NULL AND (d.id IS NULL OR d.deleted_at IS NULL) AND t.title ILIKE ? ${E}
         ORDER BY t.due NULLS LAST, t.id LIMIT ${L}`, args: [orgId, p] },
     // Saved reports and dashboards: the ones this person may open (shared, or
     // their own), the same rule the Reports rail reads.

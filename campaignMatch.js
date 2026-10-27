@@ -19,12 +19,19 @@ const { NOT_CREDIT } = require("./creditTypes");
 // IMPORT-4: a gift with no date (an import that gave none) attributed to the
 // campaign counts toward it: it is not known to be outside the window, and the
 // file said it was given to this campaign or event.
+// FIX-52 · ONCE A PERSON IS DELETED, NOTHING SHOWS THEM OR COUNTS THEIR MONEY.
+// A delete is soft (donors.deleted_at), so a row that hangs off a person (a
+// gift, a pledge, an attendance) is still there; every reader that counts or
+// lists such rows asks this, the same question the Donors list asks. A row
+// with no person (a walk-in guest) is kept.
+const NOT_DELETED = (alias, col = "donor_id") =>
+  `NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${alias}.${col} AND dx.org_id = ${alias}.org_id AND dx.deleted_at IS NOT NULL)`;
 const CAMPAIGN_GIFT_MATCH = (g = "g", c = "c") =>
   `(${g}.campaign_id = ${c}.id OR (${g}.campaign_id IS NULL AND ${g}.campaign = ${c}.name))
    AND (${c}.start_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date >= ${c}.start_date)
    AND (${c}.end_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date <= ${c}.end_date)
    AND ${NOT_CREDIT(g)}
-   AND NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${g}.donor_id AND dx.org_id = ${g}.org_id AND dx.deleted_at IS NOT NULL)`;
+   AND ${NOT_DELETED(g)}`;
 
 // FIX-49 · GRANTS ON A PUBLIC BAR. A grant awarded toward a campaign counts
 // toward it on the public bar too (Jonathan, 25 Oct), unless the campaign has
@@ -60,4 +67,4 @@ function campaignWindowRefusal(campaign, date) {
   return `${campaign.name} ${span}, and this gift is dated ${fmtDay(date)}. A gift counts toward a campaign only inside its dates, so choose another campaign or none.`;
 }
 
-module.exports = { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal };
+module.exports = { CAMPAIGN_GIFT_MATCH, NOT_DELETED, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal };

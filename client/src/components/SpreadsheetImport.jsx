@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
+import ImportUndo from "./ImportUndo";
 import { errorMessage } from "../lib/domainError";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES } from "../../../shared/sheetRead";
@@ -55,6 +56,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [msg, setMsg] = useState("");
   const [result, setResult] = useState(null);
   const [undone, setUndone] = useState("");
+  // FIX-52: the import is a job on the server. The modal shows its real
+  // state (running with progress, done with the receipt, or not imported with
+  // the reason) and never goes back to the start on its own.
+  const [job, setJob] = useState(null);
+  const [failed, setFailed] = useState(null);
   const [dateAsked, setDateAsked] = useState(null);   // the date question stays on screen once answered
   const [asideOpen, setAsideOpen] = useState(false);
   const [undatedDate, setUndatedDate] = useState("");
@@ -65,6 +71,27 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   }, [file]);
 
   const finish = () => (result && onImported ? onImported() : onClose());
+  // Reopened while an import is running (a refresh, a closed tab): follow it.
+  useEffect(() => {
+    let live = true;
+    apiFetch("/sheet-import/jobs?running=1").then(r => { const j = r && r.jobs && r.jobs[0]; if (live && j) setJob(j); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  // Follow the job until it ends, reading its state from the server.
+  useEffect(() => {
+    if (!job || job.status !== "running") return undefined;
+    let live = true;
+    const t = setTimeout(async () => {
+      try {
+        const j = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(job.id)}`);
+        if (!live) return;
+        if (j.status === "done") { setResult(j.result); setBusy(""); }
+        else if (j.status === "failed") { setFailed(j); setBusy(""); }
+        setJob(j);
+      } catch { if (live) setJob(j0 => ({ ...j0 })); }   // a dropped read: ask again, never guess
+    }, 700);
+    return () => { live = false; clearTimeout(t); };
+  }, [job]);
   useEffect(() => {
     if (!file) { setBusy(""); return undefined; }
     let live = true;
@@ -92,19 +119,21 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const setPerson = (key, v) => setAnswers(a => ({ ...a, people: { ...(a.people || {}), [key]: v } }));
 
   const commit = async () => {
-    setBusy("commit"); setMsg("");
+    setBusy("commit"); setMsg(""); setFailed(null);
     const importId = "imp_sheet_" + Math.random().toString(36).slice(2, 12);
+    // the assistant's proposals from the preview go with it, so the write is this plan
+    const payload = { importId, background: true, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides } };
     try {
-      const r = await apiFetch("/sheet-import/commit", { method: "POST", body: JSON.stringify({ importId, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides }) });
-      setResult(r);
-    } catch (e) { setMsg(e?.body?.message || errorMessage(e, "That did not save. Nothing was brought in.")); }
-    setBusy("");
-  };
-  const undo = async () => {
-    setBusy("undo");
-    try { const r = await apiFetch(`/imports/${encodeURIComponent(result.importId)}/reverse`, { method: "POST", body: "{}" }); setUndone(r.sentence); }
-    catch (e) { setMsg(e?.body?.message || errorMessage(e, "That did not undo.")); }
-    setBusy("");
+      const j = await apiFetch("/sheet-import/commit", { method: "POST", body: JSON.stringify(payload) });
+      setJob(j);
+    } catch (e) {
+      // The request was lost or refused. Whether a job started is the
+      // server's to say: look for it before saying anything.
+      const seen = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(importId)}`).catch(() => null);
+      if (seen && seen.id) { setJob(seen); return; }
+      setFailed({ sentence: `Not imported. ${e?.body?.message || errorMessage(e, "Steward did not receive the file.")} Nothing was written.` });
+      setBusy("");
+    }
   };
 
   const dateUndated = async () => {
@@ -141,7 +170,23 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         {msg && <div role="alert" style={{ ...box, borderColor: T.gold500, fontSize: 13 }}>{msg}</div>}
         {!u && busy && <div style={small}>Reading your file…</div>}
 
-        {u && !result && (
+        {job && job.status === "running" && !result && (
+          <div style={{ ...box, borderColor: T.greenDk }} data-testid="sheet-job">
+            <div style={h3}>Importing {job.fileName || (file && file.name) || "your file"}</div>
+            <div style={{ fontSize: 13.5 }}>{job.phase || "Starting"}…</div>
+            <div aria-hidden style={{ height: 6, borderRadius: 3, overflow: "hidden", margin: "8px 0 4px", background: T.bg2 }}>
+              <div style={{ width: `${job.total ? Math.round((100 * job.done) / job.total) : 4}%`, height: "100%", background: T.greenDk, transition: "width .4s" }} />
+            </div>
+            <div style={small}>It keeps going if you close this window. Reopen Import, or Settings, Imports, to see where it is.</div>
+          </div>
+        )}
+        {failed && !result && (
+          <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-failed" role="alert">
+            <div style={h3}>Not imported</div>
+            <div style={{ fontSize: 13.5 }}>{failed.sentence || "Not imported. Nothing was written."}</div>
+          </div>
+        )}
+        {u && !result && !(job && job.status === "running") && (
           <>
             <div style={box} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
@@ -150,6 +195,16 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               {u.totals.filter(t => !t.matches).map(t => (
                 <div key={t.sheet + t.line + t.column} style={{ ...small, color: T.gold700, marginTop: 4 }}>
                   Row {t.line} of {t.sheet} says {money(t.statedCents)} for "{t.column}", but the rows above it add up to {money(t.sumCents)}.
+                </div>))}
+              {(u.figureChecks || []).map(f => (
+                <div key={f.kind} data-testid="sheet-figure-check" style={{ ...small, marginTop: 4, color: f.agrees ? T.ink3 : T.gold700, fontWeight: f.agrees ? 400 : 700 }}>{f.sentence}</div>))}
+              {(u.notesSheets || []).map(ns => (
+                <div key={ns.sheet} data-testid="sheet-notes-sheet" style={{ ...small, marginTop: 6, color: T.ink, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span>{ns.imported ? `Sheet '${ns.sheet}' looks like notes about people already on the list. You chose to import it.` : ns.sentence}</span>
+                  <button type="button" style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }}
+                    onClick={() => setAnswers(a => { const cur = new Set(a.notesSheets || []); if (cur.has(ns.sheet)) cur.delete(ns.sheet); else cur.add(ns.sheet); return { ...a, notesSheets: [...cur] }; })}>
+                    {ns.imported ? "Leave it out" : "Import it anyway"}
+                  </button>
                 </div>))}
               {u.modelUsed && <div style={{ ...small, marginTop: 4 }}>Steward's assistant suggested what some columns are; each suggestion was checked against every row.</div>}
             </div>
@@ -263,7 +318,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               )}
               {(u.event || c.optOuts || c.doNotContact || c.doNotMail || c.doNotCall) ? (
                 <Layer title="Engagement" testId="layer-engagement"
-                  main={[u.event && `${eventName || u.event.name || "The event"}: ${c.invited.toLocaleString("en-US")} invited, ${c.rsvp.toLocaleString("en-US")} RSVP'd, ${c.attended.toLocaleString("en-US")} attended`,
+                  main={[u.event && `${eventName || u.event.name || "The event"}: ${(c.invitedRecords ?? c.invited).toLocaleString("en-US")} invited, ${(c.rsvpRecords ?? c.rsvp).toLocaleString("en-US")} RSVP'd, ${(c.attendedRecords ?? c.attended).toLocaleString("en-US")} attended${c.invited !== c.invitedRecords && c.invitedRecords != null ? ` (rows; ${c.invited.toLocaleString("en-US")} invited people, a couple's row is two)` : ""}`,
                          c.optOuts && n(c.optOuts, "opt-out"), c.doNotContact && `${c.doNotContact} do not contact`, c.doNotMail && `${c.doNotMail} do not mail`, c.doNotCall && `${c.doNotCall} do not call`].filter(Boolean).join(" · ")}
                   sub="Attendance, table and party size go on each person's event. Every communication choice keeps where it came from." />
               ) : null}
@@ -309,18 +364,19 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </details>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" data-testid="sheet-import-go" disabled={!u.ready || busy === "commit"}
+              <button type="button" data-testid="sheet-import-go" disabled={!u.ready || busy === "commit" || (job && job.status === "running")}
                 onClick={() => (u.button && u.button.review && !asideOpen ? setAsideOpen(true) : commit())}
                 style={{ ...btn(true), opacity: u.ready ? 1 : 0.45, cursor: u.ready ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
                 {busy === "commit" ? "Importing…" : u.button ? (u.button.review && !asideOpen ? u.button.text : u.button.importText || u.button.text) : "Import"}
               </button>
-              <span style={small}>{u.ready ? "Undo removes the whole import, for 30 days, from Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small}>{u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
 
         {result && (
           <div style={box} data-testid="sheet-result">
+            <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
             {!undone && result.undatedGifts > 0 && (
@@ -337,8 +393,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 )}
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              {!undone && <button type="button" style={btn(false)} disabled={busy === "undo"} onClick={undo}>{busy === "undo" ? "Undoing…" : "Undo this import"}</button>}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+              {!undone && result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
           </div>

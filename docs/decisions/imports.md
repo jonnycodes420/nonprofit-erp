@@ -150,6 +150,31 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   `summary_json.personChanges` and put back; attendance, suppressions, timeline lines, kept values and the fields
   and funds the run made go with it.
 
+- **A spreadsheet import is a job, written in one transaction (FIX-52).** `POST /sheet-import/commit` writes a
+  `sheet_import_jobs` row and the write runs behind it inside `db.withAmbientTransaction` (every `query`/`run`,
+  `recordGift` included, goes to one client), batched by table. A failure rolls back the whole file and the job says
+  why; a half-import cannot exist. The modal and the Imports list read the job (`GET /sheet-import/jobs/:id`), never
+  a dropped request. While a job runs, the same file and preview (or the same run id) is that job, never a second
+  write; once it is done the same file is a new run that adds nothing. `background: true` answers 202; without it
+  the request waits for the same job and answers as before.
+- **Match an org's people set-wise before asking the matcher (FIX-52).** `orgPeopleIndex` reads the org once; CHECK-2's
+  `matchDonor` is still the one matcher and is skipped only where nothing shares an email, an ID or a word of the
+  name, so it can only answer "none". The model is asked during the preview only; its proposals ride the commit as
+  overrides (`modelOverrides`). On 27 Oct the commit was about 6,800 statements, each its own round trip.
+- **A receipt counts pledges (FIX-52).** Rows = gifts + pledges + set aside + errored; dollars the same
+  (`summary.pledgesCreated`, `summary.pledgeDollarsCreated`). A row already here is set aside as such. A pledge is its
+  own row's amount, never a total column.
+- **Every receipt that reverses as a whole offers Undo for its window, reconciled or not (FIX-52).** `importUndoWindow`
+  says so; the sheet window is 30 days. Undo confirms with counts first (`GET /imports/:id/undo-preview`). People the
+  file made that were deleted by hand since are removed with the rest and counted as "already deleted".
+- **A notes sheet is not people (FIX-52).** A table with a reviewer's columns ("What to check", "How matched") and no
+  money, whose rows mostly name people another sheet lists, is notes: not imported, its columns not kept, unless she
+  says "Import it anyway" (`answers.notesSheets`). Counts written above a header ("People 443") are notes, and the
+  preview's counts are checked against them by row and by person (`figureChecks`).
+- **A person the file creates starts at the stage their role says (FIX-52).** Gave: `steward` (Ongoing care). Only
+  pledged: `solicit` (the stage list's own reading of "pledge pending"). Otherwise `prospect`. A person already here
+  keeps their stage.
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)

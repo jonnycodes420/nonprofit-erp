@@ -154,6 +154,7 @@ CORE=(
   import2-history
   import3
   import4-layers
+  fix52-import-undo
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof
