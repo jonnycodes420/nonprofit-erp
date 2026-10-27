@@ -654,7 +654,7 @@ function eventNameFromTitles(tables) {
   for (const t of tables) for (const ti of t.titles || []) {
     const text = s(ti.text);
     if (!EVENT_WORD_RE.test(text) || text.length > 80) continue;
-    const cut = text.split(/\s*[·|:–—-]\s+/)[0].replace(/\b(guest list|rsvp list|seating chart|name tags|invite list|summary|results)\b/gi, "").replace(/\s+/g, " ").trim();
+    const cut = text.split(/\s*[·|:\u2013\u2014-]\s+/)[0].replace(/\b(guest list|rsvp list|seating chart|name tags|invite list|summary|results)\b/gi, "").replace(/\s+/g, " ").trim();
     if (cut) return cut;
   }
   return null;
