@@ -48,7 +48,6 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 - **The breaker.** tests/breaker.spec.js drives the real app: double clicks, dropped networks, closed tabs, two tabs on two orgs, a 3-minute sleep, Enter in every field. It found a campaign Send that mailed twice, an undo that ran twice from two tabs, "nothing was changed" said about an undo that ran, a half-restored bulk delete, an import's lost answer reported as nothing written, and a deleted person's email not blocking a row when living people shared the name.
 - **The nightly check.** nightlyCheck.js runs at 3:30 ET on the worker, read-only, and mails only Jonathan, only when red. Check d reads Home as she sees it (the stored answer) and counts archived people in, because archive takes a person off the list and nothing else.
 - **Leftovers.** The two POLISH-3 flakes are deterministic, the battery takes a lock, and an undated gift no longer breaks a receipt, an acknowledgment letter or the QuickBooks and Xero sync.
-
 ## FIX-54 · Deleted people came back after an import (2026-10-27)
 
 - **Why (Steward LLC (SALES), 27 Oct).** About 1,200 sample people were deleted from the Donors page, a gifts file of about 200 other people was imported, and the sample people were back in the Donors list.

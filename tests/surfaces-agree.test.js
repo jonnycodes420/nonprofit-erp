@@ -201,7 +201,7 @@ function localDayReads() {
         if (INLINE.test(l) && !/timeZone/.test(l)) hit(i, l);
         const a = ASSIGN.exec(l);
         if (a) for (let j = i; j < Math.min(L.length, i + 8); j++) {
-          if (new RegExp(String.raw`\b${a[1].replace(/\$/g, "\\$")}${LOCAL}`).test(L[j]) && !/timeZone/.test(L[j])) { hit(j, L[j]); break; }
+          if (new RegExp(String.raw`\b${a[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}${LOCAL}`).test(L[j]) && !/timeZone/.test(L[j])) { hit(j, L[j]); break; }
         }
         const m = MIRROR.exec(l);
         if (m && !/(_at|current_period_end)\b/.test(m[1])) hit(i, l);
