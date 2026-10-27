@@ -32,7 +32,22 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
       const r = await apiFetch(`/imports/${encodeURIComponent(importId)}/reverse`, { method: "POST", body: "{}" });
       setDone(r.sentence || "Undone."); setStep("done");
       if (onUndone) onUndone(r);
-    } catch (e) { setErr(e?.body?.message || errorMessage(e, "That did not undo. Nothing was changed.")); setStep("confirm"); }
+    } catch (e) {
+      // HARDEN-1: a lost answer is not "nothing was changed". The undo may
+      // have run (the network dropped on the way back, or another press got
+      // there first); whether it did is the server's to say, so ask it.
+      // no-store: an answer the browser kept from before the undo is not an answer.
+      const now = await apiFetch(`/imports/${encodeURIComponent(importId)}/undo-preview`, { cache: "no-store" }).catch(() => null);
+      if (now && now.reversedAt) {
+        const r = { reversed: true, already: true, sentence: "Undone. The whole import was removed." };
+        setDone(r.sentence); setStep("done");
+        if (onUndone) onUndone(r);
+        return;
+      }
+      setErr(now ? (e?.body?.message || errorMessage(e, "That did not undo. Nothing was changed."))
+        : "Steward could not reach the server to check whether this undid. Try again: an import is never undone twice.");
+      setStep("confirm");
+    }
   };
 
   if (step === "done") return <div data-testid="import-undo-done" style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{done}</div>;
@@ -51,7 +66,7 @@ export default function ImportUndo({ importId, onUndone, disabled }) {
           </button>
         )}
         {(step === "confirm" || step === "undoing") && preview && preview.canUndo && (
-          <button type="button" data-testid="import-undo-yes" style={btn("danger")} disabled={step === "undoing"} onClick={undo}>
+          <button type="button" data-commit data-testid="import-undo-yes" style={btn("danger")} disabled={step === "undoing"} onClick={undo}>
             {step === "undoing" ? "Undoing…" : "Yes, undo it"}
           </button>
         )}

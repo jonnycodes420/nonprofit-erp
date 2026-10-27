@@ -77,6 +77,9 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **No fix merges without a test that fails before it and passes after.** Plant the defect (or
   run the test against main), see red, then fix and see green, and say so in the PR. A fix's
   test may extend an existing suite; it does not count against the one-new-test limit. (HARDEN-1)
+- **Any change to import, delete, undo, merge or sending must pass tests/real-shaped.test.js and
+  the truth check (HARDEN-1 item 3) before it merges.** The truth check is `assertSurfacesAgree`
+  in `tests/lib/surfacesAgree.js`. (HARDEN-1)
 - **Affected suites while you build; the full battery once, at the end.** A red run during
   edits tells you nothing, and a full run after every edit is the slowest way to learn that.
   Nothing is done until that final battery is green, with no silent skips. It is 35 suites in

@@ -30,7 +30,8 @@ const ROLE_LABELS = {
   address2: "Address line 2", city: "City", state: "State", zip: "ZIP", amount: "Amount",
   date: "Date given", method: "Payment method", frequency: "How often", paid: "Paid yet? (yes/no)",
   status: "Status", type: "Transaction type", pledgeTotal: "Pledge total (all years)",
-  fund: "Fund", campaign: "Campaign or appeal", note: "Note", externalId: "Donor ID (old system)",
+  fund: "Fund", campaign: "Campaign or appeal", note: "Note", giftNote: "On each gift's note", externalId: "Donor ID (old system)",
+  category: "Gift category (an event or appeal becomes the campaign)",
   giftId: "Gift or transaction ID",
   // IMPORT-4: the engagement, communication and role layers. Each lands on the
   // person; nothing in a file with data is left out by default.
@@ -149,6 +150,12 @@ const STATUS_ASIDE = new Set(["refunded", "failed", "denied", "declined", "rever
 const TYPE_GIFT = /^(donation|donation payment|payment|deposit|sales receipt|gift|contribution|charge|website payment|express checkout payment|mobile payment|subscription payment|recurring payment|p2p|merchant transaction|credit card|one-time donation|recurring donation|check|cash)$/i;
 const TYPE_ASIDE = /(withdrawal|transfer|refund|fee|journal|bill|expense|hold|reversal|invoice|payout|authorization|currency conversion)/i;
 const ORG_WORDS = /\b(foundation|fund|inc|incorporated|llc|l\.l\.c|corp|corporation|company|co\.|church|ministries|ministry|trust|bank|association|club|society|school|university|college|council|group|partners|lp|llp|pc|pllc|daf|giving|philanthropies|charitable|rotary|lions|kiwanis|temple|synagogue|parish|diocese|chapel)\b/i;
+const GIFT_CATEGORY_HDR = /^(category|gift category|donation category|giving category|income category|revenue category|class|gift class|income type|contribution type)$/;
+// HARDEN-1 (Jonathan, 27 Oct): in a category column only an event or appeal
+// label is a campaign ("Bourbon & Breeders Gala", "Gallop & Glow 5K"); an
+// accounting label ("Business Contributions") stays on its gift as its category.
+const EVENT_APPEAL_WORDS = /\b(gala|ball|5k|10k|half marathon|marathon|fun run|run|walk|race|trot|ride|dinner|luncheon|lunch|breakfast|brunch|banquet|auction|raffle|appeal|campaign|drive|telethon|radiothon|golf|tournament|classic|derby|fundraiser|benefit|concert|festival|fair|party|soiree|celebration|event|night|challenge|giving tuesday|givingtuesday|year[- ]end appeal)\b/i;
+const PAID_OUT_RE = /\b(purchase|purchased|paid to|payment to|expense|bill|invoice|reimburse(ment)?|bought|vendor|supplies)\b/i;
 const TITLE_RE = /^(mr|mrs|ms|miss|mx|dr|rev|fr|sr|jr|the honorable|hon|prof)\.?$/i;
 // Payment methods, mapped to Steward's words; anything else is Other with the
 // original text kept on the gift.
@@ -175,6 +182,31 @@ const MONTH_LABEL_RE = new RegExp(`^(${MONTHS.join("|")})[a-z]*\\.?(\\s+\\d{4})?
 
 // ── small helpers ─────────────────────────────────────────────────────────
 const s = v => (v == null ? "" : String(v)).replace(/\s+/g, " ").trim();
+// HARDEN-1: a business's own words, matched as whole tokens of the name (the
+// imports rule: word boundaries, never substrings), beside ORG_WORDS above.
+// Dots are dropped first, so "U.S.A." is "usa" and "L.L.C." is "llc".
+const ORG_TOKENS = new Set(["store", "stores", "farm", "farms", "services", "service", "realty", "construction", "excavating", "inn", "community",
+  "unlimited", "cafe", "café", "restaurant", "grill", "market", "shop", "ltd", "limited", "enterprises", "enterprise", "industries", "holdings",
+  "properties", "motors", "insurance", "agency", "associates", "stables", "stable", "ranch", "vineyards", "winery", "distillery", "brewing",
+  "brewery", "plumbing", "electric", "roofing", "landscaping", "lawncare", "contracting", "contractors", "consulting", "solutions", "dental",
+  "clinic", "hospital", "pharmacy", "studio", "salon", "academy", "center", "centre", "co", "corp", "inc", "llc", "lp", "llp", "pllc", "plc",
+  "usa", "pc", "pa", "dba", "partnership"]);
+// after a comma: a company's ending ("Car Town Kia, U.S.A") or a person's
+// suffix ("Perel V. Warville, Jr"); either way the name is not "Last, First"
+const ORG_SUFFIX = new Set(["inc", "llc", "ltd", "corp", "co", "lp", "llp", "pllc", "plc", "pc", "pa", "usa", "us", "na", "company", "incorporated", "limited"]);
+const PERSON_SUFFIX = new Set(["jr", "sr", "ii", "iii", "iv", "v", "esq", "md", "phd", "dds", "cpa", "rn", "dvm", "do"]);
+const nameTokens = x => s(x).replace(/\./g, "").toLowerCase().split(/[^a-z0-9'’&é-]+/).filter(Boolean);
+export function isOrgName(x) { return ORG_WORDS.test(s(x)) || nameTokens(x).some(w => ORG_TOKENS.has(w)); }
+// "Last, First" only when the part after the comma can be a first name: not a
+// company's ending, not a suffix, not a place in capitals after a mixed-case
+// name ("Cranwick Allow Glenstead, OAKWOOD"), and not after three or more words.
+function commaIsLastFirst(before, after) {
+  const a = nameTokens(after);
+  if (!a.length || a.every(w => ORG_SUFFIX.has(w) || PERSON_SUFFIX.has(w))) return false;
+  if (after === after.toUpperCase() && /[A-Z]{2}/.test(after) && before !== before.toUpperCase()) return false;
+  if (before.split(/\s+/).filter(w => !/^(van|von|de|del|der|da|di|la|le|st\.?|mac|mc|o')$/i.test(w)).length >= 3) return false;
+  return true;
+}
 const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
@@ -469,7 +501,7 @@ export function profileColumn(table, c, ctx = {}) {
     email: frac(v => EMAIL_RE.test(s(v))), phone: frac(v => PHONE_RE.test(s(v))),
     zip: frac(v => ZIP_RE.test(s(v))), state: frac(v => STATE_RE.test(s(v))),
     yesno: frac(v => yesNo(v) !== undefined),
-    lastFirst: frac(v => /^[A-Za-z'’ .-]+,\s*[A-Za-z'’ .&-]+$/.test(s(v)) && !ORG_WORDS.test(s(v))),
+    lastFirst: frac(v => /^[A-Za-z'’ .-]+,\s*[A-Za-z'’ .&-]+$/.test(s(v)) && !isOrgName(s(v))),
     method: frac(v => METHOD_MAP.some(([re]) => re.test(s(v))) || /^(unknown|other|pledge)$/i.test(s(v))),
     frequency: frac(v => RECURRING_RE.test(s(v)) || ONCE_RE.test(s(v)) || MULTIYEAR_RE.test(s(v)) || ANNUAL_RE.test(s(v)) || QUARTERLY_RE.test(s(v))),
     status: frac(v => STATUS_PAID.has(s(v).toLowerCase()) || STATUS_PLEDGE.has(s(v).toLowerCase()) || STATUS_ASIDE.has(s(v).toLowerCase())),
@@ -571,12 +603,12 @@ export function applyOverrides(cols, overrides = {}) {
     const col = next.find(c => String(c.index) === String(k) || c.header === k);
     if (!col || !byKey(k)) continue;
     if (!ROLE_LABELS[role]) { refused.push({ header: col.header, role, reason: "not a place Steward can put a column" }); continue; }
-    if (!["ignore", "note", "keep", "logistics"].includes(role) && !contentFits(role, col.profile)) {
+    if (!["ignore", "note", "giftNote", "category", "keep", "logistics"].includes(role) && !contentFits(role, col.profile)) {
       refused.push({ header: col.header, role, reason: `the cells in "${col.header}" do not read as ${ROLE_LABELS[role].toLowerCase()}` });
       continue;
     }
     // the role moves: whoever held it lets go
-    if (!["ignore", "note", "keep", "logistics", "totalOf"].includes(role)) for (const o of next) if (o !== col && o.role === role) { o.role = null; o.duplicateOf = role; }
+    if (!["ignore", "note", "giftNote", "keep", "logistics", "totalOf"].includes(role)) for (const o of next) if (o !== col && o.role === role) { o.role = null; o.duplicateOf = role; }
     col.role = role; col.by = "person"; col.reason = "you chose it"; col.mismatch = null; col.duplicateOf = null;
   }
   return { cols: next, refused };
@@ -594,9 +626,15 @@ export function readName({ first, last, full, lastFirst, org }) {
   first = s(first); last = s(last); full = s(full || lastFirst); org = s(org);
   if (org && !first && !last && !full) return { kind: "organization", name: org, people: [] };
   if (!first && !last && full) {
-    if (ORG_WORDS.test(full) || resolveDonorIdentity({ name: full }).kind === "organisation") return { kind: "organization", name: full, people: [] };
+    if (isOrgName(full) || resolveDonorIdentity({ name: full }).kind === "organisation") return { kind: "organization", name: full, people: [] };
     if (/^anonymous$/i.test(full)) return { kind: "anonymous", name: "Anonymous", people: [] };
     const comma = full.match(/^([^,]+),\s*(.+)$/);
+    // a company's ending after the comma is an organisation; a person's suffix,
+    // or anything else that is not a first name, keeps the name as written
+    if (comma && nameTokens(comma[2]).length && nameTokens(comma[2]).every(w => ORG_SUFFIX.has(w))) return { kind: "organization", name: full, people: [] };
+    if (comma && !commaIsLastFirst(comma[1].trim(), comma[2].trim())) return { kind: "person", name: full, people: [{ name: full }] };
+    // "S & S Westford", "R & R Hardware": initials joined are a business's name, never two people of one initial
+    if (!comma && /^([A-Za-z]\.?\s*(&|and|\+)\s*)+[A-Za-z]\.?\s+\S/.test(full)) return { kind: "organization", name: full, people: [] };
     if (comma) { last = comma[1]; first = comma[2]; }
     else {
       // "Mr. and Mrs. Walt Arnold" / "Walt and Suzanna Arnold" / "Walt Arnold"
@@ -610,8 +648,11 @@ export function readName({ first, last, full, lastFirst, org }) {
       } else return { kind: "person", name: titleCase(full), people: [{ name: titleCase(full.replace(/^(mr|mrs|ms|dr|rev)\.?\s+/i, "")) }] };
     }
   }
+  // HARDEN-1: a Last Name of two or more words with no First Name is a
+  // business or a farm ("Linhurst Bradmore Farm"), its words exactly as
+  // written. One word alone ("Foxland") is a family's surname: a person.
   if (!first && last) {
-    if (ORG_WORDS.test(last)) return { kind: "organization", name: last, people: [] };
+    if (isOrgName(last) || s(last).split(/\s+/).length >= 2) return { kind: "organization", name: s(last), people: [] };
     return { kind: "person", name: cleanPart(last), people: [{ name: cleanPart(last) }] };
   }
   if (first && !last) return { kind: "person", name: cleanPart(first), people: [{ name: cleanPart(first) }] };
@@ -723,6 +764,20 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   }
   const roleOf = (t, r) => t.cols.find(c => c.role === r);
   const cellOf = (t, b, c) => (b.raw ? b.raw[c.index] : b.cells[c.index]);
+  // HARDEN-1: does a column hold more than one value for one person's rows?
+  // The person is read off the table's own name, email and ID cells.
+  const variesWithinPerson = (t, c) => {
+    const who = ["name", "first", "last", "lastFirst", "org", "email", "externalId"].map(r => roleOf(t, r)).filter(Boolean);
+    if (!who.length) return false;
+    const seen = new Map();
+    for (const b of dataRows(t)) {
+      const k = who.map(x => s(cellOf(t, b, x)).toLowerCase()).join("|"), v = s(cellOf(t, b, c));
+      if (k.replace(/\|/g, "") === "" || !v) continue;
+      if (seen.has(k) && seen.get(k) !== v) return true;
+      if (!seen.has(k)) seen.set(k, v);
+    }
+    return false;
+  };
   // FIX-52 · A NOTES SHEET IS NOT PEOPLE. A table with a reviewer's columns
   // ("What to check", "How matched") and no money, whose rows mostly name
   // people another sheet already lists, is notes about those people: not read
@@ -827,6 +882,24 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     // section labels in a headed column ("Month": January, February) are not data
     if (dataRows(t).every(b => isBlank(b.cells[c.index]) || b.cells.filter(x => !isBlank(x)).length === 1)) {
       c.disposition = "skipped"; c.skipReason = "section labels between the rows, not a column of data"; continue;
+    }
+    // HARDEN-1: on a table of gifts, a column that is about the gift belongs to
+    // the gift, never the person. A category is read cell by cell: an event or
+    // appeal label is the gift's campaign (gifts.campaign, which reports and an
+    // event's fallback read), an accounting label stays on the gift's note as
+    // its category. Any other column whose value differs between one person's
+    // gifts goes on each gift's note under its header. Kept on the person it kept only one.
+    if (t.kind === "gifts" && roleOf(t, "amount")) {
+      if (GIFT_CATEGORY_HDR.test(hnorm(c.header)) && !roleOf(t, "category")) {
+        c.role = "category"; c.disposition = "mapped"; c.by = "rule";
+        c.reason = `the header "${c.header}" on a list of gifts: an event or appeal is the gift's campaign, any other label stays on the gift as its category`;
+        continue;
+      }
+      if (variesWithinPerson(t, c)) {
+        c.role = "giftNote"; c.disposition = "mapped"; c.by = "rule";
+        c.reason = "it differs between one person's gifts, so it is kept on each gift's note";
+        continue;
+      }
     }
     c.role = "keep"; c.disposition = "kept"; c.by = c.by || "rule";
     c.reason = c.mismatch ? `${c.mismatch}, so it is kept under its own name` : c.duplicateOf
@@ -1032,7 +1105,14 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       for (const m of moneyCols) { const v = moneyOf(cellOf(t, b, m)); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
       if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
-      if (amt < 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a refund or reversal (${fmt$(cents(amt))}), not a gift`, cents: cents(amt) }); continue; }
+      if (amt < 0) {
+        // HARDEN-1: "Purchase of Oakwell Horse" is money the org paid out, not a donor's refund
+        const said = s(get(b, "note")) || s(get(b, "type"));
+        const out = PAID_OUT_RE.test(said);
+        aside.push({ sheet: t.sheet, line: b.line, who: who.name, cents: cents(amt),
+                     reason: out ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
+        continue;
+      }
       const status = s(get(b, "status")).toLowerCase();
       const type = s(get(b, "type"));
       if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
@@ -1106,10 +1186,16 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const multiTotal = totalCol ? moneyOf(get(b, "pledgeTotal")) : null;
       const noteParts = [];
       if (s(get(b, "note"))) noteParts.push(s(get(b, "note")));
+      for (const c of t.cols.filter(x => x.role === "giftNote")) { const v = s(cellOf(t, b, c)); if (v) noteParts.push(`${c.header || `Column ${c.index + 1}`}: ${v}`); }
+      const catCell = s(get(b, "category"));
+      const catCampaign = catCell && EVENT_APPEAL_WORDS.test(catCell) ? catCell : null;
+      if (catCell && !catCampaign) noteParts.push(`${role("category").header || "Category"}: ${catCell}`);
       if (methodCol && !m.known && m.original && !/^pledge$/i.test(m.original)) noteParts.push(`Method in your file: ${m.original}`);
       if (methodCol && !m.original && !inKind) noteParts.push("Method in your file: blank");
-      if (methodCol && m.known && /pledge|dist/i.test(m.original) && m.original.toLowerCase() !== m.method.toLowerCase()) noteParts.push(`Method in your file: ${m.original}`);
+      if (methodCol && m.known && /pledge|dist|stock|transfer/i.test(m.original) && m.original.toLowerCase() !== m.method.toLowerCase()) noteParts.push(`Method in your file: ${m.original}`);
       if (freq.kind === "unknown" && freq.original) noteParts.push(`Frequency in your file: ${freq.original}`);
+      // HARDEN-1: a monthly word ("Reccuring") is kept on the gift as written; no plan is made from it
+      if (freq.kind === "monthly" && freq.original) noteParts.push(`Frequency in your file: ${freq.original}`);
       if (dateNote) noteParts.push(dateNote);
       // a stable key for this row, so a second import adds nothing
       const sig = [hnorm(t.header.join("|")), who.name.toLowerCase(), email, cents(amt), methodRaw.toLowerCase(), freq.original.toLowerCase(),
@@ -1121,7 +1207,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (methodCol && (!m.known || !m.original) && !inKind && !/^pledge$/i.test(m.original)) giftFlags.push("method_unknown");
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
-                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || null, externalId: s(get(b, "giftId")) || null,
+                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });

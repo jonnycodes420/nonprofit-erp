@@ -30,6 +30,13 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 
 const ORG = "org_trans1re";
 
@@ -143,6 +150,7 @@ const peopleCount = async () => Number((await q(
   ok("the total equals the file TO THE CENT", Number(t1.cents) === RUN1_CENTS,
      { held: Number(t1.cents), file: RUN1_CENTS });
   ok(`${PEOPLE} people, one per donor_id`, (await peopleCount()) === PEOPLE, await peopleCount());
+  await surfacesAgree("after the first import", ORG, tok);
   ok("the reconciliation balanced", r1.body.reconciliation && r1.body.reconciliation.balanced === true,
      r1.body.reconciliation);
 
@@ -155,6 +163,7 @@ const peopleCount = async () => Number((await q(
   ok("the total is unchanged, to the cent", Number(t2.cents) === RUN1_CENTS,
      { held: Number(t2.cents), file: RUN1_CENTS });
   ok(`still ${PEOPLE} people`, (await peopleCount()) === PEOPLE, await peopleCount());
+  await surfacesAgree("after the same file again", ORG, tok);
   ok(`all ${RUN1_GIFTS} gifts were recognised as already imported`,
      r2.body.externalIdDupes === RUN1_GIFTS, { externalIdDupes: r2.body.externalIdDupes });
   ok("every person was matched by the old system's own id, not by email",
@@ -205,6 +214,7 @@ const peopleCount = async () => Number((await q(
      footed === RUN1_CENTS + NEW5_CENTS, { footed, file: RUN1_CENTS + NEW5_CENTS });
 
   // ── §4 · the sentence the org reads afterwards ───────────────────────────
+  await surfacesAgree("after the updated export", ORG, tok);
   console.log("\n— §4 · 'since last time' says what the run actually did —");
   const { buildSinceLastTime } = await import("../shared/movePlan.js");
   const since = buildSinceLastTime({

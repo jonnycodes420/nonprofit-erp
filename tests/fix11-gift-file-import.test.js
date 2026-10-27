@@ -35,7 +35,8 @@
 //       and a third person may not
 //   §6  an import of any other shape still refuses to reverse as a whole
 //       (LIVE-1: a one-row-per-gift "transaction" file now reverses as a
-//       whole too; a one-row-per-donor "aggregate" file still does not)
+//       whole too; HARDEN-1 gave the old mapper's "aggregate", "wide" and
+//       "workbook" runs a whole Undo; a donors-only "donors" run still has none)
 //   §7  org A cannot reverse org B's import
 //
 // HOW IT WOULD GO RED: key the grouping on the raw name instead of the
@@ -218,7 +219,7 @@ const cents = n => Math.round(Number(n) * 100);
   // ── §6 · ANY OTHER SHAPE STILL REVERSES GIFT BY GIFT ────────────────────
   const otherRun = "imp_f11other" + Date.now().toString(36);
   await q(`INSERT INTO imports (id,org_id,name,shape,committed_at,actor_user_id)
-           VALUES ($1,$2,'ordinary.csv','aggregate',NOW(),$3)`, [otherRun, A, `u_${A}_staff`]);
+           VALUES ($1,$2,'ordinary.csv','donors',NOW(),$3)`, [otherRun, A, `u_${A}_staff`]);
   const wrongShape = await api("POST", `/imports/${otherRun}/reverse`, tokA);
   ok("§6 an ordinary import refuses to reverse as a whole", wrongShape.status === 400,
     { status: wrongShape.status, body: wrongShape.body });

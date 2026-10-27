@@ -3366,8 +3366,10 @@ app.get("/qbo/pending", requireAuth, wrap(async (req, res) => {
        LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE s.org_id=? AND s.vendor='quickbooks' AND s.realm_id=? AND s.status IN ('synced','skipped')
       ORDER BY COALESCE(s.synced_at, s.updated_at) DESC LIMIT 25`, [orgId, c && c.realm_id ? String(c.realm_id) : ""]);
+  // HARDEN-1: undated gifts are never pending; say how many and why.
+  const undated = await QS.undatedWaiting(orgId);
   res.json({
-    since, mode: map.mode, count: rows.length, shown: shown.length,
+    since, mode: map.mode, count: rows.length, shown: shown.length, undated,
     total: { value: totalCents / 100, cents: totalCents, kind: "money", label: "Waiting to go to QuickBooks",
       definition: `Every gift dated on or after ${since} that has not been sent to QuickBooks or skipped. Real money only: never a sample, a refund, stock or in-kind.`,
       source: { key: "qbo-pending", params: { since } } },
@@ -3788,6 +3790,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
   const pq = XS.pendingRowsSql(orgId, since);
   const pending = c.realm_id ? await query(pq.sql, pq.args) : [];
   const pendingCents = pending.reduce((t, r) => t + Number(r.cents), 0);
+  const undated = await XS.undatedWaiting(orgId);   // HARDEN-1: never pending, never silently missing
   res.json({
     connected: true, id: c.id, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
     tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: require("../orgKind").isDemoOrg(org),
@@ -3797,9 +3800,9 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
     mapping: { startDate: since, bankAccount: map.bankAccount, feeAccount: map.feeAccount, funds: map.funds },
     funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
             { id: XS.NO_FUND, name: "No fund named", restricted: false }],
-    pending: { count: pending.length, cents: pendingCents,
+    pending: { count: pending.length, cents: pendingCents, undated,
       definition: `Every gift dated on or after ${since} that has not been sent to this Xero organization. Real money only: never a sample, a refund, stock or in-kind.`,
-      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10),
+      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? orgTime.civilOf(r.date) : r.date).slice(0, 10),
         cents: Number(r.cents), fund: r.fund_name || null, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : null })) },
     sent,
     lastSentAt: c.last_sent_at || null, lastError: c.last_error || null, lastErrorAt: c.last_error_at || null,

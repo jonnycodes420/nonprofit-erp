@@ -33,7 +33,8 @@ async function clear() {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,legal_name,ein,receipts_enabled)
            VALUES ($1,'Statement test org','cm2t',1,'active','team','America/New_York','Statement Test Org Inc.','12-3456789',true)`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana','admin')`, [`u_${ORG}`, ORG, `dana@${ORG}.local`, PW]);
-  await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ($1,$2,'Perpetua Wexley','active','system:test','test')`, [DONOR, ORG]);
+  await q(`INSERT INTO donors (id,org_id,name,stage,address,city,state,zip,created_by,created_by_name)
+           VALUES ($1,$2,'Perpetua Wexley','active','4 Quay Street','Salem','MA','01970','system:test','test')`, [DONOR, ORG]);
   const Y = 2025;
   const gift = (id, amount, date, extra = {}) => q(
     `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,deductible_amount,is_sample,dispute_status,created_by,created_by_name)
@@ -48,6 +49,9 @@ async function clear() {
   await gift("g_cm2_sample", 999, `${Y}-08-01`, { sample: true });
   await gift("g_cm2_lastyear", 500, `${Y - 1}-12-31`);
   await gift("g_cm2_lost", 40, `${Y}-09-01`, { dispute: "lost" });
+  // HARDEN-1: a gift with no date (IMPORT-4) belongs to no tax year, so it is
+  // not on the statement (the line count and both totals below hold it out).
+  await gift("g_cm2_undated", 25, null);
 
   const tok = await login(`dana@${ORG}.local`);
   const st = await api("POST", `/donors/${DONOR}/year-end-statement`, tok, { year: Y, send: false });
@@ -70,6 +74,23 @@ async function clear() {
   }
   receiptedCents += -1001;   // the refund is a negative gift on the statement and has no receipt of its own
   ok("the statement equals the sum of the gifts' own receipts, to the cent", rc && c(rc.ded) === receiptedCents, { statement: rc && rc.ded, receipts: receiptedCents / 100 });
+
+  // HARDEN-1 · THE UNDATED GIFT. A tax receipt names the day a gift was given,
+  // so the undated one gets none until its date is set (red before: a receipt
+  // was issued printing a blank gift date). And a thank-you letter for it
+  // beside a dated gift is not printed with half a date (red before: "received
+  // on February 3, 2025 and ."); the batch says why instead.
+  const ur = await api("POST", "/gifts/g_cm2_undated/receipt", tok, {});
+  const [urRow] = await q(`SELECT COUNT(*)::int AS n FROM receipts WHERE org_id=$1 AND gift_id='g_cm2_undated'`, [ORG]);
+  ok("undated: no tax receipt is issued, and the refusal says to set the date", ur.status === 409 && ur.body?.error === "undated_gift"
+     && /no date/.test(ur.body?.message || "") && urRow.n === 0, { s: ur.status, b: ur.body, rows: urRow.n });
+  const lp = await api("POST", "/acknowledgments/letters/preview", tok, { giftIds: ["g_cm2_a", "g_cm2_undated"] });
+  const lpText = JSON.stringify(lp.body || {});
+  ok("undated: a letter for a dated and an undated gift is not printed, and the batch says a gift has no date",
+     lp.status === 200 && (lp.body?.letters || []).length === 0 && /a gift here has no date/.test(lp.body?.skipped?.[0]?.why || "")
+       && !/ and \./.test(lpText), lp.body);
+  const ld = await api("POST", "/acknowledgments/letters/preview", tok, { giftIds: ["g_cm2_a"] });
+  ok("undated: the dated gift alone still prints, with its day", ld.status === 200 && /received on February 3, 2025\./.test(ld.body?.letters?.[0]?.text || ""), ld.body);
 
   await clear();
   await closeDb();

@@ -21,7 +21,7 @@ import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
-import { displayDate } from "../../../shared/displayDate.js";
+import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 // FIX-49: the one lapse rule, on the org's own calendar.
 import lapseRuleMod from "../../../lapseRule.js";
@@ -123,8 +123,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
 
   const fmtGiftDate=s=>{
     if(!s)return null;
-    const dt=new Date(s);
-    return isNaN(dt)?null:dt.toLocaleDateString("en-US",{month:"short",year:"numeric"});
+    return displayMonth(s)||null;   // HARDEN-1: the gift's own month, in every zone
   };
 
   const cols=["Donor","Lifetime giving","Last gift","Days lapsed",GIVING_STRENGTH_LABEL,""];
@@ -510,7 +509,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       const n=r.deleted;
       if(undoIds.length){
         offerUndo({ undoSeconds:r.undoSeconds, message:`Moved ${n} ${n===1?"person":"people"} to trash.`, undoAction: async()=>{
-          for(let i=0;i<undoIds.length;i+=10) await Promise.all(undoIds.slice(i,i+10).map(id=>apiFetch(`/deleted-records/${id}/restore`,{method:"POST"})));
+          // HARDEN-1: one request, one transaction: all of them come back or none do.
+          await apiFetch("/deleted-records/restore-people",{method:"POST",body:JSON.stringify({ids:undoIds})});
           if(onBulkDone)onBulkDone();
           return { restored: undoIds.length };
         } }, "people");
@@ -937,7 +937,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   last_gift_date:()=>(<>
                 <div style={{textAlign:"right"}}>
                   {d.lastGift
-                    ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
+                    ?<><div style={{fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
                     :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
                 </div>
                   </>),
@@ -996,7 +996,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   </div>
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
                     {fmtFull(d.total)}
-                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</>:" · no gifts yet"}
+                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{displayMonth(d.lastGift)}</>:" · no gifts yet"}
                   </div>
                 </div>
                 {sc!=null
@@ -1025,7 +1025,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
 
       {/* Delete confirmation modal — never auto-confirm */}
       {delModal&&(
-        <Modal onClose={()=>setDelModal(false)} width={420} zIndex={900}
+        <Modal className="commit-screen" onClose={()=>setDelModal(false)} width={420} zIndex={900}
           backdrop="rgba(15,26,18,0.72)" blur={false} padding="36px 32px"
           ariaLabel="Delete donors" dialogStyle={{background:T.bg,borderRadius:20}}>
           <div>
@@ -1040,7 +1040,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 style={{flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",minWidth:100}}>
                 Cancel
               </button>
-              <button onClick={bulkDelete} disabled={busy}
+              <button type="button" data-commit onClick={bulkDelete} disabled={busy}
                 style={{flex:1,background:T.terracotta,border:"none",borderRadius:10,padding:"11px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
                 {busy?"Deleting…":`Delete ${delIds.length.toLocaleString("en-US")} ${delIds.length!==1?"people":"person"}`}
               </button>

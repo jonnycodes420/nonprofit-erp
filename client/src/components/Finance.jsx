@@ -9,7 +9,7 @@ import { usePeopleById } from "../lib/people";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
-import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import { displayDate, displayDateShort, civilYear } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 
@@ -917,7 +917,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const handleAddTxn = async (form) => {
     try {
       const created = await apiFetch("/finance/transactions", { method:"POST", body: JSON.stringify(form) });
-      const thisYear = new Date(created.date).getFullYear() === txnYear;
+      const thisYear = civilYear(created.date) === txnYear;   // HARDEN-1: its own year, not a UTC Date read locally
       if (thisYear) setTransactions(prev => [created, ...prev]);
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
       setShowTxnModal(false);
