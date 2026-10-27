@@ -75,7 +75,8 @@ async function fixture() {
   await person(D.vol, "Vera Helpwell", "vera@fix40.test", null, ["volunteer"], 0);
   await person(D.noe, "Noel Nomail", null, "cultivate", ["donor"], 50);
   // Ben is lapsing: his last gift was ten months ago (FIX-51: the one lapse rule).
-  await q(`UPDATE donors SET last_gift_date=$2 WHERE id=$1`, [D.ben, daysAgo(300).toISOString().slice(0, 10)]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
+           VALUES ('g_fix40_ben',$1,$2,50,$3,'donation','check',true,$4,$5)`, [ORG, D.ben, daysAgo(300).toISOString().slice(0, 10), ...who]);
   // One sent campaign to Ada and Ben in April, then six newer drafts.
   const sent = SENT;
   await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,sent_at,recipient_count,open_count)
