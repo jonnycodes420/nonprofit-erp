@@ -204,11 +204,27 @@ async function main() {
   await planted("c", /automatic message.*went to 1 person whose Automatic emails switch is off/,
     () => q(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,gate,donor_ids) VALUES ('eml_nightly_plant',$1,'nightly.test','receipt','Your receipt','sent','auto_email_on',ARRAY[$2])`, [ORG, off]),
     () => q(`DELETE FROM email_log WHERE id='eml_nightly_plant'`));
-  // d · archived: off the Donors list, still in Home's count
+  // d · archive is not a defect: off the Donors list, still in her file, so Home counts them
   const arch = people[2].id;
-  await planted("d", /the Donors list says 10, Home says 11/,
-    async () => { const a = await api("POST", `/donors/${arch}/archive`, tok); if (a.status !== 200) throw new Error("archive " + a.status); },
-    async () => { await api("POST", `/donors/${arch}/unarchive`, tok); });
+  const a = await api("POST", `/donors/${arch}/archive`, tok);
+  const archRun = await runCheck();
+  ok("§4d archiving someone keeps check d green (the list plus the archived list is Home's count)",
+    a.status === 200 && !redKeys(archRun.body).includes("d") && archRun.mail.length === 0, (archRun.body.results || []).filter(x => !x.ok));
+  await api("POST", `/donors/${arch}/unarchive`, tok);
+  // d · a stale Home: the stored answer she is shown says one more person than the file holds
+  await planted("d", /the Donors list says 11, Home says 12/,
+    async () => {
+      const h = await api("GET", "/org/setup-status", tok);   // she opens Home: the answer is stored
+      if (h.status !== 200) throw new Error("setup-status " + h.status);
+      const rows = await q(`SELECT key, body FROM org_summary WHERE org_key=$1 AND key LIKE 'setup-status|%'`, [ORG]);
+      if (!rows.length) throw new Error("no stored Home answer to make stale");
+      for (const r of rows) {
+        const b = JSON.parse(r.body);
+        for (const it of b.items || []) if (it.key === "donors") it.count = Number(it.count) + 1;
+        await q(`UPDATE org_summary SET body=$1 WHERE org_key=$2 AND key=$3`, [JSON.stringify(b), ORG, r.key]);
+      }
+    },
+    () => q(`DELETE FROM org_summary WHERE org_key=$1 AND key LIKE 'setup-status|%'`, [ORG]));
   // e · a file opened in another org first, then imported into the customer
   const grid2 = [["Date", "Donor", "Email", "Amount"], ["2026-09-03", "Pell Crossfile", "pell@nightly.test", "75"], ["2026-09-04", "Ruth Crossfile", "ruth@nightly.test", "80"]];
   await planted("e", /made 2 people and 2 gifts from a file first previewed in Nightly Check Other/,

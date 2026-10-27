@@ -15,7 +15,10 @@
 //      or went out of an org whose Donor mail is off, or reached a donor
 //      without passing the gate at all.
 //   d. An org's Donors list total differs from its Home total: the same two
-//      routes the two screens read (GET /donors, GET /org/setup-status).
+//      routes the two screens read (GET /donors, GET /org/setup-status). Home's
+//      count is read as she sees it, the stored answer included, and an
+//      archived person is still in her file, so the list side adds the
+//      archived list (GET /donors?archived=1).
 //   e. A real organization (Kind = Customer, orgKind.js) holds rows from an
 //      import whose file (its cells' fingerprint, recorded on the preview's
 //      and the commit's audit rows by routes/sheetImport.js) was first
@@ -83,6 +86,15 @@ async function screen(userId, path) {
   const token = await deps.signInternalToken(userId);
   if (!token) throw new Error(`no token for ${userId}`);
   const r = await inProcess.get(path, { headers: { authorization: `Bearer ${token}` }, marks: [FRESH, NO_STORE] });
+  if (r.status !== 200) throw new Error(`${path} answered ${r.status}: ${String(r.body).slice(0, 200)}`);
+  return JSON.parse(r.body);
+}
+// The same, but answered the way she sees it: from the stored answer when one
+// is current (never storing a new one). A stale stored Home is a real defect.
+async function seen(userId, path) {
+  const token = await deps.signInternalToken(userId);
+  if (!token) throw new Error(`no token for ${userId}`);
+  const r = await inProcess.get(path, { headers: { authorization: `Bearer ${token}` }, marks: [NO_STORE] });
   if (r.status !== 200) throw new Error(`${path} answered ${r.status}: ${String(r.body).slice(0, 200)}`);
   return JSON.parse(r.body);
 }
@@ -201,6 +213,8 @@ async function checkAutoMailSwitches({ orgIds } = {}) {
 // The Donors list for everyone (no role chosen) against Home's "N people on
 // file" (the setup line). Home leaves sample people out on purpose, so an org
 // holding sample data is not comparable and is named as skipped, not red.
+// Archive takes a person off the list and nothing else (people-and-records.md),
+// so they are still in Home's count: the list side adds the archived list.
 async function checkListVsHome({ orgIds } = {}) {
   const lines = [], skipped = [];
   for (const org of await orgsToCheck(orgIds)) {
@@ -208,11 +222,14 @@ async function checkListVsHome({ orgIds } = {}) {
     const [{ n: samples }] = await db.query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS TRUE`, [org.id]);
     if (samples) { skipped.push(`${org.id}: holds sample people`); continue; }
     const list = await screen(org.user_id, "/donors?limit=1&offset=0");
-    const setup = await screen(org.user_id, "/org/setup-status");
+    const archived = await screen(org.user_id, "/donors?archived=1&limit=1&offset=0");
+    const setup = await seen(org.user_id, "/org/setup-status");
     const item = (setup.items || []).find(i => i.key === "donors");
     if (!item) continue;
-    if (Number(list.total) !== Number(item.count)) {
-      lines.push(`${org.name} (${org.id}): the Donors list says ${Number(list.total).toLocaleString("en-US")}, Home says ${Number(item.count).toLocaleString("en-US")}.`);
+    const onList = Number(list.total), off = Number(archived.total) || 0;
+    if (onList + off !== Number(item.count)) {
+      const fmt = n => n.toLocaleString("en-US");
+      lines.push(`${org.name} (${org.id}): the Donors list says ${fmt(onList)}${off ? ` and ${fmt(off)} archived` : ""}, Home says ${fmt(Number(item.count))}.`);
     }
   }
   return { key: "d", title: "The Donors list and Home count the same people", ok: !lines.length, lines, skipped };
