@@ -453,6 +453,10 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   const body = readBody(req.body);
   if (!body.sheets.some(sh => sh.grid.length)) return res.status(400).json({ error: "empty", message: "The file has no cells in it." });
   const out = await buildUnderstanding(req, body);
+  // HARDEN-1: the file's fingerprint (its cells, not its name or org) on this
+  // preview's audit row, so the nightly check can see a file previewed in one
+  // org and imported into another (nightlyCheck.js, check e).
+  if (req.audit) req.audit.after({ file: fileFingerprint(body) });
   // HARDEN-1: the preview names the org it was read for; commit sends it back
   const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
   res.json({ ...publicView(out), org: org ? { id: org.id, name: org.name } : null });
@@ -502,6 +506,10 @@ const RUNNING = new Map();          // job id → its promise, in this process
 const JOB_BATCH = 500;
 const STALE_MS = 3 * 60 * 1000;     // a running job nobody has touched for this long died with its server
 
+// The same cells are the same file, whatever it is called and wherever it was opened.
+function fileFingerprint(body) {
+  return crypto.createHash("sha256").update(JSON.stringify(body.sheets || [])).digest("hex").slice(0, 32);
+}
 function requestKeyOf(orgId, body) {
   return crypto.createHash("sha256").update(JSON.stringify([orgId, body.fileName, body.sheets, body.answers, body.overrides])).digest("hex");
 }
@@ -866,6 +874,10 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     } else job = await find();
   }
   if (!job) return res.status(409).json({ error: "busy", message: "Another import of this file is starting. Open Import again in a moment." });
+  // HARDEN-1: nightlyCheck.js check e reads this row: the run, the file's
+  // fingerprint, and the org the page said its preview was read in.
+  if (req.audit) req.audit.after({ importId: job.id, file: fileFingerprint(body),
+    previewOrgId: (req.body && req.body.previewOrgId) ? String(req.body.previewOrgId).slice(0, 80) : null });
   if (background) return res.status(202).json(jobView(job));
   // a caller that waits: the same job, then the same answer as before
   if (RUNNING.has(job.id)) await RUNNING.get(job.id);

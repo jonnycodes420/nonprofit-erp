@@ -288,11 +288,14 @@ CORE=(
   support1-answers
   fix49-decisions
   list1-columns-filters
+  nightly-check
   breaker
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
 # an unknown name is a hard error so a typo can't silently skip verification).
+# Names given as arguments (`bash tests/run-all.sh a b`) are the same thing.
+if [ $# -gt 0 ] && [ -z "${SUITES:-}" ]; then SUITES="$*"; fi
 if [ -n "${SUITES:-}" ]; then
   RUN=()
   for want in $SUITES; do
@@ -335,7 +338,8 @@ export STEWARD_WT_TAG="$WT_TAG"
 export SHARD_DB_PREFIX="${SHARD_DB_PREFIX:-steward_${WT_TAG}_shard_}"
 LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs-${WT_TAG}}"
 mkdir -p "$LOGDIR"
-rm -f "$LOGDIR"/*.log 2>/dev/null || true
+# (the old logs are cleared once this run holds the battery lock, below, so a
+# run that is waiting never deletes the logs of the run it is waiting for)
 
 # ── CHORE-2 · SHARDING ─────────────────────────────────────────────────────
 # run-all.sh is still the one entry point. By default it now splits the SAME
@@ -372,6 +376,63 @@ if [ -z "${SHARDS:-}" ]; then
 fi
 TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
 
+# HARDEN-1 · ONE BATTERY AT A TIME ON THIS MACHINE. Two batteries that each
+# boot their own servers (three shards, ten database connections a server,
+# plus every suite's own pool) ran the scratch Postgres out of connections and
+# both went red for nothing. So a run that BOOTS servers (sharded, or
+# SHARD_SELF=1, even for one suite) first takes one machine-wide lock: an
+# atomic `mkdir` in /tmp holding this run's pid and who it is, like the port
+# block below. A second such run WAITS, saying for whom, and goes when the
+# first finishes; a lock whose pid is gone is stale and is taken over. A serial
+# run against an already-booted $BASE (pre-push, tests/affected.sh) boots
+# nothing and takes no lock. CI is unaffected: each runner is its own machine.
+# BATTERY_LOCK=0 skips it (never needed in normal use).
+_cleanup_locks() {
+  [ -n "${PORT_LOCK:-}" ] && rm -rf "$PORT_LOCK"
+  if [ -n "${BATTERY_LOCK_HELD:-}" ] && [ "$(cat "$BATTERY_LOCK_HELD/pid" 2>/dev/null)" = "$$" ]; then rm -rf "$BATTERY_LOCK_HELD"; fi
+}
+trap _cleanup_locks EXIT
+trap 'exit 130' INT TERM
+# A run started INSIDE a battery that holds the lock (fix15-two-worktrees runs
+# two nested batteries on purpose, side by side) is that battery's own work:
+# it inherits STEWARD_BATTERY_LOCK_PID and does not wait on its own parent.
+BLOCK_DIR="${BATTERY_LOCK_DIR:-/tmp/steward-battery-$(id -u).lock}"
+nested_in_lock=0
+if [ -n "${STEWARD_BATTERY_LOCK_PID:-}" ] && [ "$(cat "$BLOCK_DIR/pid" 2>/dev/null)" = "$STEWARD_BATTERY_LOCK_PID" ] \
+   && kill -0 "$STEWARD_BATTERY_LOCK_PID" 2>/dev/null; then
+  nested_in_lock=1
+  echo "[run-all] inside the battery that holds the lock (pid $STEWARD_BATTERY_LOCK_PID); not waiting on it"
+fi
+if { [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; } && [ "${BATTERY_LOCK:-1}" != "0" ] && [ "$nested_in_lock" = "0" ]; then
+  waited=0; said=""
+  while :; do
+    if mkdir "$BLOCK_DIR" 2>/dev/null; then
+      echo $$ >"$BLOCK_DIR/pid"
+      echo "worktree '$WT_TAG' · ${#RUN[@]} suite(s) · started $(date '+%H:%M:%S')" >"$BLOCK_DIR/who"
+      BATTERY_LOCK_HELD="$BLOCK_DIR"; export STEWARD_BATTERY_LOCK_PID=$$; break
+    fi
+    held=$(cat "$BLOCK_DIR/pid" 2>/dev/null || echo "")
+    if [ -n "$held" ] && kill -0 "$held" 2>/dev/null; then
+      who=$(cat "$BLOCK_DIR/who" 2>/dev/null || echo "?")
+      if [ "$said" != "$held" ]; then
+        echo "[run-all] waiting for the battery lock ($BLOCK_DIR): held by pid $held, $who"
+        said="$held"
+      fi
+      sleep 2; waited=$((waited + 2)); continue
+    fi
+    # No pid yet (a run between its mkdir and its echo) or a dead pid: give a
+    # live writer a moment, then take the stale lock over.
+    sleep 1
+    held2=$(cat "$BLOCK_DIR/pid" 2>/dev/null || echo "")
+    if [ "$held2" = "$held" ] && { [ -z "$held2" ] || ! kill -0 "$held2" 2>/dev/null; }; then
+      echo "[run-all] the battery lock was stale (pid ${held2:-none} is gone); taking it"
+      rm -rf "$BLOCK_DIR"
+    fi
+  done
+  [ "$waited" -gt 0 ] && echo "[run-all] got the battery lock after ${waited}s"
+fi
+rm -f "$LOGDIR"/*.log 2>/dev/null || true
+
 # FIX-15 — SHARD_SELF=1 runs even a single shard the sharded way: its own
 # database and its own server, instead of an already-booted $BASE. This is what
 # the pre-push hook uses when nothing is listening on $BASE.
@@ -403,7 +464,7 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
       SHARD_PORT_BASE="$base"; PORT_LOCK="$lock"; break
     done
     [ -z "${SHARD_PORT_BASE:-}" ] && { echo "ERROR: no free port block for the shards" >&2; exit 2; }
-    trap '[ -n "${PORT_LOCK:-}" ] && rm -rf "$PORT_LOCK"' EXIT
+    # (released by _cleanup_locks, the EXIT trap above)
   fi
   export SHARD_PORT_BASE
   echo "[run-all] worktree '$WT_TAG' · databases ${SHARD_DB_PREFIX}<n> · ports from $SHARD_PORT_BASE · logs $LOGDIR"

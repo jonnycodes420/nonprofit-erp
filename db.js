@@ -80,6 +80,54 @@ async function withAmbientTransaction(fn) {
     client.release();
   }
 }
+// HARDEN-1 · A READ-ONLY AMBIENT TRANSACTION, for the nightly check
+// (nightlyCheck.js). Every query() and run() inside fn, the routes it calls in
+// process included, goes to one client inside BEGIN; SET TRANSACTION READ
+// ONLY; ... ROLLBACK, so a write anywhere in it fails instead of landing.
+// With NIGHTLY_CHECK_DATABASE_URL set (a role that can only SELECT), the
+// client comes from that role's own pool, so it is read-only twice over.
+let _readOnlyPool = null;
+function readOnlyPool() {
+  const url = process.env.NIGHTLY_CHECK_DATABASE_URL;
+  if (!url) return pool;
+  if (!_readOnlyPool) {
+    _readOnlyPool = new Pool({
+      connectionString: url,
+      ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
+      options: "-c steward.app_connection=on -c default_transaction_read_only=on",
+      max: 2,
+    });
+    _readOnlyPool.on("error", err => console.error("[db] read-only pool connection dropped:", err.message));
+  }
+  return _readOnlyPool;
+}
+// A write inside it is refused HERE, before it reaches the database, so a
+// route that stores a cache on the way (Drift, the org summary) carries on
+// with its answer instead of aborting the whole transaction. Anything this
+// pattern misses still meets SET TRANSACTION READ ONLY in the database and
+// fails there, loudly. `st.refused` counts the refusals for the caller.
+const WRITE_SQL_RE = /^\s*(insert|update|delete|truncate|alter|create|drop|merge|copy|grant|revoke|lock|vacuum|analyze|refresh|reindex|cluster|comment|security|reset|set\s+(?!transaction))\b|^\s*with\b[\s\S]*\b(insert|update|delete)\b|\bfor\s+(update|share|no\s+key\s+update|key\s+share)\b|\bnextval\s*\(|\bpg_advisory_(xact_)?lock\b|\bset_config\s*\(/i;
+function refuseWriteInReadOnly(sql) {
+  const st = ambientTx.getStore();
+  if (!st || !st.open || !st.readOnly || !WRITE_SQL_RE.test(sql)) return;
+  st.refused = (st.refused || 0) + 1;
+  const e = new Error(`read_only: a write was refused inside the read-only check (${String(sql).trim().slice(0, 60)})`);
+  e.code = "25006";   // read_only_sql_transaction, the code Postgres would give
+  throw e;
+}
+async function withReadOnlyTransaction(fn) {
+  const client = await readOnlyPool().connect();
+  const st = { client, open: true, readOnly: true, refused: 0 };
+  try {
+    await client.query("BEGIN");
+    await client.query("SET TRANSACTION READ ONLY");
+    return await ambientTx.run(st, () => fn(client, st));
+  } finally {
+    st.open = false;
+    await client.query("ROLLBACK").catch(() => {});
+    client.release();
+  }
+}
 async function queryOutside(sql, params = []) {
   let i = 0;
   return (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
@@ -91,6 +139,7 @@ async function runOutside(sql, params = []) {
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
+  refuseWriteInReadOnly(sql);
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -133,6 +182,7 @@ async function querySetwise(sql, params = []) {
 }
 
 async function run(sql, params = []) {
+  refuseWriteInReadOnly(sql);
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -5419,6 +5469,12 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_time ON email_log (created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_org ON email_log (org_id, created_at DESC)`);
+  // HARDEN-1: which arm of the donor-mail gate let a send go (sendGate.js:
+  // exempt, staff_confirm, auto_email_on) and the people it went to (ids,
+  // never addresses), so the nightly check can prove no automatic message
+  // reached a person whose Automatic emails switch was off.
+  await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS gate TEXT`);
+  await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS donor_ids TEXT[]`);
 
   // Every background tick, with its last run and its result. `processDigests`
   // and its eight siblings ran on a timer with nowhere to report to: a tick
@@ -9391,5 +9447,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, withReadOnlyTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

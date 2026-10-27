@@ -111,6 +111,7 @@ const NOT_MOVED = {
   "mail_reply_steps.donor_id": "THREAD-3: a claim that one logged email already opened its reply step; the email (interactions) and the step (threads, tasks) move, and the claim only stops a second step for that email",
   "donors.external_donor_id": "the person's id in the system they came from, a value not a pointer; it is a field the merge screen offers",
   "donors.external_donor_ids": "the person's ids in other systems, values not pointers; the merge unites both lists onto the kept record",
+  "email_log.donor_ids": "HARDEN-1: who a message went to at the time it went (the nightly check reads it); a send log is history, and it is kept 30 days",
   "fin_audit_log.entity_id": "an append-only log of what happened to a record at the time; history is never rewritten",
   "workflow_runs.entity_id": "the run's dedupe key part; the person on a run is workflow_runs.donor_id, which moves",
   "asset_pointer_history.entity_id": "a log of photo and file pointer changes as they happened; history is never rewritten",

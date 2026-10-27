@@ -8078,6 +8078,8 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   }
 
   const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req), manual: true });
+  if (result.skipped === "undated_gift") return res.status(409).json({ error: "undated_gift",
+    message: "This gift has no date, and a tax receipt names the day a gift was given. Set the date on the gift, then send the receipt." });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
   res.status(201).json(result.receipt);
 }));
@@ -10947,7 +10949,12 @@ async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false,
     if (addressesOnly) { letters.push({ donorId: donor.donor_id, name: donor.name, address, text: "", giftIds: giftIdsHere, totalCents: 0 }); continue; }
     const fields = ACK.letterFields({ donor, gifts, org: orgFields });
     const r = ACK.renderLetter(tpl.body, fields);
-    if (r.missing.length) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}` }); continue; }
+    if (r.missing.length) {
+      const why = r.missing.includes("gift_date") && fields._undated
+        ? `${fields._undated === 1 ? "a gift here has" : `${fields._undated} gifts here have`} no date; set the date on the gift first`
+        : `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}`;
+      skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why }); continue;
+    }
     letters.push({ donorId: donor.donor_id, name: donor.name, address, text: r.text, giftIds: giftIdsHere, totalCents: fields._totalCents });
   }
   const found = new Set(rows.map(r => r.id));

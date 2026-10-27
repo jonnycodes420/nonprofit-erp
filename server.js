@@ -97,13 +97,15 @@ function _logOutboundEmail(opts, result, err, statusOverride) {
     String((opts && opts.subject) || "").slice(0, 200),
     statusOverride || (err ? "failed" : "sent"),
     err ? String(err.message || err).slice(0, 300) : null,
+    (opts && opts._stewardGate) || null,
+    (opts && Array.isArray(opts._stewardGateDonors) && opts._stewardGateDonors.length) ? opts._stewardGateDonors.slice(0, 50) : null,
   ];
   // Never let logging break a send, and never let it throw into a caller that
   // is already handling a provider failure. FIX-51: the write is returned (it
   // never rejects), so a caller that reads the log next, or that must not
   // finish before the row is in, awaits it.
-  return run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error)
-       VALUES (?,?,?,?,?,?,?)`, row).catch(() => {});
+  return run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error,gate,donor_ids)
+       VALUES (?,?,?,?,?,?,?,?,?)`, row).catch(() => {});
 }
 
 // A PROXY, NOT A REPLACEMENT. The first cut of this wrapper was an object
@@ -1553,6 +1555,9 @@ async function signInternalToken(userId) {
 const ORG_SUMMARY = require("./orgSummary");
 ORG_SUMMARY.configure({ orgTz, orgToday, signInternalToken });
 require("./jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refreshOrg(payload && payload.orgId));
+// HARDEN-1: the nightly read-only check (nightlyCheck.js; scheduled in routes/jobs.js).
+const NIGHTLY_CHECK = require("./nightlyCheck");
+NIGHTLY_CHECK.configure({ opsAlert, signInternalToken });
 // SCALE-2: the nightly Drift refresh: an org whose stored Drift answers are
 // from an earlier day gets them recomputed for its new day, so the first visit
 // of the morning reads stored rows too. Checked every six hours because each
@@ -3128,6 +3133,14 @@ if (!backgroundTicksDisabled()) {
 app.get("/admin/number-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   res.json({ rows: await require("./numberCheck").latest() });
 }));
+// HARDEN-1: the nightly check, run on demand by a TEST boot only (the suite).
+// On prod it runs from its tick and nothing else; there is no button.
+if (testMode()) app.post("/admin/nightly-check/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const orgIds = Array.isArray(b.orgIds) ? b.orgIds.map(String).slice(0, 50) : null;
+  const night = /^\d{4}-\d{2}-\d{2}[a-z0-9-]*$/i.test(String(b.night || "")) ? String(b.night) : null;
+  res.json(await NIGHTLY_CHECK.runNightlyCheck({ night, orgIds }));
+}));
 app.post("/admin/number-checks/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const out = await require("./numberCheck").runAll({ screens: require("./numbers").screens });
   res.json({ ranOn: out.ranOn, orgs: out.orgs, problems: out.problems, lines: out.lines });
@@ -3830,6 +3843,9 @@ const {
 async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
+  // HARDEN-1: a tax receipt names the day the gift was given. An undated gift
+  // (IMPORT-4) has none, so no receipt is issued until somebody sets its date.
+  if (gift.date == null || String(gift.date).trim() === "") return { skipped: "undated_gift" };
 
   // Idempotency — a redelivered Stripe event (or a double-click) must never
   // create a second active receipt for the same gift. Enforced here AND by
@@ -5087,7 +5103,7 @@ async function opsAlert(kind, subject, body) {
     await _rawResend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to, subject: `[Steward] ${subject}`,
-      html: `<p>${String(body).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>`,
+      html: `<p>${String(body).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])).replace(/\n/g, "<br>")}</p>`,
     });
     return { sent: true };
   } catch (e) { return { failed: String(e && e.message || e) }; }

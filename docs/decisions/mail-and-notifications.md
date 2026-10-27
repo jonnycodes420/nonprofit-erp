@@ -95,6 +95,13 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 - **Send only through the wrapped `resend` client in server.js and never construct another.** Its Proxy logs
   every `emails.send` to `email_log` (recipient DOMAIN only, never the address) and applies the permanent
   block; `opsAlert` and `routes/migc.js` are the known raw sends and check the block themselves. (BUILD-97)
+- **The nightly check mails Jonathan through `opsAlert` only, only when red (HARDEN-1, `nightlyCheck.js`).**
+  At 3:30 AM New York it reads five things that must never be true (a deleted person on a list or count,
+  an import receipt that does not foot, automatic donor mail past a switch that is off, the Donors list
+  and Home disagreeing, a Customer's import of a file first previewed in another org) inside a READ ONLY
+  transaction (`db.withReadOnlyTransaction`; `NIGHTLY_CHECK_DATABASE_URL` for the SELECT-only role) and
+  changes nothing. `email_log.gate` and `donor_ids` (ids, never addresses) record which arm of the
+  send gate let a donor message go and to whom, which is what its mail check reads.
 - **Build org-scoped send options with `donorSendOpts` (or set `_stewardOrgId`/`_stewardKind`).** That tag is
   how the proxy attributes the send and refuses it when the org's mail is off. (BUILD-97)
 - **Seed scripts create orgs with `emails_enabled=false, is_demo_org=true` and seed addresses only at

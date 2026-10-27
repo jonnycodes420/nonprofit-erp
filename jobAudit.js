@@ -60,6 +60,7 @@ const JOB_READS_ONLY = {
   reconcileStripeVsGifts: "compares two numbers and reports the difference",
   snapshotMetrics:        "writes a metric snapshot of figures already computed",
   runDataHealthNightly:   "CLEAN-1: counts what Data health shows and stores the counts; it suggests, and no donor field changes",
+  runNightlyCheck:        "HARDEN-1: five read-only checks inside a READ ONLY transaction; mails only Jonathan, only when one is red",
   recomputeScores:        "ENGAGE-1: recomputes the engagement and generosity scores from gifts and touches already on file; no field a person entered changes",
 };
 

@@ -106,7 +106,7 @@ async function decide(opts) {
       GROUP BY LOWER(email)`, [orgId, recipients]);
   const by = new Map(rows.map(r => [r.e, r]));
   const off = recipients.filter(e => !(by.get(e) && by.get(e).on_ === true));
-  if (!off.length) return { send: true, why: "auto_email_on" };
+  if (!off.length) return { send: true, why: "auto_email_on", donorIds: recipients.map(e => by.get(e).id) };
   const named = opts._stewardDonorId ? String(opts._stewardDonorId) : null;
   return { send: false, off, donorId: named || (by.get(off[0]) && by.get(off[0]).id) || null };
 }
@@ -136,7 +136,9 @@ async function sendToDonor(opts, deliver) {
     console.error("[send-gate] could not decide, nothing sent:", e.message);
     return { data: null, error: { name: "send_gate_unreadable", message: "send_gate_unreadable: " + e.message } };
   }
-  if (d.send) return deliver(opts);
+  // HARDEN-1: the arm that let it go, and to whom (ids, never addresses), ride
+  // to the email_log row, which the nightly check reads.
+  if (d.send) return deliver(Object.assign(opts, { _stewardGate: d.why, _stewardGateDonors: d.donorIds || null }));
   try { await recordBlocked(opts, d.donorId); }
   catch (e) { console.error("[send-gate] blocked line not written:", e.message); }
   const why = `${REFUSAL}: automatic emails are off for this person`;
