@@ -470,13 +470,10 @@ app.post("/sheet-import/bring-back", requireAuth, checkWriteAccess, wrap(async (
   const orgId = req.user.orgId;
   const ids = [...new Set((Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String))].slice(0, 5000);
   if (!ids.length) return res.status(400).json({ error: "ids_required", sentence: "Nobody was named to bring back." });
-  const back = await query(`UPDATE donors d SET deleted_at = NULL, updated_at = NOW()
-                             WHERE d.org_id=? AND d.id = ANY(?) AND d.deleted_at IS NOT NULL
-                               AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)
-                           RETURNING d.id`, [orgId, ids]);
-  const backIds = back.map(r => r.id);
+  // HARDEN-2: the one door back (personTrash.js): deleted_at and every open
+  // deletion record of theirs, in one transaction.
+  const backIds = await require("../personTrash").bringPeopleBack(orgId, ids, { exceptMerged: true, touch: true });
   if (backIds.length) {
-    await run(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=? AND table_name='donors' AND record_id = ANY(?) AND restored_at IS NULL`, [orgId, backIds]);
     await require("../afterChange").afterChange(orgId, backIds, { door: "sheet_import_bring_back" }).catch(e => console.error("[sheet-import] bring back:", e.message));
   }
   if (req.audit) req.audit.after({ broughtBack: backIds });

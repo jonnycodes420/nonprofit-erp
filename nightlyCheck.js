@@ -331,4 +331,4 @@ async function tick(now = new Date()) {
   return out.red.length ? `RED ${out.red.join(",")} (alert: ${JSON.stringify(out.alert)})` : `clean for ${w.night}`;
 }
 
-module.exports = { configure, runNightlyCheck, runChecks, tick, inWindow, alertText, CHECKS, WINDOW };
+module.exports = { configure, runNightlyCheck, runChecks, tick, inWindow, alertText, CHECKS, WINDOW, deletedAmong };
