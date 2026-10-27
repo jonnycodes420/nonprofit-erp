@@ -23,11 +23,18 @@
 //      alert's hourly mark), and a write inside the check's transaction is
 //      refused.
 //   §6 nobody but the founder address received anything, ever, in this suite.
+//   §7 HARDEN-2: each run writes ONE nightly_check_runs row (when, green or
+//      which checks went red by letter and title, how many orgs it read), and
+//      the super-admin route and /health say stale when the last row is older
+//      than 26 hours or there is none; `npm run status` flags stale.
 //
 // Planted defects that turned it red: opsAlert's `to` read from the org's
 // staff instead of FOUNDER_EMAIL (§1, §6); the read-only transaction's
 // `SET TRANSACTION READ ONLY` and the write refusal removed (§5); each check's
-// comparison inverted (§3 red for that check).
+// comparison inverted (§3 red for that check). HARDEN-2: a second write
+// (an UPDATE of orgs through db.queryOutside) planted beside the result row
+// turned §5 red; the 26-hour cut moved to 30 turned §7 red.
+const ROW = async (id) => (await q(`SELECT * FROM nightly_check_runs WHERE id=$1`, [id]))[0] || null;
 "use strict";
 
 const fs = require("fs");
@@ -178,6 +185,12 @@ async function main() {
   ok("§3 every check is green on a clean org", redKeys(clean.body).length === 0, (clean.body.results || []).filter(x => !x.ok));
   await new Promise(r => setTimeout(r, 1500));
   ok("§3 a clean night sends nothing to anyone", clean.mail.length === 0 && clean.body.alert === null, clean.mail.map(m => m.to + " " + m.subject));
+  const cleanRow = await ROW(clean.body.runId);
+  ok("§7 a clean run writes its one result row: green, no red checks, 2 orgs read, no error, its night",
+     !!cleanRow && cleanRow.ok === true && Array.isArray(cleanRow.red_checks) && cleanRow.red_checks.length === 0
+       && cleanRow.orgs_read === 2 && cleanRow.error === null && cleanRow.night === clean.body.night
+       && cleanRow.finished_at && new Date(cleanRow.finished_at) >= new Date(cleanRow.started_at), cleanRow);
+  ok("§7 exactly one row carries that run's night", (await q(`SELECT COUNT(*)::int AS n FROM nightly_check_runs WHERE night=$1`, [clean.body.night]))[0].n === 1);
 
   // ── §4 · one defect per check ───────────────────────────────────────────
   async function planted(key, sentence, plant, unplant) {
@@ -188,6 +201,11 @@ async function main() {
     ok(`§4${key} exactly one alert, to the founder address`, run.mail.length === 1 && run.mail[0].to === FOUNDER, run.mail.map(m => m.to + " " + m.subject));
     const m = run.mail[0] || {};
     ok(`§4${key} the alert carries the check's sentence`, /Nightly check/.test(m.subject) && sentence.test(m.html), [m.subject, String(m.html).slice(0, 600)]);
+    const row = await ROW(run.body.runId);
+    const title = (run.body.results || []).find(x => x.key === key)?.title;
+    ok(`§7${key} its result row is red and names check ${key} (letter and title), and no org`,
+       !!row && row.ok === false && JSON.stringify(row.red_checks) === JSON.stringify([{ key, title }])
+         && !/org_nightly|Nightly Check/.test(JSON.stringify(row.red_checks)), row);
     if (unplant) await unplant();
     return run;
   }
@@ -243,11 +261,17 @@ async function main() {
   await q(`DELETE FROM donor_drift WHERE org_id = ANY($1)`, [[ORG, ORG2]]);
   await q(`DELETE FROM org_summary WHERE org_key = ANY($1)`, [[ORG, ORG2]]).catch(() => {});
   const auditBefore = (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log`))[0].n;
+  // HARDEN-2: the one table the job writes, by exactly one row, is
+  // nightly_check_runs. It is held apart from the content check and counted.
+  const runsBefore = (await q(`SELECT id FROM nightly_check_runs`)).map(r => r.id);
   const s0 = await snapshot();
   const red = await runCheck();
   const s1 = await snapshot();
-  const changed = Object.keys({ ...s0, ...s1 }).filter(t => s0[t] !== s1[t] && !BOOKKEEPING.has(t));
-  ok("§5 a red run (with its alert) changed no table's content", redKeys(red.body).join() === "e" && changed.length === 0, { red: redKeys(red.body), changed });
+  const changed = Object.keys({ ...s0, ...s1 }).filter(t => s0[t] !== s1[t] && !BOOKKEEPING.has(t) && t !== "nightly_check_runs");
+  ok("§5 a red run (with its alert) changed no table's content but its own result row", redKeys(red.body).join() === "e" && changed.length === 0, { red: redKeys(red.body), changed });
+  const runsAfter = await q(`SELECT id, red_checks FROM nightly_check_runs WHERE NOT (id = ANY($1))`, [runsBefore]);
+  ok("§5 …and that is exactly one new nightly_check_runs row, this run's, naming check e",
+     runsAfter.length === 1 && runsAfter[0].id === red.body.runId && runsAfter[0].red_checks.map(x => x.key).join() === "e", runsAfter);
   const newAudit = await q(`SELECT request_path FROM fin_audit_log ORDER BY created_at DESC LIMIT $1`, [Math.max(0, (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log`))[0].n - auditBefore)]);
   ok("§5 the only audit row added is the trigger request's own", newAudit.every(r => r.request_path === "/admin/nightly-check/run"), newAudit);
   const refused = (red.body.results || []).reduce((n, x) => n + (x.refusedWrites || 0), 0);
@@ -268,6 +292,40 @@ async function main() {
   const others = captured.filter(c => c.to !== FOUNDER);
   ok("§6 every message in this suite went to the founder address alone", captured.length >= 6 && others.length === 0, others.map(c => c.to + " " + c.subject));
   ok("§6 no donor and no staff address appears on any of them", !captured.some(c => /nightly\.test|test\.local/.test(c.to)));
+
+  // ── §7 · stale, never ran, fresh: the route, /health, npm run status ───
+  const latest = async () => (await api("GET", "/admin/nightly-check/latest", superTok)).body || {};
+  const health = async () => { await latest(); const r = await fetch((process.env.BASE || "http://localhost:5601") + "/health"); return (await r.json()).nightlyCheck; };
+  const staffNo = await api("GET", "/admin/nightly-check/latest", tok);
+  ok("§7 the route is super-admin only", staffNo.status === 401 || staffNo.status === 403, staffNo.status);
+  const saved = await q(`SELECT * FROM nightly_check_runs`);
+  await q(`DELETE FROM nightly_check_runs`);
+  const none = await latest(), noneH = await health();
+  ok("§7 no row: the route says it never ran, and stale", none.neverRan === true && none.stale === true && none.lastRunAt === null, none);
+  ok("§7 no row: /health says the same, counts only", noneH && noneH.neverRan === true && noneH.stale === true, noneH);
+  const STATUS = require("../scripts/status.js");
+  const neverR = STATUS.nightlyReport(noneH);
+  ok("§7 no row: npm run status prints a red NEVER line (not an exit flag: a fresh deploy has not reached 3:30 AM)", neverR.ok === false && neverR.never === true && neverR.flag === false, neverR);
+  const plantRow = (id, hoursAgo, okv, red) => q(`INSERT INTO nightly_check_runs (id, night, started_at, finished_at, ok, red_checks, orgs_read) VALUES ($1, 'test', NOW() - make_interval(secs => $2), NOW() - make_interval(secs => $2) + INTERVAL '40 seconds', $3, $4::jsonb, 7)`,
+    [id, hoursAgo * 3600, okv, JSON.stringify(red)]);
+  await plantRow("ncr_test_27h", 27, true, []);
+  const old27 = await latest(), old27H = await health();
+  ok("§7 last run 27 hours ago: the route says stale, with when and how many orgs", old27.stale === true && old27.neverRan === false && old27.orgsRead === 7 && old27.ok === true
+     && Math.abs(Date.now() - 27 * 3600e3 - new Date(old27.lastRunAt).getTime()) < 120e3, old27);
+  ok("§7 …and /health says stale", old27H && old27H.stale === true && old27H.orgsRead === 7, old27H);
+  const staleR = STATUS.nightlyReport(old27H);
+  ok("§7 …and npm run status flags it (a red line and exit 1)", staleR.ok === false && staleR.flag === true && /NOT run in 26 hours/.test(staleR.detail), staleR);
+  await plantRow("ncr_test_25h", 25, false, [{ key: "c", title: "No automatic donor mail past a switch that is off" }]);
+  const r25 = await latest(), r25H = await health();
+  ok("§7 last run 25 hours ago and red: not stale, red names check c", r25.stale === false && r25.ok === false && r25.red.join() === "c" && r25.redChecks[0].title.length > 10, r25);
+  const redR = STATUS.nightlyReport(r25H);
+  ok("§7 …npm run status prints RED: check c, without the stale flag", redR.ok === false && redR.flag === false && /RED: check c\b/.test(redR.detail), redR);
+  await plantRow("ncr_test_1h", 1, true, []);
+  const fresh = STATUS.nightlyReport(await health());
+  ok("§7 last run an hour ago and green: ok", fresh.ok === true && fresh.flag === false && /^green · ran .* ET .*read 7 orgs$/.test(fresh.detail), fresh);
+  await q(`DELETE FROM nightly_check_runs`);
+  for (const r of saved) await q(`INSERT INTO nightly_check_runs (id, night, started_at, finished_at, ok, red_checks, orgs_read, error) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)`,
+    [r.id, r.night, r.started_at, r.finished_at, r.ok, JSON.stringify(r.red_checks), r.orgs_read, r.error]);
 
   await reset();
   sink.close();

@@ -7345,6 +7345,21 @@ async function runSchemaInit(pool) {
       hour_key TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
+  // HARDEN-2 · one row per nightly check run (nightlyCheck.js), the only
+  // thing that job writes besides its bookkeeping. Platform-wide, so no
+  // org_id: red_checks holds letters and titles, never an org's id or name.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nightly_check_runs (
+      id TEXT PRIMARY KEY,
+      night TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      ok BOOLEAN,
+      red_checks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      orgs_read INTEGER,
+      error TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_nightly_check_runs_started ON nightly_check_runs (started_at DESC)`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`
