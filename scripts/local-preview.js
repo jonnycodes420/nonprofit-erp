@@ -25,6 +25,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 
 const PORT = Number(process.env.PORT || 4173);
 const API = (process.env.API || "http://localhost:5606").replace(/\/+$/, "");
@@ -134,6 +135,8 @@ const srv = http.createServer(async (req, res) => {
   let file = path.resolve(DIST, "." + path.posix.normalize("/" + url));
   if (file !== DIST && !file.startsWith(DIST + path.sep)) { res.statusCode = 403; return res.end(); }   // no traversal
   if (url === "/giving") file = path.join(DIST, "giving.html");
+  // HARDEN-2: a giving page has its own small entry, as vercel.json serves it.
+  if (/^\/give\/./.test(url) && fs.existsSync(path.join(DIST, "give.html"))) file = path.join(DIST, "give.html");
   // CONTENT-1: a marketing page is prerendered to <path>/index.html, as Vercel
   // serves it; anything else gets the app shell (app.html), as vercel.json's
   // catch-all does. A dist from before the prerender has no app.html.
@@ -143,6 +146,13 @@ const srv = http.createServer(async (req, res) => {
 
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
   if (url.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // HARDEN-2: Vercel compresses text, so the preview does too, or a page's
+  // bytes over the wire (tests/perf-giving.spec.js) would be the raw size.
+  if (/\.(html|js|css|json|svg|txt|xml)$/.test(file) && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    return fs.createReadStream(file).pipe(zlib.createGzip()).pipe(res);
+  }
   fs.createReadStream(file).pipe(res);
 });
 

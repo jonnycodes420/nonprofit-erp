@@ -37,6 +37,9 @@ export default defineConfig({
       input: {
         main: new URL("./index.html", import.meta.url).pathname,
         giving: new URL("./giving.html", import.meta.url).pathname,
+        // HARDEN-2 item 1: /give/* is served give.html, which loads only the
+        // giving page (src/giveMain.jsx), not the CRM's entry.
+        give: new URL("./give.html", import.meta.url).pathname,
       },
     },
   },
