@@ -111,7 +111,8 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   ok("§1 it says it drafted 1 thank-you", done1.body?.thankYouDrafts === 1, done1.body);
   const nia = await donorByEmail(`nia@${DOMAIN}`), otto = await donorByEmail(`otto@${DOMAIN}`);
   ok("§1 the 5-day-old gift gets a thank-you draft", nia && (await draftsOf(nia.id)) === 1, nia);
-  ok("§1 …and starts the first-gift journey", nia && (await plansOf(nia.id)) === 1, nia && await plansOf(nia.id));
+  // SEND-GATE-1: an import fires no trigger, so a recent imported gift starts no journey (its draft is kept).
+  ok("§1 …and starts no journey: an import fires no trigger (SEND-GATE-1)", nia && (await plansOf(nia.id)) === 0, nia && await plansOf(nia.id));
   ok("§1 the 200-day-old gift gets no thank-you draft", otto && (await draftsOf(otto.id)) === 0, otto);
   ok("§1 …and starts no journey", otto && (await plansOf(otto.id)) === 0, otto);
   ok("§1 both count on the profile (lifetime and gift count)",
@@ -258,8 +259,8 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   ok("§7 the first import undoes", undo.status === 200 && undo.body?.reversed === true, undo.body);
   ok("§7 its gifts are gone", (await q(`SELECT 1 FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, run1])).length === 0);
   ok("§7 its thank-you draft is gone", (await q(`SELECT 1 FROM thank_you_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, nia.id])).length === 0);
-  ok("§7 the journey it started is gone", (await q(`SELECT 1 FROM cultivation_plans WHERE org_id=$1 AND started_import_id=$2`, [ORG, run1])).length === 0
-     && undo.body?.journeysStopped === 1, undo.body);
+  ok("§7 no journey is left from it (it started none, SEND-GATE-1)", (await q(`SELECT 1 FROM cultivation_plans WHERE org_id=$1 AND started_import_id=$2`, [ORG, run1])).length === 0
+     && undo.body?.journeysStopped === 0, undo.body);
   ok("§7 its readout is gone", (await q(`SELECT 1 FROM readouts WHERE org_id=$1 AND source_id=$2 AND removed_at IS NULL`, [ORG, run1])).length === 0);
 
   await wipe();

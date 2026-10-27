@@ -38,6 +38,9 @@ function classifyProviderError(err) {
   const name = String(err.name || "");
   if (name === "org_mail_off") return "wait";
   if (name === "blocked_address") return "permanent";
+  // SEND-GATE-1: this person's automatic emails are off. The message is kept
+  // on their profile with a Send button; no sweep tries it again.
+  if (name === "auto_email_off") return "permanent";
   if (OUR_CONFIG.has(name)) return "transient";
   const code = Number(err.statusCode || err.status || 0);
   if (code === 429 || code >= 500 || !code) return "transient";

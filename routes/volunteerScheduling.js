@@ -1093,6 +1093,8 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to: p.email,
       _stewardOrgId: orgId, _stewardKind: "volunteer_link",
+      // SEND-GATE-1: a person on staff pressed Send for this one link.
+      _stewardConfirm: await require("../sendGate").recordStaffConfirm({ orgId, to: p.email, what: "Volunteer page link", by: actor(req) }),
       subject: `Your volunteer page · ${brand.displayName}`,
       html: `<p>Here is your volunteer page. It shows the shifts you are signed up for, and you can cancel or log hours from it.</p>
              <p><a href="${url}">Open my volunteer page</a></p>

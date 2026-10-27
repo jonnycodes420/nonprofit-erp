@@ -10,7 +10,15 @@
 // (Resend's SDK honors RESEND_BASE_URL), so no real email ever leaves.
 
 const http = require("http");
-const { BASE, ok, summary, api, SINK_PORT, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api: helperApi, SINK_PORT, q, closeDb } = require("./helpers");
+// SEND-GATE-1: the people this suite mails are people the org turned
+// automatic email on for (every person starts off). It tests the other rules.
+const api = async (...a) => {
+  const r = await helperApi(...a);
+  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]);
+  return r;
+};
+
 
 const captured = []; // { path, body } for every POST the server makes to "Resend"
 const mock = http.createServer((req, res) => {

@@ -16,7 +16,9 @@
 //   3. Captures the handler's JSON response so a CREATE can name the record
 //      it made and link to it.
 //   4. On finish, writes ONE row. Bulk writers replace it with one summary
-//      row via req.audit.summary(); nobody writes one row per record.
+//      row via req.audit.summary(); a per-person decision (SEND-GATE-1's
+//      automatic-email switch) asks for one row per person via
+//      req.audit.perRecord(), and the middleware writes those too.
 //   5. A download of donor data is a GET, and a download is a disclosure, so
 //      any response that sets Content-Disposition: attachment is logged too.
 //      That is the shared seam every export already passes through.
@@ -377,6 +379,7 @@ function auditTrail(opts = {}) {
     let skipped = null;
     let extra = {};          // what a route chose to say about this change
     let summaryRow = null;   // a bulk writer's one row
+    let perRecordRows = null; // SEND-GATE-1: a change a person must be able to find one by one
     let doneOnce = false;
 
     // The handle a route uses when it knows more than the pattern does. Every
@@ -400,6 +403,11 @@ function auditTrail(opts = {}) {
       // ONE row for a bulk action, naming the records it touched. "Imported
       // 243 gifts, $240,853, from bookkeeper.csv" is one line of history; two
       // hundred and forty-three lines is a wall nobody reads.
+      // SEND-GATE-1 · ONE ROW PER PERSON, for a change that is a decision
+      // about each person (who gets automatic email). The middleware still
+      // writes them, so no route writes an audit row. Each is
+      // { entityType, entityId, label, before, after }.
+      perRecord(rows) { perRecordRows = Array.isArray(rows) ? rows : null; },
       summary(text, meta = {}) {
         summaryRow = { text: String(text || ""), meta: meta || {} };
         if (meta.count != null) extra.recordCount = meta.count;
@@ -579,6 +587,19 @@ function auditTrail(opts = {}) {
           return;
         }
 
+        if (perRecordRows && status < 400) {
+          for (const r of perRecordRows) {
+            await insertAuditRow({
+              orgId, actorId: who.id, actorName: who.name, actorKind: who.kind,
+              action, entityType: r.entityType || entityType, entityId: r.entityId || null, entityLabel: r.label || null,
+              changes: r.before && r.after ? A.diffFields(r.before, r.after) || {} : {},
+              before: r.before || null, after: r.after || null,
+              summary: bulk ? bulk.text : null, recordCount: 1,
+              method, path: req.originalUrl || req.path, status, ip: extra.noIp ? null : req.ip,
+            });
+          }
+          return;
+        }
         await insertAuditRow({
           orgId,
           actorId: who.id, actorName: who.name, actorKind: who.kind,

@@ -8333,6 +8333,18 @@ async function runSchemaInit(pool) {
     const changed = await require("./orgDemoMigration").matchDemoFlagToKind(pool);
     console.log(`[fix50] demo flag matched to Kind: ${changed.kindsSet} unset Kind(s) set to Demo, ${changed.flagsChanged} is_demo_org flag(s) changed`);
   }
+  // SEND-GATE-1 (27 Oct): automatic donor mail only to people the org turned
+  // it on for (sendGateMigration.js). The deploy change runs once and logs
+  // every org it touched, with counts, and Creo's separately.
+  {
+    const SG = require("./sendGateMigration");
+    await SG.sendGateSchema(pool);
+    const ch = await SG.sendGateDeployChange(pool);
+    if (ch.ran) {
+      for (const r of ch.perOrg) console.log(`[send-gate-1] org ${r.org_id}: ${r.people} people start with automatic emails off`);
+      console.log(`[send-gate-1] org_creo: ${ch.creoOn} people turned ON (received an automatic message in the last 12 months)`);
+    }
+  }
   // MAIL-1 · backfill onboarded by the same definition, never by guess
   // (onboarded.js). Here, not beside the onboarded_* columns, because its demo
   // test reads org_kind (FIX-51).

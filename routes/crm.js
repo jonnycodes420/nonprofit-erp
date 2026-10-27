@@ -26,6 +26,7 @@ const auditMw = require("../middleware/auditTrail");
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
 // this router and routes/finance.js cannot disagree about any of them.
 const DEP = require("../depositsFile");
+const SEND_GATE = require("../sendGate");   // SEND-GATE-1: a staff click is the confirm for one message
 const DTAGS = require("../donorTags");   // FIX-33: internal flags never reach a screen as tags
 const ItemRefs = require("../itemRefs");   // THREAD-2: the things a sentence names
 const BK = require("../bookkeeper");
@@ -7799,13 +7800,15 @@ function normalizeEin(raw) {
 // POST /gifts/:id/receipt?resend and POST /donors/:id/receipts (manual
 // resend from DonorProfile), so a resend is always byte-identical to what
 // was originally issued.
-async function resendReceiptEmail(receipt, org, donor) {
+// SEND-GATE-1: a resend is a person's click, the confirm for this one receipt.
+async function resendReceiptEmail(receipt, org, donor, by) {
   if (!donor.email) return false;
   const decision = await donorMailDecision("receipt", donor.email, org.id);
   if (!decision.send) return false;
   const pdfBuffer = Buffer.from(receipt.pdf_data, "base64");
   const filename = receipt.type === "year_end" ? `${receipt.tax_year}-giving-statement.pdf` : `receipt-${receipt.receipt_number}.pdf`;
-  const sent = await sendReceiptEmail(org, donor, receipt.snapshot, pdfBuffer, filename);
+  const extra = by ? { _stewardConfirm: await SEND_GATE.recordStaffConfirm({ orgId: org.id, to: donor.email, what: "Receipt", by }) } : {};
+  const sent = await sendReceiptEmail(org, donor, receipt.snapshot, pdfBuffer, filename, extra);
   if (sent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, receipt.id]);
   return sent;
 }
@@ -8033,14 +8036,14 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   const existingRows = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
   if (existingRows.length) {
     if (req.query.resend !== undefined) {
-      const emailSent = await resendReceiptEmail(existingRows[0], org, donor);
+      const emailSent = await resendReceiptEmail(existingRows[0], org, donor, actor(req));
       const rows = await query("SELECT * FROM receipts WHERE id=?", [existingRows[0].id]);
       return res.json({ receipt: rows[0], emailSent, resent: true });
     }
     return res.status(409).json({ error: "This gift already has an active receipt.", receipt: existingRows[0] });
   }
 
-  const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req) });
+  const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req), manual: true });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
   res.status(201).json(result.receipt);
 }));
@@ -8227,12 +8230,13 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
     const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
     const ins = await query(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key,created_by,created_by_name)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key,created_by,created_by_name,import_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
        RETURNING id`,
       [importId("pl_"), orgId, donor.id, p.amount, due, p.status === "fulfilled" ? "fulfilled" : "open",
-       (p.notes || "").slice(0, 500) || null, idem, actor(req).id, actor(req).name]);
+       (p.notes || "").slice(0, 500) || null, idem, actor(req).id, actor(req).name,
+       "semantics:" + idem.slice(0, 120)]);   // SEND-GATE-1: an imported pledge is never reminded
     if (ins.length) {
       counts.pledges++;
       // link the payments that name this pledge in their notes
@@ -25440,9 +25444,13 @@ async function sendMilestoneDraft(req, draft, opts = {}) {
       .replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
       + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
     try {
+      // SEND-GATE-1: a person pressed Send on this draft. That press is the
+      // confirm for this one message, so it goes whatever the person's
+      // automatic-email switch says (Donor mail must still be on).
+      const confirm = await SEND_GATE.recordStaffConfirm({ orgId: req.user.orgId, to: donor.email, what: draft.subject, by: actor(req) });
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(req.user.orgId, donor.email, "sequence")),
-        to: donor.email, subject: draft.subject, html: bodyHtml,
+        to: donor.email, subject: draft.subject, html: bodyHtml, _stewardConfirm: confirm,
       });
       if (sendErr) return { status: 502, error: `Send failed: ${sendErr.message}` };
     } catch (e) {
@@ -26159,7 +26167,9 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
     "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]
   );
   // FIX-15 Part 3: the provider's answer, not an assumed "Sent".
-  const { sent } = await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
+  // SEND-GATE-1: she pressed Send now; that press is the confirm for this one reminder.
+  const confirm = await SEND_GATE.recordStaffConfirm({ orgId: req.user.orgId, to: p.donor_email, what: "Pledge reminder", by: actor(req) });
+  const { sent } = await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p, { _stewardConfirm: confirm });
   if (!sent) return res.status(502).json({ sent: false, error: "The email provider did not accept the reminder, so it was not sent. Try again in a few minutes." });
   res.json({ sent: true });
 }));

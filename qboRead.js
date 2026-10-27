@@ -498,6 +498,13 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
   // One save per run: the status flips first, and a second press finds it flipped.
   const claim = await query(`UPDATE qbo_read_runs SET status='saving' WHERE id=? AND org_id=? AND status='review' RETURNING id`, [runId, orgId]);
   if (!claim.length) return { ok: false, status: 409, error: "already_saved", sentence: "This read was already saved. Read again for anything new." };
+  // SEND-GATE-1: the FIRST reviewed read is an import and fires no trigger.
+  // Every read after it (firstSavedAt is set) brings in new gifts as they
+  // arrive, so those may start a journey like any live gift (FIX-36's
+  // 30-day history rule still applies to both).
+  const [fs0] = await query(`SELECT mapping->'qbo'->'read'->>'firstSavedAt' AS f FROM bookkeeping_connections
+                              WHERE org_id=? AND vendor='quickbooks' AND status <> 'disconnected' LIMIT 1`, [orgId]);
+  const liveRead = !!(fs0 && fs0.f);
   const importId = "imp_qbo" + uuid().replace(/-/g, "").slice(0, 12);
   await run(`INSERT INTO imports (id,org_id,name,source_filename,shape,started_at,committed_at,actor_user_id,actor_user_name)
              VALUES (?,?,?,?,?,NOW(),NOW(),?,?)`,
@@ -556,7 +563,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
         notes: l.memo || "", fundId: l.fund_id || null,
         paymentMethod: l.method || "Needs you", checkNumber: l.check_number || null,
         externalId: `qbo:${l.line_key}`, conflict: "external",
-        importId, readFromVendor: VENDOR, source: VENDOR,
+        importId, liveRead, readFromVendor: VENDOR, source: VENDOR,
         actorId: who.id, actorName: who.name,
         ledgerDescription: undefined,
         // A check that came in last week waits for a thank-you, and can start a

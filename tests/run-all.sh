@@ -214,6 +214,7 @@ CORE=(
   fix50-demo-one-rule
   fix51-leftovers
   mail-block
+  send-gate
   mail-suppression
   email-footer
   consistency-e2e

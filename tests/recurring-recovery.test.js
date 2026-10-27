@@ -102,8 +102,8 @@ async function reset() {
     ["u_recrec", ORG, EMAIL, bcrypt.hashSync(PASS, 10)]);
   // Two sustainers, each with an officer who owns them.
   for (const [id, name, mail] of [["d_recrec1", "Margaret Soto", "margaret@recrec.test"], ["d_recrec2", "Desmond Vale", "desmond@recrec.test"]]) {
-    await q(`INSERT INTO donors (id,org_id,name,email,assigned_to,assigned_to_name)
-             VALUES ($1,$2,$3,$4,'u_recrec','RR Admin')`, [id, ORG, name, mail]);
+    await q(`INSERT INTO donors (id,org_id,name,email,assigned_to,assigned_to_name,auto_email)
+             VALUES ($1,$2,$3,$4,'u_recrec','RR Admin',true)`, [id, ORG, name, mail]);   // SEND-GATE-1: turned on
   }
 }
 

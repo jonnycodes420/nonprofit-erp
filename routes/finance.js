@@ -2099,7 +2099,7 @@ async function audienceMembership(orgId, audienceIds) {
   const A = await import("../shared/audiences.js");
   const donors = await query(
     `SELECT id, name, email, deceased, do_not_contact, do_not_email, email_unreachable, is_sample,
-            stage, capacity_tier, total_giving, person_types, tags
+            stage, capacity_tier, total_giving, person_types, tags, auto_email
        FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
   // MAILCHIMP-1: DEMO PEOPLE NEVER LEAVE STEWARD. The sample rows carry
   // `is_sample`; the 1,000-donor demonstration file carries the tag
@@ -2404,7 +2404,8 @@ app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWrit
   if (!mapping || !mapping.audienceId) return res.status(409).json({ error: "not_mapped",
     sentence: `Choose which ${EM.audienceNoun(provider)} to keep in step first. Steward has sent nothing.` });
 
-  const out = await runEmailSync(orgId, provider, row, mapping);
+  // SEND-GATE-1: a person pressed Sync, so this run may push everybody eligible.
+  const out = await runEmailSync(orgId, provider, row, mapping, { staffClick: true });
   if (!out.ok) return res.status(502).json({ error: "sync_failed", sentence: out.sentence });
   res.json({ ok: true, pushed: out.pushed, campaigns: out.campaigns, optOuts: out.optOuts,
              updated: out.updated, refused: out.refused, skipped: out.skipped || 0, sentence: out.sentence });
@@ -2420,7 +2421,7 @@ app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWrit
  * then read as unsubscribed. The window would be small and the mistake would be
  * the exact one this build exists to prevent.
  */
-async function runEmailSync(orgId, provider, row, mapping) {
+async function runEmailSync(orgId, provider, row, mapping, { staffClick = false } = {}) {
   const EM = await emailMarketingMod();
   await run(`UPDATE email_marketing_connections SET last_tried_at=NOW() WHERE id=?`, [row.id]).catch(() => {});
   // MAILCHIMP-1: THE RECORDS THIS RUN CHANGED, counted once each however
@@ -2431,7 +2432,7 @@ async function runEmailSync(orgId, provider, row, mapping) {
   // to the push, because Constant Contact's upsert re-subscribes an
   // unsubscribed contact (see pushAudience) and the only safe answer is never
   // to offer it one.
-  const runCtx = { skipped: 0, toolUnsubscribed: new Set() };
+  const runCtx = { skipped: 0, toolUnsubscribed: new Set(), staffClick };
   try {
     const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId, touched, runCtx);
     const campaigns = await pullCampaigns(orgId, provider, row, touched, runCtx);
@@ -2523,6 +2524,10 @@ async function pushAudience(orgId, provider, row, mapping, runCtx = { toolUnsubs
     // this catches an address the tool holds as unsubscribed that Steward could
     // not match (a second record, a changed address) and would otherwise push.
     if (runCtx.toolUnsubscribed.has(String(p.email || "").toLowerCase())) continue;
+    // SEND-GATE-1: the nightly run adds only people whose automatic emails are
+    // on. Anyone else is added only when a person presses Sync. Nothing inside
+    // the tool (its settings, its audience's other members) is changed.
+    if (!runCtx.staffClick && !(person && person.auto_email === true)) continue;
     const [firstName, ...rest] = String(person.name || "").trim().split(/\s+/);
     try {
     if (provider === "mailchimp") {

@@ -98,8 +98,8 @@ const donorCount = e => q("SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AN
   await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_ord',$1,'Order Fund',true)`, [ORG]);
   // pre-existing donors for the failed-charge + recovery scenarios
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count) VALUES ('d_fail',$1,'Fay Fail','fail@order.test','mid','steward',0,0)`, [ORG]);
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count) VALUES ('d_rec',$1,'Rex Recover','rec@order.test','mid','steward',0,0)`, [ORG]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,auto_email) VALUES ('d_fail',$1,'Fay Fail','fail@order.test','mid','steward',0,0,true)`, [ORG]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,auto_email) VALUES ('d_rec',$1,'Rex Recover','rec@order.test','mid','steward',0,0,true)`, [ORG]);
 
   // ── Q2: recurring FIRST charge, both orders + re-delivery → one sub, one gift ─
   // Order A: PI arrives FIRST (the BUILD-62 race), then checkout.

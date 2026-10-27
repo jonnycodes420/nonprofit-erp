@@ -268,6 +268,43 @@ function BulkTag({ids,disabled,onDone}){
     </span>
   );
 }
+// SEND-GATE-1 · automatic emails on (or off) for everyone ticked or matching.
+// The first click asks the server for the exact count; the second confirms that
+// count, and the server refuses if the selection no longer matches it.
+function BulkAutoEmail({ids,disabled,onDone}){
+  const [ask,setAsk]=useState(null);   // { on, count, sentence }
+  const [busy,setBusy]=useState(false);
+  const start=async on=>{
+    if(!ids.length)return;
+    setBusy(true);
+    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,on})});
+      if(!r||!r.count){onDone&&onDone((r&&r.sentence)||"Nothing to change.");}else setAsk({on,count:r.count,sentence:r.sentence});}
+    catch(e){onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nothing was changed."));}
+    setBusy(false);
+  };
+  const confirm=async()=>{
+    setBusy(true);
+    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,on:ask.on,confirm:true,count:ask.count})});
+      const n=Number(r&&r.changed||0);setAsk(null);onDone&&onDone(`Automatic emails ${ask.on?"on":"off"} for ${n.toLocaleString("en-US")} ${n===1?"person":"people"}.`);}
+    catch(e){setAsk(null);onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nothing was changed."));}
+    setBusy(false);
+  };
+  const ghost={background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"};
+  if(ask)return(
+    <span style={{display:"inline-flex",gap:6,alignItems:"center"}} data-testid="bulk-auto-email-confirm">
+      <span style={{fontSize:12,color:T.inkInverse}}>{ask.sentence}</span>
+      <button type="button" data-testid="bulk-auto-email-yes" onClick={confirm} disabled={busy}
+        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy?0.6:1}}>Turn {ask.on?"on":"off"} for {ask.count.toLocaleString("en-US")}</button>
+      <button type="button" onClick={()=>setAsk(null)} style={{background:"none",border:"none",color:T.inkInverse,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Cancel</button>
+    </span>
+  );
+  return(
+    <span style={{display:"inline-flex",gap:6,alignItems:"center"}}>
+      <button type="button" data-testid="bulk-auto-email-on" onClick={()=>start(true)} disabled={disabled||busy} style={ghost}>Turn on automatic emails</button>
+      <button type="button" data-testid="bulk-auto-email-off" onClick={()=>start(false)} disabled={disabled||busy} style={ghost}>Turn off</button>
+    </span>
+  );
+}
 function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
@@ -657,6 +694,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           {matchingIds&&<>
             {!isReadOnly&&<AddToGroup donorIds={matchingIds}/>}
             {!isReadOnly&&<BulkTag ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
+            {!isReadOnly&&<BulkAutoEmail ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
             <button type="button" data-testid="bulk-export" onClick={exportCsv} disabled={exporting}
               style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
               {exporting?"Exporting…":"Export"}
@@ -664,6 +702,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           </>}
           {!matchingIds&&<>
           {!isReadOnly&&<BulkTag ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
+          {!isReadOnly&&<BulkAutoEmail ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {/* BUILD-85 — PLAN A FOLLOW-UP for the selection. "Call these twenty
               lapsed donors this month" had nowhere to live before this; it
               lived in Tasks, which is what kept two follow-up systems running

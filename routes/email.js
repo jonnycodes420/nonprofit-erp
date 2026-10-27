@@ -54,7 +54,9 @@ function givingAccountEmailFooterHtml(slug, email, linkColor) {
     <a href="${givingAccountLink(slug, email)}" style="color:${color};">create your free giving account</a>.</p>`;
 }
 
-async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
+// SEND-GATE-1: `extra` carries a staff confirm (`_stewardConfirm`) when a
+// person pressed Send or Resend for this receipt.
+async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename, extra = {}) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
     // BUILD-88c C.1 — the org's own identity when their domain is verified,
@@ -89,6 +91,12 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
       from, ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
       to: donor.email, subject, html,
       attachments: [{ filename, content: pdfBuffer }],
+      // SEND-GATE-1: tagged, so the org switch and the person's automatic-email
+      // switch are asked at the client like every other donor send.
+      _stewardOrgId: org.id, _stewardKind: snapshot.type === "year_end" ? "year_end" : "receipt", _stewardDonorId: donor.id || null,
+      _stewardWhat: snapshot.type === "year_end" ? `Year-end statement${snapshot.year ? " for " + snapshot.year : ""}`
+        : `Receipt for $${Number(snapshot.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}${snapshot.giftDate ? " on " + snapshot.giftDate : ""}`,
+      ...extra,
     });
     if (error) { console.error("[receipts] email send failed:", error.message || JSON.stringify(error)); return false; }
     return true;
@@ -347,7 +355,7 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   const [flags] = pre ? [pre.flags] : await query(
     `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
-            bool_or(is_sample) AS sample
+            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto
        FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
     [orgId, email]
   ).catch(() => [null]);
@@ -375,6 +383,10 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   // An address that hard-bounced cannot receive anything, transactional
   // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
   if (flags?.unreachable) return { send: false, reason: "bounced" };
+  // SEND-GATE-1: a campaign is automatic mail, so it reaches only people whose
+  // automatic emails are on. Decided here, for the whole list, so the builder's
+  // count and the send agree (the gate at the client would refuse each one).
+  if (kind === "campaign" && flags?.auto !== true) return { send: false, reason: "auto_email_off" };
   const suppressReason = pre ? pre.suppressReason : await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
@@ -400,7 +412,7 @@ async function donorMailDecisions(kind, people, orgId, { personOnly = false } = 
   const flagRows = emails.length ? await query(
     `SELECT LOWER(email) AS e, bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
-            bool_or(is_sample) AS sample
+            bool_or(is_sample) AS sample, bool_or(auto_email) AS auto
        FROM donors WHERE org_id = ? AND LOWER(email) = ANY(?::text[]) AND deleted_at IS NULL
       GROUP BY LOWER(email)`,
     [orgId, emails]
@@ -448,7 +460,7 @@ function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
 // Returns { sent, refused }: refused = a permanent policy refusal (don't
 // retry); sent:false with refused:null = provider failure (retry later).
 // Callers log `dunning_sent` ONLY when sent is true — the log never lies.
-async function sendDunningEmail(org, donor, subscriptionRow) {
+async function sendDunningEmail(org, donor, subscriptionRow, extra = {}) {   // SEND-GATE-1: `extra` = a staff confirm
   await GREET_READY;
   const decision = await donorMailDecision("dunning", donor.email, org.id);
   if (!decision.send) {
@@ -479,6 +491,7 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(org.id, donor.email, "campaign")),
         to: donor.email, subject, html: bodyHtml,
+        _stewardKind: "dunning", _stewardWhat: "Failed-payment notice", ...extra,
       });
       if (sendErr) {
         // W-4 log honesty: a provider rejection is a FAILED send — callers
@@ -662,7 +675,11 @@ async function sendRawEmail(toEmail, subject, html, fromOverride, tag = null) {
   try {
     const { error } = await resend.emails.send({ from, to: toEmail, subject, html,
       ...(tag && tag.orgId ? { _stewardOrgId: tag.orgId, _stewardKind: tag.kind || "supporter" } : {}) });
-    if (error) { console.error("[donor-email] send error:", error.message); return false; }
+    if (error) {
+      console.error("[donor-email] send error:", error.message);
+      if (tag && mailRefusal.classifyProviderError(error) !== "transient") tag.refused = error.name;   // SEND-GATE-1
+      return false;
+    }
     return true;
   } catch (e) { console.error("[donor-email] send threw:", e.message); return false; }
 }
@@ -693,7 +710,7 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
 // FIX-48: returns { sent, refused, error }, not a bare boolean, so the sweep
 // can tell a person who will never get it (`refused`, the decision's reason)
 // and a message the provider refused (`error`) from an outage.
-async function sendPledgeReminderEmail(org, donor, pledgeRow) {
+async function sendPledgeReminderEmail(org, donor, pledgeRow, extra = {}) {   // SEND-GATE-1: `extra` = a staff confirm
   await GREET_READY;
   // W-4: a reminder to give is solicitation — MARKETING in the policy.
   const decision = await donorMailDecision("pledge_reminder", donor.email, org.id);
@@ -714,6 +731,9 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
     const { error: sendErr } = await resend.emails.send({
       ...(await donorSendOpts(org.id, donor.email, "campaign")),
       to: donor.email, subject, html: bodyHtml,
+      _stewardKind: "pledge_reminder", _stewardDonorId: pledgeRow.donor_id || null,
+      _stewardWhat: `Pledge reminder for $${Number(pledgeRow.amount || 0).toLocaleString("en-US")}${pledgeRow.due_date ? " due " + new Date(pledgeRow.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : ""}`,
+      ...extra,
     });
     if (sendErr) { console.error("[pledge-reminder] send error:", sendErr.message); return { sent: false, refused: null, error: sendErr }; }
   } catch (e) { console.error("[pledge-reminder] resend error:", e.message); return { sent: false, refused: null, error: { name: "network", message: e.message } }; }
