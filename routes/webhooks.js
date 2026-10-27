@@ -2739,8 +2739,8 @@ async function provisionOrgFromCloseLink(session) {
 
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
-                       signed_at, trial_ends_at, stripe_subscription_id, close_link_id, ${billingCustomerColumn()}, emails_enabled)
-     VALUES (?,?,0,?,?,'trialing',?,?,?,?,?,false)`,
+                       signed_at, trial_ends_at, stripe_subscription_id, close_link_id, ${billingCustomerColumn()}, emails_enabled, staff_mail_enabled)
+     VALUES (?,?,0,?,?,'trialing',?,?,?,?,?,false,false)`,
     [orgId, link.org_name, orgSlug, plan.id, signedAt.toISOString(), trialEndsAt.toISOString(), subId, closeLinkId, customerId]
   );
   await ensureOrgLedger(orgId).catch(e => console.error("[close-link] ledger provisioning:", e.message));

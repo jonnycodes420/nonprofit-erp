@@ -35,8 +35,8 @@ module.exports = async function run() {
   console.log(`\nfix49 Part 3 · one rule each · seed ${SEED}`);
   await wipe(`${PREFIX}%`);
   const org = `${PREFIX}${SEED}`, email = `f49b-${SEED}@example.org`, user = `u_${org}`;
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,vocabulary_json)
-           VALUES ($1,'One rule each',$2,1,'active','team','America/New_York',NOW(),false,$3)`,
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,vocabulary_json,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'One rule each',$2,1,'active','team','America/New_York',NOW(),false,$3,true,NULL)`,
     [org, `f49b-${SEED}`, JSON.stringify({ fiscal_year_start_month: 7 })]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`, [user, org, email, PW]);
   const tok = await login(email);

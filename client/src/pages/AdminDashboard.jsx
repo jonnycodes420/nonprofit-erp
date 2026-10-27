@@ -535,6 +535,17 @@ function OrgPanel({ org, onClose, onRefresh }) {
     adminFetch("/admin/orgs/" + org.id + "/mail").then(setMail).catch(console.error);
   }, [org.id]);
 
+  // FIX-53: turning Staff or Donor mail on is the one way either goes on, so
+  // it asks first and says what it will allow. Turning one off does not ask.
+  async function mailSwitch(k, on) {
+    const allows = mail && mail.turnOnSentence && mail.turnOnSentence[k];
+    if (on && allows) {
+      if (!window.confirm(`Turn on ${k === "staff" ? "Staff" : "Donor"} mail for ${org.name}?\n\n${allows}`)) return;
+      return mailAction("/mail-switches", { [k]: true, confirm: true });
+    }
+    return mailAction("/mail-switches", { [k]: on });
+  }
+
   async function mailAction(path, body) {
     setWorking(true); setMailNote("");
     try {
@@ -722,10 +733,13 @@ function OrgPanel({ org, onClose, onRefresh }) {
                       <input type="checkbox" data-testid={`admin-${k}-mail-switch`}
                         checked={!!(mail.switches && mail.switches[k]) && !mail.locked}
                         disabled={working || mail.locked}
-                        onChange={e => mailAction("/mail-switches", { [k]: e.target.checked })} />
+                        onChange={e => mailSwitch(k, e.target.checked)} />
                       <span style={{ flex: 1 }}>
                         <span style={{ color: A.ink, fontWeight: 600 }}>{label}</span>
                         <span style={{ display: "block", fontSize: 12, color: A.muted }}>{help}</span>
+                        {mail.switchSince && mail.switchSince[k] && (
+                          <span data-testid={`admin-${k}-mail-since`} style={{ display: "block", fontSize: 12, color: A.secondary }}>{mail.switchSince[k]}</span>
+                        )}
                       </span>
                     </label>
                   ))}

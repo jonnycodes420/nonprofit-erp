@@ -64,9 +64,10 @@ async function reset() {
   await q(`DELETE FROM orgs WHERE name LIKE 'Incident Provision%'`).catch(() => {});
 }
 
+// Staff mail NULL: an org from before FIX-53, whose staff mail follows donor mail.
 const mkOrg = async (id, name, emailsEnabled, isDemo) =>
-  q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status,emails_enabled,is_demo_org)
-     VALUES ($1,$2,$3,1,'core','active',$4,$5)`,
+  q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status,emails_enabled,staff_mail_enabled,is_demo_org)
+     VALUES ($1,$2,$3,1,'core','active',$4,NULL,$5)`,
     [id, name, id.replace(/_/g, "-"), emailsEnabled, isDemo]);
 
 const mkUser = async (id, org, email, isSuper = false) =>
@@ -251,14 +252,22 @@ const mkDonor = async (id, org, email, isSample) =>
 
   // Turning mail back on for an org still marked as fiction is how this
   // repeats: somebody unblocks a customer and does not notice what is in it.
+  // FIX-53: this lever only turns mail off now. On is the console's Mail
+  // switches, which refuses a demo org and asks to confirm.
   const badOn = await api("POST", `/admin/orgs/${DEMO}/email-switch`, superTok, { emailsEnabled: true });
+  ok("/email-switch never turns mail on (FIX-53), demo org or not",
+    badOn.status === 409 && badOn.body.error === "mail_on_is_the_console_switch", { s: badOn.status, b: badOn.body });
+  await api("POST", `/admin/orgs/${DEMO}/mail-switches`, superTok, { donor: false });
+  const demoOn = await api("POST", `/admin/orgs/${DEMO}/mail-switches`, superTok, { donor: true, confirm: true });
   ok("enabling mail on an org still marked as a demo org is REFUSED",
-    badOn.status === 409 && /demo org/i.test(badOn.body.error || ""), { s: badOn.status, b: badOn.body });
+    demoOn.status === 409 && /demo org/i.test(demoOn.body.error || ""), { s: demoOn.status, b: demoOn.body });
 
-  const goodOn = await api("POST", `/admin/orgs/${DEMO}/email-switch`, superTok, { emailsEnabled: true, isDemoOrg: false });
-  ok("…but clearing the mark in the same breath is allowed",
-    goodOn.status === 200 && goodOn.body.org.emails_enabled === true && goodOn.body.org.is_demo_org === false,
-    { s: goodOn.status, b: goodOn.body });
+  const clear = await api("POST", `/admin/orgs/${DEMO}/email-switch`, superTok, { isDemoOrg: false });
+  const goodOn = await api("POST", `/admin/orgs/${DEMO}/mail-switches`, superTok, { donor: true, confirm: true });
+  const [demoRow] = await q(`SELECT emails_enabled, is_demo_org FROM orgs WHERE id=$1`, [DEMO]);
+  ok("…but once the mark is cleared, the console switch turns it on",
+    clear.status === 200 && goodOn.status === 200 && demoRow.emails_enabled === true && demoRow.is_demo_org === false,
+    { c: clear.status, s: goodOn.status, demoRow });
 
   // MAIL-1 Part 2: the super-admin's view of one org's mail.
   const creoMail = await api("GET", "/admin/orgs/org_creo/mail", superTok);

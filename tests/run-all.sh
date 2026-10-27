@@ -217,6 +217,7 @@ CORE=(
   build96-ai-gate
   incident-mail-gate
   fix50-demo-one-rule
+  fix53-mail-off
   fix51-leftovers
   mail-block
   send-gate

@@ -134,6 +134,25 @@ function mailSwitches(org) {
   };
 }
 
+// FIX-53 · what turning a switch on allows, read in the confirm before it is.
+const TURN_ON_SENTENCE = {
+  staff: "Steward can now send this org's team digests and alerts.",
+  donor: "Steward can now send automatic emails to donors whose own switch is on.",
+};
+// Who turned each switch on and when, or "Off since created". Read from the
+// stamps the console toggle writes (FIX-53); an org older than the stamps
+// whose switch is on says so rather than inventing a name.
+function switchSince(org) {
+  const on = mailSwitches(org);
+  const day = d => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" });
+  const one = k => {
+    const at = org && org[`${k}_mail_set_at`], by = org && org[`${k}_mail_set_by_name`];
+    if (on[k]) return at ? `Turned on by ${by || "a super-admin"}, ${day(at)}.` : "On from before Steward recorded who turned it on.";
+    return at ? `Turned off by ${by || "a super-admin"}, ${day(at)}.` : "Off since created.";
+  };
+  return { staff: one("staff"), donor: one("donor") };
+}
+
 // The one sentence a person reads for each refusal. No raw flags reach a screen.
 const REASON_SENTENCE = {
   onboarding_sequence_off: "Steward does not send an automated onboarding series.",
@@ -147,5 +166,5 @@ const REASON_SENTENCE = {
   billing_mail_off: "Billing mail is switched off for this organization.",
 };
 
-module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, mailSwitches, STAFF_ON_REQUEST, waitsForOnboarding, isDemoOrg, orgSendsSql, DEMO_ORG_IDS,
+module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, mailSwitches, switchSince, TURN_ON_SENTENCE, STAFF_ON_REQUEST, waitsForOnboarding, isDemoOrg, orgSendsSql, DEMO_ORG_IDS,
   billingBeforeOnboarding, REASON_SENTENCE, NOT_BILLED_KINDS };

@@ -213,7 +213,7 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   // 2026-09-24 — MAIL IS OPT-IN PER ORG, BY A SUPER-ADMIN ONLY. Every org the
   // product creates starts with emails_enabled=false; POST /admin/orgs/:id/
   // email-switch is the one way on.
-  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at, emails_enabled) VALUES (?,?,?,?,0,?,'trial','trialing',?,?,false)",
+  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at, emails_enabled, staff_mail_enabled) VALUES (?,?,?,?,0,?,'trial','trialing',?,?,false,false)",
     [orgId, orgName, orgMission || "", ein || "", orgSlug, signedAt.toISOString(), trialEndsAt]);
   // BUILD-58 W-3: every org is born with a usable ledger (chart of accounts +
   // General Operating fund) — gift stamps must never no-op on a fresh org.
@@ -406,13 +406,14 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   // point of arming it. A self-serve signup is unchanged and still onboards.
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
-                       signed_at, trial_ends_at, emails_enabled, org_kind)
-     VALUES (?,?,?,?,'trial','trialing',?,?,?,?)`,
+                       signed_at, trial_ends_at, emails_enabled, staff_mail_enabled, org_kind)
+     VALUES (?,?,?,?,'trial','trialing',?,?,false,false,?)`,
     // 2026-09-24 — mail OFF for every new org (opt-in, super-admin only);
     // `provisioned` still marks the org as fiction. FIX-50: by its Kind, the
     // one thing that makes an org a demo (the trigger copies it to the flag).
+    // FIX-53: both switches are literals, so the static guard can read them.
     [orgId, orgName, isProvisioned ? 1 : 0, orgSlug, signedAt.toISOString(), trialEndsAt,
-     false, isDemoData ? "demo" : null]
+     isDemoData ? "demo" : null]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -2635,21 +2636,25 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
     return res.status(400).json({ error: "isDemoOrg must be a boolean" });
   }
 
-  // Turning mail ON for an org still marked as fiction is refused rather than
-  // silently obeyed. Clear the mark first, which forces a look at what is
-  // actually in there. FIX-50: "marked as fiction" is Kind = Demo, and
-  // isDemoOrg here sets Kind, through the same step as the Demo switch.
-  const wasDemo = ORG_KIND.isDemoOrg(org);
-  const willBeDemo  = isDemoOrg  !== undefined ? isDemoOrg  : wasDemo;
-  const willBeOn    = emailsEnabled !== undefined ? emailsEnabled : org.emails_enabled !== false;
-  if (willBeOn && willBeDemo) {
+  // FIX-53: this older lever can only turn mail OFF. Turning Donor mail on is
+  // the admin console's Mail switches (POST /admin/orgs/:id/mail-switches),
+  // which asks to confirm and records who and when. It is the one way on.
+  if (emailsEnabled === true) {
     return res.status(409).json({
-      error: "This org is still marked as a demo org. Clear isDemoOrg in the same call (or first) if its data is real now.",
+      error: "mail_on_is_the_console_switch",
+      message: "Turn Donor mail on from Mail switches in the admin console. It asks you to confirm and records who turned it on.",
     });
   }
+  const wasDemo = ORG_KIND.isDemoOrg(org);
+  const willBeDemo  = isDemoOrg  !== undefined ? isDemoOrg  : wasDemo;
+  const willBeOn    = emailsEnabled !== undefined ? false : org.emails_enabled !== false;
 
   if (willBeDemo !== wasDemo) await setOrgKind(req, orgId, willBeDemo ? "demo" : null);
-  if (emailsEnabled !== undefined) await run(`UPDATE orgs SET emails_enabled=? WHERE id=?`, [emailsEnabled, orgId]);
+  if (emailsEnabled === false) {
+    const [me] = await query("SELECT name, email FROM users WHERE id=?", [req.user.userId]);
+    await run(`UPDATE orgs SET emails_enabled=FALSE, donor_mail_set_at=NOW(), donor_mail_set_by=?, donor_mail_set_by_name=? WHERE id=?`,
+      [req.user.userId, (me && (me.name || me.email)) || "Super-admin", orgId]);
+  }
 
   clearOrgMailGate(orgId);   // an operator flip takes effect now, not in five seconds
   console.log(`[mail-switch] ${orgId} (${org.name}) emails_enabled=${willBeOn} demo=${willBeDemo} ` +
@@ -2667,6 +2672,7 @@ const mailPolicy = require("../mailPolicy");
 async function adminMailPayload(orgId) {
   const [org] = await query(
     `SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
+            staff_mail_set_at, staff_mail_set_by_name, donor_mail_set_at, donor_mail_set_by_name,
             sending_domain, sending_domain_status, sending_from_email FROM orgs WHERE id=?`, [orgId]);
   if (!org) return null;
   const demo = mailPolicy.orgMailDecision(org, mailPolicy.CATEGORY.DONOR).reason === "demo_org";
@@ -2685,6 +2691,10 @@ async function adminMailPayload(orgId) {
     donorMailOn: org.emails_enabled !== false,
     // FIX-48: the three switches as they read now. Sign-in mail has none.
     switches: mailPolicy.mailSwitches(org),
+    // FIX-53: who turned each one on and when, or that it has been off since
+    // the org was made. One sentence per switch, shown under it.
+    switchSince: mailPolicy.switchSince(org),
+    turnOnSentence: mailPolicy.TURN_ON_SENTENCE,
     demo, locked: demo,
     lockedSentence: demo ? mailPolicy.REASON_SENTENCE.demo_org + " Sign-in mail to its own logins still goes." : null,
     domain: {
@@ -2710,6 +2720,11 @@ app.get("/admin/orgs/:id/mail", requireAuth, requireSuperAdmin, wrap(async (req,
 // exactly as /email-switch refuses it. Setting any switch writes all three as
 // they read now, so staff mail stops following donor mail from the first
 // click. Sign-in mail is not a switch: it always goes.
+// FIX-53: THIS IS THE ONE WAY ON. Every org starts with Staff and Donor mail
+// off, and no other code path writes either one ON (tests/fix53-mail-off.test.js
+// scans for it). Turning one on needs `confirm: true`, which the console sends
+// only after the person reads what it will allow; each switch that moves
+// records who moved it and when, for the console's label.
 app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const [org] = await query(`SELECT id, name, emails_enabled, staff_mail_enabled, billing_mail_enabled, org_kind FROM orgs WHERE id=?`, [req.params.id]);
   if (!org) return res.status(404).json({ error: "Org not found" });
@@ -2723,8 +2738,18 @@ app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(a
   if (after.donor && !before.donor && ORG_KIND.isDemoOrg(org)) {
     return res.status(409).json({ error: "This org is still marked as a demo org. Clear the demo mark first if its data is real now." });
   }
-  await run(`UPDATE orgs SET staff_mail_enabled=?, emails_enabled=?, billing_mail_enabled=? WHERE id=?`,
-    [after.staff, after.donor, after.billing, org.id]);
+  const turningOn = ["staff", "donor"].filter(k => after[k] && !before[k]);
+  if (turningOn.length && body.confirm !== true) {
+    return res.status(409).json({ error: "confirm_required", turningOn,
+      message: turningOn.map(k => mailPolicy.TURN_ON_SENTENCE[k]).join(" ") + " Send confirm: true to go ahead." });
+  }
+  const [me] = await query("SELECT name, email FROM users WHERE id=?", [req.user.userId]);
+  const byName = (me && (me.name || me.email)) || "Super-admin";
+  const stamp = k => before[k] !== after[k]
+    ? `, ${k}_mail_set_at=NOW(), ${k}_mail_set_by=?, ${k}_mail_set_by_name=?` : "";
+  const stampParams = ["staff", "donor"].flatMap(k => before[k] !== after[k] ? [req.user.userId, byName] : []);
+  await run(`UPDATE orgs SET staff_mail_enabled=?, emails_enabled=?, billing_mail_enabled=?${stamp("staff")}${stamp("donor")} WHERE id=?`,
+    [after.staff, after.donor, after.billing, ...stampParams, org.id]);
   clearOrgMailGate(org.id);   // takes effect now, not in five seconds
   // Filed in THAT org's log (as CLIENT-SAFE-1's privacy switch is), with each
   // switch before and after, so the diff names exactly what moved.

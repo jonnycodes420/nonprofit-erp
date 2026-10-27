@@ -2530,12 +2530,13 @@ async function runSchemaInit(pool) {
   // to stop one organisation's mail without stopping everyone's, so the only
   // lever available on the night was the Resend key itself.
   //
-  // `emails_enabled` is that lever, per org. It defaults TRUE so no existing
-  // customer goes quiet on deploy; it is set FALSE for any org born of a seed
-  // or a provisioning run (see is_demo_org below).
-  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS emails_enabled BOOLEAN DEFAULT true`);
-  await pool.query(`ALTER TABLE orgs ALTER COLUMN emails_enabled SET DEFAULT true`);
-  await pool.query(`UPDATE orgs SET emails_enabled = true WHERE emails_enabled IS NULL`);
+  // `emails_enabled` is that lever, per org (Donor mail in super-admin).
+  // FIX-53: it defaults FALSE, and so does Staff mail below. Every org starts
+  // with both off however it was made, and only the super-admin toggle
+  // (POST /admin/orgs/:id/mail-switches) turns either on. The boot backfill
+  // that wrote TRUE over a NULL is gone, and no existing row is changed here.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS emails_enabled BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN emails_enabled SET DEFAULT false`);
 
   // What an org IS, rather than what it may do. A demo org is one whose data
   // is invented: a seed script's org, or one provisioned for a prospect who
@@ -2554,6 +2555,17 @@ async function runSchemaInit(pool) {
   // first time a super-admin sets it, it is its own switch. Billing mail never
   // read emails_enabled, so it starts ON. Sign-in mail has no switch: it always goes.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS staff_mail_enabled BOOLEAN`);
+  // FIX-53: a new org's Staff mail is its own switch from birth, and it is off.
+  // Existing NULLs keep following Donor mail; nothing here rewrites them.
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN staff_mail_enabled SET DEFAULT false`);
+  // Who last set each switch, and when, for the admin console's label.
+  // NULL means nobody has: "Off since created" (or, for an org older than
+  // FIX-53 whose switch is on, on from before this was recorded).
+  for (const k of ["staff_mail", "donor_mail"]) {
+    await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ${k}_set_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ${k}_set_by TEXT`);
+    await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ${k}_set_by_name TEXT`);
+  }
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mail_enabled BOOLEAN NOT NULL DEFAULT true`);
 
   // ── MAIL-1: ONBOARDED, AND THE ONBOARDING SEQUENCE OFF FOR GOOD ─────────

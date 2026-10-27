@@ -114,7 +114,7 @@ async function state(staffToken, superToken) {
   ok("§3 each flip is in the org's audit log", audits1 >= 4, `${audits0} -> ${audits1}`);
   // Off means the switches work: donor mail waits for its own switch (a former
   // demo starts with it off), and turning it on is not refused.
-  const sw = await api("POST", `/admin/orgs/${JP}/mail-switches`, sup, { donor: true });
+  const sw = await api("POST", `/admin/orgs/${JP}/mail-switches`, sup, { donor: true, confirm: true });
   ok("§3 after the switch is off, donor mail turns on and reads on", sw.status === 200 && sw.body.switches.donor === true && sw.body.families.donor.sentence !== DEMO_SENTENCE, JSON.stringify(sw.body).slice(0, 200));
 
   // §4 · Kind = Demo brings the banner back; Customer takes it away.

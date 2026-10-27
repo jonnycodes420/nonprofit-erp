@@ -88,8 +88,8 @@ async function clean() {
 }
 async function setup() {
   await clean();
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone)
-           VALUES ($1,'FIX-34 C Calendars','fix34c-calendars',1,'active','team','America/New_York')`, [ORG]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'FIX-34 C Calendars','fix34c-calendars',1,'active','team','America/New_York',true,NULL)`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Ann Lowe','admin')`, [UID, ORG, ANN, PW]);
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name)
            VALUES ($1,$2,'Rosa Diaz','rosa@example.com','active',300,'system:test','test')`, [DONOR, ORG]);

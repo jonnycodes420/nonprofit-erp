@@ -74,8 +74,8 @@ function nextWeekdayAfter(day) { let d = addDays(day, 1); while ([0, 6].includes
   await reset();
   const pw = bcrypt.hashSync(PW, 4);
   for (const [o, demo] of [[ORG, false], [DEMO, true]]) {
-    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,onboarded_at,subscription_status,plan,timezone,timezone_confirmed_at,receipt_address,client_privacy,is_demo_org)
-             VALUES ($1,$2,$3,1,NOW(),'active','team','America/New_York',NOW(),'12 Harbor Rd, Wilmington, NC 28401',true,$4)`, [o, demo ? "Auto One Demo" : "Auto One Rowing", o.replace(/_/g, "-"), demo]);
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,onboarded_at,subscription_status,plan,timezone,timezone_confirmed_at,receipt_address,client_privacy,is_demo_org,emails_enabled,staff_mail_enabled)
+             VALUES ($1,$2,$3,1,NOW(),'active','team','America/New_York',NOW(),'12 Harbor Rd, Wilmington, NC 28401',true,$4,true,NULL)`, [o, demo ? "Auto One Demo" : "Auto One Rowing", o.replace(/_/g, "-"), demo]);
   }
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_a1_admin',$1,'a1-admin@auto1.example',$2,'Dana Reyes','admin')`, [ORG, pw]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_a1_member',$1,'a1-member@auto1.example',$2,'Priya Raman','member')`, [ORG, pw]);

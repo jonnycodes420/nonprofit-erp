@@ -751,6 +751,7 @@ export const HELP_ARTICLES = [
         `Every person has an Automatic emails switch on their profile, and it starts off. Turn it on there, one person at a time, or pick people on the Donors list and choose "Turn on automatic emails". An import, a form, a journey or Atlas never turns it on.`,
         `When Steward holds an automatic email because the switch is off, the person's profile says so, for example "Receipt for $500 on Oct 22 not sent: automatic emails are off", with a Send button that sends that one message after you confirm.`,
         `An email you write and send yourself still goes when you press Send, whatever the switch says, as long as donor mail is on for your organization. A sign-in link a donor asks for from your donor portal goes straight away. An import never emails anyone.`,
+        `Email for a new organization starts switched off. Steward turns it on with you once your data is in.`,
       ]},
     ],
   },
