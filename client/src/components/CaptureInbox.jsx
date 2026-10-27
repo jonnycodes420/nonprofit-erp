@@ -117,7 +117,7 @@ function SkippedList({ rows, isReadOnly, onBack }) {
             <div style={{ fontSize: 13.5, color: T.ink, overflowWrap: "anywhere" }}>{skippedLine(c)}</div>
             <div style={{ fontSize: 12, color: T.ink3 }}>Skipped{c.decidedByName ? ` by ${c.decidedByName}` : ""}{c.decidedAt ? `, ${when(c.decidedAt)}` : ""}{c.skipReason ? `: ${String(c.skipReason).replace(/_/g, " ")}` : ""}</div>
           </div>
-          <button type="button" data-testid="capture-bring-back" disabled={isReadOnly || busy === c.id} onClick={() => bringBack(c)}
+          <button type="button" data-commit data-testid="capture-bring-back" disabled={isReadOnly || busy === c.id} onClick={() => bringBack(c)}
             style={{ background: T.white, color: T.greenDk, border: "1px solid " + T.green, borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
             {busy === c.id ? "Bringing back…" : "Bring back"}
           </button>

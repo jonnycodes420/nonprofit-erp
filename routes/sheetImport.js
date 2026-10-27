@@ -454,7 +454,9 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   // preview's audit row, so the nightly check can see a file previewed in one
   // org and imported into another (nightlyCheck.js, check e).
   if (req.audit) req.audit.after({ file: fileFingerprint(body) });
-  res.json(publicView(out));
+  // HARDEN-1: the preview names the org it was read for; commit sends it back
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ ...publicView(out), org: org ? { id: org.id, name: org.name } : null });
 }));
 
 // FIX-54 · BRING THEM BACK. The one way a person she deleted returns from an
@@ -832,6 +834,10 @@ async function runJob(req, body, importId, who) {
 
 app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  // HARDEN-1: an import is bound to its preview. A preview read in one org
+  // never commits into another, header or no header.
+  const moved = await require("../middleware/orgBound").orgChangedRefusal(req.body && req.body.previewOrgId, orgId);
+  if (moved) return res.status(moved.status).json(moved.body);
   const body = readBody(req.body);
   const background = req.body && req.body.background === true;
   const who = actor(req);
@@ -865,7 +871,10 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     } else job = await find();
   }
   if (!job) return res.status(409).json({ error: "busy", message: "Another import of this file is starting. Open Import again in a moment." });
-  if (req.audit) req.audit.after({ importId: job.id, file: fileFingerprint(body) });   // HARDEN-1: nightlyCheck.js check e
+  // HARDEN-1: nightlyCheck.js check e reads this row: the run, the file's
+  // fingerprint, and the org the page said its preview was read in.
+  if (req.audit) req.audit.after({ importId: job.id, file: fileFingerprint(body),
+    previewOrgId: (req.body && req.body.previewOrgId) ? String(req.body.previewOrgId).slice(0, 80) : null });
   if (background) return res.status(202).json(jobView(job));
   // a caller that waits: the same job, then the same answer as before
   if (RUNNING.has(job.id)) await RUNNING.get(job.id);

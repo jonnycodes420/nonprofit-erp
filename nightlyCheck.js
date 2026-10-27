@@ -242,7 +242,10 @@ async function checkCrossOrgImport({ orgIds } = {}) {
           ORDER BY a.created_at, a.id LIMIT 1`, [after.file]);
       firstPreview.set(after.file, p || null);
     }
-    const p = firstPreview.get(after.file);
+    // The org the page said it previewed in (sheet-import commit refuses a
+    // different one since HARDEN-1 item 1), else the first preview of the file.
+    const said = after.previewOrgId && after.previewOrgId !== c.org_id ? { org_id: after.previewOrgId, org_name: null } : null;
+    const p = said || firstPreview.get(after.file);
     if (!p || p.org_id === c.org_id) continue;
     const [made] = await db.query(
       `SELECT (SELECT COUNT(*)::int FROM gifts WHERE org_id = ? AND import_id = ?) AS gifts,

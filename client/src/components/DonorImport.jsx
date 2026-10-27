@@ -889,7 +889,7 @@ export function DonorImport(props) {
   if (gate === "open") return <DonorImportFile {...props} />;
   if (gate === "checking") return null;
   return (
-    <Modal onClose={props.onClose} width={520} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+    <Modal className="commit-screen" onClose={props.onClose} width={520} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
       padding={28} ariaLabel="Sample data is loaded" dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
       <div data-testid="import-clear-sample">
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,color:T.ink,marginBottom:8}}>Sample data is loaded</div>
@@ -2196,7 +2196,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   if (result !== null) {
     const hasBatchErrors = result.batchErrors?.length > 0;
     return (
-      <Modal onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      <Modal className="commit-screen" onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
         padding={28} ariaLabel={"Import result"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
         <div style={{textAlign:"center"}}>
           {/* BUILD-79 Part 3.3 — the check mark is EARNED: amount + date
@@ -2647,7 +2647,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               and its readout. */}
           {result.shape==="transaction"&&result.runId&&(result.undoSentence
             ?<div data-testid="import-undone" style={{fontSize:13,color:T.ink2,marginBottom:14}}>{result.undoSentence}</div>
-            :<button data-testid="import-undo" disabled={undoBusy} onClick={async()=>{setUndoBusy(true);try{const r=await apiFetch(`/imports/${result.runId}/reverse`,{method:"POST",body:"{}"});setResult(x=>({...x,undoSentence:r.sentence||"Undone."}));}catch(e){setErr(errorMessage(e,"The undo did not finish. Nothing was changed."));}setUndoBusy(false);}}
+            :<button type="button" data-commit data-testid="import-undo" disabled={undoBusy} onClick={async()=>{setUndoBusy(true);try{const r=await apiFetch(`/imports/${result.runId}/reverse`,{method:"POST",body:"{}"});setResult(x=>({...x,undoSentence:r.sentence||"Undone."}));}catch(e){setErr(errorMessage(e,"The undo did not finish. Nothing was changed."));}setUndoBusy(false);}}
                 style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 18px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer",marginRight:8}}>Undo this import</button>)}
           {/* IMPORT-2: the people are in; what was written about them comes next. */}
           <button data-testid="import-bring-notes" onClick={()=>{onImported&&onImported();setTimeout(()=>window.dispatchEvent(new Event("steward:history-import")),0);}} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 18px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer",marginRight:8}}>Bring your notes and history</button>
@@ -2686,7 +2686,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   ].map(role => [role, txRoleLabel(role)]);
 
   return (
-    <Modal onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+    <Modal className="commit-screen" onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
       padding={28} ariaLabel={"Import donors"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
       <div>
 
@@ -3513,7 +3513,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
-            <button onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0||shapeBlocked}
+            <button type="button" data-commit data-testid="import-commit" onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0||shapeBlocked}
               style={{flex:1,background:loading||donorCount===0||cfUndecided>0||shapeBlocked?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0||shapeBlocked?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0||shapeBlocked?0.6:1}}>
               {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
@@ -3926,7 +3926,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
 
   if (step === "result" && result) {
     return (
-      <Modal onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      <Modal className="commit-screen" onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
         padding={28} ariaLabel={"Import result"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:36,marginBottom:12}}>✓</div>
@@ -3947,7 +3947,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
                 {result.undone ? (
                   <div data-testid="gi-undone" style={{color:T.ink}}>{result.undoSentence}</div>
                 ) : (<>
-                  <button data-testid="gi-undo" disabled={loading} onClick={undoCreatedImport}
+                  <button type="button" data-commit data-testid="gi-undo" disabled={loading} onClick={undoCreatedImport}
                     style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
                     {loading?"Undoing…":"Undo this import"}
                   </button>
@@ -3967,7 +3967,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
                   {result.undone ? (
                     <div data-testid="gi-undone" style={{color:T.ink}}>{result.undoSentence}</div>
                   ) : (
-                    <button data-testid="gi-undo" disabled={loading} onClick={undoCreatedImport}
+                    <button type="button" data-commit data-testid="gi-undo" disabled={loading} onClick={undoCreatedImport}
                       style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
                       {loading?"Undoing…":"Undo this import"}
                     </button>
@@ -4003,7 +4003,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
   }
 
   return (
-    <Modal onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+    <Modal className="commit-screen" onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
       padding={28} ariaLabel={"Import gift history"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
       <div>
 
@@ -4387,12 +4387,12 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
             <button onClick={()=>setStep("configure")}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             {wouldCreate.donors.length>0&&(
-              <button data-testid="gi-create-and-import" onClick={createAndImport} disabled={loading}
+              <button type="button" data-commit data-testid="gi-create-and-import" onClick={createAndImport} disabled={loading}
                 style={{flex:"2 1 240px",background:loading?T.bg2:T.greenDk,border:"none",borderRadius:10,padding:"11px 20px",color:loading?T.ink3:T.white,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.6:1}}>
                 {loading?"Importing…":`Create ${wouldCreate.donors.length} new ${wouldCreate.donors.length===1?"donor":"donors"} and import their ${stats.unmatched===1?"gift":"gifts"}`}
               </button>
             )}
-            <button data-testid="gi-import-matched" onClick={doImport} disabled={loading||stats.toImportCount===0}
+            <button type="button" data-commit data-testid="gi-import-matched" onClick={doImport} disabled={loading||stats.toImportCount===0}
               title={stats.toImportCount===0?"None of these gifts match somebody already on file.":undefined}
               style={{flex:"1 1 180px",background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 20px",color:loading||stats.toImportCount===0?T.ink3:T.ink,fontSize:13.5,fontWeight:700,cursor:loading||stats.toImportCount===0?"not-allowed":"pointer",opacity:loading||stats.toImportCount===0?0.55:1}}>
               {loading?"Importing…":stats.toImportCount===0
@@ -4454,7 +4454,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
   ];
 
   return(
-    <Modal onClose={onClose} width={760} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+    <Modal className="commit-screen" onClose={onClose} width={760} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
       padding={28} ariaLabel={"Merge duplicates"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
@@ -4521,7 +4521,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
                   </div>
                   <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:10,marginTop:12}}>
                     <span style={{fontSize:12,color:T.ink3}}>Nothing is lost, gifts, notes, and history all move to the kept record.</span>
-                    <button onClick={()=>doMerge(g)} disabled={!primaryId||busy||isReadOnly}
+                    <button type="button" data-commit onClick={()=>doMerge(g)} disabled={!primaryId||busy||isReadOnly}
                       title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                       style={{background:(!primaryId||busy||isReadOnly)?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:(!primaryId||busy||isReadOnly)?T.ink3:T.white,fontSize:13,fontWeight:700,cursor:(!primaryId||busy||isReadOnly)?"not-allowed":"pointer"}}>
                       {busy?"Merging…":"Merge into kept record"}
