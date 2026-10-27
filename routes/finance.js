@@ -141,7 +141,7 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
          LEFT JOIN fin_funds f ON f.id=g.fund_id
         WHERE g.org_id=? AND d.deleted_at IS NULL
           AND g.date IS NOT NULL AND g.date <> '' AND g.date >= ? AND g.date <= ?
-        ${rows ? "ORDER BY g.date DESC, g.id LIMIT 2000" : ""}`, [orgId, from, to]);
+        ${rows ? "ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000" : ""}`, [orgId, from, to]);
     return rows ? r : Number(r[0].cents);
   }
   if (key === "restricted" || key === "unrestricted") {
@@ -179,7 +179,7 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
                               AND im.shape = 'deposit' AND im.reversed_at IS NULL)
           AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
           AND g.date >= (CURRENT_DATE - 90)::text
-        ${rows ? "ORDER BY g.date DESC, g.id LIMIT 2000" : ""}`, [orgId]).catch(() => rows ? [] : [{ cents: 0 }]);
+        ${rows ? "ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000" : ""}`, [orgId]).catch(() => rows ? [] : [{ cents: 0 }]);
     return rows ? r : Number((r[0] || {}).cents || 0);
   }
   return rows ? [] : 0;
@@ -322,7 +322,7 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
          FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
           AND g.date >= (CURRENT_DATE - 365)::text
-        ORDER BY g.date DESC, g.id LIMIT 2000`, [orgId]);
+        ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [orgId]);
     const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
     return res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
       totalCents: total, total: toDollars(total), foots: true,
@@ -351,7 +351,7 @@ app.get("/finance/overview/month", requireAuth, wrap(async (req, res) => {
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
        LEFT JOIN fin_funds f ON f.id=g.fund_id
       WHERE g.org_id=? AND d.deleted_at IS NULL AND substring(g.date from 1 for 7) = ?
-      ORDER BY g.date DESC, g.id LIMIT 2000`, [orgId, m]);
+      ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [orgId, m]);
   const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
   res.json({ month: m, rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
     totalCents: total, total: toDollars(total),
@@ -451,7 +451,7 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     `SELECT ft.id, ft.date, ft.type, ft.amount, ft.description, ft.vendor_donor
        FROM fin_transactions ft WHERE ft.org_id=? AND ft.fund_id=?
-      ORDER BY ft.date DESC, ft.id LIMIT 2000`, [orgId, fundId]);
+      ORDER BY ft.date DESC NULLS LAST, ft.id LIMIT 2000`, [orgId, fundId]);
   const net = rows.reduce((a, r) => a + (r.type === "income" ? 1 : -1) * Math.round(Number(r.amount) * 100), 0);
   res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
     netCents: net, net: toDollars(net),
@@ -1401,14 +1401,14 @@ async function meetingBrief(orgId, donorId, beforeIso) {
 
   const [em] = await query(
     `SELECT note, date FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND metadata->>'direction'='inbound'
-      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, donorId]);
+      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1`, [orgId, donorId]);
   const quoteOf = note => { const body = String(note || "").split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim();
     return body.length > 180 ? body.slice(0, 177).replace(/\s\S*$/, "") + "…" : body; };
   const lastEmail = em && quoteOf(em.note) ? { date: em.date, quote: quoteOf(em.note) } : null;
 
   const [g] = await query(
     `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND COALESCE(acknowledgement_sent,false)=false
-        AND amount > 0 AND date >= (CURRENT_DATE - 365)::text ORDER BY date DESC LIMIT 1`, [orgId, donorId]);
+        AND amount > 0 AND date >= (CURRENT_DATE - 365)::text ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, donorId]);
   const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `The ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
 
   const years = d.first_gift_date ? Math.max(1, new Date().getUTCFullYear() - Number(String(d.first_gift_date).slice(0, 4)) + 1) : null;
@@ -1536,7 +1536,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   // first, each with its count, attachments and the last reply quoted.
   const mails = await query(
     `SELECT id, note, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
-      ORDER BY date DESC, created_at DESC LIMIT 400`, [orgId, donorId]);
+      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 400`, [orgId, donorId]);
   const threads = new Map();
   // FIX-22 · AN ATTACHMENT THE TIMELINE COUNTS MUST OPEN SOMEWHERE. Mailbox
   // sync counts attachments and never keeps them (shared/mailboxLog.js, and the
@@ -1582,7 +1582,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const matchedGifts = await query(
     `SELECT g.id, g.amount::float AS amount, LEFT(g.date::text,10) AS date, g.donor_id, d.name AS donor_name, g.match_pledge_id
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
-      WHERE g.org_id=? AND g.match_employer_id=? ORDER BY g.date DESC LIMIT 200`, [orgId, donorId]).catch(() => []);
+      WHERE g.org_id=? AND g.match_employer_id=? ORDER BY g.date DESC NULLS LAST LIMIT 200`, [orgId, donorId]).catch(() => []);
   res.json({
     today, upcoming, past, meetings, nextMeeting, rhythm, thisYear, matchedGifts,
     emailThreads: [...threads.values()],
@@ -4237,7 +4237,7 @@ app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
   if (fund) { sql += " AND ft.fund_id = ?"; params.push(fund); }
   if (account) { sql += " AND ft.account_id = ?"; params.push(account); }
   if (donor_id) { sql += " AND ft.donor_id = ?"; params.push(donor_id); }
-  sql += " ORDER BY ft.date DESC, ft.created_at DESC";
+  sql += " ORDER BY ft.date DESC NULLS LAST, ft.created_at DESC";
   const rows = await query(sql, params);
   res.json(rows);
 }));

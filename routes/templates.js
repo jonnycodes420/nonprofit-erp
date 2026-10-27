@@ -79,14 +79,14 @@ async function factsFor(org, donorId) {
   const year = orgTime.orgToday(org).slice(0, 4);
   const [last] = await query(
     `SELECT g.amount::text AS amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND g.donor_id=? AND g.amount > 0 ORDER BY g.date DESC, g.id DESC LIMIT 1`, [org.id, d.id]);
+      WHERE g.org_id=? AND g.donor_id=? AND g.amount > 0 ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 1`, [org.id, d.id]);
   const [tot] = await query(
     `SELECT COALESCE(SUM(amount),0)::text AS life, COALESCE(SUM(amount) FILTER (WHERE LEFT(date,4)=?),0)::text AS yr FROM gifts WHERE org_id=? AND donor_id=?`,
     [year, org.id, d.id]);
   const [sub] = await query(`SELECT amount::text AS amount FROM recurring_subscriptions WHERE org_id=? AND donor_id=? AND status='active' LIMIT 1`, [org.id, d.id]).catch(() => []);
   const [ev] = await query(
     `SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id WHERE a.org_id=? AND a.donor_id=?
-        AND (a.status='attended' OR a.checked_in_at IS NOT NULL) ORDER BY e.date DESC LIMIT 1`, [org.id, d.id]);
+        AND (a.status='attended' OR a.checked_in_at IS NOT NULL) ORDER BY e.date DESC NULLS LAST LIMIT 1`, [org.id, d.id]);
   const [vh] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::int AS hh FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=?`, [org.id, d.id, year]);
   const c = v => money.toCents(String(v ?? "0")) ?? 0;
   const k = kitOf(org);

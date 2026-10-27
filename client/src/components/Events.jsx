@@ -163,7 +163,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
                 <RecordLink to={tabHref("events", { eventId: event.id })} onOpen={() => onManage(event)} data-record-link="event">{event.name}</RecordLink>
               </div>
               <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
-                {fmtDate(event.date)}{event.location ? ` · ${event.location}` : ""}
+                {event.date_unknown ? "Date not known" : fmtDate(event.date)}{event.location ? ` · ${event.location}` : ""}
               </div>
             </div>
           </div>
@@ -1419,7 +1419,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <StatusBadge status={event.status} small />
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
-            {fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
+            {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>

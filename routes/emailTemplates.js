@@ -82,7 +82,7 @@ async function buildEmailContext(orgId) {
     displayName: theme.displayName || (org && org.name) || "",
   };
   const events = await query(
-    `SELECT id, name, date, public_slug FROM events WHERE org_id=? ORDER BY date DESC LIMIT 500`, [orgId]);
+    `SELECT id, name, date, public_slug FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 500`, [orgId]);
   const pages = await query(
     `SELECT id, title, slug, image_url FROM giving_pages WHERE org_id=? AND COALESCE(page_kind,'give') = 'give' ORDER BY created_at DESC LIMIT 500`, [orgId]);
   const evMap = new Map(events.map(e => [e.id, e]));
@@ -183,7 +183,7 @@ async function sampleFields(orgId, person, ectx) {
   if (person.email) {
     const [g] = await query(
       `SELECT g.amount, g.date FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id=? AND lower(d.email)=lower(?) AND d.deleted_at IS NULL ORDER BY g.date DESC LIMIT 1`, [orgId, person.email]).catch(() => []);
+        WHERE g.org_id=? AND lower(d.email)=lower(?) AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST LIMIT 1`, [orgId, person.email]).catch(() => []);
     if (g) {
       lastAmount = "$" + Number(g.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
       const d = g.date instanceof Date ? g.date.toISOString().slice(0, 10) : String(g.date || "").slice(0, 10);

@@ -31,7 +31,14 @@ const ROLE_LABELS = {
   date: "Date given", method: "Payment method", frequency: "How often", paid: "Paid yet? (yes/no)",
   status: "Status", type: "Transaction type", pledgeTotal: "Pledge total (all years)",
   fund: "Fund", campaign: "Campaign or appeal", note: "Note", externalId: "Donor ID (old system)",
-  giftId: "Gift or transaction ID", ignore: "Leave out",
+  giftId: "Gift or transaction ID",
+  // IMPORT-4: the engagement, communication and role layers. Each lands on the
+  // person; nothing in a file with data is left out by default.
+  invited: "Invited", rsvp: "RSVP", attended: "Attended", table: "Table", partySize: "Party size",
+  logistics: "Event logistics (kept on the attendance)", mailingList: "Mailing list (on or off)",
+  optOut: "Opted out of email", doNotEmail: "Do not email", doNotMail: "Do not mail", doNotCall: "Do not call",
+  doNotContact: "Do not contact", deceased: "Deceased", volunteer: "Volunteer (yes or x)", board: "Board member",
+  staff: "Staff", keep: "Keep as a custom field", totalOf: "A total of another sheet", ignore: "Leave out",
 };
 export const SHEET_ROLES = Object.keys(ROLE_LABELS).map(k => ({ key: k, label: ROLE_LABELS[k] }));
 
@@ -50,7 +57,7 @@ const HEADER_ROLES = [
   ["state", ["state", "st", "province", "state/province", "mailing state/province", "mailing state", "home state", "region"]],
   ["zip", ["zip", "zip code", "zipcode", "postal code", "postcode", "zip/postal code", "mailing zip/postal code", "home zip", "zip_code"]],
   ["amount", ["amount", "gift amount", "donation", "donation amount", "gross", "amount (total)", "gift", "payment amount", "amt", "gift_amount", "total amount", "received amount", "contribution", "amount received", "pledge amount", "gift $", "$"]],
-  ["date", ["date", "timestamp", "gift date", "donation date", "close date", "received date", "payment date", "datetime", "transaction date", "deposit date", "date received", "gift_date", "date given", "created at", "donated at"]],
+  ["date", ["date", "received", "date of gift", "timestamp", "gift date", "donation date", "close date", "received date", "payment date", "datetime", "transaction date", "deposit date", "date received", "gift_date", "date given", "created at", "donated at"]],
   ["method", ["method", "payment method", "payment type", "pay method", "tender", "paid by", "payment", "pay type", "payment_method", "gift method", "how paid"]],
   ["frequency", ["frequency", "recurring", "recurrence", "interval", "schedule", "how often", "gift frequency"]],
   ["paid", ["completed", "paid", "paid?", "collected", "fulfilled", "received?", "complete", "paid yet"]],
@@ -62,7 +69,38 @@ const HEADER_ROLES = [
   ["note", ["note", "notes", "memo", "memo/description", "description", "comments", "comment", "message", "dedication", "gift note"]],
   ["externalId", ["donor id", "constituent id", "account number", "account id", "donor_id", "id number", "donor number", "contact id", "supporter id", "account #", "account no"]],
   ["giftId", ["transaction id", "gift id", "receipt", "receipt #", "num", "ref", "reference", "payment id", "id", "receipt number", "check #", "check number", "opportunity id", "gift_id"]],
+  ["invited", ["invited", "invite", "invitation", "invited?", "on invite list"]],
+  ["rsvp", ["rsvp", "rsvp'd", "rsvpd", "rsvp?", "rsvp status", "registered", "responded", "coming", "attending"]],
+  ["attended", ["attended", "attended?", "checked in", "check in", "checked-in", "came", "present", "attendance", "showed", "showed up"]],
+  ["table", ["table", "table #", "table number", "table no", "seat", "seating", "table assignment"]],
+  ["partySize", ["party size", "guests", "# guests", "number of guests", "guest count", "party", "headcount", "tickets", "seats"]],
+  ["logistics", ["name tag", "nametag", "name badge", "invite sent", "invitation sent", "called", "call made", "reminder sent", "thank you sent"]],
+  ["mailingList", ["mailing list", "newsletter", "email list", "opt in", "opt-in", "subscribed", "email opt in", "on mailing list", "mailing", "e-news"]],
+  ["optOut", ["unsubscribed", "opt out", "opted out", "opt-out", "unsubscribe", "email opt out"]],
+  ["doNotEmail", ["do not email", "no email", "dne", "do not e-mail"]],
+  ["doNotMail", ["do not mail", "no mail", "dnm", "no mailings"]],
+  ["doNotCall", ["do not call", "no calls", "no phone calls"]],
+  ["doNotContact", ["do not contact", "dnc", "no contact", "do not solicit"]],
+  ["deceased", ["deceased", "is deceased", "passed away", "died"]],
+  ["volunteer", ["volunteer", "volunteered", "volunteer?", "is volunteer", "volunteers"]],
+  ["board", ["board", "board member", "on board", "trustee", "board?"]],
+  ["staff", ["staff", "employee", "staff member", "staff?"]],
 ];
+// A column that adds up money kept elsewhere ("Gave at dinner" beside a Gifts
+// sheet). Checked against the gifts before it is skipped; one that does not
+// foot is kept, never dropped.
+const TOTAL_OF_RE = /^(gave at .+|gift total|total gifts?|total given|total donated|amount given|giving total|.+ gift total|total giving|gave)$/i;
+// Columns that mean "this sheet is about volunteers" when nothing else says so.
+const VOLUNTEER_HDR = new Set(["hours", "volunteer hours", "shifts", "shift", "volunteer role", "availability", "skills", "hours served", "hours volunteered"]);
+// An opt-out written anywhere on the row, in any column.
+const PLEASE_REMOVE_RE = /\b(please remove|remove me|unsubscribe me|take me off|stop (emailing|mailing)|no more (emails?|mail))\b/i;
+const OPT_OUT_WORDS = /^(unsubscribed?|opt(ed)?[- ]?out|remove|removed|no emails?|do not email|stop|off|bounced? and removed)$/i;
+const EVENT_WORD_RE = /\b(dinner|gala|lunch|luncheon|breakfast|auction|benefit|banquet|celebration|party|golf|walk|run|5k|concert|reception|fundraiser|night|brunch|tea|festival|open house)\b/i;
+// The roles that put a value on the person (core Steward fields).
+const PERSON_ROLES = new Set(["name", "first", "last", "lastFirst", "org", "email", "phone", "address", "address2", "city", "state", "zip", "externalId"]);
+const ENGAGE_ROLES = new Set(["invited", "rsvp", "attended", "table", "partySize", "logistics"]);
+const COMMS_ROLES = new Set(["mailingList", "optOut", "doNotEmail", "doNotMail", "doNotCall", "doNotContact", "deceased"]);
+const ROLE_FLAG_ROLES = new Set(["volunteer", "board", "staff"]);
 const HEADER_INDEX = new Map();
 for (const [role, list] of HEADER_ROLES) for (const h of list) if (!HEADER_INDEX.has(h)) HEADER_INDEX.set(h, role);
 // Columns that are deliberately left out, with the reason said out loud.
@@ -91,7 +129,7 @@ const NO = new Set(["no", "n", "false", "unpaid", "not yet", "pending", "0", "op
 // Status words, read as stage words (imports rule). Anything not listed is a
 // question for a person, never a guess.
 const STATUS_PAID = new Set(["completed", "complete", "succeeded", "success", "paid", "closed won", "posted", "received", "settled", "cleared", "approved", "captured", "deposited"]);
-const STATUS_PLEDGE = new Set(["pledged", "promised", "open", "outstanding", "committed"]);
+const STATUS_PLEDGE = new Set(["pledged", "promised", "open", "outstanding", "committed", "not yet received", "not received", "unpaid", "balance due", "pledge", "awaiting payment"]);
 const STATUS_ASIDE = new Set(["refunded", "failed", "denied", "declined", "reversed", "canceled", "cancelled", "voided", "void", "pending", "chargeback", "disputed", "closed lost", "partially refunded", "unclaimed", "expired"]);
 const TYPE_GIFT = /^(donation|donation payment|payment|deposit|sales receipt|gift|contribution|charge|website payment|express checkout payment|mobile payment|subscription payment|recurring payment|p2p|merchant transaction|credit card|one-time donation|recurring donation|check|cash)$/i;
 const TYPE_ASIDE = /(withdrawal|transfer|refund|fee|journal|bill|expense|hold|reversal|invoice|payout|authorization|currency conversion)/i;
@@ -110,6 +148,7 @@ const METHOD_MAP = [
   [/^(foundation|foundation grant|grant|private foundation)$/i, "Foundation", null],
   [/^(daf|donor advised fund|donor-advised fund)$/i, "DAF", null],
   [/^(ach|eft|bank transfer|wire|direct deposit|bank draft)$/i, "ACH", null],
+  [/^(in[- ]?kind|ik|goods|gift in kind|non-?cash)$/i, "In-kind", null],
 ];
 const RECURRING_RE = /^(rec+ur+ing|monthly|recurring monthly|month|every month|sustainer|recurring gift|per month|\/mo|mo)$/i;
 const ONCE_RE = /^(once|one[- ]?time|single|one off|one-off|onetime)$/i;
@@ -124,7 +163,7 @@ const s = v => (v == null ? "" : String(v)).replace(/\s+/g, " ").trim();
 const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
-const fmt$ = c => "$" + (Math.round(c) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
+const fmt$ = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
 const plural = (n, a, b) => `${n.toLocaleString("en-US")} ${n === 1 ? a : (b || a + "s")}`;
 
 function moneyOf(v) {
@@ -134,13 +173,13 @@ function moneyOf(v) {
   // "1.5k", "2K"
   const k = t.match(/^\$?\s*(\d+(?:\.\d+)?)\s*[kK]$/);
   if (k) return Number(k[1]) * 1000;
-  t = t.replace(/\s*(usd|dollars)$/i, "");
+  t = t.replace(/\s*(usd|dollars)$/i, "").replace(/^(in[- ]?kind|ik)[:\s]+/i, "");
   const m = normalizeMoney(t);
   return m.value == null ? null : m.value;
 }
 function looksMoney(v) {
   if (typeof v === "number") return true;
-  const t = s(v);
+  const t = s(v).replace(/^(in[- ]?kind|ik)[:\s]+/i, "").replace(/^usd\s+/i, "");
   if (!t) return false;
   if (/^[+-]?\s*\$?\s*\(?[+-]?\$?\s*\d[\d,]*(\.\d{1,2})?\)?\s*(usd)?$/i.test(t)) return true;
   if (/^\$?\d+(\.\d+)?[kK]$/.test(t)) return true;
@@ -184,10 +223,16 @@ function dateOf(v, ctx = {}) {
   const r = normalizeDate(t, { dayFirst: !!ctx.dayFirst });
   return r.value || null;
 }
+// IMPORT-4: "Oct 2026" is a month (dated the 1st, with the file's words kept);
+// "FY26" names a year Steward cannot place in a month, so the gift is undated
+// with the words kept. Both still read as a date column.
+const MONTH_YEAR_RE = /^([A-Za-z]{3,9})\.?\s+((19|20)\d{2})$/;
+const FISCAL_RE = /^fy\s*'?(\d{2}|\d{4})$/i;
 function looksDate(v, ctx) {
   if (v instanceof Date) return true;
   if (typeof v === "number") return !!(ctx && ctx.serials && serialToIso(v));
   const t = s(v);
+  if (FISCAL_RE.test(t)) return true;
   if (!t || /^\d{1,3}$/.test(t)) return false;
   if (/^\$/.test(t)) return false;
   return !!dateOf(t, { ...(ctx || {}), serials: !!(ctx && ctx.serials) });
@@ -201,7 +246,7 @@ function yesNo(v) {
 }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/;
-const ZIP_RE = /^\d{5}(-\d{4})?$/;
+const ZIP_RE = /^\d{4,5}(-\d{4})?$/;
 const STATE_RE = /^(A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|PR|GU|VI)$/i;
 
 // ── 0. any file → grids ───────────────────────────────────────────────────
@@ -404,6 +449,8 @@ export function profileColumn(table, c, ctx = {}) {
     sample: [...new Set(vals.map(s))].slice(0, 6),
     money: frac(looksMoney), currency: frac(hasCurrencyMark),
     date: frac(v => looksDate(v, { serials, today: ctx.today })), serials, dayFirst,
+    // a header that says date may hold an Excel serial among written dates
+    dateLoose: frac(v => looksDate(v, { serials: true, today: ctx.today })),
     email: frac(v => EMAIL_RE.test(s(v))), phone: frac(v => PHONE_RE.test(s(v))),
     zip: frac(v => ZIP_RE.test(s(v))), state: frac(v => STATE_RE.test(s(v))),
     yesno: frac(v => yesNo(v) !== undefined),
@@ -412,6 +459,7 @@ export function profileColumn(table, c, ctx = {}) {
     frequency: frac(v => RECURRING_RE.test(s(v)) || ONCE_RE.test(s(v)) || MULTIYEAR_RE.test(s(v)) || ANNUAL_RE.test(s(v)) || QUARTERLY_RE.test(s(v))),
     status: frac(v => STATUS_PAID.has(s(v).toLowerCase()) || STATUS_PLEDGE.has(s(v).toLowerCase()) || STATUS_ASIDE.has(s(v).toLowerCase())),
     wordy: frac(v => /^[A-Za-z][A-Za-z'’.&, -]*$/.test(s(v))),
+    smallCount: frac(v => /^\d{1,2}$/.test(s(v)) && +s(v) <= 60),
     distinct: new Set(lc).size,
   };
 }
@@ -430,12 +478,17 @@ function contentFits(role, p) {
   if (!p.count) return true;
   switch (role) {
     case "amount": case "pledgeTotal": return p.money >= 0.8;
-    case "date": return p.date >= 0.8;
+    case "date": return p.date >= 0.8 || p.dateLoose >= 0.8;
     case "email": return p.email >= 0.6;
     case "phone": return p.phone >= 0.6 || p.money < 0.5;
     case "zip": return p.zip >= 0.6 || p.money < 0.5;
     case "paid": return p.yesno >= 0.8;
     case "status": return p.status >= 0.6 || p.yesno >= 0.8;
+    case "invited": case "rsvp": case "attended": case "volunteer": case "board": case "staff":
+    case "doNotEmail": case "doNotMail": case "doNotCall": case "doNotContact": case "deceased":
+      return p.yesno >= 0.6 || p.date >= 0.6 || p.distinct <= 4;
+    case "partySize": return p.smallCount >= 0.9 && p.currency < 0.2;
+    case "optOut": case "mailingList": return p.money < 0.5;
     case "first": case "last": case "name": case "lastFirst": return p.money < 0.5 && p.email < 0.5;
     default: return true;
   }
@@ -454,7 +507,9 @@ export function mapColumns(table, opts = {}) {
     if (IGNORED_HEADERS.has(h)) { col.role = "ignore"; col.reason = IGNORED_HEADERS.get(h); col.by = "rule"; cols.push(col); continue; }
     if (!h && labelsOnly(table, c)) { col.role = "ignore"; col.reason = "section labels and totals, not a column"; col.by = "rule"; cols.push(col); continue; }
     let role = HEADER_INDEX.get(h) || null;
-    if (!role && /(^| )(id|number|no|#)$/.test(h) && p.money < 1.01) role = taken.has("externalId") ? "giftId" : "externalId";
+    // "Donor #", "Member ID": a person's number. "Locker #" is not (IMPORT-4).
+    if (!role && /^((donor|constituent|member|account|contact|supporter|person|record|customer|household|guest|attendee|gift|transaction|receipt)\s*)?(id|number|no|#)$/.test(h) && p.money < 1.01)
+      role = /^(gift|transaction|receipt)/.test(h) || taken.has("externalId") ? "giftId" : "externalId";
     // a header with "total" and years over a money column is a multi-year total
     if (!role && /\b(\d|three|two|five)\s*(yr|year)s?\b.*total|total.*\b(\d|three)\s*(yr|year)/i.test(h)) role = "pledgeTotal";
     if (!role && /\bamount\b|\bgift\b.*\$|donation/i.test(h) && p.money >= 0.8) role = "amount";
@@ -462,6 +517,7 @@ export function mapColumns(table, opts = {}) {
     if (!role && /\bname\b/.test(h) && !/\b(user|campaign|fund|event|opportunity|appeal|page|file|company|employer|team|product|item)\b/.test(h) && p.money < 0.5) role = "name";
     if (!role && /\be-?mail\b/.test(h) && p.email >= 0.6) role = "email";
     if (role === "status" && p.yesno >= 0.8 && p.status < 0.6) role = "paid";
+    if (role === "date" && !contentFits("date", p) && p.yesno >= 0.8) role = "paid";
     if (role === "name" && p.lastFirst >= 0.8) role = "lastFirst";
     if (role === "type" && p.method >= 0.8) role = "method";
     if (role && !contentFits(role, p)) { col.mismatch = `the header says ${ROLE_LABELS[role].toLowerCase()}, but the cells do not read that way`; role = null; }
@@ -477,7 +533,10 @@ export function mapColumns(table, opts = {}) {
       else if (p.method >= 0.9) role = "method";
       if (role) { col.by = "contents"; col.reason = `the cells read as ${ROLE_LABELS[role].toLowerCase()}`; }
     }
-    if (role && taken.has(role) && role !== "note") {
+    // IMPORT-4: a total of another sheet, and a volunteer sheet's own columns
+    if (!role && !col.mismatch && TOTAL_OF_RE.test(h) && p.money >= 0.8) { role = "totalOf"; col.by = "header"; col.reason = `the header "${header[c]}"`; }
+    if (!role && !col.mismatch && VOLUNTEER_HDR.has(h)) { role = "keep"; col.volunteerSignal = true; col.by = "header"; col.reason = `the header "${header[c]}" is about volunteering`; }
+    if (role && taken.has(role) && !["note", "logistics", "keep", "totalOf"].includes(role)) {
       col.duplicateOf = role; col.role = null;
     } else if (role) { col.role = role; taken.add(role); }
     cols.push(col);
@@ -497,12 +556,12 @@ export function applyOverrides(cols, overrides = {}) {
     const col = next.find(c => String(c.index) === String(k) || c.header === k);
     if (!col || !byKey(k)) continue;
     if (!ROLE_LABELS[role]) { refused.push({ header: col.header, role, reason: "not a place Steward can put a column" }); continue; }
-    if (role !== "ignore" && role !== "note" && !contentFits(role, col.profile)) {
+    if (!["ignore", "note", "keep", "logistics"].includes(role) && !contentFits(role, col.profile)) {
       refused.push({ header: col.header, role, reason: `the cells in "${col.header}" do not read as ${ROLE_LABELS[role].toLowerCase()}` });
       continue;
     }
     // the role moves: whoever held it lets go
-    if (role !== "ignore" && role !== "note") for (const o of next) if (o !== col && o.role === role) { o.role = null; o.duplicateOf = role; }
+    if (!["ignore", "note", "keep", "logistics", "totalOf"].includes(role)) for (const o of next) if (o !== col && o.role === role) { o.role = null; o.duplicateOf = role; }
     col.role = role; col.by = "person"; col.reason = "you chose it"; col.mismatch = null; col.duplicateOf = null;
   }
   return { cols: next, refused };
@@ -586,17 +645,43 @@ export function mapMethodWord(raw) { return methodOf(raw); }
 // "Finding Joy Dinner".
 export function eventNameFromFile(fileName) {
   let n = s(fileName).replace(/\.(xlsx|xls|csv|tsv|txt)$/i, "").replace(/[_]+/g, " ");
-  n = n.replace(/\b(gifts?|donations?|pledges?|export|final|copy|v\d+|\(\d+\)|list|sheet|results|totals?|scrubbed|tally)\b/gi, " ").replace(/\s+/g, " ").trim();
+  n = n.replace(/[-]+/g, " ").replace(/\b(gifts?|donations?|pledges?|export|final|copy|v\d+|\(\d+\)|list|sheet|results|totals?|scrubbed|tally|combined|guests?|guest list|rsvps?|attendance|seating|name tags?|invites?|invitations?|workbook)\b/gi, " ").replace(/\s+/g, " ").trim();
+  if (/^(event|events|file|data|book\d*|sheet\d*)$/i.test(n)) return null;
   return n || null;
+}
+// The event a title row names: "Finding Joy Dinner · Guest List" → "Finding Joy Dinner".
+function eventNameFromTitles(tables) {
+  for (const t of tables) for (const ti of t.titles || []) {
+    const text = s(ti.text);
+    if (!EVENT_WORD_RE.test(text) || text.length > 80) continue;
+    const cut = text.split(/\s*[·|:\u2013\u2014-]\s+/)[0].replace(/\b(guest list|rsvp list|seating chart|name tags|invite list|summary|results)\b/gi, "").replace(/\s+/g, " ").trim();
+    if (cut) return cut;
+  }
+  return null;
 }
 
 // ── 4. the plan ───────────────────────────────────────────────────────────
 // understand({sheets:[{name, grid}], fileName, today, overrides, answers})
 // → everything the review screen shows and everything the write does.
 //
-// answers: { date: "YYYY-MM-DD", eventName, linkEvent: bool,
-//            rows: { "<sheet>:<line>": "gift" | "pledge" | "skip" },
-//            columns: { "<tableKey>|<index>": role } }
+// IMPORT-4: the plan is read in layers, each on the one before.
+//   1. People   everyone in the file once: sheets that list the same people
+//               merge (a shared ID first, then an email, then the exact name
+//               with no contact detail that disagrees); couples are a household.
+//   2. Roles    what each person is, from the data: donor (gave), pledger,
+//               event guest, prospect (invited, never gave), volunteer, board,
+//               staff, or a contact when nothing else is true.
+//   3. Money    every gift and pledge, on its person. A gift with a person and
+//               an amount always lands; with no date it lands undated.
+//   4. Engagement  the event (invited, RSVP, attended, table, party size,
+//               logistics), and communication choices (opted out, do not
+//               contact, do not mail, do not call) with where they came from.
+//   5. Everything else  every remaining column with data is kept on the person
+//               as a custom field under its own header. Nothing is lost.
+//
+// answers: { date: "YYYY-MM-DD" (every undated gift), eventName, eventDate,
+//            linkEvent: bool, useEventDate: bool,
+//            rows: { "<sheet>:<line>": "gift" | "pledge" | "skip" } }
 export function understand({ sheets = [], fileName = "", today, overrides = {}, answers = {} } = {}) {
   const T = today || new Date().toISOString().slice(0, 10);
   const all = [], notes = [];
@@ -617,21 +702,72 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const has = r => t.cols.some(c => c.role === r);
     const named = has("name") || has("first") || has("last") || has("lastFirst") || has("org") || has("email");
     t.kind = named && has("amount") ? "gifts" : named ? "people" : has("amount") ? "summary" : "other";
+    // A sheet of people's IDs: a bare "ID" is the person's, not a gift's.
+    if (t.kind === "people") for (const c of t.cols) if (c.role === "giftId" && !has("externalId")) { c.role = "externalId"; c.reason = `the header "${c.header}" on a list of people`; }
+    t.isVolunteer = /volunteer/i.test(t.sheet) || t.cols.some(c => c.volunteerSignal);
+  }
+  const roleOf = (t, r) => t.cols.find(c => c.role === r);
+  const cellOf = (t, b, c) => (b.raw ? b.raw[c.index] : b.cells[c.index]);
+  // A shared ID column links sheets: a gift sheet's ID whose values are the
+  // people sheet's IDs is the person, never the gift (and gifts attach by it,
+  // never by name, when it exists).
+  const peopleIds = new Set();
+  for (const t of tables) if (t.kind === "people") { const c = roleOf(t, "externalId"); if (c) for (const b of dataRows(t)) { const v = s(cellOf(t, b, c)); if (v) peopleIds.add(v.toLowerCase()); } }
+  for (const t of tables) if (t.kind === "gifts" && peopleIds.size && !roleOf(t, "externalId")) {
+    const c = roleOf(t, "giftId");
+    if (!c) continue;
+    const vals = dataRows(t).map(b => s(cellOf(t, b, c)).toLowerCase()).filter(Boolean);
+    if (vals.length && vals.filter(v => peopleIds.has(v)).length >= vals.length * 0.5) {
+      c.role = "externalId"; c.reason = `the same IDs as your list of people, so each gift attaches to its person by ID`; c.by = "rule"; c.links = true;
+    }
   }
   const usable = tables.filter(t => t.kind === "gifts" || t.kind === "people");
+  // people first, so a gift sheet finds the person its ID names
+  usable.sort((a, b) => (a.kind === "people" ? 0 : 1) - (b.kind === "people" ? 0 : 1));
   const giftTables = usable.filter(t => t.kind === "gifts");
   const fileKind = giftTables.length ? "gifts" : usable.length ? "people" : "unknown";
-  const needsDate = giftTables.some(t => !t.cols.some(c => c.role === "date"));
   const dateAnswer = answers.date && /^\d{4}-\d{2}-\d{2}$/.test(answers.date) ? answers.date : null;
+  const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : null;
   const questions = [];
   const help = [];
+  const hasEngagement = usable.some(t => t.cols.some(c => ENGAGE_ROLES.has(c.role)));
 
-  // columns nobody placed → Help me with these
-  for (const t of (usable.length ? usable : tables)) for (const c of t.cols) {
-    if (c.role && usable.length) continue;
-    help.push({ kind: "column", key: `${t.key}|${c.index}`, sheet: t.sheet, header: c.header || `(column ${c.index + 1})`,
-                sample: c.profile.sample, reason: c.mismatch || (c.duplicateOf ? `another column is already the ${ROLE_LABELS[c.duplicateOf].toLowerCase()}` : "Steward could not tell what this column is"),
-                options: SHEET_ROLES });
+  // Every column's fate: mapped (a Steward field), kept (a custom field under
+  // its own header), or skipped with the reason said out loud. A column with
+  // data is never skipped by default; the one exception is a money-shaped
+  // column on a table that has no amount yet, which may be the gift.
+  for (const t of tables) for (const c of t.cols) {
+    const usableT = t.kind === "gifts" || t.kind === "people";
+    if (!usableT) {
+      c.disposition = "skipped";
+      c.skipReason = t.kind === "summary" ? "a summary of amounts with no names, so it is not people or gifts" : "a table with no names and no amounts";
+      continue;
+    }
+    if (c.role === "ignore") { c.disposition = "skipped"; c.skipReason = c.reason || "you left it out"; continue; }
+    if (c.role === "keep") { c.disposition = "kept"; continue; }
+    if (c.role === "totalOf") { c.disposition = "skipped"; c.skipReason = "a total of the gifts in this file"; continue; }
+    if (c.role) { c.disposition = "mapped"; continue; }
+    const p = c.profile;
+    // a list of people with a date and a column of numbers may be a list of gifts
+    const maybeAmount = !roleOf(t, "amount") && p.money >= 0.8 && p.smallCount < 0.9
+      && (t.kind === "gifts" || roleOf(t, "date") || p.currency >= 0.2);
+    if (maybeAmount || (c.mismatch && p.money >= 0.8 && !roleOf(t, "amount"))) {
+      c.disposition = "question";
+      help.push({ kind: "column", key: `${t.key}|${c.index}`, sheet: t.sheet, header: c.header || `(column ${c.index + 1})`,
+                  sample: p.sample, reason: c.mismatch || "this may be the amount: Steward could not tell", options: SHEET_ROLES });
+      continue;
+    }
+    if (c.duplicateOf && dataRows(t).every(b => s(cellOf(t, b, c)) === s(cellOf(t, b, roleOf(t, c.duplicateOf))))) {
+      c.disposition = "skipped"; c.skipReason = `the same values as "${roleOf(t, c.duplicateOf).header}"`; continue;
+    }
+    // section labels in a headed column ("Month": January, February) are not data
+    if (dataRows(t).every(b => isBlank(b.cells[c.index]) || b.cells.filter(x => !isBlank(x)).length === 1)) {
+      c.disposition = "skipped"; c.skipReason = "section labels between the rows, not a column of data"; continue;
+    }
+    c.role = "keep"; c.disposition = "kept"; c.by = c.by || "rule";
+    c.reason = c.mismatch ? `${c.mismatch}, so it is kept under its own name` : c.duplicateOf
+      ? `another column is already the ${ROLE_LABELS[c.duplicateOf].toLowerCase()}, so this one is kept under its own name`
+      : "kept on each person under its own name";
   }
   for (const t of tables) if (t.kind === "summary" || t.kind === "other") {
     help.push({ kind: "table", key: t.key, sheet: t.sheet, header: t.header.filter(Boolean).join(", "), line: t.headerLine,
@@ -639,17 +775,43 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                 informational: true });
   }
 
-  const people = new Map();   // key → {key, name, kind, household, people[], email, ..., rows[]}
+  // ── Placeholders: an email or phone on three or more people with different
+  // last names is the organisation's own line, not theirs. It is never used to
+  // tell people apart and never copied onto them.
+  const contactLasts = { email: new Map(), phone: new Map() };
+  const contactNames = { email: new Map(), phone: new Map() };
+  const contactShown = { email: new Map(), phone: new Map() };   // the value as the file wrote it
+  for (const t of usable) for (const b of dataRows(t)) {
+    const who = readName({ first: roleOf(t, "first") && cellOf(t, b, roleOf(t, "first")), last: roleOf(t, "last") && cellOf(t, b, roleOf(t, "last")),
+      full: roleOf(t, "name") && cellOf(t, b, roleOf(t, "name")), lastFirst: roleOf(t, "lastFirst") && cellOf(t, b, roleOf(t, "lastFirst")), org: roleOf(t, "org") && cellOf(t, b, roleOf(t, "org")) });
+    const last = (who.name || "").split(/\s+/).pop().toLowerCase();
+    for (const k of ["email", "phone"]) {
+      const c = roleOf(t, k); if (!c) continue;
+      const v = k === "email" ? s(cellOf(t, b, c)).toLowerCase() : s(cellOf(t, b, c)).replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+      if (!v) continue;
+      if (!contactLasts[k].has(v)) { contactLasts[k].set(v, new Set()); contactNames[k].set(v, new Set()); contactShown[k].set(v, s(cellOf(t, b, c))); }
+      if (last) { contactLasts[k].get(v).add(last); contactNames[k].get(v).add((who.name || "").toLowerCase()); }
+    }
+  }
+  const placeholder = { email: new Set(), phone: new Set() };
+  for (const k of ["email", "phone"]) for (const [v, lasts] of contactLasts[k]) if (lasts.size >= 3) placeholder[k].add(v);
+  const phoneKey = v => s(v).replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+
+  const people = new Map();   // key → the record
+  const byId = new Map(), byEmail = new Map(), byName = new Map();
   const gifts = [], pledges = [], aside = [], totals = [], flags = [];
+  const nearMisses = [];
   const occ = new Map();
+  const sourceFile = s(fileName) || "your file";
+  const personGiftCents = new Map();   // for "Gave at dinner" checks
+  const keptHeaders = new Map();       // header → { header, sheet, count }
   for (const t of usable) {
-    const role = r => t.cols.find(c => c.role === r);
-    const get = (b, r) => { const c = role(r); return c ? (b.raw ? b.raw[c.index] : b.cells[c.index]) : null; };
+    const role = r => roleOf(t, r);
+    const get = (b, r) => { const c = role(r); return c ? cellOf(t, b, c) : null; };
     const dateCol = role("date");
-    const dctx = dateCol ? { serials: dateCol.profile.serials, dayFirst: dateCol.profile.dayFirst, today: T } : null;
+    const dctx = dateCol ? { serials: true, dayFirst: dateCol.profile.dayFirst, today: T } : null;
     const nameCols = ["name", "first", "last", "lastFirst", "org", "email"].map(role).filter(Boolean);
     const moneyCols = t.cols.filter(c => c.role === "amount" || c.role === "pledgeTotal");
-    let sectionDate = null;
     t.readCount = 0;   // rows that are people or gifts: not titles, labels or totals
     const tableSums = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
     const sinceSubtotal = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
@@ -662,23 +824,24 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // a section label ("October 2026") or a stray line inside the table
       if (filled.length === 1 && !moneyCols.some(m => !isBlank(cells[m.index]))) {
         const lbl = filled[0];
-        if (MONTH_LABEL_RE.test(lbl)) sectionDate = lbl;
         if (!NUMERIC_TOTAL_RE.test(lbl)) { notes.push({ sheet: t.sheet, line: b.line, text: lbl, label: true }); continue; }
       }
-      // totals and subtotals: the person-name cells are empty or say total
-      const moneyHere = moneyCols.filter(m => moneyOf(b.raw ? b.raw[m.index] : cells[m.index]) != null);
+      const moneyHere = moneyCols.filter(m => moneyOf(cellOf(t, b, m)) != null);
       // A row with no name is a total when it says so, or when it foots: its
       // amount is exactly the sum of the rows above it. Otherwise it is a row
       // with no name (a withdrawal, a stray line) and is listed, not read.
       const amtCol = moneyCols.find(m => m.role === "amount");
       const foots = amtCol && moneyHere.includes(amtCol) && (() => {
-        const v = cents(moneyOf(b.raw ? b.raw[amtCol.index] : cells[amtCol.index]));
+        const v = cents(moneyOf(cellOf(t, b, amtCol)));
         return v !== 0 && (v === tableSums[amtCol.index] || v === sinceSubtotal[amtCol.index]);
       })();
-      if (moneyHere.length && (anyTotalWord || (!nameText && t.kind === "gifts" && foots))) {
-        const isSub = /sub-?total|total for|total\s+\w+/i.test(cells.join(" ")) && !/grand total/i.test(cells.join(" "));
+      const saysTotal = anyTotalWord || (nameText && NUMERIC_TOTAL_RE.test(nameText) && /^(sub-?total|grand total|total|totals|sum)\b/i.test(nameText));
+      if (moneyHere.length && (saysTotal || (!nameText && t.kind === "gifts" && foots))) {
+        // the label's words only: "TOTAL 178240" is a total, not "total for"
+        const labelText = cells.filter(x => !isBlank(x) && !looksMoney(x)).join(" ");
+        const isSub = /sub-?total|total for|total\s+[a-z]\w*/i.test(labelText) && !/grand total/i.test(labelText);
         for (const m of moneyHere) {
-          const stated = cents(moneyOf(b.raw ? b.raw[m.index] : cells[m.index]));
+          const stated = cents(moneyOf(cellOf(t, b, m)));
           const against = isSub && sinceSubtotal[m.index] ? sinceSubtotal[m.index] : tableSums[m.index];
           totals.push({ sheet: t.sheet, line: b.line, column: t.header[m.index], role: m.role, statedCents: stated, sumCents: against, rowsAbove: t.readCount,
                         matches: stated === against, subtotal: isSub && !!sinceSubtotal[m.index], label: cells.filter(Boolean).filter(x => !looksMoney(x)).join(" ") || "Total" });
@@ -688,56 +851,154 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       }
       t.readCount++;
       if (!nameText) {
-        for (const m of moneyHere) { const v = cents(moneyOf(b.raw ? b.raw[m.index] : cells[m.index])); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
-        const v = amtCol ? moneyOf(b.raw ? b.raw[amtCol.index] : cells[amtCol.index]) : null;
+        for (const m of moneyHere) { const v = cents(moneyOf(cellOf(t, b, m))); tableSums[m.index] += v; sinceSubtotal[m.index] += v; }
+        const v = amtCol ? moneyOf(cellOf(t, b, amtCol)) : null;
         aside.push({ sheet: t.sheet, line: b.line, reason: "no name, email or organization on this row", cells: filled.slice(0, 6), cents: v != null ? cents(v) : null });
         continue;
       }
-      // who
-      const who = readName({ first: get(b, "first"), last: get(b, "last"), full: get(b, "name"), lastFirst: get(b, "lastFirst"), org: get(b, "org") });
-      const email = s(get(b, "email")).toLowerCase();
+      // ── layer 1: who
+      let who = readName({ first: get(b, "first"), last: get(b, "last"), full: get(b, "name"), lastFirst: get(b, "lastFirst"), org: get(b, "org") });
+      let email = s(get(b, "email")).toLowerCase();
+      if (email && placeholder.email.has(email)) email = "";
+      const extId = s(get(b, "externalId"));
       if (!who.name && email) { who.kind = "person"; who.name = email; who.people = [{ name: "" }]; }
-      const pkey = email || (who.kind + ":" + who.name.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " "));
-      // A person is read when the file gives them something (a gift, a
-      // pledge) or the file is a list of people. A refunded line alone does
-      // not make somebody a record.
+      const nameKey = who.kind + ":" + who.name.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " ");
+      let pkey = null, linkedBy = null;
+      if (extId && byId.has(extId.toLowerCase())) { pkey = byId.get(extId.toLowerCase()); linkedBy = "id"; }
+      else if (email && byEmail.has(email)) { pkey = byEmail.get(email); linkedBy = "email"; }
+      else if (byName.has(nameKey)) {
+        const k = byName.get(nameKey), other = people.get(k);
+        // the same name with a different email, or a different ID, is someone else
+        const clash = (email && other.email && other.email !== email) || (extId && other.externalId && other.externalId.toLowerCase() !== extId.toLowerCase());
+        if (!clash) { pkey = k; linkedBy = "name"; }
+      }
+      if (!pkey) pkey = extId ? "id:" + extId.toLowerCase() : email || nameKey;
+      // a linked row keeps the person's own name, whatever the clipboard said
+      if (linkedBy === "id") { const p0 = people.get(pkey); who = { kind: p0.kind, name: p0.name, household: p0.household, people: p0.people }; }
+      const phoneRaw = s(get(b, "phone"));
+      const phonePlaceholder = phoneRaw && placeholder.phone.has(phoneKey(phoneRaw));
+      const stateV = s(get(b, "state"));
       const fresh = { key: pkey, name: who.name, kind: who.kind, household: who.household || null, people: who.people,
-                           email: email || null, phone: s(get(b, "phone")) || null, address: s(get(b, "address")) || null,
-                           address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: s(get(b, "state")) || null,
-                           zip: s(get(b, "zip")) || null, externalId: s(get(b, "externalId")) || null, lines: [] };
+                      email: email || null, phone: phonePlaceholder ? null : (phoneRaw || null), address: s(get(b, "address")) || null,
+                      address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: stateV || null,
+                      zip: fixZip(s(get(b, "zip")), stateV) || null, externalId: extId || null, lines: [],
+                      roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [] };
+      const zipRaw = s(get(b, "zip"));
+      if (zipRaw && fresh.zip && fresh.zip !== zipRaw) fresh.flags.push(`ZIP ${zipRaw} read as ${fresh.zip} (the leading zero was lost)`);
+      if (phonePlaceholder) fresh.flags.push(`the phone ${phoneRaw} is on ${contactNames.phone.get(phoneKey(phoneRaw)).size} different people in this file, so it was not copied`);
+      if (s(get(b, "email")) && !email) fresh.flags.push(`the email ${s(get(b, "email"))} is on several different people in this file, so it was not copied`);
+      // ── layers 2, 4, 5 on this row: roles, engagement, communication, kept
+      const absorbRow = (person, tt, bb) => {
+        const yes = r => { const c = role(r); return c ? truthy(cellOf(tt, bb, c)) : null; };
+        if (tt.isVolunteer) person.roles.add("volunteer");
+        if (yes("volunteer")) person.roles.add("volunteer");
+        if (yes("board")) person.roles.add("board");
+        if (yes("staff")) person.roles.add("staff");
+        if (t.cols.some(c => ENGAGE_ROLES.has(c.role))) {
+          const at = person.attendance || (person.attendance = { invited: false, rsvp: null, attended: false, table: null, party: null, logistics: [] });
+          const inv = yes("invited"), rs = yes("rsvp"), att = yes("attended");
+          if (inv) at.invited = true;
+          if (rs === true) at.rsvp = true; else if (rs === false && at.rsvp == null) at.rsvp = false;
+          if (att) at.attended = true;
+          const tb = s(get(bb, "table")); if (tb && !at.table) at.table = /^\d+$/.test(tb) ? `Table ${tb}` : tb;
+          const ps = s(get(bb, "partySize")); if (ps && /^\d{1,2}$/.test(ps) && !at.party) at.party = +ps;
+          for (const c of tt.cols.filter(c => c.role === "logistics")) { const v = s(cellOf(tt, bb, c)); if (v) { const line = `${c.header}: ${v}`; if (!at.logistics.includes(line)) at.logistics.push(line); } }
+          // anyone on a guest list was invited, even when no column says so
+          if (!roleOf(tt, "invited") && (at.rsvp != null || at.attended)) at.invited = true;
+          if (at.attended || at.rsvp) person.roles.add("guest");
+        }
+        const src = (c, v) => ({ header: c.header, value: v, sheet: tt.sheet, file: sourceFile });
+        for (const r of COMMS_ROLES) {
+          const c = role(r); if (!c) continue;
+          const raw = s(cellOf(tt, bb, c)); if (!raw) continue;
+          if (r === "mailingList") {
+            if (OPT_OUT_WORDS.test(raw) || PLEASE_REMOVE_RE.test(raw)) person.comms.optOut = person.comms.optOut || src(c, raw);
+            else if (truthy(raw) === true) person.comms.optIn = person.comms.optIn || src(c, raw);
+            continue;
+          }
+          if (r === "optOut") { if (truthy(raw) === true || OPT_OUT_WORDS.test(raw)) person.comms.optOut = person.comms.optOut || src(c, raw); continue; }
+          if (truthy(raw) === true) person.comms[r] = person.comms[r] || src(c, raw);
+        }
+        // "please remove" in any cell of the row
+        if (!person.comms.optOut) for (const c of tt.cols) {
+          if (COMMS_ROLES.has(c.role)) continue;
+          const v = s(cellOf(tt, bb, c));
+          if (v && PLEASE_REMOVE_RE.test(v)) { person.comms.optOut = src(c, v); break; }
+        }
+        for (const c of tt.cols.filter(c => c.role === "keep")) {
+          const v = s(cellOf(tt, bb, c)); if (!v) continue;
+          const k = c.header || `Column ${c.index + 1}`;
+          if (!keptHeaders.has(k)) keptHeaders.set(k, { header: k, sheet: tt.sheet, count: 0 });
+          const prev = person.kept[k];
+          if (prev == null) { person.kept[k] = v; keptHeaders.get(k).count++; }
+          else if (!String(prev).split("; ").includes(v)) person.kept[k] = `${prev}; ${v}`;
+        }
+      };
       const ensure = () => {
-        if (!people.has(pkey)) people.set(pkey, fresh);
+        if (!people.has(pkey)) {
+          people.set(pkey, fresh);
+          if (!linkedBy) {
+            // a near miss: the same last name, a first name one or two letters off, nothing to confirm it
+            const last = (who.name || "").split(/\s+/).pop().toLowerCase(), first = (who.name || "").split(/\s+/)[0].toLowerCase();
+            for (const o of people.values()) {
+              if (o === fresh || o.kind !== "person" || who.kind !== "person") continue;
+              const ol = o.name.split(/\s+/).pop().toLowerCase(), of = o.name.split(/\s+/)[0].toLowerCase();
+              if (ol === last && of !== first && editDistance(of, first) <= 2 && Math.min(of.length, first.length) >= 4) {
+                nearMisses.push({ a: o.name, b: who.name, line: b.line, sheet: t.sheet, reason: "the same last name and a first name a letter or two apart, with no email or ID to confirm it, so they are kept as two people" });
+                break;
+              }
+            }
+          }
+        }
         const person = people.get(pkey);
-        for (const f of ["phone", "address", "address2", "city", "state", "zip", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
+        for (const f of ["email", "phone", "address", "address2", "city", "state", "zip", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
+        for (const fl of fresh.flags) if (!person.flags.includes(fl)) person.flags.push(fl);
         person.lines.push(`${t.sheet}:${b.line}`);
+        if (person.externalId) byId.set(person.externalId.toLowerCase(), pkey);
+        if (person.email) byEmail.set(person.email, pkey);
+        if (!byName.has(nameKey)) byName.set(nameKey, pkey);
+        absorbRow(person, t, b);
+        return person;
       };
       if (t.kind === "people") { ensure(); continue; }
 
-      // how much
+      // ── layer 3: money
       const amtRaw = get(b, "amount");
       const amt = moneyOf(amtRaw);
-      for (const m of moneyCols) { const v = moneyOf(b.raw ? b.raw[m.index] : cells[m.index]); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
+      for (const m of moneyCols) { const v = moneyOf(cellOf(t, b, m)); if (v != null) { tableSums[m.index] += cents(v); sinceSubtotal[m.index] += cents(v); } }
       if (amt == null) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(amtRaw) ? "no amount on this row" : `the amount "${s(amtRaw)}" is not a number` }); continue; }
-      if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0" }); continue; }
+      if (amt === 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: "the amount is $0", cents: 0 }); continue; }
       if (amt < 0) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a refund or reversal (${fmt$(cents(amt))}), not a gift`, cents: cents(amt) }); continue; }
-      // is it a gift at all (status / type columns)
       const status = s(get(b, "status")).toLowerCase();
       const type = s(get(b, "type"));
       if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
       if (status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
-      // when
-      let date = null;
+      // when: a gift with a person and an amount always lands. No date, or a
+      // date Steward cannot place in a day, is a gift with no date, flagged.
+      let date = null, dateNote = null;
       if (dateCol) {
         const raw = get(b, "date");
-        date = dateOf(b.raw ? b.raw[dateCol.index] : raw, { ...dctx, year: answers.year || null });
-        if (!date) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: isBlank(raw) ? "no date on this row" : `the date "${s(raw)}" is not a date Steward can read`, cents: cents(amt) }); continue; }
-        if (date > T) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `dated ${date}, which is after today`, cents: cents(amt) }); continue; }
-      } else date = dateAnswer;
+        if (!isBlank(raw)) {
+          const t0 = s(raw);
+          if (FISCAL_RE.test(t0)) dateNote = `Date in your file: ${t0}`;
+          else {
+            date = dateOf(raw, { ...dctx, year: answers.year || null });
+            if (date && MONTH_YEAR_RE.test(t0)) dateNote = `Date in your file: ${t0}`;
+            if (!date) dateNote = `Date in your file: ${t0}`;
+          }
+          if (date && date > T) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `dated ${date}, which is after today`, cents: cents(amt) }); continue; }
+        }
+      }
+      if (!date && dateAnswer) date = dateAnswer;
+      let datedBy = date ? (dateCol && !isBlank(get(b, "date")) ? "file" : "you") : null;
+      if (!date && answers.useEventDate && eventDateAnswer) { date = eventDateAnswer; datedBy = "event"; }
       // paid or promised
       const rowKey = `${t.sheet}:${b.line}`;
       const pledgeList = /\bpledge/i.test(hnorm(t.header[(role("amount") || {}).index] || ""));
       let paid = !pledgeList, paidSource = pledgeList ? "file" : "default";
       const paidCol = role("paid");
+      const methodRaw = s(get(b, "method"));
+      if (/^pledge$/i.test(methodRaw)) { paid = false; paidSource = "file"; }
       if (paidCol) {
         const yn = yesNo(get(b, "paid"));
         if (yn === true) { paid = true; paidSource = "file"; }
@@ -751,6 +1012,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
             questions.push({ id: `row:${rowKey}`, kind: "row", key: rowKey, line: b.line, sheet: t.sheet, who: who.name, cents: cents(amt),
                              text: `Row ${b.line}: ${who.name}, ${fmt$(cents(amt))}. "${t.header[paidCol.index]}" is blank. Was it paid?`,
                              options: [{ key: "gift", label: "Paid, a gift" }, { key: "pledge", label: "Not yet, a pledge" }, { key: "skip", label: "Leave it out" }] });
+            ensure();
             continue;
           }
         }
@@ -766,32 +1028,43 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
             questions.push({ id: `row:${rowKey}`, kind: "row", key: rowKey, line: b.line, sheet: t.sheet, who: who.name, cents: cents(amt),
                              text: `Row ${b.line}: ${who.name}, ${fmt$(cents(amt))}, status "${s(get(b, "status"))}". Was it paid?`,
                              options: [{ key: "gift", label: "Paid, a gift" }, { key: "pledge", label: "Not yet, a pledge" }, { key: "skip", label: "Leave it out" }] });
+            ensure();
             continue;
           }
         }
       }
       const methodCol = role("method");
-      const m = methodCol ? methodOf(get(b, "method")) : (type && METHOD_MAP.some(([re]) => re.test(type)) ? methodOf(type) : { method: null, original: "", known: false });
+      const inKind = /^(in[- ]?kind|ik)\b/i.test(s(amtRaw));
+      const m = inKind ? { method: "In-kind", original: s(amtRaw), known: true }
+        : methodCol ? methodOf(methodRaw) : (type && METHOD_MAP.some(([re]) => re.test(type)) ? methodOf(type) : { method: null, original: "", known: false });
       const freq = frequencyOf(get(b, "frequency"));
       const totalCol = role("pledgeTotal");
       const multiTotal = totalCol ? moneyOf(get(b, "pledgeTotal")) : null;
       const noteParts = [];
       if (s(get(b, "note"))) noteParts.push(s(get(b, "note")));
-      if (methodCol && !m.known && m.original) noteParts.push(`Method in your file: ${m.original}`);
-      if (methodCol && !m.original) noteParts.push("Method in your file: blank");
+      if (methodCol && !m.known && m.original && !/^pledge$/i.test(m.original)) noteParts.push(`Method in your file: ${m.original}`);
+      if (methodCol && !m.original && !inKind) noteParts.push("Method in your file: blank");
       if (methodCol && m.known && /pledge|dist/i.test(m.original) && m.original.toLowerCase() !== m.method.toLowerCase()) noteParts.push(`Method in your file: ${m.original}`);
       if (freq.kind === "unknown" && freq.original) noteParts.push(`Frequency in your file: ${freq.original}`);
+      if (dateNote) noteParts.push(dateNote);
       // a stable key for this row, so a second import adds nothing
-      const sig = [hnorm(t.header.join("|")), who.name.toLowerCase(), email, cents(amt), s(get(b, "method")).toLowerCase(), freq.original.toLowerCase(),
-                   s(get(b, "paid")).toLowerCase(), dateCol ? date : "", s(get(b, "giftId"))].join("|");
+      const sig = [hnorm(t.header.join("|")), who.name.toLowerCase(), email, cents(amt), methodRaw.toLowerCase(), freq.original.toLowerCase(),
+                   s(get(b, "paid")).toLowerCase(), dateCol ? s(get(b, "date")) : "", s(get(b, "giftId")), extId.toLowerCase()].join("|");
       const n = (occ.get(sig) || 0) + 1; occ.set(sig, n);
       const rowId = hash(sig + "#" + n);
-      const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date,
+      const giftFlags = [];
+      if (!date) giftFlags.push("no_date");
+      if (methodCol && (!m.known || !m.original) && !inKind && !/^pledge$/i.test(m.original)) giftFlags.push("method_unknown");
+      const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
                      fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || null, externalId: s(get(b, "giftId")) || null,
-                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null };
-      ensure();
+                     note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
+      const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });
+      // a pledge needs due dates: with no date in the file they count from the
+      // event's date, or else the day of the import, and the pledge says so
+      const dueBase = date || eventDateAnswer || T;
+      if (!date) noteParts.push(`Your file gave no date, so its due dates count from ${dueBase}`);
       if (freq.kind === "multiYear" && freq.years > 1) {
         const yearly = cents(amt);
         const total = multiTotal != null && cents(multiTotal) > 0 ? cents(multiTotal) : yearly * freq.years;
@@ -800,28 +1073,73 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         for (let k = 0; k < freq.years; k++) {
           const amtK = k === freq.years - 1 ? remaining : Math.min(yearly, remaining);
           remaining -= amtK;
-          installments.push({ seq: k + 1, dueDate: date ? addYears(date, k) : null, cents: amtK, paid: k === 0 && paid });
+          installments.push({ seq: k + 1, dueDate: addYears(dueBase, k), cents: amtK, paid: k === 0 && paid });
         }
-        pledges.push({ ...base, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
-                       thisYearCents: yearly, dueDate: date, why: `"${freq.original}": ${fmt$(total)} over ${freq.years} years, ${fmt$(yearly)} a year` + (paid ? ", the first year paid" : "") });
-        if (paid) gifts.push({ ...base, kind: "installment", installmentOf: rowId });
+        pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
+                       paidCents: paid ? yearly : 0, openCents: total - (paid ? yearly : 0),
+                       thisYearCents: yearly, dueDate: dueBase, why: `"${freq.original}": ${fmt$(total)} over ${freq.years} years, ${fmt$(yearly)} a year` + (paid ? ", the first year paid" : "") });
+        person.roles.add("pledger");
+        if (paid) { gifts.push({ ...base, kind: "installment", installmentOf: rowId }); person.roles.add("donor"); personGiftCents.set(pkey, (personGiftCents.get(pkey) || 0) + yearly); }
         continue;
       }
       if (!paid) {
-        pledges.push({ ...base, kind: "pledge", pledgeCents: cents(amt), years: 1, thisYearCents: cents(amt),
-                       installments: [{ seq: 1, dueDate: date ? yearEnd(date) : null, cents: cents(amt), paid: false }],
-                       dueDate: date ? yearEnd(date) : null, why: paidSource === "you" ? "you said not yet paid" : pledgeList && !paidCol ? `"${t.header[role("amount").index]}": a promise, not yet paid` : `"${t.header[(paidCol || {}).index] || "Status"}" says not yet paid` });
+        pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: cents(amt), years: 1, thisYearCents: cents(amt), paidCents: 0, openCents: cents(amt),
+                       installments: [{ seq: 1, dueDate: yearEnd(dueBase), cents: cents(amt), paid: false }],
+                       dueDate: yearEnd(dueBase), why: paidSource === "you" ? "you said not yet paid" : /^pledge$/i.test(methodRaw) ? `Method "Pledge": a promise, not yet paid`
+                         : pledgeList && !paidCol ? `"${t.header[role("amount").index]}": a promise, not yet paid` : `"${t.header[(paidCol || role("status") || {}).index] || "Status"}" says not yet paid` });
+        person.roles.add("pledger");
         continue;
       }
       gifts.push({ ...base, kind: "gift" });
+      person.roles.add("donor");
+      personGiftCents.set(pkey, (personGiftCents.get(pkey) || 0) + cents(amt));
     }
   }
-  // a missing date is one question for the whole file
-  if (needsDate && !dateAnswer && (gifts.length || pledges.length)) {
-    const suggestion = eventNameFromFile(fileName);
-    questions.unshift({ id: "date", kind: "date", text: "When were these given?",
-                        hint: "Your file has no date column. Pick the day, or name the event they came from.",
-                        suggestedEventName: suggestion, suggestedDate: answers.suggestedDate || null });
+  // "Gave at dinner" beside a gift sheet: skipped only when it foots, person by
+  // person, against the gifts this file gives them; otherwise kept, never lost.
+  const totalOfChecks = [];
+  for (const t of usable) for (const c of t.cols.filter(c => c.role === "totalOf")) {
+    let checked = 0, agree = 0;
+    const misses = [];
+    for (const b of dataRows(t)) {
+      const v = moneyOf(cellOf(t, b, c)); if (v == null) continue;
+      const pk = [...people.values()].find(p => p.lines.includes(`${t.sheet}:${b.line}`));
+      checked++;
+      if (pk && (personGiftCents.get(pk.key) || 0) === cents(v)) agree++;
+      else misses.push({ line: b.line, cents: cents(v), gifts: pk ? (personGiftCents.get(pk.key) || 0) : 0 });
+    }
+    const footed = checked > 0 && giftTables.length > 0 && agree === checked;
+    totalOfChecks.push({ sheet: t.sheet, header: c.header, checked, agree, footed, misses: misses.slice(0, 20) });
+    if (footed) { c.skipReason = `a total of each person's gifts on the ${giftTables.map(g => g.sheet).join(" and ")} sheet (checked: all ${checked} agree to the cent)`; }
+    else {
+      c.role = "keep"; c.disposition = "kept"; c.reason = giftTables.length
+        ? `it looks like a total, but ${checked - agree} of ${checked} people do not match their gifts here, so it is kept under its own name`
+        : "a total with no gift rows behind it, kept under its own name";
+      for (const b of dataRows(t)) {
+        const v = s(cellOf(t, b, c)); if (!v) continue;
+        const pk = [...people.values()].find(p => p.lines.includes(`${t.sheet}:${b.line}`));
+        if (pk && pk.kept[c.header] == null) { pk.kept[c.header] = v; if (!keptHeaders.has(c.header)) keptHeaders.set(c.header, { header: c.header, sheet: t.sheet, count: 0 }); keptHeaders.get(c.header).count++; }
+      }
+    }
+  }
+
+  // ── the event: named by a title row, the file name, or her answer. Its date
+  // is optional; the gifts stay undated unless she says to use it.
+  const undatedCount = gifts.filter(g => !g.date).length;
+  const suggestedEventName = eventNameFromTitles(tables) || eventNameFromFile(fileName);
+  const eventWanted = hasEngagement || (answers.linkEvent && answers.eventName);
+  if (hasEngagement) {
+    // a name Steward cannot guess is a real question: attendance needs an event
+    questions.push({ id: "event", kind: "event", optional: !!(answers.eventName || suggestedEventName), text: "What was this event called, and when?",
+                     hint: "Steward found who was invited and who came. The date is optional.",
+                     suggestedEventName: answers.eventName || suggestedEventName, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
+  }
+  // undated gifts are one optional question for the whole file, never a block
+  if (undatedCount && !dateAnswer) {
+    questions.unshift({ id: "date", kind: "date", optional: true, count: undatedCount,
+                        text: undatedCount === 1 ? "1 gift has no date." : `${undatedCount.toLocaleString("en-US")} gifts have no date.`,
+                        hint: "They import either way, each marked No date. They count in Lifetime and the event's total, never in This year, a goal or retention, until they have a date.",
+                        suggestedEventName, suggestedDate: answers.suggestedDate || null, canUseEventDate: !!eventWanted });
   }
   // nothing readable at all is a question too, never "0 donors + 0 gift rows"
   if (!usable.length) {
@@ -830,34 +1148,140 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // help on columns blocks the import; informational help does not
   for (const h of help) if (!h.informational) questions.push({ id: `col:${h.key}`, kind: "column", ...h });
 
+  // ── layer 2, finished: what each person is
   const peopleList = [...people.values()];
+  for (const p of peopleList) {
+    if (p.attendance && !p.roles.has("donor") && !p.roles.has("pledger") && (p.attendance.invited || p.attendance.rsvp != null)) p.roles.add("prospect");
+    if (!p.roles.size) p.roles.add("contact");
+    p.roles = [...p.roles];
+    p.personTypes = personTypesFor(p.roles);
+  }
   const giftCents = gifts.reduce((a, g) => a + g.cents, 0);
   const pledgeCents = pledges.reduce((a, p) => a + p.pledgeCents, 0);
+  const pledgeOpenCents = pledges.reduce((a, p) => a + p.openCents, 0);
   const pledgeThisYear = pledges.reduce((a, p) => a + p.thisYearCents, 0);
   const paidInstallments = gifts.filter(g => g.kind === "installment").reduce((a, g) => a + g.cents, 0);
+  const unpaidRowCents = pledges.filter(p => !p.firstPaid).reduce((a, p) => a + p.thisYearCents, 0);
   // "raised" in the file's own terms: this year's amount on every row read
   const rowCents = gifts.filter(g => g.kind === "gift").reduce((a, g) => a + g.cents, 0) + pledgeThisYear;
-  const ready = questions.filter(q => q.kind !== "info").length === 0;
-  const totalsSentence = totals.filter(t => !t.subtotal && t.role === "amount").map(t => t.matches
-    ? `Your total row says ${fmt$(t.statedCents)}, and the ${plural(t.rowsAbove, "row")} above it add up to ${fmt$(t.sumCents)}.`
-    : `Your total row says ${fmt$(t.statedCents)}, but the rows above it add up to ${fmt$(t.sumCents)}.`);
+  const asideCents = aside.reduce((a, x) => a + (x.cents || 0), 0);
+  const ready = questions.filter(q => q.kind !== "info" && !q.optional).length === 0;
+  const totalsSentence = totals.filter(t => !t.subtotal && t.role === "amount").map(t => {
+    if (!t.matches) return `Your total row says ${fmt$(t.statedCents)}, but the rows above it add up to ${fmt$(t.sumCents)}.`;
+    const parts = [`${plural(gifts.length, "gift")} (${fmt$(giftCents)})`];
+    if (unpaidRowCents) parts.push(`${fmt$(unpaidRowCents)} promised and not yet received (${plural(pledges.filter(p => !p.firstPaid).length, "row")})`);
+    if (asideCents) parts.push(`${fmt$(asideCents)} set aside`);
+    return `Your total row says ${fmt$(t.statedCents)}, and the ${plural(t.rowsAbove, "row")} above it add up to ${fmt$(t.sumCents)}: ${parts.join(", ")}.`;
+  });
+  // the column account: every column is mapped, kept, or skipped with a reason
+  const columnList = [];
+  for (const t of tables) for (const c of t.cols) columnList.push({ table: t.key, sheet: t.sheet, index: c.index, header: c.header || `(column ${c.index + 1})`,
+    disposition: c.disposition, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, reason: c.disposition === "skipped" ? c.skipReason : c.reason,
+    links: !!c.links, sample: c.profile.sample.slice(0, 3) });
+  const columnAccount = { total: columnList.length, mapped: 0, kept: 0, skipped: 0, question: 0 };
+  for (const c of columnList) columnAccount[c.disposition] = (columnAccount[c.disposition] || 0) + 1;
+  const att = peopleList.filter(p => p.attendance);
+  // counted in people, as they land: a couple's row is two attendances
+  const members = p => Math.max(1, p.people.length);
+  const comm = k => peopleList.filter(p => p.comms[k]).length;
+  const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   return {
     fileKind, ready,
-    tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles,
+    tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer,
       rows: t.readCount != null ? t.readCount : dataRows(t).length,
-      columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by, reason: c.reason, sample: c.profile.sample })),
+      columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
+        reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help,
+    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks,
+    columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()],
+    placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
+                   ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
+    event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement } : null,
     counts: {
-      people: peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0),
-      records: peopleList.length,
+      people: persons, persons, records: peopleList.length,
       households: peopleList.filter(p => p.household).length,
       organizations: peopleList.filter(p => p.kind === "organization").length,
-      gifts: gifts.length, giftCents, pledges: pledges.length, pledgeCents, pledgeThisYearCents: pledgeThisYear,
-      paidInstallmentCents: paidInstallments, rowCents, aside: aside.length, monthly: flags.length,
+      donors: peopleList.filter(p => p.roles.includes("donor")).length,
+      pledgers: peopleList.filter(p => p.roles.includes("pledger")).length,
+      volunteers: peopleList.filter(p => p.roles.includes("volunteer")).length,
+      board: peopleList.filter(p => p.roles.includes("board")).length,
+      staff: peopleList.filter(p => p.roles.includes("staff")).length,
+      guests: peopleList.filter(p => p.roles.includes("guest")).reduce((a, p) => a + Math.max(1, p.people.length), 0),
+      prospects: peopleList.filter(p => p.roles.includes("prospect")).length,
+      contacts: peopleList.filter(p => p.roles.includes("contact")).length,
+      gifts: gifts.length, giftCents, undatedGifts: gifts.filter(g => !g.date).length, undatedGiftCents: gifts.filter(g => !g.date).reduce((a, g) => a + g.cents, 0),
+      pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear,
+      paidInstallmentCents: paidInstallments, rowCents, aside: aside.length, asideCents, monthly: flags.length,
+      invited: att.filter(p => p.attendance.invited).reduce((a, p) => a + members(p), 0),
+      rsvp: att.filter(p => p.attendance.rsvp === true).reduce((a, p) => a + members(p), 0),
+      attended: att.filter(p => p.attendance.attended).reduce((a, p) => a + members(p), 0),
+      optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
+      doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
+      kept: keptHeaders.size, nearMisses: nearMisses.length,
     },
-    totalsSentence, needsDate,
+    totalsSentence, needsDate: undatedCount > 0,
   };
+}
+
+// person_types (BUILD-94) from the roles: a pledger is a donor too; a person
+// who only came, was invited, or is listed is a contact ("other"), never a donor.
+function personTypesFor(roles) {
+  const out = [];
+  if (roles.includes("donor") || roles.includes("pledger")) out.push("donor");
+  if (roles.includes("volunteer")) out.push("volunteer");
+  if (roles.includes("board") || roles.includes("staff")) out.push("staff_board");
+  return out.length ? out : ["other"];
+}
+// yes / x / a date → true; no → false; anything else → null
+function truthy(v) {
+  if (v == null || v === "") return null;
+  const yn = yesNo(v);
+  if (yn === true || yn === false) return yn;
+  const t = s(v).toLowerCase();
+  if (/^(attended|came|checked in|here|present|rsvp'?d|registered|coming|going|accepted|invited|sent|y\b)/.test(t)) return true;
+  if (/^(declined|not coming|regrets|absent|no show|no-show)/.test(t)) return false;
+  if (looksDate(v, { serials: true })) return true;
+  return null;
+}
+// A ZIP that lost its leading zero ("2134") in a state whose ZIPs start with 0.
+const ZERO_ZIP_STATES = new Set(["CT", "MA", "ME", "NH", "NJ", "PR", "RI", "VT", "VI", "GU"]);
+function fixZip(z, state) {
+  if (!z) return z;
+  const m = z.match(/^(\d{4})(-\d{4})?$/);
+  if (!m) return z;
+  const st = s(state).toUpperCase();
+  if (st && !ZERO_ZIP_STATES.has(st)) return z;
+  return "0" + z;
+}
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+// The one line the Import button says: what will exist afterwards (rule C).
+// More than 5% of the people or the dollars set aside, and it asks for a
+// review first instead.
+export function importButtonSentence(u, extra = {}) {
+  const c = u.counts || {};
+  const asideShare = (c.aside || 0) / Math.max(1, (c.records || 0) + (c.aside || 0));
+  const money = (c.giftCents || 0) + (c.pledgeThisYearCents || 0);
+  const asideMoney = (u.aside || []).reduce((a, x) => a + Math.abs(x.cents || 0), 0);
+  const review = !!(c.aside && (asideShare > 0.05 || asideMoney > 0.05 * Math.max(1, money + asideMoney)));
+  const parts = [];
+  const sub = [];
+  if (c.donors) sub.push(plural(c.donors, "donor"));
+  if (c.volunteers) sub.push(plural(c.volunteers, "volunteer"));
+  parts.push(`${plural(c.persons || 0, "person", "people")}${sub.length ? ` (${sub.join(", ")})` : ""}`);
+  if (c.gifts) parts.push(`${plural(c.gifts, "gift")} ${fmt$(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} undated)` : ""}`);
+  if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${fmt$(c.pledgeOpenCents)} open`);
+  if (u.event && u.event.name && u.event.fromEngagement) parts.push(`${u.event.name}: ${c.attended.toLocaleString("en-US")} attended`);
+  if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
+  if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
+  if (extra.matched) parts.push(`${extra.matched.toLocaleString("en-US")} already in Steward`);
+  const importText = "Import " + parts.join(" · ");
+  return review ? { review, text: `Review ${c.aside.toLocaleString("en-US")} set aside first`, importText } : { review, text: importText, importText };
 }
 
 function addYears(iso, k) {
@@ -907,10 +1331,18 @@ export function tablesForModel(sheets) {
 export function wantsAdaptiveReading(sheets, roled = null) {
   if (roled && roled.some(s => s.role === "unknown")) return true;
   if (roled && !roled.some(s => ["donors", "gifts", "pledges", "recurring"].includes(s.role))) return true;
+  // IMPORT-4: a file that knows who came, who volunteers or who said don't
+  // email me, or whose gifts have no date, is read in layers here. The column
+  // mapper would set those gifts aside and leave those columns out (26 Oct:
+  // "Import 443 donors + 0 gifts" for an event workbook with 106 gifts).
+  const u0 = understand({ sheets });
+  const LAYER_ROLES = new Set([...ENGAGE_ROLES, ...COMMS_ROLES, ...ROLE_FLAG_ROLES]);
+  if (u0.tables.some(tb => tb.isVolunteer || tb.columns.some(c => LAYER_ROLES.has(c.role)))) return true;
+  if (u0.counts.undatedGifts > 0) return true;
   // a workbook the workbook flow already reads (a donors sheet and a gifts
   // sheet, every sheet with a role) stays there
   if (roled && roled.filter(s => s.rowCount > 0 && s.role !== "chrome").length > 1) return false;
-  const u = understand({ sheets });
+  const u = u0;
   if (u.fileKind === "unknown") return true;
   // No date column: an event night's sheet, unless the file is one row per
   // donor with running totals (Total Giving, Last Gift, year columns), which

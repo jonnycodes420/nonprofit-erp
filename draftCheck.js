@@ -24,9 +24,9 @@ async function draftRecord(orgId, donorId = null) {
        FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]);
   if (!donor) return base;
   const [gifts, video, meetings] = await Promise.all([
-    query(`SELECT id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC LIMIT 200`, [orgId, donorId]),
+    query(`SELECT id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC NULLS LAST LIMIT 200`, [orgId, donorId]),
     query(`SELECT token FROM video_thanks WHERE org_id = ? AND donor_id = ? AND asset_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [orgId, donorId]).catch(() => []),
-    query(`SELECT date, type FROM interactions WHERE org_id = ? AND donor_id = ? AND type IN ('meeting','call','visit','event') ORDER BY date DESC LIMIT 50`, [orgId, donorId]).catch(() => []),
+    query(`SELECT date, type FROM interactions WHERE org_id = ? AND donor_id = ? AND type IN ('meeting','call','visit','event') ORDER BY date DESC NULLS LAST LIMIT 50`, [orgId, donorId]).catch(() => []),
   ]);
   return { ...base, donor,
     rows: gifts.map(g => ({ id: g.id, amount: Number(g.amount), date: g.date })),

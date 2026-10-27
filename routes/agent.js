@@ -262,7 +262,7 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
   const who = lead.replace(AGENT_THANK_LEAD, "").replace(FIND_LEAD, "").replace(AGENT_DUE_TAIL, "").trim();
   if (!who || who === said.trim()) return null;
   const [events, campaigns] = await Promise.all([
-    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
+    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC NULLS LAST LIMIT 200`, [orgId]),
     query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
   ]);
   const ctx = { today, events, campaigns };
@@ -1020,11 +1020,11 @@ async function agentContext(orgId, { today, scope, allowed }) {
     for (const sh of ctx.shifts) sh.roles = roles.filter(r => r.slot_id === sh.id);
     ctx.opportunities = await safe(query("SELECT id, name FROM volunteer_opportunities WHERE org_id=? ORDER BY name LIMIT 50", [orgId]));
   }
-  if (want("register_event")) ctx.events = (await safe(query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC LIMIT 30", [orgId])))
+  if (want("register_event")) ctx.events = (await safe(query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST LIMIT 30", [orgId])))
     .map(e => ({ id: e.id, name: e.name, date: String(e.date || "").slice(0, 10), paid: Number(e.cost || e.ticket_price || 0) > 0 }));
   if (want("mark_gift_thanked")) ctx.gifts = scope && scope.length
-    ? await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND donor_id = ANY(?::text[]) AND amount > 0 ORDER BY date DESC LIMIT 40`, [orgId, scope]))
-    : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE AND LEFT(date,10) >= ? ORDER BY date DESC LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
+    ? await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND donor_id = ANY(?::text[]) AND amount > 0 ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, scope]))
+    : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE AND LEFT(date,10) >= ? ORDER BY date DESC NULLS LAST LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
   return ctx;
 }
 // ── AGENT-3 · WHAT THE AGENT CAN READ ABOUT EACH PERSON ─────────────────────

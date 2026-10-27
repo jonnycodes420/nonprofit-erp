@@ -203,7 +203,7 @@ async function stoppedRecurring(orgId, { asOf, today }) {
   const rows = await q(
     `WITH r AS (
        SELECT donor_id, date, amount, id,
-              ROW_NUMBER() OVER (PARTITION BY donor_id ORDER BY date DESC) AS rn,
+              ROW_NUMBER() OVER (PARTITION BY donor_id ORDER BY date DESC NULLS LAST) AS rn,
               COUNT(*) OVER (PARTITION BY donor_id) AS n
          FROM gifts
         WHERE org_id=? AND amount > 0

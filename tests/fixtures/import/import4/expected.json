@@ -1,0 +1,259 @@
+{
+  "Finding_Joy_Combined.xlsx": {
+    "records": 443,
+    "persons": 450,
+    "households": 7,
+    "donors": 104,
+    "gifts": 106,
+    "giftCents": 12429000,
+    "undatedGifts": 106,
+    "pledges": 8,
+    "pledgeOpenCents": 7895000,
+    "pledgeTotalCents": 9145000,
+    "fileCents": 17824000,
+    "notYetCents": 5395000,
+    "totalsRowCents": 17824000,
+    "eventName": "Finding Joy Dinner",
+    "invited": 406,
+    "rsvp": 191,
+    "attended": 172,
+    "optOuts": 4,
+    "doNotContact": 1,
+    "volunteers": 26,
+    "placeholderPhone": "(555) 010-0000",
+    "placeholderPeople": 30,
+    "zipsFixed": 10,
+    "columns": {
+      "total": 31,
+      "mapped": 25,
+      "kept": 2,
+      "skipped": 4
+    },
+    "kept": [
+      "Shirt Size",
+      "Dietary"
+    ],
+    "aside": 0,
+    "sample": {
+      "id": "JP-1017",
+      "gaveCents": 5000,
+      "table": "Table 18",
+      "volunteer": true
+    },
+    "pledgeSample": {
+      "id": "JP-1099",
+      "totalCents": 1500000,
+      "receivedCents": 500000,
+      "openCents": 1000000
+    }
+  },
+  "event-guest-list-scrubbed.xlsx": {
+    "records": 166,
+    "persons": 195,
+    "attended": 165,
+    "invited": 195,
+    "gifts": 0,
+    "giftCents": 0,
+    "columns": {
+      "total": 8,
+      "mapped": 8,
+      "kept": 0,
+      "skipped": 0
+    },
+    "giftSheetPersons": 135,
+    "answers": {
+      "eventName": "Finding Joy Dinner"
+    }
+  },
+  "Volunteers.xlsx": {
+    "records": 26,
+    "persons": 26,
+    "volunteers": 26,
+    "donors": 0,
+    "gifts": 0,
+    "giftCents": 0,
+    "columns": {
+      "total": 8,
+      "mapped": 2,
+      "kept": 5,
+      "skipped": 1
+    },
+    "hoursTotal": 204
+  },
+  "Contacts_no_volunteers.csv": {
+    "records": 20,
+    "persons": 20,
+    "volunteers": 0,
+    "donors": 0,
+    "gifts": 0,
+    "giftCents": 0,
+    "optOuts": 1,
+    "columns": {
+      "total": 4,
+      "mapped": 4,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u01-merged-title-header-row-6.xlsx": {
+    "ugly": true,
+    "persons": 4,
+    "gifts": 4,
+    "giftCents": 46500,
+    "undatedGifts": 1,
+    "asideCents": 0,
+    "fileCents": 46500,
+    "columns": {
+      "total": 4,
+      "mapped": 4,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u02-amount-grammar.csv": {
+    "ugly": true,
+    "persons": 5,
+    "gifts": 5,
+    "giftCents": 260050,
+    "undatedGifts": 0,
+    "asideCents": -5000,
+    "fileCents": 255050,
+    "inKind": 1,
+    "columns": {
+      "total": 3,
+      "mapped": 3,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u03-names-every-way.csv": {
+    "ugly": true,
+    "persons": 6,
+    "households": 2,
+    "gifts": 5,
+    "giftCents": 105000,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 105000,
+    "columns": {
+      "total": 3,
+      "mapped": 3,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u04-placeholder-contact.csv": {
+    "ugly": true,
+    "persons": 12,
+    "gifts": 12,
+    "giftCents": 30600,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 30600,
+    "placeholderEmail": "info@helpinghands.org",
+    "columns": {
+      "total": 5,
+      "mapped": 5,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u05-please-remove-anywhere.csv": {
+    "ugly": true,
+    "persons": 3,
+    "gifts": 3,
+    "giftCents": 21000,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 21000,
+    "optOuts": 1,
+    "doNotMail": 1,
+    "columns": {
+      "total": 6,
+      "mapped": 6,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u06-zips-and-phones.csv": {
+    "ugly": true,
+    "persons": 3,
+    "gifts": 3,
+    "giftCents": 6000,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 6000,
+    "zips": [
+      "02134",
+      "02134-1234",
+      "07030"
+    ],
+    "columns": {
+      "total": 6,
+      "mapped": 6,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u07-two-tables-notes-under.xlsx": {
+    "ugly": true,
+    "persons": 3,
+    "gifts": 2,
+    "giftCents": 75000,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 75000,
+    "columns": {
+      "total": 5,
+      "mapped": 5,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u08-subtotals-and-a-short-total.xlsx": {
+    "ugly": true,
+    "persons": 3,
+    "gifts": 3,
+    "giftCents": 45000,
+    "undatedGifts": 0,
+    "asideCents": -5000,
+    "fileCents": 40000,
+    "totalsRowCents": 40000,
+    "columns": {
+      "total": 4,
+      "mapped": 3,
+      "kept": 0,
+      "skipped": 1
+    }
+  },
+  "u09-some-dates-blank.csv": {
+    "ugly": true,
+    "persons": 4,
+    "gifts": 4,
+    "giftCents": 24000,
+    "undatedGifts": 2,
+    "asideCents": 0,
+    "fileCents": 24000,
+    "columns": {
+      "total": 3,
+      "mapped": 3,
+      "kept": 0,
+      "skipped": 0
+    }
+  },
+  "u10-many-unknown-columns.csv": {
+    "ugly": true,
+    "persons": 2,
+    "gifts": 2,
+    "giftCents": 7000,
+    "undatedGifts": 0,
+    "asideCents": 0,
+    "fileCents": 7000,
+    "columns": {
+      "total": 12,
+      "mapped": 4,
+      "kept": 8,
+      "skipped": 0
+    }
+  }
+}

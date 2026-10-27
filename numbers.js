@@ -58,9 +58,23 @@ async function donorGlance(query, orgId, donorId) {
     refundCents: -(money.toCents(String(r.refunded)) ?? 0),
     importedCents: imp ? (money.toCents(imp.t) ?? 0) : 0,
   });
+  // IMPORT-4: gifts with no date count in Lifetime and the average and in no
+  // figure for a span of time; the profile says so beside those figures.
+  const [ud] = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount), 0)::text AS t
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId, donorId]);
+  out.undated = ud && ud.n ? { count: ud.n, cents: money.toCents(ud.t) ?? 0, source: src("donor-undated-gifts"), words: undatedWords(ud.n) } : null;
   out.imported = imp ? { cents: money.toCents(imp.t) ?? 0, through: imp.imported_through, source: imp.imported_source || "your old system",
                          on: imp.imported_on || null, words: importedWords(imp) } : null;
   return out;
+}
+
+// "1 gift with no date not counted": said beside every figure for a span of
+// time (This year, a goal, retention) when there are undated gifts behind it.
+function undatedWords(n) {
+  n = Number(n) || 0;
+  return n ? `${n.toLocaleString("en-US")} ${n === 1 ? "gift" : "gifts"} with no date not counted` : "";
 }
 
 // "Includes $50,000 from your old system (before Mar 2025)": the line under
@@ -137,4 +151,4 @@ async function publicBarRaised(query, orgId, campaignId) {
 // screen draws (scripts/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { importedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, screens };
+module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, screens };

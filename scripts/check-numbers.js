@@ -84,6 +84,9 @@ const RULES = {
     screens: "Communications Lapsing or lapsed, Home re-engage list, going-quiet suggestion" },
   "giving-level": { words: "A person's giving level is what they gave in the last 12 months against the org's own cut points (Settings, Giving levels), and nothing else.",
     screens: "profile tag, Directory filter, groups, Communications Major, the Board" },
+  // IMPORT-4: a gift the file gave no day for.
+  "undated": { words: "A gift with no date counts in Lifetime, the gift count, the average and the event or campaign it was given to, and never in This year, a goal's period, retention, lapse or any figure for a span of time, because its year is not known. Where those figures show, the profile says how many gifts with no date it did not count, and that number opens them.",
+    screens: "profile header (Lifetime, This year and its note, Average), campaign totals, Fundraising, Home goal, Reports year" },
   "household-one": { words: "The household record is the only grouping: two people linked as spouses or a household are in one household.",
     screens: "the profile's household panel, household totals" },
 };
@@ -133,16 +136,16 @@ async function checkOrg(orgId, opts = {}) {
     // day it covers are added to it, gifts on or before it are inside it.
     const imp = d.imported_total != null;
     const through = imp ? day(d.imported_through) : null;
-    const after = imp && through ? cash.filter(g => day(g.date) > through) : cash;
+    const after = imp && through ? cash.filter(g => !day(g.date) || day(g.date) > through) : cash;   // IMPORT-4: an undated gift is never inside the period
     const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
-    const latest = [...gs].sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
+    const latest = gs.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
     // Stored on the person: exactly what the gifts and the imported figure say.
     if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
     const afterN = after.filter(g => c(g.amount) > 0).length;
     const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : realCash.length - afterN) : 0) + afterN;
     const n = Number(d.gift_count) || 0;
     if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
-    const firstReal = real.map(g => day(g.date)).sort()[0] || null;
+    const firstReal = real.map(g => day(g.date)).filter(Boolean).sort()[0] || null;
     const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date || d.imported_last_gift_date) : null].filter(Boolean).sort()[0] || null;
     if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
     const impLast = imp ? day(d.imported_last_gift_date) : null;
@@ -168,14 +171,24 @@ async function checkOrg(orgId, opts = {}) {
     const avgCents = countedN ? Math.round(counted.reduce((s, g) => s + c(g.amount), 0) / countedN) : null;
     if ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents))
       add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
-    const first = [...real].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))[0];
+    const realDated = real.filter(g => day(g.date));
+    const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))[0];
     const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
-    if (real.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
+    if (realDated.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
     if (real.length && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
     if (latest && (!last.rows[0] || last.rows[0].id !== latest.id)) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
     const yearCents = cash.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
     if ((year.totalRows ? year.cents : 0) !== yearCents) add("donor-this-year", { donor: d.id, shown: year.cents, gifts: yearCents });
+    // IMPORT-4: the profile says how many undated gifts This year leaves out,
+    // and that figure opens exactly those gifts.
+    const undated = gs.filter(g => !day(g.date));
+    const shownU = glance.undated ? glance.undated.count : 0;
+    if (shownU !== undated.length) add("undated", { donor: d.id, what: "not counted", shown: shownU, gifts: undated.length });
+    else if (undated.length) {
+      const uf = await FS.figureValue(orgId, src("donor-undated-gifts"), {});
+      if (uf.totalRows !== undated.length || uf.cents !== undated.reduce((s, g) => s + c(g.amount), 0)) add("undated", { donor: d.id, what: "rows", shown: [uf.totalRows, uf.cents] });
+    }
     // Each of these opens rows that must foot.
     for (const f of await Promise.all(["donor-lifetime", "donor-average-gift"].map(key => FS.footCheck(orgId, src(key), {}))))
       if (f && !f.foots) add("foots", { source: f.key, donor: d.id, value: f.value, rows: f.rowsFoot });
@@ -195,7 +208,7 @@ async function checkOrg(orgId, opts = {}) {
         const t = tag.get(d.id);
         if (!impFirst || !t) continue;
         if (impFirst < w0From && t.lifecycle === "new") add("donor-since", { donor: d.id, what: "lifecycle", shown: "new", importedFirst: impFirst });
-        const realFirst = (byDonor.get(d.id) || []).filter(g => c(g.amount) > 0).map(g => day(g.date)).sort()[0];
+        const realFirst = (byDonor.get(d.id) || []).filter(g => c(g.amount) > 0).map(g => day(g.date)).filter(Boolean).sort()[0];
         const want = [realFirst, impFirst].filter(Boolean).sort()[0];
         if (day(t.first_date) !== want) add("donor-since", { donor: d.id, what: "first", shown: day(t.first_date), want });
       }
@@ -206,7 +219,7 @@ async function checkOrg(orgId, opts = {}) {
   const households = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
   const lifeOf = new Map(donors.map(d => {
     const through = d.imported_total != null ? day(d.imported_through) : null;
-    const it = (byDonor.get(d.id) || []).filter(g => (!through || day(g.date) > through) && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
+    const it = (byDonor.get(d.id) || []).filter(g => (!through || !day(g.date) || day(g.date) > through) && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
     return [d.id, (d.imported_total != null ? c(d.imported_total) : 0) + it];
   }));
   for (const h of households) {
@@ -397,7 +410,9 @@ const UNIT = { "donor-lifetime": "donors where Lifetime disagrees", "donor-count
   "donor-since": "people whose imported history is missing from Donor since or the lifecycle tags",
   lapse: "people whose lapsed or lapsing tag disagrees", "giving-level": "people whose giving level disagrees",
   "household-one": "linked pairs not in one household",
-  "credit-totals": "people whose census credit lines disagree", quiet: "people the Lapsing or lapsed segment gets wrong" };
+  "credit-totals": "people whose census credit lines disagree", quiet: "people the Lapsing or lapsed segment gets wrong",
+  undated: "people whose gifts with no date are counted wrongly" };
+
 function countLine(r) {
   const n = r.problems.reduce((s, p) => s + p.count, 0);
   if (!n) return `${r.name}: 0 problems`;

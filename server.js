@@ -1082,14 +1082,19 @@ async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
 async function recordGift(o) {
   const orgId = o.orgId;
   const amount = round2(Number(o.amount) || 0);
-  const date = o.date;
+  // IMPORT-4: a gift with no date is written only when the caller says the
+  // file gave none (`undated: true`, the import). Every other door needs a day.
+  const undated = o.undated === true && (o.date == null || o.date === "");
+  const date = undated ? null : o.date;
+  if (!undated && (date == null || date === "")) throw new Error("recordGift: a gift needs a date");
   const giftId = o.giftId || ("g_" + uuid().slice(0, 8));
   const actorId = o.actorId || null, actorName = o.actorName || null;
   // FIX-36: a gift a HISTORY READ brought in (`o.history`: a giving source's
   // first read, QuickBooks, an import) older than historyGifts.HISTORY_DAYS is
   // recorded and counted like any other, and starts nothing: no journey, no
   // sequence, no thank-you draft. A live gift never sets `history`.
-  const oldHistory = o.history === true
+  // An undated gift is history by definition: its day is not known, so it starts nothing.
+  const oldHistory = undated || o.history === true
     && HISTORY.isOldHistory(date, o.today || orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   // FIX-37: an imported gift the organisation says was ALREADY THANKED in the
   // system it came from (importThanks.js) is recorded and counted, and gets no
@@ -1234,7 +1239,7 @@ async function recordGift(o) {
 
   // Rule 3 — the ledger.
   let posted = false;
-  if (o.post !== false) {
+  if (o.post !== false && !undated) {
     try {
       const [orgRow] = await query("SELECT ledger_posting_enabled FROM orgs WHERE id=?", [orgId]);
       if (!orgRow || orgRow.ledger_posting_enabled !== false) {
@@ -1317,7 +1322,7 @@ async function recordGift(o) {
   // membership or ticket carries its own quid pro quo) or one that just paid
   // an instalment.
   let appliedMembership = null;
-  if (o.membershipRenewal !== false && !appliedInstallment && o.quidProQuoValue == null && !o.recurring) {
+  if (o.membershipRenewal !== false && !undated && !appliedInstallment && o.quidProQuoValue == null && !o.recurring) {
     appliedMembership = await applyGiftAsMembershipRenewal({ orgId, donorId: o.donorId, giftId, amount, actorId, actorName })
       .catch(e => { console.error("[membership] renewal auto-apply:", e.message); return null; });
   }
@@ -2943,7 +2948,7 @@ async function onPledgeSettled(orgId, pledgeId) {
                 AND EXISTS (SELECT 1 FROM pledges q WHERE q.id=? AND q.status='fulfilled')`,
     [orgId, pledgeId, pledgeId]);
   const [last] = await query(
-    "SELECT id FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date DESC, id DESC LIMIT 1", [orgId, pledgeId]);
+    "SELECT id FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date DESC NULLS LAST, id DESC LIMIT 1", [orgId, pledgeId]);
   if (!last) return null;
   // ONE DRAFT PER GIFT is the queue's rule, so this does not add a second
   // letter — it REPLACES the one the final payment already earned with the
@@ -3556,7 +3561,7 @@ async function recalcPledgePayment(pledgeId, orgId) {
 
   if (status === "fulfilled") {
     const lastGift = await query(
-      "SELECT id FROM gifts WHERE pledge_id=? AND org_id=? ORDER BY date DESC, id DESC LIMIT 1",
+      "SELECT id FROM gifts WHERE pledge_id=? AND org_id=? ORDER BY date DESC NULLS LAST, id DESC LIMIT 1",
       [pledgeId, orgId]);
     await run(
       `UPDATE pledges SET status='fulfilled', fulfilled_gift_id=?, fulfilled_at=COALESCE(fulfilled_at, NOW()),
@@ -4864,7 +4869,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
       WHERE org_id = ? AND giving_page_id = ?
         AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
         AND amount > 0
-      ORDER BY date DESC LIMIT 2000`, [orgId, givingPageId]);
+      ORDER BY date DESC NULLS LAST LIMIT 2000`, [orgId, givingPageId]);
   let cents = rows.map(r => Number(r.cents));
   let scope = "this form";
   if (cents.length < S.MIN_SAMPLE) {
@@ -4874,7 +4879,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
         WHERE org_id = ?
           AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
           AND amount > 0
-        ORDER BY date DESC LIMIT 2000`, [orgId]);
+        ORDER BY date DESC NULLS LAST LIMIT 2000`, [orgId]);
     if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organization"; }
   }
   const dist = S.ladderFromDistribution(cents);
@@ -5264,7 +5269,7 @@ async function legacyCampaignBody(body, donor, orgName, year) {
   const firstName   = (await GREET_READY).firstNames(donor);
   const lastName    = donor.name.split(" ").slice(1).join(" ");
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
-  const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
+  const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
   const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
   return (await GREET_READY).greetMerge(body || "", GREET.greetingName(donor))
     .replace(/{{first_name}}/g,   firstName)
@@ -7259,7 +7264,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   let personalDetail = donor.notes && donor.notes.trim() ? donor.notes.trim() : null;
   if (!personalDetail) {
     const lastNoteRows = await query(
-      "SELECT note FROM interactions WHERE donor_id = ? AND org_id = ? AND note IS NOT NULL AND note != '' ORDER BY date DESC LIMIT 1",
+      "SELECT note FROM interactions WHERE donor_id = ? AND org_id = ? AND note IS NOT NULL AND note != '' ORDER BY date DESC NULLS LAST LIMIT 1",
       [donorId, orgId]
     );
     personalDetail = lastNoteRows[0]?.note || null;
@@ -11549,14 +11554,14 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
                JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
                JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
               WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")} AND g.amount > 0
-              ORDER BY g.date DESC, g.id DESC LIMIT ?`, [ctx.campaignId, org.id, n])
+              ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT ?`, [ctx.campaignId, org.id, n])
         : ctx.pageId
         ? await query(
             `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
                FROM gifts g
                JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
               WHERE g.org_id=? AND g.giving_page_id=? AND g.amount > 0
-              ORDER BY g.date DESC, g.id DESC LIMIT ?`, [org.id, ctx.pageId, n])
+              ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT ?`, [org.id, ctx.pageId, n])
         : [];
       const showAmounts = w.showAmounts === true;
       r.gifts = rows.map(row => CP.publicGiftLine({
@@ -12234,7 +12239,7 @@ require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINAT
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });
 require("./routes/sheetImport").mount({ query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recalcPledgePayment,
-  withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, orgToday, orgTz });
+  withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, orgToday, orgTz, recalcDonorSummary });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });
@@ -12451,4 +12456,7 @@ require("./routes/email").mount({
   publicAppUrl, query, resend, resolveOrgBrandTheme, uuid,
 });
 
+// IMPORT-4: the in-process suites (numbers1-foot) record an undated gift
+// through the one gift path, as the spreadsheet import does.
+app.locals.recordGift = recordGift;
 module.exports = app;

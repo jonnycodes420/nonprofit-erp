@@ -246,10 +246,18 @@ const key = o => ({ people: 0, households: 0, organizations: 0, gifts: 0, giftCe
   for (let i = 0; i < 5; i++) { const pp = person(i + 15); rows.push([`9/${i + 1}/2026 12:0${i}:00`, `${pp.first} ${pp.last}`, mail(pp), `$${amt(i + 1)}`, i % 2 ? "Check" : "Card"]); gc += c(amt(i + 1)); }
   add("26-google-sheets-form.csv", f => fs.writeFileSync(f, toCsv(rows)), key({ people: 5, gifts: 5, giftCents: gc }));
 }
-// 27 · a column nobody can name: it must stop at "Help me with these"
+// 27 · a column nobody can name. IMPORT-4 rule A: nothing with data is lost or
+// left out by default, so "Code" is kept on each person under its own name and
+// the three gifts import. (Before IMPORT-4 it stopped at "Help me with these".)
 {
   const rows = [["Name", "Amount", "Date", "Code"], ["Alma Ibarra", 100, iso(3, 1), "A1"], ["Theo Jennings", 200, iso(3, 2), "B7"], ["Priya Kowalski", 300, iso(3, 3), "C2"]];
-  add("27-unknown-column-needs-help.csv", f => fs.writeFileSync(f, toCsv(rows)), key({ stopsAtHelp: true, helpColumns: ["Code"] }));
+  add("27-unknown-column-needs-help.csv", f => fs.writeFileSync(f, toCsv(rows)), key({ people: 3, gifts: 3, giftCents: c(600), kept: ["Code"] }));
+}
+// 28 · a column that may be the amount, on a sheet with no amount: the one
+// column question IMPORT-4 still asks, because guessing would make up money
+{
+  const rows = [["Name", "Date", "Tally"], ["Alma Ibarra", iso(3, 1), 100], ["Theo Jennings", iso(3, 2), 200], ["Priya Kowalski", iso(3, 3), 300]];
+  add("28-unknown-money-column-needs-help.csv", f => fs.writeFileSync(f, toCsv(rows)), key({ stopsAtHelp: true, helpColumns: ["Tally"] }));
 }
 
 if (require.main === module) {

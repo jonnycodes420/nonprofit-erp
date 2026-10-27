@@ -24,7 +24,7 @@ async function build(orgId, donorId) {
   const [g] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, MIN(LEFT(date,10)) AS first, MAX(LEFT(date,10)) AS last,
       MAX(amount)::text AS largest FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, donorId]);
   const contacts = await query(`SELECT type, LEFT(date,10) AS date FROM interactions WHERE org_id = ? AND donor_id = ?
-      AND type IN ('call','meeting','email','visit','stewardship','note') ORDER BY date DESC LIMIT 3`, [orgId, donorId]);
+      AND type IN ('call','meeting','email','visit','stewardship','note') ORDER BY date DESC NULLS LAST LIMIT 3`, [orgId, donorId]);
   const room = (await P.roomToGive(orgId, [donorId])).get(donorId);
   const [filing] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ? AND found = true AND source_date IS NOT NULL`, [orgId, donorId]);
 

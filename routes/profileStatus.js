@@ -122,7 +122,7 @@ async function highlights(orgId, d, today, w) {
       source: between(`${a}-01-01`, b === thisY ? today : `${b}-12-31`) });
   }
   // Years in a row, ending this year or last.
-  const gaveIn = new Set(pos.map(g => Number(g.date.slice(0, 4))));
+  const gaveIn = new Set(pos.map(g => Number(String(g.date || "").slice(0, 4))));
   let end = gaveIn.has(thisY) ? thisY : gaveIn.has(thisY - 1) ? thisY - 1 : null;
   if (end) {
     let n = 0;

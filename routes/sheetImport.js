@@ -91,6 +91,13 @@ async function matchPeople(orgId, u, answers, privacy) {
         if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "you", isClient: d.is_client === true }); continue; }
       }
       if (pick === "new") { members.push({ name: nm, status: "new", id: null, by: "you" }); continue; }
+      // TRANS-1: the old system's own id matches first, for the record it names
+      if (p.externalId && nm === names[0]) {
+        const [d] = await query(`SELECT id, is_client FROM donors WHERE org_id=? AND deleted_at IS NULL
+                                    AND (LOWER(external_donor_id)=LOWER(?) OR COALESCE(external_donor_ids,'[]'::jsonb) @> ?::jsonb) LIMIT 2`,
+          [orgId, p.externalId, JSON.stringify([p.externalId])]);
+        if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "the ID in your file", isClient: d.is_client === true }); continue; }
+      }
       const m = await DM.matchDonor(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip });
       if (m.state === "matched" && m.selectedId) {
         const [d] = await query("SELECT is_client FROM donors WHERE id=?", [m.selectedId]);
@@ -111,6 +118,122 @@ async function matchPeople(orgId, u, answers, privacy) {
     out.set(p.key, { members, client });
   }
   return out;
+}
+
+// IMPORT-4 · layers 4 and 5 on the people the import just placed: who was
+// invited and who came, communication choices with where they came from, and
+// every kept column as a custom field under its own header. Everything carries
+// the run (event_attendees.import_id, interactions.import_id, the summary), so
+// Undo takes it all back.
+const ATT_CHUNK = 500;
+const COMM_WORDS = { optOut: "Opted out of email", doNotContact: "Do not contact", doNotMail: "Do not mail", doNotCall: "Do not call",
+                     doNotEmail: "Do not email", deceased: "Marked deceased" };
+async function writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName, eventName }) {
+  const today = ctx.orgToday(await ctx.orgTz(orgId).catch(() => null));
+  // attendance, one row per person on the event
+  if (eventId) {
+    const have = new Set((await query("SELECT donor_id FROM event_attendees WHERE org_id=? AND event_id=? AND donor_id IS NOT NULL", [orgId, eventId])).map(r => r.donor_id));
+    const rows = [];
+    for (const p of u.people) {
+      const at = p.attendance;
+      if (!at || !(at.invited || at.rsvp != null || at.attended)) continue;
+      const status = at.attended ? "attended" : at.rsvp === true ? "registered" : at.rsvp === false ? "declined" : "invited";
+      const ids = personIds.get(p.key) || [];
+      ids.forEach((id, i) => {
+        if (have.has(id)) return;
+        have.add(id);
+        const memberName = (p.people[i] && p.people[i].name) || p.name;
+        rows.push(["ea_" + uuid().slice(0, 10), eventId, orgId, id, memberName, i === 0 ? p.email : null, status, at.table || null,
+                   i === 0 && at.party ? at.party : 1, "import", at.logistics.length ? at.logistics.join(". ") : null, importId]);
+      });
+    }
+    for (let k = 0; k < rows.length; k += ATT_CHUNK) {
+      const batch = rows.slice(k, k + ATT_CHUNK);
+      await run(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,table_label,quantity,source,notes,import_id)
+                 VALUES ${batch.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}`, batch.flat());
+    }
+    summary.attendees = rows.length;
+  }
+  // communication choices: on the person, in the suppression list, and a line
+  // on the timeline saying where each came from
+  const ix = [];
+  for (const p of u.people) {
+    const ids = personIds.get(p.key) || [];
+    for (const [k, words] of Object.entries(COMM_WORDS)) {
+      const src = p.comms && p.comms[k];
+      if (!src) continue;
+      const where = `${src.file}, ${src.sheet ? src.sheet + " sheet, " : ""}"${src.header}": ${String(src.value).slice(0, 120)}`
+        + (eventName && /event|rsvp|guest|mailing|sign/i.test(`${src.sheet} ${src.header}`) ? ` (${eventName})` : "");
+      for (const id of ids) ix.push(["int_" + uuid().slice(0, 10), orgId, id, "note", `${words}. From your import: ${where}.`, today, who.id, who.name, importId,
+        JSON.stringify({ source: "sheet-import", kind: "preference", preference: k, header: src.header, value: src.value, file: src.file })]);
+    }
+    if (p.comms && p.comms.optOut && p.email) {
+      const em = p.email.toLowerCase();
+      const [x] = await query("SELECT id FROM email_suppressions WHERE org_id=? AND LOWER(email)=?", [orgId, em]);
+      if (!x) {
+        const sid = "sup_" + uuid().slice(0, 10);
+        await run("INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)", [sid, orgId, em, "unsubscribed", `import:${importId}`]);
+        summary.suppressions.push(sid);
+      }
+    }
+  }
+  // kept columns: one custom field per header (an existing field of that
+  // name is reused), filled where the person has nothing yet. Past the
+  // org's field limit a value is kept as a note on the person instead.
+  const kept = u.keptHeaders || [];
+  if (kept.length) {
+    const { CF_LIMITS, generateFieldKey } = await import("../shared/customFieldShape.js");
+    const CF = require("../customFields");
+    const keyFor = new Map();
+    for (const kh of kept) {
+      const label = String(kh.header).trim().slice(0, CF_LIMITS.LABEL_MAX);
+      const [def] = await query("SELECT id, key, type FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL AND LOWER(label)=LOWER(?) LIMIT 1", [orgId, label]);
+      if (def) { if (def.type === "text") keyFor.set(kh.header, def.key); continue; }
+      const [{ n }] = await query("SELECT COUNT(*)::int AS n FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL", [orgId]);
+      if (n >= CF_LIMITS.FIELDS_PER_ENTITY) continue;
+      const keys = (await query("SELECT key FROM custom_field_defs WHERE org_id=? AND entity='donor'", [orgId])).map(r => r.key);
+      const key = generateFieldKey(label, keys);
+      const [{ mp }] = await query("SELECT COALESCE(MAX(position),0) AS mp FROM custom_field_defs WHERE org_id=? AND entity='donor'", [orgId]);
+      const id = "cfd_" + uuid().slice(0, 12);
+      await run(`INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
+                 VALUES (?,?,'donor',?,?,'text','[]',?,?,?,?)`, [id, orgId, key, label, (mp || 0) + 1, who.id, who.name, `import:${fileName}`.slice(0, 200)]);
+      summary.customFieldsCreated.push(id);
+      keyFor.set(kh.header, key);
+    }
+    const defs = await CF.loadDefs("donor", orgId);
+    for (const p of u.people) {
+      const entries = Object.entries(p.kept || {});
+      if (!entries.length) continue;
+      const id = (personIds.get(p.key) || [])[0];
+      if (!id) continue;
+      const vals = {}, notes = [];
+      for (const [h, v] of entries) { const k = keyFor.get(h); if (k) vals[k] = String(v).slice(0, 2000); else notes.push(`${h}: ${v}`); }
+      if (Object.keys(vals).length) {
+        const r = await CF.validateCustomFields("donor", orgId, vals, { defs });
+        const ok = Object.fromEntries(Object.entries(r.values).filter(([, v]) => v != null));
+        for (const e of r.errors) notes.push(`${e.key}: ${e.raw}`);
+        if (Object.keys(ok).length) {
+          const [cur] = await query("SELECT custom_fields FROM donors WHERE id=? AND org_id=?", [id, orgId]);
+          const have = (cur && cur.custom_fields) || {};
+          const fresh = Object.fromEntries(Object.entries(ok).filter(([k]) => have[k] == null || have[k] === ""));
+          if (Object.keys(fresh).length) {
+            await run("UPDATE donors SET custom_fields = ?::jsonb || COALESCE(custom_fields, '{}'::jsonb) WHERE id=? AND org_id=?", [JSON.stringify(fresh), id, orgId]);
+            summary.customValuesSet.push({ donorId: id, keys: Object.keys(fresh), wasNull: !(cur && cur.custom_fields) });
+          }
+        }
+      }
+      if (notes.length) {
+        ix.push(["int_" + uuid().slice(0, 10), orgId, id, "note", `From your import (${fileName}): ${notes.join("; ")}`.slice(0, 4000), today, who.id, who.name, importId,
+          JSON.stringify({ source: "sheet-import", kind: "kept" })]);
+        summary.keptAsNotes++;
+      }
+    }
+  }
+  for (let k = 0; k < ix.length; k += ATT_CHUNK) {
+    const batch = ix.slice(k, k + ATT_CHUNK);
+    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,import_id,metadata)
+               VALUES ${batch.map(() => "(?,?,?,?,?,?,?,?,?,?::jsonb)").join(",")}`, batch.flat());
+  }
 }
 
 async function buildUnderstanding(req, body) {
@@ -150,15 +273,35 @@ async function buildUnderstanding(req, body) {
   // an event already on the calendar with the suggested name
   let events = [];
   const nm = (body.answers && body.answers.eventName) || (u.questions.find(q => q.id === "date") || {}).suggestedEventName;
-  if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC LIMIT 5", [orgId, nm]);
-  u.ready = u.questions.length === 0;
-  return { u, matches, model, orgDonors, newPeople, matchedPeople, events, today };
+  if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC NULLS LAST LIMIT 5", [orgId, nm]);
+  u.ready = u.questions.filter(q => !q.optional).length === 0;
+  const button = Rm.importButtonSentence(u, { matched: matchedPeople });
+  if (!u.ready) button.text = `Answer ${u.questions.filter(q => !q.optional).length === 1 ? "1 question" : u.questions.filter(q => !q.optional).length + " questions"} first`;
+  return { u, matches, model, orgDonors, newPeople, matchedPeople, events, today, button };
 }
 
-function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, events }) {
+// The one person shown as they will look after import: the record that
+// touches the most layers (IMPORT-4 Part 8, item 24).
+function samplePerson(u) {
+  let best = null, score = -1;
+  for (const p of u.people) {
+    const sc = (p.roles.includes("donor") ? 2 : 0) + (p.roles.includes("pledger") ? 2 : 0) + (p.attendance && p.attendance.attended ? 2 : 0)
+      + (p.roles.includes("volunteer") ? 2 : 0) + Object.keys(p.comms || {}).length + Object.keys(p.kept || {}).length + (p.email ? 1 : 0);
+    if (sc > score) { score = sc; best = p; }
+  }
+  if (!best) return null;
+  const gifts = u.gifts.filter(g => g.personKey === best.key).map(g => ({ cents: g.cents, date: g.date, method: g.method, methodOriginal: g.methodOriginal, fund: g.fund, flags: g.flags, kind: g.kind }));
+  const pledges = u.pledges.filter(p => p.personKey === best.key).map(p => ({ pledgeCents: p.pledgeCents, paidCents: p.paidCents, openCents: p.openCents, years: p.years, why: p.why,
+    nextDue: (p.installments.find(i => !i.paid) || {}).dueDate || null }));
+  return { name: best.name, email: best.email, phone: best.phone, roles: best.roles, attendance: best.attendance, comms: best.comms, kept: best.kept, flags: best.flags,
+           household: best.household, gifts, pledges };
+}
+
+function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, events, button }) {
   return {
     ...u,
-    people: u.people.map(p => ({ key: p.key, name: p.name, kind: p.kind, household: p.household, email: p.email, lines: p.lines,
+    button, sample: samplePerson(u),
+    people: u.people.map(p => ({ key: p.key, name: p.name, kind: p.kind, household: p.household, email: p.email, lines: p.lines, roles: p.roles, flags: p.flags,
       members: matches.get(p.key).members.map(x => ({ name: x.name, status: x.status, id: x.id, by: x.by || null })) })),
     newPeople, matchedPeople, orgDonors, events, modelUsed: !!model.used, modelOff: !!model.off,
   };
@@ -179,27 +322,34 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
   const result = await withAdvisoryLock("import:" + orgId, async () => {
     const out = await buildUnderstanding(req, body);
     const { u, matches } = out;
+    const Rm = await R();
     if (!u.ready) return { status: 409, body: { error: "questions_open", message: `${u.questions.length} ${u.questions.length === 1 ? "question needs" : "questions need"} an answer first.`, questions: u.questions } };
     if (!u.gifts.length && !u.pledges.length && !u.people.length) return { status: 400, body: { error: "nothing", message: "Nothing in this file is a person or a gift." } };
     const [already] = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [importId, orgId]);
     if (already) return { status: 409, body: { error: "run_exists", message: "That import has already been recorded." } };
     const a = body.answers || {};
-    const summary = { eventCreated: null, householdsCreated: [], householdAssigned: [], sustainerFlagged: [], pledges: [], fundsCreated: [] };
+    const summary = { eventCreated: null, householdsCreated: [], householdAssigned: [], sustainerFlagged: [], pledges: [], fundsCreated: [],
+                      personChanges: [], suppressions: [], attendees: 0, customFieldsCreated: [], customValuesSet: [], keptAsNotes: 0 };
 
-    // the event, when she named one
+    // the event: one she named (IMPORT-3), or one the file shows (IMPORT-4:
+    // who was invited and who came). Its date is optional; with none, the
+    // event sits on the import's day and its page says the date is not known.
     let eventId = null;
-    if (a.linkEvent && a.eventName && a.date) {
-      const nm = String(a.eventName).trim().slice(0, 200);
+    const evName = String(a.eventName || (u.event && u.event.name) || "").trim().slice(0, 200);
+    const evDate = /^\d{4}-\d{2}-\d{2}$/.test(String(a.eventDate || "")) ? a.eventDate : (a.linkEvent && /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || "")) ? a.date : null);
+    if (evName && ((a.linkEvent && a.eventName) || (u.event && u.event.fromEngagement))) {
       const [ev] = a.eventId
         ? await query("SELECT id FROM events WHERE id=? AND org_id=?", [a.eventId, orgId])
-        : await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) AND date=?::date LIMIT 1", [orgId, nm, a.date]);
+        : evDate ? await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) AND date=?::date LIMIT 1", [orgId, evName, evDate])
+          : await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC LIMIT 1", [orgId, evName]);
       if (ev) eventId = ev.id;
       else {
         eventId = "evt_" + uuid().slice(0, 8);
-        await run(`INSERT INTO events (id, org_id, name, event_type, date, status, notes, created_by, created_by_name, import_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)`,
-          [eventId, orgId, nm, "fundraiser", a.date, a.date < out.today ? "completed" : "upcoming",
-           `Created by the import of ${body.fileName || "a spreadsheet"}.`, who.id, who.name, importId]);
+        const day = evDate || out.today;
+        await run(`INSERT INTO events (id, org_id, name, event_type, date, date_unknown, status, notes, created_by, created_by_name, import_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [eventId, orgId, evName, "fundraiser", day, !evDate, day <= out.today ? "completed" : "upcoming",
+           `Created by the import of ${body.fileName || "a spreadsheet"}.` + (evDate ? "" : " The file did not give its date."), who.id, who.name, importId]);
         summary.eventCreated = eventId;
       }
     }
@@ -208,19 +358,24 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     const personId = new Map();   // record key → the donor the gift is credited to
     const touched = new Set();
     let donorsCreated = 0;
+    const personIds = new Map();  // record key → every member's donor id
+    const matchedIds = new Set();
     for (const p of u.people) {
       const m = matches.get(p.key);
       const ids = [];
+      const c = p.comms || {};
       for (const [i, x] of m.members.entries()) {
-        if (x.id) { ids.push(x.id); continue; }
+        if (x.id) { ids.push(x.id); matchedIds.add(x.id); continue; }
         const id = "d_" + uuid().replace(/-/g, "").slice(0, 10);
         const spouse = p.people[i] && p.people[i].spouse ? p.people[i].spouse : null;
         await run(`INSERT INTO donors (id, org_id, name, email, phone, address, address2, city, state, zip, external_donor_id, kind, spouse_name,
-                                       stage, status, tags, person_types, created_by, created_by_name, created_import_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'prospect','active','[]',?::jsonb,?,?,?)`,
+                                       stage, status, tags, person_types, do_not_email, do_not_contact, do_not_mail, do_not_call, deceased,
+                                       created_by, created_by_name, created_import_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'prospect','active','[]',?::jsonb,?,?,?,?,?,?,?,?)`,
           [id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip,
            i === 0 ? p.externalId : null, p.kind === "organization" ? "organisation" : (p.kind === "anonymous" ? "anonymous" : "person"), spouse,
-           u.fileKind === "gifts" ? '["donor"]' : '["other"]', who.id, who.name, importId]);
+           JSON.stringify(p.personTypes || ["other"]), !!(c.optOut || c.doNotEmail), !!c.doNotContact, !!c.doNotMail, !!c.doNotCall, !!c.deceased,
+           who.id, who.name, importId]);
         ids.push(id); donorsCreated++;
       }
       if (p.household && ids.length) {
@@ -237,8 +392,38 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
         }
       }
       personId.set(p.key, ids[0]);
+      personIds.set(p.key, ids);
       ids.forEach(id => touched.add(id));
+      // A person who was already here: the file fills what is missing, adds
+      // their roles and their communication choices, and what it changed is
+      // kept so Undo puts them back exactly as they were.
+      for (const id of ids.filter(d => matchedIds.has(d))) {
+        const [before] = await query(`SELECT email, phone, address, address2, city, state, zip, external_donor_id, person_types,
+                                             do_not_email, do_not_contact, do_not_mail, do_not_call, deceased
+                                        FROM donors WHERE id=? AND org_id=?`, [id, orgId]);
+        if (!before) continue;
+        const first = id === ids[0];
+        const types = Array.isArray(before.person_types) ? before.person_types : [];
+        const addTypes = (p.personTypes || []).filter(t => t !== "other" && !types.includes(t));
+        const nextTypes = addTypes.length ? [...types.filter(t => t !== "other"), ...addTypes] : types;
+        const after = {
+          email: before.email || (first ? p.email : null) || null, phone: before.phone || (first ? p.phone : null) || null,
+          address: before.address || p.address || null, address2: before.address2 || p.address2 || null, city: before.city || p.city || null,
+          state: before.state || p.state || null, zip: before.zip || p.zip || null, external_donor_id: before.external_donor_id || (first ? p.externalId : null) || null,
+          person_types: nextTypes, do_not_email: before.do_not_email || !!(c.optOut || c.doNotEmail), do_not_contact: before.do_not_contact || !!c.doNotContact,
+          do_not_mail: before.do_not_mail || !!c.doNotMail, do_not_call: before.do_not_call || !!c.doNotCall, deceased: before.deceased || !!c.deceased,
+        };
+        const changed = Object.keys(after).filter(k => JSON.stringify(after[k] ?? null) !== JSON.stringify(before[k] ?? null));
+        if (!changed.length) continue;
+        await run(`UPDATE donors SET email=?, phone=?, address=?, address2=?, city=?, state=?, zip=?, external_donor_id=?, person_types=?::jsonb,
+                                     do_not_email=?, do_not_contact=?, do_not_mail=?, do_not_call=?, deceased=?, updated_at=NOW()
+                    WHERE id=? AND org_id=?`,
+          [after.email, after.phone, after.address, after.address2, after.city, after.state, after.zip, after.external_donor_id, JSON.stringify(after.person_types),
+           after.do_not_email, after.do_not_contact, after.do_not_mail, after.do_not_call, after.deceased, id, orgId]);
+        summary.personChanges.push({ id, before: Object.fromEntries(changed.map(k => [k, before[k] ?? null])) });
+      }
     }
+    await writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName: body.fileName || "your file", eventName: evName });
 
     // funds named in the file
     const fundCache = new Map();
@@ -258,7 +443,9 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
       return id;
     };
     const giftArgs = async g => ({
-      orgId, donorId: personId.get(g.personKey), amount: g.cents / 100, date: g.date,
+      // IMPORT-4: a gift with no date lands undated, and starts nothing
+      undated: !g.date, alreadyThanked: !g.date || undefined,
+      orgId, donorId: personId.get(g.personKey), amount: g.cents / 100, date: g.date || null,
       paymentMethod: g.method || undefined, notes: g.note || "", campaign: g.campaign || "",
       fundId: await fundIdFor(g.fund), importId, eventId, history: true, post: false,
       idempotencyKey: "sheet:" + g.rowId, conflict: "idempotency", source: "sheet_import",
@@ -270,7 +457,7 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     const pledgeIdByRow = new Map();
     for (const p of u.pledges) {
       const pid = "pl_" + uuid().slice(0, 8);
-      const notes = [p.why, p.note, eventId && a.eventName ? `Pledged at ${a.eventName}` : null].filter(Boolean).join(". ");
+      const notes = [p.why, p.note, eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ");
       const ins = await query(
         `INSERT INTO pledges (id, org_id, donor_id, amount, due_date, status, notes, idempotency_key, frequency, installment_count,
                               created_by, created_by_name, import_id, event_id)
@@ -312,7 +499,10 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
         [f.cents / 100, id, orgId]);
       if (upd.length) summary.sustainerFlagged.push(id);
     }
-    summary.counts = { ...u.counts, giftsCreated, giftCents, pledgesCreated, pledgeCents, duplicates, donorsCreated };
+    summary.counts = { ...u.counts, giftsCreated, giftCents, pledgesCreated, pledgeCents, duplicates, donorsCreated, attendees: summary.attendees };
+    summary.columnAccount = u.columnAccount;
+    summary.button = Rm.importButtonSentence(u).text;
+    summary.undatedGiftIds = (await query("SELECT id FROM gifts WHERE org_id=? AND import_id=? AND date IS NULL", [orgId, importId])).map(r => r.id);
     summary.totals = u.totals;
     summary.aside = u.aside.slice(0, 500);
     summary.eventId = eventId;
@@ -325,14 +515,44 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     await require("../afterChange").afterChange(orgId, [...touched], { door: "sheet_import", history: true }).catch(e => console.error("[sheet-import] after change:", e.message));
     const parts = [];
     if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
-    if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${money(pledgeCents)})`);
+    if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${money(pledgeCents)}, ${money(u.counts.pledgeOpenCents)} still open)`);
     if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
     const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
       : `Nothing new: every row in this file was already here.`;
     return { status: 201, body: { importId, eventId, giftsCreated, giftCents, pledgesCreated, pledgeCents, donorsCreated, duplicates,
-                                  aside: u.aside.length, sentence, totals: u.totals, totalsSentence: u.totalsSentence } };
+                                  aside: u.aside.length, sentence, totals: u.totals, totalsSentence: u.totalsSentence,
+                                  undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
+                                  eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
+                                  columnAccount: u.columnAccount, button: summary.button } };
   });
   res.status(result.status).json(result.body);
+}));
+
+// IMPORT-4 · "Use the event date for these 106 gifts": one click dates every
+// gift this run brought in with no date, and the event too when the file never
+// gave its day. Optional, never required; once dated they count in This year,
+// goals and retention like any other gift.
+app.post("/imports/:id/date-undated", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const date = String((req.body && req.body.date) || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(Date.parse(date + "T00:00:00Z"))) return res.status(400).json({ error: "bad_date", message: "Pick a day for these gifts." });
+  const today = ctx.orgToday(await ctx.orgTz(orgId));
+  if (date > today) return res.status(400).json({ error: "future", message: "A gift that was given cannot be dated after today." });
+  const [imp] = await query("SELECT id, reversed_at, summary_json FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!imp) return res.status(404).json({ error: "not_found" });
+  if (imp.reversed_at) return res.status(409).json({ error: "undone", message: "That import was undone." });
+  const rows = await query("UPDATE gifts SET date=? WHERE org_id=? AND import_id=? AND date IS NULL RETURNING id, donor_id", [date, orgId, req.params.id]);
+  const sj = typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json || "{}") : (imp.summary_json || {});
+  let eventDated = false;
+  if (sj.eventCreated) {
+    const upd = await query("UPDATE events SET date=?::date, date_unknown=false WHERE org_id=? AND id=? AND date_unknown=true RETURNING id", [date, orgId, sj.eventCreated]);
+    eventDated = upd.length > 0;
+  }
+  const donors = [...new Set(rows.map(r => r.donor_id))];
+  for (const d of donors) await ctx.recalcDonorSummary(d, orgId);
+  await require("../afterChange").afterChange(orgId, donors, { door: "sheet_import", history: true }).catch(e => console.error("[sheet-import] after change:", e.message));
+  res.json({ dated: rows.length, date, eventDated,
+    sentence: rows.length ? `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "gift is" : "gifts are"} now dated ${date}, and count in This year.` : "Every gift from this import already has a date." });
 }));
 }
 

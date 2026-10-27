@@ -84,7 +84,7 @@ function meetingsSql(orgId, { donor = null, staff = null, from = null, to = null
 async function meetingsWith(orgId, donorId, opts = {}) {
   const { sql, args } = meetingsSql(orgId, { ...opts, donor: donorId });
   const lim = Math.max(1, Math.min(1000, Number(opts.limit) || 500));
-  const rows = await query(`SELECT * FROM (${sql}) m ORDER BY m.date DESC, m.starts_at DESC NULLS LAST, m.id DESC LIMIT ${lim}`, args);
+  const rows = await query(`SELECT * FROM (${sql}) m ORDER BY m.date DESC NULLS LAST, m.starts_at DESC NULLS LAST, m.id DESC LIMIT ${lim}`, args);
   return rows.map(r => ({ ...r, held: r.held === true || r.held === "t" }));
 }
 
@@ -113,7 +113,7 @@ async function conversationsWith(orgId, donorId, { limit = 500 } = {}) {
       WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = ANY(?)
         AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%'
         AND i.date IS NOT NULL AND i.date <> '' AND LEFT(i.date, 10) <= ${ORG_TODAY("i")}
-      ORDER BY i.date DESC, i.id DESC LIMIT ${lim}`, [orgId, donorId, CONVERSATION_TYPES]);
+      ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT ${lim}`, [orgId, donorId, CONVERSATION_TYPES]);
   const met = (await meetingsWith(orgId, donorId, { held: true, limit: lim }))
     .map(m => ({ id: m.id, kind: m.kind, donor_id: m.donor_id, type: "meeting", note: m.kind === "calendar" ? (m.title || "Meeting") : m.note, date: m.date, who: m.who }));
   return [...talk, ...met].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id))).slice(0, lim);
