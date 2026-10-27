@@ -7,8 +7,8 @@
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //
-// THE MACHINES. A phone is tests/perf-giving.spec.js's phone (Moto G Power,
-// CPU 4x, DevTools slow 4G). A desktop is Lighthouse's desktop: 1350×940, CPU
+// THE MACHINES. A phone is tests/lib/phone.js's (Moto G Power: DevTools slow
+// 4G, a CPU slowdown calibrated to this machine). A desktop is Lighthouse's desktop: 1350×940, CPU
 // 1x, 40 ms round trip, 10 Mbps. Fresh browser and no cache for every run; each
 // number is the median of PERF_RUNS (default 3).
 //
@@ -36,11 +36,8 @@ const DESKTOP = {
   ctx: { viewport: { width: 1350, height: 940 }, deviceScaleFactor: 1 },
   net: { offline: false, latency: 40, downloadThroughput: (10240 * 1024) / 8, uploadThroughput: (10240 * 1024) / 8 }, cpu: 1,
 };
-const PHONE = {
-  ctx: { viewport: { width: 412, height: 823 }, deviceScaleFactor: 1.75, isMobile: true, hasTouch: true,
-    userAgent: "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" },
-  net: { offline: false, latency: 562.5, downloadThroughput: (1474.56 * 1024) / 8, uploadThroughput: (675 * 1024) / 8 }, cpu: Number(process.env.PERF_CPU || 4),
-};
+const { PHONE: PHONE_CTX, SLOW_4G, cpuRate } = require("./lib/phone");
+const PHONE = { ctx: PHONE_CTX, net: SLOW_4G, cpu: 4 };   // cpu set from cpuRate() before the first screen
 const median = xs => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
 async function seed() {
@@ -135,6 +132,9 @@ async function measureN(browser, machine, auth, url, ready, rows) {
 
   const { chromium } = require(PW);
   const browser = await chromium.launch();
+  const cal = await cpuRate(browser);
+  PHONE.cpu = cal.rate;
+  console.log(`  phone CPU slowdown ${PHONE.cpu}x (this machine's benchmark ${cal.score == null ? "not run: PERF_CPU" : cal.score})`);
   // Home's own blocks, whatever INSIGHTS-1 or a later build draws there.
   const HOME_READY = '[data-testid^="home-"]';
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);

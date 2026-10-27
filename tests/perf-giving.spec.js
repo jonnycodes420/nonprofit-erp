@@ -7,11 +7,9 @@
 //     under 3 s
 //   · under 200 KB of JavaScript over the wire
 //
-// THE PHONE. Lighthouse's mobile profile (Moto G Power) applied the way
-// Lighthouse's own "devtools" throttling applies it, because a browser driven
-// by Playwright throttles per request, not by simulation: 412×823 at 1.75x,
-// CPU 4x slower, and slow 4G as DevTools emulates it (562.5 ms round trip,
-// 1,474.56 Kbps down, 675 Kbps up). Fresh browser, no cache, no service worker.
+// THE PHONE. Lighthouse's mobile profile (Moto G Power), as tests/lib/phone.js
+// defines it: slow 4G as DevTools emulates it and a CPU slowdown calibrated to
+// this machine. Fresh browser, no cache, no service worker.
 //
 // THE PAGES. /give/<org> in each layout (Story, simple, campaign), a
 // peer-to-peer fundraiser's page, the membership page (/give/<org>?memberships)
@@ -28,8 +26,7 @@
 //
 // Env:
 //   APP_URL, BASE         the preview and the API (tests/shard.sh sets both)
-//   PERF_CPU=4            CPU slowdown (CI runners are slower than a laptop;
-//                         the budget is the same, the phone is the same)
+//   PERF_CPU=<n>          fix the CPU slowdown instead of calibrating it
 //   PERF_RUNS=3           fresh phones per page; each number is the median
 //   PERF_REPORT=1         print a table of every number, budget or not
 "use strict";
@@ -43,13 +40,8 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const ORG = "org_perfgive", SLUG = "perf-give-harbor";
 const BUDGET = { lcp: 2500, usable: 3000, jsBytes: 200 * 1024 };
-const CPU = Number(process.env.PERF_CPU || 4);
-// DevTools' slow 4G, which is what Lighthouse applies with throttlingMethod=devtools.
-const NET = { offline: false, latency: 562.5, downloadThroughput: (1474.56 * 1024) / 8, uploadThroughput: (675 * 1024) / 8 };
-const PHONE = {
-  viewport: { width: 412, height: 823 }, deviceScaleFactor: 1.75, isMobile: true, hasTouch: true,
-  userAgent: "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-};
+const { PHONE, SLOW_4G: NET, cpuRate } = require("./lib/phone");
+let CPU = 4;   // set from cpuRate() before the first page
 
 // Every page, with the element that means "a donor can use this now".
 const PAGES = [
@@ -151,6 +143,9 @@ async function measure(browser, p) {
   await reset();
   const { chromium } = require(PW);
   const browser = await chromium.launch();
+  const cal = await cpuRate(browser);
+  CPU = cal.rate;
+  console.log(`  phone CPU slowdown ${CPU}x (this machine's benchmark ${cal.score == null ? "not run: PERF_CPU" : cal.score})`);
   // Three fresh phones per page and the median of each number, as Lighthouse
   // advises: one run is one sample of a noisy machine.
   const RUNS = Number(process.env.PERF_RUNS || 3);
