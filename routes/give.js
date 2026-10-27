@@ -21,7 +21,7 @@ const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file d
 const { getAssetMeta } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
-const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 
 const routers = {
   r0: express.Router(),
@@ -1659,7 +1659,7 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
   // progress (one goal concept), so the manager list carries the same figures.
   const rows = await query(
     `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
          COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = gp.org_id AND ${CAMPAIGN_GIFT_MATCH("g", "c")}), 0)
        END AS campaign_raised
@@ -1847,7 +1847,7 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
     ]
   );
   const rows = await query(
-    `SELECT gp.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+    `SELECT gp.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount
      FROM giving_pages gp WHERE gp.id=?`,
     [req.params.id]
   );
@@ -2734,7 +2734,7 @@ async function fundraiserByToken(token) {
 const P2P_RAISED = `COALESCE(SUM(g.amount) FILTER (WHERE g.amount > 0), 0)`;
 
 async function fundraiserRaisedCents(fundraiserId) {
-  const [r] = await query(`SELECT COALESCE(SUM(amount),0)::float AS t FROM gifts WHERE peer_fundraiser_id=? AND amount > 0`, [fundraiserId]);
+  const [r] = await query(`SELECT COALESCE(SUM(amount),0)::float AS t FROM gifts WHERE peer_fundraiser_id=? AND amount > 0 AND ${NOT_DELETED("gifts")}`, [fundraiserId]);
   return Math.round(Number(r?.t || 0) * 100);
 }
 async function teamRaisedCents(orgId, teamId) {
@@ -2786,7 +2786,7 @@ app.get("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
     if (t) {
       const members = await query(
         `SELECT pf.id, pf.name, pf.slug,
-                COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND amount > 0), 0)::float AS raised
+                COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND amount > 0 AND ${NOT_DELETED("gifts")}), 0)::float AS raised
            FROM peer_fundraisers pf
           WHERE pf.team_id = ? AND pf.org_id = ? AND pf.status = 'active'
           ORDER BY raised DESC, pf.name`, [t.id, f.org_id]);
@@ -2878,7 +2878,7 @@ app.get("/giving-pages/:id/fundraisers", requireAuth, wrap(async (req, res) => {
   if (!pageRows.length) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.org_id=? ORDER BY raised_amount DESC, pf.created_at DESC`,
     [req.params.id, req.user.orgId]
   );
@@ -3082,7 +3082,7 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   if (status !== undefined) await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=? AND org_id=?", [status, req.params.id, req.user.orgId]);
   const updated = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.id=? AND pf.org_id=?`,
     [req.params.id, req.user.orgId]
   );

@@ -36,6 +36,13 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 
 const ORG = "org_import2h";
 const ADMIN = "import2h@test.local";
@@ -96,6 +103,7 @@ async function reset() {
       importNotes += r.body.importNotesCreated || 0;
     }
     ok("§1 the 1,000-donor file imports", !chunkFail, chunkFail);
+    await surfacesAgree("after the 1,000-donor import", ORG, tok);
     const scott = await q(`SELECT id, external_donor_id, external_donor_ids FROM donors WHERE org_id=$1
                             AND (external_donor_id='D10449' OR external_donor_ids @> '["D10449"]'::jsonb
                                  OR external_donor_id='D20024' OR external_donor_ids @> '["D20024"]'::jsonb)`, [ORG]);
@@ -216,6 +224,7 @@ async function reset() {
     const created = await q(`SELECT id FROM donors WHERE org_id=$1 AND created_import_id=$2`, [ORG, RUN_HIST]);
     const un = await api("POST", `/imports/${RUN_HIST}/reverse`, tok, {});
     ok("§10 undo runs", un.status === 200, `${un.status} ${JSON.stringify(un.body).slice(0, 200)}`);
+    await surfacesAgree("after the history import's undo", ORG, tok);
     const [left] = await q(`SELECT (SELECT COUNT(*) FROM interactions WHERE org_id=$1 AND import_id=$2)::int ix,
                                    (SELECT COUNT(*) FROM tasks WHERE org_id=$1 AND import_id=$2)::int tk,
                                    (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND do_not_solicit IS TRUE)::int dns,

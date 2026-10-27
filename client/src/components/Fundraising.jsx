@@ -465,7 +465,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
           ariaLabel={`View the gifts behind ${overview.periodLabel} raised`}
           sub={period.priorRaised > 0
-            ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs last period`
+            ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs the same days last year`
             : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
         <StatTile label="Gifts this period" value={period.giftCount} accent={T.bg3}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}

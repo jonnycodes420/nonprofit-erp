@@ -156,6 +156,7 @@ CORE=(
   import4-layers
   fix52-import-undo
   fix54-deleted-stay-deleted
+  surfaces-agree
   org-bound-writes
   real-shaped
   int4-mailbox
