@@ -480,6 +480,14 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           ariaLabel="View giving pages"
           sub={gp.count > 0 ? `${fmtFull(gp.raised)} raised` : "None published"} />
       </div>
+      {/* IMPORT-4: the period's figures leave out gifts with no date, and say so. */}
+      {overview.undated && overview.undated.count > 0 && (
+        <div data-testid="fr-undated" style={{ fontSize: 12, color: T.ink3, marginTop: -4 }}>
+          <Figure variant="inline" kind="count" value={overview.undated.count} suffix={overview.undated.count === 1 ? " gift" : " gifts"} label="Gifts with no date"
+            definition="Gifts that came in with no date. They count in Lifetime and the campaign or event they were given to, and in no figure for a span of time, because their year is not known."
+            source={overview.undated.source} figureKey="fundraising.undated" /> with no date not counted in this period
+        </div>
+      )}
 
       {/* Two-column: top campaign + recent gifts */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>

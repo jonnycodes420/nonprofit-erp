@@ -92,7 +92,7 @@ async function eventSheet() {
   const answers = { date: "2026-10-22", eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } };
   const u2 = await api("POST", "/sheet-import/understand", tok, { ...body, answers });
   ok("§1 answered, it is ready, 135 people new and none matched (an empty org)", u2.body.ready === true && u2.body.newPeople === 135 && u2.body.matchedPeople === 0, JSON.stringify({ r: u2.body.ready, n: u2.body.newPeople, m: u2.body.matchedPeople, q: u2.body.questions }));
-  ok("§2 the review states the total row's check in words", (u2.body.totalsSentence || [])[0] === "Your total row says $124,290, and the 106 rows above it add up to $124,290.", JSON.stringify(u2.body.totalsSentence));
+  ok("§2 the review states the total row's check in words", (u2.body.totalsSentence || [])[0] === "Your total row says $124,290, and the 106 rows above it add up to $124,290: 63 gifts ($45,340), $78,950 promised and not yet received (43 rows).", JSON.stringify(u2.body.totalsSentence));
   const before = await one("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [ORG]);
   ok("§1 understand wrote nothing", before.n === 0);
 

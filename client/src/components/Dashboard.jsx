@@ -1544,6 +1544,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 {/* Context line carries more of the weight here than the
                     numeral above it — a sentence about what the number means
                     for donor relationships, not a bare "vs. X%" field label. */}
+                {/* IMPORT-4: retention leaves out gifts with no date, and says so; the count opens them. */}
+                {stewardMetrics.undated&&stewardMetrics.undated.count>0&&(
+                  <div data-testid="home-retention-undated" onClick={e=>e.stopPropagation()} style={{fontSize:12,color:T.ink3,marginTop:4}}>
+                    <Figure variant="inline" kind="count" value={stewardMetrics.undated.count} suffix={stewardMetrics.undated.count===1?" gift":" gifts"} label="Gifts with no date"
+                      definition="Gifts that came in with no date. They count in Lifetime and their event or campaign, and in no figure for a span of time, retention included, because their year is not known."
+                      source={stewardMetrics.undated.source} figureKey="home.undated"/> with no date not counted
+                  </div>
+                )}
                 <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
                   {/* A brand-new org gets an expectant "too early" line, never
                       the below-sector-average verdict (QA_FRESH_ORG R2) —

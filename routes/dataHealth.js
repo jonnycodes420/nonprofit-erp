@@ -536,7 +536,7 @@ async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confid
       const through = throughs[0] || null;
       const [aft] = (await queryTx(client,
         `SELECT COALESCE(SUM(amount), 0)::text AS t, (COUNT(*) FILTER (WHERE amount > 0))::int AS n FROM gifts
-          WHERE org_id = $1 AND donor_id = $2 AND ($3::text IS NULL OR date > $3)`, [orgId, keptId, through]));
+          WHERE org_id = $1 AND donor_id = $2 AND ($3::text IS NULL OR date IS NULL OR date > $3)`, [orgId, keptId, through]));
       const firsts = [kept.imported_first_gift_date, other.imported_first_gift_date].filter(Boolean).sort();
       const lasts = [kept, other].filter(x => x.imported_last_gift_date).sort((a, b) => (a.imported_last_gift_date < b.imported_last_gift_date ? 1 : -1));
       const srcs = [...new Set([kept, other].filter(x => x.imported_total != null).map(x => x.imported_source || "your old system"))];

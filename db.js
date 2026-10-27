@@ -5693,6 +5693,9 @@ async function runSchemaInit(pool) {
   // a FALLBACK for rows written before this column existed; nothing is
   // rewritten behind anybody's back.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  // IMPORT-4: a gift whose day the file never gave is stored with no date (an
+  // undated gift). It counts in Lifetime and its event, never in a period.
+  await pool.query(`ALTER TABLE gifts ALTER COLUMN date DROP NOT NULL`);
   // IMPORT-3: what one spreadsheet import made, so Undo removes the whole file:
   // its pledges, the households and the event it created. A pledge made at an
   // event remembers which.
@@ -5700,6 +5703,11 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS event_id TEXT`);
   await pool.query(`ALTER TABLE households ADD COLUMN IF NOT EXISTS import_id TEXT`);
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  // IMPORT-4: an import writes attendance (undone with the run), and an event
+  // a file names without a day is put on the import's day, said so on its page.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_attendees_import ON event_attendees (org_id, import_id) WHERE import_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS date_unknown BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_event ON gifts (org_id, event_id) WHERE event_id IS NOT NULL`);
   // The campaign an event raises into, so an event and its appeal are one
   // total rather than two.

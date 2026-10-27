@@ -122,6 +122,34 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **The messy-file set grades the reader, so its answer key never comes from the reader.**
   `tests/fixtures/import/messy/make.cjs` computes each key from the rows it writes. (IMPORT-3, after BUILD-77)
 
+- **An import reads in layers and loses nothing (IMPORT-4).** `understand()` in `shared/sheetRead.js` builds
+  People (sheets that list the same people merge: a shared ID first, then email, then the exact name with no
+  contact detail that disagrees), Roles (donor, pledger, event guest, prospect, volunteer, board, staff, else a
+  contact; a person with no gift is never a donor), Money, Engagement (invited, RSVP, attended, table, party size,
+  logistics; opted out, do not contact, do not mail, do not call, each with its source) and Everything else.
+- **Every column is mapped, kept or skipped with a reason; never "Don't import" by default.** A column Steward has
+  no field for is kept as a text custom field under its own header (`created_source` `import:<file>`); past the
+  40-field limit, as a note on the person. The only column that still blocks is a money-shaped one on a sheet with
+  no amount yet, because guessing would make up money. The preview states `columnAccount` (total = mapped + kept +
+  skipped). This replaces BUILD-78's "no field without an explicit accept" for this reader: the Import button,
+  which names the kept columns, is the accept.
+- **A gift with a person and an amount always lands.** A blank or unreadable date is an undated gift
+  (`gifts.date IS NULL`), never a set-aside row. "Oct 2026" is the 1st with the file's words kept; "FY26" is
+  undated with its words kept. `POST /imports/:id/date-undated` dates a run's undated gifts in one click.
+- **A shared ID links sheets.** A gift sheet's ID column whose values are the people sheet's IDs is the person,
+  and gifts attach by it, never by name. Matching an org's existing people tries that ID first (TRANS-1).
+- **An email or phone on three or more people with different last names is a placeholder**: never used to tell
+  people apart and never copied onto anyone.
+- **A column that totals the gifts ("Gave at dinner") is skipped only when it foots person by person**; otherwise kept.
+- **An event the file shows is created even without a date** (`events.date_unknown`, on the import's day, "Date not
+  known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
+  only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).
+- **The button says what will exist afterwards** (`importButtonSentence`); over 5% of people or dollars set aside,
+  it says "Review N set aside first" until the list is opened.
+- **Undo restores a person who was already here exactly**: the fields the import changed are kept in
+  `summary_json.personChanges` and put back; attendance, suppressions, timeline lines, kept values and the fields
+  and funds the run made go with it.
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)
@@ -150,7 +178,8 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 
 ## Where the code is
 - `shared/sheetRead.js` + `routes/sheetImport.js` + `client/src/components/SpreadsheetImport.jsx`: the adaptive
-  reader for any spreadsheet (IMPORT-3); `tests/import3.test.js` with `tests/fixtures/import/messy/`
+  reader for any spreadsheet (IMPORT-3), read in layers (IMPORT-4); `tests/import3.test.js` with
+  `tests/fixtures/import/messy/`, `tests/import4-layers.test.js` with `tests/fixtures/import/import4/`
 - `shared/importShape.js` — the whole pure layer: header tokens, shape detection, `analyzeCsvText`,
   `decodeSpreadsheetBytes`, money/date/id normalisers, `classifyColumns`, the workbook reader and builder,
   `resolveDonorIdentity`, `IMPORT_PROMISE_FIELDS`

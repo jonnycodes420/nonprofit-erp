@@ -194,7 +194,7 @@ async function generosityParts(today, gifts, subs) {
   const lifetime = gifts;
   const recent = gifts.filter(g => ageDays(today, g.date) < w.WINDOW_DAYS && ageDays(today, g.date) >= 0);
   const byYear = new Map();
-  for (const g of gifts) { const y = Number(g.date.slice(0, 4)); if (y > Y - w.CONSISTENCY_YEARS && y <= Y) byYear.set(y, (byYear.get(y) || 0) + g.cents); }
+  for (const g of gifts) { const y = Number(String(g.date || "").slice(0, 4)); if (y > Y - w.CONSISTENCY_YEARS && y <= Y) byYear.set(y, (byYear.get(y) || 0) + g.cents); }
   const yearRows = [...byYear.entries()].filter(([, c]) => c > 0).sort((a, b) => b[0] - a[0])
     .map(([y, c]) => ({ id: `year:${y}`, date: `${y}-12-31`, cents: c, detail: `Gave in ${y}` }));
   const last = gifts.filter(g => { const a = ageDays(today, g.date); return a >= 0 && a < w.UPGRADE_DAYS; });

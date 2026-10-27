@@ -562,7 +562,7 @@ async function catalogValues(orgId) {
   const [fund, campaign, event, owner, payment_method, gift_type, interaction_type, logged_by, stage, interval, recurring_status, ask_status, grant_status] = await Promise.all([
     q(`SELECT name AS v FROM fin_funds WHERE org_id = ? ORDER BY name LIMIT 40`),
     q(`SELECT name AS v FROM campaigns WHERE org_id = ? AND sent_at IS NULL AND COALESCE(subject,'') = '' ORDER BY start_date DESC NULLS LAST LIMIT 40`),
-    q(`SELECT name AS v FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 40`),
+    q(`SELECT name AS v FROM events WHERE org_id = ? ORDER BY date DESC NULLS LAST LIMIT 40`),
     q(`SELECT DISTINCT assigned_to_name AS v FROM donors WHERE org_id = ? AND assigned_to_name <> '' LIMIT 30`),
     q(`SELECT DISTINCT payment_method AS v FROM gifts WHERE org_id = ? AND payment_method <> '' LIMIT 20`),
     q(`SELECT DISTINCT type AS v FROM gifts WHERE org_id = ? AND type <> '' LIMIT 20`),

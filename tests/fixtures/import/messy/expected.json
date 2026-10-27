@@ -359,6 +359,22 @@
   },
   "27-unknown-column-needs-help.csv": {
     "expect": {
+      "people": 3,
+      "households": 0,
+      "organizations": 0,
+      "gifts": 3,
+      "giftCents": 60000,
+      "pledges": 0,
+      "pledgeCents": 0,
+      "aside": 0,
+      "kept": [
+        "Code"
+      ]
+    },
+    "answers": {}
+  },
+  "28-unknown-money-column-needs-help.csv": {
+    "expect": {
       "people": 0,
       "households": 0,
       "organizations": 0,
@@ -369,7 +385,7 @@
       "aside": 0,
       "stopsAtHelp": true,
       "helpColumns": [
-        "Code"
+        "Tally"
       ]
     },
     "answers": {}

@@ -20,7 +20,8 @@ import { Figure, FigureWhy } from "./Figure";
 import { censusById } from "../../../shared/numberCensus.js";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 
-const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : null);
+// IMPORT-4: a gift with no date reads "No date", never "null".
+const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : "No date");
 
 // POLISH-1 · the average says what it is the average OF, and what came off it.
 function averageSub(a) {
@@ -59,6 +60,19 @@ function Cell({ label, def, source, children, under, testid, first = false, oneL
       <div style={VALUE}>{children}</div>
       {under && <div style={oneLine ? { ...UNDER, whiteSpace: "nowrap" } : UNDER} title={oneLine ? under : undefined}>{under}</div>}
     </div>
+  );
+}
+
+// IMPORT-4 · "1 gift with no date not counted", under a figure for a span of
+// time. The count opens the undated gifts themselves.
+export function UndatedNote({ u }) {
+  if (!u || !u.count) return null;
+  return (
+    <span data-testid="dp-fig-undated">
+      <Figure value={u.count} kind="count" suffix={u.count === 1 ? " gift" : " gifts"} label="Gifts with no date"
+        definition="Gifts that came in with no date. They count in Lifetime, the gift count and the average, and in no figure for a span of time, because their year is not known."
+        source={u.source} figureKey="profile.undated" variant="inline" /> with no date not counted
+    </span>
   );
 }
 
@@ -103,7 +117,8 @@ export function ProfileHeaderFigures({ figures }) {
         </> : null}>
         <One f={F.lifetime} kind="money" label="Lifetime" def={censusById("profile.lifetime").sentence} figureKey="profile.lifetime" />
       </Cell>
-      <Cell label="This year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear">
+      <Cell label="This year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear"
+        under={F.undated && F.undated.count ? <UndatedNote u={F.undated} /> : null}>
         <One f={F.thisYear} kind="money" label="This year" def={censusById("profile.thisYear").sentence} figureKey="profile.thisYear" />
       </Cell>
       <Cell label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift"
@@ -133,12 +148,18 @@ export function ProfileMoreNumbers({ figures, glance }) {
         <One f={glanceFig(avg)} kind="money" label={(avg && avg.label) || "Average gift"} figureKey="profile.glance.average-gift" />
       </Cell>
       <Cell label="First / Largest" source={src(g.first)} testid="dp-fig-firstLargest"
-        under={g.first && g.first.value != null ? `${monthOf(g.first.date)}${g.largest && g.largest.value != null ? ` / ${monthOf(g.largest.date)}` : ""}` : null}>
+        under={g.first && g.first.value != null ? `${monthOf(g.first.date)}${g.largest && g.largest.value != null ? ` / ${monthOf(g.largest.date)}` : ""}`
+          : g.largest && g.largest.value != null ? `No date / ${monthOf(g.largest.date)}` : null}>
         {g.first && g.first.value != null
           ? <><One f={g.first} kind="money" label={g.first.label || "First gift"} figureKey="profile.glance.first-gift" />
               <span style={{ color: T.ink3, fontWeight: 400 }}> / </span>
               <One f={g.largest} kind="money" label={(g.largest && g.largest.label) || "Largest gift"} figureKey="profile.glance.largest-gift" /></>
-          : <One f={glanceFig(g.first)} kind="money" label="First gift" figureKey="profile.glance.first-gift" />}
+          : g.largest && g.largest.value != null
+            // IMPORT-4: every gift on file has no date, so the first is not known; Largest still is.
+            ? <><span data-testid="dp-fig-first-unknown" style={BLANK}>Unknown</span>
+                <span style={{ color: T.ink3, fontWeight: 400 }}> / </span>
+                <One f={g.largest} kind="money" label={g.largest.label || "Largest gift"} figureKey="profile.glance.largest-gift" /></>
+            : <One f={glanceFig(g.first)} kind="money" label="First gift" figureKey="profile.glance.first-gift" />}
       </Cell>
       <Cell label="Last met" def={censusById("profile.lastMet").sentence} testid="dp-fig-lastMet"
         under={lm && lm.date ? `${lm.what ? lm.what + ". " : ""}${displayDateShort(lm.date, today)}` : null} oneLine>

@@ -1193,7 +1193,9 @@ export function PlanPending({failed=false,minHeight=120}){
     </div>
   );
 }
-export function GivingHistoryChart({gifts}) {
+export function GivingHistoryChart({gifts:all}) {
+  // IMPORT-4: a gift with no date has no place on a timeline; it is in the gift list.
+  const gifts=(all||[]).filter(g=>g&&g.date);
   if (!gifts?.length) return <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}>No gift history recorded</div>;
   const sorted=[...gifts].sort((a,b)=>new Date(a.date)-new Date(b.date));
   const maxAmt=Math.max(...sorted.map(g=>g.amount),1);

@@ -126,7 +126,11 @@ async function fire(evt) {
 // matching gift credit, which is never money in Lifetime, a campaign or an average.
 // FIX-51: "goQuiet" moves every gift of one person to 9 to 15 months ago,
 // through the edit route, so they are Lapsing or Lapsed (the one quiet rule).
-const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal", "coverFee", "creditRow", "goQuiet"];
+// IMPORT-4: "undated" records a gift the file gave no date for (through
+// recordGift, as the spreadsheet import does); "dateUndated" gives one a day
+// through the profile's Set date (PUT /gifts/:id).
+const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal", "coverFee", "creditRow", "goQuiet", "undated", "dateUndated"];
+
 async function live(o) {
   const donors = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY id`, [o.org])).map(r => r.id);
   const gifts = await q(`SELECT id, donor_id, amount::text AS amount, date, campaign_id, fund_id, stripe_payment_id FROM gifts WHERE org_id=$1 ORDER BY id`, [o.org]);
@@ -155,6 +159,26 @@ async function step(o, s) {
       const want = (await windowOk(o, campaignId, date)) ? 201 : 400;
       if (res.status !== want) throw new Error(`add ${amount} on ${date} to ${campaignId} answered ${res.status}, expected ${want}`);
       return `add $${amount} to ${donor.slice(-1)} dated ${date}${campaignId ? ` for ${campaignId.split("_").pop()}` : ""}${want === 400 ? " (refused: outside the campaign's dates)" : ""}`;
+    }
+    case "undated": {
+      // Half the time someone with an imported total, the case where an
+      // undated gift could wrongly fall "inside" the old system's period.
+      const imported = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND imported_total IS NOT NULL ORDER BY id`, [o.org])).map(x => x.id);
+      const donor = imported.length && r() < 0.5 ? pick(r, imported) : pick(r, donors), campaignId = pick(r, [null, null, `c_${o.org}_spring`, `c_${o.org}_gt`, `c_${o.org}_open`]), amount = money(r);
+      const recordGift = require("../server.js").locals.recordGift;
+      await recordGift({ orgId: o.org, donorId: donor, amount, date: null, undated: true, history: true, alreadyThanked: true, post: false,
+                         campaignId: campaignId || null, type: "cash", paymentMethod: "Check", actorId: "system:test", actorName: "test", timeline: false });
+      await require("../afterChange").afterChange(o.org, [donor], { door: "test", history: true });
+      return `undated gift $${amount} to ${donor.slice(-1)}${campaignId ? ` for ${campaignId.split("_").pop()}` : ""}`;
+    }
+    case "dateUndated": {
+      const u = gifts.filter(x => !x.date);
+      if (!u.length) return "set date: no undated gift";
+      const pickG = pick(r, u), date = dateIn(r, o);
+      const res = await api("PUT", `/gifts/${pickG.id}`, o.tok, { date });
+      // A campaign the new day is outside refuses it, like any date edit with a campaign.
+      expect(res, [200, 400], "set date");
+      return `set date of ${pickG.id} to ${date}${res.status === 400 ? " (refused)" : ""}`;
     }
     case "coverFee": {
       if (!g || Number(g.amount) < 1) return "cover fee: no gift";

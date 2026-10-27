@@ -153,6 +153,7 @@ CORE=(
   connect2-sources
   import2-history
   import3
+  import4-layers
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof
