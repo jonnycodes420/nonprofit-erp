@@ -151,11 +151,32 @@ async function fireStripe(evtId, piId, cents, email, name) {
   // real change, and the store is right to refuse its answers then; the pass
   // is repeated, up to three times, and only a refusal with NO change behind
   // it counts against the store.
+  // HARDEN-1 · THE FLAKE WAS ANOTHER DATABASE'S TRANSACTION. A stored answer
+  // remembers pg_snapshot_xmin, the oldest transaction open ANYWHERE on the
+  // Postgres cluster, and is served only while no change for the org is at or
+  // above it. Another worktree's battery (or this run's other shards) on the
+  // same :5544 holding one transaction open across the seed meant the seed's
+  // own writes stayed "newer than the mark", so nothing was ever served from
+  // the store and the org-wide check went red with no change behind it.
+  // Reproduced by holding `BEGIN; SELECT pg_current_xact_id(); pg_sleep(40)`
+  // in a different database: red every time. So each attempt first waits
+  // (bounded) until every transaction older than the org's last change has
+  // ended, and then waits for the store's own rows, which are written just
+  // after the response (orgSummary.cached does not await its insert).
+  const settled = () => waitFor(async () => (await q(
+    `SELECT NOT EXISTS (SELECT 1 FROM org_changes WHERE org_key=$1 AND xid >= pg_snapshot_xmin(pg_current_snapshot())) AS ok`,
+    [ORG]))[0].ok, { timeout: 60000, interval: 100 });
+  const storedRows = () => waitFor(async () => {
+    const have = new Set((await q(`SELECT path FROM org_summary WHERE org_key=$1`, [ORG])).map(r => r.path));
+    return STORED.every(p => have.has(p));
+  }, { timeout: 10000, interval: 50 });
   let fresh, stored, notStored = CLAIMED, sameBytes = CLAIMED, unexplained = true;
   for (let attempt = 0; attempt < 3 && (notStored.length || sameBytes.length); attempt++) {
+    await settled();
     await forgetStore();
     const mark = await changeMark();
     fresh = await readAll(tok);
+    await storedRows();
     stored = await readAll(tok, CLAIMED);
     sameBytes = CLAIMED.filter(p => stored[p].body !== fresh[p].body);
     notStored = STORED.filter(p => !stored[p].stored);
