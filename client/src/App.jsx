@@ -3,7 +3,6 @@ import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
-import { HelpPanel } from "./components/HelpPanel";
 import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
 import { CheckSnapHost, openCheckSnap } from "./components/CheckSnap";   // CHECK-2
 import { Camera } from "lucide-react";
@@ -49,6 +48,8 @@ const GroupsPage = lazy(() => import("./components/Groups"));
 const CalendarPage = lazy(() => import("./components/Calendar"));
 const DonorPortalHub = named(() => import("./components/DonorPortalHub"), "DonorPortalHub");
 const Events = named(() => import("./components/Events"), "Events");
+// The Help panel (Support chat and every help article) exists only while open.
+const HelpPanel = named(() => import("./components/HelpPanel"), "HelpPanel");
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
@@ -1109,7 +1110,7 @@ function AppShell() {
       </div>
     </div>}
 
-    {mobileHelp&&<HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/>}
+    {mobileHelp&&<Suspense fallback={null}><HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/></Suspense>}
     {/* VOICE-2 option B: the floating square mic, bottom right, on every screen
         and every width. It opens the same Tell Steward window; the rail keeps
         its own Tell Steward row. */}
