@@ -391,14 +391,23 @@ _cleanup_locks() {
 }
 trap _cleanup_locks EXIT
 trap 'exit 130' INT TERM
-if { [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; } && [ "${BATTERY_LOCK:-1}" != "0" ]; then
-  BLOCK_DIR="${BATTERY_LOCK_DIR:-/tmp/steward-battery-$(id -u).lock}"
+# A run started INSIDE a battery that holds the lock (fix15-two-worktrees runs
+# two nested batteries on purpose, side by side) is that battery's own work:
+# it inherits STEWARD_BATTERY_LOCK_PID and does not wait on its own parent.
+BLOCK_DIR="${BATTERY_LOCK_DIR:-/tmp/steward-battery-$(id -u).lock}"
+nested_in_lock=0
+if [ -n "${STEWARD_BATTERY_LOCK_PID:-}" ] && [ "$(cat "$BLOCK_DIR/pid" 2>/dev/null)" = "$STEWARD_BATTERY_LOCK_PID" ] \
+   && kill -0 "$STEWARD_BATTERY_LOCK_PID" 2>/dev/null; then
+  nested_in_lock=1
+  echo "[run-all] inside the battery that holds the lock (pid $STEWARD_BATTERY_LOCK_PID); not waiting on it"
+fi
+if { [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; } && [ "${BATTERY_LOCK:-1}" != "0" ] && [ "$nested_in_lock" = "0" ]; then
   waited=0; said=""
   while :; do
     if mkdir "$BLOCK_DIR" 2>/dev/null; then
       echo $$ >"$BLOCK_DIR/pid"
       echo "worktree '$WT_TAG' · ${#RUN[@]} suite(s) · started $(date '+%H:%M:%S')" >"$BLOCK_DIR/who"
-      BATTERY_LOCK_HELD="$BLOCK_DIR"; break
+      BATTERY_LOCK_HELD="$BLOCK_DIR"; export STEWARD_BATTERY_LOCK_PID=$$; break
     fi
     held=$(cat "$BLOCK_DIR/pid" 2>/dev/null || echo "")
     if [ -n "$held" ] && kill -0 "$held" 2>/dev/null; then

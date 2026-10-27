@@ -92,7 +92,7 @@ async function sheetImport(tok, grid, fileName) {
 // Each run's nights are its own, so opsAlert's once-an-hour mark (per kind,
 // and the kind carries the night) never swallows an alert of a re-run.
 let superTok = null, night = 0;
-const RUN_TAG = Date.now().toString(36);
+const RUN_TAG = require("crypto").randomBytes(4).toString("hex");
 async function runCheck() {
   night++;
   const before = captured.length;
