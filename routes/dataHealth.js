@@ -116,6 +116,8 @@ const NOT_MOVED = {
   "workflow_runs.entity_id": "the run's dedupe key part; the person on a run is workflow_runs.donor_id, which moves",
   "asset_pointer_history.entity_id": "a log of photo and file pointer changes as they happened; history is never rewritten",
   "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
+  "insight_outcomes.donor_ids": "INSIGHTS-1: who a suggestion was about when she marked it Done, Not now or Doesn't fit; a record of what happened, never rewritten",
+  "insight_shown.donor_ids": "INSIGHTS-1: who a suggestion showed when it was first shown, for What worked; a record of what happened, never rewritten",
 };
 // Tables with no `id` column: a row is found by these columns plus the pointer.
 const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"] };

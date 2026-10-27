@@ -7107,7 +7107,7 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
   // INSIGHTS-1: a gift back from Review moves its person's totals again.
   if (t.table_name === "gifts" && row && row.donor_id) {
     await recalcDonorSummary(row.donor_id, req.user.orgId);
-    await require("../afterChange").afterChange(req.user.orgId, [row.donor_id], { door: "insights_review", recalc: false });
+    await require("../afterChange").afterChange(req.user.orgId, [row.donor_id], { door: "gift_form", recalc: false });
   }
   // The audit row is about the record that came back, not the trash row.
   if (req.audit) {

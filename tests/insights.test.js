@@ -81,11 +81,11 @@ async function importFile(tok, file) {
   const u = await api("POST", "/sheet-import/understand", tok, body);
   if (u.status !== 200 || !u.body.ready) return { ok: false, why: JSON.stringify(u.body).slice(0, 300) };
   const r = await api("POST", "/sheet-import/commit", tok, { ...body, background: true });
-  const t0 = Date.now();
+  const t0 = performance.now();
   for (;;) {
     const j = await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok);
     if (j.status === 200 && j.body.status !== "running") return { ok: j.body.status === "done", importId: r.body.importId, why: j.body.status };
-    if (Date.now() - t0 > 120000) return { ok: false, why: "timeout" };
+    if (performance.now() - t0 > 120000) return { ok: false, why: "timeout" };
     await new Promise(res => setTimeout(res, 150));
   }
 }
@@ -319,9 +319,9 @@ async function main() {
   await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, created_by, created_by_name)
            SELECT 'gsp_'||i, $1, 'dsp_'||(1 + (i % 2000)), 25 + (i % 40) * 25, (DATE '2024-01-01' + (i * 7919 % 1030))::text, CASE WHEN i % 97 = 0 THEN 'Tickets' ELSE 'Donation' END, 'system:test', 'test'
              FROM generate_series(1,10000) i`, [BIG]);
-  const t0 = Date.now();
+  const t0 = performance.now();
   const sp = await api("GET", `/insights?asOf=${AS_OF}&view=first`, tokB);
-  const ms8 = Date.now() - t0;
+  const ms8 = Math.round(performance.now() - t0);
   ok(`§8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds (${ms8} ms)`, sp.status === 200 && sp.body.cards.length > 0 && ms8 < 3000, ms8);
 
   if (WAITING.length) {

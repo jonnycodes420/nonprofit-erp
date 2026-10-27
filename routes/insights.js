@@ -176,7 +176,8 @@ app.post("/insights/review/:giftId", requireAuth, checkWriteAccess, wrap(async (
       [orgId, giftId, "not_gift", trashId, a.id, a.name]);
   });
   await recalcDonorSummary(g.donor_id, orgId);
-  await require("../afterChange").afterChange(orgId, [g.donor_id], { door: "insights_review", recalc: false });
+  // a staff click on a page: the gift-form door (afterChange.js DOORS)
+  await require("../afterChange").afterChange(orgId, [g.donor_id], { door: "gift_form", recalc: false });
   if (req.audit) { req.audit.entity("gift", giftId); req.audit.before(g); req.audit.after(null); }
   res.json({ ok: true, decision, undoId: trashId, undoSeconds: 60,
     sentence: `Not a gift: ${I.money(Math.round(Number(g.amount) * 100))} no longer counts in any total. Undo puts it back.` });
