@@ -1,0 +1,333 @@
+// tests/insights.test.js: INSIGHTS-1. WHO TO CALL, WHY, AND WHAT TO SAY, FROM
+// THE REAL-SHAPED FILES. Guards donor data and money: the Review card moves a
+// row out of every total (and Undo puts it back), the Link card writes
+// relationships, and every card's words may carry only numbers its facts hold.
+//
+// Into one EMPTY fresh org: the gift file, then the dinner file, then the
+// contacts file. asOf = 2026-10-27 throughout (GET ?asOf=, TEST_MODE only):
+//   §1 the gift file's own numbers, by donor NAME, are the brief's: 182 donors;
+//      113, 72, 31 in 2024-26; 25 of 2024's gave in 2025; 47 first-time in
+//      2025, 3 gave in 2026; 66 gave in 2025 not 2026 ($127,781.77), 23 of them
+//      $1,000+ ($121,860.04); 20 gave $99,834.70 in Dec 2025; top 10 give
+//      69.13%; 129 gave once; pace $73,771.96 by Sep 30 2026 vs $132,495.60.
+//   §2 the engine counts GIVING UNITS: the same numbers from the same rows,
+//      with each name mapped to the record the import put its gifts on. Where
+//      the import made one record of two names, that is listed, and the
+//      engine's figure must equal the file's under that mapping, exactly.
+//   §3 Major slipping names Cranville: $100,000 (2024), $100,000 (2025),
+//      $25,577.60 (2026). Upgrade names Ashham: $1,000 (Jan 2025), $5,000
+//      (Dec 2025) through The Ashham Family Foundation; ask $7,500.
+//   §4 Review: rows that look like purchases are listed with a reason; nothing
+//      moves until she decides; Not a gift moves Lifetime and the truth check
+//      agrees; Undo restores it to the cent.
+//   §5 after the dinner: Belley Wilah's undated $10,000 keeps her off
+//      slipping, off Drift and off Home's "Gone quiet"; Marshaw's $20,000 pledge is in Collect pledges; Stock,
+//      Retirement Dist, Investment Dist and Foundation are planned signals
+//      and gift types on their pledges; 7 multi-year pledges show 2027, 2028.
+//   §6 family: OAKVILLE, the Warburys (dinner) and the Bradbrooks are one
+//      suggested network; nothing is linked until Link; then it is.
+//   §7 every card's words hold only numbers in its facts; with Atlas off every
+//      card has template words; outcomes take a card away and What worked
+//      counts what followed.
+//   §8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds.
+//   §M (needs the memo-kept gift file Jonathan gives with the brief): the
+//      reimbursement, auction-table and ticket rows in Review; "Stable Moments"
+//      designated; FOXWOOD and Redwick in the Warbury network. When the
+//      fixture in the repo is still the scrubbed one, these are counted as
+//      WAITING, printed by name, and the suite fails: they are not passes.
+//
+// assertSurfacesAgree after every step, including Review confirm and Undo.
+//
+// HOW IT GOES RED ON MAIN: GET /insights is a 404 (§2-§8), a pledge has no
+// gift type (§5), and Home's lead says "Call Belley Wilah" (gone quiet) though
+// her $10,000 dinner gift has no date (§5).
+//
+// Standard scratch stack (tests/README.md). Sends nothing.
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const bcrypt = require("bcryptjs");
+const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");
+const { numbersOk } = require("../insights");
+
+const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
+const FX = path.join(__dirname, "fixtures", "import", "real-shaped");
+const AS_OF = "2026-10-27";
+const PASSWORD = "loadtest1234";
+const cents = v => Math.round(Number(v || 0) * 100);
+const norm = s => String(s || "").toLowerCase().replace(/\band\b/g, "&").replace(/[^a-z0-9&]+/g, " ").trim();
+const WAITING = [];
+const waiting = (name, why) => { WAITING.push(name); console.log(`  WAITING ${name}: ${why}`); };
+
+let R = null;
+async function sheetsOf(file) {
+  R = R || await import("../shared/sheetRead.js");
+  return R.gridsFromWorkbook(XLSX.read(fs.readFileSync(path.join(FX, file)), { type: "buffer", cellDates: true }), XLSX);
+}
+async function freshOrg(id, name) {
+  const all = (await q(`SELECT table_name AS t FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.t);
+  for (let pass = 0; pass < 5; pass++) {
+    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [id]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [id]).then(() => true).catch(() => false)) break;
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,'active','team')`, [id, name, id.replace(/_/g, "-")]);
+  const email = `${id}@test.local`;
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Test','admin')`, ["u_" + id, id, email, bcrypt.hashSync(PASSWORD, 4)]);
+  return login(email, PASSWORD);
+}
+async function importFile(tok, file) {
+  const body = { fileName: file, sheets: await sheetsOf(file) };
+  const u = await api("POST", "/sheet-import/understand", tok, body);
+  if (u.status !== 200 || !u.body.ready) return { ok: false, why: JSON.stringify(u.body).slice(0, 300) };
+  const r = await api("POST", "/sheet-import/commit", tok, { ...body, background: true });
+  const t0 = Date.now();
+  for (;;) {
+    const j = await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok);
+    if (j.status === 200 && j.body.status !== "running") return { ok: j.body.status === "done", importId: r.body.importId, why: j.body.status };
+    if (Date.now() - t0 > 120000) return { ok: false, why: "timeout" };
+    await new Promise(res => setTimeout(res, 150));
+  }
+}
+
+// The brief's numbers, from the file's rows, keyed by `keyOf(name)`.
+function fileStats(rows, keyOf) {
+  const pos = rows.filter(r => r.c > 0);
+  const by = new Map();
+  for (const g of pos) { const k = keyOf(g.n); (by.get(k) || by.set(k, []).get(k)).push(g); }
+  const yr = y => new Set(pos.filter(g => g.d.startsWith(y)).map(g => keyOf(g.n)));
+  const [a, b, c] = ["2024", "2025", "2026"].map(yr);
+  const first = k => by.get(k).map(g => g.d).sort()[0];
+  const ft = [...by.keys()].filter(k => first(k).startsWith("2025"));
+  const s25 = k => by.get(k).filter(g => g.d.startsWith("2025")).reduce((n, g) => n + g.c, 0);
+  const lyb = [...b].filter(k => !c.has(k));
+  const big = lyb.filter(k => s25(k) >= 100000);
+  const dec = pos.filter(g => g.d.startsWith("2025-12"));
+  const tot = [...by.values()].map(gs => gs.reduce((n, g) => n + g.c, 0)).sort((x, y) => y - x);
+  const T = tot.reduce((n, x) => n + x, 0);
+  const pace = (lo, hi) => pos.filter(g => g.d >= lo && g.d <= hi).reduce((n, g) => n + g.c, 0);
+  return {
+    givers: by.size, y2024: a.size, y2025: b.size, y2026: c.size, retained: [...a].filter(k => b.has(k)).length,
+    firstTime: ft.length, firstTimeAgain: ft.filter(k => c.has(k)).length,
+    lybunt: lyb.length, lybuntCents: lyb.reduce((n, k) => n + s25(k), 0), big: big.length, bigCents: big.reduce((n, k) => n + s25(k), 0),
+    dec: new Set(dec.map(g => keyOf(g.n))).size, decCents: dec.reduce((n, g) => n + g.c, 0),
+    top10: Math.round((tot.slice(0, 10).reduce((n, x) => n + x, 0) / T) * 10000) / 100,
+    once: [...by.values()].filter(gs => gs.length === 1).length,
+    paceThis: pace("2026-01-01", "2026-09-30"), paceLast: pace("2025-01-01", "2025-09-30"),
+  };
+}
+const engineStats = s => ({
+  givers: s.givers, y2024: s.byYear[2024], y2025: s.byYear[2025], y2026: s.byYear[2026], retained: s.retainedFromPrior,
+  firstTime: s.firstTime.count, firstTimeAgain: s.firstTime.gaveAgain, lybunt: s.lybunt.count, lybuntCents: s.lybunt.cents,
+  big: s.lybunt.big, bigCents: s.lybunt.bigCents, dec: s.december.count, decCents: s.december.cents, top10: s.top10Share, once: s.once,
+  paceThis: s.pace.thisCents, paceLast: s.pace.lastCents,
+});
+const BRIEF = { givers: 182, y2024: 113, y2025: 72, y2026: 31, retained: 25, firstTime: 47, firstTimeAgain: 3, lybunt: 66, lybuntCents: 12778177,
+  big: 23, bigCents: 12186004, dec: 20, decCents: 9983470, top10: 69.13, once: 129, paceThis: 7377196, paceLast: 13249560 };
+
+async function main() {
+  const ORG = "org_ins1test";
+  const tok = await freshOrg(ORG, "Insights (test)");
+  const truth = async step => {
+    try { await assertSurfacesAgree(ORG, { token: tok, step }); ok(`truth check: ${step}`, true, ""); }
+    catch (e) { ok(`truth check: ${step}`, false, e.message.slice(0, 600)); }
+  };
+  const get = async (p = "") => (await api("GET", `/insights?asOf=${AS_OF}${p}`, tok));
+  const card = (r, kind) => (r.body.cards || []).find(c => c.kind === kind);
+  const itemNamed = (c, name) => c && c.items.find(i => norm(i.name) === norm(name));
+
+  // ── §1 the file, by name ────────────────────────────────────────────────
+  const gSheets = await sheetsOf("jp-gift-history-287.xlsx");
+  const fileRows = gSheets[0].grid.slice(1).filter(r => r[1]).map(r => ({ d: String(r[0]).slice(0, 10), n: String(r[1]).trim(), c: cents(r[2]), memo: String(r[3] || "") }));
+  const byName = fileStats(fileRows, n => n);
+  for (const [k, v] of Object.entries(BRIEF)) ok(`§1 the file by name: ${k} = ${v}`, byName[k] === v, byName[k]);
+  const memoKept = fileRows.some(r => /Reimbursement|Stable Moments/i.test(r.memo));
+  console.log(`  [insights] gift fixture: ${memoKept ? "memo-kept copy" : "scrubbed copy (memo words replaced)"}`);
+  await truth("empty org");
+
+  const g = await importFile(tok, "jp-gift-history-287.xlsx");
+  ok("the gift file imports", g.ok, g.why);
+  await truth("after the gift file");
+
+  // ── §2 the engine, by giving unit ───────────────────────────────────────
+  const r1 = await get();
+  ok("§2 GET /insights answers", r1.status === 200 && Array.isArray(r1.body.cards), r1.status);
+  if (r1.status !== 200) { summary(); await closeDb(); process.exit(1); }
+  // each file name -> the unit the import put its gifts on (matched by date and amount)
+  const landed = await q(`SELECT g.date::text AS d, ROUND(g.amount*100)::bigint AS c, COALESCE('h:'||d.household_id, 'p:'||d.id) AS u
+                            FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.import_id=$2`, [ORG, g.importId]);
+  const pool = new Map();
+  for (const l of landed) { const k = `${l.d}|${l.c}`; (pool.get(k) || pool.set(k, []).get(k)).push(l.u); }
+  const votes = new Map();
+  for (const fr of fileRows.filter(x => x.c > 0)) {
+    const u = (pool.get(`${fr.d}|${fr.c}`) || []).shift();
+    if (!u) continue;
+    const v = votes.get(fr.n) || votes.set(fr.n, new Map()).get(fr.n);
+    v.set(u, (v.get(u) || 0) + 1);
+  }
+  const unitOf = new Map([...votes].map(([n, v]) => [n, [...v].sort((a, b) => b[1] - a[1])[0][0]]));
+  const names = new Map();
+  for (const [n, u] of unitOf) (names.get(u) || names.set(u, []).get(u)).push(n);
+  const merged = [...names.values()].filter(ns => ns.length > 1);
+  console.log(`  [insights] the import made one record of: ${merged.map(ns => ns.join(" + ")).join("; ") || "none"}`);
+  const byUnit = fileStats(fileRows, n => unitOf.get(n) || "?" + n);
+  const eng = engineStats(r1.body.stats);
+  for (const k of Object.keys(BRIEF)) ok(`§2 the engine, by giving unit: ${k} = ${byUnit[k]} (by name ${byName[k]})`, eng[k] === byUnit[k], eng[k]);
+  ok("§2 the coverage line says where the history ends", /Gift history ends Sep 30, 2026/.test(r1.body.coverage.sentence), r1.body.coverage.sentence);
+  ok("§2 the major-gift line is shown, with its rule", r1.body.majorLine && r1.body.majorLine.cents === 500000 && /\$5,000/.test(r1.body.majorLine.rule), r1.body.majorLine);
+
+  // ── §3 named cards ──────────────────────────────────────────────────────
+  const ms = itemNamed(card(r1, "major_slipping"), "Ulis & Verin Cranville Family Foundation");
+  ok("§3 Major slipping names Cranville: $100,000 (2024), $100,000 (2025), $25,577.60 (2026)",
+     !!ms && ms.facts.some(f => f[1] === "$100,000 (2024), $100,000 (2025), $25,577.60 (2026)"), ms && ms.facts);
+  ok("§3 …and suggests a range, never a single number", !!ms && ms.how.ask && Array.isArray(ms.how.ask.range) && ms.how.ask.cents === undefined, ms && ms.how.ask);
+  const up = itemNamed(card(r1, "upgraded"), "Alin and Dalbrook Ashham");
+  const f = Object.fromEntries((up && up.facts) || []);
+  ok("§3 Upgrade names Ashham: $1,000 (January 2025), then $5,000 (December 2025) through The Ashham Family Foundation",
+     !!up && f["earlier gift"] === "$1,000 (January 2025)" && f["recent gift"] === "$5,000 (December 2025)" && f.through === "The Ashham Family Foundation", up && up.facts);
+  ok("§3 …ask $7,500, with its rule", !!up && up.how.ask.cents === 750000 && /1\.5 times/.test(up.how.ask.rule), up && up.how.ask);
+  if (memoKept) ok("§M Ashham designated Stable Moments", !!up && f.designated === "Stable Moments", up && up.facts);
+  else waiting("§M Ashham designated Stable Moments", "the scrubbed fixture has no program words");
+
+  // ── §4 Review ───────────────────────────────────────────────────────────
+  const rv = card(r1, "review");
+  ok("§4 Review lists rows that may not be gifts, each with its reason", !!rv && rv.items.length > 0 && rv.items.every(i => i.reason && i.giftId), rv && rv.items.length);
+  const want = [["Reimbursement on buying the Horse From Cardford Jenin", "Selin and Orlie Marshaw", 500000], ["Double Barrel Head End Table", "Orwen Northhurst"], ["Defender"], ["UK Basketball"]];
+  for (const [memo, who, c] of want) {
+    if (!memoKept) { waiting(`§M Review lists "${memo}"`, "the scrubbed fixture replaced that memo"); continue; }
+    const it = rv && rv.items.find(i => i.memo.includes(memo));
+    ok(`§M Review lists "${memo}"`, !!it && (!who || norm(it.name) === norm(who)) && (!c || it.cents === c), it);
+  }
+  if (rv && rv.items.length) {
+    const it = rv.items.slice().sort((a, b) => b.cents - a.cents)[0];
+    const lifeOf = async () => Number((await q(`SELECT COALESCE(SUM(total_giving),0) AS s FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, it.ids]))[0].s);
+    const before = await lifeOf();
+    ok("§4 nothing moved before she decides", before > 0 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1, before);
+    const no = await api("POST", `/insights/review/${it.giftId}`, tok, { decision: "not_gift" });
+    ok("§4 Not a gift answers with an Undo", no.status === 200 && !!no.body.undoId, JSON.stringify(no.body).slice(0, 200));
+    const after = await lifeOf();
+    ok(`§4 …Lifetime moved by exactly ${it.cents} cents`, Math.round((before - after) * 100) === it.cents, [before, after]);
+    ok("§4 …the row is out of gifts and its ledger stamp with it", (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 0
+       && (await q(`SELECT 1 FROM fin_transactions WHERE gift_id=$1`, [it.giftId])).length === 0, "");
+    ok("§4 …and it leaves the Review card", !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), "");
+    await truth("after Not a gift");
+    const undo = await api("POST", `/deleted-records/${no.body.undoId}/restore`, tok);
+    ok("§4 Undo puts it back", undo.status === 200 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1, undo.status);
+    ok("§4 …Lifetime is restored to the cent", Math.round((await lifeOf()) * 100) === Math.round(before * 100), "");
+    ok("§4 …and the row is back in Review, undecided", (card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), "");
+    await truth("after Undo");
+    const keep = await api("POST", `/insights/review/${it.giftId}`, tok, { decision: "keep" });
+    ok("§4 Keep as gift: recorded, the row stays a gift and leaves the card", keep.status === 200 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1
+       && !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), keep.status);
+  }
+
+  // ── §5 the dinner file ──────────────────────────────────────────────────
+  const d = await importFile(tok, "jp-dinner-gifts-106.xlsx");
+  ok("the dinner file imports", d.ok, d.why);
+  await truth("after the dinner file");
+  const r2 = await get();
+  const units2 = new Map();
+  for (const c of r2.body.cards) for (const it of c.items) (units2.get(norm(it.name)) || units2.set(norm(it.name), []).get(norm(it.name))).push(c.kind);
+  const [bw] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Belley Wilah' AND deleted_at IS NULL`, [ORG]);
+  const bwp = bw && (await api("GET", `/insights/donor/${bw.id}?asOf=${AS_OF}`, tok)).body;
+  ok("§5 Belley Wilah has an undated $10,000 dinner gift", (await q(`SELECT 1 FROM gifts WHERE org_id=$1 AND donor_id=$2 AND date IS NULL AND amount=10000`, [ORG, bw && bw.id])).length === 1, "");
+  ok("§5 …and is not slipping, nor in Major slipping", !!bwp && bwp.unit.status !== "slipping" && !(units2.get(norm("Belley Wilah")) || []).includes("major_slipping"), bwp && bwp.unit);
+  const dr = await api("GET", "/drift", tok);
+  const drNames = JSON.stringify(dr.body || {});
+  const homeLead = await api("GET", "/home/lead", tok);
+  ok("§5 …and Drift and Home's lead never call her gone quiet", dr.status === 200 && !drNames.includes("Belley Wilah") && !JSON.stringify(homeLead.body || {}).includes("Call Belley Wilah"),
+     [dr.status, homeLead.status, (JSON.stringify(homeLead.body || {}).match(/Call [^"]+/) || [])[0]]);
+  ok("§5 …her profile says to set the undated gift's date", !!bwp && /^Has an undated gift from .+; set its date\.$/.test(bwp.unit.undatedNote || ""), bwp && bwp.unit.undatedNote);
+  const pl = card(r2, "pledges");
+  const mar = pl && pl.items.find(i => /marshaw/i.test(i.name) && i.facts.some(x => x[0] === "pledged" && x[1] === "$20,000"));
+  ok("§5 Selin and Orlie Marshaw: a $20,000 open pledge, in Collect pledges", !!mar, pl && pl.items.slice(0, 3).map(i => i.name));
+  const marUnit = mar && (await api("GET", `/insights/donor/${mar.lead}?asOf=${AS_OF}`, tok)).body.unit;
+  ok("§5 …and not slipping", !!marUnit && marUnit.status !== "slipping", marUnit && marUnit.status);
+  const multi = (pl ? pl.items : []).filter(i => i.installments && i.installments.length === 3);
+  ok("§5 7 multi-year pledges show their 2027 and 2028 installments", multi.length === 7 && multi.every(i => ["2027", "2028"].every(y => i.installments.some(x => x.year === y))), multi.length);
+  const types = await q(`SELECT gift_type, COUNT(*)::int AS n FROM pledges WHERE org_id=$1 AND gift_type IS NOT NULL GROUP BY 1 ORDER BY 1`, [ORG]);
+  const T = Object.fromEntries(types.map(t => [t.gift_type, t.n]));
+  ok("§5 the dinner's methods are gift types on their pledges: Stock 2, Retirement 1, Investment 3, Foundation 1", T.stock === 2 && T.ira === 1 && T.investment === 3 && T.foundation === 1, T);
+  const plan = card(r2, "planned");
+  const planned = n => !!plan && plan.items.some(i => norm(i.name) === norm(n));
+  ok("§5 planned signals include the dinner's Stock, Retirement Dist, Investment Dist and Foundation rows",
+     ["Brookhurst Bradmere", "Oakford Bradridge", "Everbrook Sallow", "Rosyn Cardgate"].every(planned), plan && plan.items.map(i => i.name).slice(0, 20));
+
+  // ── §6 family ───────────────────────────────────────────────────────────
+  const fam = card(r2, "family");
+  const net = fam && fam.items.find(i => i.members.some(m => /OAKVILLE/.test(m.name)));
+  ok("§6 OAKVILLE Foundation and the dinner's Warburys are one suggested network", !!net && net.members.some(m => /Warbury/.test(m.name)), net && net.members.map(m => m.name));
+  for (const n of ["FOXWOOD. Kelley", "KY Redwick Farm Everwell' Club"]) {
+    if (memoKept) ok(`§M ${n} is in the Warbury network`, !!net && net.members.some(m => m.name === n), net && net.members.map(m => m.name));
+    else waiting(`§M ${n} is in the Warbury network`, "its memo naming a Warbury was scrubbed");
+  }
+  const relCount = async () => (await q(`SELECT COUNT(*)::int AS n FROM donor_relationships WHERE org_id=$1`, [ORG]))[0].n;
+  ok("§6 nothing is linked until she says so", (await relCount()) === 0, await relCount());
+  if (net) {
+    const lk = await api("POST", "/insights/link", tok, { networkKey: net.key, decision: "link", leadIds: net.members.map(m => m.lead) });
+    ok("§6 Link writes the relationships", lk.status === 200 && (await relCount()) === net.members.length - 1, [lk.status, await relCount()]);
+    const prof = (await api("GET", `/insights/donor/${net.members[0].lead}?asOf=${AS_OF}`, tok)).body;
+    ok("§6 …and the profile shows their combined giving", !!prof.combined && prof.combined.cents === net.cents, prof.combined);
+    ok("§6 …and the suggestion goes", !((card(await get(), "family") || { items: [] }).items.some(i => i.key === net.key)), "");
+  }
+
+  // ── the contacts file, and the words ───────────────────────────────────
+  const c = await importFile(tok, "jp-contacts-656.xlsx");
+  ok("the contacts file imports", c.ok, c.why);
+  await truth("after the contacts file");
+  const r3 = await get();
+  // §7 every number in the words is in the facts
+  const bad = [];
+  for (const cd of r3.body.cards) {
+    for (const w of [cd.words.what, cd.words.why, cd.words.how]) {
+      const chk = numbersOk(w, cd.facts);
+      if (!chk.ok) bad.push(`${cd.kind}: ${chk.bad.join(",")} in "${w}"`);
+    }
+    for (const it of cd.items) if (it.how && it.how.say) { const chk = numbersOk(it.how.say, cd.facts); if (!chk.ok) bad.push(`${cd.kind}/${it.name}: ${chk.bad.join(",")}`); }
+  }
+  ok("§7 every card's words hold only numbers its facts hold", bad.length === 0, bad.slice(0, 5));
+  const planted = numbersOk("Ask $7,512 by Nov 3.", [["ask", "$7,500"]]);
+  ok("§7 the number check can fail (a planted $7,512 is caught)", !planted.ok && planted.bad.includes("7512"), planted);
+  await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]).catch(() => {});
+  const r4 = await get();
+  ok("§7 with Atlas off every card has its template words", r4.body.cards.length >= 5 && r4.body.cards.every(x => x.wordsFrom === "template" && x.words.what && x.words.why), r4.body.cards.map(x => x.kind));
+  const first = await get("&view=first");
+  ok("§7 the first look: 5 to 7 cards, no Home-only card, the coverage line first", first.body.cards.length >= 5 && first.body.cards.length <= 7 && !first.body.cards.some(x => x.homeOnly) && !!first.body.coverage.sentence, first.body.cards.map(x => x.kind));
+  const ranks = first.body.cards.map(x => x.rung).filter(Boolean);
+  const order = ["retain", "second", "upgrade", "major", "planned"];
+  ok("§7 cards rank by rung (Retain, Second gift, Upgrade, Major, Planned)", ranks.every((x, i) => i === 0 || order.indexOf(x) >= order.indexOf(ranks[i - 1])), ranks);
+  // outcomes
+  const ye = card(r3, "year_end");
+  const seen = await api("POST", "/insights/seen", tok, { asOf: AS_OF, items: ye.items.map(i => ({ kind: "year_end", itemKey: i.key, donorIds: i.ids })) });
+  ok("§7 the page records what it showed (a POST; the GET wrote nothing)", seen.status === 200 && seen.body.recorded === ye.items.length, seen.body);
+  const done = await api("POST", "/insights/outcome", tok, { kind: "year_end", itemKey: ye.items[0].key, donorIds: ye.items[0].ids, state: "done" });
+  ok("§7 Done takes that giver off the card", done.status === 200 && !card(await get(), "year_end").items.some(i => i.key === ye.items[0].key), done.status);
+  const sn = await api("POST", "/insights/outcome", tok, { kind: "year_end", itemKey: ye.items[1].key, donorIds: ye.items[1].ids, state: "snoozed", until: "2026-11-05" });
+  ok("§7 Not now hides it until its date, then it is back", sn.status === 200 && !card(await get(), "year_end").items.some(i => i.key === ye.items[1].key)
+     && (await api("GET", "/insights?asOf=2026-11-05", tok)).body.cards.find(x => x.kind === "year_end").items.some(i => i.key === ye.items[1].key), sn.status);
+  const lead = ye.items[0];
+  await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ($1,$2,$3,250,'2026-11-01','system:test','test')`, ["g_ins_follow", ORG, lead.lead]);
+  const wk = (await api("GET", "/insights/worked", tok)).body;
+  const row = wk.rows.find(x => x.kind === "year_end");
+  ok("§7 What worked: shown, done, and a gift within 60 days with its dollars", !!row && row.shown === ye.items.length && row.acted === 1 && row.followed >= 1 && row.cents >= 25000, row);
+  await q(`DELETE FROM gifts WHERE id='g_ins_follow'`);
+
+  // ── §8 speed: 2,000 donors and 10,000 gifts ────────────────────────────
+  const BIG = "org_ins1speed";
+  const tokB = await freshOrg(BIG, "Insights speed (test)");
+  await q(`INSERT INTO donors (id, org_id, name, created_by, created_by_name) SELECT 'dsp_'||i, $1, 'Speed Person '||i, 'system:test', 'test' FROM generate_series(1,2000) i`, [BIG]);
+  await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, created_by, created_by_name)
+           SELECT 'gsp_'||i, $1, 'dsp_'||(1 + (i % 2000)), 25 + (i % 40) * 25, (DATE '2024-01-01' + (i * 7919 % 1030))::text, CASE WHEN i % 97 = 0 THEN 'Tickets' ELSE 'Donation' END, 'system:test', 'test'
+             FROM generate_series(1,10000) i`, [BIG]);
+  const t0 = Date.now();
+  const sp = await api("GET", `/insights?asOf=${AS_OF}&view=first`, tokB);
+  const ms8 = Date.now() - t0;
+  ok(`§8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds (${ms8} ms)`, sp.status === 200 && sp.body.cards.length > 0 && ms8 < 3000, ms8);
+
+  if (WAITING.length) {
+    ok(`§M ${WAITING.length} checks wait on the memo-kept gift file (NEEDS-JONATHAN): ${WAITING.join("; ")}`, false, "fixture");
+  }
+  summary();
+  await closeDb();
+}
+main().catch(async e => { console.error(e); try { await closeDb(); } catch {} process.exit(1); });

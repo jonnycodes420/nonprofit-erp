@@ -4,7 +4,7 @@ import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID, WHAT_WORKED_ID } from "../lib/reportsRail";
 import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
@@ -18,6 +18,7 @@ import { tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
 import { WhyLink } from "./WhyAnswer";
 import { AskBox } from "./AskPanel";
+import { WhatWorked } from "./Insights";   // INSIGHTS-1
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -304,6 +305,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const onBoardPack = active === BOARD_PACK_ID;
   const onNewDashboard = active === NEW_DASH_ID;
   const onStored = active === STORED_REPORTS_ID;
+  const onWorked = active === WHAT_WORKED_ID;   // INSIGHTS-1
   const fsm = fiscalStart || 7;
   const CUR_FY = fyOf(fsm);
   const PRESETS = presetsFor(CUR_FY, fsm);
@@ -748,8 +750,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           onOpenSettings={() => onNavigate && onNavigate("settings", { section: "org", focus: "board-pack" })} />}
 
         {onStored && <StoredReports onNavigate={onNavigate} />}
+        {onWorked && <WhatWorked />}
 
-        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && active !== BUILD_ID
+        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && !onWorked && active !== BUILD_ID
           && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
 
         {isTab && <Card style={{ padding: "18px 22px" }}>

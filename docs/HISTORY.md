@@ -25,6 +25,13 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## INSIGHTS-1 · Who to call, why, and exactly what to say (2026-10-27)
+
+- **Why.** On 27 Oct Home said "Call Lois Doan" and "$63,984 behind last year" on a real file. A number is not advice: a director needs, per donor, what is happening, why it matters and what to do, in the order keep, second gift, upgrade, major, planned.
+- **What.** `insights.js` (pure, takes `asOf`) computes the ladder (rung, status, planned flag per giving unit), the signals (memo, method, rhythm, coverage, relations) and ten cards with What, Why, How, the ask and its rule. Home leads with the ladder strip and the cards; the import receipt shows "What your file says"; the profile header shows rung, status, signals and the next move; the Donors list has a rung column and filters; Ask answers "slipping donors"; Reports has What worked. New: `gift_type` on gifts and pledges, `orgs.ladder_major_line_cents`, and four `insight_*` tables. No existing row changed.
+- **Found on the way.** Home's "Gone quiet" called a donor with an undated $10,000 gift lapsed; Drift now leaves anyone with an undated gift out (`undated_gift`).
+- **Guard.** `tests/insights.test.js` imports the three real-shaped files into one empty org with asOf 2026-10-27. Seven checks wait on the memo-kept gift file (NEEDS-JONATHAN).
+
 ## FIX-53 · Mail starts off, and only Jonathan turns it on (2026-10-27)
 
 - **Why.** On 27 Oct a real customer file was loaded on prod, and the only thing between those donors and an automatic email was a switch someone had to remember to check.

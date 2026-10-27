@@ -29,6 +29,7 @@ import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures, ProfileMoreNumbers } from "./ProfileHeaderFigures";
+import { ProfileLadder } from "./Insights";   // INSIGHTS-1
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras, AutoEmailCard } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { EmailsReceived } from "./EmailAsSent";
@@ -2289,6 +2290,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         </div>
         {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
             bottom edge; the other four head the Gifts & pledges tab. */}
+        {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
+        <div style={{padding:"0 2px"}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
 

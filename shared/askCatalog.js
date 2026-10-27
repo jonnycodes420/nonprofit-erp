@@ -427,6 +427,17 @@ export function templatePlan(text, ctx = {}) {
 
   // People filters (the one shared filter's rules).
   take(/\b(monthly|recurring) (donors?|givers?)\b|\bonly monthly\b|\bmonthly ones\b/g, () => { rules.monthly = "1"; out._who = "monthly"; });
+  // INSIGHTS-1: the ladder, through the Donors list's own fields (donorList.js)
+  const ladder = (field, op, value) => {
+    const w = rules.where ? JSON.parse(rules.where) : { join: "and", conditions: [] };
+    w.conditions.push(value === undefined ? { field, op } : { field, op, value });
+    rules.where = JSON.stringify(w);
+  };
+  take(/\bslipping( donors?| givers?)?\b/g, () => ladder("ladder_status", "is", "slipping"));
+  take(/\b(donors?|givers?) (who are )?moving up\b|\bmoving up\b/g, () => ladder("ladder_status", "is", "up"));
+  take(/\b(upgrade|upgrading) (donors?|givers?|rung)\b|\bon the upgrade rung\b/g, () => ladder("rung", "is", "upgrade"));
+  take(/\b(second[- ]gift|first[- ]time) (donors?|givers?) (with no|without a|who haven't made a) second( gift)?\b|\bon the second[- ]gift rung\b/g, () => ladder("rung", "is", "second"));
+  take(/\bplanned[- ]gift (signals|prospects|donors)\b|\blegacy prospects\b/g, () => ladder("planned", "yes"));
   take(/\bmajor (donors?|givers?)\b/g, () => { rules.level = "major"; });
   take(/\bmid[- ]level (donors?|givers?)\b/g, () => { rules.level = "mid"; });
   take(/\b(who live |living |based )?in ([a-z][a-z'-]+(?: [a-z][a-z'-]+)?)\b/g, (m, a, place) => {

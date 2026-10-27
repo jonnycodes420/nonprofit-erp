@@ -103,6 +103,15 @@ const FIELDS = [
     sentence: "Steward's one lapsed rule: gave before, and nothing in the last twelve months. Lapsing is close to it." }),
   F("lifecycle", "Lifecycle", "Giving", { col: false, filter: SEL_OPS,
     options: ["new", "current", "recaptured", "lapsed"].map(v => ({ value: v, label: v[0].toUpperCase() + v.slice(1) })) }),
+  // INSIGHTS-1: the donor ladder, computed from each giver's own giving (insights.js)
+  F("rung", "Ladder rung", "Giving", { filter: SEL_OPS, cell: "rung",
+    options: ["new", "second", "retain", "upgrade", "major"].map(v => ({ value: v, label: require("./insights").RUNG_LABEL[v] })),
+    sentence: "Where this giver sits on the ladder, from their own giving: New, Second gift, Retain, Upgrade or Major. A household is one giver." }),
+  F("ladder_status", "Ladder status", "Giving", { col: false, filter: SEL_OPS,
+    options: [{ value: "steady", label: "Steady" }, { value: "slipping", label: "Slipping" }, { value: "up", label: "Moving up" }],
+    sentence: "Slipping: past their own usual time, lapsing, or far below last year. Moving up: their last 12 months are at least 1.5 times the 12 before." }),
+  F("planned", "Planned-gift signals", "Giving", { col: false, filter: BOOL_OPS,
+    sentence: "A gift of stock, an IRA or investment distribution, a donor-advised fund or foundation gift, a memorial or honor gift, or 5 or more years in a row." }),
   F("monthly", "Gives monthly", "Giving", { col: false, filter: BOOL_OPS }),
   F("fund", "Gave to a fund", "Giving", { col: false, filter: SEL_OPS }),
   F("campaign", "Gave to a campaign", "Giving", { col: false, filter: SEL_OPS }),
@@ -354,6 +363,13 @@ async function compileOne(orgId, c, fields) {
     case "level": return sel() ? { rules: { level: sel() } } : needSel();
     case "lapse": return sel() === "lapsing" ? { rules: { lapsing: "1" } } : sel() === "lapsed" ? { rules: { lifecycle: "lapsed" } } : needSel();
     case "lifecycle": return sel() ? { rules: { lifecycle: sel() } } : needSel();
+    case "rung": case "ladder_status": case "planned": {
+      // computed, not stored: the engine's answer for today, as a set of ids
+      if (c.field !== "planned" && !sel()) return needSel();
+      const m = await require("./insightsData").ladderMap(orgId, await require("./donorStatus").todayFor(orgId));
+      const keep = [...m.entries()].filter(([, u]) => c.field === "rung" ? u.rung === sel() : c.field === "ladder_status" ? u.status === sel() : !!u.planned === (c.op === "yes")).map(([id]) => id);
+      return { sql: "donors.id = ANY(?::text[])", args: [keep] };
+    }
     case "monthly": return c.op === "yes" ? { rules: { recurring: "1" } } : { negateRules: { recurring: "1" } };
     case "fund": return sel() ? { sql: has(`${giftOf("gf")} AND gf.amount > 0 AND gf.fund_id = ?`), args: [sel()] } : needSel();
     case "campaign": return sel() ? { rules: { gaveCampaign: sel() } } : needSel();
@@ -488,6 +504,9 @@ async function cellsFor(orgId, rows, columns) {
     `SELECT donor_id AS id, MAX(LEFT(date,10)) AS v FROM interactions
       WHERE org_id = ? AND donor_id = ANY(?) AND type IN ('call','meeting','email','stewardship') GROUP BY donor_id`, [orgId, ids])
     .then(r => put(r, "last_contact")));
+  if (want.has("rung")) reads.push(require("./donorStatus").todayFor(orgId).then(t => require("./insightsData").ladderMap(orgId, t)).then(m => {
+    for (const id of ids) { const u = m.get(id); if (u) out.get(id).rung = `${u.rungLabel} · ${u.statusLabel}${u.planned ? " · Planned" : ""}`; }
+  }).catch(() => {}));
   await Promise.all(reads);
   const DTAGS = require("./donorTags");
   for (const r of rows) {

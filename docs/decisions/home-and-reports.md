@@ -3,6 +3,15 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **The ladder and the cards are one engine (INSIGHTS-1).** `insights.js` is pure (every input, `asOf`
+  included, is a parameter); `insightsData.js` reads; `routes/insights.js` serves Home, the first look, the
+  profile, the Donors list's rung column and filter, and Ask (through the list's `rung`, `ladder_status` and
+  `planned` fields). Nothing is stored: a rung is computed from the gifts each time (an in-process memo keyed
+  by the org's gift fingerprint). A household is one giver. Every number in a card's words must be in its
+  facts (`numbersOk`); a GET writes nothing (the page POSTs `/insights/seen`). "Not a gift" moves the row to
+  the trash with its ledger stamp and the one Undo (`/deleted-records/:id/restore`) puts both back; it is
+  refused for a gift with a receipt, a payment, a pledge or an open thank-you. A person with an undated gift
+  is never in Drift or "Gone quiet" (`excludedReason: undated_gift`).
 - **A next step is one record in three views (FIX-31).** Every thread has one `link_kind='next_step'` task written
   by `trg_thread_task_sync`; Tasks, the Thread and the Calendar read that one pair. Ticking the task logs
   "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws

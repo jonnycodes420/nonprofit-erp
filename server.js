@@ -4332,6 +4332,7 @@ app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support a
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
+app.use(require("./routes/insights").routers.r0);      // INSIGHTS-1 the ladder and the cards
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/readouts").routers.r0);     // LIVE-1: what this told us
@@ -7179,6 +7180,10 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   ]);
   const onSubscription = new Set(recurringRows.map(r => r.donor_id));
   const onPledge = new Set(pledgeRows.map(r => r.donor_id));
+  // INSIGHTS-1: a person with an undated gift is never called gone quiet; we
+  // can't see when they last gave. Their card asks for the date instead.
+  const undatedGift = new Set((await query(`SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND amount > 0 AND (date IS NULL OR date = '')${donorIds ? " AND donor_id = ANY(?)" : ""}`,
+    [orgId, ...idParams])).map(r => r.donor_id));
   const lastContact = new Map(contactRows.map(r => [r.donor_id, String(r.last_contact).slice(0, 10)]));
   const handledCutoff = orgTime.addDays(today, -driftEngine.DRIFT.HANDLED_SNOOZE_DAYS);
   // BUILD-80 Part 2.4: the import stamps has-refused-rows:N; a refused row
@@ -7207,6 +7212,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     else if (onSubscription.has(d.id) || d.stripe_subscription_status === "active") excludedReason = "active_recurring";
     else if (d.imported_sustainer) excludedReason = "unlinked_sustainer";  // BUILD-77 Part 5 — their card stopped, they did not; the recurring surface owns them
     else if (onPledge.has(d.id) || (ans && ans.pledgeRecent)) excludedReason = "pledge_cadence";
+    else if (undatedGift.has(d.id)) excludedReason = "undated_gift";
     if (excludedReason) {
       map.set(d.id, { state: "excluded", excludedReason, donorId: d.id });
       continue;
@@ -12311,6 +12317,7 @@ require("./routes/profileStatus").mount({
 });
 require("./routes/homeBundle").mount({ requireAuth, testMode, wrap });
 require("./routes/homeLead").mount({ ...GRANTS1_CTX, meetingBrief: require("./routes/finance").meetingBrief });
+require("./routes/insights").mount({ ...GRANTS1_CTX, queryTx, runTx, recalcDonorSummary });
 require("./routes/homeCalls").mount({
   actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, uuid, wrap,
 });
