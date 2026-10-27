@@ -10,6 +10,7 @@
 // Import button; Undo removes the whole file.
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
+import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
@@ -71,6 +72,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   }, [file]);
 
   const finish = () => (result && onImported ? onImported() : onClose());
+  // FIX-54: the last delete's Undo comes down while a file is imported
+  useEffect(() => { dismissUndo(); }, []);
   // Reopened while an import is running (a refresh, a closed tab): follow it.
   useEffect(() => {
     let live = true;
@@ -208,6 +211,28 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 </div>))}
               {u.modelUsed && <div style={{ ...small, marginTop: 4 }}>Steward's assistant suggested what some columns are; each suggestion was checked against every row.</div>}
             </div>
+
+            {/* FIX-54: people she deleted stay deleted unless she brings them back */}
+            {(u.deletedMatches || []).length > 0 && (
+              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-matches">
+                <div style={h3}>{u.deletedSentence}</div>
+                <div style={small}>
+                  {[...new Map(u.deletedMatches.map(x => [x.id, x])).values()].slice(0, 8).map(x => `${x.deletedName || x.name} (row ${String(x.line).split(":")[1] || x.line}, by ${x.by})`).join(", ")}
+                  {new Set(u.deletedMatches.map(x => x.id)).size > 8 ? `, and ${new Set(u.deletedMatches.map(x => x.id)).size - 8} more` : ""}.
+                  {" "}Their rows are set aside. Bring them back only if you meant to keep them; their gifts in this file are then imported with the rest.
+                </div>
+                <button type="button" data-testid="sheet-bring-back" disabled={!!busy} style={{ ...btn(false), marginTop: 8 }}
+                  onClick={async () => {
+                    setBusy("bring");
+                    try {
+                      const r = await apiFetch("/sheet-import/bring-back", { method: "POST", body: JSON.stringify({ ids: [...new Set(u.deletedMatches.map(x => x.id))] }) });
+                      setMsg(r.sentence || ""); setAnswers(a => ({ ...a }));   // read the file again: they now match
+                    } catch (e) { setMsg(e?.body?.sentence || errorMessage(e, "Nobody was brought back.")); setBusy(""); }
+                  }}>
+                  Bring them back
+                </button>
+              </div>
+            )}
 
             {(eventQ || (u.event && u.event.fromEngagement)) && (
               <div style={{ ...box, borderColor: eventQ && !eventQ.optional ? T.gold500 : T.bg3 }} data-testid="sheet-question-event">

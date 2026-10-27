@@ -25,6 +25,13 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-54 · Deleted people came back after an import (2026-10-27)
+
+- **Why (Steward LLC (SALES), 27 Oct).** About 1,200 sample people were deleted from the Donors page, a gifts file of about 200 other people was imported, and the sample people were back in the Donors list.
+- **What the code showed.** Nothing on the server clears `donors.deleted_at` except `POST /deleted-records/:id/restore` (routes/crm.js, the Undo). Bulk delete, the sheet import job, the ambient transaction, the after-change step, the summary recompute, boot migrations and import Undo were each checked and reproduced locally: none brings a deleted person back. Two things on the screen could: the Donors page had no Delete for "Select all N matching" (only a page of up to 100 at a time, each with a minute-long Undo toast that pauses while the pointer is on it and sits over the next screen), and an import naming a deleted person made them again as new, because every matcher reads only the people still here.
+- **What changed.** Delete with all N matching selected deletes exactly N; the confirm sends N and the server refuses a selection of any other size. The import asks every name it would call new of the people deleted by hand (ID, email, exact name; a merged record is not a deletion): a match is not imported, its rows are set aside, the preview names them, and `POST /sheet-import/bring-back` (a button she presses) is the one way back. Opening Import takes the last delete's Undo toast down.
+- **Test.** tests/fix54-deleted-stay-deleted.test.js (27 checks), 16 red on main.
+
 ## SEND-GATE-1 · Donors get automatic email only if the org turned it on for them (2026-10-27)
 
 - **Why (Justin's Place, 27 Oct).** A real import partly landed through a page that timed out. Nothing went out because Donor mail was off, but that one org switch was the only lock.

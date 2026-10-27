@@ -6622,8 +6622,17 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requireCrm, checkWri
 }));
 
 app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
+  if (!Array.isArray(req.body.ids) || req.body.ids.length === 0) return res.status(400).json({ error: "ids array required" });
+  // FIX-54 · "Select all N matching", then Delete, deletes exactly N. The
+  // screen sends the N it showed in the confirm; a selection that no longer
+  // holds that many people is refused whole, so the number she agreed to is
+  // the number that goes.
+  const ids = [...new Set(req.body.ids.map(String))];
+  const expect = req.body.count;
+  if (expect !== undefined && Number(expect) !== ids.length) {
+    req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+    return res.status(409).json({ error: "count_changed", sentence: `You confirmed ${Number(expect).toLocaleString("en-US")}, and the selection holds ${ids.length.toLocaleString("en-US")}. Nobody was deleted.` });
+  }
 
   const owned = await query(
     "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
@@ -6648,13 +6657,13 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     const gone = await queryTx(client,
       "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
       [ids, req.user.orgId]);
-    const undoIds = [];
-    for (const g of gone) {
-      const undoId = "del_" + uuid().slice(0, 12);
+    // one trash row each, written 500 at a time (a whole org is one click now)
+    const undoIds = gone.map(() => "del_" + uuid().slice(0, 12));
+    for (let k = 0; k < gone.length; k += 500) {
+      const b = gone.slice(k, k + 500);
       await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-                 VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
-        [undoId, req.user.orgId, g.id, who.id, who.name]);
-      undoIds.push(undoId);
+                 VALUES ${b.map(() => `(?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`).join(",")}`,
+        b.flatMap((g, i) => [undoIds[k + i], req.user.orgId, g.id, who.id, who.name]));
     }
     return { changes: gone.length, undoIds };
   });

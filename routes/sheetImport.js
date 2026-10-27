@@ -110,11 +110,46 @@ async function orgPeopleIndex(orgId) {
   };
 }
 
+// FIX-54 · SOMEONE YOU DELETED STAYS DELETED. The matcher reads only the
+// people still here, so a file naming a person she deleted made them again as
+// "new". Every name the matcher calls new is asked of the people she deleted
+// (by the old system's ID, the email, then the exact name); a record that
+// matches one is not imported, and the preview says so with a Bring them back
+// she has to press. A record merged into another is not a deletion.
+async function deletedPeopleIndex(orgId) {
+  const rows = await query(
+    `SELECT d.id, d.name, LOWER(TRIM(COALESCE(d.name,''))) AS lname, LOWER(TRIM(COALESCE(d.email,''))) AS email,
+            LOWER(COALESCE(d.external_donor_id,'')) AS ext, d.external_donor_ids AS exts
+       FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`, [orgId]);
+  const byExt = new Map(), byEmail = new Map(), byName = new Map();
+  for (const r of rows) {
+    let more = r.exts;
+    if (typeof more === "string") { try { more = JSON.parse(more); } catch { more = []; } }
+    for (const x of [r.ext, ...(Array.isArray(more) ? more : [])]) { const k = String(x || "").toLowerCase(); if (k && !byExt.has(k)) byExt.set(k, r); }
+    if (r.email && !byEmail.has(r.email)) byEmail.set(r.email, r);
+    if (r.lname && !byName.has(r.lname)) byName.set(r.lname, r);
+  }
+  return {
+    find({ externalId, email, name }) {
+      const ext = externalId && byExt.get(String(externalId).toLowerCase());
+      if (ext) return { id: ext.id, name: ext.name, by: "the ID in your file" };
+      const em = email && byEmail.get(String(email).trim().toLowerCase());
+      if (em) return { id: em.id, name: em.name, by: "email" };
+      const nm = name && byName.get(String(name).trim().toLowerCase());
+      if (nm) return { id: nm.id, name: nm.name, by: "the same name" };
+      return null;
+    },
+  };
+}
+
 // Who each record in the file is in this org: matched, new, or a question.
 async function matchPeople(orgId, u, answers, privacy) {
   const out = new Map();
   const picks = (answers && answers.people) || {};
   const idx = await orgPeopleIndex(orgId);
+  const gone = await deletedPeopleIndex(orgId);
   for (const p of u.people) {
     const names = p.people.length ? p.people.map(x => x.name) : [p.name];
     const members = [];
@@ -147,6 +182,12 @@ async function matchPeople(orgId, u, answers, privacy) {
           members.push({ name: nm, status: "matched", id: exact, by: "the same name", isClient: !!(d && d.is_client === true) });
         } else members.push({ name: nm, status: "new", id: null });
       }
+    }
+    // FIX-54: a name the matcher calls new may be someone she deleted
+    for (const [i, x] of members.entries()) {
+      if (x.status !== "new" || x.by === "you") continue;
+      const hit = gone.find({ externalId: i === 0 ? p.externalId : null, email: i === 0 ? p.email : null, name: x.name });
+      if (hit) members[i] = { name: x.name, status: "deleted", id: null, deletedId: hit.id, deletedName: hit.name, by: hit.by };
     }
     // CLIENT-SAFE-1: a person marked as a client is never made a donor here.
     const client = privacy.on && (members.some(x => x.isClient || (x.id && privacy.clientIds.has(x.id))) || (p.email && privacy.clientEmails.has(p.email)));
@@ -311,6 +352,41 @@ async function buildUnderstanding(req, body) {
     u.pledges = u.pledges.filter(g => !clientKeys.has(g.personKey));
     u.people = u.people.filter(p => !clientKeys.has(p.key));
   }
+  // FIX-54: a record naming someone she deleted comes out of the plan the same
+  // way, and the preview names them, with Bring them back for her to press
+  const deletedMatches = [];
+  for (const p of u.people) {
+    const m = matches.get(p.key);
+    if (clientKeys.has(p.key) || !m.members.some(x => x.status === "deleted")) continue;
+    for (const x of m.members.filter(y => y.status === "deleted"))
+      deletedMatches.push({ key: p.key, name: x.name, id: x.deletedId, deletedName: x.deletedName, by: x.by, line: p.lines[0] });
+  }
+  const deletedKeys = new Set(deletedMatches.map(x => x.key));
+  if (deletedKeys.size) {
+    // the counts the button and the receipt read leave them out too
+    const c = u.counts || (u.counts = {});
+    const sub = (k, n) => { if (typeof c[k] === "number") c[k] = Math.max(0, c[k] - n); };
+    for (const p of u.people.filter(x => deletedKeys.has(x.key))) {
+      sub("records", 1); sub("people", 1); sub("persons", Math.max(1, (p.people || []).length));
+      for (const [role, k] of [["donor", "donors"], ["pledger", "pledgers"], ["volunteer", "volunteers"]]) if ((p.roles || []).includes(role)) sub(k, 1);
+    }
+    const heldGifts = u.gifts.filter(g => deletedKeys.has(g.personKey) && g.kind !== "installment");
+    const heldPledges = u.pledges.filter(g => deletedKeys.has(g.personKey));
+    sub("gifts", heldGifts.length); sub("giftCents", heldGifts.reduce((n, g) => n + (g.cents || 0), 0));
+    sub("undatedGifts", heldGifts.filter(g => !g.date).length);
+    sub("pledges", heldPledges.length); sub("pledgeCents", heldPledges.reduce((n, g) => n + (g.pledgeCents || 0), 0));
+    sub("pledgeOpenCents", heldPledges.reduce((n, g) => n + (g.openCents || 0), 0));
+    c.aside = (c.aside || 0) + heldGifts.length + heldPledges.length;
+    // a paid first year rides on its pledge's row, so it is set aside once, as the pledge
+    for (const g of [...u.gifts.filter(x => x.kind !== "installment"), ...u.pledges]) if (deletedKeys.has(g.personKey))
+      u.aside.push({ sheet: g.sheet, line: g.line, who: g.who, reason: "matches someone you deleted, so it was not imported", cents: g.pledgeCents != null ? g.pledgeCents : (g.cents || 0) });
+    u.gifts = u.gifts.filter(g => !deletedKeys.has(g.personKey));
+    u.pledges = u.pledges.filter(g => !deletedKeys.has(g.personKey));
+    u.people = u.people.filter(p => !deletedKeys.has(p.key));
+  }
+  const nDel = new Set(deletedMatches.map(x => x.id)).size;
+  u.deletedMatches = deletedMatches;
+  u.deletedSentence = nDel ? `${nDel.toLocaleString("en-US")} ${nDel === 1 ? "person matches someone" : "people match someone"} you deleted. Not imported.` : null;
   const [{ n: orgDonors }] = await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL", [orgId]);
   let newPeople = 0, matchedPeople = 0;
   for (const p of u.people) for (const x of matches.get(p.key).members) { if (x.status === "matched") matchedPeople++; else if (x.status === "new") newPeople++; }
@@ -358,6 +434,28 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   if (!body.sheets.some(sh => sh.grid.length)) return res.status(400).json({ error: "empty", message: "The file has no cells in it." });
   const out = await buildUnderstanding(req, body);
   res.json(publicView(out));
+}));
+
+// FIX-54 · BRING THEM BACK. The one way a person she deleted returns from an
+// import: she presses it, for the people the preview named. Only someone
+// deleted by hand comes back (never one merged into another), and their trash
+// rows are closed so Undo and Recent changes do not offer them twice.
+app.post("/sheet-import/bring-back", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const ids = [...new Set((Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String))].slice(0, 5000);
+  if (!ids.length) return res.status(400).json({ error: "ids_required", sentence: "Nobody was named to bring back." });
+  const back = await query(`UPDATE donors d SET deleted_at = NULL, updated_at = NOW()
+                             WHERE d.org_id=? AND d.id = ANY(?) AND d.deleted_at IS NOT NULL
+                               AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)
+                           RETURNING d.id`, [orgId, ids]);
+  const backIds = back.map(r => r.id);
+  if (backIds.length) {
+    await run(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=? AND table_name='donors' AND record_id = ANY(?) AND restored_at IS NULL`, [orgId, backIds]);
+    await require("../afterChange").afterChange(orgId, backIds, { door: "sheet_import_bring_back" }).catch(e => console.error("[sheet-import] bring back:", e.message));
+  }
+  if (req.audit) req.audit.after({ broughtBack: backIds });
+  const n = backIds.length;
+  res.json({ restored: n, ids: backIds, sentence: n ? `${n.toLocaleString("en-US")} ${n === 1 ? "person is" : "people are"} back. Their rows will be imported with the file.` : "Nobody was brought back." });
 }));
 
 // FIX-52 · IMPORT IS A JOB, AND THE SCREEN TELLS THE TRUTH. On 27 Oct a real
