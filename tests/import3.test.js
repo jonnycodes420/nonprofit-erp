@@ -40,6 +40,13 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import");
@@ -100,6 +107,7 @@ async function eventSheet() {
   const run1 = "imp_import3e_one";
   const c1 = await api("POST", "/sheet-import/commit", tok, { ...body, answers, importId: run1 });
   ok("§2 commit answers 201", c1.status === 201, c1.status + " " + JSON.stringify(c1.body).slice(0, 300));
+  await surfacesAgree("after the import", ORG, tok);
   const g = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1", [ORG]);
   const p = await one(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM pledges WHERE org_id=$1`, [ORG]);
   const pThisYear = await one(`SELECT COALESCE(SUM(i.amount),0)::numeric AS s FROM pledge_installments i JOIN pledges p ON p.id=i.pledge_id
@@ -166,6 +174,7 @@ async function eventSheet() {
                                  (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int AS d, (SELECT COUNT(*) FROM households WHERE org_id=$1)::int AS h,
                                  (SELECT COUNT(*) FROM events WHERE org_id=$1)::int AS e, (SELECT COUNT(*) FROM pledge_installments WHERE org_id=$1)::int AS i`, [ORG]);
   ok("§9 undo removes the whole import", left.g === 0 && left.p === 0 && left.d === 0 && left.h === 0 && left.e === 0 && left.i === 0, JSON.stringify(left));
+  await surfacesAgree("after the undo", ORG, tok);
 
   // §10 privacy mode
   const PORG = "org_import3p";

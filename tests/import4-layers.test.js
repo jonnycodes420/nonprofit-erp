@@ -46,6 +46,13 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import");
@@ -166,6 +173,7 @@ async function combined() {
   const RUN = "imp_import4c_one";
   const c1 = await api("POST", "/sheet-import/commit", tok, { ...body, importId: RUN });
   ok("§2 commit answers 201", c1.status === 201, c1.status + " " + JSON.stringify(c1.body).slice(0, 400));
+  await surfacesAgree("after the import", ORG, tok);
   const g = await one(`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE date IS NULL)::int AS undated, COALESCE(SUM(amount),0)::numeric AS s,
                               COUNT(DISTINCT donor_id)::int AS donors FROM gifts WHERE org_id=$1`, [ORG]);
   ok("§2 all 106 gifts land, every one undated, $124,290", g.n === E.gifts && g.undated === E.undatedGifts && centsOf(g.s) === E.giftCents, JSON.stringify(g));
@@ -248,6 +256,7 @@ async function combined() {
   ok("§8 a second import adds nothing", c2.status === 201 && c2.body.giftsCreated === 0 && c2.body.donorsCreated === 0 && again.g === E.gifts
      && again.d === E.persons && again.a === E.invited && again.p === E.pledges && again.e === 1, JSON.stringify({ s: c2.status, again, b: c2.body && c2.body.sentence }));
   await api("POST", "/imports/imp_import4c_two/reverse", tok, {});
+  await surfacesAgree("after a second import and its undo", ORG, tok);
 
   // §9 the event date, in one click
   const d1 = await api("POST", `/imports/${RUN}/date-undated`, tok, { date: "2026-10-22" });
@@ -266,6 +275,7 @@ async function combined() {
   for (const t of ["imports"]) { before[t] = []; after[t] = []; }   // the run's own record stays, marked undone
   const diff = snapDiff(before, after);
   ok("§10 undo restores the org exactly, the three matched people as they were", diff.length === 0, diff.join("\n"));
+  await surfacesAgree("after the undo", ORG, tok);
   return { file: "Finding_Joy_Combined.xlsx", previewMs };
 }
 
