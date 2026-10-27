@@ -49,6 +49,9 @@ const GUARDED_WRITERS = [
   // NUMBERS-1: moves gifts credited outside their campaign's dates to no campaign.
   // Dry run by default; --apply writes through writerDbUrl, one audit row per gift.
   "numbers1-campaign-window",
+  // HARDEN-2: closes the deletion records of people already back, one org
+  // (--org required). Dry run by default; --apply writes through writerDbUrl.
+  "close-stale-deletions",
   // ADMIN-CLEAN: sorts every org into its kind, archives and deletes junk.
   // Dry run by default; --apply writes through writerDbUrl.
   "admin-clean",
