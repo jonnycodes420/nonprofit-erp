@@ -251,6 +251,17 @@ async function janFirst() {
   const prof = await get(`/donors/${(await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Pia January'`, [ORG_C]))[0].id}`);
   ok("C: the profile's first and last gift are Jan 1", String(prof.first_gift_date).slice(0, 10) === `${P}-01-01` && String(prof.last_gift_date).slice(0, 10) === `${Y}-01-01`,
      [prof.first_gift_date, prof.last_gift_date]);
+  // Year-end statements: each Jan 1 in its own tax year, Dec 31 never in the next (send: false writes the
+  // statement row and sends nothing)
+  await q(`UPDATE orgs SET receipts_enabled=true WHERE id=$1`, [ORG_C]);
+  const idOf = async n => (await q(`SELECT id FROM donors WHERE org_id=$1 AND name=$2`, [ORG_C, n]))[0].id;
+  const [pia, quin] = [await idOf("Pia January"), await idOf("Quin December")];
+  const stmt = (id, year) => api("POST", `/donors/${id}/year-end-statement`, tokC, { year, send: false });
+  const [sPiaP, sPiaY, sQuinP, sQuinY] = [await stmt(pia, P), await stmt(pia, Y), await stmt(quin, P), await stmt(quin, Y)];
+  ok("C: year-end statements put each Jan 1 in its own tax year and Dec 31 in its own",
+    sPiaP.status === 201 && c(sPiaP.body.amount) === 10000 && sPiaY.status === 201 && c(sPiaY.body.amount) === 30000
+      && sQuinP.status === 201 && c(sQuinP.body.amount) === 5000 && sQuinY.status === 400,
+    [[sPiaP.status, sPiaP.body && sPiaP.body.amount], [sPiaY.status, sPiaY.body && sPiaY.body.amount], [sQuinP.status, sQuinP.body && sQuinP.body.amount], sQuinY.status]);
 
   // A DATE column, read as its day: an event on Jan 1 and a price that ends Dec 31
   const EV = "ev_hs1c_" + STAMP;
