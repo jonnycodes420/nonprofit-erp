@@ -153,6 +153,15 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   return { sql, args };
 }
 
+// FIX-51 · LAPSING OR LAPSED, the one quiet rule, as the set of people the
+// tags themselves call Lapsing or Lapsed (statusSql above, so imported history
+// counts and a refund or a credit row is not a gift). Communications' segment
+// reads this, and scripts/check-numbers.js checks it against the gifts.
+async function quietIds(orgId, today) {
+  const st = statusSql(orgId, today, await cutsFor(orgId));
+  return new Set((await query(st.sql, st.args)).filter(r => r.lifecycle === "lapsed" || r.lapsing).map(r => r.donor_id));
+}
+
 // The SQL condition "this donor has tag K", for a list or a group rule. `alias`
 // is the donors table alias in the caller's query. Returns null for an
 // unknown key.
@@ -220,6 +229,6 @@ async function statusFor(orgId, donorId, { today = null, cuts = null } = {}) {
 
 module.exports = {
   DEFAULT_CUTS, NEW_DAYS, LEVELS, LIFECYCLES, RETAINED, LAPSING, CLOSENESS, TAG_KEYS,
-  cutsFor, todayFor, windowsFor, statusSql, tagCondition, closenessSql, closenessCondition, firstSeenSql, statusFor,
+  cutsFor, todayFor, windowsFor, statusSql, quietIds, tagCondition, closenessSql, closenessCondition, firstSeenSql, statusFor,
   tagLabel, tagSentence, levelSentence, dollars,
 };

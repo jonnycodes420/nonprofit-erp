@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-51 · Leftovers from FIX-49 and GIVE-3 (2026-10-26)
+
+- **Soft credit, everywhere.** The profile's This year (`donor-gifts-between`) summed credit rows; it now leaves them out, like Lifetime. `donorCreditTotals` (now `creditTotals.js`) summed every gift row and had no caller; it is now the census lines' source: hard is `donor-lifetime`, soft is `donor-soft-credit`, and GET /donors/:id/soft-credit returns `ownGiving` and `hardPlusGiftSoft` from it.
+- **One quiet rule.** Communications' "Gone quiet" was Drift or stage lapsed; it is "Lapsing or lapsed", read from the tags (`donorStatus.quietIds`). The going-quiet suggestion fires on Lapsing only (was 180 to 365 days). Home's re-engage list is lapsing or lapsed (was 180 days, and a refund counted as a gift). The re-engaged and recovery-goal gaps are 365 days or more (was more than 365). why.js "Why did they stop?" uses `lapseRule.isLapsed`. The two lapsed sequence triggers both read the rule; the 90 and 180 day clocks are gone, and the picker shows one "Lapsed (12+ months)". Left alone on purpose: the portfolio's 90-day contact label, Ask's "a while is 180 days", Drift's six-month silence before it says "then not at all".
+- **Boot order.** `bootGate.js` holds DB_READY. Every boot timer (the workflow-to-journey conversion, status, number check, asset counters, reconcile denominator, mailbox health, import resume) starts its delay after the migrations. The MAIL-1 onboarded backfill moved below the `org_kind` columns it reads (a fresh database logged `column o.org_kind does not exist`).
+- **§10b.** `_logOutboundEmail` returns its write and the pledge-reminder refusal and the send proxy await it.
+- **themeAssets.dbFallbackRows.** A single failed S3 put sent an upload to Postgres for good. Puts are tried three times, and the `moveFallbackAssets` queue job (every 30 minutes) puts each fallback row to S3, reads it back, and only then clears the Postgres copy. It never touches org_creo and logs counts by kind and day.
+
 ## FIX-50 · A Customer org still acted like a demo (2026-10-26)
 
 - **Why (Justin's Place, prod, 26 Oct).** Kind = Customer, yet the console's Email section said "This is a demonstration organization" for Staff, Donor and Billing mail, and the org's app showed the demo banner. It was created as a demo (`is_demo_org`) and set to Customer before #234, and #234 only cleared the flag when Kind changed. About eight separate rules decided "demo": the flag alone (banner, 2FA, mailbox, QuickBooks, Xero, volunteer reminders, the checklist, the send alarm), the flag plus two seeded ids (onboarding stamp, receipts), the flag plus four ids plus a "(Demo)" name (mail gate and sweeps), and a bare "demo" in the name (the console's guess).

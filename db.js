@@ -2479,9 +2479,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_via TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by_name TEXT`);
-  // Backfill by the same definition, never by guess (onboarded.js).
-  await require("./onboarded").backfillOnboarded(query)
-    .catch(e => console.error("[mail-1] onboarded backfill:", e.message));
+  // The backfill (onboarded.js) reads orgs.org_kind, so it runs below, after
+  // ADMIN-CLEAN adds that column (FIX-51: on a fresh database it ran first and
+  // logged "column o.org_kind does not exist").
   // The founder drip never sends again: stop every onboarding enrolment so a
   // dormant one cannot fire, whatever later changes.
   await pool.query(`
@@ -8325,6 +8325,11 @@ async function runSchemaInit(pool) {
     const changed = await require("./orgDemoMigration").matchDemoFlagToKind(pool);
     console.log(`[fix50] demo flag matched to Kind: ${changed.kindsSet} unset Kind(s) set to Demo, ${changed.flagsChanged} is_demo_org flag(s) changed`);
   }
+  // MAIL-1 · backfill onboarded by the same definition, never by guess
+  // (onboarded.js). Here, not beside the onboarded_* columns, because its demo
+  // test reads org_kind (FIX-51).
+  await require("./onboarded").backfillOnboarded(query)
+    .catch(e => console.error("[mail-1] onboarded backfill:", e.message));
   // The monthly amount of the org's live Stripe subscription, in cents, as the
   // billing webhook last read it. MRR is this, never a plan's list price.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mrr_cents INTEGER`);

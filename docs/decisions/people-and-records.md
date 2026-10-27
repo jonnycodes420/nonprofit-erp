@@ -13,6 +13,9 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   calendar year and this one). The profile, the list filters, Groups, the dashboard's level chart and the
   `donors-by-status` source all read it. A refund comes off the 12-month total but never counts as "gave".
   `tests/parity1-donor-tags.test.js` pins the edges. (PARITY-1)
+- **"Gone quiet" is Lapsing plus Lapsed, and nothing else.** No screen keeps its own day count for quiet:
+  Communications' "Lapsing or lapsed" reads `donorStatus.quietIds`, the going-quiet move suggestion and
+  Home's re-engage list read `lapseRule.js`, and a gap of 365 days or more is a lapse everywhere. (FIX-51)
 - **A machine flag in `donors.tags` is never shown as a tag.** `donorTags.js` lists the internal flags
   (`has-refused-rows:N`); every read the API returns (list, summaries, profile, CSV export) passes through
   `visibleTags`, and `PUT /donors/:id` keeps the flags the client never saw (`keepInternal`). The unread
