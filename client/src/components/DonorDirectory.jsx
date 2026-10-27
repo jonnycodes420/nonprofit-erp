@@ -8,7 +8,7 @@ import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
-import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
+import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, MIN_WIDTH, alignFor, cleanColumns, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
@@ -826,7 +826,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             const checked=selIds.has(d.id);
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
             return[
-              <div key={d.id} className="dir-donor-row" onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}
+              <div key={d.id} {...interactive(()=>onSelectDonor(d),{row:true,href:donorHref(d.id),role:"link"})} className="dir-donor-row click-row-focus"
                 style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?T.green100:T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
@@ -1028,7 +1028,7 @@ function TeamView({donors,orgTeam,onSelectDonor}){
               :md.slice(0,10).map((d,i)=>{
                 const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
                 return(
-                  <div key={d.id} onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
+                  <div key={d.id} {...interactive(()=>onSelectDonor(d),{row:true,href:donorHref(d.id),role:"link"})} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
                     <PersonMark id={d.id} name={d.name} kind={d.kind} size={28}
                       tint={T.bg2} tintFg={T.ink}/>
                     <div style={{flex:1,minWidth:0}}>

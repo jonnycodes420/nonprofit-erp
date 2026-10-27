@@ -3,12 +3,13 @@
 // one line that says why it is there. The server decides (GET /home/lead,
 // shared/homeLead.js); this draws it. "Not now" sets a card aside for the day,
 // and three of a kind teaches Home to rank that kind lower for this person.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
+import { useStewardTold, told } from "../lib/stewardTold";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import { openTellSteward } from "./TellSteward";
-import { atlasName } from "../lib/atlas";   // AGENT-5
+import { atlasName, linkTarget } from "../lib/atlas";   // AGENT-5
 import { beforeLines } from "./BeforeYourMeeting";   // VOICE-3: the one list of what to know before a meeting
 
 const SERIF = "'DM Serif Display', Georgia, serif";
@@ -29,9 +30,72 @@ function Why({ text, dark }) {
   );
 }
 
-export function HomeLead({ lead, onNavigate, onSetAside, isReadOnly }) {
+// POLISH-3 · WHAT ATLAS IS WAITING ON, AS A CARD OF HOME'S OWN. It was a thin
+// strip bolted above Home; now each waiting line is a card at the top of For
+// you today, in the same shape as the others, with its one tap and a Not now.
+// The server leaves out anything already done elsewhere (a gift recorded on
+// the Add Gift form stops asking), so a card here always still needs her.
+const ATLAS_TAP = { gift: "Record it", pledge: "Record it", receipt: "Send both", held_back: "Keep as a note" };
+function atlasTitle(n) {
+  const line = String(n.line || "");
+  if (n.kind === "gift" || n.kind === "pledge") return `Record the ${line.replace(/:\s*tap to record\.?$/i, "")}?`;
+  if (n.kind === "receipt") return `Send ${line.replace(/:\s*tap to send.*$/i, "").replace(/^Receipt and thank-you to /, "the receipt and thank-you to ")}?`;
+  return line;
+}
+function atlasWhen(at) {
+  const d = new Date(at);
+  if (isNaN(d)) return "";
+  const today = new Date();
+  return d.toDateString() === today.toDateString() ? "today" : "on " + d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+function useAtlasWaiting() {
+  const [notes, setNotes] = useState([]);
+  const load = () => apiFetch("/atlas/notes?place=home").then(r => setNotes((r.notes || []).filter(n => n.waits))).catch(() => setNotes([]));
+  useEffect(() => { load(); }, []);
+  useStewardTold(() => load());
+  return [notes, load];
+}
+function AtlasCard({ n, onNavigate, isReadOnly, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const name = atlasName();
+  const act = async path => {
+    setBusy(true); setErr("");
+    try { await apiFetch(path, { method: "POST", body: "{}" }); told(); await onDone(); }
+    catch (e) { setErr((e && e.sentence) || "That didn't go through. Try again, or open it from the bell."); }
+    setBusy(false);
+  };
+  const t = linkTarget(n.link);
+  const why = n.kind === "gift" || n.kind === "pledge"
+    ? `You told ${name} ${atlasWhen(n.at)}. It is not in your totals until you say yes.`
+    : n.kind === "receipt" ? `It goes once the gift is recorded. You told ${name} ${atlasWhen(n.at)}.`
+    : `From what you told ${name} ${atlasWhen(n.at)}.`;
+  return (
+    <article data-testid="home-atlas-card" data-kind={n.kind}
+      style={{ position: "relative", borderRadius: 14, padding: "20px 22px 18px", background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenDk }}>
+      {!isReadOnly && (
+        <button type="button" data-testid="home-atlas-dismiss" aria-label={`Not now: ${atlasTitle(n)}`} disabled={busy} onClick={() => act(`/atlas/actions/${n.id}/no`)}
+          style={{ float: "right", margin: "-4px -4px 6px 10px", background: "none", border: "none", fontSize: 12.5, fontWeight: 700, color: T.ink3, cursor: "pointer", fontFamily: "inherit" }}>
+          Not now ×</button>
+      )}
+      <div style={{ ...EYEBROW, color: T.greenDk }}>{name} · waiting for your yes</div>
+      <h2 data-testid="home-atlas-title" style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 20, lineHeight: 1.2, margin: "6px 0 8px" }}>{atlasTitle(n)}</h2>
+      <Why text={why} />
+      {err && <p role="alert" style={{ fontSize: 13, color: T.ink, margin: "0 0 12px" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {!isReadOnly && ATLAS_TAP[n.kind] && <button type="button" data-testid="home-atlas-tap" disabled={busy} style={B1} onClick={() => act(`/atlas/actions/${n.id}/yes`)}>{busy ? "Working…" : ATLAS_TAP[n.kind]}</button>}
+        {n.kind === "draft" && t && <button type="button" style={B1} onClick={() => onNavigate && onNavigate(t[0], t[1])}>Open the draft</button>}
+        {n.donorId && <DonorLink id={n.donorId} onOpen={() => onNavigate && onNavigate("donors", { selectDonorId: n.donorId })} style={B2}>Open the record</DonorLink>}
+      </div>
+    </article>
+  );
+}
+
+export function HomeLead({ lead: leadIn, onNavigate, onSetAside, isReadOnly }) {
   const [aside, setAside] = useState({});
-  if (!lead || !lead.length) return null;
+  const [atlas, reloadAtlas] = useAtlasWaiting();
+  const lead = leadIn || [];
+  if (!lead.length && !atlas.length) return null;
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
   const notNow = c => {
     setAside(a => ({ ...a, [c.key]: true }));
@@ -41,6 +105,7 @@ export function HomeLead({ lead, onNavigate, onSetAside, isReadOnly }) {
   return (
     <section data-testid="home-lead" aria-label="For you today" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ ...EYEBROW, color: T.ink3 }}>For you today{lead.some(c => c.kind === "season") ? " · Year-end" : ""}</div>
+      {atlas.slice(0, 3).map(n => <AtlasCard key={n.id} n={n} onNavigate={onNavigate} isReadOnly={isReadOnly} onDone={reloadAtlas} />)}
       {lead.filter(c => !aside[c.key]).map(c => {
         const dark = c.kind === "meeting";
         const brass = c.kind === "confirm";

@@ -54,11 +54,11 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 |---|---|---|---|---|
 | fig-lifetime | Lifetime | Figure → `donor-lifetime` {donor} | `[data-figure-key="profile.lifetime"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lifetime"]` · source:donor-lifetime |
 | fig-last-gift | Last gift | Figure → `donor-last-gift` {donor} | `[data-figure-key="profile.lastGift"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lastGift"]` · source:donor-last-gift |
-| fig-last-met | Last met (days) | Figure → `donor-last-met` {donor, today} | `[data-figure-key="profile.lastMet"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lastMet"]` · source:donor-last-met |
-| fig-last-email | Last email (days) | Figure → `donor-last-email` {donor, today} | `[data-figure-key="profile.lastEmail"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lastEmail"]` · source:donor-last-email |
-| fig-first | First gift (month under) | Figure → `donor-first-gift` {donor} (ProfileStatus `Tile`) | `[data-figure-key="profile.glance.first-gift"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.glance.first-gift"]` · source:donor-first-gift |
-| fig-largest | Largest gift (month under) | Figure → `donor-largest-gift` {donor} | `[data-figure-key="profile.glance.largest-gift"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.glance.largest-gift"]` · source:donor-largest-gift |
-| fig-average | Average gift ("of N gifts…" under) | Figure → `donor-average-gift` {donor}, measure `per_gift` | `[data-figure-key="profile.glance.average-gift"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.glance.average-gift"]` · source:donor-average-gift |
+| fig-last-met | Last met (days) | Figure → `donor-last-met` {donor, today} | `[data-figure-key="profile.lastMet"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastMet"]` · source:donor-last-met |
+| fig-last-email | Last email (days) | Figure → `donor-last-email` {donor, today} | `[data-figure-key="profile.lastEmail"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastEmail"]` · source:donor-last-email |
+| fig-first | First gift (month under) | Figure → `donor-first-gift` {donor} (ProfileStatus `Tile`) | `[data-figure-key="profile.glance.first-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.first-gift"]` · source:donor-first-gift |
+| fig-largest | Largest gift (month under) | Figure → `donor-largest-gift` {donor} | `[data-figure-key="profile.glance.largest-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.largest-gift"]` · source:donor-largest-gift |
+| fig-average | Average gift ("of N gifts…" under) | Figure → `donor-average-gift` {donor}, measure `per_gift` | `[data-figure-key="profile.glance.average-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.average-gift"]` · source:donor-average-gift |
 | fig-def | "?" beside Lifetime / Last gift / Last met / Last email | hover + keyboard title = census sentence (no click target) | `[data-testid=dp-tile-def-<Label>]` || header · `[data-testid=dp-header-figures] [data-testid="dp-tile-def-Lifetime"]` · exists |
 
 ## 3. Glance lines, Ask, Giving by year
@@ -153,7 +153,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | vol-panel | Volunteer panel (when hours/record): Add hours, Edit, Remove, Download CSV, Copy their link, qualifications, hours Figures | `POST/PATCH/DELETE` volunteer-hours/shifts; Figure → `volunteer-hours` (VolunteerPanel.jsx) | `[data-testid=volunteer-panel]` || overview · `<VolunteerPanel donor` · code |
 | funder-panel | Funder panel (organisation): Save type/EIN, New grant request, Open grant, merge | `PUT /funders/:id`, `POST /funders/:id/grants`, `onNavigate("grants",{grantId})` (FunderPanel.jsx) | `[data-testid=funder-panel]` || overview · `<FunderPanel` · code |
 | matching | Matching gift note (when employer matches) | hover title only | text || overview · `matchingGift.companyName` · code |
-| tags-notes | tags pills, notes box | text only | `Pill` || header · `[data-testid=dp-record-tags]` · exists |
+| tags-notes | tags pills, notes box | text only | `Pill` || header · `[data-testid=dp-header-tags]` · exists |
 
 ## 7. Gifts & Pledges tab
 

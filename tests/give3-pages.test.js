@@ -19,6 +19,13 @@
 //   4. Show a trust line the record does not hold, or ignore "hide" → §2 red.
 //   5. Drop giving_page_id on the way to recordGift → §4 goes red.
 //   6. Crop the logo (object-fit cover) in the editor or on the page → §6 red.
+//   7. POLISH-3: the org's own Donation form (/give/<org>, `?form=org` in the
+//      editor) drew a stand-in (logo, name, amount buttons) and the Design
+//      header image reached neither the preview nor a giving page. Now the
+//      org form is the same page in the Story layout (no layout chosen: Story),
+//      the header image shows with its focus and crop, and the preview's
+//      markup equals the live page's → §7. Red on main: no preview route, no
+//      real page in the org form, no header image.
 // On main the whole suite is red: the preview route, the design field and the
 // layouts do not exist. 1, 3 and 6 were planted and watched go red.
 //
@@ -266,6 +273,43 @@ async function reset() {
       ok(`§6 ${layout}: the trust panel shows only the lines the org filled in`, JSON.stringify(r.trust) === JSON.stringify(want), r.trust);
       if (layout === "campaign") ok("§6 the campaign page shows its donors", /^3 donors$/.test(String(r.goal || "").trim()), r.goal);
     }
+
+    // ── §7 · POLISH-3: the org's Donation form is the page, header image and all ──
+    console.log("\n— §7 · the org's own donation form, with its header image —");
+    const pubOrg = await api("GET", `/org/${SLUG}/public`, null);
+    const pvOrg = await api("GET", "/org-form/page/preview", TOK);
+    ok("§7 the org form's preview is the public page's own payload", pvOrg.status === 200 && JSON.stringify(pvOrg.body) === JSON.stringify(pubOrg.body), { status: pvOrg.status });
+    const banner = await sharp({ create: { width: 1200, height: 400, channels: 3, background: { r: 160, g: 110, b: 80 } } }).png().toBuffer();
+    const hd = await api("PUT", "/portal-settings", TOK, { headerImageData: "data:image/png;base64," + banner.toString("base64"), headerFocalX: 0.2, headerFocalY: 0.8 });
+    ok("§7 a header image saves (no layout was ever chosen)", hd.status === 200, hd.status);
+    await page.goto(`${APP}/portal-editor?form=org`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.waitForSelector('[data-testid="editor-mode-design"]', { timeout: 20000 }).catch(() => {});
+    await page.click('[data-testid="editor-mode-design"]').catch(() => {});
+    await page.waitForSelector(PREV_DESK, { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const oDesk = await html(PREV_DESK), oPhone = await html(PREV_PHONE);
+    const shown = await page.evaluate(sel => { const g = document.querySelector(sel); const i = g && g.querySelector('[data-testid="page-header-image"] img');
+      return g ? { layout: g.getAttribute("data-layout"), header: !!i, pos: i ? getComputedStyle(i).objectPosition : null, form: !!g.querySelector("#give-form") } : null; }, PREV_DESK);
+    ok("§7 the editor draws the real page in Story, with the header image and the form", !!shown && shown.layout === "story" && shown.header && shown.form, shown);
+    ok("§7 at the focus she set", !!shown && shown.pos === "20% 80%", shown && shown.pos);
+    const oLive = async (w, h) => { await live.setViewportSize({ width: w, height: h }); await live.goto(`${APP}/give/${SLUG}`, { waitUntil: "networkidle" });
+      await live.waitForSelector('[data-testid="giving-page"]', { timeout: 15000 }).catch(() => {});
+      return live.evaluate(() => { const el = document.querySelector('[data-testid="giving-page"]'); return el ? el.innerHTML : null; }); };
+    const o1440 = await oLive(1440, 900), o390 = await oLive(390, 844);
+    ok("§7 the public donation page shows the header image", /data-testid="page-header-image"/.test(o1440 || ""), !!o1440);
+    ok("§7 desktop preview markup = the live donation page at 1440", !!oDesk && oDesk === o1440, { d: oDesk && oDesk.length, l: o1440 && o1440.length });
+    ok("§7 phone preview markup = the live donation page at 390", !!oPhone && oPhone === o390, { p: oPhone && oPhone.length, l: o390 && o390.length });
+    // A new header image shows the moment it is dropped, before any save.
+    const headerInput = page.locator('[data-field="header-image"] + * input[type="file"]');
+    const hi = await headerInput.count();
+    const next = await sharp({ create: { width: 1200, height: 400, channels: 3, background: { r: 40, g: 90, b: 70 } } }).png().toBuffer();
+    if (hi > 0) await headerInput.first().setInputFiles({ name: "clay.png", mimeType: "image/png", buffer: next });
+    await page.waitForTimeout(500);
+    const now = await page.evaluate(sel => { const i = document.querySelector(sel + ' [data-testid="page-header-image"] img'); return i ? i.getAttribute("src").slice(0, 22) : null; }, PREV_DESK);
+    ok("§7 a new header image is in the preview at once, before the save", hi > 0 && now === "data:image/png;base64,", { hi, now });
+    // A giving page with no photo of its own carries the header image too.
+    await live.goto(`${APP}/give/${SLUG}/story-page`, { waitUntil: "networkidle" });
+    ok("§7 a giving page with no photo shows the org's header image", await live.evaluate(() => !!document.querySelector('[data-testid="giving-page"] [data-testid="page-header-image"] img')));
     await browser.close();
   }
 

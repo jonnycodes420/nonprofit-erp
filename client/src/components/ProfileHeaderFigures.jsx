@@ -1,20 +1,22 @@
-// PROFILE-1 (header) · THE SEVEN NUMBERS, IN THE HEADER.
+// PROFILE-1 (header) · POLISH-3 · FOUR NUMBERS IN THE HEADER, THE REST ON GIFTS.
 //
-// The profile used to draw these as seven white boxes under the header (four
-// figures, then First, Largest and Average in a second row). They are one row
-// across the header's bottom edge now, divided by thin rules, and a two-column
-// grid at 390. Nothing about a number changed: each is the same <Figure> over
-// the same source, so it opens the same rows and foots the same way, and each
-// keeps its "?" with the same census sentence.
+// PROFILE-1 put seven figures across the header, each with a "?" on its label
+// and another on its value. Jonathan's walk (26 Oct) found that too much, so
+// the header keeps four:
 //
-//   Lifetime · This year · Last gift · Average gift · First / Largest ·
-//   Last met · Last email
+//   Lifetime · This year · Last gift (with its date) · Last contact
 //
-// All seven come with the donor (GET /donors/:id `figures`). First, Largest
+// Last contact is the more recent of Last met and Last email, saying which it
+// was. Average gift, First / Largest, Last met and Last email moved to the top
+// of the Gifts & pledges tab (ProfileMoreNumbers below). Nothing about a
+// number changed: each is the same <Figure> over the same source, so it opens
+// the same rows and foots the same way. Each number has ONE "?", on its label.
+//
+// All of them come with the donor (GET /donors/:id `figures`). First, Largest
 // and Average used to come from GET /donors/:id/status, a second read that a
 // gift recorded from another door never refreshed (NUMBERS-1).
 import { T, fmtFull } from "./shared";
-import { Figure } from "./Figure";
+import { Figure, FigureWhy } from "./Figure";
 import { censusById } from "../../../shared/numberCensus.js";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 
@@ -35,13 +37,11 @@ const VALUE = { fontSize: 19, fontWeight: 800, fontFamily: "'DM Serif Display',s
 const UNDER = { fontSize: 11, color: T.ink3, marginTop: 2, lineHeight: 1.35 };
 const BLANK = { fontSize: 12.5, fontWeight: 400, color: T.ink3, lineHeight: 1.45, fontFamily: "'DM Sans',system-ui,sans-serif" };
 
-function Def({ label, def }) {
-  if (!def) return null;
-  return (
-    <span tabIndex={0} title={def} aria-label={def} data-testid={"dp-tile-def-" + label}
-      style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: T.ink3, border: "1px solid " + T.bg3, borderRadius: 99, width: 13, height: 13,
-        display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "help", verticalAlign: "middle" }}>?</span>
-  );
+// The one "?" per number, on its label. A number with no census sentence
+// says its source's sentence, read on the first press.
+function Def({ label, def, source }) {
+  if (!def && !(source && source.key)) return null;
+  return <span data-testid={"dp-tile-def-" + label} style={{ marginLeft: 2 }}><FigureWhy definition={def} label={label} source={source} /></span>;
 }
 
 // One number: its figure, or the sentence that says what will appear there.
@@ -50,13 +50,13 @@ function One({ f, kind, label, def, figureKey, suffix = "" }) {
     return <span data-figure={figureKey} data-figure-key={figureKey} data-blank="" style={BLANK}>{(f && (f.blankShort || f.blank)) || "Not yet."}</span>;
   }
   return <Figure value={f.value} kind={kind} suffix={suffix && Number(f.value) === 1 ? suffix.replace(/s$/, "") : suffix} label={label} definition={def || f.sentence}
-    source={f.source} blank={f.blank} blankShort={f.blankShort} figureKey={figureKey} variant="inline" />;
+    source={f.source} blank={f.blank} blankShort={f.blankShort} figureKey={figureKey} variant="inline" why={false} />;
 }
 
-function Cell({ label, def, children, under, testid, first = false, oneLine = false }) {
+function Cell({ label, def, source, children, under, testid, first = false, oneLine = false }) {
   return (
     <div className="dph-fig" data-testid={testid} style={{ minWidth: 0, padding: "10px 16px 2px", borderLeft: first ? "none" : "1px solid " + T.bg3 }}>
-      <div style={LABEL}>{label}<Def label={label} def={def} /></div>
+      <div style={{ ...LABEL, display: "flex", alignItems: "center" }}>{label}<Def label={label} def={def} source={source} /></div>
       <div style={VALUE}>{children}</div>
       {under && <div style={oneLine ? { ...UNDER, whiteSpace: "nowrap" } : UNDER} title={oneLine ? under : undefined}>{under}</div>}
     </div>
@@ -78,20 +78,35 @@ export function UndatedNote({ u }) {
 
 const glanceFig = g => (g ? { ...g, blankShort: "No gifts yet." } : null);
 
-export function ProfileHeaderFigures({ figures, glance }) {
+const src = f => (f && f.source) || null;
+function pick(F, G) {
+  return { first: F.first || G.first, largest: F.largest || G.largest, average: F.average || G.average };
+}
+const timeOf = d => (d ? new Date(String(d).length <= 10 ? d + "T12:00:00" : d).getTime() : -Infinity);
+
+// Last contact: the more recent of the meeting and the email, saying which.
+function lastContact(F, today) {
+  const lm = F.lastMet && F.lastMet.value != null && F.lastMet.under && F.lastMet.under.date ? F.lastMet : null;
+  const le = F.lastEmail && F.lastEmail.value != null && F.lastEmail.under && F.lastEmail.under.date ? F.lastEmail : null;
+  if (!lm && !le) return { f: F.lastMet || F.lastEmail || null, key: "profile.lastMet", def: censusById("profile.lastMet").sentence, under: null };
+  const met = lm && (!le || timeOf(lm.under.date) >= timeOf(le.under.date));
+  if (met) {
+    const u = lm.under;
+    return { f: lm, key: "profile.lastMet", def: censusById("profile.lastMet").sentence,
+      under: `Met${u.what ? `: ${u.what.replace(/\.$/, "")}` : ""}. ${displayDateShort(u.date, today)}` };
+  }
+  const u = le.under;
+  return { f: le, key: "profile.lastEmail", def: censusById("profile.lastEmail").sentence,
+    under: `Email ${u.direction === "replied" ? "replied" : u.direction === "sent" ? "sent" : "logged"} ${displayDateShort(u.date, today)}` };
+}
+
+export function ProfileHeaderFigures({ figures }) {
   const F = figures || {};
-  // NUMBERS-1 · First, Largest and Average come with Lifetime in one read, so
-  // they can never be a refresh behind it. The status read is the fallback
-  // only for a server that does not send them yet.
-  const G = glance || {};
-  const g = { first: F.first || G.first, largest: F.largest || G.largest, average: F.average || G.average };
   const today = new Date();
   const lg = F.lastGift && F.lastGift.under;
-  const lm = F.lastMet && F.lastMet.under;
-  const le = F.lastEmail && F.lastEmail.under;
-  const avg = g.average;
+  const lc = lastContact(F, today);
   return (
-    <div className="dph-figures" data-testid="dp-header-figures" style={{ flexBasis: "100%", display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))",
+    <div className="dph-figures" data-testid="dp-header-figures" style={{ flexBasis: "100%", display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))",
       borderTop: "1px solid " + T.bg3, margin: "6px -24px -12px", padding: "0 8px 10px" }}>
       <Cell first label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime"
         under={(F.imported || (F.softCredit && F.softCredit.value)) ? <>
@@ -110,10 +125,29 @@ export function ProfileHeaderFigures({ figures, glance }) {
         under={lg && lg.date ? displayDate(lg.date) : null}>
         <One f={F.lastGift} kind="money" label="Last gift" def={censusById("profile.lastGift").sentence} figureKey="profile.lastGift" />
       </Cell>
-      <Cell label="Average gift" testid="dp-fig-average" under={averageSub(avg)}>
+      <Cell label="Last contact" def={lc.def} testid="dp-fig-lastContact" under={lc.under} oneLine>
+        <One f={lc.f} kind="count" suffix=" days" label="Last contact" def={lc.def} figureKey={lc.key} />
+      </Cell>
+    </div>
+  );
+}
+
+// The numbers that left the header, at the top of Gifts & pledges. Same
+// figures, same sources, same sentences.
+export function ProfileMoreNumbers({ figures, glance }) {
+  const F = figures || {};
+  const g = pick(F, glance || {});
+  const today = new Date();
+  const lm = F.lastMet && F.lastMet.under;
+  const le = F.lastEmail && F.lastEmail.under;
+  const avg = g.average;
+  return (
+    <div className="dph-figures dp-more-numbers" data-testid="dp-more-numbers" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))",
+      background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "4px 0 10px", marginBottom: 14 }}>
+      <Cell first label="Average gift" source={src(avg)} testid="dp-fig-average" under={averageSub(avg)}>
         <One f={glanceFig(avg)} kind="money" label={(avg && avg.label) || "Average gift"} figureKey="profile.glance.average-gift" />
       </Cell>
-      <Cell label="First / Largest" testid="dp-fig-firstLargest"
+      <Cell label="First / Largest" source={src(g.first)} testid="dp-fig-firstLargest"
         under={g.first && g.first.value != null ? `${monthOf(g.first.date)}${g.largest && g.largest.value != null ? ` / ${monthOf(g.largest.date)}` : ""}`
           : g.largest && g.largest.value != null ? `No date / ${monthOf(g.largest.date)}` : null}>
         {g.first && g.first.value != null

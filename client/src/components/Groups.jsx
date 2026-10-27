@@ -15,7 +15,7 @@ import RemoveMenu from "./RemoveMenu";
 import { useCallback, useEffect, useState } from "react";
 import { Zap } from "lucide-react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, interactive } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { SkeletonCards, SkeletonPage } from "./Skeleton";
@@ -371,9 +371,9 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
             {data.members.length ? "Nobody in this group is at that level." : g.kind === "static" ? "Nobody yet. Add people from the Donors list or from a profile." : "Nobody matches this rule today."}
           </div>}
           {members.map(m => (
-            <div key={m.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}>
-              <button type="button" onClick={() => onOpenPerson && onOpenPerson(m.id)}
-                style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, fontWeight: 600, cursor: "pointer", textAlign: "left", flex: "1 1 180px", minWidth: 0 }}>{m.name}</button>
+            <div key={m.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 4px", borderTop: "1px solid " + T.bg2, flexWrap: "wrap" }}
+              {...interactive(onOpenPerson ? () => onOpenPerson(m.id) : null, { row: true, label: `Open ${m.name}` })}>
+              <span style={{ color: T.ink, fontWeight: 600, flex: "1 1 180px", minWidth: 0 }}>{m.name}</span>
               <span style={{ fontSize: 12, color: T.ink3, width: 64 }}>{m.level ? m.level.charAt(0).toUpperCase() + m.level.slice(1) : "Not given"}</span>
               <span style={{ fontSize: 12.5, color: T.ink2, width: 110, textAlign: "right" }}>
                 ${Math.round(m.last12).toLocaleString("en-US")} <span style={{ color: T.ink3 }}>this 12 mo.</span>
@@ -429,11 +429,11 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
         {list && list.groups.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
             {list.groups.map(g => (
-              <div key={g.id} style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }} data-testid="group-card">
-                <button type="button" onClick={() => setOpen(g.id)}
-                  style={{ background: "none", border: "none", padding: 0, font: "inherit", textAlign: "left", cursor: "pointer", color: T.ink, fontSize: 16, fontWeight: 600 }}>
+              <div key={g.id} style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }} data-testid="group-card"
+                {...interactive(() => setOpen(g.id), { label: `Open ${g.name}` })}>
+                <div style={{ color: T.ink, fontSize: 16, fontWeight: 600 }}>
                   {g.name}{g.kind === "dynamic" && <LightningMark />}
-                </button>
+                </div>
                 <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
                 <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} /> {g.count === 1 ? "person" : "people"}</span>
@@ -450,7 +450,10 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
 
 // The profile's small control: the groups this person is in, and a way to
 // add them to one kept by hand.
-export function ProfileGroups({ donorId, isReadOnly }) {
+// POLISH-3 · given a function as `children`, it hands back the group chips
+// and the add control instead of drawing its own row, so the profile header
+// can put them on one line with the tags.
+export function ProfileGroups({ donorId, isReadOnly, children }) {
   const [d, setD] = useState(null);
   const [pick, setPick] = useState("");
   const load = useCallback(() => {
@@ -458,12 +461,33 @@ export function ProfileGroups({ donorId, isReadOnly }) {
     apiFetch(`/donors/${donorId}/groups`).then(setD).catch(() => setD(null));
   }, [donorId]);
   useEffect(() => { load(); }, [load]);
-  if (!d || (!d.groups.length && !d.canJoin.length)) return null;
+  const asParts = typeof children === "function";
+  if (!d || (!d.groups.length && !d.canJoin.length)) return asParts ? children([], null) : null;
   const add = () => {
     if (!pick) return;
     apiFetch(`/groups/${pick}/members`, { method: "POST", body: JSON.stringify({ donorIds: [donorId] }) }).then(() => { setPick(""); load(); }).catch(() => {});
   };
   const out = gid => apiFetch(`/groups/${gid}/members/remove`, { method: "POST", body: JSON.stringify({ donorIds: [donorId] }) }).then(load).catch(() => {});
+  if (asParts) {
+    const chips = d.groups.map(g => (
+      <span key={"g:" + g.id} data-testid="profile-group-chip" title={`Group: ${g.name}`} style={{ border: "1px solid " + T.bg2, borderRadius: 999, padding: "2px 9px", background: T.bgCard, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: T.ink2, whiteSpace: "nowrap" }}>
+        {g.name}{g.kind === "dynamic" ? <LightningMark size={12} /> : (!isReadOnly && (
+          <button type="button" aria-label={`Take out of ${g.name}`} onClick={() => out(g.id)}
+            style={{ background: "none", border: "none", padding: "0 0 0 2px", cursor: "pointer", color: T.ink3, font: "inherit" }}>×</button>
+        ))}
+      </span>
+    ));
+    const addCtl = !isReadOnly && d.canJoin.length > 0 ? (
+      <span data-testid="profile-groups" style={{ display: "inline-flex", gap: 4, flexShrink: 0 }}>
+        <select aria-label="Add to a group" value={pick} onChange={e => setPick(e.target.value)} style={{ ...field, padding: "2px 6px", fontSize: 12, width: "auto", maxWidth: 140 }}>
+          <option value="">+ Group</option>
+          {d.canJoin.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+        {pick && <button type="button" style={{ ...quiet, padding: "2px 9px", fontSize: 12 }} onClick={add}>Add</button>}
+      </span>
+    ) : null;
+    return children(chips, addCtl);
+  }
   return (
     <div data-testid="profile-groups" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: T.ink2, marginTop: 6 }}>
       <span style={{ color: T.ink3 }}>Groups:</span>

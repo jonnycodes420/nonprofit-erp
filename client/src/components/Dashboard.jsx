@@ -3260,7 +3260,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px"}}>
           <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay}
-            lead={homeDay&&homeDay.lead&&homeDay.lead.length>0?<HomeLead lead={homeDay.lead} onNavigate={onNavigate} isReadOnly={isReadOnly} onSetAside={loadHomeDay}/>:null}
+            lead={homeDay?<HomeLead lead={homeDay.lead||[]} onNavigate={onNavigate} isReadOnly={isReadOnly} onSetAside={loadHomeDay}/>:null}
             agent={{available:true,line:agentDaily&&agentDaily.line,
               onSend:t=>openTellSteward(null,{text:t,send:true}),
               onOpen:()=>openTellSteward(null)}}/>

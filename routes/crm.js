@@ -256,7 +256,7 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     sentence: T.segmentSentence(donors.length, names, noun),
     // The first recipient is whose name the preview shows, so what she reads on
     // the right of the screen is the email the first person will get.
-    first: donors[0] ? { name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+    first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
     // Who the segment holds and this send will not reach, by reason, with the
     // first names of each so "3 left out" opens onto people, not a number.
     leftOutCount: aud.leftOutCount,
@@ -269,6 +269,71 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     orgSends: !!(aud.orgGate && aud.orgGate.send),
     orgReason: aud.orgGate && !aud.orgGate.send ? aud.orgGate.reason : null,
   });
+}));
+
+// POLISH-3 · WHAT ELEANOR WILL SEE. A template campaign's preview is the
+// send's own render (emailCompose.render on the campaign's blocks, with one
+// real person's fields and the real footer), for the person the composer
+// names: the first on the list, or whoever it asks for. It used to show
+// campaigns.body, a snapshot taken when the campaign was made, which the demo's
+// seeded campaign never had, so the right of the screen was blank. Reading
+// only: nothing is written and nothing is sent.
+app.post("/campaigns/:id/preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [campaign] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+  if (!emailCompose.hasBlocks(campaign)) return res.status(400).json({ error: "not_from_template", sentence: "This campaign is written in the editor, not built from a template." });
+  let donor = null;
+  const wanted = req.body && req.body.donorId ? String(req.body.donorId) : null;
+  if (wanted) [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [wanted, orgId]);
+  if (!donor) {
+    const seg = req.body && req.body.segment && typeof req.body.segment === "object" ? JSON.stringify(req.body.segment) : campaign.segment;
+    const aud = await campaignAudience({ segment: seg }, orgId).catch(() => ({ recipients: [] }));
+    donor = aud.recipients[0] || null;
+  }
+  const ctx = await emailCompose.orgRenderContext(orgId);
+  const fields = donor
+    ? await emailCompose.personFields(ctx, donor, { campaignName: campaign.name || "" })
+    : emailCompose.sampleFields(ctx, { name: "", email: "", campaignName: campaign.name || "" });
+  const r = await emailCompose.render(ctx, { blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
+  const footer = await unsubscribeEmailFooterHtml((donor && donor.email) || "you@example.org", orgId, "campaign");
+  // A copy the send would refuse still shows, drawn the way the template
+  // editor draws it, with what to fix said beside it.
+  const shown = r.problems.length
+    ? await emailCompose.render(ctx, { blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "preview" })
+    : r;
+  const html = emailCompose.withFooter(shown, footer, "") || shown.html;
+  res.json({
+    html, problems: r.problems, sentence: r.problems.length ? emailCompose.refusalSentence(r.problems) : null,
+    subject: await emailCompose.subjectFor(campaign.subject, fields),
+    person: donor ? { id: donor.id, name: displayNameCase(donor.name || "") } : null,
+  });
+}));
+
+// POLISH-3 · BACK TO CAMPAIGN. A campaign keeps its own copy of the template's
+// blocks (so a scheduled send sends what it holds). When she opened the
+// template from this campaign to change its words, coming back takes the
+// template's words into the campaign. Only a campaign that has not gone; an
+// approval covers the words approved, exactly as an edit through PUT does.
+app.post("/campaigns/:id/take-template", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Campaign not found" });
+  if (!c.template_id || !emailCompose.hasBlocks(c)) return res.status(400).json({ error: "not_from_template" });
+  if (!["draft", "scheduled", "awaiting_approval"].includes(c.status)) return res.status(409).json({ error: "already_sent", sentence: "This campaign has gone, so its words stay as they were sent." });
+  const t = await emailCompose.templateFor(orgId, c.template_id);
+  if (!t) return res.status(404).json({ error: "template_not_found" });
+  const blocks = emailCompose.toArray(t.blocks);
+  const same = JSON.stringify(blocks) === JSON.stringify(emailCompose.toArray(c.email_blocks))
+    && (t.subject || "") === (c.subject || "") && (t.preheader || "") === (c.preheader || "");
+  if (!same) {
+    const [meRole] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+    const reapprove = !!c.approved_at && !(meRole && meRole.role === "admin");
+    await run(`UPDATE campaigns SET email_blocks=?::jsonb, subject=?, preheader=?, updated_at=NOW()${reapprove ? ", status='awaiting_approval', approved_at=NULL, approved_by=NULL, approved_by_name=NULL" : ""} WHERE id=? AND org_id=?`,
+      [JSON.stringify(blocks), t.subject || "", t.preheader || "", c.id, orgId]);
+  }
+  const [row] = await query("SELECT * FROM campaigns WHERE id=?", [c.id]);
+  res.json({ campaign: row, changed: !same });
 }));
 
 // SEND ME A TEST — one copy, to the person pressing the button, under whatever
@@ -22080,31 +22145,54 @@ app.get("/org/public-list", wrap(async (req, res) => {
 }));
 
 // ── Public donation page ───────────────────────────────────────────────────
-app.get("/org/:orgSlug/public", wrap(async (req, res) => {
-  // BUILD-58 W-2 — the give page is a DONOR-FACING money surface: it shows
-  // the org's white-label display name (portal_settings.display_name) when
-  // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
-  const orgs = await query(
-    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+// POLISH-3 · ONE PAYLOAD FOR THE ORG'S OWN PAGE AND ITS PREVIEW, as GIVE-3
+// did for giving pages: the public read and the editor's preview of the
+// org-wide Donation form build it here, so the page and the preview cannot be
+// handed two different shapes. The org's facts ride along for the trust panel.
+const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id,
           ${GIVE_THEME_COLS}
-     FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
-    [req.params.orgSlug]
-  );
-  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
-  const org = orgs[0];
+     FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
+async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {
   org.donor_facing_name = String(org.display_name || "").trim() || org.name;
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
   // BUILD-49 entry point (c): the post-donation thank-you screen offers the
   // giving account only for listed orgs (givingAccountEntry — the one gate).
   // Listing is already public via the directory, so this reveals nothing new.
-  const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
+  const gaEntry = await givingAccountEntry({ id: org.id, org_slug: orgSlug });
   // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
   // PARITY-2 Part 1: the give hub: the org's other open doors (waysToGive.js).
-  const ways = await waysToGive(org.id, req.params.orgSlug);
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true, ways }, funds });
+  const ways = await waysToGive(org.id, orgSlug);
+  const theme = giveThemePayload(org);
+  // The editor's preview draws the drafted amounts, as Publish will set them.
+  if (draftForm) {
+    if (Array.isArray(draftForm.onetimeAmounts) && draftForm.onetimeAmounts.length) theme.onetimeAmounts = draftForm.onetimeAmounts.map(Number);
+    if (Array.isArray(draftForm.monthlyAmounts) && draftForm.monthlyAmounts.length) theme.monthlyAmounts = draftForm.monthlyAmounts.map(Number);
+  }
+  return { org: { name: org.donor_facing_name, mission: org.mission, slug: orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme, portalSignIn: org.portal_enabled === true, ways,
+    // GIVE-3's trust panel, on the org's own page too (shared/givingPageDesign.js decides which lines show).
+    facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: org.ein || "",
+             contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } }, funds };
+}
+app.get("/org/:orgSlug/public", wrap(async (req, res) => {
+  // BUILD-58 W-2 — the give page is a DONOR-FACING money surface: it shows
+  // the org's white-label display name (portal_settings.display_name) when
+  // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
+  const orgs = await query(orgPageSql("o.org_slug = $1"), [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  res.json(await orgPagePublicPayload(orgs[0], req.params.orgSlug));
+}));
+// The editor's preview of the org's own Donation form: the same payload, with
+// the drafted amounts. A GET: nothing is written.
+app.get("/org-form/page/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgs = await query(orgPageSql("o.id = $1"), [req.user.orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "not_found" });
+  const [d] = await query("SELECT form_draft FROM portal_settings WHERE org_id = $1", [req.user.orgId]);
+  const draft = d && d.form_draft && typeof d.form_draft === "object" ? d.form_draft : null;
+  res.json(await orgPagePublicPayload(orgs[0], orgs[0].org_slug, { draftForm: draft }));
 }));
 
 // Public — org info + giving page + real live progress. Same shape as

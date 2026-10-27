@@ -969,7 +969,7 @@ function AppShell() {
           usable and switching tabs (resetKey=tab) recovers — instead of a black
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
-      {tab==="dashboard"&&<AtlasNote place="home" onNavigate={navigateTo}/>}
+      {/* POLISH-3: what Atlas waits on is a card in Home's For you today (HomeLead), not a strip above it. */}
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="home"/>}
       {/* BUILD-86 — the same component, the other surface. One Dashboard, one
           layout, one set of sections; `surface` decides which of them render.

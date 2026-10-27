@@ -85,6 +85,10 @@ async function sendAndWait(tok, id) {
   const camp = await api("POST", "/campaigns/from-template", tok, { templateId: tpl.body.id, name: "Brand send" });
   ok("§2 a campaign started from the template", (camp.status === 201 || camp.status === 200) && camp.body.id, camp.body);
   await api("PUT", `/campaigns/${camp.body.id}`, tok, { name: "Brand send", subject: camp.body.subject || "Thank you", segment: { mode: "all" } });
+  // §5 reads this: the preview for Rosa taken just before the send, so the two
+  // see the same record.
+  const [rosa0] = await q("SELECT id FROM donors WHERE org_id=$1 AND email=$2", [orgId, donorEmail]);
+  const pvBeforeSend = await api("POST", `/campaigns/${camp.body.id}/preview`, tok, { donorId: rosa0.id });
   await sendAndWait(tok, camp.body.id);
   const sent = captured.find(e => e.path === "/emails" && (e.body?.to === donorEmail || e.body?.to?.includes?.(donorEmail)));
   const html = (sent && sent.body.html) || "";
@@ -155,6 +159,38 @@ async function sendAndWait(tok, id) {
   ok("§4 a campaign starter opens as blocks in the org's name", ap.status === 201 && (appeal.blocks || []).some(b => b.type === "richtext" && /Email One Brand Org/.test(JSON.stringify(b))) && (appeal.blocks || []).some(b => b.type === "button"), appeal.blocks);
   const ac = await api("POST", "/campaigns/from-template", tok, { templateId: appeal.id, name: "Bridged appeal" });
   ok("§4 and starts a campaign", ac.status === 201, ac.body);
+
+  // ── §5 · POLISH-3: what the first person will see, and Back to campaign ──
+  // A template campaign's preview is the send's own render for one real
+  // person. The composer used to show campaigns.body, a snapshot the demo's
+  // seeded campaign never had, so "What Eleanor will see" was blank. Coming
+  // back from the template editor takes the template's new words in.
+  // How it goes red: no /campaigns/:id/preview (main before POLISH-3) → every
+  // §5 line; preview through a second renderer → "the same bytes as the send";
+  // take-template not copying the blocks → "the campaign took the new words".
+  console.log("\n§5 the campaign preview");
+  const sentHtml = html;
+  const pv5 = await api("POST", `/campaigns/${camp.body.id}/preview`, tok, { donorId: rosa.id });
+  ok("§5 the preview is the email for that person", pv5.status === 200 && /Rosa/.test(pv5.body.html || "") && pv5.body.person && pv5.body.person.id === rosa.id, [pv5.status, pv5.body.person, (pv5.body.html || "").slice(0, 200)]);
+  const strip = h => String(h || "").replace(/<img[^>]*\/track\/[^>]*>$/, "");
+  const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return [i, a.slice(i - 40, i + 60), b.slice(i - 40, i + 60)]; };
+  ok("§5 the same bytes as the send, less the open pixel", !!sentHtml && strip(sentHtml) === pvBeforeSend.body.html, firstDiff(strip(sentHtml), pvBeforeSend.body.html || ""));
+  const tplPv = await api("POST", `/email-templates/${tpl.body.id}/preview`, tok, {});
+  ok("§5 the editor's preview marks its blocks; the send never carries the marks", /data-st-block="0"/.test(tplPv.body.html || "") && !sentHtml.includes("data-st-block"), [(tplPv.body.html || "").length]);
+  const yeTpl = await api("POST", "/email-templates", tok, { starterKey: "campaign_appeal" });
+  const ye = await api("POST", "/campaigns/from-template", tok, { templateId: yeTpl.body.template.id, name: "Year-end appeal" });
+  await q("UPDATE campaigns SET body='' WHERE id=$1", [ye.body.id]);   // the seed's shape: blocks, and no snapshot
+  const pv6 = await api("POST", `/campaigns/${ye.body.id}/preview`, tok, { segment: { mode: "all" } });
+  ok("§5 a campaign with no snapshot still shows its email, for the first on the list", pv6.status === 200 && (pv6.body.html || "").length > 500 && /Rosa/.test(pv6.body.html) && /Unsubscribe<\/a>/.test(pv6.body.html), [pv6.status, pv6.body.person]);
+  const newBlocks = (yeTpl.body.template.blocks || []).map(b => (b.type === "richtext" ? { ...b, blocks: [{ type: "p", text: "Dear {{first_name}}, the harbor words." }] } : b));
+  await api("PUT", `/email-templates/${yeTpl.body.template.id}`, tok, { blocks: newBlocks });
+  const tk = await api("POST", `/campaigns/${ye.body.id}/take-template`, tok);
+  const pv7 = await api("POST", `/campaigns/${ye.body.id}/preview`, tok, { donorId: rosa.id });
+  ok("§5 the campaign took the new words, and its preview shows them", tk.status === 200 && tk.body.changed === true && /Dear Rosa, the harbor words\./.test(pv7.body.html || ""), [tk.status, tk.body.changed]);
+  const tk2 = await api("POST", `/campaigns/${ye.body.id}/take-template`, tok);
+  ok("§5 taking them twice changes nothing the second time", tk2.status === 200 && tk2.body.changed === false, tk2.body.changed);
+  const tk3 = await api("POST", `/campaigns/${camp.body.id}/take-template`, tok);
+  ok("§5 a sent campaign keeps the words it was sent with", tk3.status === 409, tk3.status);
 
   for (const t of ["campaign_recipients", "campaigns", "email_templates", "media_items", "giving_pages", "interactions", "milestone_drafts", "message_templates"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [orgId]).catch(() => {});
   mock.close();

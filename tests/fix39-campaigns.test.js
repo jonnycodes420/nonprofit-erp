@@ -186,6 +186,8 @@ async function main() {
             await tplBtn.click(); await settle(page);
             const inEditor = await page.locator('[data-testid="email-editor"]').waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
             ok("§editor the template opens in the email editor", inEditor && !(await page.locator('[data-testid="campaign-builder"]').isVisible()));
+            ok("§editor POLISH-3: it says whose email it is, and Back names the campaign", /^Editing the email for /.test(await page.locator('[data-testid="email-editor-title"]').innerText().catch(() => ""))
+              && (await page.getByRole("button", { name: /^Back to campaign$/ }).count()) === 1);
             await page.getByRole("button", { name: /^Back/ }).first().click(); await settle(page);
             ok("§editor Back returns to the campaign", await page.locator('[data-testid="campaign-builder"]').isVisible());
           }

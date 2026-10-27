@@ -142,10 +142,10 @@ function ScaledDesktop({ children, width = 1280 }) {
 // GIVE-3 — the draft's fields as she types them, laid over the server's
 // payload for the draft. Once a save lands the server's payload already holds
 // them, so the two agree and the preview is the page.
-function overlayPreview(pv, ds, ps, widgets) {
-  if (!pv || !pv.givingPage) return null;
-  const gp = { ...pv.givingPage };
-  if (ds) {
+function overlayPreview(pv, ds, ps, widgets, orgForm = false) {
+  if (!pv || (!pv.givingPage && !orgForm)) return null;
+  const gp = pv.givingPage ? { ...pv.givingPage } : null;
+  if (gp && ds) {
     if (ds.title != null) gp.title = ds.title;
     if (ds.story != null) gp.story = ds.story;
     const img = ds.imageData || ds.imageUrl || "";
@@ -155,7 +155,7 @@ function overlayPreview(pv, ds, ps, widgets) {
     if (!gp.campaignId && ds.goalAmount !== undefined) gp.goalAmount = ds.goalAmount;
     gp.design = normalizeDesign(ds.design);
   }
-  if (Array.isArray(gp.page) && Array.isArray(widgets)) {
+  if (gp && Array.isArray(gp.page) && Array.isArray(widgets)) {
     gp.page = gp.page.map(w => {
       const mine = w && widgets.find(x => x.id === w.id);
       return mine && w.type === "hero" ? { ...w, heading: mine.heading, sub: mine.sub } : w;
@@ -169,8 +169,19 @@ function overlayPreview(pv, ds, ps, widgets) {
     if (ps.background_tint !== undefined) theme.backgroundTint = ps.background_tint || null;
     if (ps.type_pairing) theme.typePairing = ps.type_pairing;
     if (ps.card_style) theme.cardStyle = ps.card_style;
+    // POLISH-3: the header image, its focus and its zoom, the moment they change.
+    // The stored path as the server sends it, so the preview's markup is the page's.
+    theme.headerImage = ps.header_image_data || ps.header_image_url || null;
+    theme.headerFocal = { x: Number(ps.header_focal_x ?? 0.5), y: Number(ps.header_focal_y ?? 0.5) };
+    const crop = ps.header_crop;
+    theme.headerCrop = !crop ? null : typeof crop === "object" ? crop : (() => { try { return JSON.parse(crop); } catch { return null; } })();
   }
-  return { ...pv, org: { ...pv.org, theme }, givingPage: gp };
+  // The org form's drafted amounts, as she types them.
+  if (orgForm && ds) {
+    if (Array.isArray(ds.onetimeAmounts) && ds.onetimeAmounts.length) theme.onetimeAmounts = ds.onetimeAmounts.map(Number);
+    if (Array.isArray(ds.monthlyAmounts) && ds.monthlyAmounts.length) theme.monthlyAmounts = ds.monthlyAmounts.map(Number);
+  }
+  return gp ? { ...pv, org: { ...pv.org, theme }, givingPage: gp } : { ...pv, org: { ...pv.org, theme } };
 }
 
 function readImageFile(file, cb) {
@@ -241,10 +252,12 @@ export default function PortalEditor() {
   // as the public page; re-read after every save so the server's word (smart
   // amounts, adjusted colours, the goal bar) is what the preview draws.
   const [pv, setPv] = useState(null);
+  // POLISH-3: the org's own Donation form previews through its own payload too.
   const loadPreview = useCallback(() => {
+    if (isOrgForm) { apiFetch("/org-form/page/preview").then(d => { if (d && d.org) setPv(d); }).catch(() => {}); return; }
     if (!givingPageId) return;
     apiFetch(`/giving-pages/${givingPageId}/page/preview`).then(d => { if (d && d.givingPage) setPv(d); }).catch(() => {});
-  }, [givingPageId]);
+  }, [givingPageId, isOrgForm]);
 
   useEffect(() => {
     apiFetch(apiBase).then(d => {
@@ -466,9 +479,10 @@ export default function PortalEditor() {
 
   // What the preview draws this instant: the server's payload with the fields
   // being typed laid over it, so a keystroke shows before its save lands.
-  const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets), [pv, ds, ps, widgets]);
+  const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets, isOrgForm), [pv, ds, ps, widgets, isOrgForm]);
   const pickField = useCallback((field) => {
     if (field === "blocks") { setMode("page"); return; }
+    if (field === "header") { setMode("design"); setTimeout(() => { const el = document.querySelector("[data-field=header-image]"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); }, 60); return; }
     if (field === "photo") { const el = document.querySelector("[data-testid=editor-cover]"); if (el) el.scrollIntoView({ block: "nearest" }); return; }
     setMode("details");
     setTimeout(() => {
@@ -588,7 +602,7 @@ export default function PortalEditor() {
   ) : null;
 
   // GIVE-3 — outside the block arranger, a giving page's preview is the page.
-  const useRealPage = surface === "give" && mode !== "page" && !!livePayload;
+  const useRealPage = (surface === "give" || surface === "orgform") && mode !== "page" && !!livePayload;
   const realPage = useRealPage ? (
     <div data-testid="real-preview">
       <Donate preview={{ payload: livePayload, orgSlug: ps.org_slug, pageSlug: meta?.pageSlug, onPick: pickField }} />
@@ -852,6 +866,7 @@ function DesignRail({ ps, onSet, note }) {
       <div style={lbl}>Header image (optional)</div>
       {/* The banner-shaped filled state IS the crop preview — what the org
           sees here is the exact wide crop donors get. */}
+      <div data-field="header-image" />
       <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
         shape="banner" preview={headerSrc || null}
         label={headerSrc ? "Replace image" : "Drag a header image here, or browse"}

@@ -25,6 +25,7 @@ import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
 import MembershipsPage from "./MembershipsPage";
 import Picture from "../components/Picture";
+import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 // GIVE-3 — the page's layout, trust panel, other ways to give and impact lines,
 // said once and read by this page AND the editor's preview of it.
 import { layoutFor, storyParagraphs, impactFor as designImpact, trustLines, waysLines, READ_MORE_AFTER } from "../../../shared/givingPageDesign.js";
@@ -109,6 +110,7 @@ function resolveTheme(theme) {
     logo: t.logo || null,
     headerImage: t.headerImage || null,
     headerFocal: t.headerFocal || { x: 0.5, y: 0.5 },
+    headerCrop: t.headerCrop || null,   // POLISH-3: the zoom she set in Design (BUILD-61's crop rect)
     footerText: t.footerText || null,
     poweredBy: t.poweredBy === true,
     onetimeAmounts: Array.isArray(t.onetimeAmounts) && t.onetimeAmounts.length ? t.onetimeAmounts : ONETIME_FALLBACK,
@@ -1596,7 +1598,18 @@ export default function Donate({ preview = null }) {
   // short photo and the headline, then the form, then the story. Three
   // layouts the org picks (shared/givingPageDesign.js). The editor's preview
   // renders exactly this, so what she sees is what a donor gets.
-  if (givingPage && !peerFundraiser && !isEmbed) {
+  // POLISH-3 · THE ORG'S OWN DONATION PAGE IS THIS PAGE TOO. /give/<org> drew
+  // a narrow stand-in, and so did the editor's Donation form, so the header
+  // image, the story, the trust panel and the layout never showed on it. It is
+  // now GIVE-3's page in the Story layout (an org-wide page has no layout to
+  // pick yet, so Story is the default), its story the org's mission.
+  const orgWidePage = !givingPage && !peerFundraiser && !isEmbed && !pageSlug && org ? {
+    title: `Give to ${org.name}`, story: org.mission || "", imageUrl: null, cover: null, page: null,
+    showGoal: false, design: { layout: "story" },
+  } : null;
+  const g3Page = givingPage || orgWidePage;
+  if (g3Page && !peerFundraiser && !isEmbed) {
+    const givingPage = g3Page;   // the page being drawn: a giving page, or the org's own
     const design = givingPage.design || {};
     const layout = layoutFor(design, givingPage);
     const facts = org.facts || {};
@@ -1621,9 +1634,16 @@ export default function Donate({ preview = null }) {
       "--g3-muted": T.ink3, "--g3-primary": th.primary, "--g3-button": th.button, "--g3-serif": th.serif, "--g3-sans": th.sans,
     };
     const brandLogo = th.logo ? <img src={th.logo} alt={th.displayName || org.name} onError={e => { e.target.style.display = "none"; }} /> : null;
+    // POLISH-3: the header image from Design, at the focus and zoom she set,
+    // as the portal draws it (PortalBanner, the same crop math), across the top.
+    const headerBanner = th.headerImage ? (
+      <div className="g3-header" data-testid="page-header-image" data-edit="header">
+        <PortalBanner url={th.headerImage} focal={th.headerFocal} crop={th.headerCrop} bandColor={th.primary} ratio={PORTAL_HEADER_RATIO} scrim={false} priority alt="" />
+      </div>
+    ) : null;
     const photo = cover ? (
       <div className="g3-photo" data-edit="photo"><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" /></div>
-    ) : (
+    ) : headerBanner ? null : (
       <div className="g3-fill" data-edit="photo">{brandLogo}</div>
     );
     return (
@@ -1631,11 +1651,12 @@ export default function Donate({ preview = null }) {
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
         <style>{G3_CSS}</style>
         {signupModal}
-        {layout === "simple" ? (
+        {layout === "simple" && !headerBanner ? (
           <div className="g3-band" data-edit="photo">{brandLogo || <span className="g3-bar-name" style={{ color: th.primaryFg }}>{th.displayName || org.name}</span>}</div>
         ) : (
           <div className="g3-bar">{brandLogo}{!brandLogo && <span className="g3-bar-name">{th.displayName || org.name}</span>}</div>
         )}
+        {headerBanner}
         <div className="g3-wrap">
           {layout === "campaign" && showGoalBar && (
             <div className="g3-campaign-goal" data-testid="campaign-top" data-edit="goal" style={{ marginBottom: 24 }}>{goalBar()}</div>
@@ -1687,6 +1708,21 @@ export default function Donate({ preview = null }) {
                   </ul>
                 )}
                 {layout === "story" && showGoalBar && <div style={{ marginTop: 22 }} data-edit="goal">{goalBar()}</div>}
+                {/* PARITY-2 Part 1's give hub, on the org's own page only. */}
+                {orgWidePage && Array.isArray(org.ways) && org.ways.length > 0 && (
+                  <div data-testid="ways-to-give" style={{ marginTop: 24 }}>
+                    <div className="g3-label">More ways to give</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {org.ways.map(w => (
+                        <a key={w.kind + w.href} href={w.href} data-kind={w.kind} style={{ ...card, padding: "14px 18px", textDecoration: "none", display: "block" }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: th.primary }}>
+                            {w.title}{w.date ? <span style={{ fontWeight: 500, color: T.ink3 }}> · {displayDate(w.date)}</span> : null}
+                          </div>
+                          <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5, marginTop: 3 }}>{w.sentence}</div>
+                        </a>))}
+                    </div>
+                  </div>
+                )}
                 {p2p && (
                   <div data-testid="p2p-entries" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "16px 20px", marginTop: 18 }}>
                     <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5, marginBottom: 10 }}>
