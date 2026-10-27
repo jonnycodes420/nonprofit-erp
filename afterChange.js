@@ -176,6 +176,9 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
     // RECONCILE-1: a door that writes gifts re-checks the org's old reports
     // against Steward, once, a moment later ("Checked Oct 14, 2026").
     if (GIFT_DOORS.has(door)) require("./reconcile").scheduleRecheck(orgId);
+    // POLISH-3: a gift (or receipt) Atlas was waiting to record, now written
+    // through any door, stops asking for its tap.
+    if (!history) await require("./routes/atlas").settleForDonors(orgId, ids).catch(e => console.error("[after-change] atlas settle:", e.message));
   } catch (e) {
     console.error(`[after-change] ${door} for ${ids.length}:`, e.message);
     result.error = e.message;

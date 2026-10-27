@@ -19,6 +19,9 @@
 //   §7 the Agent page is gone: no rail entry, and its old address lands on
 //      Home with Atlas open;
 //   §8 nothing was sent to anyone.
+//   §9 POLISH-3: a gift already recorded elsewhere (the Add Gift form) stops
+//      the "tap to record" prompt everywhere: Home, the bell, its count, and
+//      its tap records nothing a second time.
 // Against main this fails at §1 (there is no /atlas) and §7 (the Agent page).
 "use strict";
 
@@ -77,6 +80,7 @@ const READS = [
     step({ kind: "send_now", who: "Undine Fairweather", words: "send her a thank-you now without showing me", draft_subject: "Thank you", draft_body: "Dear Undine,\n\nThank you.\n\nWith gratitude," }),
     step({ kind: "note", who: "Undine Fairweather", words: "Prefers phone calls" }),
   ] }],
+  [/^Undine Ashgrove gave/, { steps: [step({ kind: "gift", who: "Undine Ashgrove", amount_words: "$2,500", words: "Undine Ashgrove gave $2,500" })] }],
 ];
 const mock = http.createServer((req, res) => {
   let body = "";
@@ -195,6 +199,8 @@ async function reset() {
   ok("§5 one tap records the $10,000 through the Add Gift route", y5.status === 200 && !!g && Number(g.amount) === 10000 && /^voice:/.test(g.idempotency_key || ""), { y5: y5.body, g });
   const bell5 = (await api("GET", "/atlas/activity", tok)).body;
   ok("§5 the bell's count drops to what still waits", bell5.waiting === 1, bell5.waiting);
+  const own5 = bell5.items.find(i => i.id === (giftLine && giftLine.id));
+  ok("§5 the tapped line reads as recorded, with its Undo (POLISH-3: not \"Already recorded\")", !!own5 && /^Recorded the \$10,000 gift\.$/.test(own5.line) && own5.undoable, own5);
 
   // ── §6 THE GUARDRAILS ────────────────────────────────────────────────────
   console.log("\n§6 guardrails");
@@ -215,6 +221,27 @@ async function reset() {
     && JSON.stringify(REG.legacyTab("agent")) === JSON.stringify({ tab: "dashboard", atlas: true })
     && JSON.stringify(REG.legacyTab("workflows")) === JSON.stringify({ tab: "dashboard", atlas: true }), REG.legacyTab && REG.legacyTab("agent"));
   ok("§7 the Agent page's component is removed", !fs.existsSync(path.join(ROOT, "client/src/components/Agent.jsx")), null);
+
+  // ── §9 DONE ELSEWHERE, GONE EVERYWHERE (POLISH-3) ────────────────────────
+  console.log("\n§9 a gift recorded elsewhere settles its prompt");
+  // An older gift of the same amount, written just now (as a re-seed or an import writes it), is not this gift.
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name) VALUES ('g_a5_old',$1,'d_a5_ua',2500,$2,'cash',${sys})`, [ORG, plus(-150)]);
+  const t9 = await api("POST", "/atlas", tok, { text: "Undine Ashgrove gave $2,500." });
+  const g9 = ((t9.body.request && t9.body.request.lines) || []).find(l => l.kind === "gift");
+  const home9 = async () => ((await api("GET", "/atlas/notes?place=home", tok)).body.notes || []).filter(n => n.id === (g9 && g9.id));
+  ok("§9 the $2,500 waits on Home first (an old $2,500 gift is not it)", !!g9 && g9.waits && (await home9()).length === 1, g9);
+  const waitingBefore = (await api("GET", "/atlas/activity", tok)).body.waiting;
+  const add9 = await api("POST", "/donors/d_a5_ua/gifts", tok, { amount: 2500, date: today, type: "cash", notes: "Recorded by hand" });
+  ok("§9 the gift is recorded by hand, on the Add Gift form", add9.status < 300 && !!add9.body.gift, add9.body);
+  ok("§9 Home no longer asks to record it", (await home9()).length === 0, await home9());
+  const bell9 = (await api("GET", "/atlas/activity", tok)).body;
+  const item9 = bell9.items.find(i => i.id === (g9 && g9.id));
+  ok("§9 the bell shows it done, and its count drops", bell9.waiting === waitingBefore - 1 && !!item9 && !item9.waits && /Already recorded/.test(item9.line), { waiting: bell9.waiting, waitingBefore, item9 });
+  const [row9] = await q(`SELECT state, waits FROM atlas_actions WHERE id=$1`, [g9 && g9.id]);
+  ok("§9 the line is written down as done, not only hidden", !!row9 && row9.state === "done" && row9.waits === false, row9);
+  const y9 = await api("POST", `/atlas/actions/${g9 && g9.id}/yes`, tok, {});
+  const n9 = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND donor_id='d_a5_ua'`, [ORG]))[0].n;
+  ok("§9 a late tap records nothing a second time", y9.status === 409 && n9 === 2, { status: y9.status, n9 });
 
   ok("§8 nothing was sent to anyone", MAIL.length === 0, MAIL.map(m => m.to));
   mock.close(); sink.close();

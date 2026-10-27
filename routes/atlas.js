@@ -27,6 +27,8 @@ const { anthropicFor, recordAiFallback } = require("../aiClient");
 const DM = require("../donorMatch");
 
 const routers = { r0: express.Router() };
+// Set by mount(); the after-change step settles waiting lines through it.
+let settleForDonors = async () => 0;
 const TEXT_MIN = 3, TEXT_MAX = 4000;
 // The read is one short structured call; the faster model keeps a request
 // like Undine's under ten seconds. ATLAS_MODEL overrides it.
@@ -621,15 +623,105 @@ async function syncFromCards(orgId, requestId) {
       [state, c.state === "saved" && c.kind === "money", line, orgId, requestId, c.id]);
   }
 }
+// ── DONE ELSEWHERE, GONE EVERYWHERE (POLISH-3) ──────────────────────────────
+// A waiting line asks for a yes on one card. The same thing can be done
+// another way: the gift typed on the Add Gift form, the receipt sent from the
+// gift, the draft sent from Communications, or the card answered in Tell
+// Steward. Margaret Chen's $10,000 was recorded and Home still said "tap to
+// record", and a late tap would have recorded it twice. settledElsewhere
+// READS what each waiting line asks for and whether it already exists (a GET
+// shows the answer without writing it); settleWaiting writes it down, from a
+// POST or from the one after-change step.
+async function settledElsewhere(orgId, rows) {
+  const out = new Map();
+  const waiting = rows.filter(r => r.state === "waiting" && r.waits === true && r.request_id && r.card_id);
+  if (!waiting.length) return out;
+  const memos = await query("SELECT id, cards FROM voice_memos WHERE org_id=? AND id = ANY(?::text[])", [orgId, [...new Set(waiting.map(r => r.request_id))]]);
+  const cardsOf = new Map(memos.map(m => [m.id, j(m.cards) || []]));
+  const AT_ = await AT();
+  const day = d => new Date(String(d).slice(0, 10) + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // A gift for this person, of this amount, written since (or just before) she said it.
+  const giftFor = async (a, c) => {
+    if (c.giftId) { const [g] = await query("SELECT id, date, thanked_at, idempotency_key FROM gifts WHERE id=? AND org_id=?", [c.giftId, orgId]); return g || null; }
+    const [g] = await query(`SELECT id, date, thanked_at, idempotency_key FROM gifts WHERE org_id=? AND donor_id=? AND ROUND(amount*100)=? AND created_at >= ?::timestamptz - interval '2 days'
+                             AND LEFT(date::text, 10) >= to_char(?::timestamptz - interval '3 days', 'YYYY-MM-DD') ORDER BY created_at LIMIT 1`, [orgId, c.donorId, c.cents, a.created_at, a.created_at]);
+    return g || null;
+  };
+  for (const a of waiting) {
+    const cards = cardsOf.get(a.request_id) || [];
+    const c = cards.find(x => x.id === a.card_id);
+    if (!c) continue;
+    if (c.state !== "waiting") { out.set(a.id, { card: c, cardDecided: true }); continue; }
+    if (c.kind === "money" && c.moneyKind === "gift") {
+      const g = await giftFor(a, c);
+      // The tap's own gift passes through the after-change step before its
+      // card is marked: that one is this line's own yes, with its Undo.
+      const own = g && g.idempotency_key === `voice:${a.request_id}:${c.id}`;
+      if (g) out.set(a.id, { card: c, patch: { state: "saved", giftId: g.id, ...(own ? {} : { by: "Recorded elsewhere" }) }, undoable: own,
+        line: own ? `Recorded the ${AT_.usd(c.cents)} gift.` : `Already recorded: the ${AT_.usd(c.cents)} gift on ${day(g.date)}.` });
+    } else if (c.kind === "money" && c.moneyKind === "pledge") {
+      const [p] = await query(`SELECT id FROM pledges WHERE org_id=? AND donor_id=? AND ROUND(amount*100)=? AND created_at >= ?::timestamptz - interval '2 days' ORDER BY created_at LIMIT 1`,
+        [orgId, c.donorId, c.cents, a.created_at]);
+      if (p) out.set(a.id, { card: c, patch: { state: "saved", pledgeId: p.id, by: "Recorded elsewhere" }, line: `Already recorded: the ${AT_.usd(c.cents)} pledge.` });
+    } else if (c.kind === "thanks") {
+      const giftCard = cards.find(x => x.id === c.afterCard);
+      const g = giftCard ? await giftFor(a, giftCard) : null;
+      if (!g) continue;
+      const [rc] = await query("SELECT id FROM receipts WHERE org_id=? AND gift_id=? AND voided_at IS NULL LIMIT 1", [orgId, g.id]);
+      if (rc || g.thanked_at) out.set(a.id, { card: c, patch: { state: "saved", receiptId: rc ? rc.id : null, by: "Done elsewhere" }, line: "Already thanked." });
+    } else if (c.kind === "draft" && c.draftId) {
+      const [d] = await query("SELECT status FROM agent_drafts WHERE id=? AND org_id=?", [c.draftId, orgId]);
+      if (d && d.status !== "pending") out.set(a.id, { card: c, patch: { state: d.status === "sent" ? "saved" : "discarded", by: "Done elsewhere" },
+        line: d.status === "sent" ? "Sent." : null, state: d.status === "sent" ? "done" : "discarded" });
+    }
+  }
+  return out;
+}
+// What a reader is shown for a line that was settled elsewhere (nothing written).
+function asSettled(r, s) {
+  if (!s) return r;
+  if (s.cardDecided) {
+    const st = s.card.state === "saved" ? "done" : s.card.state;
+    return { ...r, state: st, waits: false };
+  }
+  return { ...r, state: s.state || "done", waits: false, undoable: s.undoable === true, line: s.line || r.line };
+}
+async function settleWaiting(orgId, rows) {
+  const found = await settledElsewhere(orgId, rows);
+  const memos = new Set();
+  for (const [id, s] of found) {
+    const a = rows.find(r => r.id === id);
+    memos.add(a.request_id);
+    if (s.cardDecided) continue;
+    const [m] = await query("SELECT cards FROM voice_memos WHERE id=? AND org_id=?", [a.request_id, orgId]);
+    const cards = (j(m && m.cards) || []).map(c => (c.id === a.card_id && c.state === "waiting" ? { ...c, ...s.patch } : c));
+    await run("UPDATE voice_memos SET cards=? WHERE id=? AND org_id=?", [JSON.stringify(cards), a.request_id, orgId]);
+    await run(`UPDATE atlas_actions SET state=?, waits=false, undoable=?, line=COALESCE(?, line), updated_at=NOW() WHERE id=? AND org_id=? AND state='waiting'`,
+      [s.state || "done", s.undoable === true, s.line || null, id, orgId]);
+  }
+  for (const rid of memos) await syncFromCards(orgId, rid);
+  return found.size;
+}
+// The one after-change step calls this for the people it touched.
+settleForDonors = async (orgId, donorIds) => {
+  const ids = [...new Set(donorIds || [])].filter(Boolean);
+  if (!ids.length) return 0;
+  const rows = await query("SELECT * FROM atlas_actions WHERE org_id=? AND state='waiting' AND waits=true AND donor_id = ANY(?::text[])", [orgId, ids]);
+  return rows.length ? settleWaiting(orgId, rows) : 0;
+};
 app.post("/atlas/actions/:id/yes", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const a = await actionRow(orgId, req.params.id);
+  let a = await actionRow(orgId, req.params.id);
   if (!a) return res.status(404).json({ error: "Not found" });
-  if (a.state !== "waiting" || !a.card_id) return res.status(409).json({ error: "not_waiting", sentence: "This one isn't waiting for you." });
+  // Done another way since it was asked: write that down, and never do it twice.
+  if (a.state === "waiting" && await settleWaiting(orgId, [a])) a = await actionRow(orgId, a.id);
+  if (a.state !== "waiting" || !a.card_id) return res.status(409).json({ error: "not_waiting", sentence: a.state === "done" ? "This one is already done." : "This one isn't waiting for you." });
   if (a.kind === "draft") return res.status(400).json({ error: "open_the_draft", sentence: "Open the draft to read it and send it yourself." });
   const r = await asHer(req, "POST", `/voice/memos/${a.request_id}/cards/${a.card_id}/yes`, {});
-  if (r.status >= 300) return res.status(r.status).json(r.body || { error: "not_done" });
+  // The card may have been decided even when the answer is an error (the gift
+  // was recorded and a follow-on failed): the line follows the card either way.
   await syncFromCards(orgId, a.request_id);
+  if (r.status >= 300) return res.status(r.status).json(r.body || { error: "not_done" });
   res.json({ request: await requestOut(orgId, a.request_id) });
 }));
 app.post("/atlas/actions/:id/no", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -704,8 +796,9 @@ app.post("/atlas/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res)
 app.get("/atlas/activity", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(`SELECT * FROM atlas_actions WHERE org_id=? ORDER BY created_at DESC, id DESC LIMIT 60`, [orgId]);
-  const [n] = await query(`SELECT COUNT(*)::int AS n FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
-  res.json({ name: atlasName(), waiting: n ? n.n : 0, items: rows.map(actionOut) });
+  const waitingRows = await query(`SELECT * FROM atlas_actions WHERE org_id=? AND waits=true AND state='waiting'`, [orgId]);
+  const settled = await settledElsewhere(orgId, waitingRows);
+  res.json({ name: atlasName(), waiting: waitingRows.length - settled.size, items: rows.map(r => actionOut(asSettled(r, settled.get(r.id)))) });
 }));
 // The notes on one page: what Atlas did there that nobody has seen yet, and
 // anything still waiting there. Reading never marks them seen (a GET changes
@@ -724,7 +817,11 @@ app.get("/atlas/notes", requireAuth, wrap(async (req, res) => {
   else if (place === "home") { where += " AND waits=true AND state='waiting'"; }
   else { where += " AND place=?"; params.push(place); if (pid) { where += " AND place_id=?"; params.push(pid); } }
   const rows = await query(`SELECT * FROM atlas_actions WHERE ${where} AND (seen_at IS NULL OR (waits=true AND state='waiting')) ORDER BY created_at DESC LIMIT 20`, params);
-  res.json({ name: atlasName(), notes: rows.map(actionOut) });
+  const settled = await settledElsewhere(orgId, rows);
+  const shown = rows.map(r => asSettled(r, settled.get(r.id)))
+    // Home lists only what waits; a page keeps a settled line it has not shown yet.
+    .filter(r => (place === "home" ? r.waits === true && r.state === "waiting" : r.seen_at == null || (r.waits === true && r.state === "waiting")));
+  res.json({ name: atlasName(), notes: shown.map(actionOut) });
 }));
 app.post("/atlas/notes/seen", requireAuth, wrap(async (req, res) => {
   const ids = (Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String).slice(0, 50);
@@ -733,4 +830,4 @@ app.post("/atlas/notes/seen", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, settleForDonors: (...a) => settleForDonors(...a) };

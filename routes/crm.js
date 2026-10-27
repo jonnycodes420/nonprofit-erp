@@ -22028,31 +22028,54 @@ app.get("/org/public-list", wrap(async (req, res) => {
 }));
 
 // ── Public donation page ───────────────────────────────────────────────────
-app.get("/org/:orgSlug/public", wrap(async (req, res) => {
-  // BUILD-58 W-2 — the give page is a DONOR-FACING money surface: it shows
-  // the org's white-label display name (portal_settings.display_name) when
-  // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
-  const orgs = await query(
-    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+// POLISH-3 · ONE PAYLOAD FOR THE ORG'S OWN PAGE AND ITS PREVIEW, as GIVE-3
+// did for giving pages: the public read and the editor's preview of the
+// org-wide Donation form build it here, so the page and the preview cannot be
+// handed two different shapes. The org's facts ride along for the trust panel.
+const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id,
           ${GIVE_THEME_COLS}
-     FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
-    [req.params.orgSlug]
-  );
-  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
-  const org = orgs[0];
+     FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
+async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {
   org.donor_facing_name = String(org.display_name || "").trim() || org.name;
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
   // BUILD-49 entry point (c): the post-donation thank-you screen offers the
   // giving account only for listed orgs (givingAccountEntry — the one gate).
   // Listing is already public via the directory, so this reveals nothing new.
-  const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
+  const gaEntry = await givingAccountEntry({ id: org.id, org_slug: orgSlug });
   // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
   // PARITY-2 Part 1: the give hub: the org's other open doors (waysToGive.js).
-  const ways = await waysToGive(org.id, req.params.orgSlug);
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true, ways }, funds });
+  const ways = await waysToGive(org.id, orgSlug);
+  const theme = giveThemePayload(org);
+  // The editor's preview draws the drafted amounts, as Publish will set them.
+  if (draftForm) {
+    if (Array.isArray(draftForm.onetimeAmounts) && draftForm.onetimeAmounts.length) theme.onetimeAmounts = draftForm.onetimeAmounts.map(Number);
+    if (Array.isArray(draftForm.monthlyAmounts) && draftForm.monthlyAmounts.length) theme.monthlyAmounts = draftForm.monthlyAmounts.map(Number);
+  }
+  return { org: { name: org.donor_facing_name, mission: org.mission, slug: orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme, portalSignIn: org.portal_enabled === true, ways,
+    // GIVE-3's trust panel, on the org's own page too (shared/givingPageDesign.js decides which lines show).
+    facts: { orgName: org.donor_facing_name, legalName: org.legal_name || "", ein: org.ein || "",
+             contactEmail: org.give_contact || "", address: org.receipt_address || "", stripe: !!org.stripe_account_id } }, funds };
+}
+app.get("/org/:orgSlug/public", wrap(async (req, res) => {
+  // BUILD-58 W-2 — the give page is a DONOR-FACING money surface: it shows
+  // the org's white-label display name (portal_settings.display_name) when
+  // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
+  const orgs = await query(orgPageSql("o.org_slug = $1"), [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  res.json(await orgPagePublicPayload(orgs[0], req.params.orgSlug));
+}));
+// The editor's preview of the org's own Donation form: the same payload, with
+// the drafted amounts. A GET: nothing is written.
+app.get("/org-form/page/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgs = await query(orgPageSql("o.id = $1"), [req.user.orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "not_found" });
+  const [d] = await query("SELECT form_draft FROM portal_settings WHERE org_id = $1", [req.user.orgId]);
+  const draft = d && d.form_draft && typeof d.form_draft === "object" ? d.form_draft : null;
+  res.json(await orgPagePublicPayload(orgs[0], orgs[0].org_slug, { draftForm: draft }));
 }));
 
 // Public — org info + giving page + real live progress. Same shape as
