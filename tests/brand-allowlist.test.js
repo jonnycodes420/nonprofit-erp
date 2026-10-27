@@ -200,9 +200,10 @@ ok("Grants keeps Board/List toggle + drag-and-drop", grantBoard.includes('[["boa
 const donors = read("src/components/Donors.jsx");
 const menuBlock = donors.slice(donors.indexOf("Import &amp; tools"), donors.indexOf("Import &amp; tools") + 2600);
 ok("Donors has ONE 'Import & tools' menu", donors.includes("Import &amp; tools"));
-ok("menu reaches Import + History (recommended default)", menuBlock.includes("setShowCombinedImport(true)") && menuBlock.includes('badge:"Recommended"'));
-ok("menu reaches donor-only import", menuBlock.includes("setShowImport(true)"));
-ok("menu reaches giving-history import", menuBlock.includes("setShowGiftImport(true)"));
+// HARDEN-1: the old mapper's three doors (Import + History, donors only, giving
+// history) became the one reader, "Import a spreadsheet", the recommended default.
+ok("menu reaches Import a spreadsheet (recommended default)", menuBlock.includes("setShowSheetImport(true)") && menuBlock.includes('badge:"Recommended"'));
+ok("menu no longer opens the old mapper", !menuBlock.includes("setShowCombinedImport(true)") && !menuBlock.includes("setShowImport(true)") && !menuBlock.includes("setShowGiftImport(true)"));
 // CLEAN-1: merging lives in Data health now (pairs, side by side, undo); the menu opens it.
 ok("menu reaches merge duplicates", menuBlock.includes("setShowMerge(true)") || menuBlock.includes('setView("health")'));
 ok("the four sibling toolbar buttons are gone", !donors.includes("↑ Giving History</button>") && !donors.includes("⇆ Merge duplicates</button>"));

@@ -148,6 +148,7 @@ async function deletedPeopleIndex(orgId) {
 async function matchPeople(orgId, u, answers, privacy) {
   const out = new Map();
   const picks = (answers && answers.people) || {};
+  const deletedPicks = (answers && answers.deletedPeople) || {};
   const idx = await orgPeopleIndex(orgId);
   const gone = await deletedPeopleIndex(orgId);
   for (const p of u.people) {
@@ -187,7 +188,12 @@ async function matchPeople(orgId, u, answers, privacy) {
     for (const [i, x] of members.entries()) {
       if (x.status !== "new" || x.by === "you") continue;
       const hit = gone.find({ externalId: i === 0 ? p.externalId : null, email: i === 0 ? p.email : null, name: x.name });
-      if (hit) members[i] = { name: x.name, status: "deleted", id: null, deletedId: hit.id, deletedName: hit.name, by: hit.by };
+      if (!hit) continue;
+      // HARDEN-1: a match by the name alone is a question, Same person by
+      // default; "Different person" imports them as new. An ID or an email stays blocked.
+      const nameOnly = hit.by === "the same name";
+      if (nameOnly && deletedPicks[`${p.key}|${x.name}`] === "different") { members[i] = { ...x, deletedAsked: hit.id }; continue; }
+      members[i] = { name: x.name, status: "deleted", id: null, deletedId: hit.id, deletedName: hit.name, by: hit.by, nameOnly };
     }
     // CLIENT-SAFE-1: a person marked as a client is never made a donor here.
     const client = privacy.on && (members.some(x => x.isClient || (x.id && privacy.clientIds.has(x.id))) || (p.email && privacy.clientEmails.has(p.email)));
@@ -359,7 +365,18 @@ async function buildUnderstanding(req, body) {
     const m = matches.get(p.key);
     if (clientKeys.has(p.key) || !m.members.some(x => x.status === "deleted")) continue;
     for (const x of m.members.filter(y => y.status === "deleted"))
-      deletedMatches.push({ key: p.key, name: x.name, id: x.deletedId, deletedName: x.deletedName, by: x.by, line: p.lines[0] });
+      deletedMatches.push({ key: p.key, name: x.name, id: x.deletedId, deletedName: x.deletedName, by: x.by, line: p.lines[0], nameOnly: !!x.nameOnly });
+  }
+  // HARDEN-1: each name-only match asks; the answer rides the commit (answers.deletedPeople)
+  const asked = new Set();
+  for (const p of u.people) for (const x of matches.get(p.key).members) {
+    const k = `${p.key}|${x.name}`;
+    if (!(x.nameOnly || x.deletedAsked) || asked.has(k)) continue;
+    asked.add(k);
+    const dn = x.deletedName || x.name;
+    u.questions.push({ id: `deleted:${k}`, kind: "deletedPerson", key: k, optional: true, default: "same", deletedId: x.deletedId || x.deletedAsked,
+      text: `Is this the same ${dn} you deleted? Row ${String(p.lines[0]).split(":")[1] || p.lines[0]} matches them by name only.`,
+      options: [{ key: "same", label: "Same person (stays out)" }, { key: "different", label: "Different person (import as new)" }] });
   }
   const deletedKeys = new Set(deletedMatches.map(x => x.key));
   if (deletedKeys.size) {
@@ -680,7 +697,9 @@ async function writePlan({ req, body, importId, who, report }) {
   for (let k = 0; k < u.pledges.length; k += JOB_BATCH) {
     const batch = u.pledges.slice(k, k + JOB_BATCH).map(p => ({ p, pid: "pl_" + uuid().slice(0, 8) }));
     const rows = batch.map(({ p, pid }) => [pid, orgId, personId.get(p.personKey), p.pledgeCents / 100, p.installments[p.installments.length - 1].dueDate || p.dueDate, "open",
-      [p.why, p.note, eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ").slice(0, 1000), "sheet:" + p.rowId + ":pledge",
+      // HARDEN-1: a pledge has no payment-method column, so how it will be paid ("Stock", "Foundation") rides its note
+      [p.why, p.note, p.methodOriginal && !/Method in your file/.test(p.note || "") ? `Method in your file: ${p.methodOriginal}` : null,
+       eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ").slice(0, 1000), "sheet:" + p.rowId + ":pledge",
       p.years > 1 ? "annual" : null, p.installments.length, who.id, who.name, importId, eventId]);
     const ins = await query(`INSERT INTO pledges (${PCOLS.join(",")}) VALUES ${rows.map(() => "(" + PCOLS.map(() => "?").join(",") + ")").join(",")}
                               ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, rows.flat());
@@ -750,6 +769,9 @@ async function writePlan({ req, body, importId, who, report }) {
   summary.dollarsSetAside = (asideCents + duplicateCents) / 100;
   summary.dollarsErrored = 0;
   summary.peopleRows = u.people.length;
+  // HARDEN-1: what the receipt of a file of people says (crm.js peopleLine)
+  summary.personRowsInFile = new Set(u.people.flatMap(p => p.lines || [])).size;
+  summary.peopleMatched = u.people.reduce((n, p) => n + (matches.get(p.key) ? matches.get(p.key).members.filter(x => x.status === "matched").length : 0), 0);
   summary.columnAccount = u.columnAccount;
   summary.button = Rm.importButtonSentence(u).text;
   summary.undatedGiftIds = (await query("SELECT id FROM gifts WHERE org_id=? AND import_id=? AND date IS NULL", [orgId, importId])).map(r => r.id);
