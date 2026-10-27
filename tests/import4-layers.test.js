@@ -132,9 +132,9 @@ async function combined() {
   const body = { fileName: "Finding_Joy_Combined.xlsx", sheets };
 
   // §1 the preview
-  const t0 = Date.now();
+  const t0 = performance.now();
   const u = await api("POST", "/sheet-import/understand", tok, body);
-  const previewMs = Date.now() - t0;
+  const previewMs = Math.round(performance.now() - t0);
   const U = u.body || {};
   ok("§1 understand answers 200 and is ready with no blocking question", u.status === 200 && U.ready === true,
      u.status + " " + JSON.stringify((U.questions || []).filter(x => !x.optional)).slice(0, 300));
@@ -309,9 +309,9 @@ async function everyFixture(rows) {
     const full = file.startsWith("event-") ? path.join(FX, file) : path.join(FX4, file);
     const body = { fileName: file, sheets: await sheetsOf(full), answers: e.answers || {} };
     const before = await snapshot(ORG);
-    const t0 = Date.now();
+    const t0 = performance.now();
     const u = await api("POST", "/sheet-import/understand", tok, body);
-    const ms = Date.now() - t0;
+    const ms = Math.round(performance.now() - t0);
     const U = u.body || {};
     const c = await api("POST", "/sheet-import/commit", tok, { ...body, importId: `imp_import4f_${i}` });
     const db = await one(`SELECT (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int AS people,
