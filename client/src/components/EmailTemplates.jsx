@@ -104,7 +104,7 @@ const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.gree
 // FIX-39: `openTemplateId` opens that one template straight away (an "Edit in
 // editor" from a journey, a campaign or a draft), and `onBackFromOpen` is where
 // its Back goes: to the screen that opened it, not to this library.
-export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts, openTemplateId = null, onBackFromOpen = null }) {
+export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts, openTemplateId = null, onBackFromOpen = null, openTitle = null, openBackLabel = null }) {
   const [tab, setTab] = useState("templates");
   const [data, setData] = useState(null);
   const [letters, setLetters] = useState(null);
@@ -160,7 +160,8 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
   if (open) {
     return <EmailEditor key={open.id} template={open} isReadOnly={isReadOnly} blockTypes={data.blockTypes || []}
       mergeFields={open.mergeFields || data.mergeFields || []} donors={donors} onOpenDrafts={onOpenDrafts} onOpenCampaigns={onOpenCampaigns}
-      backLabel={openedFrom === open.id ? "Back" : "Back to templates"}
+      backLabel={openedFrom === open.id ? (openBackLabel || "Back") : "Back to templates"}
+      title={openedFrom === open.id ? openTitle : null}
       onBack={() => { if (openedFrom === open.id && onBackFromOpen) { setOpenedFrom(null); setOpenId(null); onBackFromOpen(); return; } setOpenId(null); load(); }}
       onSaved={() => { load(); loadLetters(); }} />;
   }
@@ -296,7 +297,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
 // journey reads the template (the server decides, and says what it would
 // change), and Publish is what makes them the template.
 const withDraft = t => (t && t.draft ? { ...t, ...t.draft } : t);
-export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, donors = [], onOpenDrafts, onOpenCampaigns, onBack, onSaved, backLabel = "Back to templates" }) {
+export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, donors = [], onOpenDrafts, onOpenCampaigns, onBack, onSaved, backLabel = "Back to templates", title = null }) {
   const start0 = withDraft(template);
   const [name, setName] = useState(start0.name);
   const [subject, setSubject] = useState(start0.subject);
@@ -319,6 +320,61 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
   const [events, setEvents] = useState([]);
   const [pages, setPages] = useState([]);
   const previewSeq = useRef(0);
+  // POLISH-3 · A BLOCK IN THE PREVIEW AND ITS FIELDS ARE ONE THING. Clicking
+  // a block in the preview brings its fields into view; working in a block's
+  // fields brings it into view in the preview. The preview is drawn again on
+  // every edit, so it reopens on the block being edited, never at the top.
+  const frameRef = useRef(null);
+  const cardRefs = useRef([]);
+  const activeBlock = useRef(null);
+  const flash = el => { if (!el) return; el.style.outline = "2px solid #0D5C3A"; el.style.outlineOffset = "2px"; setTimeout(() => { el.style.outline = ""; el.style.outlineOffset = ""; }, 1200); };
+  const frameDoc = () => { try { return frameRef.current && frameRef.current.contentDocument; } catch { return null; } };
+  const showInPreview = (i, { mark = true, smooth = true } = {}) => {
+    activeBlock.current = i;
+    const el = frameDoc() && frameDoc().querySelector(`[data-st-block="${i}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "auto" });
+    if (mark) flash(el);
+  };
+  const showFields = i => {
+    activeBlock.current = i;
+    const card = cardRefs.current[i];
+    if (!card) return;
+    card.scrollIntoView({ block: "start", behavior: "smooth" });
+    const field = card.querySelector("input:not([type=checkbox]), textarea, select");
+    if (field) setTimeout(() => field.focus({ preventScroll: true }), 250);
+    flash(card);
+  };
+  // The frame is as tall as the window below where it starts, so on arrival
+  // the whole preview is on screen; if a lot sits above it (proposed words, a
+  // note), it is the window's height and the page scrolls to it.
+  const gridRef = useRef(null);
+  const [frameH, setFrameH] = useState(null);
+  useEffect(() => {
+    const fit = () => {
+      const g = gridRef.current;
+      if (!g) return;
+      const docTop = g.getBoundingClientRect().top + window.scrollY;
+      const h = window.innerHeight - docTop - 16;
+      setFrameH(h >= 480 ? h : window.innerHeight - 76);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [note, ai, usage, hasDraft, template.personKind]);
+  const onFrameLoad = () => {
+    const doc = frameDoc();
+    if (!doc) return;
+    const st = doc.createElement("style");
+    st.textContent = "[data-st-block]{cursor:pointer}[data-st-block]:hover{outline:2px dashed #0D5C3A;outline-offset:-2px}";
+    doc.head && doc.head.appendChild(st);
+    doc.addEventListener("click", e => {
+      e.preventDefault();
+      const b = e.target && e.target.closest && e.target.closest("[data-st-block]");
+      if (b) showFields(Number(b.getAttribute("data-st-block")));
+    });
+    if (activeBlock.current != null) showInPreview(activeBlock.current, { mark: false, smooth: false });
+  };
 
   useEffect(() => {
     apiFetch(`/email-templates/${template.id}/usage`).then(setUsage).catch(() => setUsage(null));
@@ -477,7 +533,8 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
   return (
     <div style={{ padding: "4px 0 40px" }} data-testid="email-editor">
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <button style={btn.quiet} onClick={async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this template have not been saved.", yes: "Leave" })) onBack(); }}>{backLabel}</button>
+        <button style={btn.quiet} data-testid="email-editor-back" onClick={async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this template have not been saved.", yes: "Leave" })) onBack(); }}>{title && <span aria-hidden="true">{"\u2190 "}</span>}{backLabel}</button>
+        {title && <h2 data-testid="email-editor-title" style={{ margin: 0, fontFamily: "'DM Serif Display',serif", fontWeight: 400, fontSize: 22, color: T.ink }}>{title}</h2>}
         <div style={{ flex: 1 }} />
         <button style={btn.quiet} disabled={isReadOnly} onClick={draftAi}>Draft with AI</button>
         <button style={btn.quiet} disabled={isReadOnly} onClick={test}>Send me a test</button>
@@ -548,8 +605,13 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(300px, 1fr) minmax(320px, 640px)", gap: 18, alignItems: "start" }} className="email-editor-grid">
-        <div>
+      {/* POLISH-3 · The preview fills the screen's height beside the blocks and
+          stays there: the two columns scroll on their own inside one frame as
+          tall as the window (the app's root clips sideways, so a sticky column
+          would never stick). Below 900px they stack and the page scrolls. */}
+      <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(300px, 1fr) minmax(320px, 640px)", gap: 18,
+        alignItems: narrow ? "start" : "stretch", ...(narrow ? {} : { height: frameH ? frameH + "px" : "calc(100vh - 76px)", minHeight: 480 }) }} className="email-editor-grid" data-testid="email-editor-grid" ref={gridRef}>
+        <div data-testid="email-editor-blocks" style={narrow ? undefined : { overflowY: "auto", minHeight: 0, paddingRight: 6 }}>
           <div style={card}>
             <label style={{ ...label, marginTop: 0 }} htmlFor="et-name">Template name</label>
             <input id="et-name" style={input} value={name} onChange={e => setName(e.target.value)} />
@@ -561,7 +623,9 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
           </div>
 
           {blocks.map((b, i) => (
-            <div key={b._k} style={{ ...card, marginTop: 10 }}>
+            <div key={b._k} ref={el => { cardRefs.current[i] = el; }} data-testid="email-block-card" data-block={i}
+              onFocusCapture={() => { if (activeBlock.current !== i) showInPreview(i); }} onClick={() => { if (activeBlock.current !== i) showInPreview(i); }}
+              style={{ ...card, marginTop: 10, transition: "outline-color 0.3s" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, flex: 1 }}>{(blockTypes.find(t => t.key === b.type) || {}).label || b.type}</span>
                 <button style={btn.small} aria-label="Move up" onClick={() => move(i, -1)} disabled={i === 0}>Up</button>
@@ -584,7 +648,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
           </div>
         </div>
 
-        <div style={{ position: narrow ? "static" : "sticky", top: 12, order: narrow ? -1 : 0, minWidth: 0 }}>
+        <div data-testid="email-preview-column" style={{ order: narrow ? -1 : 0, minWidth: 0, ...(narrow ? {} : { display: "flex", flexDirection: "column", minHeight: 0 }) }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
             {[["desktop", "Desktop"], ["phone", "Phone"]].map(([id, l]) => (
               <button key={id} style={{ ...btn.small, background: device === id ? T.ink : "transparent", color: device === id ? T.white : T.ink }} aria-pressed={device === id} onClick={() => setDevice(id)}>{l}</button>
@@ -598,9 +662,11 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
               <ul style={{ margin: 0, paddingLeft: 18 }}>{problems.map((p, k) => <li key={k}>{p}</li>)}</ul>
             </div>
           )}
-          <div style={{ background: T.bg2, borderRadius: 12, padding: 10, overflowX: "auto" }}>
-            <iframe title="Email preview" sandbox="" srcDoc={preview.html}
-              style={{ display: "block", margin: "0 auto", width: device === "phone" ? 375 : 640, maxWidth: "100%", height: 760, border: 0, background: T.white, borderRadius: 8 }} />
+          <div style={{ background: T.bg2, borderRadius: 12, padding: 10, overflowX: "auto", ...(narrow ? {} : { flex: 1, minHeight: 0, display: "flex" }) }}>
+            {/* Scripts never run in it (no allow-scripts); same-origin only so the
+                editor can join a block to its fields. */}
+            <iframe ref={frameRef} title="Email preview" data-testid="email-preview-frame" sandbox="allow-same-origin" srcDoc={preview.html} onLoad={onFrameLoad}
+              style={{ display: "block", margin: "0 auto", width: device === "phone" ? 375 : 640, maxWidth: "100%", height: narrow ? 760 : "100%", border: 0, background: T.white, borderRadius: 8 }} />
           </div>
         </div>
       </div>

@@ -212,6 +212,7 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   list.forEach((w, i) => {
     if (!w || typeof w !== "object") return;
     const where = `Block ${i + 1} (${w.type})`;
+    const firstRow = rows.length;
     switch (w.type) {
       case "header": {
         const logo = resolveSrc(B.logoUrl, L);
@@ -357,6 +358,9 @@ ${w.title ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14
       default:
         problems.push(`${where}: this block cannot go in an email.`);
     }
+    // POLISH-3: in a preview each block's rows carry its index, so the editor
+    // can join a block in the preview to its fields. A send never carries it.
+    if (mode === "preview") for (let k = firstRow; k < rows.length; k++) rows[k] = rows[k].replace(/^<tr\b/, `<tr data-st-block="${i}"`);
   });
 
   const subj = subject ? mergeText(subject, F, problems, "Subject") : "";

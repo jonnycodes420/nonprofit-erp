@@ -256,7 +256,7 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     sentence: T.segmentSentence(donors.length, names, noun),
     // The first recipient is whose name the preview shows, so what she reads on
     // the right of the screen is the email the first person will get.
-    first: donors[0] ? { name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+    first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
     // Who the segment holds and this send will not reach, by reason, with the
     // first names of each so "3 left out" opens onto people, not a number.
     leftOutCount: aud.leftOutCount,
@@ -269,6 +269,71 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     orgSends: !!(aud.orgGate && aud.orgGate.send),
     orgReason: aud.orgGate && !aud.orgGate.send ? aud.orgGate.reason : null,
   });
+}));
+
+// POLISH-3 · WHAT ELEANOR WILL SEE. A template campaign's preview is the
+// send's own render (emailCompose.render on the campaign's blocks, with one
+// real person's fields and the real footer), for the person the composer
+// names: the first on the list, or whoever it asks for. It used to show
+// campaigns.body, a snapshot taken when the campaign was made, which the demo's
+// seeded campaign never had, so the right of the screen was blank. Reading
+// only: nothing is written and nothing is sent.
+app.post("/campaigns/:id/preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [campaign] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+  if (!emailCompose.hasBlocks(campaign)) return res.status(400).json({ error: "not_from_template", sentence: "This campaign is written in the editor, not built from a template." });
+  let donor = null;
+  const wanted = req.body && req.body.donorId ? String(req.body.donorId) : null;
+  if (wanted) [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [wanted, orgId]);
+  if (!donor) {
+    const seg = req.body && req.body.segment && typeof req.body.segment === "object" ? JSON.stringify(req.body.segment) : campaign.segment;
+    const aud = await campaignAudience({ segment: seg }, orgId).catch(() => ({ recipients: [] }));
+    donor = aud.recipients[0] || null;
+  }
+  const ctx = await emailCompose.orgRenderContext(orgId);
+  const fields = donor
+    ? await emailCompose.personFields(ctx, donor, { campaignName: campaign.name || "" })
+    : emailCompose.sampleFields(ctx, { name: "", email: "", campaignName: campaign.name || "" });
+  const r = await emailCompose.render(ctx, { blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
+  const footer = await unsubscribeEmailFooterHtml((donor && donor.email) || "you@example.org", orgId, "campaign");
+  // A copy the send would refuse still shows, drawn the way the template
+  // editor draws it, with what to fix said beside it.
+  const shown = r.problems.length
+    ? await emailCompose.render(ctx, { blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "preview" })
+    : r;
+  const html = emailCompose.withFooter(shown, footer, "") || shown.html;
+  res.json({
+    html, problems: r.problems, sentence: r.problems.length ? emailCompose.refusalSentence(r.problems) : null,
+    subject: await emailCompose.subjectFor(campaign.subject, fields),
+    person: donor ? { id: donor.id, name: displayNameCase(donor.name || "") } : null,
+  });
+}));
+
+// POLISH-3 · BACK TO CAMPAIGN. A campaign keeps its own copy of the template's
+// blocks (so a scheduled send sends what it holds). When she opened the
+// template from this campaign to change its words, coming back takes the
+// template's words into the campaign. Only a campaign that has not gone; an
+// approval covers the words approved, exactly as an edit through PUT does.
+app.post("/campaigns/:id/take-template", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Campaign not found" });
+  if (!c.template_id || !emailCompose.hasBlocks(c)) return res.status(400).json({ error: "not_from_template" });
+  if (!["draft", "scheduled", "awaiting_approval"].includes(c.status)) return res.status(409).json({ error: "already_sent", sentence: "This campaign has gone, so its words stay as they were sent." });
+  const t = await emailCompose.templateFor(orgId, c.template_id);
+  if (!t) return res.status(404).json({ error: "template_not_found" });
+  const blocks = emailCompose.toArray(t.blocks);
+  const same = JSON.stringify(blocks) === JSON.stringify(emailCompose.toArray(c.email_blocks))
+    && (t.subject || "") === (c.subject || "") && (t.preheader || "") === (c.preheader || "");
+  if (!same) {
+    const [meRole] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+    const reapprove = !!c.approved_at && !(meRole && meRole.role === "admin");
+    await run(`UPDATE campaigns SET email_blocks=?::jsonb, subject=?, preheader=?, updated_at=NOW()${reapprove ? ", status='awaiting_approval', approved_at=NULL, approved_by=NULL, approved_by_name=NULL" : ""} WHERE id=? AND org_id=?`,
+      [JSON.stringify(blocks), t.subject || "", t.preheader || "", c.id, orgId]);
+  }
+  const [row] = await query("SELECT * FROM campaigns WHERE id=?", [c.id]);
+  res.json({ campaign: row, changed: !same });
 }));
 
 // SEND ME A TEST — one copy, to the person pressing the button, under whatever

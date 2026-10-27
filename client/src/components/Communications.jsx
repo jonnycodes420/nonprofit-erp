@@ -1456,7 +1456,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // Builder
   const [view, setView]               = useState("list"); // list | builder
-  const openTemplateEditor = (id, back) => { setView("list"); setTplOpen({ id, back: back || (() => {}) }); setNav("templates"); };
+  // POLISH-3: the second click of a double click lands after the screen has
+  // changed, on whatever the editor put under the pointer. For half a second
+  // after the editor opens, a click goes nowhere, so pressing twice lands
+  // exactly where pressing once does.
+  const openTemplateEditor = (id, back, ctx = {}) => {
+    const swallow = e => { e.stopPropagation(); e.preventDefault(); };
+    document.addEventListener("click", swallow, true);
+    setTimeout(() => document.removeEventListener("click", swallow, true), 500);
+    setView("list"); setTplOpen({ id, back: back || (() => {}), title: ctx.title || null, backLabel: ctx.backLabel || null }); setNav("templates");
+  };
   // WIRE-1: arriving with a group opens New Campaign (the starting emails),
   // and whichever she picks starts with that group as its audience.
   useEffect(() => { if (presetSeg && !isReadOnly) { setNav("campaigns"); setView("gallery"); } }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -1581,6 +1590,21 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     }, 250);
     return () => { dead = true; clearTimeout(tid); };
   }, [view, segKey]);
+
+  // POLISH-3 · A TEMPLATE CAMPAIGN'S PREVIEW IS THE SEND'S RENDER, for the
+  // first person on the list (the server's /campaigns/:id/preview). It used to
+  // read campaigns.body, a snapshot the seeded Year-end appeal never had.
+  const [campPreview, setCampPreview] = useState(null);
+  const firstId = segPreview?.first?.id || "";
+  const fromBlocks = !!(form.fromTemplate && !form.detach);
+  useEffect(() => {
+    if (view !== "builder" || !fromBlocks || !editingId) { setCampPreview(null); return; }
+    let dead = false;
+    apiFetch(`/campaigns/${editingId}/preview`, { method: "POST", body: JSON.stringify({ donorId: firstId || undefined, segment: JSON.parse(segKey) }) })
+      .then(r => { if (!dead) setCampPreview(r); })
+      .catch(() => { if (!dead) setCampPreview({ html: "", problems: ["The preview could not be drawn."] }); });
+    return () => { dead = true; };
+  }, [view, fromBlocks, editingId, firstId, form.source]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Builder actions ─────────────────────────────────────────────────────────
   const openBuilder = (campaign = null) => {
@@ -2041,7 +2065,21 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {/* FIX-39: the template opens in the email editor, and its Back comes here. */}
                   {form.templateId && !readOnlySent && (
-                    <button type="button" data-testid="edit-in-editor" onClick={() => openTemplateEditor(form.templateId, () => { setNav("campaigns"); if (form.source) openBuilder(form.source); })}
+                    <button type="button" data-testid="edit-in-editor" onClick={() => {
+                      const cid = editingId, src = form.source, name = form.name || (src && src.name) || "this campaign";
+                      // Back takes the template's words into this campaign (it keeps its own
+                      // copy), then reopens it, so its preview shows the change.
+                      openTemplateEditor(form.templateId, async () => {
+                        setNav("campaigns");
+                        let fresh = src;
+                        if (cid) {
+                          await apiFetch(`/campaigns/${cid}/take-template`, { method: "POST", body: "{}" }).catch(() => null);
+                          fresh = await apiFetch(`/campaigns/${cid}`).catch(() => src);
+                          loadCampaigns();
+                        }
+                        if (fresh) openBuilder(fresh);
+                      }, { title: `Editing the email for ${name}`, backLabel: "Back to campaign" });
+                    }}
                       style={{ ...S.btn("ghost") }}>Edit in editor</button>
                   )}
                   <button type="button" onClick={() => { setForm(f => ({ ...f, detach: true })); setEditorKey(k => k + 1); }}
@@ -2061,9 +2099,18 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           <div className="comm-preview cb-col" style={{ width: 390, flexShrink: 0, borderLeft: "1px solid " + T.bg3, background: T.bg, padding: "20px 20px 32px", overflowY: "auto" }}>
             <div style={{ ...S.label, marginBottom: 12 }}>What {previewName} will see</div>
             {templateMode ? (
-              <iframe data-testid="campaign-preview" title="The email" sandbox=""
-                srcDoc={renderPreview(form.bodyHtml)}
-                style={{ width: "100%", height: 640, border: "1px solid " + T.bg3, borderRadius: 16, background: T.white }} />
+              <>
+                {campPreview?.subject && <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8, lineHeight: 1.45 }}><b style={{ color: T.ink }}>Subject:</b> {campPreview.subject}</div>}
+                {!!campPreview?.problems?.length && (
+                  <div data-testid="campaign-preview-problems" style={{ fontSize: 12.5, color: T.ink2, background: T.white, border: "1px solid " + T.gold300, borderRadius: 10, padding: "8px 12px", marginBottom: 8, lineHeight: 1.5 }}>
+                    {campPreview.sentence || campPreview.problems[0]}
+                  </div>
+                )}
+                <iframe data-testid="campaign-preview" title="The email" sandbox=""
+                  srcDoc={campPreview ? (campPreview.html || "") : ""}
+                  style={{ width: "100%", height: 640, border: "1px solid " + T.bg3, borderRadius: 16, background: T.white }} />
+                {!campPreview && <div style={{ marginTop: 8 }}><Spin /></div>}
+              </>
             ) : (
             <div data-testid="campaign-preview" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, overflow: "hidden" }}>
               <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10, minHeight: 22 }}>
@@ -2649,7 +2696,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             sections (EmailTemplates.jsx says the rule). */}
         {nav === "templates" && (
           <EmailTemplates isReadOnly={isReadOnly} key={tplOpen ? "open-" + tplOpen.id : "library"}
-            openTemplateId={tplOpen ? tplOpen.id : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
+            openTemplateId={tplOpen ? tplOpen.id : null} openTitle={tplOpen ? tplOpen.title : null} openBackLabel={tplOpen ? tplOpen.backLabel : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
             onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")} />
         )}
