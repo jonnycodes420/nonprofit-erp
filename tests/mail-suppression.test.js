@@ -23,7 +23,15 @@
 //
 // Verify-first: committed RED against the pre-BUILD-58 server.
 
-const { ok, summary, api, q, closeDb, BASE, SINK_PORT, login } = require("./helpers");
+const { ok, summary, api: helperApi, q, closeDb, BASE, SINK_PORT, login } = require("./helpers");
+// SEND-GATE-1: the people this suite mails are people the org turned
+// automatic email on for (every person starts off). It tests the other rules.
+const api = async (...a) => {
+  const r = await helperApi(...a);
+  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]);
+  return r;
+};
+
 const crypto = require("crypto");
 const http = require("http");
 const fs = require("fs");
@@ -435,7 +443,8 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const camp = await api("POST", "/campaigns", m1Tok, { name: "M1 After " + uniq(), subject: "After", body: "Hi", audience: "all" });
     await api("POST", `/campaigns/${camp.body?.id || camp.body?.campaign?.id}/send`, m1Tok, {});
     await settle(2500);
-    ok("§9b a campaign to 3 donors (1 unsubscribed) sends 2", sentTo(keep) === 1 && sentTo(real) === 1 && sentTo(gone) === 0,
+    // SEND-GATE-1: the imported person's automatic emails are off (an import never turns them on), so the campaign skips them too.
+    ok("§9b a campaign to 3 donors (1 unsubscribed, 1 just imported) sends 1", sentTo(keep) === 1 && sentTo(real) === 0 && sentTo(gone) === 0,
       { keep: sentTo(keep), real: sentTo(real), gone: sentTo(gone) });
     ok("§9 the onboarding sequence sent nothing, in any case", !state.captured.some(m => /great decision for your mission/i.test(m.subject || "")), null);
 

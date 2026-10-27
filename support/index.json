@@ -1,7 +1,7 @@
 {
  "about": "SUPPORT-1 · built by support/buildIndex.mjs from Steward's own sources. Do not edit by hand.",
  "counts": {
-  "help": 194,
+  "help": 196,
   "helpdoc": 122,
   "faq": 16,
   "feature": 40,
@@ -1420,6 +1420,26 @@
    "route": "/app/settings?section=security",
    "screen": "settings:security",
    "text": "See Set up two-factor for the step-by-step. Security also has a \"Download everything\" card for admins, which downloads all your data as JSON."
+  },
+  {
+   "id": "help:how-steward-sends:0",
+   "source": "help",
+   "title": "How Steward sends",
+   "heading": "",
+   "link": "/help/how-steward-sends",
+   "route": null,
+   "screen": null,
+   "text": "Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself."
+  },
+  {
+   "id": "help:how-steward-sends:1",
+   "source": "help",
+   "title": "How Steward sends",
+   "heading": "Automatic emails",
+   "link": "/help/how-steward-sends",
+   "route": null,
+   "screen": null,
+   "text": "Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.\nAn automatic email is anything Steward sends on its own: a receipt, a thank-you, a journey or sequence step, a pledge reminder, a renewal or failed-payment notice, an event confirmation, an auction receipt, a fundraiser update or a campaign.\nEvery person has an Automatic emails switch on their profile, and it starts off. Turn it on there, one person at a time, or pick people on the Donors list and choose \"Turn on automatic emails\". An import, a form, a journey or Atlas never turns it on.\nWhen Steward holds an automatic email because the switch is off, the person's profile says so, for example \"Receipt for $500 on Oct 22 not sent: automatic emails are off\", with a Send button that sends that one message after you confirm.\nAn email you write and send yourself still goes when you press Send, whatever the switch says, as long as donor mail is on for your organization. A sign-in link a donor asks for from your donor portal goes straight away. An import never emails anyone."
   },
   {
    "id": "help:how-steward-counts:0",

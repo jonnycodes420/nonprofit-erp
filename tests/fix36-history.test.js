@@ -30,7 +30,7 @@
 
 const stripe = require("stripe")("sk_test_dummy");
 const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
-const { ORG, ADMIN, A_CONTRIB, STUB_PORT, day, startStub, reset } = require("./qboin/standin");
+const { ORG, ADMIN, A_CONTRIB, STUB_PORT, day, startStub, reset, company } = require("./qboin/standin");
 
 const ACCT = "acct_fix36";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
@@ -87,10 +87,22 @@ async function fireStripe(evtId, piId, cents, email, name) {
   const [ben] = await q(`SELECT gift_count FROM donors WHERE id='d_qi_ben'`);
   ok("§1 Ben's two gifts are both recorded (the 40-day-old one first)", ben && Number(ben.gift_count) === 2, ben);
   ok("§1 Ben's first gift is 40 days old: no first-gift journey", (await plansOf("d_qi_ben")) === 0, await plansOf("d_qi_ben"));
-  ok("§1 Ada's first gift is 10 days old: the first-gift journey starts", (await plansOf("d_qi_ada")) === 1, await plansOf("d_qi_ada"));
+  // SEND-GATE-1: QuickBooks' read stamps its import id, and an import fires no trigger.
+  ok("§1 Ada's first gift is 10 days old, from the QuickBooks read: no journey (SEND-GATE-1)", (await plansOf("d_qi_ada")) === 0, await plansOf("d_qi_ada"));
   const benOldDraft = await q(`SELECT t.id FROM thank_you_drafts t JOIN gifts g ON g.id=t.gift_id
                                 WHERE t.org_id=$1 AND g.donor_id='d_qi_ben' AND g.date=$2`, [ORG, day(-40)]);
   ok("§1 Ben's 40-day-old gift opens no thank-you draft", benOldDraft.length === 0, benOldDraft);
+  // SEND-GATE-1: only the FIRST read is an import. A later read brings new
+  // gifts as they arrive, and a new first gift there starts its journey.
+  await q(`INSERT INTO donors (id,org_id,name,email,person_types,auto_email) VALUES ('d_qi_nell',$1,'Nell Newgift','nell@example.org','["donor"]'::jsonb,true)`, [ORG]);
+  company.Customer.push({ Id: "7", DisplayName: "Nell Newgift", GivenName: "Nell", FamilyName: "Newgift", PrimaryEmailAddr: { Address: "nell@example.org" } });
+  company.SalesReceipt.push({ Id: "199", TxnDate: day(-3), TotalAmt: 60, CustomerRef: { value: "7", name: "Nell Newgift" },
+    PaymentMethodRef: { value: "2", name: "Check" }, PaymentRefNum: "1201",
+    Line: [{ Id: "1", Amount: 60, DetailType: "SalesItemLineDetail", SalesItemLineDetail: { ItemRef: { value: "11", name: "Donation" } } }] });
+  const p1b = await api("POST", "/qbo/read/preview", tok, {});
+  const s1b = await api("POST", "/qbo/read/save", tok, { runId: p1b.body?.runId, picks: {} });
+  ok("§1 a later read records Nell's new 3-day-old gift", s1b.status === 200 && s1b.body?.recorded === 1, s1b.body);
+  ok("§1 …and, as new giving rather than an import, it starts her first-gift journey (SEND-GATE-1)", (await plansOf("d_qi_nell")) === 1, await plansOf("d_qi_nell"));
 
   // ── §2 · A PAYPAL FIRST READ ───────────────────────────────────────────
   await q(`INSERT INTO giving_sources (id,org_id,provider,display_name,status) VALUES ('gs_fix36',$1,'paypal','PayPal','active')`, [ORG]);

@@ -115,7 +115,7 @@ const file = (tag, n, perDonor = 1) => ({
   await importFile(runB, file("b", 300), { thanks: { mode: "all" } });
   await settled(runB);
   ok("§2 'No, draft them all' drafts 300", (await drafts(runB)) === 300, await drafts(runB));
-  ok("§2 …and starts the first-gift journey", (await plans(runB)) > 0, await plans(runB));
+  ok("§2 …and starts no journey: an import fires no trigger (SEND-GATE-1)", (await plans(runB)) === 0, await plans(runB));
   ok("§2 undo", (await undo(runB)).body?.reversed === true);
   const runC = runId("c");
   await importFile(runC, file("c", 300), { thanks: { mode: "min", min: 250 } });

@@ -64,10 +64,11 @@ const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
 // and every future one is logged BY CONSTRUCTION, including ones written by
 // somebody who never read this comment.
 //
-// It LOGS. It does not gate — the two gates (`orgMaySendEmail` and
-// `donorMailDecision`) stay exactly where they are, above the send paths that
-// matter, because a gate at the client would have no idea which donor a message
-// is for. What this buys is the OTHER half the incident needed: an outside
+// It LOGS, and since SEND-GATE-1 it is also where donor mail is GATED: the
+// recipient address says which person a message is for, and sendGate.js asks
+// that person's automatic-email switch (or a staff click recorded for this one
+// message). `orgMaySendEmail` and `donorMailDecision` stay above the send paths
+// as before. What the log buys is the OTHER half the incident needed: an outside
 // observer. On 22 September the only way to find out what had been sent was to
 // read the Resend console.
 //
@@ -77,6 +78,7 @@ const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
 const _rawResend = new Resend(process.env.RESEND_API_KEY);
 const mailPolicy = require("./mailPolicy");   // MAIL-1: the one mail policy, by family of mail
 const mailRefusal = require("./mailRefusal"); // FIX-48: a refused send is failed once, never retried
+const SEND_GATE = require("./sendGate");      // SEND-GATE-1: the one gate for mail to a donor
 const EMAIL_LOG_RETENTION_DAYS = 30;
 
 // The org this send belongs to is taken from an explicit `_stewardOrgId` on the
@@ -152,19 +154,32 @@ const resend = new Proxy(_rawResend, {
               return { data: null, error: { name: "org_mail_off", message: why } };
             }
           }
-          // Steward's own tags never reach the provider.
-          const wire = {};
-          for (const k of Object.keys(opts || {})) if (!k.startsWith("_steward")) wire[k] = opts[k];
-          let out, thrown = null;
-          try {
-            out = await eTarget.send(wire);
-          } catch (e) { thrown = e; }
-          // The log must never break a send, and never swallow a provider
-          // failure the caller is already handling. FIX-51: awaited (it never
-          // rejects), so the row is in before the caller hears the answer.
-          try { await _logOutboundEmail(opts, out, thrown || (out && out.error)); } catch (_) { /* ignore */ }
-          if (thrown) throw thrown;
-          return out;
+          const deliver = async () => {
+            // Steward's own tags never reach the provider.
+            const wire = {};
+            for (const k of Object.keys(opts || {})) if (!k.startsWith("_steward")) wire[k] = opts[k];
+            let out, thrown = null;
+            try {
+              out = await eTarget.send(wire);
+            } catch (e) { thrown = e; }
+            // The log must never break a send, and never swallow a provider
+            // failure the caller is already handling. FIX-51: awaited (it never
+            // rejects), so the row is in before the caller hears the answer.
+            try { await _logOutboundEmail(opts, out, thrown || (out && out.error)); } catch (_) { /* ignore */ }
+            if (thrown) throw thrown;
+            return out;
+          };
+          // SEND-GATE-1 · THE ONE GATE FOR MAIL TO A DONOR (sendGate.js). An
+          // org's donor mail goes only to people whose automatic-email switch
+          // is on, or by a staff click recorded for that one message.
+          if (orgId && category === mailPolicy.CATEGORY.DONOR) {
+            const out = await SEND_GATE.sendToDonor(opts, deliver);
+            if (out && out.error && out.error.name === SEND_GATE.REFUSAL) {
+              try { await _logOutboundEmail(opts, null, { message: out.error.message }, "blocked"); } catch (_) { /* ignore */ }
+            }
+            return out;
+          }
+          return deliver();
         };
       },
     });
@@ -1101,6 +1116,12 @@ async function recordGift(o) {
   // thank-you draft and starts no gift journey or gift sequence: the thanking
   // happened, elsewhere.
   const thankedElsewhere = o.alreadyThanked === true;
+  // SEND-GATE-1: a gift an IMPORT wrote (`o.importId`) fires no trigger: no
+  // sequence, no journey, no group journey. (Its thank-you DRAFT, if the
+  // import's own question asked for one, is a draft a person reviews.) A
+  // QuickBooks read after the first one (`liveRead`) is new gifts arriving,
+  // not an import, and fires triggers like any live gift.
+  const fromImport = !!o.importId && o.liveRead !== true;
   // Rule 1 — a fund and a method, always. A fund the caller names is honoured
   // only if it belongs to this org (never trust an id off a webhook payload).
   //
@@ -1386,7 +1407,7 @@ async function recordGift(o) {
     // place it is unambiguous — a route that checks "is this their first gift"
     // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
     // is what that means mechanically: the only way in is the event itself.
-    if (!oldHistory && !thankedElsewhere) try {
+    if (!oldHistory && !thankedElsewhere && !fromImport) try {
       const [after] = await query(
         `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
       if (after && Number(after.gift_count) === 1) {
@@ -1421,7 +1442,7 @@ async function recordGift(o) {
     try {
       const [d] = await query(
         `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
-      if (d && !oldHistory && !thankedElsewhere) {
+      if (d && !oldHistory && !thankedElsewhere && !fromImport) {
         const cents = Math.round(amount * 100);
         // ORDER MATTERS, and it is the priority order, not this list's order:
         // each call independently asks the engine, and the engine replaces a
@@ -1479,7 +1500,7 @@ async function recordGift(o) {
     if (o.afterChange !== false) {
       await AFTER.afterChange(orgId, [o.donorId], { door: o.door || "gift_form", history: o.history === true,
         recalc: false,
-        fire: oldHistory ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
+        fire: oldHistory || fromImport ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
     }
   };
   let later = null;
@@ -2882,6 +2903,8 @@ async function processPledgeInstallmentReminders(opts = {}) {
         WHERE i.org_id = ? AND i.paid_gift_id IS NULL AND i.due_date <= ?
           AND i.reminder_thread_id IS NULL
           AND p.status = 'open' AND COALESCE(p.is_shell,false) = false AND COALESCE(p.is_match,false) = false
+          -- SEND-GATE-1: an import fires no reminder for what was already due when it landed
+          AND (p.import_id IS NULL OR i.due_date > to_char(p.created_at, 'YYYY-MM-DD'))
           AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
           AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE
           AND d.do_not_solicit IS NOT TRUE
@@ -2932,6 +2955,7 @@ app.use((req, res, next) => {
 app.use(require("./routes/grantMail").routers.r1);     // GRANTS-1 fixed /grants/* paths, ahead of crm's /grants/:id
 app.use(require("./routes/donorLookups").routers.r0); // SCALE-2: pickers, counts and lookups, ahead of crm's /donors/:id
 app.use(require("./routes/donorList").routers.r0);    // LIST-1: columns, views and the filter, ahead of crm's /donors/:id
+app.use(require("./routes/autoEmail").routers.r0);    // SEND-GATE-1: the automatic-email switch and held mail, ahead of /donors/:id
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -3799,7 +3823,8 @@ const {
 // Single choke point for issuing a per-gift receipt — used by both the
 // webhook (fire-and-forget) and the manual "Send receipt" route, so
 // idempotency/suppression/sample-skip logic lives in exactly one place.
-async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO } = {}) {
+// SEND-GATE-1: `manual` is a person's click (Send receipt): the confirm for this one receipt.
+async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
 
@@ -3877,7 +3902,8 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO }
     // not apply (deceased still blocks, via the one policy).
     const decision = await donorMailDecision("receipt", donor.email, org.id);
     if (decision.send) {
-      emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `receipt-${receiptNumber}.pdf`);
+      const extra = manual ? { _stewardConfirm: await SEND_GATE.recordStaffConfirm({ orgId: org.id, to: donor.email, what: "Receipt", by }) } : {};
+      emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `receipt-${receiptNumber}.pdf`, extra);
       if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
     }
   }
@@ -8236,13 +8262,18 @@ async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverrid
     const gate = await orgMaySendEmail(orgId, mailPolicy.CATEGORY.DONOR);
     if (!gate.send) { console.log(`[mail-policy] ${kind} not sent for org ${orgId} (${gate.reason})`); return false; }
   }
-  const ok = await sendRawEmail(toEmail, subject, html, fromOverride, orgId ? { orgId, kind } : null);
+  const tag = orgId ? { orgId, kind } : null;
+  const ok = await sendRawEmail(toEmail, subject, html, fromOverride, tag);
   if (ok) return true;
+  // SEND-GATE-1: a person whose automatic emails are off is an answer, not an
+  // outage. The message waits on their profile, never in this retry queue.
+  if (tag && tag.refused) return false;
   try {
     await run(
       `INSERT INTO notification_failures (id,org_id,event_key,recipient_user_id,recipient_email,channel,subject,body_html,attempts,last_error,next_retry_at)
        VALUES (?,?,?,?,?,?,?,?,1,?,NOW())`,
-      ["nf_" + uuid().slice(0, 8), DONOR_EMAIL_ORG, kind + ":" + Date.now(), "donor", toEmail,
+      // SEND-GATE-1: the org rides in the key, so the retry is gated like the first try.
+      ["nf_" + uuid().slice(0, 8), DONOR_EMAIL_ORG, kind + (orgId ? "@" + orgId : "") + ":" + Date.now(), "donor", toEmail,
        "donor_" + kind, subject, html, "send_rejected"]);
     notifyFailedPending++;
   } catch (e) { console.error("[donor-email] failed to queue for retry:", e.message); }
@@ -8269,7 +8300,8 @@ async function retryFailedNotifications({ force = false } = {}) {
     // Donor-account lifecycle rows: resend the stored html raw (no org
     // context, no staff dedup reservation) — see DONOR_EMAIL_ORG above.
     if (f.org_id === DONOR_EMAIL_ORG) {
-      const okD = await sendRawEmail(f.recipient_email, f.subject, f.body_html);
+      const km = String(f.event_key || "").match(/^([^@:]+)@([^:]+):/);
+      const okD = await sendRawEmail(f.recipient_email, f.subject, f.body_html, null, km ? { orgId: km[2], kind: km[1] } : null);
       if (okD) { await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]); delivered++; }
       else {
         const attemptsD = (f.attempts || 1) + 1;
@@ -8812,6 +8844,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
            FROM pledges p
           WHERE p.org_id = ? AND p.status = 'open'
             AND p.due_date >= ? AND p.due_date <= ?
+            AND p.import_id IS NULL   -- SEND-GATE-1: an import fires no trigger
           LIMIT 200`,
         [orgId, todayStr, horizon]);
       for (const p of due) {
@@ -8931,6 +8964,7 @@ async function processPledgeReminders() {
        JOIN orgs o ON o.id = p.org_id
        WHERE p.status = 'open' AND p.next_reminder_at <= NOW()
          AND COALESCE(p.is_match,false) = false
+         AND p.import_id IS NULL   -- SEND-GATE-1: an imported pledge is never reminded
          AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
          AND ${mailPolicy.orgSendsSql("o")}`
     );
@@ -12235,6 +12269,7 @@ require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/donorLookups").mount({ query, requireAuth, wrap });
 require("./routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
+require("./routes/autoEmail").mount({ query, run, uuid, requireAuth, checkWriteAccess, wrap, actor, resend, orgToday, orgTz });
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });

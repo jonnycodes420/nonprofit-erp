@@ -3,6 +3,12 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **A donor gets automatic email only if the org turned it on for them (SEND-GATE-1).** `donors.auto_email`
+  starts false and only a person on staff turns it on (`routes/autoEmail.js`). `sendGate.js` `sendToDonor`, inside the
+  wrapped client, sends an org's donor mail only to switched-on people or on a staff click recorded in
+  `send_confirms` for that one message (pass `_stewardConfirm` from `recordStaffConfirm`). A held message is a
+  `mail_blocked` row with Send, never a queue. Tag every new donor send with `_stewardOrgId` and a kind; an untagged
+  send outside the named staff/sign-in/Jonathan list fails `tests/send-gate.test.js`. An import fires no trigger.
 - **Privacy mode decides what capture may keep, and with it off nothing changes (CLIENT-SAFE-1).** `orgs.client_privacy`
   plus `donors.is_client`. Every capture door asks `clientSafe.js` first: `privacyFor(orgId)` (who is a client) and
   `screenForStore(...)` (what of an email may be stored). A client is never SEARCHED for, a message with one on it is

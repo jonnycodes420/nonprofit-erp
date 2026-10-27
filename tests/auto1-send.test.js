@@ -93,7 +93,8 @@ function nextWeekdayAfter(day) { let d = addDays(day, 1); while ([0, 6].includes
   ];
   for (const [id, name] of PEOPLE) {
     const email = id.slice(5) + "@auto1.example";
-    await q(`INSERT INTO donors (id,org_id,name,email,stage,person_types,is_client,created_by,created_by_name) VALUES ($1,$2,$3,$4,'active','["donor"]'::jsonb,$5,${sys})`,
+    // SEND-GATE-1: everyone here has automatic emails turned on; the journey's own rules decide.
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,person_types,is_client,created_by,created_by_name,auto_email) VALUES ($1,$2,$3,$4,'active','["donor"]'::jsonb,$5,${sys},true)`,
       [id, ORG, name, email, id === "d_a1_client"]);
     // A gift a year ago for everyone (so {{last_gift_amount}} fills), except Nora.
     if (id !== "d_a1_nogift") await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name) VALUES ($1,$2,$3,100,$4,'cash',${sys})`,

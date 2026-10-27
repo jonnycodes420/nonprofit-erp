@@ -7,7 +7,7 @@
 // (routes/crm.js), and every number or item carries the source its rows come
 // from, so it opens them like any figure in Steward. A card with nothing to
 // say is not drawn at all, never drawn empty.
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { Figure } from "./Figure";
@@ -212,5 +212,69 @@ export function ContactExtras({ contact, donorId, isReadOnly }) {
         {contact.flags.map(f => <span key={f.key} style={{ color: T.gold500, fontWeight: 700 }}>{f.label}</span>)}
       </dd></>}
     </>
+  );
+}
+
+// SEND-GATE-1 · AUTOMATIC EMAILS. The person's switch (off until somebody on
+// staff turns it on, with a confirm) and every automatic message Steward held
+// because it was off, each with Send: that one message, after a confirm.
+const SMALL_BTN = { background: "none", border: "1px solid " + RAIL.line, borderRadius: 8, padding: "5px 10px", color: RAIL.text, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+const GO_BTN = { ...SMALL_BTN, background: T.greenDk, border: "none", color: T.white };
+export function AutoEmailCard({ donorId, email, isReadOnly }) {
+  const [st, setSt] = useState(null);
+  const [asking, setAsking] = useState(false);
+  const [sendAsk, setSendAsk] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const load = () => apiFetch(`/donors/${donorId}/blocked-mail`).then(setSt).catch(() => setSt(null));
+  useEffect(() => { if (donorId) load(); }, [donorId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (!st) return null;
+  const flip = async on => {
+    setBusy(true); setMsg("");
+    try { await apiFetch(`/donors/${donorId}/auto-email`, { method: "POST", body: JSON.stringify({ on, confirm: true }) }); setAsking(false); await load(); }
+    catch (e) { setMsg((e && e.sentence) || "That didn't save."); }
+    setBusy(false);
+  };
+  const send = async id => {
+    if (busy) return;   // a second click while the first is on its way sends nothing
+    setBusy(true); setMsg("");
+    try { await apiFetch(`/donors/${donorId}/blocked-mail/${id}/send`, { method: "POST", body: JSON.stringify({ confirm: true }) }); setSendAsk(null); await load(); }
+    catch (e) { setSendAsk(null); setMsg((e && e.sentence) || "It wasn't sent."); await load(); }
+    setBusy(false);
+  };
+  const held = (st.blocked || []).filter(b => !b.sentAt);
+  const sent = (st.blocked || []).filter(b => b.sentAt);
+  return (
+    <RailSection title="Automatic emails" testid="dp-rail-auto-email">
+      <div style={{ ...ROW, alignItems: "center" }}>
+        <span data-testid="dp-auto-email-state" style={{ fontWeight: 700, color: st.autoEmail ? T.white : T.gold500 }}>Automatic emails: {st.autoEmail ? "On" : "Off"}</span>
+        {!isReadOnly && !asking && <button type="button" data-testid="dp-auto-email-toggle" disabled={busy} style={SMALL_BTN}
+          onClick={() => st.autoEmail ? flip(false) : setAsking(true)}>{st.autoEmail ? "Turn off" : "Turn on"}</button>}
+      </div>
+      <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.5, color: RAIL.dim }}>
+        {st.autoEmail
+          ? `Steward sends receipts, thank-yous and other automatic emails${email ? " to " + email : ""}.${st.by ? " Turned on by " + st.by + "." : ""}`
+          : "Steward sends nothing automatic to this person. Anything you write and send yourself still goes."}
+      </p>
+      {asking && <div data-testid="dp-auto-email-confirm" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12, color: RAIL.text }}>Turn on automatic emails for this person?</span>
+        <button type="button" data-testid="dp-auto-email-yes" disabled={busy} style={GO_BTN} onClick={() => flip(true)}>Turn on</button>
+        <button type="button" disabled={busy} style={{ ...SMALL_BTN, border: "none", textDecoration: "underline" }} onClick={() => setAsking(false)}>Cancel</button>
+      </div>}
+      {held.map(b => (
+        <div key={b.id} data-testid="dp-held-mail" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45, color: RAIL.text }}>
+          <div>{b.what} not sent: automatic emails are off <span style={DIM}>({displayDateShort(String(b.at).slice(0, 10))})</span></div>
+          {!isReadOnly && (sendAsk === b.id
+            ? <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={DIM}>Send this one message{email ? " to " + email : ""}?</span>
+                <button type="button" data-testid="dp-held-send-yes" disabled={busy} style={GO_BTN} onClick={() => send(b.id)}>Send</button>
+                <button type="button" disabled={busy} style={{ ...SMALL_BTN, border: "none", textDecoration: "underline" }} onClick={() => setSendAsk(null)}>Cancel</button>
+              </div>
+            : <button type="button" data-testid="dp-held-send" style={{ ...SMALL_BTN, marginTop: 4 }} onClick={() => setSendAsk(b.id)}>Send</button>)}
+        </div>
+      ))}
+      {sent.map(b => <div key={b.id} style={{ marginTop: 8, fontSize: 12, color: RAIL.dim }}>{b.what}: sent by {b.sentBy || "a person"}</div>)}
+      {msg && <div style={{ marginTop: 8, fontSize: 12, color: T.gold500 }}>{msg}</div>}
+    </RailSection>
   );
 }

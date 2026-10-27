@@ -20,7 +20,15 @@
 //   · renderEmail letting a missing alt through → §3 "nothing was sent".
 
 const http = require("http");
-const { ok, summary, api, SINK_PORT, q, closeDb } = require("./helpers");
+const { ok, summary, api: helperApi, SINK_PORT, q, closeDb } = require("./helpers");
+// SEND-GATE-1: the people this suite mails are people the org turned
+// automatic email on for (every person starts off). It tests the other rules.
+const api = async (...a) => {
+  const r = await helperApi(...a);
+  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]);
+  return r;
+};
+
 
 const captured = [];
 const mock = http.createServer((req, res) => {

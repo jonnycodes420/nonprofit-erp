@@ -738,6 +738,22 @@ export const HELP_ARTICLES = [
   // ── Tasks people come for ────────────────────────────────────────────────
   // NUMBERS-2 · the definitions, word for word as the "?" beside each number
   // says them (figureSources.js AVERAGE_WORDS and RETENTION_WORDS).
+  // SEND-GATE-1: who gets automatic email, in the words of the brief.
+  {
+    slug: `how-steward-sends`,
+    title: `How Steward sends`,
+    screens: [],
+    summary: `Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.`,
+    sections: [
+      { h: `Automatic emails`, p: [
+        `Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.`,
+        `An automatic email is anything Steward sends on its own: a receipt, a thank-you, a journey or sequence step, a pledge reminder, a renewal or failed-payment notice, an event confirmation, an auction receipt, a fundraiser update or a campaign.`,
+        `Every person has an Automatic emails switch on their profile, and it starts off. Turn it on there, one person at a time, or pick people on the Donors list and choose "Turn on automatic emails". An import, a form, a journey or Atlas never turns it on.`,
+        `When Steward holds an automatic email because the switch is off, the person's profile says so, for example "Receipt for $500 on Oct 22 not sent: automatic emails are off", with a Send button that sends that one message after you confirm.`,
+        `An email you write and send yourself still goes when you press Send, whatever the switch says, as long as donor mail is on for your organization. A sign-in link a donor asks for from your donor portal goes straight away. An import never emails anyone.`,
+      ]},
+    ],
+  },
   {
     slug: `how-steward-counts`,
     title: `How Steward counts`,

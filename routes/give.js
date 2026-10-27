@@ -3876,7 +3876,9 @@ app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
     const html = `<p>${escapeHtml(body).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
       + await require("./email").unsubscribeEmailFooterHtml(r.email, orgId, "campaign");
     try {
-      const { error } = await resend.emails.send({ ...(await donorSendOpts(orgId, r.email, "campaign")), to: r.email, subject, html });
+      // SEND-GATE-1: she wrote it and pressed Send; that press is the confirm for this one note.
+      const confirm = await require("../sendGate").recordStaffConfirm({ orgId, to: r.email, what: subject, by: me });
+      const { error } = await resend.emails.send({ ...(await donorSendOpts(orgId, r.email, "campaign")), to: r.email, subject, html, _stewardConfirm: confirm });
       if (error) throw new Error(error.message);
     } catch (e) {
       await run("UPDATE gift_starts SET note_sent_at=NULL, note_sent_by=NULL, note_sent_by_name=NULL WHERE id=? AND org_id=?", [r.id, orgId]);
@@ -5401,7 +5403,9 @@ app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
   );
   // W-4: dunning is transactional — the marketing suppression list no longer
   // blocks a staff resend. dunning_sent is logged ONLY on real delivery.
-  const result = await sendDunningEmail(orgRows[0], donor, rs);
+  // SEND-GATE-1: she pressed Resend; that press is the confirm for this one notice.
+  const confirm = await require("../sendGate").recordStaffConfirm({ orgId, to: donor.email, what: "Failed-payment notice", by: actor(req) });
+  const result = await sendDunningEmail(orgRows[0], donor, rs, { _stewardConfirm: confirm });
   if (result.refused) return res.status(400).json({ error: `Cannot send, ${result.refused === "deceased" ? "this donor is marked deceased" : result.refused}.` });
   if (!result.sent) return res.status(502).json({ sent: false, error: "The email provider rejected the send, nothing was recorded as sent. Try again shortly." });
   await logRecoveryEvent(orgId, donor.id, rs.stripe_subscription_id, "dunning_sent", null, { manual: true });

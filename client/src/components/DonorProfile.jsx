@@ -29,7 +29,7 @@ import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures, ProfileMoreNumbers } from "./ProfileHeaderFigures";
-import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
+import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras, AutoEmailCard } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { EmailsReceived } from "./EmailAsSent";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext, Phone } from "./shared";
@@ -3756,6 +3756,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
             </dl>
           </RailSection>
+          {/* SEND-GATE-1: the person's automatic-email switch and what it held. */}
+          {donor&&donor.id&&<AutoEmailCard donorId={donor.id} email={donor.email} isReadOnly={isReadOnly}/>}
 
           <RailSection title="Relationship owner" testid="dp-rail-owner"
             actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
