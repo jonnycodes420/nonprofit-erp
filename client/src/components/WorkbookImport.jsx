@@ -379,8 +379,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
 
   // ─────────────────────────── RENDER ───────────────────────────
   const btn = (label, onClick, opts = {}) => (
-    <button onClick={onClick} disabled={opts.disabled}
-      data-testid={opts.testid}
+    <button type="button" onClick={onClick} disabled={opts.disabled}
+      data-testid={opts.testid} data-commit={opts.commit ? "" : undefined}
       style={{ background: opts.secondary ? "transparent" : T.green600, color: opts.secondary ? T.ink3 : T.white,
                border: opts.secondary ? `1px solid ${T.bg3}` : "none", borderRadius: 10, padding: "11px 18px",
                fontSize: 13.5, fontWeight: 700, cursor: opts.disabled ? "default" : "pointer", opacity: opts.disabled ? 0.5 : 1 }}>
@@ -581,7 +581,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     const REASON_LABEL = REASON_LABEL_RESULT;
     void _REASON_LABELS_MOVED_TO_MODULE_SCOPE;
     return (
-      <div data-testid="wb-summary">
+      <div data-testid="wb-summary" data-commit-screen="">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 10 }}>One import, fully accounted, before anything is written.</div>
 
         {/* BUILD-87 Part 1 — name this run. It is what the Imports list will
@@ -712,7 +712,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {s.columnNotes.length > 0 && s.columnNotes.map((n, i) => <div key={i} style={{ fontSize: 11.5, color: T.ink3, marginBottom: 8 }}>{n}</div>)}
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}>
-          {btn(building ? "Importing…" : `Import ${fmtN(s.totals.donors)} donors + ${fmtN(s.totals.gifts)} gifts →`, doImport, { disabled: building, testid: "wb-import" })}
+          {btn(building ? "Importing…" : `Import ${fmtN(s.totals.donors)} donors + ${fmtN(s.totals.gifts)} gifts →`, doImport, { disabled: building, testid: "wb-import", commit: true })}
           {btn("← Back", () => setStep("mapper"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
