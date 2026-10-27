@@ -33,7 +33,7 @@ const BK = require("../bookkeeper");
 const IXF = require("../interactionFiles");
 const TL = require("../timelineLine");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
-const { CAMPAIGN_GIFT_MATCH } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
+const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUM = require("../campaignMatch");
 const { NOT_CREDIT } = require("../creditTypes");   // FIX-49: soft and matching credits are not money
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
@@ -8461,17 +8461,22 @@ function importNotices(row) {
 function importFindings(row, summary) {
   const out = [];
   const n = v => Number(v) || 0;
-  const rowsIn = n(row.rows_in), created = n(row.gifts_created),
+  const s = summary && typeof summary === "object" ? summary : {};
+  // FIX-52: a pledge is a row the file brought in, as much as a gift is. The
+  // spreadsheet import stores how many it made; every other shape has none.
+  // A receipt written before FIX-52 kept the same figures under summary.counts.
+  const sc = s.counts && typeof s.counts === "object" && row.shape === "sheet" ? s.counts : {};
+  const rowsIn = n(row.rows_in), created = n(row.gifts_created), pledges = n(s.pledgesCreated ?? sc.pledgesCreated),
         aside = n(row.rows_set_aside), errored = n(row.rows_errored);
-  if (rowsIn !== created + aside + errored) {
-    out.push(`Rows do not reconcile: ${rowsIn} in the file, ${created} created + ${aside} set aside + ${errored} errored = ${created + aside + errored}.`);
+  if (rowsIn !== created + pledges + aside + errored) {
+    out.push(`Rows do not reconcile: ${rowsIn} in the file, ${created} gifts${pledges ? ` + ${pledges} pledges` : ""} created + ${aside} set aside + ${errored} errored = ${created + pledges + aside + errored}.`);
   }
   const c = v => money.toCents(v) ?? 0;
-  const s = summary && typeof summary === "object" ? summary : {};
   const inC = c(row.dollars_in), madeC = c(row.dollars_created),
+        pledgeC = s.pledgeDollarsCreated != null ? c(s.pledgeDollarsCreated) : sc.pledgeCents != null ? n(sc.pledgeCents) : 0,
         asideC = c(s.dollarsSetAside), errC = c(s.dollarsErrored);
-  if (inC !== madeC + asideC + errC) {
-    out.push(`Dollars do not reconcile: ${money.formatCents(inC)} in the file, ${money.formatCents(madeC)} created + ${money.formatCents(asideC)} set aside + ${money.formatCents(errC)} errored = ${money.formatCents(madeC + asideC + errC)}.`);
+  if (inC !== madeC + pledgeC + asideC + errC) {
+    out.push(`Dollars do not reconcile: ${money.formatCents(inC)} in the file, ${money.formatCents(madeC)} in gifts${pledgeC ? ` + ${money.formatCents(pledgeC)} in pledges` : ""} created + ${money.formatCents(asideC)} set aside + ${money.formatCents(errC)} errored = ${money.formatCents(madeC + pledgeC + asideC + errC)}.`);
   }
   // The stored columns against the summary's own copy of the same figures.
   // These are written in one request from one object; if they ever differ,
@@ -8676,12 +8681,23 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
             TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
             committed_at, actor_user_name, rows_in, gifts_created, donors_created,
             donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
-            migration_source, thanks_answer
+            migration_source, thanks_answer, reversed_at
        FROM imports WHERE org_id=? ${withChecks ? "" : "AND COALESCE(shape, '') <> 'source'"}
       ORDER BY committed_at DESC, id DESC LIMIT 200`,
     [req.user.orgId]);
+  // FIX-52: a spreadsheet import still being written, or one that failed and
+  // was rolled back, is on the list too, read from its job, never guessed.
+  const jobs = await query(`SELECT j.id, j.file_name, j.status, j.phase, j.done, j.total, j.error, j.started_at, j.created_by_name
+                              FROM sheet_import_jobs j WHERE j.org_id=? AND j.status IN ('running','failed') AND j.started_at > NOW() - interval '7 days'
+                               AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.id=j.id AND i.org_id=j.org_id)
+                             ORDER BY j.started_at DESC LIMIT 20`, [req.user.orgId]);
   res.json({
-    imports: rows.map(r => {
+    imports: jobs.map(j => ({ id: j.id, name: j.file_name || "Spreadsheet", sourceFilename: j.file_name, shape: "sheet",
+      committedOn: new Date(j.started_at).toISOString().slice(0, 10), committedAt: j.started_at, by: j.created_by_name || null,
+      state: j.status === "running" ? "in_progress" : "failed", phase: j.phase, done: Number(j.done) || 0, total: Number(j.total) || 0,
+      sentence: j.status === "running" ? `In progress: ${j.phase || "starting"}.` : `Not imported. ${j.error || ""} Nothing was written.`,
+      rowsIn: 0, giftsCreated: 0, donorsCreated: 0, donorsMerged: 0, rowsSetAside: 0, rowsErrored: 0, dollarsIn: 0, dollarsCreated: 0,
+      reconciled: true, findings: [], notices: [] })).concat(rows.map(r => {
       const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
       const findings = importFindings(r, summary);
       return {
@@ -8700,8 +8716,10 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         hasMoveReport: !!(summary && summary.moveFile),
         // FIX-37: what she answered about the last 30 days' thank-yous.
         thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+        state: r.reversed_at ? "undone" : "done",
+        pledgesCreated: Number(summary.pledgesCreated) || 0,
       };
-    }),
+    })),
   });
 }));
 
@@ -8738,6 +8756,14 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
       thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+      // FIX-52: the pledges it made are part of what it brought in, and every
+      // receipt that reverses as a whole offers Undo for its window, whether
+      // or not it reconciles: an import that went wrong is when undo matters.
+      pledgesCreated: Number(summary.pledgesCreated ?? (r.shape === "sheet" && summary.counts ? summary.counts.pledgesCreated : 0)) || 0,
+      pledgeDollarsCreated: summary.pledgeDollarsCreated != null ? Number(summary.pledgeDollarsCreated) || 0
+        : r.shape === "sheet" && summary.counts && summary.counts.pledgeCents != null ? (Number(summary.counts.pledgeCents) || 0) / 100 : 0,
+      reversedAt: r.reversed_at || null,
+      ...importUndoWindow(r),
       summary,
     },
   });
@@ -9515,7 +9541,14 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // carry it as `created_import_id`, which is everything the undo needs, and
 // what it now starts (thank-you drafts, journeys, a readout) is undone with it.
 const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 7 };
+// FIX-52: the spreadsheet import's screen promises Undo for 30 days, and now keeps it.
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30 };
+// Whether a receipt offers Undo, and until when. The route below is the judge.
+function importUndoWindow(r) {
+  if (!WHOLE_IMPORT_SHAPES.has(r.shape) || !r.committed_at) return { canUndo: false, undoUntil: null };
+  const until = new Date(new Date(r.committed_at).getTime() + (SHAPE_REVERSE_HOURS[r.shape] || DEPOSIT_REVERSE_HOURS) * 3600e3);
+  return { canUndo: !r.reversed_at && until > new Date(), undoUntil: until.toISOString() };
+}
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -9557,6 +9590,40 @@ async function stopImportJourneys(orgId, importId, who) {
   void who;
   return ids.length;
 }
+
+// FIX-52 · WHAT UNDO WILL REMOVE, before she confirms. Counted from the rows
+// the run tagged, still there now; people deleted by hand since are counted
+// separately, because Undo finishes removing them too.
+app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId, id = req.params.id;
+  const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
+  if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
+  const win = importUndoWindow(imp);
+  const sj = imp.summary_json ? (typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json) : imp.summary_json) : {};
+  const n = async (sql, args) => Number(((await query(sql, args))[0] || {}).n) || 0;
+  const counts = {
+    gifts: await n("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND import_id=?", [orgId, id]),
+    pledges: await n("SELECT COUNT(*)::int AS n FROM pledges WHERE org_id=? AND import_id=?", [orgId, id]),
+    people: await n("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND created_import_id=?", [orgId, id]),
+    alreadyDeleted: await n("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND created_import_id=? AND deleted_at IS NOT NULL", [orgId, id]),
+    events: await n("SELECT COUNT(*)::int AS n FROM events WHERE org_id=? AND import_id=?", [orgId, id]),
+    attendance: await n("SELECT COUNT(*)::int AS n FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, id]),
+    households: await n("SELECT COUNT(*)::int AS n FROM households WHERE org_id=? AND import_id=?", [orgId, id]),
+    notes: await n("SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=? AND import_id=?", [orgId, id]),
+    customFields: (sj.customFieldsCreated || []).length,
+    peopleRestored: (sj.personChanges || []).length,
+  };
+  const parts = [];
+  const add = (k, one, many) => { if (counts[k]) parts.push(`${counts[k].toLocaleString("en-US")} ${counts[k] === 1 ? one : many}`); };
+  add("gifts", "gift", "gifts"); add("pledges", "pledge", "pledges"); add("people", "person", "people"); add("events", "event", "events");
+  add("attendance", "attendance", "attendances"); add("households", "household", "households"); add("notes", "timeline line", "timeline lines");
+  add("customFields", "custom field", "custom fields");
+  const sentence = (parts.length ? `Undo removes ${parts.join(", ")}` : "Undo removes what is left of this import")
+    + (counts.alreadyDeleted ? ` (${counts.alreadyDeleted.toLocaleString("en-US")} of the people were already deleted)` : "")
+    + (counts.peopleRestored ? `, and puts ${counts.peopleRestored.toLocaleString("en-US")} ${counts.peopleRestored === 1 ? "person who was already here" : "people who were already here"} back as they were` : "")
+    + ". It sends nothing and starts nothing.";
+  res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
+}));
 
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -9662,9 +9729,15 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     }
   }
   const orphans = await query(
-    `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
+    `SELECT d.id, (d.deleted_at IS NOT NULL) AS was_deleted FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
        AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, req.params.id]);
+  // FIX-52: people this file made that were deleted by hand since are still
+  // rows (a delete is soft). Undo takes them with the rest, says how many were
+  // already deleted, and clears their trash rows so nothing points at nobody.
+  const alreadyDeleted = orphans.filter(o => o.was_deleted).length;
+  if (alreadyDeleted) await run(`DELETE FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)`,
+    [orgId, orphans.filter(o => o.was_deleted).map(o => o.id)]).catch(() => {});
   // A person the file created who is held by something else the file wrote
   // and this undo does not reach (a membership, an open ask) stays, rather than
   // the whole undo failing half way.
@@ -9710,12 +9783,13 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
   await require("../afterChange").afterChange(orgId, donorIds.filter(d => !orphansRemoved.some(o => o.id === d)), { door: "csv_import", history: true });
   res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphansRemoved.length, journeysStopped: plansStopped,
-    pledgesRemoved,
+    pledgesRemoved, alreadyDeleted,
     sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"}`
       + (pledgesRemoved ? ` and ${pledgesRemoved} ${pledgesRemoved === 1 ? "pledge" : "pledges"}` : "") + ` removed`
       + (plansStopped ? `, ${plansStopped} ${plansStopped === 1 ? "journey" : "journeys"} it started stopped` : "")
       + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
-      + `. Nothing else was touched.` });
+      + (alreadyDeleted ? ` (${alreadyDeleted} of them already deleted)` : "")
+      + `. Nothing was sent. Nothing else was touched.` });
 }));
 
 // The merge review list — every fold the importer made, newest import first.
@@ -19201,7 +19275,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     -- the gift's org); it lets the planner read this org's recent gifts by
     -- (org_id, date) instead of probing every donor: 43 ms -> 10 ms at 25k.
     JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id
-    WHERE d.org_id = ?
+    WHERE d.org_id = ? AND d.deleted_at IS NULL
       AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
       AND d.deceased IS NOT TRUE
       AND g.date >= ? ${scopeClause}
@@ -19214,7 +19288,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
       FROM gifts g
       JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id   -- SCALE-2: the tenant rule, as above
-      WHERE d.org_id = ?
+      WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND g.amount >= 250
         AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
         AND (g.is_sample IS NOT TRUE)
@@ -19230,7 +19304,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       FROM receipts r
       LEFT JOIN gifts g ON g.id = r.gift_id
       JOIN donors d ON d.id = r.donor_id
-      WHERE r.org_id = ? AND r.type = 'gift' AND r.voided_at IS NULL
+      WHERE r.org_id = ? AND d.deleted_at IS NULL AND r.type = 'gift' AND r.voided_at IS NULL
         AND (g.id IS NULL OR r.amount != g.amount OR (r.snapshot->>'giftDateRaw') != g.date)
         ${scopeClause}
       LIMIT 5
@@ -19240,7 +19314,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
-    WHERE t.org_id = ? AND done=0 AND t.voided_at IS NULL AND t.due <= ? ${scopeClause}
+    WHERE t.org_id = ? AND d.deleted_at IS NULL AND done=0 AND t.voided_at IS NULL AND t.due <= ? ${scopeClause}
       AND COALESCE(t.link_kind, '') <> 'next_step'   -- FIX-31: a next step is already in this queue as its thread
     ORDER BY t.due ASC
     LIMIT 5
@@ -19250,7 +19324,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT md.id AS draft_id, md.donor_id, md.subject, md.created_at, d.name AS donor_name, d.total_giving
     FROM milestone_drafts md
     JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review' ${scopeClause}
+    WHERE md.org_id = ? AND d.deleted_at IS NULL AND md.status = 'pending_review' ${scopeClause}
     ORDER BY md.created_at DESC
     LIMIT 5
   `, [orgId, ...scopeParams]),
@@ -19259,7 +19333,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT md.id AS draft_id, md.donor_id, d.name AS donor_name, d.total_giving
     FROM milestone_drafts md
     JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk' ${scopeClause}
+    WHERE md.org_id = ? AND d.deleted_at IS NULL AND md.status = 'pending_review' AND md.milestone_key = 'at_risk' ${scopeClause}
     ORDER BY md.created_at DESC
     LIMIT 10
   `, [orgId, ...scopeParams]),
@@ -19268,7 +19342,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT nr.id AS reminder_id, nr.donor_id, nr.talking_points, nr.created_at, d.name AS donor_name, d.total_giving
     FROM note_reminders nr
     JOIN donors d ON d.id = nr.donor_id
-    WHERE nr.org_id = ? AND nr.status = 'pending' ${scopeClause}
+    WHERE nr.org_id = ? AND d.deleted_at IS NULL AND nr.status = 'pending' ${scopeClause}
     ORDER BY nr.created_at DESC
     LIMIT 5
   `, [orgId, ...scopeParams]),
@@ -19277,7 +19351,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT rs.donor_id, rs.stripe_subscription_id, rs.amount, rs.interval, d.name AS donor_name, d.total_giving
     FROM recurring_subscriptions rs
     JOIN donors d ON d.id = rs.donor_id
-    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering') ${scopeClause}
+    WHERE rs.org_id = ? AND d.deleted_at IS NULL AND rs.status IN ('past_due','recovering') ${scopeClause}
     ORDER BY rs.amount DESC NULLS LAST
     LIMIT 5
   `, [orgId, ...scopeParams]),
@@ -21139,7 +21213,7 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
       `SELECT COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS total
        FROM pledges p
        LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
-       WHERE p.org_id=? AND p.campaign_id=? AND p.status='open'`,
+       WHERE p.org_id=? AND p.campaign_id=? AND p.status='open' AND ${NOT_DELETED("p")}`,
       [req.user.orgId, req.user.orgId, c.id]),
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM grants WHERE org_id=? AND campaign_id=? AND awarded_at IS NOT NULL`, [req.user.orgId, c.id]),
   ]);
@@ -21252,7 +21326,7 @@ async function fundraisingCampaignRows(orgId) {
               COUNT(*) AS pledge_count
          FROM pledges p
          LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
-        WHERE p.org_id = ? AND p.campaign_id IS NOT NULL AND p.status = 'open'
+        WHERE p.org_id = ? AND p.campaign_id IS NOT NULL AND p.status = 'open' AND ${NOT_DELETED("p")}
         GROUP BY p.campaign_id`,
       [orgId, orgId]
     ),
@@ -25988,7 +26062,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
     `WITH day AS (
        SELECT donor_id, date, SUM(amount) AS amt, COUNT(*) AS n,
               LAG(date) OVER (PARTITION BY donor_id ORDER BY date) AS prev
-         FROM gifts WHERE org_id = ? AND date IS NOT NULL
+         FROM gifts g WHERE g.org_id = ? AND g.date IS NOT NULL AND ${NOT_DELETED("g")}
         GROUP BY donor_id, date),
      per AS (
        SELECT donor_id, COALESCE(SUM(amt),0) AS amount, SUM(n)::int AS gift_count, MAX(date) AS last_return_date
@@ -26011,7 +26085,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
   const pGiving = query(
     `SELECT COALESCE(SUM(amount), 0) AS total
-       FROM gifts WHERE org_id=? AND stripe_payment_id IS NOT NULL`,
+       FROM gifts g WHERE g.org_id=? AND g.stripe_payment_id IS NOT NULL AND ${NOT_DELETED("g")}`,
     [orgId]
   );
 
@@ -27982,12 +28056,12 @@ app.get("/events", requireAuth, async (req, res) => {
         COUNT(CASE WHEN ea.checked_in_at IS NOT NULL THEN 1 END)::int AS checked_in_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue,
         (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
-          WHERE g.org_id = e.org_id
+          WHERE g.org_id = e.org_id AND ${NOT_DELETED("g")}
             AND (g.event_id = e.id
                  OR (g.event_id IS NULL AND e.campaign_id IS NOT NULL AND g.campaign_id = e.campaign_id)
                  OR (g.event_id IS NULL AND e.campaign_id IS NULL AND g.campaign = e.name)))::float AS raised
       FROM events e
-      LEFT JOIN event_attendees ea ON ea.event_id = e.id
+      LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ${NOT_DELETED("ea")}
       WHERE e.org_id = $1
       GROUP BY e.id
       ORDER BY e.date DESC NULLS LAST
@@ -28048,7 +28122,7 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
         COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
         COUNT(ea.id)::int AS invited_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue
-      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id
+      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id AND ${NOT_DELETED("ea")}
       WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
     `, [req.params.id, orgId]);
     res.json(rows[0] || {});
@@ -28196,7 +28270,7 @@ app.get("/events/:id", requireAuth, async (req, res) => {
         COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
         COUNT(ea.id)::int AS total_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue
-      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id
+      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id AND ${NOT_DELETED("ea")}
       WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
     `, [req.params.id, orgId]);
     if (!evts.length) return res.status(404).json({ error: "Not found" });
@@ -28204,7 +28278,7 @@ app.get("/events/:id", requireAuth, async (req, res) => {
       SELECT ea.*, d.stage, d.total_giving, d.assigned_to_name
       FROM event_attendees ea
       LEFT JOIN donors d ON d.id = ea.donor_id
-      WHERE ea.event_id=$1
+      WHERE ea.event_id=$1 AND (d.id IS NULL OR d.deleted_at IS NULL)
       ORDER BY ea.created_at ASC
     `, [req.params.id]);
     // PARITY-2 Part 3: the page's address, built on the one public origin.
@@ -28457,17 +28531,17 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
 
   const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
-    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC NULLS LAST", [orgId]),
-    query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? ORDER BY pg.created_at DESC", [orgId]),
+    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST", [orgId]),
+    query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY pg.created_at DESC", [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
     query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
     query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
-    query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? ORDER BY ea.created_at DESC", [orgId]),
+    query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY ea.created_at DESC", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),
-    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST", [orgId]),
+    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST", [orgId]),
     query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]),
-    query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? ORDER BY t.due", [orgId]),
+    query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY t.due", [orgId]),
   ]);
 
   const donorsEnriched = donors.map(d => ({ ...d, custom_fields: liveCf(d, cfDonorDefs) }));
@@ -28575,20 +28649,20 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
            LEFT JOIN campaigns c ON c.id=g.campaign_id
            LEFT JOIN giving_pages gp ON gp.id=g.giving_page_id
            LEFT JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
-           WHERE g.org_id=? ORDER BY g.date DESC NULLS LAST`, [orgId]),
+           WHERE g.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY g.date DESC NULLS LAST`, [orgId]),
     query(`SELECT i.*, d.name AS donor_name, d.email AS donor_email, i.metadata->>'direction' AS direction
            FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id
-           WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST`, [orgId]),
+           WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST`, [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
     query(`SELECT p.*, d.name AS donor_name, d.email AS donor_email
            FROM pledges p LEFT JOIN donors d ON d.id=p.donor_id
-           WHERE p.org_id=? ORDER BY p.due_date`, [orgId]),
+           WHERE p.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY p.due_date`, [orgId]),
     query(`SELECT pg.*, d.name AS donor_name, d.email AS donor_email
            FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id
-           WHERE pg.org_id=? ORDER BY pg.created_at DESC`, [orgId]),
+           WHERE pg.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY pg.created_at DESC`, [orgId]),
     query(`SELECT r.*, d.name AS donor_name, d.email AS donor_email
            FROM recurring_subscriptions r LEFT JOIN donors d ON d.id=r.donor_id
-           WHERE r.org_id=? ORDER BY r.created_at DESC`, [orgId]),
+           WHERE r.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY r.created_at DESC`, [orgId]),
     query(`SELECT gp.*, f.name AS fund_name FROM giving_pages gp
            LEFT JOIN fin_funds f ON f.id=gp.fund_id
            WHERE gp.org_id=? ORDER BY gp.created_at DESC`, [orgId]),
