@@ -143,7 +143,7 @@ async function geocodeGeocodio(queries, cfg, { fetchImpl = fetch } = {}) {
       const hit = rows[j]?.response?.results?.[0];
       const loc = hit?.location;
       out[i + j] = (loc && typeof loc.lat === "number" && typeof loc.lng === "number")
-        ? { status: "ok", lat: loc.lat, lng: loc.lng }
+        ? { status: "ok", lat: loc.lat, lng: loc.lng, county: hit.address_components?.county || null }   // LIST-1: the county filter
         : { status: "not_found" };
     }
   }
@@ -158,13 +158,13 @@ async function geocodeNominatim(queries, cfg, { fetchImpl = fetch } = {}) {
   for (const q of queries) {
     requests++;
     try {
-      const url = `${cfg.base}/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
+      const url = `${cfg.base}/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=1`;
       const res = await fetchImpl(url, { headers: { "User-Agent": USER_AGENT, "Accept-Language": "en" } });
       if (!res.ok) throw new Error(`nominatim ${res.status}`);
       const data = await res.json();
       const hit = Array.isArray(data) ? data[0] : null;
       const lat = hit ? parseFloat(hit.lat) : NaN, lng = hit ? parseFloat(hit.lon) : NaN;
-      out.push(Number.isFinite(lat) && Number.isFinite(lng) ? { status: "ok", lat, lng } : { status: "not_found" });
+      out.push(Number.isFinite(lat) && Number.isFinite(lng) ? { status: "ok", lat, lng, county: hit.address?.county || null } : { status: "not_found" });
     } catch (e) {
       out.push({ status: "failed", error: e.message });
     }

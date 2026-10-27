@@ -1,5 +1,5 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
-import { useState, useEffect, useMemo, Component } from "react";
+import { useState, useEffect, useMemo, useRef, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import OldReportsImport from "./OldReportsImport";
 import HistoryImport from "./HistoryImport";
@@ -24,6 +24,8 @@ import { composeNextMove } from "../../../shared/nextMove.js";
 import { DonorMap } from "./DonorMap";
 import { DataHealth } from "./DataHealth";
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
+import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
+import { EMPTY_WHERE, whereParam } from "./DonorFilters";
 import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
@@ -138,7 +140,21 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // its own 50-row pages with search/stage/owner pushed to query params;
   // orgPeople (SCALE-2: loaded when one opens) feeds the whole-org views
   // (pipeline/team/re-engage/map) and everything else.
-  const DIR_PAGE_SIZE=50;
+  // LIST-1: her columns, her page size, her saved views and the filter she
+  // is building, from GET /donors/list-setup. The rows wait for the layout so
+  // the first page asks for the right columns at the right size.
+  const[listSetup,setListSetup]=useState(null);
+  const[layout,setLayout]=useState(null);
+  const layoutRef=useRef(null);
+  layoutRef.current=layout;
+  const[dirWhere,setDirWhere]=useState(EMPTY_WHERE);
+  const[dirDir,setDirDir]=useState("");
+  const[filterError,setFilterError]=useState("");
+  const[activeViewId,setActiveViewId]=useState("");
+  const DIR_PAGE_SIZE=layout&&PAGE_SIZES.includes(Number(layout.pageSize))?Number(layout.pageSize):50;
+  const dirCols=layout?layout.columns.join(","):"";
+  const layoutReady=!!layout;
+  const dirWhereStr=whereParam(dirWhere);
   const[dirPage,setDirPage]=useState(0);
   const[dirRows,setDirRows]=useState(null); // null = loading
   const[dirTotal,setDirTotal]=useState(0);
@@ -152,9 +168,24 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useEffect(()=>{const open=()=>setShowHistory(true);window.addEventListener("steward:history-import",open);return()=>window.removeEventListener("steward:history-import",open);},[]);
   // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
   const[dirStatus,setDirStatus]=useState("");
-  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus]);
+  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirWhereStr,dirDir,DIR_PAGE_SIZE]);
   useEffect(()=>{
-    if(view!=="directory")return;
+    if(view!=="directory"||listSetup)return;
+    let live=true;
+    apiFetch("/donors/list-setup").then(s=>{
+      if(!live)return;
+      const st={...FALLBACK_SETUP,...s};
+      const l={...FALLBACK_SETUP.layout,...(s&&s.layout||{})};
+      setListSetup(st);
+      setLayout({...l,widths:l.widths||{},columns:cleanColumns(l.columns||st.defaultColumns,st.fields)});
+    }).catch(e=>{
+      console.warn("[list-setup]",e&&e.message);
+      if(live){setListSetup(FALLBACK_SETUP);setLayout(FALLBACK_SETUP.layout);}
+    });
+    return()=>{live=false;};
+  },[view,listSetup]);
+  useEffect(()=>{
+    if(view!=="directory"||!layoutReady)return;
     let cancelled=false;
     (async()=>{
       try{
@@ -169,15 +200,61 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(dirSort)qs.set("sort",dirSort);
         if(dirHousehold)qs.set("household",dirHousehold);
         if(dirStatus){const [k,v]=dirStatus.split(":");qs.set(k,v);}
+        if(dirDir)qs.set("dir",dirDir);
+        if(dirCols)qs.set("cols",dirCols);
+        if(dirWhereStr)qs.set("where",dirWhereStr);
         const r=await apiFetch(`/donors?${qs.toString()}`);
         if(cancelled)return;
+        setFilterError("");
         setDirRows((r.donors||[]).map(adaptDonor));
         setDirTotal(r.total||0);
         setDirRowsFor(dirSearch.trim());
-      }catch(e){console.error(e);if(!cancelled)setDirRows([]);}
+      }catch(e){
+        if(cancelled)return;
+        // LIST-1: a filter the server cannot run says why, in its own sentence.
+        if(e&&e.status===400&&(e.error==="bad_filter"||e.sentence)){setFilterError(e.sentence||"That filter could not be run.");setDirRows([]);setDirTotal(0);return;}
+        console.error(e);setDirRows([]);
+      }
     })();
     return()=>{cancelled=true;};
-  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirReloadKey]);
+  },[view,layoutReady,DIR_PAGE_SIZE,dirCols,dirWhereStr,dirDir,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirReloadKey]);
+  // LIST-1: the layout, saved for her (PUT), reset (DELETE), or set as the
+  // org's starting layout (admins). Views are a name for columns + filters.
+  const persistLayout=async next=>{
+    const full={...(layoutRef.current||FALLBACK_SETUP.layout),...next};
+    setLayout(full);
+    const r=await apiFetch("/donors/list-layout",{method:"PUT",body:JSON.stringify({columns:full.columns,widths:full.widths||{},pageSize:full.pageSize})});
+    if(r&&r.layout)setLayout(l=>({...l,...r.layout,columns:cleanColumns(r.layout.columns||full.columns,(listSetup||FALLBACK_SETUP).fields)}));
+    return r&&r.layout;
+  };
+  const resetLayout=async()=>{
+    const r=await apiFetch("/donors/list-layout",{method:"DELETE"});
+    if(r&&r.layout)setLayout({...r.layout,widths:r.layout.widths||{},columns:cleanColumns(r.layout.columns,(listSetup||FALLBACK_SETUP).fields)});
+    return r&&r.layout;
+  };
+  const saveOrgLayout=async columns=>{
+    const cur=layoutRef.current||FALLBACK_SETUP.layout;
+    return apiFetch("/donors/list-layout/org",{method:"PUT",body:JSON.stringify({columns,widths:cur.widths||{},pageSize:cur.pageSize})});
+  };
+  const saveView=async name=>{
+    const cur=layoutRef.current||FALLBACK_SETUP.layout;
+    const r=await apiFetch("/donors/list-views",{method:"POST",body:JSON.stringify({name,columns:cur.columns,widths:cur.widths||{},filters:dirWhere,pageSize:cur.pageSize})});
+    const v=r&&r.view;
+    if(v){setListSetup(s=>({...s,views:[...((s&&s.views)||[]).filter(x=>x.id!==v.id),{mine:true,...v}]}));setActiveViewId(v.id);}
+    return v;
+  };
+  const pickView=v=>{
+    if(!v){setActiveViewId("");return;}
+    setActiveViewId(v.id);
+    const cur=layoutRef.current||FALLBACK_SETUP.layout;
+    persistLayout({columns:cleanColumns(v.columns||cur.columns,(listSetup||FALLBACK_SETUP).fields),widths:v.widths||cur.widths||{},pageSize:v.pageSize||cur.pageSize}).catch(e=>console.warn("[list-layout]",e&&e.message));
+    setDirWhere(v.filters&&Array.isArray(v.filters.conditions)?{join:v.filters.join==="or"?"or":"and",conditions:v.filters.conditions}:EMPTY_WHERE);
+  };
+  const deleteView=async v=>{
+    try{await apiFetch(`/donors/list-views/${encodeURIComponent(v.id)}`,{method:"DELETE"});
+      setListSetup(s=>({...s,views:((s&&s.views)||[]).filter(x=>x.id!==v.id)}));setActiveViewId("");}
+    catch(e){console.warn("[list-views]",e&&e.message);}
+  };
   // Officer color map — assigned_to → hex; used for portfolio color-coding.
   const officerColorMap=useMemo(()=>Object.fromEntries(officers.filter(o=>o.portfolio_color).map(o=>[o.id,o.portfolio_color])),[officers]);
 
@@ -270,7 +347,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // and email at once; the server's rows replace them when they land.
   const searchTerm=search.trim().toLowerCase();
   const searchPending=dirRows!==null&&dirRowsFor!==null&&search.trim()!==dirRowsFor;
-  const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf)
+  // LIST-1: the Directory's filters run on the server now (where=), across
+  // every page; the old page-only filters belong to the whole-org views.
+  const dirPageRows=(dirRows||[])
     .filter(d=>!searchPending||!searchTerm||((d.name||"")+" "+(d.email||"")).toLowerCase().includes(searchTerm));
 
   const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
@@ -716,7 +795,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </div>
 
-      {(()=>{
+      {view!=="directory"&&(()=>{
         const count=advFilterCount+cfFilterCount;
         const pills=[];
         filters.tiers.forEach(t=>{const m=TIER_META.find(x=>x.id===t);pills.push({id:"t"+t,label:`Tier: ${m?.label||t}`,rm:()=>setFilters(f=>({...f,tiers:f.tiers.filter(v=>v!==t)}))});});
@@ -776,7 +855,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))}/>}
 
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
