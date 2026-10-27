@@ -7261,7 +7261,13 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL,
       created_by_name TEXT
     )`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_sheet_import_jobs_running ON sheet_import_jobs (org_id, request_key) WHERE status = 'running'`);
+  // HARDEN-2: the key under "the same file is the same job while it runs"
+  // (routes/sheetImport.js takes the org's commit lock above it). Over running
+  // rows only, so finished history never blocks it; and a table that somehow
+  // holds two running rows for one file logs and boots rather than failing.
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_sheet_import_jobs_running ON sheet_import_jobs (org_id, request_key) WHERE status = 'running'`);
+  } catch (e) { console.error("[harden-2] uq_sheet_import_jobs_running not created:", e.message); }
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sheet_import_jobs_org ON sheet_import_jobs (org_id, started_at DESC)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS import_recent_work (
