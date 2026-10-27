@@ -13,6 +13,9 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   calendar year and this one). The profile, the list filters, Groups, the dashboard's level chart and the
   `donors-by-status` source all read it. A refund comes off the 12-month total but never counts as "gave".
   `tests/parity1-donor-tags.test.js` pins the edges. (PARITY-1)
+- **"Gone quiet" is Lapsing plus Lapsed, and nothing else.** No screen keeps its own day count for quiet:
+  Communications' "Lapsing or lapsed" reads `donorStatus.quietIds`, the going-quiet move suggestion and
+  Home's re-engage list read `lapseRule.js`, and a gap of 365 days or more is a lapse everywhere. (FIX-51)
 - **A machine flag in `donors.tags` is never shown as a tag.** `donorTags.js` lists the internal flags
   (`has-refused-rows:N`); every read the API returns (list, summaries, profile, CSV export) passes through
   `visibleTags`, and `PUT /donors/:id` keeps the flags the client never saw (`keepInternal`). The unread
@@ -291,6 +294,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   Phone numbers render through `shared/phone.js` (`<Phone>`), formatted with a tel: link. The stage
   `steward` is labelled "Ongoing care". The header is the same with or without a photo: Back on its
   own line, the mark top-aligned with the name. (POLISH-1)
+
+- **The Donors list is one registry and one filter (LIST-1).** Columns and filters come from `donorList.js`
+  (`FIELDS` plus the org's custom fields); a filter is `where` JSON compiled into `groups.js buildDonorFilter`,
+  never a second query. A new filterable field is added there, reusing a buildDonorFilter rule when one exists.
+  A number in a column is the profile's (stored totals the NUMBERS-1 checker guards, or the same figure source
+  set-wise), never a new computation. Layouts are per person; only an admin sets the org default. A filter
+  Steward cannot run is refused with a sentence, never dropped.
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy

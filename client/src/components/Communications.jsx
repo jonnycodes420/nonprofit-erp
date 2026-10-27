@@ -469,8 +469,10 @@ const BLANK = { name: "", subject: "", bodyHtml: "", seg: { mode: "all" }, sched
 
 // ── Sequence trigger labels ───────────────────────────────────────────────────
 const SEQ_TRIGGERS = [
-  { id: "lapsed_90",  label: "Lapsed (90 days)",       ctx: "re-engaging lapsed donors who haven't given in 90+ days" },
-  { id: "lapsed_180", label: "Lapsed (180 days)",      ctx: "re-engaging long-lapsed donors who haven't given in 180+ days" },
+  // FIX-51: one lapse rule. Both ids mean Lapsed (12+ months); the second is
+  // kept only so a sequence saved with it still reads its name.
+  { id: "lapsed_90",  label: "Lapsed (12+ months)",    ctx: "re-engaging lapsed donors who haven't given in 12 months or more" },
+  { id: "lapsed_180", label: "Lapsed (12+ months)",    ctx: "re-engaging lapsed donors who haven't given in 12 months or more", legacy: true },
   { id: "new_donor",  label: "New donor (first gift)", ctx: "welcoming first-time donors and building the relationship after their first gift" },
   { id: "manual",     label: "Manual only",            ctx: "a personal donor outreach sequence" },
 ];
@@ -920,7 +922,7 @@ function SequencesPanel({ data }) {
           <div>
             <div style={S.label}>Trigger</div>
             <select value={form.trigger} onChange={e => setForm(f => ({ ...f, trigger: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
-              {SEQ_TRIGGERS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {SEQ_TRIGGERS.filter(t => !t.legacy || form.trigger === t.id).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </div>
           <div>

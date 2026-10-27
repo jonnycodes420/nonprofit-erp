@@ -188,6 +188,48 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push("(upper(trim(COALESCE(state,''))) = ? OR lower(trim(COALESCE(state,''))) = lower(?))");
     params.push(code, US.US_STATES[code] || code);
   }
+  // LIST-1: a zip. "40502" is that zip (a ZIP+4 counts), "405*" every zip
+  // starting so, "40502,40503" any of a list. Ask, a Group and the list read it.
+  if (q.zip) {
+    const z5 = "left(regexp_replace(COALESCE(zip,''), '\\s', '', 'g'), 5)";
+    const raw = String(q.zip).trim();
+    if (/^\d{1,5}\*$/.test(raw)) { where.push(`left(${z5}, ?) = ?`); params.push(raw.length - 1, raw.slice(0, -1)); }
+    else {
+      const list = raw.split(/[,\s]+/).filter(Boolean);
+      if (!list.length || list.some(z => !/^\d{5}$/.test(z))) return { badStatus: true, badFilter: "A zip is five digits, like 40502." };
+      where.push(`${z5} = ANY(?::text[])`); params.push(list);
+    }
+  }
+  // LIST-1: within N miles of a zip, for an org whose addresses are placed on
+  // the map. The zip's centre is the middle of this org's own placed
+  // addresses in it; a zip with none placed is refused, never guessed.
+  if (q.zipMiles) {
+    const m = /^(\d{5}):(\d{1,3}(?:\.\d+)?)$/.exec(String(q.zipMiles));
+    if (!m) return { badStatus: true, badFilter: "Within miles takes a zip and a number of miles." };
+    const [c] = await query(`SELECT AVG(latitude) AS lat, AVG(longitude) AS lng FROM donors
+      WHERE org_id = ? AND deleted_at IS NULL AND latitude IS NOT NULL AND left(COALESCE(zip,''),5) = ?`, [orgId, m[1]]);
+    if (!c || c.lat == null) return { badStatus: true, badFilter: `Steward hasn't placed any address in ${m[1]} on the map yet, so it can't measure from there.` };
+    where.push(`latitude IS NOT NULL AND 3958.8 * 2 * asin(sqrt(power(sin(radians(latitude - ?) / 2), 2)
+                + cos(radians(?)) * cos(radians(latitude)) * power(sin(radians(longitude - ?) / 2), 2))) <= ?`);
+    params.push(Number(c.lat), Number(c.lat), Number(c.lng), Number(m[2]));
+  }
+  // LIST-1: came to this event (attended or checked in) and has given nothing
+  // since the day of the event.
+  if (q.attendedNoGift) {
+    where.push(`EXISTS (SELECT 1 FROM event_attendees an JOIN events ae ON ae.id = an.event_id AND ae.org_id = an.org_id
+                 WHERE an.org_id = donors.org_id AND an.donor_id = donors.id AND an.event_id = ?
+                   AND (lower(COALESCE(an.status,'')) = 'attended' OR an.checked_in_at IS NOT NULL)
+                   AND NOT EXISTS (SELECT 1 FROM gifts ag WHERE ag.org_id = donors.org_id AND ag.donor_id = donors.id
+                                     AND ag.amount > 0 AND ag.date >= ae.date::text))`);
+    params.push(String(q.attendedNoGift));
+  }
+  // LIST-1: the list's own filter, any field, joined by and or or (donorList.js).
+  if (q.where) {
+    const c = await require("./donorList").compileWhere(orgId, q.where, { depth: (opts.depth || 0) + 1 });
+    if (c.error) return { badStatus: true, badFilter: c.error };
+    if ((opts.depth || 0) >= 3) return { badStatus: true, badFilter: "A filter inside a group inside a filter is as deep as it goes." };
+    if (c.sql) { where.push(c.sql); params.push(...c.args); }
+  }
   // AI-FIX: nobody has been in touch since this date: no call, meeting, email
   // or stewardship logged on or after it (the contact "Why did they stop?" reads).
   if (q.noContactSince) {
@@ -444,7 +486,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     params.push(...m.args);
   }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
-  let orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
+  // LIST-1: a column header sorts by that column, either way.
+  let orderBy = (q.dir && require("./donorList").sortSql(String(q.sort || ""), String(q.dir)))
+    || (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
   // arguments ahead of the WHERE's.
   let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`;
@@ -511,7 +555,10 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // JOURNEYS-4: event guests, four ways, at any event or one.
   "eventGuest", "eventGuestEvent",
   // FIX-44: a first gift ever on or after a day.
-  "firstGiftFrom"];
+  "firstGiftFrom",
+  // LIST-1: a zip (or a list, or a prefix), miles from a zip, came and didn't
+  // give, and the list's own filter on any field (donorList.js).
+  "zip", "zipMiles", "attendedNoGift", "where"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -523,8 +570,18 @@ function normalizeRules(raw) {
   for (const k of RULE_KEYS) {
     const v = src[k];
     if (v === undefined || v === null || v === "" || v === false) continue;
+    // LIST-1: the list's filter is JSON, checked whole by donorList.parseWhere.
+    if (k === "where") { rules.where = typeof v === "string" ? v : JSON.stringify(v); continue; }
     rules[k] = String(v).trim().slice(0, 120);
   }
+  if (rules.where) {
+    const p = require("./donorList").parseWhere(rules.where);
+    if (p.error) errors.push(p.error);
+    else if (!p.where || !p.where.conditions.length) delete rules.where;
+    else rules.where = JSON.stringify(p.where);
+  }
+  if (rules.zip && !/^(\d{1,5}\*|\d{5}([,\s]+\d{5})*)$/.test(rules.zip)) errors.push("A zip is five digits, like 40502.");
+  if (rules.zipMiles && !/^\d{5}:\d{1,3}(\.\d+)?$/.test(rules.zipMiles)) errors.push("Within miles takes a zip and a number of miles.");
   if (rules.role && !PEOPLE_ROLES.includes(rules.role)) errors.push("A role is Donor, Volunteer, or Staff and board.");
   if (rules.level && !DS.LEVELS[rules.level]) errors.push("A giving level is General, Mid or Major.");
   if (rules.lifecycle && !DS.LIFECYCLES[rules.lifecycle] && rules.lifecycle !== "lapsing") errors.push("A lifecycle is New, Current, Recaptured, Lapsing or Lapsed.");
@@ -599,6 +656,10 @@ function rulesSentence(rules = {}) {
   if (rules.notGaveFrom || rules.notGaveTo) parts.push(`with nothing given ${rules.notGaveFrom || "any time"} to ${rules.notGaveTo || "today"}`);
   if (rules.monthly) parts.push("giving monthly");
   if (rules.city) parts.push(`in ${rules.city}`);
+  if (rules.zip) parts.push(/\*$/.test(rules.zip) ? `in a zip starting ${rules.zip.slice(0, -1)}` : `in ${rules.zip.split(/[,\s]+/).join(" or ")}`);
+  if (rules.zipMiles) parts.push(`within ${rules.zipMiles.split(":")[1]} miles of ${rules.zipMiles.split(":")[0]}`);
+  if (rules.attendedNoGift) parts.push("who came to one event and have not given since");
+  if (rules.where) parts.push(`where ${require("./donorList").whereSentence(rules.where)}`);
   if (rules.state) parts.push(`in ${rules.state}`);
   if (rules.noContactSince) parts.push(`with no contact logged since ${rules.noContactSince}`);
   if (rules.gaveEvent) parts.push("who gave to one event");

@@ -92,7 +92,7 @@ const {
   processPledgeReminders, pruneUnreferencedAssets, publicAppUrl, putThemeAsset, query, queryTx,
   raiseGrantMilestone, rateLimitDisabled, rbCents, rbCentsEv, rbCustomDefs, rbFormatCell,
   emitWebhook,
-  recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
+  recalcDonorSummary, donorCreditTotals, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
   reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
@@ -804,15 +804,10 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
   }
   return { where: clauses.join(" AND "), params };
 }
-// BUILD-73 Part 3 — QUIET_DAYS is the "going quiet" threshold, and it already
-// existed: computeMoveSuggestions fires `going_quiet` at 180 days with the
-// reason "reach out before they lapse." That is the whole Steward thesis — a
-// donor drifting is the moment to act, and waiting for the 365-day lapse line
-// is waiting too long. The at-risk figure on the home screen uses THIS
-// threshold, not the lapse one, so the demo leads with drift rather than with
-// recapture. Named here so the two thresholds sit together and neither can
-// drift from the other unnoticed.
-const QUIET_DAYS = 180;
+// FIX-51 · ONE QUIET RULE. "Going quiet" is lapseRule.js and nothing else:
+// Lapsing (last gift 9 to 12 months ago) and Lapsed (12 months and more).
+// The 180-day clock that the going-quiet suggestion, the Communications
+// segment and Home's re-engage list each kept is gone; each reads the rule.
 
 // Auto-un-lapse: a lapsed donor just gave, so move them out of Lapsed to
 // Steward automatically ("they just gave"), logged, editable. Called from every
@@ -838,6 +833,8 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const giftCount = Number(donor.gift_count) || 0;
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
+  // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
+  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
@@ -848,9 +845,8 @@ function computeMoveSuggestions(donor, ctx = {}) {
     out.push({ signal: "gift_after_solicit", toStage: "steward",
       reason: "A gift landed after your solicitation, move to Stewardship." });
   }
-  // In active cultivation but gone quiet (not yet lapsed) → take a look.
-  if (["qualify", "cultivate"].includes(stage) && daysSinceGift != null
-      && daysSinceGift > 180 && daysSinceGift < LAPSE_DAYS) {
+  // In active cultivation but lapsing (9 to 12 months, the one rule) → take a look.
+  if (["qualify", "cultivate"].includes(stage) && quietState === "lapsing") {
     out.push({ signal: "going_quiet", toStage: null,
       reason: `No gift in ${Math.round(daysSinceGift / 30)} months, reach out before they lapse.` });
   }
@@ -1112,7 +1108,7 @@ async function resumeRecentWork() {
   const jobs = await query(`SELECT import_id, org_id FROM import_recent_jobs WHERE status='running'`).catch(() => []);
   for (const j of jobs) kickRecentWork(j.org_id, j.import_id);
 }
-setTimeout(() => { resumeRecentWork().catch(e => console.error("[import-recent] resume:", e.message)); }, 8000).unref();
+require("../bootGate").afterMigrations(() => { resumeRecentWork().catch(e => console.error("[import-recent] resume:", e.message)); }, 8000, { unref: true });   // FIX-51
 
 // What the import screen shows while the work runs.
 function recentProgressSentence(j) {
@@ -3961,6 +3957,7 @@ async function buildDonorListFilter(req) {
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const filter = await buildDonorListFilter(req);
+  if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
@@ -4021,7 +4018,12 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
-  res.json({ donors: donors.map(mapDonor(tpMap, driftMap)), total: parseInt(cnt[0].c, 10) });
+  // LIST-1: the columns she chose, for this page only (donorList.js cellsFor).
+  const cols = String(req.query.cols || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 40);
+  const cells = cols.length ? await require("../donorList").cellsFor(req.user.orgId, donors, cols) : null;
+  const out = donors.map(mapDonor(tpMap, driftMap));
+  if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
+  res.json({ donors: out, total: parseInt(cnt[0].c, 10) });
 }));
 
 // Lightweight whole-org list for consumers that need every donor but not the
@@ -4150,6 +4152,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 // already see), never checkWriteAccess-gated (export-routes convention).
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   const filter = await buildDonorListFilter(req);
+  if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
@@ -10395,14 +10398,19 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
        LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? GROUP BY sc.role, gp.id, gp.title`, [req.user.orgId, req.params.id]);
-  const giftSoftCents = scAgg.reduce((t, r) => t + Number(r.cents), 0);
+  // FIX-51: the census lines read donorCreditTotals, the header's own two
+  // figures: their own giving is Lifetime (no credit rows), and soft credit
+  // is the one Soft credit figure (others' gifts and their own credit rows).
+  const credit = await donorCreditTotals(req.user.orgId, req.params.id);
+  const giftSoftCents = credit.softCents;
   // One line per page they raised for, newest gift first, in cents.
   const raisedFor = scAgg.filter(r => r.role === "peer_fundraiser" && r.page_id)
     .sort((a, b) => (String(b.newest) > String(a.newest) ? 1 : -1))
     .map(r => ({ pageId: r.page_id, pageTitle: r.page_title, amountCents: Number(r.cents), giftCount: r.n }));
   res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined, householdSources,
     giftSoftCredit: giftSoftCents / 100,
-    hardPlusGiftSoft: (Math.round(hardCredit * 100) + giftSoftCents) / 100,
+    ownGiving: credit.hardCents / 100,
+    hardPlusGiftSoft: credit.hardPlusSoftCents / 100,
     raisedFor,
     raisedForSentence: "Money other people gave through their fundraiser page. It is recognition, not their own giving, and it changes nothing about their record.",
     giftSoftCredits: scRows.map(r => ({ id: r.id, amount: Number(r.amount), pct: r.pct == null ? null : Number(r.pct), role: r.role,
@@ -11211,7 +11219,7 @@ app.post("/pipeline/:donorId/move", requireAuth, requireCrm, checkWriteAccess, w
 app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
-  res.json({ suggestions: computeMoveSuggestions(rows[0]) });
+  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: orgToday(await orgTz(req.user.orgId)) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
@@ -20561,7 +20569,7 @@ async function orgGoalRaised(orgId, goal) {
        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
          AND ${NOT_CREDIT("g")}
          AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date) IS NOT NULL
-         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date)::date > 365`,
+         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date)::date >= ${lapseRule.LAPSED_DAYS}`,
       [orgId, goal.period_start, goal.period_end]);
     return parseFloat(r?.total) || 0;
   }
@@ -20617,7 +20625,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
          JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
          WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
            AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
-           AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
+           AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date >= ${lapseRule.LAPSED_DAYS}`,
         [req.user.orgId, recentStart, today]
       );
       recentAmount = parseFloat(rows3[0]?.total) || 0;
@@ -21767,19 +21775,16 @@ async function hubMailState(orgId) {
 // Donors" was everyone with an email (volunteers and staff too, 1,206 against
 // 1,158 donors), and "Lapsed" read a status nothing sets (0). Each segment is
 // now filterBySegment's, over the same people audienceRoster counts (everyone
-// with an email), and "Gone quiet" is the Why rail's rule (routes/why.js):
-// stage lapsed, or Drift says past their own gap. A volunteer coordinator gets
-// no giving column (VOL-2's rule).
+// with an email). FIX-51: "Lapsing or lapsed" is the one lapse rule
+// (lapseRule.js), read from the tags themselves (donorStatus.quietIds), so it
+// is exactly the Lapsing people plus the Lapsed people. A volunteer coordinator gets no giving column
+// (VOL-2's rule).
 app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const coordinator = req.user.role === "volunteer_coordinator";
   const donors = await query(
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL", [orgId]);
-  const drift = await query("SELECT donor_id, assessment FROM donor_drift WHERE org_id = ?", [orgId]).catch(() => []);
-  const quiet = new Set(drift.filter(r => {
-    let a = r.assessment; try { if (typeof a === "string") a = JSON.parse(a); } catch { a = null; }
-    return a && (a.state === "drifting" || a.state === "lapsed");
-  }).map(r => r.donor_id));
+  const quiet = await DS.quietIds(orgId, orgToday(await orgTz(orgId)));
   const all = filterBySegment(donors, { mode: "donors" });
   const byStage = st => all.filter(d => d.stage === st);
   const SEGS = [
@@ -21787,8 +21792,8 @@ app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
       definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
     { id: "major", label: "Major", rows: filterBySegment(all, await resolveSegmentSpec({ mode: "major" }, orgId)),
       definition: "Donors with an email address at the Major giving level: what they gave in the last 12 months against your cut points in Settings, Giving levels." },
-    { id: "lapsed", label: "Gone quiet", rows: all.filter(d => d.stage === "lapsed" || quiet.has(d.id)),
-      definition: "Donors with an email address who are past their own usual gap between gifts, or marked lapsed. The same rule as Why." },
+    { id: "lapsed", label: "Lapsing or lapsed", rows: all.filter(d => quiet.has(d.id)),
+      definition: `Donors with an email address who are lapsing or lapsed. ${lapseRule.WORDS.lapsing} ${lapseRule.WORDS.lapsed}` },
     { id: "prospect", label: "Prospects", rows: byStage("prospect"), definition: "Donors with an email address at the Prospect stage." },
     { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
     { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
@@ -25899,7 +25904,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
         GROUP BY donor_id, date),
      per AS (
        SELECT donor_id, COALESCE(SUM(amt),0) AS amount, SUM(n)::int AS gift_count, MAX(date) AS last_return_date
-         FROM day WHERE prev IS NOT NULL AND date::date - prev::date > 365
+         FROM day WHERE prev IS NOT NULL AND date::date - prev::date >= ${lapseRule.LAPSED_DAYS}
         GROUP BY donor_id)
      SELECT t.amt, t.donors, l.id, l.name, l.amount, l.gift_count, l.last_return_date
        FROM (SELECT COALESCE(SUM(amount),0) AS amt, COUNT(*)::int AS donors FROM per) t
@@ -25939,39 +25944,34 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // which is invented social proof. The standing rule is that the value math
   // describes the SIZE OF THE PROBLEM and never Steward's results.
   //
-  // So the lead figure is the lifetime giving of donors who have gone QUIET —
-  // no gift in QUIET_DAYS — which is money genuinely at risk today, is a fact
-  // about the organization's own file, and claims nothing about what Steward
-  // did.
-  //
-  // QUIET_DAYS (180), not LAPSE_DAYS (365), and that choice is the product
-  // thesis. A donor who has not given in six months is drifting; a donor at
-  // twelve months has already gone. Leading with the 365-day set would tell the
-  // LAPSED-RECAPTURE story — four hundred small donors who left — which is the
-  // story every other tool tells. Leading at 180 days surfaces the mid-level
-  // donors who are quietly slipping while every lifetime-total report still
-  // shows them as fine. That difference is the entire differentiator, and it is
-  // the same threshold computeMoveSuggestions already fires `going_quiet` on.
+  // So the lead figure is the lifetime giving of donors who have gone QUIET,
+  // which is money genuinely at risk today, is a fact about the organization's
+  // own file, and claims nothing about what Steward did. FIX-51: "quiet" is
+  // the one lapse rule, lapsing or lapsed (lapseRule.js), the same rule the
+  // going-quiet suggestion and the Communications segment read.
   // The quiet cutoff is a CIVIL DATE in the ORGANIZATION'S timezone, resolved
   // through the seam (BUILD-72 Part 4). `gifts.date` is a civil date — a gift
   // given on March 15 was given on March 15 in every timezone on earth — so
   // comparing it to CURRENT_DATE would ask Postgres's UTC clock a question only
   // the org's calendar can answer, and the at-risk figure would flip for
   // everyone west of UTC for part of each day. One cutoff, computed once.
-  const _quietCutoff = orgTime.addDays(orgToday(await orgTz(orgId)), -QUIET_DAYS);
+  // FIX-51: lapsing or lapsed by the one rule (lapseRule.js): a last gift on
+  // or before the day nine months ago.
+  const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
+  const _quietCutoff = _quietBounds.lapsingOnOrBefore;
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
   // source, and the destination shows the same count and amount the chip claimed.
   const pAtRiskDonors = query(
     `SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount,
-            (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) AS last_gift_date
+            (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) AS last_gift_date
        FROM donors d
       WHERE d.org_id = ?
         AND d.deleted_at IS NULL
         AND d.total_giving > 0
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) IS NOT NULL
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) < ?
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) IS NOT NULL
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
       ORDER BY d.total_giving DESC
       LIMIT 50`,
     [orgId, _quietCutoff]
@@ -26007,7 +26007,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   void atRiskRows;
 
   res.json({
-    quietSinceDays: QUIET_DAYS,
+    quietSinceDays: orgTime.daysBetween(_quietCutoff, _quietBounds.today),
     reengageCandidates: atRiskDonors.map(r => ({
       id: r.id, name: r.name, amount: parseFloat(r.amount) || 0, lastGiftDate: r.last_gift_date,
     })),

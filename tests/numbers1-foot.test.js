@@ -124,10 +124,13 @@ async function fire(evt) {
 // FIX-49: "coverFee" marks a gift as one where the donor covered the fee (the
 // gift stays the full amount everywhere but Finance), "creditRow" records a
 // matching gift credit, which is never money in Lifetime, a campaign or an average.
+// FIX-51: "goQuiet" moves every gift of one person to 9 to 15 months ago,
+// through the edit route, so they are Lapsing or Lapsed (the one quiet rule).
 // IMPORT-4: "undated" records a gift the file gave no date for (through
 // recordGift, as the spreadsheet import does); "dateUndated" gives one a day
 // through the profile's Set date (PUT /gifts/:id).
-const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal", "coverFee", "creditRow", "undated", "dateUndated"];
+const KINDS = ["add", "add", "editAmount", "editDate", "moveCampaign", "refund", "delete", "undo", "split", "softCredit", "merge", "import", "voice", "importTotal", "coverFee", "creditRow", "goQuiet", "undated", "dateUndated"];
+
 async function live(o) {
   const donors = (await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY id`, [o.org])).map(r => r.id);
   const gifts = await q(`SELECT id, donor_id, amount::text AS amount, date, campaign_id, fund_id, stripe_payment_id FROM gifts WHERE org_id=$1 ORDER BY id`, [o.org]);
@@ -200,6 +203,16 @@ async function step(o, s) {
       const date = dateIn(r, o);
       expect(await api("PUT", `/gifts/${g.id}`, o.tok, { date }), [200], "edit date");
       return `edit ${g.id} date to ${date}`;
+    }
+    case "goQuiet": {
+      if (!g) return "go quiet: no gift";
+      const mine = gifts.filter(x => x.donor_id === g.donor_id);
+      const back = int(r, 275, 460);
+      for (const x of mine) {
+        const res = await api("PUT", `/gifts/${x.id}`, o.tok, { date: civilPlusDays(-back - int(r, 0, 20)) });
+        expect(res, [200, 400], "go quiet");   // 400: a campaign's dates refuse the move
+      }
+      return `${g.donor_id.slice(-1)}'s ${mine.length} gift${mine.length === 1 ? "" : "s"} moved to about ${back} days ago`;
     }
     case "moveCampaign": {
       if (!g) return "move campaign: no gift";

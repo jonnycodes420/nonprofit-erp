@@ -57,6 +57,8 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   `uq_fin_txns_grant`; un-award deletes the auto stamp and unlinks (never deletes) an adopted manual row. (FIX entity-routing)
 - **Count a gift once, on the person whose money it was.** Soft credit is a row pointing at a gift
   (`gift_soft_credits`); no total, ledger or bookkeeper export reads it; reports add it only via `?credit=soft`. (BUILD-98)
+- **A soft or matching credit is in no "own giving" figure.** Lifetime, This year and the census's "Their own
+  giving" leave credit rows out; the census lines are `creditTotals.js`, the header's two figures. (FIX-49, FIX-51)
 - **A matching gift is a pledge on the employer's record, never money.** `pledges.is_match`; excluded
   from late-pledge threads and reminders, because Steward never chases a company. (BUILD-98)
 - **A tribute honouree is a record when one exists, otherwise a name.** Imports never invent a record

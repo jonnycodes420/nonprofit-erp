@@ -1271,9 +1271,10 @@ const SOURCES = {
     label: "Given",
     measure: () => "sum",
     params: { donor: "id:required", from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total.`,
+    sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total. Soft and matching credits are not gifts and are shown as Soft credit instead.`,
+    // FIX-51: credit rows are not money here either, as in Lifetime.
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.date >= ? AND g.date <= ?`,
+      sql: `${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND g.date >= ? AND g.date <= ?`,
       args: [orgId, p.donor, p.from, p.to], order: "date DESC NULLS LAST, id",
     }),
   },
@@ -1286,7 +1287,7 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => "This person's gifts that came in with no date. They count in Lifetime, the gift count and the average, and in no figure for a span of time, because their year is not known.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.date IS NULL`,
+      sql: `${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")} AND g.date IS NULL`,
       args: [orgId, p.donor], order: "id",
     }),
   },
@@ -1300,7 +1301,7 @@ const SOURCES = {
                    COALESCE(f.name, 'Unrestricted') AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
               LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`,
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")} AND g.date IS NULL`,
       args: [orgId], order: "id",
     }),
   },

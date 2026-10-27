@@ -29,6 +29,7 @@ const orgTime = require("../orgTime");
 const { statementLines } = require("../statementTotals");
 const DS = require("../donorStatus");
 const lapseRule = require("../lapseRule");
+const CT = require("../creditTotals");   // FIX-51: the census lines' two figures
 
 const CREDIT = new Set(FS.BOOKKEEPER_EXCLUDED_TYPES);
 const c = v => money.toCents(String(v ?? "0")) ?? 0;
@@ -42,7 +43,7 @@ const RULES = {
     screens: "profile header Average gift, 'of N gifts'" },
   "donor-first-largest-last": { words: "First is their earliest gift above zero, Largest their biggest, and Last gift their most recent, each a real gift on file.",
     screens: "profile header First / Largest, Last gift, the rail" },
-  "donor-this-year": { words: "This year is the sum of their gifts dated from the start of the org's fiscal year to today.",
+  "donor-this-year": { words: "This year is the sum of their gifts dated from the start of the org's fiscal year to today. Soft and matching credit rows are not in it.",
     screens: "profile header This year" },
   "donor-stored": { words: "The totals kept on the person (total_giving, gift_count, first and last gift date, last amount) agree with their gifts and imported total, and no recompute has erased an imported total.",
     screens: "donor list, groups, households, portfolios, Lost & Found, exports, staff emails" },
@@ -76,6 +77,11 @@ const RULES = {
   // FIX-49 decisions 6 to 8 (Jonathan, 25 Oct).
   "lapse": { words: "Lapsed is no gift in the last 12 months after giving before; lapsing is a last gift 9 to 12 months ago. The tags, the Directory's counts and every list name the same people by that one rule.",
     screens: "profile tags, Directory and its Re-engage badge, groups, Drift, journey triggers, Lost & Found" },
+  // FIX-51
+  "credit-totals": { words: "The profile's census lines are the header's own figures: their own giving is Lifetime, soft credit is the Soft credit figure, and with soft credit is the two added.",
+    screens: "profile Their own giving, With soft credit" },
+  quiet: { words: "Gone quiet is one rule: Lapsing (last gift 9 to 12 months ago) and Lapsed (12 months and more). The Communications segment names exactly those people.",
+    screens: "Communications Lapsing or lapsed, Home re-engage list, going-quiet suggestion" },
   "giving-level": { words: "A person's giving level is what they gave in the last 12 months against the org's own cut points (Settings, Giving levels), and nothing else.",
     screens: "profile tag, Directory filter, groups, Communications Major, the Board" },
   // IMPORT-4: a gift the file gave no day for.
@@ -172,7 +178,7 @@ async function checkOrg(orgId, opts = {}) {
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
     if (real.length && glance.largest.cents !== largest) add("donor-first-largest-last", { donor: d.id, what: "largest", shown: glance.largest.cents, gifts: largest });
     if (latest && (!last.rows[0] || last.rows[0].id !== latest.id)) add("donor-first-largest-last", { donor: d.id, what: "last", shown: last.rows[0] && last.rows[0].id, gifts: latest.id });
-    const yearCents = gs.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
+    const yearCents = cash.filter(g => g.date >= fyStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
     if ((year.totalRows ? year.cents : 0) !== yearCents) add("donor-this-year", { donor: d.id, shown: year.cents, gifts: yearCents });
     // IMPORT-4: the profile says how many undated gifts This year leaves out,
     // and that figure opens exactly those gifts.
@@ -231,6 +237,8 @@ async function checkOrg(orgId, opts = {}) {
     const cuts = await DS.cutsFor(orgId);
     const st = DS.statusSql(orgId, today, cuts);
     const tagged = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
+    // FIX-51: the Communications segment's people are the tags' Lapsing and Lapsed.
+    const quiet = await DS.quietIds(orgId, today);
     for (const [donorId, gs] of byDonor) {
       const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
       if (!pos.length) continue;
@@ -244,6 +252,7 @@ async function checkOrg(orgId, opts = {}) {
       if (imported) continue;
       if (!t) { add("lapse", { donor: donorId, want, shown: null }); continue; }
       if ((t.lifecycle === "lapsed") !== (want === "lapsed") || !!t.lapsing !== (want === "lapsing")) add("lapse", { donor: donorId, want, shown: [t.lifecycle, !!t.lapsing] });
+      if (quiet.has(donorId) !== (want === "lapsed" || want === "lapsing")) add("quiet", { donor: donorId, want, shown: quiet.has(donorId) });
       const last12 = gs.filter(g => day(g.date) >= lapseRule.bounds(today).lapsingFrom && day(g.date) <= today).reduce((x, g) => x + c(g.amount), 0);
       const lvl = last12 >= cuts.majorCents ? "major" : last12 >= cuts.midCents ? "mid" : "general";
       if (t.level !== lvl) add("giving-level", { donor: donorId, want: lvl, shown: t.level });
@@ -274,6 +283,11 @@ async function checkOrg(orgId, opts = {}) {
     if (sample && !sample.has(donorId)) continue;
     const f = await FS.figureValue(orgId, { key: "donor-soft-credit", params: { donor: donorId } }, {});
     if ((f.totalRows ? f.cents : 0) !== want) add("soft-credit", { donor: donorId, what: "figure", shown: f.cents, want });
+    // FIX-51: the census lines read the same two figures, and add them once.
+    const ct = await CT.donorCreditTotals(orgId, donorId);
+    const life = await FS.figureValue(orgId, { key: "donor-lifetime", params: { donor: donorId } }, {});
+    if (ct.hardCents !== (life.cents || 0) || ct.softCents !== want || ct.hardPlusSoftCents !== ct.hardCents + want)
+      add("credit-totals", { donor: donorId, shown: [ct.hardCents, ct.softCents], want: [life.cents || 0, want] });
   }
 
   // ── campaigns ────────────────────────────────────────────────────────
@@ -395,7 +409,10 @@ const UNIT = { "donor-lifetime": "donors where Lifetime disagrees", "donor-count
   removed: "rows pointing at removed gifts", foots: "figures that do not foot",
   "donor-since": "people whose imported history is missing from Donor since or the lifecycle tags",
   lapse: "people whose lapsed or lapsing tag disagrees", "giving-level": "people whose giving level disagrees",
-  "household-one": "linked pairs not in one household", undated: "people whose gifts with no date are counted wrongly" };
+  "household-one": "linked pairs not in one household",
+  "credit-totals": "people whose census credit lines disagree", quiet: "people the Lapsing or lapsed segment gets wrong",
+  undated: "people whose gifts with no date are counted wrongly" };
+
 function countLine(r) {
   const n = r.problems.reduce((s, p) => s + p.count, 0);
   if (!n) return `${r.name}: 0 problems`;

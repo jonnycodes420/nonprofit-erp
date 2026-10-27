@@ -97,8 +97,10 @@ function _logOutboundEmail(opts, result, err, statusOverride) {
     err ? String(err.message || err).slice(0, 300) : null,
   ];
   // Never let logging break a send, and never let it throw into a caller that
-  // is already handling a provider failure.
-  run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error)
+  // is already handling a provider failure. FIX-51: the write is returned (it
+  // never rejects), so a caller that reads the log next, or that must not
+  // finish before the row is in, awaits it.
+  return run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error)
        VALUES (?,?,?,?,?,?,?)`, row).catch(() => {});
 }
 
@@ -132,7 +134,7 @@ const resend = new Proxy(_rawResend, {
           if (blocked) {
             const why = "blocked_address: recipient is on Steward's permanent block list";
             console.warn(`[mail-block] REFUSED a send to a blocked address (kind=${(opts && opts._stewardKind) || "?"}, org=${(opts && opts._stewardOrgId) || "none"})`);
-            try { _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
+            try { await _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
             return { data: null, error: { name: "blocked_address", message: why } };
           }
           // An org-tagged send (donorSendOpts tags it) whose org has mail OFF
@@ -146,7 +148,7 @@ const resend = new Proxy(_rawResend, {
             if (!gate.send) {
               const why = "org_mail_off: " + gate.reason;
               console.warn(`[mail-gate] REFUSED at the client: org ${orgId} (${gate.reason}), kind=${opts._stewardKind || "?"}`);
-              try { _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
+              try { await _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
               return { data: null, error: { name: "org_mail_off", message: why } };
             }
           }
@@ -158,8 +160,9 @@ const resend = new Proxy(_rawResend, {
             out = await eTarget.send(wire);
           } catch (e) { thrown = e; }
           // The log must never break a send, and never swallow a provider
-          // failure the caller is already handling.
-          try { _logOutboundEmail(opts, out, thrown || (out && out.error)); } catch (_) { /* ignore */ }
+          // failure the caller is already handling. FIX-51: awaited (it never
+          // rejects), so the row is in before the caller hears the answer.
+          try { await _logOutboundEmail(opts, out, thrown || (out && out.error)); } catch (_) { /* ignore */ }
           if (thrown) throw thrown;
           return out;
         };
@@ -748,8 +751,11 @@ let dbReady = false;
 // and failed for every org on a column the migration had not added yet
 // ("column pattern of relation donor_scores does not exist"). recordTick, the
 // seam every job passes through, now awaits this before running.
-let markDbReady = null;
-const DB_READY = new Promise(resolve => { markDbReady = resolve; });
+// FIX-51: the promise lives in bootGate.js, so a boot job in any module waits
+// for it (bootGate.afterMigrations) rather than a bare timer.
+const bootGate = require("./bootGate");
+const markDbReady = bootGate.markReady;
+const DB_READY = bootGate.READY;
 let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
 getDb()
   .then(async () => {
@@ -1706,20 +1712,8 @@ async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName 
   return result;
 }
 
-// One donor's credit: hard is the gift rows, soft is the rows pointing at
-// other people's gifts. The second is never added into the first anywhere
-// except on the line that says it is "with soft credit".
-async function donorCreditTotals(orgId, donorId) {
-  const [[h], [s]] = await Promise.all([
-    query("SELECT COALESCE(SUM(amount),0)::numeric AS t, COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=?", [orgId, donorId]),
-    query(`SELECT COALESCE(SUM(sc.amount),0)::numeric AS t, COUNT(*)::int AS n FROM gift_soft_credits sc
-             JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
-            WHERE sc.org_id=? AND sc.donor_id=?`, [orgId, donorId]),
-  ]);
-  const hardCents = Math.round(Number(h?.t || 0) * 100);
-  const softCents = Math.round(Number(s?.t || 0) * 100);
-  return { ...GC.creditTotals(hardCents, softCents), hardCount: h?.n || 0, softCount: s?.n || 0 };
-}
+// One donor's credit, the census lines' hard and soft figures (FIX-51).
+const { donorCreditTotals } = require("./creditTotals");
 
 
 // ---- BUILD-89S 89a - GIVING SOURCES: THE RUNNER --------------------------
@@ -2937,6 +2931,7 @@ app.use((req, res, next) => {
 });
 app.use(require("./routes/grantMail").routers.r1);     // GRANTS-1 fixed /grants/* paths, ahead of crm's /grants/:id
 app.use(require("./routes/donorLookups").routers.r0); // SCALE-2: pickers, counts and lookups, ahead of crm's /donors/:id
+app.use(require("./routes/donorList").routers.r0);    // LIST-1: columns, views and the filter, ahead of crm's /donors/:id
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -3092,8 +3087,8 @@ async function statusCheckOnce() {
   return results;
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 20000);
-  setInterval(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
+  bootGate.afterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 20000);
+  bootGate.everyAfterMigrations(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
 }
 
 // NUMBERS-1 · every number checked every night, counts only (numberCheck.js).
@@ -3101,7 +3096,7 @@ if (!backgroundTicksDisabled()) {
 // digest reads the day's logs. The super-admin reads the latest night, and may
 // run it now; neither returns a name, an amount or an id.
 if (!backgroundTicksDisabled()) {
-  setInterval(() => require("./numberCheck").nightlyTick(require("./numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
+  bootGate.everyAfterMigrations(() => require("./numberCheck").nightlyTick(require("./numbers").screens).catch(e => console.error("[numbers]", e.message)), 60 * 60 * 1000);
 }
 app.get("/admin/number-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   res.json({ rows: await require("./numberCheck").latest() });
@@ -6140,10 +6135,12 @@ async function processGeocodeQueue({ limit = GEOCODE_TICK_BUDGET, orgId = null }
     if (!ids.length) continue;
     if (status === "ok") {
       await run(`UPDATE donors SET geocode_status='ok', geocoded_at=NOW(), geocode_provider=?,
-                   latitude=v.lat::double precision, longitude=v.lng::double precision
-                   FROM (SELECT * FROM UNNEST(?::text[], ?::text[], ?::text[]) AS t(id, lat, lng)) AS v
+                   latitude=v.lat::double precision, longitude=v.lng::double precision,
+                   county=COALESCE(NULLIF(v.county, ''), donors.county)
+                   FROM (SELECT * FROM UNNEST(?::text[], ?::text[], ?::text[], ?::text[]) AS t(id, lat, lng, county)) AS v
                   WHERE donors.id = v.id`,
-                [provider, ids, ids.map(id => String(coords.get(id).lat)), ids.map(id => String(coords.get(id).lng))]);
+                [provider, ids, ids.map(id => String(coords.get(id).lat)), ids.map(id => String(coords.get(id).lng)),
+                 ids.map(id => coords.get(id).county || "")]);   // LIST-1: the county the provider placed it in
     } else {
       await run(`UPDATE donors SET geocode_status=?, geocoded_at=NOW(), geocode_provider=?,
                    latitude=NULL, longitude=NULL WHERE id = ANY(?)`, [status, provider, ids]);
@@ -7073,6 +7070,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
                           AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.id = ANY(?)
+              AND g.date ~ '^\\d{4}-\\d{2}-\\d{2}'   -- LIST-1: a gift with no date has no place in a rhythm (and ''::date 500'd the list)
             GROUP BY g.donor_id`, [today, orgId, need]);
   const giftsByDonor = new Map(giftAgg.map(r => [r.donor_id, r]));
   const vals = [], tuples = [];
@@ -7448,15 +7446,14 @@ async function autoEnroll() {
     );
     for (const seq of seqs) {
       let donors = [];
-      if (seq.trigger === "lapsed_90") {
+      if (seq.trigger === "lapsed_90" || seq.trigger === "lapsed_180") {
+        // FIX-51: both lapsed triggers are the one lapse rule (lapseRule.js),
+        // 12 months and more since the last gift, in the org's own day. The
+        // old 90- and 180-day clocks are gone; the stage still has to say it.
+        const lapsedNow = lapseRule.sql("lapsed", "last_gift_date", orgToday(await orgTz(seq.org_id)));
         donors = await query(
-          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
-          [seq.org_id]
-        );
-      } else if (seq.trigger === "lapsed_180") {
-        donors = await query(
-          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
-          [seq.org_id]
+          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND ${lapsedNow.sql}`,
+          [seq.org_id, ...lapsedNow.args]
         );
       } else if (seq.trigger === "new_donor") {
         donors = await query(
@@ -8833,20 +8830,24 @@ async function processWorkflowSweeps(onlyOrgId = null) {
 // visibility); same 5-min cadence, never a second scheduler. BUILD-56 adds
 // the softDeleted (restorable) count on the same tick.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => refreshAssetFallbackCount().catch(console.error), 20000);
-  setInterval(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
-  setTimeout(() => refreshRetentionCounts().catch(console.error), 20000);
-  setInterval(() => refreshRetentionCounts().catch(console.error), 5 * 60 * 1000);
+  bootGate.afterMigrations(() => refreshAssetFallbackCount().catch(console.error), 20000);
+  bootGate.everyAfterMigrations(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
+  bootGate.afterMigrations(() => refreshRetentionCounts().catch(console.error), 20000);
+  bootGate.everyAfterMigrations(() => refreshRetentionCounts().catch(console.error), 5 * 60 * 1000);
   // BUILD-56 Part 4 — the retention purge: destroys objects soft-deleted more
   // than ASSET_RETENTION_DAYS ago (never a referenced one; every destruction
   // logged in asset_purge_log). 6-hour cadence like checkTrialExpiry.
   // SCALE-1: the purge writes, so it is a queue job and runs once, not per replica.
   require("./jobQueue").define("purgeExpiredAssets", { everyMs: 6 * 60 * 60 * 1000, firstMs: 90000, run: () => purgeExpiredAssets() });
+  // FIX-51 · an upload whose S3 put failed every try goes to the bucket on
+  // the next pass (assetStore.moveFallbackAssetsToS3; never org_creo). A queue
+  // job, so one replica does it, and only after the migrations.
+  require("./jobQueue").define("moveFallbackAssets", { everyMs: 30 * 60 * 1000, firstMs: 60000, run: () => require("./assetStore").moveFallbackAssetsToS3() });
 } else {
   // Ticks off (test boot): populate the /health counters once at load — a
   // read-only count, no mail/state side effects — so the fields aren't stale.
-  refreshAssetFallbackCount().catch(console.error);
-  refreshRetentionCounts().catch(console.error);
+  bootGate.afterMigrations(() => refreshAssetFallbackCount().catch(console.error));
+  bootGate.afterMigrations(() => refreshRetentionCounts().catch(console.error));
 }
 
 // ── Recurring gift recovery: staff-facing routes ────────────────────────────
@@ -8965,7 +8966,7 @@ async function processPledgeReminders() {
             await run(`UPDATE pledges SET reminder_failed_at=NOW(), reminder_error=?, next_reminder_at=NULL, updated_at=NOW() WHERE id=?`, [why, p.id]);
             // A provider refusal is already in the send log (the client proxy
             // writes it); a refusal decided here never reached the provider.
-            if (r.refused) _logOutboundEmail({ to: p.donor_email || "", _stewardOrgId: p.org_id, _stewardKind: "pledge_reminder", subject: "Pledge reminder" }, null, { message: "refused: " + why }, "failed");
+            if (r.refused) await _logOutboundEmail({ to: p.donor_email || "", _stewardOrgId: p.org_id, _stewardKind: "pledge_reminder", subject: "Pledge reminder" }, null, { message: "refused: " + why }, "failed");
             console.error(`[pledge-reminder] ${p.id} failed for good: ${why}`);
           } else {
             await run(`UPDATE pledges SET reminder_error=?, next_reminder_at=NOW() + INTERVAL '1 day', updated_at=NOW() WHERE id=?`, [why, p.id]);
@@ -11782,7 +11783,8 @@ app.listen(PORT, () => {
   // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
   // on the first boot that has this code (idempotent; one replica does it).
   // Not on a test boot (ticks off): suites turn recipes on by hand and fire them.
-  if (!backgroundTicksDisabled()) setTimeout(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
+  // FIX-51: four seconds after the migrations, never after listen alone.
+  if (!backgroundTicksDisabled()) bootGate.afterMigrations(() => require("./workflowsToJourneys").convertWorkflows().catch(e => console.error("[workflows-to-journeys]", e.message)), 4000);
   if (backgroundTicksDisabled()) {
     console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
   }
@@ -12232,6 +12234,7 @@ const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, norm
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/donorLookups").mount({ query, requireAuth, wrap });
+require("./routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });
@@ -12388,6 +12391,7 @@ require("./routes/crm").mount({
   processPledgeReminders, pruneUnreferencedAssets, publicAppUrl, putThemeAsset, query, queryTx,
   raiseGrantMilestone, rateLimitDisabled, rbCents, rbCentsEv, rbCustomDefs, rbFormatCell,
   recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
+  donorCreditTotals,   // FIX-51: the census lines' hard and soft credit
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
   reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,

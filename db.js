@@ -2479,9 +2479,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_via TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by_name TEXT`);
-  // Backfill by the same definition, never by guess (onboarded.js).
-  await require("./onboarded").backfillOnboarded(query)
-    .catch(e => console.error("[mail-1] onboarded backfill:", e.message));
+  // The backfill (onboarded.js) reads orgs.org_kind, so it runs below, after
+  // ADMIN-CLEAN adds that column (FIX-51: on a fresh database it ran first and
+  // logged "column o.org_kind does not exist").
   // The founder drip never sends again: stop every onboarding enrolment so a
   // dormant one cannot fire, whatever later changes.
   await pool.query(`
@@ -8333,6 +8333,11 @@ async function runSchemaInit(pool) {
     const changed = await require("./orgDemoMigration").matchDemoFlagToKind(pool);
     console.log(`[fix50] demo flag matched to Kind: ${changed.kindsSet} unset Kind(s) set to Demo, ${changed.flagsChanged} is_demo_org flag(s) changed`);
   }
+  // MAIL-1 · backfill onboarded by the same definition, never by guess
+  // (onboarded.js). Here, not beside the onboarded_* columns, because its demo
+  // test reads org_kind (FIX-51).
+  await require("./onboarded").backfillOnboarded(query)
+    .catch(e => console.error("[mail-1] onboarded backfill:", e.message));
   // The monthly amount of the org's live Stripe subscription, in cents, as the
   // billing webhook last read it. MRR is this, never a plan's list price.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mrr_cents INTEGER`);
@@ -8474,6 +8479,36 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL, created_by_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
+
+  // LIST-1 · THE DONOR LIST'S COLUMNS. One layout per person (user_id), and
+  // one org default (user_id ''), set by an admin. A saved view is a name for
+  // a set of columns plus a filter, kept per person. Columns are field keys
+  // from donorList.js, a custom field as "cf:<key>".
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS county TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_zip ON donors (org_id, zip)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_list_layouts (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+      widths JSONB NOT NULL DEFAULT '{}'::jsonb,
+      page_size INTEGER NOT NULL DEFAULT 50,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, user_id))`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_list_views (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+      widths JSONB NOT NULL DEFAULT '{}'::jsonb,
+      filters JSONB,
+      page_size INTEGER NOT NULL DEFAULT 50,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_list_views_user ON donor_list_views (org_id, user_id)`);
 
   // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
   // become household records (the only grouping); the links themselves stay.

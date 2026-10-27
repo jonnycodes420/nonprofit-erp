@@ -2591,7 +2591,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div data-testid="soft-credit-panel" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
                 <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Soft credit</span>
                 <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
-                  {[["Their own giving",softCredit.hardCredit,T.ink,censusById("profile.creditHard")],
+                  {[["Their own giving",softCredit.ownGiving??softCredit.hardCredit,T.ink,censusById("profile.creditHard")],
                     ["With soft credit",softCredit.hardPlusGiftSoft,T.gold600,censusById("profile.creditWithSoft")]].map(([l,v,c,e])=>(
                     <div key={l} data-testid={e.testid} title={e.sentence} aria-label={e.sentence} tabIndex={0}>
                       <div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>{l}</div>
