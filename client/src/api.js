@@ -330,6 +330,7 @@ export function adaptDonor(d) {
     // (the adaptDonor trap: a field this adapter drops renders as nothing).
     room:          d.room ?? null,
     ownerLabel:    d.owner_label ?? null,   // FIX-33: "No owner" for nobody assigned
+    cells:         d.cells ?? null,              // LIST-1: the columns she chose, by key (GET /donors?cols=)
     drift:         d.drift ?? null,              // BUILD-76 — the badge field, server-computed (one truth)
     // BUILD-89S 89f — the sentence for a donor giving monthly through a
     // connected source, built server-side from the ONE phrase builder so the

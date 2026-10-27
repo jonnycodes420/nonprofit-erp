@@ -2932,6 +2932,7 @@ app.use((req, res, next) => {
 });
 app.use(require("./routes/grantMail").routers.r1);     // GRANTS-1 fixed /grants/* paths, ahead of crm's /grants/:id
 app.use(require("./routes/donorLookups").routers.r0); // SCALE-2: pickers, counts and lookups, ahead of crm's /donors/:id
+app.use(require("./routes/donorList").routers.r0);    // LIST-1: columns, views and the filter, ahead of crm's /donors/:id
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -6135,10 +6136,12 @@ async function processGeocodeQueue({ limit = GEOCODE_TICK_BUDGET, orgId = null }
     if (!ids.length) continue;
     if (status === "ok") {
       await run(`UPDATE donors SET geocode_status='ok', geocoded_at=NOW(), geocode_provider=?,
-                   latitude=v.lat::double precision, longitude=v.lng::double precision
-                   FROM (SELECT * FROM UNNEST(?::text[], ?::text[], ?::text[]) AS t(id, lat, lng)) AS v
+                   latitude=v.lat::double precision, longitude=v.lng::double precision,
+                   county=COALESCE(NULLIF(v.county, ''), donors.county)
+                   FROM (SELECT * FROM UNNEST(?::text[], ?::text[], ?::text[], ?::text[]) AS t(id, lat, lng, county)) AS v
                   WHERE donors.id = v.id`,
-                [provider, ids, ids.map(id => String(coords.get(id).lat)), ids.map(id => String(coords.get(id).lng))]);
+                [provider, ids, ids.map(id => String(coords.get(id).lat)), ids.map(id => String(coords.get(id).lng)),
+                 ids.map(id => coords.get(id).county || "")]);   // LIST-1: the county the provider placed it in
     } else {
       await run(`UPDATE donors SET geocode_status=?, geocoded_at=NOW(), geocode_provider=?,
                    latitude=NULL, longitude=NULL WHERE id = ANY(?)`, [status, provider, ids]);
@@ -7068,6 +7071,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
                           AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.id = ANY(?)
+              AND g.date ~ '^\\d{4}-\\d{2}-\\d{2}'   -- LIST-1: a gift with no date has no place in a rhythm (and ''::date 500'd the list)
             GROUP BY g.donor_id`, [today, orgId, need]);
   const giftsByDonor = new Map(giftAgg.map(r => [r.donor_id, r]));
   const vals = [], tuples = [];
@@ -12227,6 +12231,7 @@ const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, norm
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/donorLookups").mount({ query, requireAuth, wrap });
+require("./routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });

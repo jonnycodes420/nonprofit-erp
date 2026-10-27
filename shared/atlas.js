@@ -281,6 +281,9 @@ function readClauseRaw(c) {
     const m = t.match(new RegExp(NAME)); return { ...blank, kind: "recurring_change", who: m ? m[1].replace(/'s$/, "") : "" };
   }
   if (/\?$/.test(c.trim()) || /^(who|what|how many|how much|when|where|why|which|did|does|is|are|has|have)\b/i.test(t)) return { ...blank, kind: "question", target: t };
+  // LIST-1: "donors in 40502 who came to Finding Joy", "show me people in
+  // Lexington": a list asked for is a question, answered by the list's filter.
+  if (/^(?:(?:show me|list|find|pull up|give me)\s+)?(?:all\s+|the\s+|my\s+|our\s+)?(?:donors|people|supporters)\b/i.test(t)) return { ...blank, kind: "question", target: t };
   let m = t.match(new RegExp(`^(?:find|show me|open|pull up|look up)\\s+${NAME}`, "i"));
   if (m) return { ...blank, kind: "find", who: m[1] };
   m = t.match(new RegExp(`^${NAME}\\s+(?:went to|came to|attended|was at|showed up (?:at|to))\\s+(?:the\\s+)?(.+?)(?:\\s+event)?$`));

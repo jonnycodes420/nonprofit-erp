@@ -55,6 +55,10 @@ export const METRICS = {
     sentence: "Each person with a monthly gift running today." },
   pledged_outstanding: { label: "Pledged, not yet paid", kind: "money", base: "source", source: "pledges-open", noPeriod: "today",
     sentence: "Every open pledge, at what is still to come on it." },
+  // LIST-1: the Donors list's own filter, asked in words ("donors in 40502
+  // who came to Finding Joy"). The same rows the list shows for that filter.
+  donor_list:      { label: "Donors on your list", kind: "count", base: "donors", noPeriod: "today", unit: ["donor", "donors"],
+    sentence: "Each person on your Donors list who matches, the same people the list's filter shows." },
   volunteer_count: { label: "Volunteers on the roster", kind: "count", base: "donors", noPeriod: "today", unit: ["volunteer on the roster", "volunteers on the roster"],
     sentence: "Everyone whose record carries the Volunteer role, including anyone added today." },
   volunteer_hours: { label: "Volunteer hours", kind: "hours", base: "source", source: "volunteer-hours",
@@ -241,7 +245,7 @@ export function validatePlan(raw, ctx = {}) {
     if (!(Number.isInteger(n) && n >= 1 && n <= 200)) return { ok: false, refused: "that many people" };
     plan.top = n; plan.kind = "who";
   }
-  if (kind === "who" && !["raised", "gift_count", "donor_count", "new_donor_count", "recaptured_count", "lapsed_count", "recurring_donors", "volunteer_count"].includes(plan.metric))
+  if (kind === "who" && !["raised", "gift_count", "donor_count", "new_donor_count", "recaptured_count", "lapsed_count", "recurring_donors", "volunteer_count", "donor_list"].includes(plan.metric))
     return { ok: false, refused: `naming the people behind ${m.label.toLowerCase()}` };
   return { ok: true, plan };
 }
@@ -340,6 +344,18 @@ export function templatePlan(text, ctx = {}) {
   });
   if (/\bgiving by month\b/.test(s)) out.groupBy = "month";
 
+  // LIST-1: "who came to Finding Joy" is the people who came (the list's
+  // attendedEvent rule), not the gifts to the event and not "who came back".
+  // Read before the came-back shapes. An event Steward doesn't have is said.
+  take(/\b(?:who )?(?:came to|attended|went to|were at|was at) (?:the )?([a-z0-9' -]{3,60}?)(?= in \d| this| last| who| and|\s*$)/g, (m, w) => {
+    const words = w.trim();
+    const ev = (ctx.events || []).find(e => String(e.name).toLowerCase() === words)
+      || (ctx.events || []).filter(e => words.split(/\s+/).every(x => String(e.name).toLowerCase().includes(x)))
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+    if (ev) rules.attendedEvent = ev.id; else say(`the ${words}`);
+  });
+  // LIST-1: a zip ("in 40502", "zip 40502").
+  take(/\b(?:in|from|zip(?: code)?|zipcode) (\d{5})\b/g, (m, z) => { rules.zip = z; });
   // The people: "top 20 donors", "who gave for the first time".
   take(/\b(my |our |the )?top (\d{1,3}) (donors|givers|supporters)\b/g, (m, a, n) => { out.top = Number(n); out.kind = "who"; out.metric = "raised"; });
   take(/\bwho gave for the first time\b|\bgave for the first time\b/g, () => { out.kind = /\bwho\b/.test(String(text).toLowerCase()) ? "who" : "metric"; out.metric = "new_donor_count"; });
@@ -441,6 +457,9 @@ export function templatePlan(text, ctx = {}) {
   if (out._who === "monthly" && out.metric === "donor_count" && !out.period) { out.metric = "recurring_donors"; delete rules.monthly; }
   if (out.metric === "recurring_monthly_value" || out.metric === "recurring_donors") delete rules.monthly;
   delete out._who;
+  // LIST-1: people asked for by the list's own filters ("donors in 40502 who
+  // came to Finding Joy") are the Donors list for that filter.
+  if (!out.metric && Object.keys(rules).length && /\b(donors?|people|supporters|who)\b/.test(String(text).toLowerCase())) { out.metric = "donor_list"; out.kind = "who"; }
   if (out.filters.event && (!out.metric || out.metric === "raised") && !out.period) { out.metric = "event_revenue"; }
   // A question about an event means the whole event unless it names dates.
   if (out.filters.event && !out.period) out.period = { kind: "all_time" };
@@ -608,10 +627,11 @@ export function answerSentence(a, plan, ctx = {}) {
     else {
       const who = n === 1 ? "One person" : `${n.toLocaleString("en-US")} people`;
       const verb = { new_donor_count: "gave for the first time", recaptured_count: "came back", lapsed_count: n === 1 ? "is tagged Lapsed" : "are tagged Lapsed",
-        recurring_donors: n === 1 ? "gives monthly" : "give monthly", volunteer_count: n === 1 ? "is on the volunteer roster" : "are on the volunteer roster" }[plan.metric] || "gave";
+        recurring_donors: n === 1 ? "gives monthly" : "give monthly", volunteer_count: n === 1 ? "is on the volunteer roster" : "are on the volunteer roster",
+        donor_list: n === 1 ? "on your Donors list matches" : "on your Donors list match" }[plan.metric] || "gave";
       t(`${who} ${verb}${sc}${METRICS[plan.metric].noPeriod ? "" : per2}; `);
     }
-    t(plan.top || !["lapsed_count", "recurring_donors", "volunteer_count"].includes(plan.metric) ? `${a.people[0].name} gave the most.` : `${a.people[0].name} is first on the list.`);
+    t(plan.top || !["lapsed_count", "recurring_donors", "volunteer_count", "donor_list"].includes(plan.metric) ? `${a.people[0].name} gave the most.` : `${a.people[0].name} is first on the list.`);
     return pack(P, a);
   }
   switch (plan.metric) {
@@ -634,6 +654,7 @@ export function answerSentence(a, plan, ctx = {}) {
     case "recurring_monthly_value": t("Monthly gifts bring in "); f("value"); t(" a month"); break;
     case "pledged_outstanding": f("value"); t(" is pledged and not yet paid"); break;
     case "volunteer_hours": t("Volunteers gave "); f("value"); t(per); break;
+    case "donor_list": f("value"); t(` ${v.value === 1 ? "person on your Donors list matches" : "people on your Donors list match"}`); break;
     case "volunteer_count": t("You have "); f("value"); t(` ${v.value === 1 ? "volunteer" : "volunteers"} on the roster`); break;
     case "campaign_progress": t(`${(a.campaign || {}).name || "The campaign"} has raised `); f("part0"); t(" of its "); f("part1"); t(" goal, "); f("value"); break;
     default: f("value");

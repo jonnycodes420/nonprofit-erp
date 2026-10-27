@@ -292,6 +292,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   `steward` is labelled "Ongoing care". The header is the same with or without a photo: Back on its
   own line, the mark top-aligned with the name. (POLISH-1)
 
+- **The Donors list is one registry and one filter (LIST-1).** Columns and filters come from `donorList.js`
+  (`FIELDS` plus the org's custom fields); a filter is `where` JSON compiled into `groups.js buildDonorFilter`,
+  never a second query. A new filterable field is added there, reusing a buildDonorFilter rule when one exists.
+  A number in a column is the profile's (stored totals the NUMBERS-1 checker guards, or the same figure source
+  set-wise), never a new computation. Layouts are per person; only an admin sets the org default. A filter
+  Steward cannot run is refused with a sentence, never dropped.
+
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy
   `/person-photos` and every bare backend path before the SPA catch-all. `scripts/local-preview.js`
