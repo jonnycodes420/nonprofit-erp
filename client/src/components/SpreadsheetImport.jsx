@@ -435,7 +435,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 {!dated && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
                     <input type="date" data-testid="sheet-undated-date" value={undatedDate} onChange={e => setUndatedDate(e.target.value)} style={{ ...field, flex: "0 0 auto" }} />
-                    <button type="button" data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
+                    <button type="button" data-commit data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
                       {busy === "date" ? "Dating…" : answers.eventDate && undatedDate === answers.eventDate ? `Use the event date for these ${n(result.undatedGifts, "gift")}` : `Date these ${n(result.undatedGifts, "gift")}`}
                     </button>
                     <span style={small}>Optional. You can also set each one on its profile.</span>
