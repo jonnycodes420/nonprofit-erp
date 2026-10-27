@@ -8,6 +8,7 @@ import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
 import { PinnedAnswers } from "./AskPanel";
 import { SkeletonBar } from "./Skeleton";
+import { HOME_FIRST_READS, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
@@ -50,16 +51,7 @@ import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING
 // a step proposed from a drift row and one proposed in the modal never differ.
 const todayCivil=()=>new Date().toISOString().split("T")[0];
 // SCALE-2: what Home reads when it opens, and what it reads once it knows the
-// scope (GET /home/bundle answers each list in one request; routes/homeBundle.js
-// holds the same paths). Keep in step with the effects below.
-const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/journey-sends/notice","/recurring/exceptions","/readouts/latest","/move",
-  "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
-  "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
-  "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins",
-  "/donors/birthdays-near","/home/lead"];
-const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
-  `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
-  `/dashboard/retention/breakdown?scope=${scope}`];
+// scope, live in lib/homeReads.js since HARDEN-2 (main.jsx asks for them too).
 // "Next: send the proposal." keeps names and acronyms (shared/stepCase.js).
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
@@ -769,8 +761,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // Decide the initial scope once, from whether this user actually has
       // an assigned portfolio — never overrides a scope the user already
       // picked (guarded by the `prev===undefined` check).
-      setScope(prev=>prev!==undefined?prev:((r?.portfolioCount||0)>0?"mine":"all"));
-    }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
+      setScope(prev=>prev!==undefined?prev:initialScope(r));
+    }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:initialScope(null));});
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r&&r.counts?r:{counts:Array.isArray(r)?r:[],placed:[],suggested:[],anyPlaced:true})).catch(()=>{});
     apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>setRecurringHealth(h=>h||{failed:true,atRisk:[]}));
     apiFetch("/impact").then(r=>setImpact(r)).catch(()=>{});

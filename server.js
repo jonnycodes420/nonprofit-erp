@@ -752,6 +752,15 @@ app.use(require("./routes/push").router(() => ({ query, run, syncMailbox, syncCa
 // webhook routes are never buffered by the compressor. Mounting on "/donors"
 // prefix-matches the whole family (list, summaries, export, :id).
 app.use("/donors", compression());
+// HARDEN-2 item 2: every read is compressed too. The app's boot reads and
+// Home's bundles went out as raw JSON (65 KB for /tasks on a 2,000-person org),
+// which on a phone is seconds. Reads only, and never an event stream, so the
+// AI stream (a POST) and anything that streams events are never buffered.
+app.use(compression({
+  filter: (req, res) => (req.method === "GET" || req.method === "HEAD")
+    && !/event-stream/i.test(String(res.getHeader("Content-Type") || ""))
+    && compression.filter(req, res),
+}));
 
 // ── BUILD-94 Part 2 — the person-type module, eagerly ──────────────────────
 // shared/personType.js is ESM (the shared/ convention) but its predicate is
