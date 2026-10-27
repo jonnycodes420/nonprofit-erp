@@ -6677,29 +6677,24 @@ async function runSchemaInit(pool) {
   // check a, personTrash.js, and the trigger below all ask exactly this).
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_open_person ON deleted_records (org_id, record_id)
                       WHERE table_name = 'donors' AND restored_at IS NULL`);
-  // HARDEN-2: an open deletion record is about one row. When that row is gone
-  // for good (purge, Clear sample data, an import's Undo, an org's deletion)
-  // or a new row takes its id (Load sample data reuses its ids), the record
-  // goes with it, whichever door did it, in the same statement. Without this,
-  // Clear and then Load sample data put a person back on the list whom the
-  // nightly check still read as deleted.
+  // HARDEN-2: an open deletion record is about one row. When a new row takes a
+  // deleted person's id (Load sample data reuses its ids after Clear), that
+  // person is live again, so the record is closed, in the same statement,
+  // whichever door did it. Without this, Clear and then Load sample data put a
+  // person back on the list whom the nightly check still read as deleted.
+  // Closed, never deleted: the record of who deleted them stays.
   await pool.query(`
     CREATE OR REPLACE FUNCTION steward_person_row_forgets_trash() RETURNS TRIGGER AS $fn$
     BEGIN
-      IF TG_OP = 'DELETE' THEN
-        DELETE FROM deleted_records r USING (SELECT DISTINCT org_id, id FROM old_rows) x
-         WHERE r.org_id = x.org_id AND r.record_id = x.id AND r.table_name = 'donors' AND r.restored_at IS NULL;
-      ELSE
-        DELETE FROM deleted_records r USING (SELECT DISTINCT org_id, id FROM new_rows) x
-         WHERE r.org_id = x.org_id AND r.record_id = x.id AND r.table_name = 'donors' AND r.restored_at IS NULL;
-      END IF;
+      UPDATE deleted_records r SET restored_at = NOW()
+        FROM (SELECT DISTINCT org_id, id FROM new_rows) x
+       WHERE r.org_id = x.org_id AND r.record_id = x.id AND r.table_name = 'donors' AND r.restored_at IS NULL;
       RETURN NULL;
     END; $fn$ LANGUAGE plpgsql`);
-  for (const [ev, ref] of [["DELETE", "OLD TABLE AS old_rows"], ["INSERT", "NEW TABLE AS new_rows"]]) {
-    await pool.query(`DROP TRIGGER IF EXISTS trg_person_row_forgets_trash_${ev.toLowerCase()} ON donors`);
-    await pool.query(`CREATE TRIGGER trg_person_row_forgets_trash_${ev.toLowerCase()} AFTER ${ev} ON donors
-                        REFERENCING ${ref} FOR EACH STATEMENT EXECUTE FUNCTION steward_person_row_forgets_trash()`);
-  }
+  await pool.query(`DROP TRIGGER IF EXISTS trg_person_row_forgets_trash_delete ON donors`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_person_row_forgets_trash_insert ON donors`);
+  await pool.query(`CREATE TRIGGER trg_person_row_forgets_trash_insert AFTER INSERT ON donors
+                      REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION steward_person_row_forgets_trash()`);
 
   // FIX-41 REMOVAL. Something with money or people attached is RETIRED, not
   // deleted: hidden from new use, kept on every past record (removal.js).

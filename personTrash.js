@@ -17,10 +17,10 @@
 // person with an older open row, left by a path that never closed it, stayed
 // "deleted" to the nightly check after a perfectly good Undo.)
 //
-// A person whose row is hard-deleted (purge, Clear sample data, an import's
-// Undo, an org's deletion) or whose id is taken again by a new row (Load
-// sample data reuses its ids) has their open trash rows dropped by the
-// trigger in db.js (steward_person_row_forgets_trash), whichever door did it.
+// A person whose id is taken again by a new row (Load sample data reuses its
+// ids after Clear) has their open trash rows closed by the trigger in db.js
+// (steward_person_row_forgets_trash), whichever door did it. A row that is
+// gone for good is never live, so its record is left as it is.
 //
 // STALE_DELETIONS_SQL is the read-only count by org, the same definition as
 // check a, used by scripts/close-stale-deletions.js and the FIX-54 suite.

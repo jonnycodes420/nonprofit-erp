@@ -168,8 +168,8 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   takes the last delete's Undo toast down.
 - **A person who comes back closes every deletion record of theirs (HARDEN-2).** Every door that clears
   `deleted_at` calls `bringPeopleBack` (personTrash.js), which closes all their open `deleted_records`
-  rows in the same transaction. A person row hard-deleted, or an id taken again by a new row, drops its open
-  rows (trigger `steward_person_row_forgets_trash`, db.js). Old leftovers: count with
+  rows in the same transaction. An id taken again by a new row closes its open
+  rows (trigger `steward_person_row_forgets_trash`, db.js); records are closed, never deleted. Old leftovers: count with
   `scripts/stale-deletions-readonly.sql`, close one org at a time with `scripts/close-stale-deletions.js`.
 - **Every Undo toast comes from the one host** (`offerUndo` in `EditHistory.jsx`, mounted on
   document.body). A screen never renders its own toast: one drawn inside the screen dies when that screen
