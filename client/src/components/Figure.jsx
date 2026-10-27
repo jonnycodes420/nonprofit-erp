@@ -63,7 +63,7 @@ export function FigureWhy({ definition, label, source, tile = false }) {
 }
 
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
-                         figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color }) {
+                         figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color, why = true }) {
   const [open, setOpen] = useState(false);
   const { openPerson } = useContext(FigureContext);
   const isBlank = value === null || value === undefined;
@@ -121,7 +121,8 @@ export function Figure({ value, kind = "count", label, definition, source, blank
                    fontWeight: variant === "cell" ? 700 : "inherit", whiteSpace: "nowrap" }}>
           {text}
         </button>
-        {variant === "inline" && <FigureWhy definition={definition} label={label} source={source} />}
+        {/* POLISH-3: why={false} when the label above already carries the "?". */}
+        {variant === "inline" && why && <FigureWhy definition={definition} label={label} source={source} />}
         {panel}
       </>
     );

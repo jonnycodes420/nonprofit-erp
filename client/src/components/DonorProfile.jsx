@@ -28,7 +28,7 @@ import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
 import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
-import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
+import { ProfileHeaderFigures, ProfileMoreNumbers } from "./ProfileHeaderFigures";
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { EmailsReceived } from "./EmailAsSent";
@@ -48,7 +48,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
-import { useDonorStatus, StatusTags, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
+import { useDonorStatus, statusTagItems, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
@@ -816,6 +816,37 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
 // DONOR IS SET BY GIVING. While gifts are on file the Donor chip cannot come
 // off, and it says why — the SERVER's sentence (GET /people/:id), and the
 // server refuses the removal too, so the chip and the rule cannot disagree.
+// POLISH-3 · TAGS AND GROUPS ON ONE LINE. The giving level, lifecycle and
+// Retained (each opening its donors), the record's own tags, then the groups,
+// as one row of chips; past the first few the rest fold into "+3", which opens
+// them in place. "+ Group" stays at the end of the line.
+const HEADER_CHIP_LIMIT=4;
+function HeaderChips({status,donor,isReadOnly}){
+  const [all,setAll]=useState(false);
+  const narrow=typeof window!=="undefined"&&window.innerWidth<600;
+  const limit=narrow?3:HEADER_CHIP_LIMIT;
+  return <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(groupChips,addCtl)=>{
+    const st=statusTagItems(status).map(el=>({kind:"status",el}));
+    const rec=(donor.tags||[]).map(t=>({kind:"record",el:<Pill key={"t:"+t} label={t}/>}));
+    const items=[...st,...rec,...groupChips.map(el=>({kind:"group",el}))];
+    const shown=all?items:items.slice(0,limit);
+    const more=items.length-shown.length;
+    const of=k=>shown.filter(x=>x.kind===k).map(x=>x.el);
+    if(!items.length&&!addCtl)return null;
+    return (
+      <div data-testid="dp-header-tags" style={{display:"flex",alignItems:"center",gap:6,flexWrap:all||narrow?"wrap":"nowrap",marginTop:6,minWidth:0}}>
+        {of("status").length>0&&<span data-testid="dp-status-tags" style={{display:"contents"}}>{of("status")}</span>}
+        {of("record").length>0&&<span data-testid="dp-record-tags" style={{display:"contents"}}>{of("record")}</span>}
+        {of("group")}
+        {more>0&&<button type="button" data-testid="dp-tags-more" onClick={()=>setAll(true)} aria-label={`Show ${more} more tag${more===1?"":"s"} and group${more===1?"":"s"}`}
+          style={{fontSize:11.5,fontWeight:700,padding:"2px 9px",borderRadius:99,border:"1px solid "+T.bg3,background:T.white,color:T.ink2,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>+{more}</button>}
+        {all&&items.length>limit&&<button type="button" data-testid="dp-tags-fewer" onClick={()=>setAll(false)}
+          style={{fontSize:11.5,fontWeight:600,padding:0,border:"none",background:"none",color:T.ink3,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit"}}>Fewer</button>}
+        {addCtl}
+      </div>
+    );
+  }}</ProfileGroups>;
+}
 const ROLE_CHIPS=PERSON_TYPES.filter(t=>t.key!=="other");
 function RoleLine({donor,isReadOnly,birthday=""}){
   const [types,setTypes]=useState(donor.personTypes||["donor"]);
@@ -2039,12 +2070,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* PROFILE-1 (header) — tags and groups on one line: the giving
                 level, lifecycle and Retained (each opening its donors), the
                 record's own tags, then the groups with "Add to a group". */}
-            <div data-testid="dp-header-tags" style={{display:"flex",alignItems:"center",gap:"4px 10px",flexWrap:"wrap"}}>
-              <StatusTags status={status}/>
-              {donor.tags?.length>0&&<div data-testid="dp-record-tags" style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
-              {/* PARITY-1 Part D — the groups this person is in. */}
-              <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}/>
-            </div>
+            <HeaderChips status={status} donor={donor} isReadOnly={isReadOnly}/>
             {/* The Close line, under the tags. */}
             <ClosenessLine status={status}/>
             {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
@@ -2228,9 +2254,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
             onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
         </div>
-        {/* PROFILE-1 (header) — the seven numbers, across the header's
-            bottom edge. Each opens the rows the old box opened. */}
-        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures} glance={status&&status.glance}/>}
+        {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
+            bottom edge; the other four head the Gifts & pledges tab. */}
+        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
 
       <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
@@ -2521,6 +2547,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           {/* Gifts & Pledges tab */}
           {dpTab==="gifts"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {/* POLISH-3 — the numbers that left the header head the Gifts tab:
+                Average, First / Largest, Last met and Last email. */}
+            {(figs||donor.figures)&&<ProfileMoreNumbers figures={figs||donor.figures} glance={status&&status.glance}/>}
             {/* PROFILE-1 (header) — Giving by year heads the Gifts tab. */}
           <div>
           {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
@@ -3312,13 +3341,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           {/* BUILD-94 Part 5 — the same three outputs as the
                               Home row, from the same builder. */}
                           {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
-                          <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
-                          {/* FIX-14 Part 3 — the one next step is edited and deleted here. */}
-                          {it.kind==="thread"&&!isReadOnly&&<span style={{display:"inline-flex",gap:10,alignItems:"center",width:"100%"}}>
-                            <EditedMarker item={it}/>
-                            <button type="button" data-testid="dp-step-edit-btn" onClick={()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
-                            <button type="button" data-testid="dp-step-delete" onClick={()=>deleteStep(it)} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
-                          </span>}
+                          {/* FIX-14 Part 3 — the one next step is edited and deleted here.
+                              POLISH-3 — in the "…" menu, with who edited it, not as a
+                              row of underlined words beside the buttons. */}
+                          <ThreadDismissMenu thread={it} onDone={loadDpThread}
+                            extra={it.kind==="thread"&&!isReadOnly?[
+                              {label:"Edit the step",testid:"dp-step-edit-btn",onClick:()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})},
+                              {label:"Delete the step",testid:"dp-step-delete",onClick:()=>deleteStep(it)},
+                            ]:null}
+                            footer={it.kind==="thread"&&it.edited_at?<EditedMarker item={it}/>:null}/>
                         </div>
                       )}
                     </div>
