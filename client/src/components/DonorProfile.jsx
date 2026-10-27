@@ -2291,7 +2291,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
             bottom edge; the other four head the Gifts & pledges tab. */}
         {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
-        <div style={{padding:"0 2px"}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
+        <div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
 
