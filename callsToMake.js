@@ -75,7 +75,7 @@ function callsSql(orgId, today, floorCents) {
              AND NOT EXISTS (SELECT 1 FROM call_snoozes s WHERE s.org_id = ? AND s.gift_id = c.id AND s.until > ?)`,
     args: [orgId, lo, lo, today, orgId, weekFrom, orgId, today, lo, lo, weekFrom, floorCents, bigFrom,
       `Gift of ${dollars(floorCents)} or more`, orgId, orgId, today],
-    order: "date DESC, id DESC",
+    order: "date DESC NULLS LAST, id DESC",
   };
 }
 

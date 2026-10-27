@@ -742,7 +742,7 @@ export const HELP_ARTICLES = [
     slug: `how-steward-counts`,
     title: `How Steward counts`,
     screens: [],
-    summary: `What Lifetime, Average gift, Retention, First gift, "this year", soft credits, goals, lapsed, giving levels and households mean, the same on every screen, report, export, Ask answer and board pack.`,
+    summary: `What Lifetime, Average gift, Retention, First gift, "this year", soft credits, goals, lapsed, giving levels, households and gifts with no date mean, the same on every screen, report, export, Ask answer and board pack.`,
     sections: [
       { h: `The definitions`, p: [
         `Average gift: the total of the counted gifts divided by how many there are, to the cent. A refund comes off the total and is not a gift. Soft and matching credits are not gifts. Pledges do not count until they are paid; each payment on one is a gift.`,
@@ -773,6 +773,13 @@ export const HELP_ARTICLES = [
         `When a file brings a person's total from your old system (with or without their gifts), Steward keeps that total as its own figure, with the file's name and the date it came in. Nothing Steward does later changes it.`,
         `Lifetime is that total plus the gifts in Steward dated after the last day it covers. The last day is the old system's last gift date, or the day of the import when the file had none. A gift dated on or before that day is already inside the old total, so it is never counted twice.`,
         `The profile says so under Lifetime, for example "Includes $50,000 from your old system (before Mar 2025)", and the Lifetime drawer shows the old total as one row.`,
+      ]},
+      { h: `Gifts with no date`, p: [
+        `A gift your file gave no date for still lands on the person who gave it, marked "No date". Steward never makes up a day for it.`,
+        `It counts in Lifetime, the gift count, the average gift, and the event or campaign it was given to.`,
+        `It never counts in This year, a goal's period, retention, lapsed or lapsing, or any other figure for a span of time, because its year is not known. Where one of those figures leaves gifts out, it says so, for example "1 gift with no date not counted", and that number opens the gifts.`,
+        `First gift, Last gift and Donor since use dated gifts only. Someone whose only gifts have no date shows "Donor since: unknown".`,
+        `Click "Set date" on the gift to give it a day. From then on it counts like any other gift on that day.`,
       ]},
     ],
   },

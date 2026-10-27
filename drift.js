@@ -132,7 +132,7 @@ function assessDrift(gifts, today, opts = {}) {
   for (const g of gifts || []) {
     const c = orgTime.parseCivil(g.date);
     if (!c) continue;
-    const key = g.date.slice(0, 10);
+    const key = String(g.date || "").slice(0, 10);
     byDay.set(key, (byDay.get(key) || 0) + (Number(g.amount) || 0));
   }
   const events = [...byDay.keys()].sort().map(date => ({ date, amount: byDay.get(date) }));

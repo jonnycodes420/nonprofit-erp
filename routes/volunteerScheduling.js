@@ -409,7 +409,7 @@ app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
        JOIN volunteer_slots s ON s.id = su.slot_id
        JOIN volunteer_opportunities o ON o.id = s.opportunity_id
       WHERE su.org_id=? AND su.group_id=? AND su.status <> 'cancelled'
-      ORDER BY s.date DESC LIMIT 60`, [g.id, orgId, g.id]);
+      ORDER BY s.date DESC NULLS LAST LIMIT 60`, [g.id, orgId, g.id]);
 
   // The lead is a PERSON on file, never a name typed twice.
   const [lead] = g.contact_person_id
@@ -1380,7 +1380,7 @@ app.get("/volunteer-hub/report/rows", requireAuth, wrap(async (req, res) => {
        LEFT JOIN volunteer_slots sl ON sl.id = su.slot_id
        LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
       WHERE s.org_id=? AND s.date >= ? AND s.date <= ? ${where}
-      ORDER BY s.date DESC, s.id LIMIT 2000`, params);
+      ORDER BY s.date DESC NULLS LAST, s.id LIMIT 2000`, params);
   const total = rows.reduce((a, r) => a + Math.round(Number(r.hours) * 100), 0);
   res.json({ rows: rows.map(r => ({ ...r, hours: Number(r.hours) })), count: rows.length,
     totalHours: total / 100,

@@ -515,7 +515,7 @@ app.get("/volunteer-hub/person/:id", requireAuth, wrap(async (req, res) => {
   const summary = await volunteerSummary(orgId, p.id);
   const shifts = await query(
     `SELECT id, date, hours, role, via FROM volunteer_shifts
-      WHERE org_id=? AND person_id=? ORDER BY date DESC LIMIT 25`, [orgId, p.id]);
+      WHERE org_id=? AND person_id=? ORDER BY date DESC NULLS LAST LIMIT 25`, [orgId, p.id]);
   const upcoming = await query(
     `SELECT su.id, su.status, su.position, s.date, s.start_time, s.end_time, o.name AS opportunity, o.location
        FROM volunteer_signups su
@@ -871,7 +871,7 @@ app.get("/volunteer-hub/shifts", requireAuth, wrap(async (req, res) => {
             COALESCE(NULLIF(u.name, ''), s.created_by_name) AS created_by_name
        FROM volunteer_shifts s JOIN donors d ON d.id = s.person_id AND d.org_id = s.org_id AND d.deleted_at IS NULL
        LEFT JOIN users u ON u.id = s.created_by AND u.org_id = s.org_id
-      WHERE s.org_id = ? ORDER BY s.date DESC, s.created_at DESC, s.id LIMIT ?`, [req.user.orgId, limit]);
+      WHERE s.org_id = ? ORDER BY s.date DESC NULLS LAST, s.created_at DESC, s.id LIMIT ?`, [req.user.orgId, limit]);
   res.json({ shifts: rows.map(r => ({ ...r, hours: Number(r.hours) })),
     sentence: `The ${limit} most recent shifts, newest first. "Logged by" is staff, the volunteer from their own link, or an import.` });
 }));

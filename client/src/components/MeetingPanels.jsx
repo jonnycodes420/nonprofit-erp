@@ -250,7 +250,8 @@ export function buildTimelineItems({ rel, gifts = [], interactions = [], tasks =
       items.push({ kind: "meeting", bucket: "conversation", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
     }
   }
-  for (const g of gifts || []) items.push({ kind: "gift", bucket: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  // IMPORT-4: a gift with no date sorts last and says "No date", never a day.
+  for (const g of gifts || []) items.push({ kind: "gift", bucket: "gift", id: "g:" + g.id, date: String(g.date || "").slice(0, 10), undated: !g.date, g });
   // WIRE-1 · on an employer, the gifts it matched: the employee's gift, said as matched.
   for (const g of rel.matchedGifts || []) items.push({ kind: "gift", bucket: "gift", id: "mg:" + g.id, date: String(g.date || "").slice(0, 10), g: { ...g, matched: true } });
   // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
@@ -421,7 +422,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>{filter === "file" ? "No files attached to conversations or notes yet." : filter === "task" ? `No tasks for ${first}.` : "Nothing here yet."}</div>}
       {view === "list" && shown.length > 0 && <TimelineListView
         rows={shown.slice(0, limit).map(it => { const d = describe(it); const lg = loggedOf(it);
-          return { id: it.id, kind: it.kind, dateLabel: relDay(it.date), type: d.type, mass: !!it.mass,
+          return { id: it.id, kind: it.kind, dateLabel: (it.undated ? "No date" : relDay(it.date)), type: d.type, mass: !!it.mass,
             summary: typeof d.title === "string" ? d.title : "", by: d.by, files: lg ? (filesBy[lg.id] || []) : [] }; })}
         onOpen={r => { setPref({ view: "cards" }); setOpenId(r.id); }}/>}
       {view !== "list" && shown.slice(0, limit).map(it => {
@@ -477,7 +478,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
               {extra}
               {attachRow}
             </div>
-            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}
+            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{(it.undated ? "No date" : relDay(it.date))}
               {/* FIX-14 Part 2: Edit/Delete and "Edited" on a logged meeting. */}
               {renderActions && lg && <div>{renderActions(lg)}</div>}
             </div>

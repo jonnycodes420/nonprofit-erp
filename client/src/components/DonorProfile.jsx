@@ -57,6 +57,38 @@ import { ProfileGroups } from "./Groups";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { openCheckSnap } from "./CheckSnap";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
+
+// IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
+// undated: it counts in Lifetime and its event, never in This year. "Set date"
+// gives it a day in one click (the same PUT /gifts/:id as Edit).
+function UndatedGiftDate({ giftId, readOnly, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [day, setDay] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const save = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { setErr("Pick a day."); return; }
+    setBusy(true); setErr("");
+    try { await apiFetch(`/gifts/${giftId}`, { method: "PUT", body: JSON.stringify({ date: day }) }); setOpen(false); onSaved && onSaved(); }
+    catch (e) { setErr(errorMessage(e, "That date was refused.")); }
+    setBusy(false);
+  };
+  return (
+    <span data-testid="dp-gift-undated" style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <span title="This gift came in with no date. It counts in Lifetime and the average, and in no figure for a span of time, because its year is not known."
+        style={{ background: T.gold50, color: T.gold700, border: "1px solid " + T.gold300, borderRadius: 99, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>No date</span>
+      {!readOnly && !open && <button data-testid="dp-gift-set-date" onClick={() => setOpen(true)}
+        style={{ background: "none", border: "none", color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>Set date</button>}
+      {open && <>
+        <input type="date" value={day} onChange={e => setDay(e.target.value)} aria-label="Gift date"
+          style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 6, padding: "3px 6px", fontSize: 12, color: T.ink }} />
+        <button onClick={save} disabled={busy} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{busy ? "Saving" : "Save"}</button>
+        <button onClick={() => { setOpen(false); setErr(""); }} style={{ background: "none", border: "none", color: T.ink3, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+      </>}
+      {err && <span style={{ color: T.gold700, fontSize: 11 }}>{err}</span>}
+    </span>
+  );
+}
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -837,6 +869,7 @@ function RoleLine({donor,isReadOnly,birthday=""}){
       setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
       const y=String(r.first_gift_date||"").slice(0,4);
       if(/^\d{4}$/.test(y))setFirstGiftYear(y);
+      else if(Number(r.gift_count)>0)setFirstGiftYear("unknown");   // IMPORT-4: every gift on file is undated
     }).catch(()=>{});
     return()=>{gone=true;};
   },[donor.id]);
@@ -866,7 +899,7 @@ function RoleLine({donor,isReadOnly,birthday=""}){
   const missing=ROLE_CHIPS.filter(c=>!types.includes(c.key));
   const sinceYear=firstGiftYear;
   const roleWords=have.map(c=>
-    c.key==="donor"&&sinceYear?`Donor since ${sinceYear}`:c.label).join(" · ");
+    c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`):c.label).join(" · ");
   return (
     <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
       {roleWords&&<span style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
@@ -1448,7 +1481,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       if(seq!==giftReadSeq.current)return;
       setGiftReadErr(false);
       const g=(raw.gifts||[]).map(g=>({
-        id:g.id,amount:parseFloat(g.amount)||0,date:g.date||g.created_at?.split("T")[0],
+        id:g.id,amount:parseFloat(g.amount)||0,date:g.date||null,   // IMPORT-4: no date is "No date", never the day it was entered
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
         fund_id:g.fund_id||"",fund_name:g.fund_name||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
@@ -2792,7 +2825,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           </td>
                         ):(
                           <>
-                            <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{displayDate(g.date)}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date?displayDate(g.date):<UndatedGiftDate giftId={g.id} readOnly={isReadOnly} onSaved={loadGiftsFull}/>}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>

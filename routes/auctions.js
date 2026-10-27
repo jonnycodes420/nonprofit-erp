@@ -209,7 +209,7 @@ app.get("/auctions", requireAuth, wrap(async (req, res) => {
             (a.closes_at <= NOW()) AS closed, (a.opens_at > NOW()) AS not_open
        FROM auctions a LEFT JOIN events e ON e.id=a.event_id AND e.org_id=a.org_id
       WHERE a.org_id=? ORDER BY a.status, a.closes_at DESC`, [orgId]);
-  const events = await query(`SELECT id, name, date FROM events WHERE org_id=? AND status <> 'cancelled' ORDER BY date DESC LIMIT 50`, [orgId]);
+  const events = await query(`SELECT id, name, date FROM events WHERE org_id=? AND status <> 'cancelled' ORDER BY date DESC NULLS LAST LIMIT 50`, [orgId]);
   res.json({ auctions: rows, events, timezone: await tzOf(orgId) });
 }));
 

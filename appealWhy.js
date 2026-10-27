@@ -25,7 +25,7 @@ async function campaignGifts(orgId, c) {
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL
         AND (g.campaign_id = ? OR (g.campaign_id IS NULL AND g.campaign = ?))
-      ORDER BY g.date DESC, g.id`, [orgId, c.id, c.name]);
+      ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, c.id, c.name]);
   return rows.map(r => ({ ...r, cents: cents(r.amount) }));
 }
 

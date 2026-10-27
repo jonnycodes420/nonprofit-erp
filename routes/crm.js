@@ -1144,8 +1144,8 @@ async function calcWealthScore(donorId, orgId) {
   try {
     const [donorRows, gifts, interactions] = await Promise.all([
       query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]),
-      query("SELECT amount FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [donorId, orgId]),
-      query("SELECT type, note FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [donorId, orgId]),
+      query("SELECT amount FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [donorId, orgId]),
+      query("SELECT type, note FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [donorId, orgId]),
     ]);
     if (!donorRows.length) return null;
     const d = donorRows[0];
@@ -4351,7 +4351,12 @@ async function donorProfileFigures(orgId, donorId, today) {
   // whatever refreshes one tile refreshes all of them (they were a second read
   // that the voice card and other doors never re-asked for).
   const glance = await require("../numbers").donorGlance(query, orgId, donorId);
-  return { ...Object.fromEntries(got), first: glance.first, largest: glance.largest, average: glance.average, imported: glance.imported };
+  const figs = Object.fromEntries(got);
+  // IMPORT-4: This year leaves out gifts with no date, and says so on the figure itself.
+  if (glance.undated && figs.thisYear) figs.thisYear = { ...figs.thisYear, notCounted: glance.undated.words, undatedSource: glance.undated.source };
+  // A person whose every gift is undated has gifts, just no dated last one.
+  if (glance.undated && figs.lastGift && figs.lastGift.value == null) figs.lastGift = { ...figs.lastGift, blank: "Their gifts on file have no date, so none is the last one.", blankShort: "No dated gift." };
+  return { ...figs, first: glance.first, largest: glance.largest, average: glance.average, imported: glance.imported, undated: glance.undated };
 }
 
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
@@ -4363,7 +4368,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
 
   const d = rows[0];
   d.tags = DTAGS.visibleTags(d.tags);
-  d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
+  d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [d.id, req.user.orgId]);
   // FIX-11 Part 1 — the gift carries its fund's NAME, not just its id. The
   // timeline line reads "$100,000.00 · General Operating · ACH", and a screen
   // that only had `fund_id` had to either print an id at a fundraiser or load
@@ -4371,7 +4376,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   d.gifts = await query(
     `SELECT g.*, f.name AS fund_name
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-      WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC`, [d.id, req.user.orgId]);
+      WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST`, [d.id, req.user.orgId]);
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.
@@ -4463,7 +4468,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
                      FROM gifts g
                     WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
                       AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND g.amount > 0
-                    ORDER BY g.date DESC, g.id DESC`, [orgId, id, since]) : [],
+                    ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, id, since]) : [],
     query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
             WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
               AND COALESCE(ea.status, '') NOT IN ('cancelled','canceled','declined')
@@ -10177,7 +10182,7 @@ app.get("/households/:id", requireAuth, wrap(async (req, res) => {
     `SELECT g.id, g.donor_id, d.name AS donor_name, g.amount, g.date, g.type, g.campaign
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      WHERE d.household_id=? AND g.org_id=? AND d.deleted_at IS NULL
-     ORDER BY g.date DESC, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
+     ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
   view.giving_history = gifts.map(g => ({ ...g, amount: parseFloat(g.amount) || 0 }));
   res.json(view);
 }));
@@ -10348,7 +10353,7 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
        LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
-      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 200`, [req.user.orgId, req.params.id]);
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 200`, [req.user.orgId, req.params.id]);
   // NUMBERS-2: the totals are added up over EVERY soft credit, not the 200
   // newest the list shows (a busy peer-to-peer fundraiser has more).
   const scAgg = await query(
@@ -11798,7 +11803,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
       `SELECT DISTINCT ON (donor_id) donor_id, type, date, note, logged_by_name
          FROM interactions WHERE org_id=? AND donor_id = ANY(?)
           AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship','gift','event'])
-        ORDER BY donor_id, date DESC, created_at DESC`, [orgId, ids]))
+        ORDER BY donor_id, date DESC NULLS LAST, created_at DESC`, [orgId, ids]))
       lastConv.set(r.donor_id, { type: r.type, date: r.date, note: (r.note || "").slice(0, 220), by: r.logged_by_name || "" });
     // The NEXT STEP comes from the Thread (BUILD-81) — the one open one per
     // donor, which the partial unique index makes true by construction.
@@ -13722,7 +13727,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
        JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
       WHERE d.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
         ${minCents ? "AND ROUND(g.amount*100) >= " + Number(minCents) : ""}
-      ORDER BY g.date DESC LIMIT 1`, [orgId]))[0] || null;
+      ORDER BY g.date DESC NULLS LAST LIMIT 1`, [orgId]))[0] || null;
 
   if (t.trigger_key === "first_gift") {
     const [r] = await query(
@@ -14481,7 +14486,7 @@ async function briefRowsFor(orgId, donorId) {
     `SELECT g.id, g.amount, g.date, g.type, g.payment_method, g.campaign, f.name AS fund_name
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
       WHERE g.org_id=? AND g.donor_id=? AND g.is_sample IS NOT TRUE
-      ORDER BY g.date DESC, g.id LIMIT 12`, [orgId, donorId]);
+      ORDER BY g.date DESC NULLS LAST, g.id LIMIT 12`, [orgId, donorId]);
   for (const g of gifts) {
     refs.add(`gift:${g.id}`);
     lines.push(`gift:${g.id} · ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
@@ -14491,7 +14496,7 @@ async function briefRowsFor(orgId, donorId) {
 
   // PLEDGES — a promise is not money, and the brief must not read it as one.
   for (const p of await query(
-    `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC LIMIT 6`, [orgId, donorId])) {
+    `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC NULLS LAST LIMIT 6`, [orgId, donorId])) {
     refs.add(`pledge:${p.id}`);
     lines.push(`pledge:${p.id}, a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
   }
@@ -14511,7 +14516,7 @@ async function briefRowsFor(orgId, donorId) {
        FROM gift_soft_credits sc
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 6`, [orgId, donorId]).catch(() => [])) {
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC NULLS LAST LIMIT 6`, [orgId, donorId]).catch(() => [])) {
     refs.add(`softcredit:${sc.id}`);
     lines.push(`softcredit:${sc.id}: soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
       + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
@@ -14536,7 +14541,7 @@ async function briefRowsFor(orgId, donorId) {
   for (const i of await query(
     `SELECT id, type, date, note, logged_by_name FROM interactions
       WHERE org_id=? AND donor_id=? AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship'])
-        AND COALESCE(note,'') <> '' ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, donorId])) {
+        AND COALESCE(note,'') <> '' ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 5`, [orgId, donorId])) {
     refs.add(`conversation:${i.id}`);
     lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
   }
@@ -16891,7 +16896,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     for (const i of await query(
       `SELECT id, type, date, note, logged_by_name FROM interactions
         WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> ''
-        ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, g.funder_donor_id])) {
+        ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 5`, [orgId, g.funder_donor_id])) {
       refs.add(`conversation:${i.id}`);
       lines.push(`conversation:${i.id} · ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
     }
@@ -17061,7 +17066,7 @@ app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
          OR lower(description) LIKE ?
          OR (? > 0 AND amount = ?)
        )
-     ORDER BY date DESC LIMIT 5`,
+     ORDER BY date DESC NULLS LAST LIMIT 5`,
     [req.user.orgId, cutoff, `%${funder}%`, funder, `%${funder}%`, amt, amt]
   );
   res.json({ grantId: g.id, funder: g.funder, program: g.program || "", amount: amt, matches: matches.map(m => ({ ...m, amount: parseFloat(m.amount) })) });
@@ -17079,7 +17084,7 @@ app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
   const g = rows[0];
   g.history = JSON.parse(g.history || "[]");
   const ints = await query(
-    "SELECT * FROM grant_interactions WHERE grant_id = ? ORDER BY date DESC, created_at DESC",
+    "SELECT * FROM grant_interactions WHERE grant_id = ? ORDER BY date DESC NULLS LAST, created_at DESC",
     [req.params.id]
   );
   g.interactions = ints;
@@ -17138,7 +17143,7 @@ async function volunteerLog(orgId, personId, q = {}) {
             v.opportunity_id, v.slot_id, v.start_time, v.end_time, o.name AS opportunity_name
        FROM volunteer_shifts v LEFT JOIN volunteer_opportunities o ON o.id=v.opportunity_id AND o.org_id=v.org_id
        LEFT JOIN users u ON u.id = v.created_by AND u.org_id = v.org_id
-      WHERE ${where.join(" AND ")} ORDER BY v.date DESC, v.created_at DESC LIMIT ${VOL_LOG_MAX}`, args);
+      WHERE ${where.join(" AND ")} ORDER BY v.date DESC NULLS LAST, v.created_at DESC LIMIT ${VOL_LOG_MAX}`, args);
 }
 const VIA_WORD = { staff: "Staff", self: "The volunteer, from their own link", import: "An import" };
 
@@ -18512,7 +18517,7 @@ async function taskGiftToThank(orgId, t, giftId) {
   if (t.source_gift_id) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [t.source_gift_id, orgId]); if (g) return g; }
   const [g] = await query(
     `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE
-      ORDER BY date DESC, id DESC LIMIT 1`, [orgId, t.donor_id]);
+      ORDER BY date DESC NULLS LAST, id DESC LIMIT 1`, [orgId, t.donor_id]);
   return g || null;
 }
 app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {
@@ -18894,7 +18899,7 @@ app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res
       `SELECT i.id, i.donor_id, d.name AS donor_name, i.date, i.type FROM interactions i
        JOIN donors d ON d.id = i.donor_id
        WHERE i.org_id=? AND i.created_by=? AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date>=? AND d.deleted_at IS NULL
-       ORDER BY i.date DESC LIMIT ?`,
+       ORDER BY i.date DESC NULLS LAST LIMIT ?`,
       [orgId, userId, fyStart, PAGE_SIZE]
     ),
     query(
@@ -19191,7 +19196,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     FROM donors d
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> ''
       AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.last_gift_date >= ? ${scopeClause}
-    ORDER BY d.last_gift_date DESC
+    ORDER BY d.last_gift_date DESC NULLS LAST
     LIMIT 30
   `, [orgId, ninetyDaysAgo, ...scopeParams]),
   ]);
@@ -19970,7 +19975,7 @@ async function calendarEventForThread(orgId, threadId) {
   // remember when the reminder fires three days from now.
   const [last] = await query(
     `SELECT note FROM interactions WHERE org_id = ? AND donor_id = ?
-      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, t.donor_id]).catch(() => []);
+      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1`, [orgId, t.donor_id]).catch(() => []);
   const recordUrl = `${publicAppUrl()}/donors/${t.donor_id}`;
   return {
     uid: CAL.taskUid(orgId, t.id),
@@ -20717,6 +20722,13 @@ app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summ
       })() : null,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },
+    // IMPORT-4: gifts with no date are in no figure for a span of time, so
+    // Home says how many retention and the year's figures left out.
+    undated: await (async () => {
+      const [u] = await query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                                WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId]);
+      return u && u.n ? { count: u.n, words: require("../numbers").undatedWords(u.n), source: { key: "undated-gifts", params: {} } } : null;
+    })(),
   });
 }));
 
@@ -20801,7 +20813,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const recentInteractions = await query(
     `SELECT i.*, d.name as donor_name FROM interactions i
      JOIN donors d ON d.id = i.donor_id
-     WHERE i.org_id=? ORDER BY i.date DESC LIMIT 10`,
+     WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST LIMIT 10`,
     [orgId]
   );
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
@@ -21309,7 +21321,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
-        WHERE g.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC, g.id DESC LIMIT 8`,
+        WHERE g.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 8`,
       [orgId]
     ),
     fundraisingCampaignRows(orgId),
@@ -21380,7 +21392,11 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   // org goal as the Fundraising Overview centerpiece.
   const portfolio = fundraisingGoalsPortfolio(campaigns);
 
+  // IMPORT-4: gifts with no date are in no period's figure; the tiles say how many.
+  const [undatedRow] = await query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                                     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId]);
   res.json({
+    undated: undatedRow && undatedRow.n ? { count: undatedRow.n, words: require("../numbers").undatedWords(undatedRow.n), source: { key: "undated-gifts", params: {} } } : null,
     yearMode,
     periodLabel: cur.chartLabel,
     goal,
@@ -22763,7 +22779,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
     `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
        FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND g.peer_fundraiser_id = ? AND g.amount > 0
-      ORDER BY g.date DESC, g.created_at DESC LIMIT 10`, [org.id, f.id]);
+      ORDER BY g.date DESC NULLS LAST, g.created_at DESC LIMIT 10`, [org.id, f.id]);
   const [{ n: donorN } = { n: 0 }] = await query(
     `SELECT COUNT(DISTINCT donor_id)::int AS n FROM gifts WHERE org_id = ? AND peer_fundraiser_id = ? AND amount > 0`, [org.id, f.id]);
   const [camp] = page.campaign_id ? await query(`SELECT to_char(end_date,'YYYY-MM-DD') AS end_date FROM campaigns WHERE id=? AND org_id=?`, [page.campaign_id, org.id]) : [];
@@ -25065,7 +25081,7 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
   });
 
   const recentGifts = await query(
-    "SELECT amount, date, campaign FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC LIMIT 5",
+    "SELECT amount, date, campaign FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST LIMIT 5",
     [donor.id, orgId]
   );
 
@@ -27855,7 +27871,7 @@ app.get("/events", requireAuth, async (req, res) => {
       LEFT JOIN event_attendees ea ON ea.event_id = e.id
       WHERE e.org_id = $1
       GROUP BY e.id
-      ORDER BY e.date DESC
+      ORDER BY e.date DESC NULLS LAST
     `, [orgId]);
     res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -28270,7 +28286,7 @@ app.get("/donors/:id/events", requireAuth, async (req, res) => {
       FROM event_attendees ea
       JOIN events e ON e.id = ea.event_id
       WHERE ea.donor_id = $1 AND ea.org_id = $2
-      ORDER BY e.date DESC
+      ORDER BY e.date DESC NULLS LAST
     `, [req.params.id, orgId]);
     res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -28322,14 +28338,14 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
 
   const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
-    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC", [orgId]),
+    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC NULLS LAST", [orgId]),
     query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? ORDER BY pg.created_at DESC", [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
-    query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC", [orgId]),
-    query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC", [orgId]),
+    query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
+    query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
     query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? ORDER BY ea.created_at DESC", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),
-    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? ORDER BY i.date DESC", [orgId]),
+    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST", [orgId]),
     query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? ORDER BY t.due", [orgId]),
@@ -28440,10 +28456,10 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
            LEFT JOIN campaigns c ON c.id=g.campaign_id
            LEFT JOIN giving_pages gp ON gp.id=g.giving_page_id
            LEFT JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
-           WHERE g.org_id=? ORDER BY g.date DESC`, [orgId]),
+           WHERE g.org_id=? ORDER BY g.date DESC NULLS LAST`, [orgId]),
     query(`SELECT i.*, d.name AS donor_name, d.email AS donor_email, i.metadata->>'direction' AS direction
            FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id
-           WHERE i.org_id=? ORDER BY i.date DESC`, [orgId]),
+           WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST`, [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
     query(`SELECT p.*, d.name AS donor_name, d.email AS donor_email
            FROM pledges p LEFT JOIN donors d ON d.id=p.donor_id
@@ -28727,7 +28743,9 @@ app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   // a fact about the person, so it travels with the person rather than being
   // dug out of a gift list the header does not have.
   res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
-             first_gift_date: row.first_gift_date || null });
+             first_gift_date: row.first_gift_date || null,
+             // IMPORT-4: gifts on file but none dated reads "Donor since: unknown".
+             gift_count: Number(row.gift_count) || 0 });
 }));
 
 // One chip, one write: the person's own row, person_types, nothing else. Adding

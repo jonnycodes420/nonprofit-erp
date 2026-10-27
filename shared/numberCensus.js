@@ -114,9 +114,20 @@ export const NUMBER_CENSUS = [
     surface: "Donor profile",
     label: "This year",
     computation: "figureSources donor-gifts-between: SUM of this donor's gifts rows dated from the start of the org's fiscal year (NUMBERS-2) to the org's civil today; a refund comes off it",
-    sentence: "Every gift on this record since the start of your fiscal year, added up. A refund comes off it. Click it for the gifts behind it.",
+    sentence: "Every gift on this record since the start of your fiscal year, added up. A refund comes off it. A gift with no date is not in it, because its year is not known. Click it for the gifts behind it.",
     where: HOVER,
     testid: "dp-tile-def-This year",
+  },
+
+  // IMPORT-4: gifts with no date, said under This year.
+  {
+    id: "profile.undated",
+    surface: "Donor profile",
+    label: "Gifts with no date",
+    computation: "figureSources donor-undated-gifts: COUNT of this donor's gifts rows whose date IS NULL (an import that gave no day); they are in Lifetime, the count and the average, and in no figure for a span of time",
+    sentence: "Gifts that came in with no date. They count in Lifetime, the gift count and the average, and in no figure for a span of time, because their year is not known.",
+    where: HOVER,
+    testid: "dp-fig-undated",
   },
 
   // FIX-49: soft and matching credits, their own figure under Lifetime.

@@ -398,7 +398,7 @@ async function planRead({ orgId, conn, today, who, tokenFor, automatic = false }
       `SELECT q.gift_id, g.donor_id FROM qbo_read_gifts q JOIN gifts g ON g.id = q.gift_id AND g.org_id = q.org_id
         WHERE q.org_id=? AND q.realm_id=? AND q.status='recorded' AND q.cents=? AND COALESCE(q.customer_id,'') = COALESCE(?, '')
           AND LEFT(g.date, 10) <= ? AND q.txn_type <> 'RefundReceipt'
-        ORDER BY g.date DESC LIMIT 1`, [orgId, realmId, r.cents, r.customerId, r.date]);
+        ORDER BY g.date DESC NULLS LAST LIMIT 1`, [orgId, realmId, r.cents, r.customerId, r.date]);
     if (g) { row.bucket = "refund"; row.matchedGiftId = g.gift_id; row.donorId = g.donor_id;
       row.reason = "Refunded in QuickBooks. Saving marks this gift refunded."; }
     else { row.bucket = "refund_unmatched"; row.reason = "A refund in QuickBooks that matches no gift Steward read from it. Nothing in Steward changes."; }

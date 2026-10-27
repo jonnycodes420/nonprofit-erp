@@ -579,7 +579,7 @@ const SOURCES = {
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND g.giving_page_id = ?`,
       args: [orgId, p.gpage],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   "page-views": {
@@ -593,7 +593,7 @@ const SOURCES = {
                    fe.views::numeric AS amount, 'Views that day' AS detail
               FROM form_events fe WHERE fe.org_id = ? AND fe.form_id = ? AND fe.views > 0`,
       args: [orgId, p.gpage],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   // VOL-PAGE-1 · A VOLUNTEER PAGE'S THREE NUMBERS, each opening its rows.
@@ -611,7 +611,7 @@ const SOURCES = {
                    fe.views::numeric AS amount, 'Views that day' AS detail
               FROM form_events fe WHERE fe.org_id = ? AND fe.form_id = ? AND fe.views > 0`,
       args: [orgId, p.vpage],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   "volpage-signups": {
@@ -628,7 +628,7 @@ const SOURCES = {
               LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
              WHERE ps.org_id = ? AND ps.page_id = ? AND d.deleted_at IS NULL`,
       args: [orgId, p.vpage],
-      order: "date DESC, id DESC",
+      order: "date DESC NULLS LAST, id DESC",
     }),
   },
   "volpage-shifts": {
@@ -646,7 +646,7 @@ const SOURCES = {
               LEFT JOIN volunteer_slot_roles r ON r.id = su.role_id
              WHERE ps.org_id = ? AND ps.page_id = ? AND su.status IN ('confirmed','completed') AND d.deleted_at IS NULL`,
       args: [orgId, p.vpage],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   // REPORTS-4 · Members by status: active, grace, lapsed (a PERSON whose
@@ -810,7 +810,7 @@ const SOURCES = {
            FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`, [orgId, p.donor]);
       if (!d) return [];
       const through = d.imported_total != null && d.imported_through ? String(d.imported_through).slice(0, 10) : null;
-      const rows = await query(`${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")}${through ? " AND g.date > ?" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
+      const rows = await query(`${DONOR_GIFT_SELECT} AND ${NOT_CREDIT("g")}${through ? " AND (g.date IS NULL OR g.date > ?)" : ""} ORDER BY g.date DESC NULLS LAST, g.id DESC`,
         through ? [orgId, p.donor, through] : [orgId, p.donor]);
       if (d.imported_total == null) return rows;
       const n = Number(d.imported_gift_count) || 0;
@@ -893,7 +893,8 @@ const SOURCES = {
     // NUMBERS-1: two gifts on one day, the one recorded last, which is the
     // gift the stored last gift on the person names (donorSummary.js).
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
+      // IMPORT-4: the last gift is a dated one; a gift with no date is never "last".
+      sql: `${DONOR_GIFT_SELECT} AND g.date IS NOT NULL ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -995,7 +996,7 @@ const SOURCES = {
            FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
           WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
             AND i.date IS NOT NULL AND i.date <> ''
-          ORDER BY i.date DESC, i.id DESC LIMIT ?`,
+          ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT ?`,
         [orgId, p.donor, CONTACT_ROWS_MAX]);
       return rows.map((r, i) => {
         const date = String(r.date).slice(0, 10);
@@ -1028,7 +1029,7 @@ const SOURCES = {
                      m.date, NULL::numeric AS amount,
                      COALESCE(m.who, 'A colleague') || CASE m.kind WHEN 'calendar' THEN ' · from a calendar' ELSE ' · logged' END AS detail
                 FROM (${m.sql}) m LEFT JOIN donors d ON d.id = m.donor_id AND d.org_id = ?`,
-        args: [...m.args, orgId], order: "date DESC, id",
+        args: [...m.args, orgId], order: "date DESC NULLS LAST, id",
       };
     },
   },
@@ -1056,7 +1057,7 @@ const SOURCES = {
                 JOIN campaigns c ON c.id = cr.campaign_id AND c.org_id = cr.org_id
                 LEFT JOIN donors d ON d.id = cr.donor_id AND d.org_id = cr.org_id AND d.deleted_at IS NULL
                WHERE cr.org_id = ? AND cr.sent_at IS NOT NULL${w}`,
-        args, order: "date DESC, id",
+        args, order: "date DESC NULLS LAST, id",
       };
     },
   },
@@ -1082,7 +1083,7 @@ const SOURCES = {
                              AND g.date >= to_char((c.sent_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD')
                              AND g.date <= to_char((c.sent_at AT TIME ZONE 'UTC')::date + 30, 'YYYY-MM-DD'))`,
       args: [orgId, p.campaign, p.campaign],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   // FIX-40 · ONE OFFICER'S PORTFOLIO, the Donors page's chip "717 · $4,020,376.66":
@@ -1113,7 +1114,7 @@ const SOURCES = {
               FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
              WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
                AND i.metadata->>'logged_by' = ? AND i.date >= ?`,
-      args: [orgId, p.staff, p.since], order: "date DESC, id",
+      args: [orgId, p.staff, p.since], order: "date DESC NULLS LAST, id",
     }),
   },
   "mailbox-people": {
@@ -1131,7 +1132,7 @@ const SOURCES = {
                      WHERE c.org_id = ? AND c.owner_user_id = ? AND ${meetings.CAL_DATE} >= ?) x
               JOIN donors d ON d.id = x.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
              GROUP BY d.id, d.name`,
-      args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC, id",
+      args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC NULLS LAST, id",
     }),
   },
   // ENGAGE-1 §4 — APPEAL-WHY. Every number on "How did it do?" opens these
@@ -1262,7 +1263,7 @@ const SOURCES = {
                 FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
                WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
                  AND i.date >= ? AND i.date <= ?${w}`,
-        args, order: "date DESC, id",
+        args, order: "date DESC NULLS LAST, id",
       };
     },
   },
@@ -1273,7 +1274,34 @@ const SOURCES = {
     sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total.`,
     sql: (orgId, p) => ({
       sql: `${DONOR_GIFT_SELECT} AND g.date >= ? AND g.date <= ?`,
-      args: [orgId, p.donor, p.from, p.to], order: "date DESC, id",
+      args: [orgId, p.donor, p.from, p.to], order: "date DESC NULLS LAST, id",
+    }),
+  },
+  // IMPORT-4 · GIFTS WITH NO DATE. A file that gave no day for a gift is kept
+  // undated: it counts in Lifetime and its event or campaign, never in a span
+  // of time. "1 gift with no date not counted" opens these rows.
+  "donor-undated-gifts": {
+    label: "Gifts with no date",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "This person's gifts that came in with no date. They count in Lifetime, the gift count and the average, and in no figure for a span of time, because their year is not known.",
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} AND g.date IS NULL`,
+      args: [orgId, p.donor], order: "id",
+    }),
+  },
+  "undated-gifts": {
+    label: "Gifts with no date",
+    measure: () => "sum",
+    params: {},
+    sentence: () => "Every gift on file with no date. They count in Lifetime and the event or campaign they belong to, and in no figure for a span of time (This year, a goal, retention, lapse), because their year is not known.",
+    sql: orgId => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                   COALESCE(f.name, 'Unrestricted') AS detail
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+              LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`,
+      args: [orgId], order: "id",
     }),
   },
   // PROFILE-1 (header + tabs) · WHERE ONE PERSON'S GIFTS CAME FROM. The rail's
@@ -1310,7 +1338,7 @@ const SOURCES = {
         args.push(p.ref);
       }
       else throw new FigureParamError("origin is page, source, stripe, quickbooks, plan or recurring.");
-      return { sql: DONOR_GIFT_SELECT + w, args, order: "date DESC, id" };
+      return { sql: DONOR_GIFT_SELECT + w, args, order: "date DESC NULLS LAST, id" };
     },
   },
   // PARITY-1 Part 1b · AT A GLANCE. Each figure in the profile's glance block
@@ -1321,7 +1349,8 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => "The first gift this person ever gave, on its own: what it was, when it came in and what it went to.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.date ASC, g.id ASC LIMIT 1`,
+      // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND g.date IS NOT NULL ORDER BY g.date ASC, g.id ASC LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1331,7 +1360,7 @@ const SOURCES = {
     params: { donor: "id:required" },
     sentence: () => "The largest single gift this person has given. When two gifts are the same size, the more recent one.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.amount DESC, g.date DESC, g.id DESC LIMIT 1`,
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.amount DESC, g.date DESC NULLS LAST, g.id DESC LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1348,7 +1377,7 @@ const SOURCES = {
     sentence: () => AVERAGE_WORDS,
     sql: (orgId, p) => ({
       sql: `${DONOR_GIFT_SELECT} AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])`,
-      args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC, id",
+      args: [orgId, p.donor, BOOKKEEPER_EXCLUDED_TYPES], order: "date DESC NULLS LAST, id",
     }),
   },
   // PARITY-1 Part 1a · EACH TAG OPENS ITS DONORS. The tag's rule is
@@ -1654,7 +1683,7 @@ const SOURCES = {
               FROM gifts g JOIN peer_fundraisers pf ON pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id
               LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
              WHERE g.org_id = ? AND pf.person_id = ?`,
-      args: [orgId, p.donor], order: "date DESC, id",
+      args: [orgId, p.donor], order: "date DESC NULLS LAST, id",
     }),
   },
   // PARITY-2 Part 2: one peer-to-peer page's gifts: the P2P screen's Raised
@@ -1671,7 +1700,7 @@ const SOURCES = {
               FROM gifts g JOIN peer_fundraisers pf ON pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id
               LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
              WHERE g.org_id = ? AND pf.id = ? AND g.amount > 0`,
-      args: [orgId, p.fundraiser], order: "date DESC, id",
+      args: [orgId, p.fundraiser], order: "date DESC NULLS LAST, id",
     }),
   },
   // MOVES MANAGEMENT — who has not been met. Owner and amount aware.
@@ -1788,7 +1817,7 @@ const SOURCES = {
               LEFT JOIN LATERAL (SELECT d.id FROM donors d WHERE d.org_id = s.org_id AND LOWER(d.email) = LOWER(s.email) AND d.deleted_at IS NULL ORDER BY d.created_at LIMIT 1) dd ON TRUE
              WHERE s.org_id = ? AND s.started_at >= ?::date AND s.started_at < (?::date + 1) AND ${giftStartOpenSql("s")}`,
       args: [orgId, p.from, p.to],
-      order: "date DESC, id",
+      order: "date DESC NULLS LAST, id",
     }),
   },
   "recurring-change": {
@@ -2645,7 +2674,8 @@ function shapeRow(r, dd) {
   const date = r.date ? String(r.date).slice(0, 10) : null;
   return {
     id: String(r.id), type: r.type, donorId: r.donor_id || null, name: r.name || "",
-    date, dateLabel: date ? dd(date) : "", amount: num(r.amount), detail: r.detail || null,
+    // IMPORT-4: a gift with no date says so, so the drawer never shows a blank.
+    date, dateLabel: date ? dd(date) : (r.type === "gift" ? "No date" : ""), amount: num(r.amount), detail: r.detail || null,
   };
 }
 function valueOf(measure, agg) {

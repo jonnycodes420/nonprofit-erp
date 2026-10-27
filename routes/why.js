@@ -195,7 +195,7 @@ async function showMe(req, res, typed, preset = null) {
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));
   const [events, campaigns] = await Promise.all([
-    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
+    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC NULLS LAST LIMIT 200`, [orgId]),
     query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
   ]);
   const ctx = { today, events, campaigns };
@@ -699,7 +699,7 @@ async function talkedAnswer(orgId, donor, typed, userId) {
     `SELECT i.id, i.type, LEFT(i.date::text, 10) AS date, i.note, i.logged_by_name AS who, i.metadata->>'kind' AS kind
        FROM interactions i WHERE i.org_id = ? AND i.donor_id = ? AND i.type = ANY(?)
         AND LEFT(i.date::text, 10) >= ? AND LEFT(i.date::text, 10) <= ? AND COALESCE(i.note, '') <> ''
-      ORDER BY i.date DESC, i.id DESC LIMIT 3`,
+      ORDER BY i.date DESC NULLS LAST, i.id DESC LIMIT 3`,
     [orgId, d.id, ["call", "meeting", "email", "ask", "note", "stewardship", "letter", "text", "event"], period.from, period.to]) : [];
   const word = r => r.kind === "visit" ? "a visit" : ({ call: "a call", meeting: "a meeting", email: "an email", ask: "an ask", note: "a note",
     stewardship: "a thank-you", letter: "a letter", text: "a text", event: "a conversation at an event" })[r.type] || "a conversation";
@@ -780,7 +780,7 @@ async function orgWordsFor(orgId) {
 }
 async function candidatesFor(orgId, ids) {
   if (!ids.length) return [];
-  const rows = await query(`SELECT d.id, d.name, d.city, (SELECT g.amount FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 ORDER BY g.date DESC LIMIT 1) AS last_amount,
+  const rows = await query(`SELECT d.id, d.name, d.city, (SELECT g.amount FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 ORDER BY g.date DESC NULLS LAST LIMIT 1) AS last_amount,
        (SELECT LEFT(MAX(g.date),10) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) AS last_date
      FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL LIMIT 8`, [orgId, ids]);
   const order = new Map(ids.map((id, i) => [id, i]));

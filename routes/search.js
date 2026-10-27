@@ -185,7 +185,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       sql: `SELECT g.id, g.amount, g.date, g.check_number, g.payment_method, g.donor_id, d.name AS donor_name
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
         WHERE g.org_id = ? AND ${w.sql}
-        ORDER BY g.date DESC, g.created_at DESC, g.id LIMIT ${L}`, args: [orgId, ...w.args] };
+        ORDER BY g.date DESC NULLS LAST, g.created_at DESC, g.id LIMIT ${L}`, args: [orgId, ...w.args] };
   }
   // Monthly plans: by amount or by who gives.
   {
@@ -204,7 +204,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       sql: `SELECT pl.id, pl.amount, pl.due_date, pl.status, pl.donor_id, d.name AS donor_name
          FROM pledges pl JOIN donors d ON d.id = pl.donor_id AND d.org_id = pl.org_id AND d.deleted_at IS NULL
         WHERE pl.org_id = ? AND ${w.sql}
-        ORDER BY pl.due_date DESC, pl.id LIMIT ${L}`, args: [orgId, ...w.args] };
+        ORDER BY pl.due_date DESC NULLS LAST, pl.id LIMIT ${L}`, args: [orgId, ...w.args] };
   }
   // Journeys: by name or description; archived ones are gone.
   reads.journeys = {
@@ -222,7 +222,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       sql: `SELECT m.id, m.kind, m.title, m.note, m.date, m.location, m.donor_id, d.name AS donor_name
          FROM (${m.sql}) m JOIN donors d ON d.id = m.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
         WHERE ${w.sql}
-        ORDER BY m.date DESC, m.id LIMIT ${L}`, args: [...m.args, orgId, ...w.args] };
+        ORDER BY m.date DESC NULLS LAST, m.id LIMIT ${L}`, args: [...m.args, orgId, ...w.args] };
   }
   // Emails: by subject, or by who sent it (the person for one they wrote, the
   // colleague for one we wrote). The sender's address is never stored, so a

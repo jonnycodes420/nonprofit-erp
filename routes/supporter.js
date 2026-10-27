@@ -161,7 +161,7 @@ async function whatTheyHave(orgId, personId, email) {
        LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
        LEFT JOIN receipts r ON r.gift_id=g.id AND r.org_id=g.org_id AND r.voided_at IS NULL
       WHERE g.org_id=? AND g.donor_id=? AND g.amount > 0
-      ORDER BY g.date DESC, g.created_at DESC LIMIT 100`, [orgId, personId]);
+      ORDER BY g.date DESC NULLS LAST, g.created_at DESC LIMIT 100`, [orgId, personId]);
   const recurring = await query(
     `SELECT id, amount::float AS amount, interval, status, current_period_end, stripe_subscription_id,
             membership_level_id
