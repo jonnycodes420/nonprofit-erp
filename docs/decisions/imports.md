@@ -179,7 +179,10 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   pledged: `solicit` (the stage list's own reading of "pledge pending"). Otherwise `prospect`. A person already here
   keeps their stage.
 - **A column about the gift lands on the gift, never the person (HARDEN-1).** On a table of gifts, a "Category" (or
-  Class, Gift category, Income category) is each gift's campaign or appeal (`gifts.campaign`), and any other column
+  Class, Gift category, Income category) is read cell by cell (role `category`): only an event or appeal label
+  ("Bourbon & Breeders Gala", "Gallop & Glow 5K", by `EVENT_APPEAL_WORDS`) becomes the gift's campaign
+  (`gifts.campaign`); an accounting label ("Business Contributions", "Direct Public Support") stays on that gift's note
+  as "Category: …" and never names a campaign (Jonathan, 27 Oct). Any other column
   whose value differs between one person's gifts goes on each gift's note under its header (role `giftNote`). Memo is
   the gift's note. Kept on the person, a donor who gave to a gala and a 5K kept only one. An event-like category
   ("Bourbon & Breeders Gala") is a campaign name, not a new event: the event's raised figure already falls back to the

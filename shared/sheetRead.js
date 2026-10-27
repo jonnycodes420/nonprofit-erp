@@ -31,6 +31,7 @@ const ROLE_LABELS = {
   date: "Date given", method: "Payment method", frequency: "How often", paid: "Paid yet? (yes/no)",
   status: "Status", type: "Transaction type", pledgeTotal: "Pledge total (all years)",
   fund: "Fund", campaign: "Campaign or appeal", note: "Note", giftNote: "On each gift's note", externalId: "Donor ID (old system)",
+  category: "Gift category (an event or appeal becomes the campaign)",
   giftId: "Gift or transaction ID",
   // IMPORT-4: the engagement, communication and role layers. Each lands on the
   // person; nothing in a file with data is left out by default.
@@ -150,6 +151,10 @@ const TYPE_GIFT = /^(donation|donation payment|payment|deposit|sales receipt|gif
 const TYPE_ASIDE = /(withdrawal|transfer|refund|fee|journal|bill|expense|hold|reversal|invoice|payout|authorization|currency conversion)/i;
 const ORG_WORDS = /\b(foundation|fund|inc|incorporated|llc|l\.l\.c|corp|corporation|company|co\.|church|ministries|ministry|trust|bank|association|club|society|school|university|college|council|group|partners|lp|llp|pc|pllc|daf|giving|philanthropies|charitable|rotary|lions|kiwanis|temple|synagogue|parish|diocese|chapel)\b/i;
 const GIFT_CATEGORY_HDR = /^(category|gift category|donation category|giving category|income category|revenue category|class|gift class|income type|contribution type)$/;
+// HARDEN-1 (Jonathan, 27 Oct): in a category column only an event or appeal
+// label is a campaign ("Bourbon & Breeders Gala", "Gallop & Glow 5K"); an
+// accounting label ("Business Contributions") stays on its gift as its category.
+const EVENT_APPEAL_WORDS = /\b(gala|ball|5k|10k|half marathon|marathon|fun run|run|walk|race|trot|ride|dinner|luncheon|lunch|breakfast|brunch|banquet|auction|raffle|appeal|campaign|drive|telethon|radiothon|golf|tournament|classic|derby|fundraiser|benefit|concert|festival|fair|party|soiree|celebration|event|night|challenge|giving tuesday|givingtuesday|year[- ]end appeal)\b/i;
 const PAID_OUT_RE = /\b(purchase|purchased|paid to|payment to|expense|bill|invoice|reimburse(ment)?|bought|vendor|supplies)\b/i;
 const TITLE_RE = /^(mr|mrs|ms|miss|mx|dr|rev|fr|sr|jr|the honorable|hon|prof)\.?$/i;
 // Payment methods, mapped to Steward's words; anything else is Other with the
@@ -598,7 +603,7 @@ export function applyOverrides(cols, overrides = {}) {
     const col = next.find(c => String(c.index) === String(k) || c.header === k);
     if (!col || !byKey(k)) continue;
     if (!ROLE_LABELS[role]) { refused.push({ header: col.header, role, reason: "not a place Steward can put a column" }); continue; }
-    if (!["ignore", "note", "giftNote", "keep", "logistics"].includes(role) && !contentFits(role, col.profile)) {
+    if (!["ignore", "note", "giftNote", "category", "keep", "logistics"].includes(role) && !contentFits(role, col.profile)) {
       refused.push({ header: col.header, role, reason: `the cells in "${col.header}" do not read as ${ROLE_LABELS[role].toLowerCase()}` });
       continue;
     }
@@ -879,14 +884,15 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       c.disposition = "skipped"; c.skipReason = "section labels between the rows, not a column of data"; continue;
     }
     // HARDEN-1: on a table of gifts, a column that is about the gift belongs to
-    // the gift, never the person. A category is the gift's campaign or appeal
-    // (gifts.campaign, which reports and an event's fallback read); any other
-    // column whose value differs between one person's gifts goes on each
-    // gift's note under its header. Kept on the person it kept only one.
+    // the gift, never the person. A category is read cell by cell: an event or
+    // appeal label is the gift's campaign (gifts.campaign, which reports and an
+    // event's fallback read), an accounting label stays on the gift's note as
+    // its category. Any other column whose value differs between one person's
+    // gifts goes on each gift's note under its header. Kept on the person it kept only one.
     if (t.kind === "gifts" && roleOf(t, "amount")) {
-      if (GIFT_CATEGORY_HDR.test(hnorm(c.header)) && !roleOf(t, "campaign")) {
-        c.role = "campaign"; c.disposition = "mapped"; c.by = "rule";
-        c.reason = `the header "${c.header}" on a list of gifts: each gift's campaign or appeal`;
+      if (GIFT_CATEGORY_HDR.test(hnorm(c.header)) && !roleOf(t, "category")) {
+        c.role = "category"; c.disposition = "mapped"; c.by = "rule";
+        c.reason = `the header "${c.header}" on a list of gifts: an event or appeal is the gift's campaign, any other label stays on the gift as its category`;
         continue;
       }
       if (variesWithinPerson(t, c)) {
@@ -1181,6 +1187,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const noteParts = [];
       if (s(get(b, "note"))) noteParts.push(s(get(b, "note")));
       for (const c of t.cols.filter(x => x.role === "giftNote")) { const v = s(cellOf(t, b, c)); if (v) noteParts.push(`${c.header || `Column ${c.index + 1}`}: ${v}`); }
+      const catCell = s(get(b, "category"));
+      const catCampaign = catCell && EVENT_APPEAL_WORDS.test(catCell) ? catCell : null;
+      if (catCell && !catCampaign) noteParts.push(`${role("category").header || "Category"}: ${catCell}`);
       if (methodCol && !m.known && m.original && !/^pledge$/i.test(m.original)) noteParts.push(`Method in your file: ${m.original}`);
       if (methodCol && !m.original && !inKind) noteParts.push("Method in your file: blank");
       if (methodCol && m.known && /pledge|dist|stock|transfer/i.test(m.original) && m.original.toLowerCase() !== m.method.toLowerCase()) noteParts.push(`Method in your file: ${m.original}`);
@@ -1198,7 +1207,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       if (methodCol && (!m.known || !m.original) && !inKind && !/^pledge$/i.test(m.original)) giftFlags.push("method_unknown");
       const base = { rowId, sheet: t.sheet, line: b.line, personKey: pkey, who: who.name, cents: cents(amt), date, datedBy, undated: !date,
                      method: m.method || (methodCol ? "Other" : null), methodOriginal: m.original || null,
-                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || null, externalId: s(get(b, "giftId")) || null,
+                     fund: s(get(b, "fund")) || null, campaign: s(get(b, "campaign")) || catCampaign, externalId: s(get(b, "giftId")) || null,
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });

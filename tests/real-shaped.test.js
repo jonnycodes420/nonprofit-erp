@@ -197,13 +197,21 @@ async function main() {
 
   // §2 a per-gift column lands on the gift
   const catCol = (GU.columns || []).find(c => c.header === "Category") || {};
-  ok("§2 Category is read as each gift's campaign or appeal, not kept on the person", catCol.disposition === "mapped" && catCol.role === "campaign", JSON.stringify(catCol));
+  ok("§2 Category is read as each gift's category, not kept on the person", catCol.disposition === "mapped" && catCol.role === "category", JSON.stringify(catCol));
   ok("§2 no custom field called Category or Memo", !(await one("SELECT 1 AS x FROM custom_field_defs WHERE org_id=$1 AND LOWER(label) IN ('category','memo')", [ORG])), "");
   const catMismatch = gRows.map((r, i) => [i + 2, r]).filter(([, r]) => centsOf(r[2]) > 0);
   const gifts = await q("SELECT g.campaign, g.notes, g.amount, g.date::text AS date, d.name FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.import_id=$2", [ORG, G_RUN]);
-  const wantCat = {}; for (const [, r] of catMismatch) wantCat[r[4] || ""] = (wantCat[r[4] || ""] || 0) + 1;
+  // Jonathan, 27 Oct: only an event or appeal label becomes a campaign; an
+  // accounting label ("Business Contributions") stays on the gift as its category.
+  const EVENT_LABELS = new Set(["Bourbon & Breeders Gala", "Gallop & Glow 5K"]);
+  const wantCat = {}; for (const [, r] of catMismatch) { const k = EVENT_LABELS.has(String(r[4] || "").trim()) ? String(r[4]).trim() : ""; wantCat[k] = (wantCat[k] || 0) + 1; }
   const gotCat = {}; for (const g of gifts) gotCat[g.campaign || ""] = (gotCat[g.campaign || ""] || 0) + 1;
-  ok("§2 every gift carries its own row's Category as its campaign", JSON.stringify(Object.entries(wantCat).sort()) === JSON.stringify(Object.entries(gotCat).sort()), JSON.stringify({ wantCat, gotCat }));
+  ok("§2 only the event and appeal labels become the gift's campaign", JSON.stringify(Object.entries(wantCat).sort()) === JSON.stringify(Object.entries(gotCat).sort()), JSON.stringify({ wantCat, gotCat }));
+  const acct = catMismatch.filter(([, r]) => r[4] && !EVENT_LABELS.has(String(r[4]).trim()));
+  const acctNotes = {}; for (const [, r] of acct) acctNotes[String(r[4]).trim()] = (acctNotes[String(r[4]).trim()] || 0) + 1;
+  const gotNotes = {}; for (const g of gifts) { const m = /(?:^|\. |\n|; )Category: ([^\n;.]+)/.exec(g.notes || ""); if (m) gotNotes[m[1].trim()] = (gotNotes[m[1].trim()] || 0) + 1; }
+  ok("§2 every accounting label stays on its own gift as its category", JSON.stringify(Object.entries(acctNotes).sort()) === JSON.stringify(Object.entries(gotNotes).sort()), JSON.stringify({ acctNotes, gotNotes }));
+  ok("§2 no campaign is named after an accounting label", !gifts.some(g => g.campaign && !EVENT_LABELS.has(g.campaign)), JSON.stringify([...new Set(gifts.map(g => g.campaign))]));
   const memoOk = catMismatch.every(([, r]) => !r[3] || gifts.some(g => (g.notes || "").includes(String(r[3]).trim())));
   ok("§2 every gift's Memo is on the gift's note", memoOk, "");
   const both = await q(`SELECT d.name FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.import_id=$2

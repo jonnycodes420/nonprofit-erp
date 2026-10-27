@@ -831,6 +831,19 @@ async function main() {
   for (const [n, p] of Object.entries(MOCK_PORTS)) await startMock(n, p);
   const unbound = Object.entries(mocks).filter(([, s]) => !s.bound).map(([n]) => n);
   ok("every provider mock is listening on the port the server calls (so a call cannot go unseen)", !unbound.length, unbound);
+  // The server checks its own platform price ids once, a few seconds after it
+  // boots (server.js checkBillingPriceModes). On a server booted just before this
+  // suite, that lands on the billing mock before any case runs. Wait for /health
+  // to say it ran, then set aside only those GET /v1/prices lookups; any billing
+  // call a case makes still goes red.
+  for (let i = 0; i < 60; i++) {
+    const h = await fetch(`${process.env.BASE || "http://localhost:5601"}/health`).then(r => r.json()).catch(() => ({}));
+    if (h.billing && h.billing.checked) break;
+    await wait(250);
+  }
+  const bootChecks = mocks.billing.calls.filter(c => c.method === "GET" && /^\/v1\/prices\//.test(c.url));
+  mocks.billing.calls = mocks.billing.calls.filter(c => !bootChecks.includes(c));
+  console.log(`  (set aside ${bootChecks.length} boot-time billing price check(s) the server made before any case)`);
   const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"));
   browser = await chromium.launch();
   const guard = (name, fn) => fn().catch(e => ok(`${name}: the case ran to the end`, false, String(e && e.stack || e).slice(0, 500)));
