@@ -3843,6 +3843,9 @@ const {
 async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
+  // HARDEN-1: a tax receipt names the day the gift was given. An undated gift
+  // (IMPORT-4) has none, so no receipt is issued until somebody sets its date.
+  if (gift.date == null || String(gift.date).trim() === "") return { skipped: "undated_gift" };
 
   // Idempotency — a redelivered Stripe event (or a double-click) must never
   // create a second active receipt for the same gift. Enforced here AND by

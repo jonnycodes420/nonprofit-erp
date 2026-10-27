@@ -149,6 +149,7 @@ export default function XeroSync({ connectionId = null, isReadOnly, isAdmin }) {
         <div data-testid="xero-pending" title={d.pending && d.pending.definition} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>
           {d.pending && d.pending.count ? `${d.pending.count} ${d.pending.count === 1 ? "gift" : "gifts"}, ${money(d.pending.cents)}.` : "Nothing is waiting."}
         </div>
+        {d.pending && d.pending.undated && d.pending.undated.sentence && <div data-testid="xero-pending-undated" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.pending.undated.sentence}</div>}
         {(d.pending && d.pending.rows || []).slice(0, 10).map(r => (
           <div key={r.giftId} style={row}>
             <span style={{ flex: "1 1 160px", minWidth: 0 }}>{r.donorName || "A donor"}</span>

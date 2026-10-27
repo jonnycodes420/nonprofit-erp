@@ -100,9 +100,14 @@ export function firstNameOf(name) {
 // The fields for ONE donor's letter. `gifts` are this donor's gifts in the
 // batch, oldest first.
 export function letterFields({ donor, gifts, org }) {
-  const list = (gifts || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const list = (gifts || []).slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const totalCents = list.reduce((t, g) => t + toCents(g.amount), 0);
   const one = list.length === 1 ? list[0] : null;
+  // HARDEN-1: a gift with no date (IMPORT-4) has no day to name. Rule 2: the
+  // date is then empty, so a letter that says "received on" is not printed
+  // and the batch says why; it never reads "received on March 1 and ."
+  const undated = list.filter(g => !formatLetterDate(g.date)).length;
+  const dated = list.filter(g => formatLetterDate(g.date));
   const funds = [...new Set(list.map(g => g.fund).filter(Boolean))];
   const tributes = list.filter(g => g.tributeType && g.tributeName);
   const tribute = tributes.length === 1
@@ -115,18 +120,20 @@ export function letterFields({ donor, gifts, org }) {
     first: isOrg ? "" : firstNameOf(donor.name),
     name: donor.name || "",
     gift_amount: list.length ? formatCents(totalCents) : "",
-    gift_date: one ? formatLetterDate(one.date)
+    gift_date: undated ? ""
+      : one ? formatLetterDate(one.date)
       : list.length === 2 ? `${formatLetterDate(list[0].date)} and ${formatLetterDate(list[1].date)}`
       : list.length > 2 ? `${list.length} dates between ${formatLetterDate(list[0].date)} and ${formatLetterDate(list[list.length - 1].date)}` : "",
     gift_word: list.length > 1 ? "gifts" : "gift",
-    gift_list: list.map(g => `${formatLetterDate(g.date)}  ${formatCents(toCents(g.amount))}${g.fund ? `  (${g.fund})` : ""}`).join("\n"),
+    gift_list: list.map(g => `${formatLetterDate(g.date) || "No date"}  ${formatCents(toCents(g.amount))}${g.fund ? `  (${g.fund})` : ""}`).join("\n"),
     fund: funds.length === 1 ? funds[0] : "",
     tribute,
     org_name: org.name || "",
     signer: org.signer || "",
     signer_title: org.signerTitle || "",
-    year: list.length ? String(list[list.length - 1].date).slice(0, 4) : "",
+    year: dated.length ? String(dated[dated.length - 1].date).slice(0, 4) : "",
     _totalCents: totalCents,
+    _undated: undated,
   };
 }
 
