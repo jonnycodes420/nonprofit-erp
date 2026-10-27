@@ -24,10 +24,10 @@
 //   BREAKER_EXPECT_ORG_BINDING=1  (default on) the two-tab case expects HARDEN-1
 //                                 item 1's org-bound writes (X-Steward-Org → 409
 //                                 "This page was for A, but you're now in B.
-//                                 Reload to continue."). Until item 1 merges it is
-//                                 RED by design; set 0 to only record where the
-//                                 writes landed.
-//   BREAKER_ONLY=clicks,drop,...  run some cases (clicks, drop, twotabs, toast, orders, sleep)
+//                                 Reload to continue.", or held in the tab under
+//                                 the cross-tab banner). Set 0 to only record
+//                                 where the writes landed.
+//   BREAKER_ONLY=clicks,drop,...  run some cases (clicks, drop, twotabs, toast, orders, enter, sleep)
 //
 // HOW IT GOES RED ON MAIN (each planted and watched, see the HARDEN-1 report):
 //   · two presses of a campaign's Send emailed every donor twice (crm.js claim)
@@ -35,6 +35,8 @@
 //   · a dropped answer on Undo said "Nothing was changed" when it had undone
 //   · a bulk delete's Undo put people back ten at a time: a drop half way left
 //     half of them back, and the toast could never finish the job
+//   · a dropped answer on Import said "Not imported. Nothing was written."
+//     about a file that was written (SpreadsheetImport follows the job now)
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -190,7 +192,7 @@ const writesTo = (page, re, status) => page.writes.filter(w => re.test(w.m + " "
 async function openSheetImport(page) {
   if (!/\/donors(\?|$)/.test(page.url())) await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.getByRole("button", { name: /Import & tools/ }).first().click({ timeout: 30000 });
-  await page.getByRole("menuitem", { name: /Any spreadsheet/ }).first().click({ timeout: 10000 });
+  await page.getByRole("menuitem", { name: /Import a spreadsheet|Any spreadsheet/ }).first().click({ timeout: 10000 });
   await page.waitForSelector('[data-testid="sheet-import"]', { timeout: 15000 });
 }
 async function chooseFile(page, file) {
@@ -205,6 +207,7 @@ async function waitForDb(fn, ms = 30000) { const t0 = Date.now(); let v; while (
 // ═════════════════════════════════════════════════════════════════════════
 async function caseClicks() {
   const L = "clicks";
+  const caseStart = (await one("SELECT NOW() AS t")).t;
   const o = await freshOrg("org_brk_clicks", "Breaker Clicks (test)");
   const CLICK_NAMES = ["Cleo Ashby", "Marta Quill", "Ivo Brandt", "Pia Lorne", "Rufus Hale", "Gwen Tarr"];
   for (let i = 1; i <= 6; i++) await person(o.orgId, `d_brk_c${i}`, CLICK_NAMES[i - 1], `brk-c${i}@test.local`);
@@ -286,7 +289,8 @@ async function caseClicks() {
   await waitForDb(async () => (await one("SELECT phone FROM donors WHERE id='d_brk_c5'")).phone === "555-0101", 10000);
   await wait(800);
   const puts = writesTo(page, /PUT \/donors\/d_brk_c5$/, "2xx");
-  const edits = await one(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND entity_id='d_brk_c5' AND request_method='PUT' AND (status_code IS NULL OR status_code<400)`, [o.orgId]);
+  // audit rows are append-only (an earlier run's rows stay), so count this run's
+  const edits = await one(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND entity_id='d_brk_c5' AND request_method='PUT' AND (status_code IS NULL OR status_code<400) AND created_at >= $2`, [o.orgId, caseStart]);
   ok(`${L} §1 Save on a person edit pressed three times: one save, one audit row`, puts.length === 1 && edits.n === 1, { puts: puts.length, audit: edits.n });
 
   // 1g · Save on a new gift, three times; then Save on its edit, three times
@@ -386,6 +390,8 @@ async function caseDrop() {
       ok(`${L} import: while offline the screen does not say "Nothing was written" about a file that was written`,
         !(c.gifts > 0 && /Nothing was written|Not imported/i.test(says)), { says, c });
       await ctx.setOffline(false);
+      const back = await page.waitForSelector('[data-testid="sheet-result"]', { timeout: 30000 }).then(() => true).catch(() => false);
+      ok(`${L} import: back online, the same window shows the receipt of what was written`, back, await textOf(page, '[data-testid="sheet-import"]'));
     }
     // back on: open Import again. It follows the job or shows the receipt; pressing Import again adds nothing.
     await page.unroute("**/sheet-import/commit").catch(() => {});
@@ -433,13 +439,33 @@ async function caseDrop() {
     // back on, she presses it again
     await page.goto(`${APP}/app/settings?section=imports&import=${encodeURIComponent(imp.id)}`, { waitUntil: "domcontentloaded" });
     const open = page.locator('[data-testid="import-undo-open"]').first();
-    if (await open.isVisible({ timeout: 8000 }).catch(() => false)) {
+    if (await open.waitFor({ timeout: 8000 }).then(() => true).catch(() => false)) {
       await open.click();
       await page.locator('[data-testid="import-undo-yes"]').click({ timeout: 3000 }).catch(() => {});
     }
     await wait(800);
     const shown = (await textOf(page, '[data-testid="import-receipt-undone"]')) + (await textOf(page, '[data-testid="import-undo-confirm"]')) + (await textOf(page, '[data-testid="import-undo-done"]'));
     ok(`${L} undo: afterwards the receipt says it was undone, and a second press changes nothing`, /undone/i.test(shown) && JSON.stringify(await counts(o.orgId)) === JSON.stringify(u), { shown: shown.slice(0, 200) });
+    await surfacesAgree(L, o);
+    await noProviderCalls(L, o.orgId);
+    await ctx.close();
+  }
+  // and the other half: the network drops BEFORE the file reaches the server
+  {
+    const L = "drop/unsent";
+    const o = await freshOrg("org_brk_drop_unsent", "Breaker Drop unsent (test)");
+    const ctx = await signedIn(o);
+    const page = await newPage(ctx);
+    await openSheetImport(page);
+    await chooseFile(page, giftsFile("drop-unsent.csv", 10, i => `Uma Unsent${i}`));
+    await page.route("**/sheet-import/commit", async route => { await ctx.setOffline(true); await route.abort("internetdisconnected").catch(() => {}); });
+    await page.locator('[data-testid="sheet-import-go"]').click();
+    await wait(2500);
+    await ctx.setOffline(false);
+    await page.waitForSelector('[data-testid="sheet-failed"]', { timeout: 30000 }).catch(() => {});
+    const says = await textOf(page, '[data-testid="sheet-failed"]');
+    const c = await counts(o.orgId);
+    ok(`${L}: nothing was written, and once back the screen says exactly that`, c.gifts === 0 && c.imports === 0 && /Nothing was written/.test(says), { says, c });
     await surfacesAgree(L, o);
     await noProviderCalls(L, o.orgId);
     await ctx.close();
@@ -506,12 +532,20 @@ async function caseTwoTabs() {
   ok(`${L}: nothing tab A did landed in org B (the org tab B switched to)`, landed.giftInB === 0 && landed.deletedInB === 0 && landed.importInB === 0 && landed.peopleMadeInB === 0, landed);
   if (EXPECT_BINDING) {
     const all = [...profile.writes, ...deleter.writes, ...importer.writes].filter(w => /^(POST \/donors\/[^/]+\/gifts|DELETE \/donors\/|POST \/sheet-import\/commit)/.test(w.m + " " + w.url));
+    // Refused at the server (409 org_changed) or before it left the tab (the
+    // cross-tab banner): either way nothing is written anywhere.
     const refused = all.filter(w => w.status === 409);
-    ok(`${L} [needs HARDEN-1 item 1] every write from tab A is refused with 409, and nothing landed in A either`,
-      all.length > 0 && refused.length === all.length && landed.giftInA === 0 && landed.deletedInA === 0 && landed.importInA === 0, { all, landed });
+    ok(`${L} [needs HARDEN-1 item 1] every write from tab A is refused (409, or held in the tab), and nothing landed in A either`,
+      refused.length === all.length && landed.giftInA === 0 && landed.deletedInA === 0 && landed.importInA === 0, { all, landed });
     const shown = [await profile.locator("body").innerText().catch(() => ""), await deleter.locator("body").innerText().catch(() => ""), await importer.locator("body").innerText().catch(() => "")];
-    ok(`${L} [needs HARDEN-1 item 1] tab A says "This page was for Alder House, but you're now in Birch House. Reload to continue."`,
-      shown.every(t => ORG_BINDING_SENTENCE.test(t)), shown.map(t => (t.match(/This page was for[^\n]*/) || ["(not shown)"])[0]));
+    const SAYS = new RegExp(ORG_BINDING_SENTENCE.source + "|You switched to Birch House \\(test\\) in another tab\\. Reload to see it\\.");
+    ok(`${L} [needs HARDEN-1 item 1] every tab A page says it is for Alder House and she is now in Birch House, reload to continue`,
+      shown.every(t => SAYS.test(t)), shown.map(t => (t.match(/(This page was for|You switched to)[^\n]*/) || ["(not shown)"])[0]));
+    // and the server's own refusal, for a write that does leave a stale tab
+    const stale = await fetch(BASE + "/donors/d_brk_ta1/gifts", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + B.token, "X-Steward-Org": A.orgId }, body: JSON.stringify({ amount: 9, date: "2026-10-01" }) });
+    const sb = await stale.json().catch(() => ({}));
+    ok(`${L} [needs HARDEN-1 item 1] a write from a page for Alder House on Birch House's session is refused 409 with the sentence`,
+      stale.status === 409 && /This page was for Alder House \(test\), but you're now in Birch House \(test\)\. Reload to continue\./.test(JSON.stringify(sb)), { status: stale.status, sb });
   }
   await surfacesAgree(L + " A", A);
   await surfacesAgree(L + " B", B);
@@ -688,6 +722,107 @@ async function caseSleep() {
   await ctx.close();
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// CASE 7 · ENTER IN EVERY FIELD OF EVERY SCREEN THAT COMMITS
+// ═════════════════════════════════════════════════════════════════════════
+// A key press meant for a field is never the click that imports, undoes,
+// deletes, merges, restores or sends (HARDEN-1 item 5, client/src/lib/commitGuard.js).
+// Each screen is opened with its commit button ready; then every typing
+// field on it gets focus and Enter. Nothing may commit.
+const COMMIT_WRITE = /^(POST \/sheet-import\/commit|POST \/sheet-import\/bring-back|POST \/imports\/[^/]+\/reverse|POST \/donors\/bulk-delete|DELETE \/donors\/|POST \/deleted-records\/|POST \/campaigns\/[^/]+\/send|POST \/donors\/merge|POST \/data-health\/merge|POST \/[a-z-]*merge)/;
+async function enterInEveryField(page, scope) {
+  const fields = page.locator(`${scope} input`);
+  const n = await fields.count();
+  let pressed = 0;
+  for (let i = 0; i < n; i++) {
+    const f = fields.nth(i);
+    const type = String(await f.getAttribute("type").catch(() => "") || "").toLowerCase();
+    if (!/^(text|search|email|tel|url|number|date|)$/.test(type)) continue;
+    if (!(await f.isVisible().catch(() => false)) || !(await f.isEnabled().catch(() => false))) continue;
+    await f.focus().catch(() => {});
+    await f.press("Enter").catch(() => {});
+    pressed++;
+    await wait(250);
+  }
+  await wait(800);
+  return pressed;
+}
+async function caseEnter() {
+  const L = "enter";
+  const o = await freshOrg("org_brk_enter", "Breaker Enter (test)");
+  await person(o.orgId, "d_brk_e1", "Ezra Kettle", "brk-e1@test.local");
+  await person(o.orgId, "d_brk_e2", "Ezra Kettle", "brk-e1@test.local");   // a duplicate, for the merge screen
+  await person(o.orgId, "d_brk_e3", "Wren Halloway", "brk-e3@test.local");
+  await person(o.orgId, "d_brk_e4", "Juno Pemberton", "brk-e4@test.local");
+  await q("UPDATE donors SET deleted_at=NOW() WHERE id='d_brk_e4'");
+  await q(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name) VALUES ('del_brk_e4',$1,'donors','d_brk_e4','{"__soft":true}'::jsonb,'system:test','test')`, [o.orgId]);
+  const prior = await sheetImport(o.token, [["Date", "Donor", "Amount"], ["2026-09-02", "Lior Castellan", "25"]], "prior.csv");
+  const before = await counts(o.orgId);
+  const ctx = await signedIn(o);
+  const page = await newPage(ctx);
+  const committed = () => page.writes.filter(w => COMMIT_WRITE.test(w.m + " " + w.url));
+
+  // import (and restore: the file names someone deleted, so Bring them back is on screen too)
+  await openSheetImport(page);
+  await page.setInputFiles('[data-testid="sheet-file"]', csvFile("enter.csv", ["Date", "Donor", "Email", "Amount"],
+    [["2026-10-01", "Juno Pemberton", "brk-e4@test.local", "15"], ["2026-10-02", "Calla Brightwater", "", "30"]]));
+  await page.waitForSelector('[data-testid="sheet-import-go"]', { timeout: 60000 });
+  await wait(1500);
+  const p1 = await enterInEveryField(page, '[data-testid="sheet-import"]');
+  ok(`${L} import + bring back: Enter in each of ${p1} fields imports and brings back nothing`, !committed().length, committed());
+  await page.keyboard.press("Escape").catch(() => {});
+
+  // undo (the receipt, with the confirm open)
+  await page.goto(`${APP}/app/settings?section=imports&import=${encodeURIComponent(prior.importId)}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.locator('[data-testid="import-undo-open"]').first().click({ timeout: 30000 });
+  await page.waitForSelector('[data-testid="import-undo-yes"]', { timeout: 15000 });
+  const p2 = await enterInEveryField(page, "body");
+  ok(`${L} undo: Enter in each of ${p2} fields on the receipt undoes nothing`, !committed().length, committed());
+
+  // delete (people selected, the confirm open)
+  await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForSelector(".dir-donor-row", { timeout: 30000 });
+  await page.locator(".dir-donor-row", { hasText: "Wren Halloway" }).locator('input[type="checkbox"]').first().check();
+  const p3a = await enterInEveryField(page, "body");
+  await page.locator('[data-testid="dir-bulk-bar"]').getByRole("button", { name: /^Delete$/ }).click({ timeout: 10000 });
+  await page.getByRole("button", { name: "Delete 1 person" }).waitFor({ timeout: 10000 });
+  const p3b = await enterInEveryField(page, "body");
+  ok(`${L} delete: Enter in each of ${p3a + p3b} fields, with the delete confirm open, deletes nobody`, !committed().length, committed());
+  await page.keyboard.press("Escape").catch(() => {});
+
+  // merge (Data health, two records compared, the merge confirm on screen)
+  await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.getByText("Data health", { exact: true }).first().click({ timeout: 30000 }).catch(() => {});
+  await page.getByText("Review pairs", { exact: true }).first().click({ timeout: 20000 }).catch(() => {});
+  const pair = page.locator('[data-testid="dh-pair"]').first();
+  if (await pair.waitFor({ timeout: 20000 }).then(() => true).catch(() => false)) {
+    await pair.getByRole("button", { name: "Compare" }).click();
+    await page.waitForSelector('[data-testid="dh-merge-confirm"]', { timeout: 15000 }).catch(() => {});
+    const p4 = await enterInEveryField(page, "body");
+    ok(`${L} merge: Enter in each of ${p4} fields, with the merge confirm on screen, merges nothing`, !committed().length, committed());
+  } else ok(`${L} merge: the duplicate pair is on Data health to try Enter on`, false, "no dh-pair");
+
+  // send (a campaign in the editor, Send ready)
+  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [o.orgId]);
+  await q("UPDATE donors SET auto_email=true WHERE id='d_brk_e3'");
+  const camp = await api("POST", "/campaigns", o.token, { name: "Breaker enter", subject: "Hello", body: "Hi", segment: { mode: "manual", donorIds: ["d_brk_e3"] }, status: "draft" });
+  const campId = camp.body && (camp.body.id || (camp.body.campaign && camp.body.campaign.id));
+  await page.goto(`${APP}/app/communications?subtab=campaigns&campaign=${campId}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.locator('[data-testid="edit-in-editor"]').first().click({ timeout: 30000 });
+  await page.waitForSelector('[data-testid="campaign-send"]:not([disabled])', { timeout: 30000 });
+  const p5 = await enterInEveryField(page, "body");
+  await wait(1500);
+  ok(`${L} send: Enter in each of ${p5} fields of the campaign editor sends nothing`, !committed().length && !sinkTo("brk-e3@test.local").length,
+    { committed: committed(), sink: sinkTo("brk-e3@test.local").length });
+
+  const after = await counts(o.orgId);
+  ok(`${L}: the database is exactly as it was`, JSON.stringify(after) === JSON.stringify(before)
+    && !!(await one("SELECT deleted_at FROM donors WHERE id='d_brk_e4'")).deleted_at, { before, after });
+  await surfacesAgree(L, o);
+  await noProviderCalls(L, o.orgId);
+  await ctx.close();
+}
+
 async function main() {
   const t0 = Date.now();
   console.log(`breaker (HARDEN-1 item 4) · sleep ${SLEEP_SECS}s · org binding expected: ${EXPECT_BINDING ? "yes" : "no"}${assertSurfacesAgree ? " · assertSurfacesAgree loaded" : " · assertSurfacesAgree not on this branch: minimal check only"}`);
@@ -700,7 +835,7 @@ async function main() {
   browser = await chromium.launch();
   const guard = (name, fn) => fn().catch(e => ok(`${name}: the case ran to the end`, false, String(e && e.stack || e).slice(0, 500)));
   const sleeper = want("sleep") ? guard("sleep", caseSleep) : Promise.resolve();
-  for (const [name, fn] of [["clicks", caseClicks], ["drop", caseDrop], ["twotabs", caseTwoTabs], ["toast", caseToast], ["orders", caseOrders]])
+  for (const [name, fn] of [["clicks", caseClicks], ["drop", caseDrop], ["twotabs", caseTwoTabs], ["toast", caseToast], ["orders", caseOrders], ["enter", caseEnter]])
     if (want(name)) await guard(name, fn);
   await sleeper;
   await browser.close();
