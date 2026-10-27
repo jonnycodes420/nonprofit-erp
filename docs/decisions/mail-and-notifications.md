@@ -3,6 +3,13 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **Staff mail and Donor mail start OFF, and only the super-admin toggle turns either on (FIX-53).** `orgs.emails_enabled`
+  (Donor mail) and `orgs.staff_mail_enabled` (Staff mail) default false, and every org insert writes both as a `false`
+  literal. The one write of ON is `POST /admin/orgs/:id/mail-switches` with `confirm: true`; it stamps
+  `<staff|donor>_mail_set_at/_by/_by_name`, and the console shows that, or "Off since created". `/email-switch` only
+  turns mail off. Signup, provisioning, Close a deal, Mark onboarded, a plan change, a payment, a webhook, an import, a
+  boot step, a seed or AI never turn a switch on: `tests/fix53-mail-off.test.js` scans every non-test `.js` file for it.
+  Existing NULL Staff mail still follows Donor mail; no deploy rewrites an existing org's switch.
 - **A donor gets automatic email only if the org turned it on for them (SEND-GATE-1).** `donors.auto_email`
   starts false and only a person on staff turns it on (`routes/autoEmail.js`). `sendGate.js` `sendToDonor`, inside the
   wrapped client, sends an org's donor mail only to switched-on people or on a staff click recorded in

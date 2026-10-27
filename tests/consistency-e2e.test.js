@@ -49,8 +49,8 @@ async function wipe(org) {
   await q(`DELETE FROM orgs WHERE id=$1`, [org]).catch(() => {});
 }
 async function seedOrg(org, slug, acct) {
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,receipts_enabled)
-           VALUES ($1,$2,$3,1,'active','growth',$4,false)`, [org, "CE2E " + slug, slug, acct]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,receipts_enabled,emails_enabled,staff_mail_enabled)
+           VALUES ($1,$2,$3,1,'active','growth',$4,false,true,NULL)`, [org, "CE2E " + slug, slug, acct]);
   // MAIL-1: an org that has onboarded (its donor file is in), so its digest may send.
   await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [org]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Admin','admin')`,
@@ -87,8 +87,8 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
   await seedOrg(A, "ce2e-a", ACCT_A);
   await seedOrg(B, "ce2e-b", null);
   // C is created bare (no account/fund) for the true empty-org edge test.
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan)
-           VALUES ($1,'CE2E Empty','ce2e-c',1,'active','growth')`, [C]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,emails_enabled,staff_mail_enabled)
+           VALUES ($1,'CE2E Empty','ce2e-c',1,'active','growth',true,NULL)`, [C]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,'ce2e-c@ce2e.local',$3,'Admin','admin')`,
     [`u_${C}`, C, bcrypt.hashSync("loadtest1234", 10)]);
 

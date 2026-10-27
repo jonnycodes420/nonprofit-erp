@@ -39,8 +39,8 @@ async function run() {
   await reset();
   try {
     const pw = bcrypt.hashSync("loadtest1234", 4);
-    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
-             VALUES ($1,'Fix34 A fixture','fix34a-one',1,'active','team','America/New_York',NOW())`, [ORG]);
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,emails_enabled,staff_mail_enabled)
+             VALUES ($1,'Fix34 A fixture','fix34a-one',1,'active','team','America/New_York',NOW(),true,NULL)`, [ORG]);
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`, [`u_${ORG}`, ORG, `dana@${ORG}.local`, pw]);
     const T = await login(`dana@${ORG}.local`, "loadtest1234");
     for (const [id, name] of [["d_f34a_chris", "Christopher Fixture"], ["d_f34a_ada", "Ada Fixture"], ["d_f34a_bo", "Bo Fixture"]])

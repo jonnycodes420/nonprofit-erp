@@ -64,7 +64,7 @@ async function seedOrg(o, hash) {
          legal_name, ein, receipt_address, recurring_dunning_enabled, emails_enabled, is_demo_org, timezone, ai_enabled,
          stripe_account_id, stripe_connected, stripe_connected_at, qbo_sync_enabled, qbo_auto_sync, onboarded_at, org_kind)
        VALUES ($1,$2,'SCALE-1 synthetic load org',1,$3,'team','active',true,$2,'47-0000000','100 Main St, Mobile, AL 36602',
-         true,true,false,$4,true,$5,$6,$7,$6,$6,NOW(),'customer')`,
+         true,false,false,$4,true,$5,$6,$7,$6,$6,NOW(),'customer')`,
       [o.id, o.name, o.slug, ["America/Chicago", "America/New_York", "America/Denver"][o.n % 3],
        big ? `acct_load${o.n}` : null, big, big ? new Date().toISOString() : null]);
     const users = [[`u_${o.slug}_admin`, `admin@${o.slug}.load`, "Load Admin", "admin"]];

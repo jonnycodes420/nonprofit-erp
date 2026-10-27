@@ -72,8 +72,8 @@ async function clean() {
   }
 }
 async function orgWithAdmin(id, name, slug, email, uid, qbo) {
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,qbo_sync_enabled,qbo_auto_sync)
-           VALUES ($1,$2,$3,1,'active','team',$4,$4)`, [id, name, slug, qbo]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,qbo_sync_enabled,qbo_auto_sync,emails_enabled,staff_mail_enabled)
+           VALUES ($1,$2,$3,1,'active','team',$4,$4,true,NULL)`, [id, name, slug, qbo]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Fix34 D Admin','admin')`,
     [uid, id, email, bcrypt.hashSync("loadtest1234", 10)]);
 }

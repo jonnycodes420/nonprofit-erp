@@ -57,8 +57,8 @@ async function run() {
     const today = civilToday();
     const pw = bcrypt.hashSync("loadtest1234", 4);
     for (const [o, demo] of [[ORG, false], [DEMO, true]]) {
-      await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,emails_enabled,onboarded_at,is_demo_org,receipt_address,legal_name)
-               VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),true,NOW(),$4,'12 Wharf Street, Salem, MA 01970',$2)`,
+      await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,emails_enabled,onboarded_at,is_demo_org,receipt_address,legal_name,staff_mail_enabled)
+               VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),true,NOW(),$4,'12 Wharf Street, Salem, MA 01970',$2,NULL)`,
         [o, demo ? "Fix34e Demo" : "Fix34e Real", demo ? "fix34e-demo" : "fix34e-real", demo]);
       const uid = demo ? "u_f34e_demo" : "u_f34e";
       await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`,
