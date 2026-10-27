@@ -386,7 +386,7 @@ async function main() {
   const tok8 = await freshOrg(ORG8, "Old mapper (test)");
   const S8 = await snapshot(ORG8);
   const people = cSheets[0].grid.slice(1).map(r => ({ name: [r[1], r[0]].filter(Boolean).join(" "), email: r[3] || undefined, phone: r[2] || undefined }));
-  const RUN8 = "imp_hs1old" + Date.now().toString(36);
+  const RUN8 = "imp_hs1old" + require("crypto").randomBytes(5).toString("hex");
   const ic = await api("POST", "/donors/import-combined", tok8, { importId: RUN8, donors: people, gifts: [] });
   ok("§8 the old mapper's write (import-combined) answers 200", ic.status === 200, ic.status + " " + JSON.stringify(ic.body).slice(0, 200));
   const made8 = (await one("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND created_import_id=$2", [ORG8, RUN8])).n;
