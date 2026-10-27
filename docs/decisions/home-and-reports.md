@@ -38,6 +38,16 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   or over `orgs.call_gift_floor_cents` (WHY-1's $250 by default) in the last 60, with no call logged with
   that person on or after the gift date. Mark called writes a call interaction; Snooze hides one gift for
   7 days (`call_snoozes`). The panel and its count read the same SQL (`calls-to-make` source). (PARITY-1)
+- **"Vs last year" is one computation: `numbers.vsLastYear` (span from `numbers.lastYearSpan`, i.e.
+  `orgTime.samePointLastYear`).** This period so far against the same days last year, both halves the `gifts`
+  source. Home's Why and What line, the season card, Fundraising's Raised tile (`period.compare`) and the
+  Board read it, and each sentence says it compares the same days. Fundraising once compared the year so far
+  with all of last year beside Home's same-point figure. (HARDEN-1)
+- **Home's file line reads live counts.** `/move`'s `homeLine` counts the onboarding card's people and gifts
+  now, never the move runs' stored counters. (HARDEN-1)
+- **Every surface agrees, and a suite proves it.** `tests/lib/surfacesAgree.js assertSurfacesAgree(orgId, ctx)`
+  asks every place that shows people or money and lists each disagreement; suites call it after imports,
+  deletes, undos and merges. (HARDEN-1)
 - **Retention has three definitions, each a ratio whose halves open.** Calendar year (`retention`),
   fiscal year and rolling 12 months (`retention-window`). The dashboard says which one is showing. (PARITY-1)
 - **Home is hers at 7:40 and the board view is the board meeting: one `<Dashboard surface>` over one

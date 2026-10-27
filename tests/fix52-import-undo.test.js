@@ -37,6 +37,13 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 const { testNow } = require("./clock");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
@@ -156,6 +163,7 @@ async function main() {
   const ms = performance.now() - t0;
   ok("§2 the job ends done, with its receipt", end.status === "done" && end.result && end.result.importId === RUN, JSON.stringify(end).slice(0, 400));
   ok(`§2 the import commits in under 20 seconds (${ms} ms)`, ms < 20000, ms);
+  await surfacesAgree("after the workbook import", ORG, tok);
   const runs = await q("SELECT id FROM imports WHERE org_id=$1", [ORG]);
   const jobs = await q("SELECT id FROM sheet_import_jobs WHERE org_id=$1", [ORG]);
   ok("§2 two clicks at once: one import, one job", runs.length === 1 && jobs.length === 1, JSON.stringify({ runs, jobs }));
@@ -203,6 +211,7 @@ async function main() {
     const del = await api("POST", "/donors/bulk-delete", tok, { ids: made.slice(k, k + 200) });
     if (del.status !== 200) { ok("§6 bulk delete answers 200", false, del.status + " " + JSON.stringify(del.body)); break; }
   }
+  await surfacesAgree("after deleting everyone the import made", ORG, tok);
   // what is still here: the five people who were here before, and the gifts and
   // attendance of the three of them the file named (they were not deleted)
   const live = await one(`SELECT (SELECT COUNT(*)::int FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND d.deleted_at IS NULL) AS gifts,
@@ -236,6 +245,7 @@ async function main() {
   const after = await snapshot(ORG);
   const diff = snapDiff(before, after);
   ok("§7 the org matches its pre-import snapshot, the people already here exactly as they were", diff.length === 0, diff.join("\n"));
+  await surfacesAgree("after the undo", ORG, tok);
   const rc2 = (await api("GET", `/imports/${RUN}`, tok)).body.import || {};
   ok("§7 the receipt says it was undone, and offers Undo no more", rc2.canUndo === false && !!rc2.reversedAt, JSON.stringify([rc2.canUndo, rc2.reversedAt]));
 }
@@ -271,6 +281,7 @@ async function dropped() {
   ok("§8 undo answers 200", un.status === 200, un.status + " " + JSON.stringify(un.body));
   const diff = snapDiff(before, await snapshot(ORG));
   ok("§8 the org is exactly as before", diff.length === 0, diff.join("\n"));
+  await surfacesAgree("after the undo of a dropped request", ORG, tok);
 }
 
 // §9 a job that fails partway: a trigger on the scratch database refuses the

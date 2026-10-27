@@ -156,6 +156,7 @@ CORE=(
   import4-layers
   fix52-import-undo
   fix54-deleted-stay-deleted
+  surfaces-agree
   org-bound-writes
   real-shaped
   int4-mailbox
@@ -288,6 +289,7 @@ CORE=(
   fix49-decisions
   list1-columns-filters
   nightly-check
+  breaker
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

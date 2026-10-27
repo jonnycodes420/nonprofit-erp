@@ -186,9 +186,12 @@ async function matchPeople(orgId, u, answers, privacy) {
     }
     // FIX-54: a name the matcher calls new may be someone she deleted
     for (const [i, x] of members.entries()) {
-      if (x.status !== "new" || x.by === "you") continue;
+      if ((x.status !== "new" && x.status !== "ambiguous") || x.by === "you") continue;
       const hit = gone.find({ externalId: i === 0 ? p.externalId : null, email: i === 0 ? p.email : null, name: x.name });
       if (!hit) continue;
+      // HARDEN-1: a name the living share stays their question, unless the ID or
+      // the email says it is the person she deleted.
+      if (x.status === "ambiguous" && hit.by === "the same name") continue;
       // HARDEN-1: a match by the name alone is a question, Same person by
       // default; "Different person" imports them as new. An ID or an email stays blocked.
       const nameOnly = hit.by === "the same name";

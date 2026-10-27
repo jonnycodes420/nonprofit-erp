@@ -102,6 +102,10 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **A Move Report's two sides measure the same thing: the whole move, not one run.** A re-export is the org's
   whole file again, so a per-run held side made the second report read "8 fewer gifts than your file" about a
   move that had lost nothing. Both sides also key identity the same way (source id, then email, then name). (TRANS-1)
+- **What a Move Report holds is live people's gifts, and its headline names its scope.** A deleted person's
+  gifts stay as rows and are not held (`moveHeldFacts`, `NOT_DELETED`). The headline opens "From this file,
+  Steward holds…" for one run, or "Across the whole move from <vendor>, N imports so far, Steward holds…"
+  when the held side covers earlier runs. (HARDEN-1)
 - **Under one source id, a couple form that names the person is the same record** ("Jeffrey & Jessica Morales"
   beside "Jeffrey Morales" under D10530). An email or a name alone still never folds a couple into a person. (FIX-33)
 - **Two different source ids join by email only with a compatible name.** Otherwise which twins merged depended on

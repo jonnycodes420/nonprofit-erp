@@ -510,7 +510,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       const n=r.deleted;
       if(undoIds.length){
         offerUndo({ undoSeconds:r.undoSeconds, message:`Moved ${n} ${n===1?"person":"people"} to trash.`, undoAction: async()=>{
-          for(let i=0;i<undoIds.length;i+=10) await Promise.all(undoIds.slice(i,i+10).map(id=>apiFetch(`/deleted-records/${id}/restore`,{method:"POST"})));
+          // HARDEN-1: one request, one transaction: all of them come back or none do.
+          await apiFetch("/deleted-records/restore-people",{method:"POST",body:JSON.stringify({ids:undoIds})});
           if(onBulkDone)onBulkDone();
           return { restored: undoIds.length };
         } }, "people");

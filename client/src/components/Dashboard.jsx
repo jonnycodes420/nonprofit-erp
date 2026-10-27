@@ -1256,7 +1256,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
     const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
     const delta=period.delta||0;
-    const deltaTxt=delta>0?`up ${fmtFull(delta)} vs last`:delta<0?`down ${fmtFull(Math.abs(delta))} vs last`:"level vs last";
+    const deltaTxt=delta>0?`up ${fmtFull(delta)} on the same days last year`:delta<0?`down ${fmtFull(Math.abs(delta))} on the same days last year`:"level with the same days last year";
     return {period,many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt};
   })():null;
   const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};

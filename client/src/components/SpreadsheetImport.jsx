@@ -14,7 +14,7 @@ import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
-import { errorMessage } from "../lib/domainError";
+import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES } from "../../../shared/sheetRead";
@@ -92,7 +92,12 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         if (j.status === "done") { setResult(j.result); setBusy(""); }
         else if (j.status === "failed") { setFailed(j); setBusy(""); }
         setJob(j);
-      } catch { if (live) setJob(j0 => ({ ...j0 })); }   // a dropped read: ask again, never guess
+      } catch (e) {
+        if (!live) return;
+        // the server has no such job: the commit never reached it
+        if (e && e.status === 404) { setJob(null); setFailed({ sentence: "Not imported. Steward did not receive the file. Nothing was written." }); setBusy(""); return; }
+        setJob(j0 => ({ ...j0 }));   // a dropped read: ask again, never guess
+      }
     }, 700);
     return () => { live = false; clearTimeout(t); };
   }, [job]);
@@ -138,6 +143,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       // server's to say: look for it before saying anything.
       const seen = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(importId)}`).catch(() => null);
       if (seen && seen.id) { setJob(seen); return; }
+      // HARDEN-1: the connection dropped, so the server could not be asked.
+      // The file may be importing: follow its id until the server answers,
+      // rather than say "Nothing was written" about a file that was.
+      if (!seen && isNetworkFailure(e)) {
+        setJob({ id: importId, status: "running", fileName: file.name, phase: "Steward lost the connection. It will show what happened here as soon as it is back" });
+        return;
+      }
       setFailed({ sentence: `Not imported. ${e?.body?.message || errorMessage(e, "Steward did not receive the file.")} Nothing was written.` });
       setBusy("");
     }
