@@ -21,6 +21,8 @@ const has = (src, needle) => src.includes(needle);
 const count = (src, needle) => src.split(needle).length - 1;
 
 const shared = read("client/src/components/shared.jsx");
+// POLISH-3: interactive()'s click and keyboard rules live in lib/rowOpen.js.
+const rowOpen = read("client/src/lib/rowOpen.js");
 const fund   = read("client/src/components/Fundraising.jsx");
 const fin    = read("client/src/components/Finance.jsx");
 const reports= read("client/src/components/Reports.jsx");
@@ -31,9 +33,9 @@ const server = read("server.js");
 
 // ── Part 2: shared interactive() treatment ─────────────────────────────────
 ok(/export function interactive\(/.test(shared), "shared.jsx exports interactive()");
-ok(has(shared, 'role: "button"'), "interactive() sets role=button (accessible name/role)");
-ok(has(shared, "tabIndex: 0"), "interactive() is keyboard-focusable (tabIndex 0)");
-ok(has(shared, '"Enter"') && has(shared, "onKeyDown"), "interactive() activates on Enter/Space");
+ok(has(shared, "rowOpenProps(onClick, opts)") && has(rowOpen, '"button"'), "interactive() sets role=button (accessible name/role)");
+ok(has(rowOpen, "tabIndex: 0"), "interactive() is keyboard-focusable (tabIndex 0)");
+ok(has(rowOpen, '"Enter"') && has(rowOpen, "onKeyDown"), "interactive() activates on Enter/Space");
 ok(has(shared, ".click-card:focus-visible"), "GlobalStyles gives .click-card a visible focus ring");
 ok(has(shared, ".click-card:hover"), "GlobalStyles gives .click-card a hover wash");
 
@@ -83,8 +85,9 @@ ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communicat
 ok(has(comms, 'data-testid="analytics-campaigns-sent" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}'), "Comms 'Campaigns sent' card → the sent campaigns");
 ok(has(comms, 'data-testid="analytics-best" onClick={() => setAsSent(`/campaigns/${bestCampaign.id}/as-sent`)}'), "Comms 'Best campaign' card → the campaign's page");
 // Donors entity rows already navigate (pre-existing) — spot-check they carry onSelectDonor.
-// FIX-13 Part 6 — the row opens through rowClick (a Cmd-click on it opens a new tab) and the name is a real link.
-ok(has(donors, "onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}"), "Donors TeamView rows open the donor profile");
+// FIX-13 Part 6 — a Cmd-click on the row opens a new tab and the name is a real link.
+// POLISH-3: the row is interactive() with the donor's href, so Enter opens it too.
+ok(has(donors, "interactive(()=>onSelectDonor(d),{row:true,href:donorHref(d.id)"), "Donors TeamView rows open the donor profile");
 
 // ── Part 1: no page-subtitle blurb clutter (removed strings) ────────────────
 ok(!has(fund, "sub={narrative}") && !has(fund, "This is your fundraising command center"), "Fundraising subtitle blurb removed");

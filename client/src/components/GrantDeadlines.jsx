@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import { deadlinesInWindow, HOME_WINDOW_DAYS } from "../../../shared/grantMilestones";
@@ -29,7 +29,7 @@ const primaryBtn = { background: T.greenDk, border: "none", borderRadius: 8, pad
 
 function MilestoneRow({ m, onDone, onOpenGrant, isReadOnly, showGrant = true }) {
   return (
-    <div data-testid="deadline-row" style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+    <div data-testid="deadline-row" {...interactive(showGrant && onOpenGrant ? () => onOpenGrant(m.grantId) : null, { row: true })} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap" }}>
       <div style={{ width: 4, alignSelf: "stretch", borderRadius: 2, background: BAND_COLOR[m.band] || T.bg3 }} />
       <div style={{ minWidth: 64, fontSize: 13, fontWeight: 700, color: T.ink }}>{dayLabel(m.dueDate)}</div>
       <div style={{ flex: "1 1 220px", minWidth: 0 }}>

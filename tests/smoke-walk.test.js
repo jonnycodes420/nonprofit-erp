@@ -430,6 +430,34 @@ async function demoDoor(browser) {
       }
     }
   }
+  // POLISH-3 · CLICK ANYWHERE. On Groups you had to hit the name to open a
+  // group. A card that opens something opens from anywhere on it, so the walk
+  // clicks the card's EMPTY bottom padding, away from the name, the count and
+  // the menu, and needs the group's own page. It goes red when only the name
+  // is the button (proven on da0242f: the click lands on nothing).
+  {
+    trouble = [];
+    await page.goto(`${APP}/app/groups`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    const card = page.locator('[data-testid="group-card"]').first();
+    await card.waitFor({ timeout: 15000 }).catch(() => {});
+    const box = await card.boundingBox().catch(() => null);
+    let opened = false;
+    if (box) {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height - 5);
+      opened = await page.locator('[data-testid="group-page"]').waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+    }
+    ok("§click a click on the empty part of a Groups card opens that group", opened, { box: !!box, url: page.url() });
+    if (opened) {
+      await page.locator('[data-testid="group-page"] button', { hasText: "All groups" }).first().click().catch(() => {});
+      await card.waitFor({ timeout: 10000 }).catch(() => {});
+      await card.focus().catch(() => {});
+      await page.keyboard.press("Enter");
+      ok("§click Enter on a focused Groups card opens it too",
+        await page.locator('[data-testid="group-page"]').waitFor({ timeout: 5000 }).then(() => true).catch(() => false));
+    }
+    await look("groups · click anywhere");
+  }
+
   ok("the walk visited a DIFFERENT screen each time (not the dashboard N times)",
      new Set(seen).size === seen.length, seen);
 

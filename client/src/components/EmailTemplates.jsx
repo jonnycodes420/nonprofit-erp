@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { usePeoplePicker } from "../lib/people";
-import { T, Spin, activeMark } from "./shared";
+import { T, Spin, activeMark, interactive } from "./shared";
 import { TemplateEditor } from "./BrandKit";
 import { offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
@@ -93,7 +93,7 @@ export function templateSection(store, key, words) {
 }
 
 const tplCard = { ...card, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
-const openArea = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4, color: T.ink, width: "100%" };
+const openArea = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4, color: T.ink, width: "100%" };
 const mediumStyle = { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 };
 const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.greenDk : T.gold700 });
 
@@ -251,15 +251,15 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,250px),1fr))", gap: 10 }}>
                     {mine.map(c => (
-                      <div key={c.id} style={tplCard} data-template-card={c.store} data-template-id={c.id} data-template-editor={c.editor}>
-                        <button type="button" style={{ ...openArea, cursor: c.onOpen ? "pointer" : "default" }} disabled={!c.onOpen}
-                          aria-label={`${c.openLabel}: ${c.name}`} onClick={c.onOpen || undefined}>
+                      <div key={c.id} style={tplCard} data-template-card={c.store} data-template-id={c.id} data-template-editor={c.editor}
+                        {...interactive(c.onOpen || null, { label: `${c.openLabel}: ${c.name}` })}>
+                        <div style={openArea}>
                           <span style={mediumStyle} data-template-medium>{c.medium}</span>
                           <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{c.name}</span>
                           <span style={{ fontSize: 12, color: T.ink3, overflowWrap: "anywhere" }}>{c.how}</span>
                           <span data-reviewed={c.reviewed ? "1" : "0"} style={reviewedStyle(c.reviewed)}>{c.review}</span>
                           {c.onOpen && <span data-testid={c.openLabel === "Edit in editor" ? "edit-in-editor" : undefined} style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}
-                        </button>
+                        </div>
                         {c.designed && (
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
                             <button style={btn.small} disabled={isReadOnly || !!busy} onClick={() => start({ copyOf: c.designed.id })}>Copy</button>

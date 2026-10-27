@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, PageTitle, EmptyState, Modal } from "./shared";
+import { T, PageTitle, EmptyState, Modal, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
 import { urlParam } from "../lib/appUrls";
@@ -262,11 +262,15 @@ function TaskRow({ t, today, picked, onPick, onTick, onOpen, onAbout, action, on
   const late = t.view === "overdue";
   // A long press on a phone starts selecting, the way "Select" does.
   const press = useRef(null);
-  const startPress = () => { if (isReadOnly || t.done || selecting) return; press.current = setTimeout(() => { press.current = null; onLongPress && onLongPress(); }, 550); };
+  const longFired = useRef(false);
+  const startPress = () => { if (isReadOnly || t.done || selecting) return; press.current = setTimeout(() => { press.current = null; longFired.current = true; onLongPress && onLongPress(); }, 550); };
+  // POLISH-3: the whole row opens the task, or picks it while selecting. The
+  // click that ends a long press is the press, not a second tap.
+  const rowAct = () => { if (longFired.current) { longFired.current = false; return; } if (selecting && !t.done && !isReadOnly) onPick(); else onOpen(); };
   const endPress = () => { if (press.current) { clearTimeout(press.current); press.current = null; } };
   const dayLine = t.due ? (t.due.slice(0, 10) === today ? "Today" : `${late ? "Was due " : ""}${fmtDayShort(t.due)}`) : "";
   return (
-    <div data-testid="task-row" data-task-id={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, background: T.white, border: `1px solid ${T.bg2}`,
+    <div data-testid="task-row" data-task-id={t.id} {...interactive(rowAct, { row: true, label: undefined })} style={{ display: "flex", alignItems: "flex-start", gap: 10, background: T.white, border: `1px solid ${T.bg2}`,
       borderLeft: `3px solid ${late ? T.gold500 : t.done ? T.bg3 : T.greenDk}`, borderRadius: 10, padding: "4px 8px", opacity: t.done ? 0.6 : 1 }}
       onTouchStart={startPress} onTouchEnd={endPress} onTouchMove={endPress} onTouchCancel={endPress}>
       {selecting && !t.done && !isReadOnly && (

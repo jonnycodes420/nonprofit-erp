@@ -7,7 +7,7 @@
 // when its EIN is on file, and what went to it. Every change offers Undo.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import { FunderHistoryPanel } from "./GrantReports";
@@ -57,7 +57,7 @@ export default function GrantFunders({ isReadOnly, onOpenGrant, openFunderId, on
       {msg && <div role="status" style={{ fontSize: 13 }}>{msg}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
         {list.funders.map(f => (
-          <button key={f.id} type="button" onClick={() => setSel(f.id)} data-testid="funder-card" style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
+          <button key={f.id} type="button" onClick={() => setSel(f.id)} data-testid="funder-card" className="click-card" style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
             <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink }}>{f.name}</div>
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{(list.funderTypes.find(t => t.key === f.funderType) || {}).label || "Kind not set"}{f.contacts ? ` · ${f.contacts} ${f.contacts === 1 ? "contact" : "contacts"}` : ""}</div>
             <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 8 }}>{f.asks} {f.asks === 1 ? "ask" : "asks"}, {f.awards} awarded{f.awardedCents ? ` (${money(f.awardedCents)})` : ""}</div>
@@ -179,7 +179,7 @@ function FunderDetail({ id, isReadOnly, onBack, onOpenGrant, onOpenPerson }) {
         <div style={eyebrow}>Every ask and award</div>
         {!f.grants.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nothing asked of them yet.</div>}
         {f.grants.map(g => (
-          <div key={g.id} data-testid="funder-grant" style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+          <div key={g.id} data-testid="funder-grant" {...interactive(() => onOpenGrant(g.id), { row: true })} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap" }}>
             <button type="button" onClick={() => onOpenGrant(g.id)} style={{ all: "unset", cursor: "pointer", flex: "1 1 220px", fontSize: 13.5, fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{g.program || "A grant"}{g.cycleName ? ` (${g.cycleName})` : ""}</button>
             <span style={{ fontSize: 12.5, color: T.ink2, minWidth: 90 }}>{g.statusLabel}</span>
             <span style={{ fontSize: 12.5, color: T.ink2, minWidth: 150 }}>{money(g.requestedCents)} asked{g.awardedCents ? `, ${money(g.awardedCents)} awarded` : ""}</span>

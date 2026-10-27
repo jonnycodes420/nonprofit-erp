@@ -3,7 +3,7 @@ import RemoveMenu, { removeOne } from "./RemoveMenu";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { usePeoplePicker } from "../lib/people";
-import { T, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
+import { T, interactive, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
@@ -153,7 +153,8 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
                                    goalCents: goal ? Math.round(goal * 100) : null });
 
   return (
-    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden", borderLeft: `3px solid ${t.color}`, display: "flex", flexDirection: "column", boxShadow: T.shadow }}>
+    <div {...interactive(() => onManage(event), { href: tabHref("events", { eventId: event.id }), role: "link" })} data-testid="event-card"
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden", borderLeft: `3px solid ${t.color}`, display: "flex", flexDirection: "column", boxShadow: T.shadow }}>
       <div style={{ padding: "16px 18px 12px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
