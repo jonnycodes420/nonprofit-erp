@@ -871,5 +871,3 @@ hand.
   Cards, Apple Pay, Google Pay and Link need nothing. Venmo is not offered by Stripe.
 
 - **HARDEN-1: a read-only database role for the nightly check.** In Supabase's SQL editor run the six lines in the header of `nightlyCheck.js` (CREATE ROLE steward_nightly_check … GRANT SELECT …) with a new password, then in Railway set `NIGHTLY_CHECK_DATABASE_URL` on the worker to DATABASE_URL with that role and password. Until then the check runs on the normal connection, inside a read-only transaction.
-
-- **INSIGHTS-1: the memo-kept gift file.** Put the copy of `jp-gift-history-287.xlsx` whose Memo column keeps the non-name words ("Reimbursement on buying the Horse", "Stable Moments", "Tickets", "Mother", "Friend") at `tests/fixtures/import/real-shaped/jp-gift-history-287.xlsx`. Both copies in Downloads are the scrubbed one; `tests/insights.test.js` holds 7 checks waiting on it (§M).

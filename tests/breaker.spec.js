@@ -284,14 +284,21 @@ async function caseClicks() {
   await page.goto(`${APP}/donors/d_brk_c5`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator('[data-testid="dp-more"]').first().click({ timeout: 30000 });
   await page.getByRole("menuitem", { name: /Edit record/ }).first().click({ timeout: 10000 }).catch(() => page.getByText("Edit record").first().click());
-  await page.locator('input[placeholder="Phone"]').first().fill("555-0101", { timeout: 10000 });
+  // The form fills itself from the record after it opens; on a slow runner (CI,
+  // 27 Oct) a value typed before that was overwritten. Type once it holds still.
+  const phone = page.locator('input[placeholder="Phone"]').first();
+  await phone.waitFor({ state: "visible", timeout: 10000 });
+  await wait(600);
+  for (let i = 0; i < 5 && (await phone.inputValue().catch(() => "")) !== "555-0101"; i++) { await phone.fill("555-0101"); await wait(300); }
   await page.getByRole("button", { name: /Save Changes/ }).click({ clickCount: 3 });
   await waitForDb(async () => (await one("SELECT phone FROM donors WHERE id='d_brk_c5'")).phone === "555-0101", 10000);
   await wait(800);
   const puts = writesTo(page, /PUT \/donors\/d_brk_c5$/, "2xx");
   // audit rows are append-only (an earlier run's rows stay), so count this run's
   const edits = await one(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND entity_id='d_brk_c5' AND request_method='PUT' AND (status_code IS NULL OR status_code<400) AND created_at >= $2`, [o.orgId, caseStart]);
-  ok(`${L} §1 Save on a person edit pressed three times: one save, one audit row`, puts.length === 1 && edits.n === 1, { puts: puts.length, audit: edits.n });
+  ok(`${L} §1 Save on a person edit pressed three times: one save, one audit row`, puts.length === 1 && edits.n === 1,
+    { puts: puts.length, audit: edits.n, every: writesTo(page, /\/donors\/d_brk_c5$/).map(w => `${w.m} ${w.status}`),
+      phone: await phone.inputValue().catch(() => null), says: (await textOf(page, '[role="dialog"]')).slice(0, 300) });
 
   // 1g · Save on a new gift, three times; then Save on its edit, three times
   await page.goto(`${APP}/donors/d_brk_c6`, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -382,9 +389,14 @@ async function caseDrop() {
       await page.waitForSelector('[data-testid="sheet-failed"], [data-testid="sheet-job"], [data-testid="sheet-result"]', { timeout: 20000 }).catch(() => {});
       await wait(1500);
     }
-    const done = await waitForDb(async () => { const j = await one("SELECT status FROM sheet_import_jobs WHERE org_id=$1", [o.orgId]); return j && j.status !== "running" ? j : null; }, 60000);
+    // Every job, once none is running: a lost answer may leave a second job (CI,
+    // 27 Oct: two rows, one failed), so read them all, never one row at random.
+    const jobs = await waitForDb(async () => { const js = await q("SELECT status, error, request_key FROM sheet_import_jobs WHERE org_id=$1 ORDER BY started_at, id", [o.orgId]);
+      return js.length && js.every(j => j.status !== "running") ? js : null; }, 60000) || [];
     const c = await counts(o.orgId);
-    ok(`${L} import: the file is all written or not at all (never half)`, done && done.status === "done" ? c.gifts === 60 && c.alive === 61 && c.imports === 1 : c.gifts === 0 && c.alive === 1, { job: done, c });
+    ok(`${L} import: the file is all written or not at all (never half)`, jobs.some(j => j.status === "done") ? c.gifts === 60 && c.alive === 61 && c.imports === 1 : c.gifts === 0 && c.alive === 1, { jobs, c });
+    ok(`${L} import: at most one job wrote the file`, jobs.filter(j => j.status === "done").length <= 1, jobs);
+    if (jobs.length > 1) console.log(`  (${L}: ${jobs.length} jobs: ${jobs.map(j => `${j.status}${j.error ? ` "${String(j.error).slice(0, 160)}"` : ""}`).join("; ")})`);
     if (how === "offline") {
       const says = await textOf(page, '[data-testid="sheet-failed"]');
       ok(`${L} import: while offline the screen does not say "Nothing was written" about a file that was written`,
