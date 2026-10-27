@@ -8,7 +8,7 @@ import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
 import { YourWords } from "./YourWords";
-import { DonorImport } from "./Donors";
+import SpreadsheetImport from "./SpreadsheetImport";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
@@ -1939,7 +1939,7 @@ function ImportsHistory(){
                   </td>
                   <td style={td}>{r.committedOn||""}</td>
                   <td style={td}>{r.by||"Not set"}</td>
-                  <td style={{...td,textAlign:"right"}}>{fmtCount(r.rowsIn)}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtCount(r.peopleSentence?(r.peopleRowsIn??(r.donorsCreated+(r.peopleMatched||0))):r.rowsIn)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtMoney(r.dollarsIn)}</td>
                 </tr>
@@ -1959,9 +1959,11 @@ function ImportsHistory(){
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftsCreated)}</div></div>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
               </div>
+              {/* HARDEN-1: a file of people is counted in people, never "0 rows in the file" */}
+              {open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
                 {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"created"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
-              </div>
+              </div>}
               {open.pledgesCreated>0&&(
                 <div style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
                   {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges, plus anything set aside.
@@ -2630,7 +2632,8 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
         </Modal>
       )}
 
-      {showImport&&<DonorImport withHistory onClose={()=>setShowImport(false)} onImported={()=>{setShowImport(false);load();}}/>}
+      {/* HARDEN-1: every import door opens the one reader */}
+      {showImport&&<SpreadsheetImport onClose={()=>setShowImport(false)} onImported={()=>{setShowImport(false);load();}}/>}
     </>
   );
 

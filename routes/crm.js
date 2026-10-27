@@ -8706,6 +8706,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
                               FROM sheet_import_jobs j WHERE j.org_id=? AND j.status IN ('running','failed') AND j.started_at > NOW() - interval '7 days'
                                AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.id=j.id AND i.org_id=j.org_id)
                              ORDER BY j.started_at DESC LIMIT 20`, [req.user.orgId]);
+  const recent = await recentGiftRuns(req.user.orgId, rows);
   res.json({
     imports: jobs.map(j => ({ id: j.id, name: j.file_name || "Spreadsheet", sourceFilename: j.file_name, shape: "sheet",
       committedOn: new Date(j.started_at).toISOString().slice(0, 10), committedAt: j.started_at, by: j.created_by_name || null,
@@ -8729,10 +8730,12 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         // before this build has a source but nothing to compare.
         migrationSource: r.migration_source || null,
         hasMoveReport: !!(summary && summary.moveFile),
-        // FIX-37: what she answered about the last 30 days' thank-yous.
-        thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+        // FIX-37: what she answered about the last 30 days' thank-yous; HARDEN-1:
+        // only for a run that had gifts from those 30 days to thank.
+        thanks: recent.has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
         state: r.reversed_at ? "undone" : "done",
         pledgesCreated: Number(summary.pledgesCreated) || 0,
+        ...peopleLine(r, summary),
       };
     })),
   });
@@ -8753,6 +8756,35 @@ app.get("/imports/:id/progress", requireAuth, wrap(async (req, res) => {
              readout: ro ? { id: ro.id, headline: ro.headline } : null });
 }));
 
+// HARDEN-1 · A RUN WITH NO RECENT GIFTS THANKED NOBODY. The answer to "have the
+// last 30 days been thanked?" is shown only on a run that had a gift dated in
+// the 30 days before it committed; a contacts file drafted no thank-yous.
+async function recentGiftRuns(orgId, rows) {
+  const ids = rows.filter(r => r.thanks_answer).map(r => r.id);
+  if (!ids.length) return new Set();
+  const hit = await query(`SELECT DISTINCT g.import_id AS id FROM gifts g JOIN imports i ON i.id=g.import_id AND i.org_id=g.org_id
+                            WHERE g.org_id=? AND g.import_id = ANY(?) AND g.date IS NOT NULL
+                              AND g.date::date >= (i.committed_at::date - 30)`, [orgId, ids]);
+  return new Set(hit.map(x => x.id));
+}
+// HARDEN-1 · A FILE OF PEOPLE IS COUNTED IN PEOPLE. Its receipt read "0 rows in
+// the file" after writing 656 people: rows_in counts gift rows. A run with no
+// gift rows says what it did with its people instead (stored on the run, never
+// recomputed: the reader keeps its rows and matches; the old mapper its counts).
+function peopleLine(r, summary) {
+  const gifts = Number(r.gifts_created) || 0, rowsIn = Number(r.rows_in) || 0;
+  const made = Number(r.donors_created) || 0;
+  const matched = summary.peopleMatched != null ? Number(summary.peopleMatched) || 0 : Number(r.donors_merged) || Number(summary.donorsMatched) || 0;
+  if (rowsIn || gifts || !(made + matched)) return { peopleRowsIn: null, peopleSentence: null };
+  const rowsP = summary.personRowsInFile != null ? Number(summary.personRowsInFile) || 0 : null;
+  const folded = rowsP != null ? Math.max(0, rowsP - made - matched) : 0;
+  const n = (k, w) => `${k.toLocaleString("en-US")} ${k === 1 ? w : w + "s"}`;
+  const parts = [`${made.toLocaleString("en-US")} added`, `${matched.toLocaleString("en-US")} already here`];
+  if (folded) parts.push(`${n(folded, "row")} for someone named on another row`);
+  return { peopleRowsIn: rowsP, peopleMatched: matched,
+           peopleSentence: `${rowsP != null ? n(rowsP, "row") + " of people" : `${(made + matched).toLocaleString("en-US")} ${made + matched === 1 ? "person" : "people"}`} in the file = ${parts.join(" + ")}. No gifts in this file.` };
+}
+
 // One run, with the receipt exactly as it was shown.
 app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -8770,7 +8802,8 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       reconciled: findings.length === 0, findings, notices: importNotices(r),
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
-      thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+      thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
+      ...peopleLine(r, summary),
       // FIX-52: the pledges it made are part of what it brought in, and every
       // receipt that reverses as a whole offers Undo for its window, whether
       // or not it reconciles: an import that went wrong is when undo matters.
@@ -9571,9 +9604,15 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // undoes as a whole too. Its gifts carry the run id and the people it created
 // carry it as `created_import_id`, which is everything the undo needs, and
 // what it now starts (thank-you drafts, journeys, a readout) is undone with it.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet"]);
+// HARDEN-1: the old "Import Donors" mapper is retired; every door opens the one
+// reader. Its past runs ("aggregate", a contacts or totals file; "wide", a
+// year-columns file; "workbook" and "both", two sheets) carry the run id on
+// their gifts and on the people they made, so each undoes whole from its
+// receipt like the others, for the reader's 30 days.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet", "aggregate", "wide", "workbook", "both"]);
 // FIX-52: the spreadsheet import's screen promises Undo for 30 days, and now keeps it.
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30 };
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30,
+                              aggregate: 24 * 30, wide: 24 * 30, workbook: 24 * 30, both: 24 * 30 };
 // Whether a receipt offers Undo, and until when. The route below is the judge.
 function importUndoWindow(r) {
   if (!WHOLE_IMPORT_SHAPES.has(r.shape) || !r.committed_at) return { canUndo: false, undoUntil: null };
@@ -9709,7 +9748,10 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     for (const i of ixIds) if (i.donor_id && !donorIds.includes(i.donor_id)) donorIds.push(i.donor_id);
   }
-  const tasksRemoved = (await query("DELETE FROM tasks WHERE org_id=? AND import_id=? RETURNING id", [orgId, req.params.id])).length;
+  // HARDEN-1: the "Review N possible duplicates from the import" task its Data
+  // health run opened is the run's too, while nobody has done it
+  const tasksRemoved = (await query(`DELETE FROM tasks WHERE org_id=? AND (import_id=? OR (created_by=? AND COALESCE(done,0)::int = 0)) RETURNING id`,
+    [orgId, req.params.id, `system:data-health/import/${req.params.id}`])).length;
   await run("DELETE FROM donor_relationships WHERE org_id=? AND import_id=?", [orgId, req.params.id]).catch(() => {});
   // Flags and tags are reverted only where this run turned them on and they
   // are still on: a flag somebody set by hand afterwards is not this run's.

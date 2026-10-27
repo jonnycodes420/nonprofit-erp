@@ -157,6 +157,7 @@ CORE=(
   fix52-import-undo
   fix54-deleted-stay-deleted
   surfaces-agree
+  real-shaped
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof

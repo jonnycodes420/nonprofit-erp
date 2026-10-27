@@ -178,6 +178,39 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **A person the file creates starts at the stage their role says (FIX-52).** Gave: `steward` (Ongoing care). Only
   pledged: `solicit` (the stage list's own reading of "pledge pending"). Otherwise `prospect`. A person already here
   keeps their stage.
+- **A column about the gift lands on the gift, never the person (HARDEN-1).** On a table of gifts, a "Category" (or
+  Class, Gift category, Income category) is each gift's campaign or appeal (`gifts.campaign`), and any other column
+  whose value differs between one person's gifts goes on each gift's note under its header (role `giftNote`). Memo is
+  the gift's note. Kept on the person, a donor who gave to a gala and a 5K kept only one. An event-like category
+  ("Bourbon & Breeders Gala") is a campaign name, not a new event: the event's raised figure already falls back to the
+  campaign name, and making events from a category would invent dates and attendance.
+- **A comma is "Last, First" only when what follows can be a first name (HARDEN-1).** A company ending after it
+  ("…, Inc", "…, LLC", "…, U.S.A") is an organisation; a person's suffix ("Perel V. Warville, Jr"), a place in capitals
+  after a mixed-case name ("…, OAKWOOD"), or three or more words before it keep the name exactly as written.
+- **A business's own words make an organisation, as whole tokens (HARDEN-1).** `isOrgName` in sheetRead.js: ORG_WORDS
+  plus `ORG_TOKENS` (store, farm, services, realty, construction, excavating, inn, community, unlimited, cafe, …), dots
+  dropped first. Initials joined by "&" ("S & S Westford") are a business, never two people of one initial. A Last
+  Name of two or more words with no First Name is an organisation, its words as written (the farms in a contacts
+  file); one word alone ("Foxland" on a dinner list) is a family's surname and stays a person.
+- **A name-only match to someone deleted is a question (HARDEN-1, after FIX-54).** "Is this the same Stephen Gray you
+  deleted?": Same person (default, stays out) or Different person (imported as new), in `answers.deletedPeople`,
+  which rides the commit. A match by the old system's ID or by email stays blocked with no question.
+- **Every import door opens the one reader (HARDEN-1).** Donors' "Import a spreadsheet", Settings, Imports, onboarding
+  and Home's openImport all open `SpreadsheetImport.jsx`. The old "Import Donors" mapper (DonorImport, GiftHistoryImport)
+  is no longer rendered; its code stays for the shared parsers. Its past runs (shapes `aggregate`, `wide`, `workbook`,
+  `both`) undo whole from their receipt for 30 days. A run with no gift rows is counted in people on its receipt
+  ("656 rows of people in the file = 589 added + 61 already here + …"), never "0 rows in the file", and a run with no
+  gift from the 30 days before it never shows the thank-you answer. Undo also removes the open "Review N possible
+  duplicates from the import" task its Data health run opened.
+- **A method the reader cannot name keeps its words (HARDEN-1, IMPORT-3).** "Online (Miss)" is method Other with
+  "Method in your file: Online (Miss)" on the gift; it is still a received gift when Completed says Yes. A pledge has no payment-method column, so how it will be paid
+  ("Stock", "Foundation", "Retirement Dist") rides its note. A monthly word ("Reccuring") is kept on the gift's note
+  and flags the person as a monthly giver for her to confirm; no plan and no pledge is made from it.
+- **A negative row whose words say money went out is an expense, not a refund (HARDEN-1).** "Purchase of Oakwell
+  Horse" (-$4,800) is set aside as "money paid out … an expense, not a gift" (`PAID_OUT_RE`).
+- **The real-shaped files grade the reader (HARDEN-1).** `tests/real-shaped.test.js` imports
+  `tests/fixtures/import/real-shaped/` (scrubbed from a real customer's files; the only customer-shaped files allowed)
+  into an empty org and checks them to the cent against `expected.json`, whose `years` are net of the negative rows.
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
@@ -217,7 +250,8 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - `shared/migrationPresets.js`, `sourcePresets.js`, `mailchimpPreset.js`, `npspPreset.js`, `grantImport.js`,
   `membershipImport.js` — the presets
 - `shared/importSentence.js` — the receipt's one sentence
-- `client/src/components/Donors.jsx` `DonorImport`, `WorkbookImport.jsx`, `ColumnTargetSelect.jsx` — the UI
+- `client/src/components/Donors.jsx` `DonorImport`, `WorkbookImport.jsx`, `ColumnTargetSelect.jsx` — the old mapper's UI,
+  no longer opened by any door (HARDEN-1); `SpreadsheetImport.jsx` is the one import screen
 - `server.js` `POST /donors/import-combined`, `/donors/import-semantics` (fold undo via `import_merges`),
   `recalcDonorSummaryBatch`, `importGiftExtras`
 - `bookkeeper.js`, `reportToCsv` / `sendReportCsv`, `GET /org/export/csv`, `GET /org/export/full` — exports
