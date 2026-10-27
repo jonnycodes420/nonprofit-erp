@@ -285,6 +285,7 @@ CORE=(
   support1-answers
   fix49-decisions
   list1-columns-filters
+  breaker
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

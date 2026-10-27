@@ -7029,6 +7029,29 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
   res.json({ deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
+// HARDEN-1: THE UNDO OF A BULK DELETE IS ONE STEP, like the delete. The toast
+// used to put people back ten requests at a time; a dropped network (or a
+// closed tab) half way left some back and some not, and pressing Undo again
+// hit "already back" on the first ten and stopped, so the rest could never
+// come back from the toast. One transaction now: all of them, or none. A
+// person already back counts as back, so a second press finishes the job.
+app.post("/deleted-records/restore-people", requireAuth, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? [...new Set(req.body.ids.map(String))] : [];
+  if (!ids.length || ids.length > 100000) return res.status(400).json({ error: "ids array required" });
+  const orgId = req.user.orgId;
+  const rows = await query("SELECT id, record_id, restored_at, created_by FROM deleted_records WHERE org_id = ? AND table_name = 'donors' AND id = ANY(?)", [orgId, ids]);
+  if (rows.length !== ids.length) return res.status(404).json({ error: "not_found", sentence: "Some of these are no longer in Recent changes. Nobody was put back." });
+  if (rows.some(t => t.created_by !== req.user.userId) && !(await mayEditLogged(req, {}))) return res.status(403).json(NOT_YOURS);
+  const waiting = rows.filter(t => !t.restored_at);
+  await withTransaction(async client => {
+    if (!waiting.length) return;
+    await runTx(client, "UPDATE donors SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.record_id)]);
+    await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.id)]);
+  });
+  if (req.audit) req.audit.entity("donor", waiting.length === 1 ? waiting[0].record_id : null);
+  res.json({ restored: rows.length, newlyRestored: waiting.length, alreadyBack: rows.length - waiting.length });
+}));
+
 // UNDO. Puts the row back exactly as it was. Allowed to whoever deleted it,
 // or an admin, and only once.
 app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
@@ -9638,7 +9661,17 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
 }));
 
+// HARDEN-1: ONE UNDO. Two presses of "Yes, undo it" (a double-click, a retry
+// after the answer was lost, a second tab) both read reversed_at as empty and
+// both ran the whole undo, each answering "Undone. 40 gifts removed". The undo
+// of one run now waits for any other undo of that run, then reads
+// reversed_at again, so the second press is told it was already undone. Its
+// own key, not `import:<org>`: the recent-gift work holds that one and the
+// undo waits for that work (cancelRecentWork), which would wait forever.
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await withAdvisoryLock(`import-undo:${req.user.orgId}:${req.params.id}`, () => reverseImport(req, res));
+}));
+async function reverseImport(req, res) {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
@@ -9803,7 +9836,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
       + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
       + (alreadyDeleted ? ` (${alreadyDeleted} of them already deleted)` : "")
       + `. Nothing was sent. Nothing else was touched.` });
-}));
+}
 
 // The merge review list — every fold the importer made, newest import first.
 app.get("/import-merges", requireAuth, wrap(async (req, res) => {
@@ -22027,8 +22060,22 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
   const donors = await resolveCampaignRecipients(campaign, req.user.orgId);
   const aud = await campaignAudience(campaign, req.user.orgId);
 
-  // Mark as sending and respond immediately (non-blocking)
-  await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=?", [campaign.id]);
+  // Mark as sending and respond immediately (non-blocking).
+  // HARDEN-1: the mark is a CLAIM. Two presses of Send (a double-click, a
+  // retry after a lost answer, a second tab) both read 'draft', both marked it
+  // sending and both ran the loop below, so every donor got the campaign
+  // twice. One UPDATE now decides which press sends; the other is told it is
+  // already going. A send stuck in 'sending' for 15 minutes (the server died
+  // mid-loop) may be pressed again, as before.
+  const claimed = await query(
+    `UPDATE campaigns SET status='sending', updated_at=NOW()
+      WHERE id=? AND org_id=? AND status IS DISTINCT FROM 'sent'
+        AND (status IS DISTINCT FROM 'sending' OR updated_at < NOW() - interval '15 minutes')
+      RETURNING id`, [campaign.id, req.user.orgId]);
+  if (!claimed.length) {
+    req.audit && req.audit.skip && req.audit.skip("a second press of Send changes nothing");
+    return res.status(409).json({ error: "already_sending", message: "This campaign is already going out. Nothing was sent twice." });
+  }
   res.json({ queued: true, recipientCount: aud.orgGate.send ? aud.recipients.length : 0 });
 
   setImmediate(() => runCampaignSend(campaign, org, donors));
