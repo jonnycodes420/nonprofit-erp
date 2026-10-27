@@ -43,8 +43,22 @@ const PROGRAMMER_ERROR_NAMES = new Set([
   "ReferenceError", "TypeError", "RangeError", "SyntaxError", "InternalError",
 ]);
 
+// HARDEN-1: A LOST CONNECTION IS NOT A BUG, AND IT IS NOT "NOTHING CHANGED".
+// fetch() rejects with a TypeError when the network drops ("Failed to fetch"
+// in Chrome, "NetworkError when attempting to fetch resource." in Firefox,
+// "Load failed" in Safari). Read as a bug, every write whose answer was lost
+// told her "nothing was changed", and the breaker found an import undo that
+// HAD run saying exactly that. The request may have arrived; only the server
+// can say, so the sentence says that.
+const NETWORK_FAILURE = /^(Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|Network request failed)$/;
+export function isNetworkFailure(e) {
+  return !!e && String(e.name || "") === "TypeError" && NETWORK_FAILURE.test(String(e.message || ""));
+}
+export const NETWORK_FAILURE_SENTENCE = "Steward lost the connection before it heard back, so this may or may not have gone through. Check, then try again.";
+
 export function isProgrammerError(e) {
   if (!e) return false;
+  if (isNetworkFailure(e)) return false;
   // `instanceof` is unreliable across realms (an iframe, a worker, a bundled
   // copy of a library), so the NAME is the test — it survives them all.
   const name = (e && e.name) || (e && e.constructor && e.constructor.name) || "";
@@ -79,6 +93,7 @@ export function rethrowProgrammerError(e) {
 //                     the user's file is a sentence about their data as far as
 //                     they can tell.
 export function errorMessage(e, fallback) {
+  if (isNetworkFailure(e)) return NETWORK_FAILURE_SENTENCE;
   if (isProgrammerError(e)) {
     const detail = (e && e.message) ? ` (${e.message})` : "";
     return `Something went wrong inside Steward, this is not a problem with your data, and nothing was changed.${detail}`;
