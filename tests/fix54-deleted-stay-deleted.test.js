@@ -146,6 +146,21 @@ async function main() {
   ok("§3 once back, the file matches them", (u3b.people || []).some(p => p.members.some(m => m.id === p17.id && m.status === "matched")) && (u3b.deletedMatches || []).length === 1,
      JSON.stringify([u3b.matchedPeople, u3b.deletedMatches]).slice(0, 300));
 
+  // §3c HARDEN-1 (found by the breaker): two people still here share the name, so
+  // the matcher asks "which Cleo Clicker"; the row's email is the deleted one's,
+  // and an email match to someone deleted stays blocked even when the name is a question.
+  for (const [id, deleted] of [["d_f54_cleo_a", false], ["d_f54_cleo_b", false], ["d_f54_cleo_gone", true]])
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,deleted_at,created_by,created_by_name)
+             VALUES ($1,$2,'Cleo Clicker',$3,'steward','active','[]','["donor"]',$4,'system:test','test')`,
+      [id, ORG, deleted ? "cleo.gone@f54.local" : null, deleted ? new Date(0).toISOString() : null]);
+  const body3c = { fileName: "cleo.csv", sheets: [{ name: "Sheet1", grid: [["Date", "Donor", "Email", "Amount"], ["2026-10-04", "Cleo Clicker", "cleo.gone@f54.local", "25"]] }] };
+  const u3c = (await api("POST", "/sheet-import/understand", tok, body3c)).body || {};
+  ok("§3c a deleted person's email is held as deleted, never offered as a choice of the living",
+    (u3c.deletedMatches || []).some(x => x.id === "d_f54_cleo_gone" && !x.nameOnly) && u3c.newPeople === 0
+      && !(u3c.people || []).some(p => p.members.some(m => m.status === "ambiguous")),
+    JSON.stringify([u3c.deletedMatches, u3c.newPeople, (u3c.people || []).map(p => p.members)]).slice(0, 400));
+  await q("DELETE FROM donors WHERE org_id=$1 AND id = ANY($2)", [ORG, ["d_f54_cleo_a", "d_f54_cleo_b", "d_f54_cleo_gone"]]);
+
   // §4 import, delete by hand, undo the import
   await q(`INSERT INTO donors (id,org_id,name,stage,status,tags,person_types,created_by,created_by_name) VALUES ('d_f54_here',$1,'Marigold Alreadyhere','steward','active','[]','["donor"]','system:test','test')`, [ORG]);
   const here = { id: "d_f54_here", name: "Marigold Alreadyhere" };
