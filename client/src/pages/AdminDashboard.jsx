@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { rowOpenProps } from "../lib/rowOpen";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
@@ -1022,7 +1023,8 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
             {loading && <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filtered.length === 0 && <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>No orgs found</td></tr>}
             {filtered.map(o => (
-              <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
+              <tr key={o.id} {...rowOpenProps(() => setSelectedOrg(o), { role: "row" })} data-testid="admin-org-row"
+                style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease", cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "12px 16px" }}>

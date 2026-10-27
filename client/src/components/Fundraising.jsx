@@ -1242,7 +1242,8 @@ function FundsView({ data, onNavigate }) {
       {funds.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
           {funds.map(f => (
-            <div key={f.id || f.name} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.bg3}` }}>
+            <div key={f.id || f.name} {...interactive(f.id && onNavigate ? () => onNavigate("finance", { subtab: "funds", fundId: f.id }) : null, { href: f.id ? fundHref(f.id) : undefined, role: "link" })}
+              style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.bg3}` }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>
                 {f.id ? <RecordLink to={fundHref(f.id)} onOpen={onNavigate ? () => onNavigate("finance", { subtab: "funds", fundId: f.id }) : undefined} data-record-link="fund">{f.name}</RecordLink> : f.name}
               </div>

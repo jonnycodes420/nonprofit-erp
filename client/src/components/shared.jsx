@@ -138,16 +138,12 @@ export function interactive(onClick, opts = {}) {
   if (!onClick) return {};
   // `dark:true` for interactive DARK panels (goal card etc.) — the light mist
   // hover wash would clobber a dark gradient, so those get a lighter-pine
-  // hover instead. Same focus ring either way.
-  const base = opts.dark ? "click-card-dark" : "click-card";
-  return {
-    onClick,
-    onKeyDown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(e); } },
-    role: "button",
-    tabIndex: 0,
-    "aria-label": opts.label,
-    className: base + (opts.className ? " " + opts.className : ""),
-  };
+  // hover instead. Same focus ring either way. `row:true` for a list or table
+  // row: a quiet cream wash, no lift. POLISH-3: the click and keyboard rules
+  // (inner controls keep their own clicks, Cmd-click with an href) are
+  // lib/rowOpen.js.
+  const base = opts.dark ? "click-card-dark" : opts.row ? "click-row" : "click-card";
+  return { ...rowOpenProps(onClick, opts), className: base + (opts.className ? " " + opts.className : "") };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -160,6 +156,7 @@ export function interactive(onClick, opts = {}) {
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
 import { fmt, fmtFull, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
+import { rowOpenProps } from "../lib/rowOpen";
 import { civilDaysAgo } from "../lib/orgToday";
 import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
 export { fmt, fmtFull, quietPhrase };
@@ -514,6 +511,12 @@ export function GlobalStyles() {
        pine gradient must survive, just a gold edge + lift on hover, same
        gold focus ring. Deliberately does not carry the .click-card class so
        the light mist wash can never clobber the gradient. */
+    /* POLISH-3: a list or table row that opens something. */
+    .click-row{cursor:pointer;transition:background 0.12s ease;outline:none;}
+    .click-row:hover{background:${T.bg}!important;}
+    .click-row-focus{outline:none;}
+    .click-row-focus:focus-visible{box-shadow:inset 0 0 0 2px rgba(201,168,76,0.6)!important;}
+    .click-row:focus-visible{box-shadow:inset 0 0 0 2px rgba(201,168,76,0.6)!important;}
     .click-card-dark{cursor:pointer;transition:box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
     .click-card-dark:hover{border-color:${T.gold500}!important;box-shadow:0 6px 26px rgba(0,0,0,0.28)!important;transform:translateY(-1px);}
     .click-card-dark:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.5)!important;border-color:${T.gold500}!important;}
@@ -996,7 +999,9 @@ export function Card({children,selected,accent,onClick,style={},variant,...rest}
     : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
   const passThrough = Object.fromEntries(
     Object.entries(rest).filter(([k]) => k.startsWith("data-") || k.startsWith("aria-") || k === "id" || k === "role" || k === "title"));
-  return <div onClick={onClick} className={onClick?"card-click":""} {...passThrough} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+  // POLISH-3: a Card that opens something opens from anywhere on it, by
+  // keyboard too, and the buttons inside it keep their own clicks.
+  return <div {...interactive(onClick||null)} className={onClick?"card-click":""} {...passThrough} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 // Horizontal section-nav tabs across the top of a tab's content area — the
 // in-section counterpart of the app sidebar (Communications, Reports,

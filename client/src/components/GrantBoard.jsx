@@ -8,7 +8,7 @@
 // both back. The list view reads the same rows with the same filters.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, Modal } from "./shared";
+import { T, Modal, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import { RecordLink } from "./RecordLink";
@@ -74,7 +74,8 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
   const card = g => (
     <div key={g.id} data-testid="grant-card" draggable={!isReadOnly && !narrow}
       onDragStart={() => setDrag(g)} onDragEnd={() => { setDrag(null); setOver(""); }}
-      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 10px", cursor: isReadOnly ? "default" : "grab", opacity: drag && drag.id === g.id ? 0.45 : 1 }}>
+      {...interactive(() => onOpenGrant(g.id), { href: tabHref("grants", { grantId: g.id }), role: "link" })}
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 10px", opacity: drag && drag.id === g.id ? 0.45 : 1 }}>
       <div>
         <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>
           <RecordLink to={tabHref("grants", { grantId: g.id })} onOpen={() => onOpenGrant(g.id)} draggable={false} data-record-link="grant">{g.funderName}</RecordLink>
@@ -145,7 +146,7 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
               {["Funder", "Program", "Stage", "Ask", "Next deadline", "Officer"].map(h => <th key={h} style={{ padding: "10px 12px", fontWeight: 700, borderBottom: "1px solid " + T.bg3 }}>{h}</th>)}
             </tr></thead>
             <tbody>{rows.map(g => (
-              <tr key={g.id} style={{ borderTop: "1px solid " + T.bg3 }}>
+              <tr key={g.id} {...interactive(() => onOpenGrant(g.id), { row: true, href: tabHref("grants", { grantId: g.id }), role: "row" })} style={{ borderTop: "1px solid " + T.bg3 }}>
                 <td style={{ padding: "9px 12px", fontWeight: 700 }}><RecordLink to={tabHref("grants", { grantId: g.id })} onOpen={() => onOpenGrant(g.id)}>{g.funderName}</RecordLink></td>
                 <td style={{ padding: "9px 12px", color: T.ink2 }}>{g.program}</td>
                 <td style={{ padding: "9px 12px" }}>{isReadOnly ? (stages.find(s => s.key === g.status) || {}).label

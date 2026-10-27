@@ -751,7 +751,7 @@ function TrackedSequences() {
       {list.length === 0
         ? <div style={{ fontSize: 13, color: T.ink3 }}>No sequences yet.</div>
         : list.map(s => (
-          <div key={s.id} data-testid="seq-row" style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
+          <div key={s.id} data-testid="seq-row" {...interactive(() => open(s.id), { row: true, label: `Edit ${s.line}` })} style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.line}</div>
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }} data-testid="seq-status">
@@ -2514,7 +2514,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   const isOpen = expandedId === c.id;
                   return (
                     <div key={c.id} data-testid="camp-row" data-status={c.status} style={{ borderTop: "1px solid " + T.bg2 }}>
-                      <div className="fx39-row">
+                      <div {...interactive(() => setExpandedId(isOpen ? null : c.id), { row: true, className: "fx39-row", href: tabHref("communications", { subtab: "campaigns", campaignId: c.id }) })} aria-expanded={isOpen}>
                         <div className="fx39-cell fx39-name">
                           <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: c.id })} data-record-link="email-campaign"
                             onOpen={() => setExpandedId(isOpen ? null : c.id)}

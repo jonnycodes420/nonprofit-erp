@@ -11,7 +11,7 @@
 import RemoveMenu from "./RemoveMenu";
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, StartHere, EmptyState } from "./shared";
+import { T, StartHere, EmptyState, interactive } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { HowDidItDo } from "./HowDidItDo";
 import { AskBox } from "./AskPanel";
@@ -195,6 +195,7 @@ function CampaignCard({ g, allGoals, editBtn, onOpenCampaign }) {
   const name = (c, body) => <RecordLink to={campaignHref(c.id)} onOpen={onOpenCampaign ? () => onOpenCampaign(c.id) : undefined} data-record-link="campaign" data-testid="campaign-title">{body}</RecordLink>;
   return (
     <div data-campaign-id={g.id} data-testid="campaign-card"
+      {...interactive(onOpenCampaign ? () => onOpenCampaign(g.id) : null, { href: campaignHref(g.id), role: "link" })}
       style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
@@ -216,7 +217,8 @@ function CampaignCard({ g, allGoals, editBtn, onOpenCampaign }) {
             const cat = CATEGORY_META[c.goalCategory] || CATEGORY_META.project;
             const cs = c.sources || {};
             return (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div key={c.id} {...interactive(onOpenCampaign ? () => onOpenCampaign(c.id) : null, { row: true, href: campaignHref(c.id), role: "link" })}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, borderRadius: 8, margin: "0 -6px", padding: "2px 6px" }}>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color, flexShrink: 0 }} />
@@ -308,7 +310,7 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
         <div style={card}>
           <div style={h}>The goals it rolls up</div>
           {children.map(c => (
-            <div key={c.id} style={{ padding: "10px 0", borderTop: "1px solid " + T.bg2 }}>
+            <div key={c.id} {...interactive(() => onOpenCampaign(c.id), { row: true, href: campaignHref(c.id), role: "link" })} style={{ padding: "10px 0", borderTop: "1px solid " + T.bg2 }}>
               <RecordLink to={campaignHref(c.id)} onOpen={() => onOpenCampaign(c.id)} style={{ fontWeight: 600, color: T.ink }}>{c.name}</RecordLink>
               <div style={{ marginTop: 6 }}><CampaignThermometer g={c} /></div>
             </div>
