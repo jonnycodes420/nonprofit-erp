@@ -111,6 +111,14 @@ async function main() {
   const after = await agrees("A: after the delete, every surface agrees and none shows them", ORG_A, tok);
   ok("A: the helper saw the deleted person's money gone from this year", after.facts["giving this year so far"]
      && Object.values(after.facts["giving this year so far"]).every(v => v === 175000), after.facts["giving this year so far"]);
+  // HARDEN-1: /annual-fund has no screen today, but it is still a route that
+  // answers "raised this year", so it counts nobody deleted either.
+  const af = (await api("GET", "/annual-fund", tok)).body || {};
+  const [{ live }] = await q(`SELECT COALESCE(SUM(g.amount),0)::float AS live FROM gifts g
+     WHERE g.org_id=$1 AND LEFT(g.date::text,4)=$2
+       AND NOT EXISTS (SELECT 1 FROM donors d WHERE d.id=g.donor_id AND d.deleted_at IS NOT NULL)`, [ORG_A, String(af.year)]);
+  ok("A: /annual-fund raised this year counts no deleted person", Math.round(Number(af.totalRaised) * 100) === Math.round(live * 100),
+     { annualFund: af.totalRaised, live, year: af.year });
 
   // Undo brings Zed back, and every surface counts him again
   const undoZ = await api("POST", `/deleted-records/${del.body.undoIds[0]}/restore`, tok, {});

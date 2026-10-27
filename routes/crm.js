@@ -22252,7 +22252,6 @@ app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(asyn
 app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const year = parseInt(req.query.year) || orgTime.parseCivil(orgToday(await orgTz(orgId))).y; // ORG_TZ_SEAM_OK (BUILD-75 A.4)
-  const prevYear = year - 1;
 
   const goalRows = await query(
     "SELECT goal FROM annual_fund_goals WHERE org_id = ? AND year = ?",
@@ -22260,22 +22259,19 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   );
   const goal = goalRows.length ? goalRows[0].goal : 0;
 
-  const allGifts = await query(
-    "SELECT * FROM gifts WHERE org_id = ?",
+  // HARDEN-1: nobody deleted counts, an amount is a number (pg hands NUMERIC
+  // back as text, so `s + g.amount` was joining strings), and the year and
+  // month are read off the civil date, never through a UTC Date. An undated
+  // gift belongs to no year.
+  const allGifts = (await query(
+    `SELECT g.* FROM gifts g WHERE g.org_id = ? AND ${NOT_DELETED("g")}`,
     [orgId]
-  );
+  )).map(g => ({ ...g, amount: Number(g.amount) || 0 }));
 
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const civil = g => (g.date ? String(g.date instanceof Date ? g.date.toISOString() : g.date).slice(0, 10) : "");
 
-  const thisYearGifts = allGifts.filter(g => {
-    const d = new Date(g.date);
-    return d.getFullYear() === year;
-  });
-
-  const prevYearGifts = allGifts.filter(g => {
-    const d = new Date(g.date);
-    return d.getFullYear() === prevYear;
-  });
+  const thisYearGifts = allGifts.filter(g => civil(g).slice(0, 4) === String(year));
 
   const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
   const giftCount   = thisYearGifts.length;
@@ -22283,7 +22279,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
 
   const monthly = monthNames.map((month, idx) => {
     const raised = thisYearGifts
-      .filter(g => new Date(g.date).getMonth() === idx)
+      .filter(g => Number(civil(g).slice(5, 7)) === idx + 1)
       .reduce((s, g) => s + g.amount, 0);
     return { month, raised };
   });
