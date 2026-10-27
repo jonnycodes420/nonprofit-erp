@@ -266,6 +266,23 @@ function formatCivil(dateStr) {
   return c ? `${MONTHS_LONG[c.m - 1]} ${c.d}, ${c.y}` : "";
 }
 
+// HARDEN-1 · A STORED DATE IS ITS OWN DAY. A gift's date is text ("2026-01-01");
+// a DATE column comes back from pg as a Date at LOCAL midnight. `new Date(text)`
+// is UTC midnight, so a local getter or formatter reads Dec 31 anywhere west of
+// UTC, and toISOString() on pg's Date reads the day before anywhere east of it.
+// civilOf reads either as its own "YYYY-MM-DD" (or null); civilLocale formats it
+// the way toLocaleDateString(locale, opts) would, pinned so no zone moves it.
+function civilOf(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : ymd(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  const c = parseCivil(String(v));
+  return c ? ymd(c.y, c.m, c.d) : null;
+}
+function civilLocale(v, opts = {}, locale = "en-US") {
+  const c = parseCivil(civilOf(v) || "");
+  return c ? new Date(Date.UTC(c.y, c.m - 1, c.d)).toLocaleDateString(locale, { ...opts, timeZone: "UTC" }) : "";
+}
+
 // The year a report labels "current", for both bases. BUILD-86 Part B — reads
 // the ORG's start month, like orgPeriodBounds. It used the hardcoded constant,
 // so an org with a January fiscal year would have got the right period bounds
@@ -312,4 +329,5 @@ module.exports = {
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,
   orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,
   addDays, dayOfWeek, compareCivil, daysBetween, parseCivil, localToInstant,
+  civilOf, civilLocale,
 };

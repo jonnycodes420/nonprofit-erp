@@ -52,6 +52,14 @@ export function displayDateShort(value, today) {
   return t && t.y === p.y ? `${MON[p.mo - 1]} ${p.d}` : `${MON[p.mo - 1]} ${p.d}, ${p.y}`;
 }
 
+// HARDEN-1 · the year a stored date falls in, read off its own text. Never
+// `new Date("2026-01-01").getFullYear()`: that is UTC midnight, which every
+// zone west of UTC reads as 2025.
+export function civilYear(value) {
+  const p = parts(value);
+  return p ? p.y : null;
+}
+
 // "Sep 2026" — a month, for a chart axis or a period heading.
 export function displayMonth(value) {
   const p = parts(/^\d{4}-\d{2}$/.test(String(value)) ? value + "-01" : value);

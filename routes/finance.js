@@ -3799,7 +3799,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
             { id: XS.NO_FUND, name: "No fund named", restricted: false }],
     pending: { count: pending.length, cents: pendingCents,
       definition: `Every gift dated on or after ${since} that has not been sent to this Xero organization. Real money only: never a sample, a refund, stock or in-kind.`,
-      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10),
+      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? orgTime.civilOf(r.date) : r.date).slice(0, 10),
         cents: Number(r.cents), fund: r.fund_name || null, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : null })) },
     sent,
     lastSentAt: c.last_sent_at || null, lastError: c.last_error || null, lastErrorAt: c.last_error_at || null,

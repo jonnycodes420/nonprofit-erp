@@ -825,7 +825,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
       usd: org.setup_fee_cents != null ? org.setup_fee_cents / 100 : (tierNow && tierNow.setupUsd) || null,
     },
     customPrice: org.custom_price_cents != null
-      ? { usd: org.custom_price_cents / 100, endsOn: org.custom_price_ends_on, note: org.custom_price_note || null } : null,
+      ? { usd: org.custom_price_cents / 100, endsOn: require("../orgTime").civilOf(org.custom_price_ends_on), note: org.custom_price_note || null } : null,
     notice: org.tier_notice_band ? {
       band: org.tier_notice_band,
       label: (PRICING.tierById(org.tier_notice_band) || PRICING.TALK_TO_US).band,

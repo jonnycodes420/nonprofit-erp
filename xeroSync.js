@@ -231,7 +231,7 @@ function buildBankTransaction(g, landing, map, { donorNames = false } = {}) {
     Type: "RECEIVE",
     Contact: { Name: donor || GENERIC_CONTACT },
     BankAccount: map.bankAccount.id ? { AccountID: map.bankAccount.id } : { Code: map.bankAccount.code },
-    Date: String(g.date instanceof Date ? g.date.toISOString() : g.date).slice(0, 10),
+    Date: String(g.date instanceof Date ? require("./orgTime").civilOf(g.date) : g.date).slice(0, 10),
     Reference: String(g.id).slice(0, 255),
     LineAmountTypes: "NoTax",
     LineItems: lines,

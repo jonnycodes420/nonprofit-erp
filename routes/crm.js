@@ -16594,7 +16594,7 @@ function ixAttachmentRow(r, orgId) {
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     createdByName: r.created_by_name || "",
     interactionType: r.interaction_type || null,
-    interactionDate: r.interaction_date ? String(r.interaction_date instanceof Date ? r.interaction_date.toISOString() : r.interaction_date).slice(0, 10) : null,
+    interactionDate: r.interaction_date ? String(r.interaction_date instanceof Date ? orgTime.civilOf(r.interaction_date) : r.interaction_date).slice(0, 10) : null,
     // Minted PER READ, thirty minutes. A stored URL outlives its reason.
     url: IXF.signFileUrl({ orgId, assetId: r.asset_id }),
   };
@@ -19198,7 +19198,7 @@ app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
       detail: TYPE_LABEL[r.type] || r.type,
-      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      value: orgTime.civilLocale(r.date, { month: "short", day: "numeric" }),
     })),
   });
 }));
@@ -19231,7 +19231,7 @@ app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
-      detail: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      detail: orgTime.civilLocale(r.date, { month: "short", day: "numeric", year: "numeric" }),
       value: "$" + Number(r.amount).toLocaleString(),
     })),
   });
@@ -19284,7 +19284,7 @@ app.get("/dashboard/my-stats/lapsed/breakdown", requireAuth, wrap(async (req, re
     count: parseInt(countRow[0]?.cnt || 0),
     rows: rows.map(d => ({
       donorId: d.id, donorName: d.name,
-      detail: d.last_gift_date ? `Last gave ${new Date(d.last_gift_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "No gift date on file",
+      detail: d.last_gift_date ? `Last gave ${orgTime.civilLocale(d.last_gift_date, { month: "short", day: "numeric", year: "numeric" })}` : "No gift date on file",
       value: "$" + Number(d.total_giving || 0).toLocaleString(),
     })),
   });
@@ -19544,7 +19544,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const { eitherContainsTokenRun } = await import("../shared/importShape.js");
   const unconfirmedLargest = (impStats?.largestGifts || []).filter(g => !g.confirmed);
   for (const g of unacked) {
-    const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    const giftDate = orgTime.civilLocale(g.date, { month: "long", day: "numeric" });
     // BUILD-84 census — matching two donor NAMES respects token boundaries.
     // `g.donor_name.includes(x.name)` matched "Ann Lee" inside "Joann Leewood",
     // which here would put a confirm-this-amount flag on the wrong donor's
@@ -19580,7 +19580,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // ran first) when both could apply to the same offline gift.
   if (receiptsEnabled) {
     for (const g of needsReceipt) {
-      const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+      const giftDate = orgTime.civilLocale(g.date, { month: "long", day: "numeric" });
       upsertItem({
         donorId: g.donor_id, donorName: g.donor_name,
         reason: `Gift of $${Number(g.amount).toLocaleString()} on ${giftDate} needs a tax receipt`,
@@ -22269,7 +22269,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   )).map(g => ({ ...g, amount: Number(g.amount) || 0 }));
 
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const civil = g => (g.date ? String(g.date instanceof Date ? g.date.toISOString() : g.date).slice(0, 10) : "");
+  const civil = g => (g.date ? String(g.date instanceof Date ? orgTime.civilOf(g.date) : g.date).slice(0, 10) : "");
 
   const thisYearGifts = allGifts.filter(g => civil(g).slice(0, 4) === String(year));
 
@@ -22410,7 +22410,7 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
   const out = [];
   for (const l of levels) out.push(eventLevelPayload(l, await levelTaken(l.id)));
   res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
-    event: { id: ev.id, name: ev.name, date: String(ev.date).slice(0, 10), location: ev.location, description: ev.description },
+    event: { id: ev.id, name: ev.name, date: orgTime.civilOf(ev.date), location: ev.location, description: ev.description },
     levels: out });
 }));
 
@@ -23216,7 +23216,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const pqMs = pqb.start, pqMe = pqb.end;
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
-  const toDs = d => d ? (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10) : "";
+  const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
 
   console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
 
@@ -25386,10 +25386,13 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
   let yearsGiving = null;
   let firstGiftLabel = null;
   if (donor.first_gift_date) {
-    const first = new Date(donor.first_gift_date);
-    if (!isNaN(first.getTime())) {
-      yearsGiving = now.getFullYear() - first.getFullYear() - ((now.getMonth() < first.getMonth() || (now.getMonth() === first.getMonth() && now.getDate() < first.getDate())) ? 1 : 0);
-      firstGiftLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    // HARDEN-1: the first gift's own civil day against the org's today, never
+    // through a Date (a January 1 first gift read as December 31 west of UTC).
+    const first = orgTime.parseCivil(orgTime.civilOf(donor.first_gift_date) || "");
+    if (first) {
+      const t = orgTime.parseCivil(orgToday(await orgTz(orgId))); // ORG_TZ_SEAM_OK
+      yearsGiving = t.y - first.y - ((t.m < first.m || (t.m === first.m && t.d < first.d)) ? 1 : 0);
+      firstGiftLabel = orgTime.civilLocale(donor.first_gift_date, { month: "long", year: "numeric" });
     }
   }
 
@@ -25482,7 +25485,7 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
       doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
       doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Recent Gifts", 50, y); y += 18;
       recentGifts.forEach((g, i) => {
-        const d = g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Not set";
+        const d = g.date ? orgTime.civilLocale(g.date, { month: "short", day: "numeric", year: "numeric" }) : "Not set";
         doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(d, 58, y + 5, { width: 90 });
         doc.fillColor(INK3).text(g.campaign || "General", 155, y + 5, { width: 250 });
@@ -27389,7 +27392,7 @@ const evDayWords = iso => {
   // String(it) is "Sat Dec 05 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
   // and slicing ten characters off that gives "Sat Dec 0". The public page
   // printed exactly that. Normalise to the civil day first.
-  const day = iso instanceof Date ? iso.toISOString().slice(0, 10) : String(iso || "").slice(0, 10);
+  const day = iso instanceof Date ? orgTime.civilOf(iso).slice(0, 10) : String(iso || "").slice(0, 10);
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
   if (!m) return String(iso || "");
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
@@ -27631,7 +27634,7 @@ app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
           ORDER BY a.created_at DESC LIMIT 1`, [e.org_id, e.id, String(hold.email).toLowerCase()]);
     }
   }
-  const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
+  const day = e.date instanceof Date ? orgTime.civilOf(e.date).slice(0, 10) : String(e.date).slice(0, 10);
   const CAL = await import("../shared/calendarLinks.js");
   const calEvent = await evCalendarEvent(e);
   const times = EPG.timeRangeWords(e.start_time, e.end_time);

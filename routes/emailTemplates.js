@@ -94,7 +94,7 @@ async function buildEmailContext(orgId) {
     event: id => {
       const e = evMap.get(id);
       if (!e) return null;
-      const d = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date || "").slice(0, 10);
+      const d = e.date instanceof Date ? require("../orgTime").civilOf(e.date).slice(0, 10) : String(e.date || "").slice(0, 10);
       const pretty = d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "";
       return { name: e.name, date: pretty, url: e.public_slug ? `${app}/e/${encodeURIComponent(e.public_slug)}` : "" };
     },
@@ -186,7 +186,7 @@ async function sampleFields(orgId, person, ectx) {
         WHERE g.org_id=? AND lower(d.email)=lower(?) AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST LIMIT 1`, [orgId, person.email]).catch(() => []);
     if (g) {
       lastAmount = "$" + Number(g.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
-      const d = g.date instanceof Date ? g.date.toISOString().slice(0, 10) : String(g.date || "").slice(0, 10);
+      const d = g.date instanceof Date ? require("../orgTime").civilOf(g.date).slice(0, 10) : String(g.date || "").slice(0, 10);
       if (d) lastDate = new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
     }
   }
