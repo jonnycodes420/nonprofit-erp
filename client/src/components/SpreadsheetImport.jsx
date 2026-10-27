@@ -120,6 +120,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const setAnswer = patch => setAnswers(a => ({ ...a, ...patch }));
   const setRow = (key, v) => setAnswers(a => ({ ...a, rows: { ...(a.rows || {}), [key]: v } }));
   const setPerson = (key, v) => setAnswers(a => ({ ...a, people: { ...(a.people || {}), [key]: v } }));
+  const setDeleted = (key, v) => setAnswers(a => ({ ...a, deletedPeople: { ...(a.deletedPeople || {}), [key]: v } }));
 
   const commit = async () => {
     setBusy("commit"); setMsg(""); setFailed(null);
@@ -152,7 +153,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
   const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate ? dateAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column") : [];
+  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
   const eventName = answers.eventName ?? (eventQ && eventQ.suggestedEventName) ?? (dateQ && dateQ.suggestedEventName) ?? "";
   const tablesRead = u ? u.tables.filter(t => t.kind === "gifts" || t.kind === "people") : [];
@@ -213,6 +215,22 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </div>
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
+            {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
+            {deletedQs.length > 0 && (
+              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-questions">
+                {deletedQs.map(q => {
+                  const cur = (answers.deletedPeople || {})[q.key] || q.default;
+                  return (
+                    <div key={q.id} style={{ padding: "6px 0", fontSize: 13 }}>
+                      <div>{q.text}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                        {(q.options || []).map(o => <button type="button" key={o.key} data-testid={`sheet-deleted-${o.key}`} style={{ ...btn(cur === o.key), padding: "6px 10px", fontSize: 12 }}
+                          onClick={() => setDeleted(q.key, o.key)}>{o.label}</button>)}
+                      </div>
+                    </div>);
+                })}
+              </div>
+            )}
             {(u.deletedMatches || []).length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-matches">
                 <div style={h3}>{u.deletedSentence}</div>
