@@ -154,6 +154,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   only the note, next step and people). (FIX-14)
 - **A delete that offers Undo moves the row to `deleted_records`** (`trashRow`) and Undo puts it back
   whole (`POST /deleted-records/:id/restore`). No reader learns a deleted_at column. (FIX-14)
+- **Once a person is deleted, nothing shows them or counts their money (FIX-52).** A person's delete stays soft
+  (`donors.deleted_at`, the Donors page and bulk delete); their gifts, pledges and attendance stay as rows. Every
+  reader that counts or lists rows hanging off a person asks `NOT_DELETED(alias)` (campaignMatch.js), the same
+  question the Donors list asks: Events (list, page, attendee list), campaign and goal pledged, the Home lead card,
+  Today, /impact, search tasks and the export sheets. `/org/export/full` stays a whole-table dump on purpose.
+  A new reader of gifts, pledges or attendance carries it. Undoing an import finishes removing the people it made
+  that were deleted by hand, and says how many.
 - **Every Undo toast comes from the one host** (`offerUndo` in `EditHistory.jsx`, mounted on
   document.body). A screen never renders its own toast: one drawn inside the screen dies when that screen
   re-renders away. The ten seconds stop while the pointer or focus is on it or the tab is hidden. (FIX-25)

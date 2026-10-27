@@ -13,6 +13,7 @@ import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
+import ImportUndo from "./ImportUndo";   // FIX-52
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
@@ -1904,11 +1905,14 @@ function ImportsHistory(){
               {rows.map(r=>(
                 <tr key={r.id} data-testid="imports-row">
                   <td style={td}>
-                    <button onClick={()=>openOne(r.id)} data-testid="imports-open"
+                    <button onClick={()=>(r.state==="in_progress"||r.state==="failed")?null:openOne(r.id)} data-testid="imports-open"
                       style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.green,cursor:"pointer",textAlign:"left"}}>
                       {r.name}
                     </button>
                     {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile, open for the finding.</div>}
+                    {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
+                    {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
+                    {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(
@@ -1956,8 +1960,13 @@ function ImportsHistory(){
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
               </div>
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
-                {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} created + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
+                {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} {open.pledgesCreated?"gifts":"created"}{open.pledgesCreated?<> + {fmtCount(open.pledgesCreated)} pledges</>:null} + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
               </div>
+              {open.pledgesCreated>0&&(
+                <div style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
+                  {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges, plus anything set aside.
+                </div>
+              )}
               {(open.notices||[]).map((n,i)=>(
                 <div key={`n${i}`} data-testid="import-receipt-notice" style={{fontSize:12.5,color:T.ink3,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{n}</div>
               ))}
@@ -1968,6 +1977,18 @@ function ImportsHistory(){
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
               <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
+              {/* FIX-52: every receipt that undoes as a whole offers Undo for its
+                  window, whether or not it reconciles. */}
+              <div style={{marginTop:14,borderTop:"1px solid "+T.bg3,paddingTop:12}}>
+                {open.reversedAt
+                  ? <div data-testid="import-receipt-undone" style={{fontSize:12.5,color:open.undoneSentence?T.ink:T.ink3,fontWeight:open.undoneSentence?700:400}}>{open.undoneSentence||`Undone ${displayDate(open.reversedAt)}.`}</div>
+                  : open.canUndo
+                    ? <>
+                        <ImportUndo importId={open.id} onUndone={r=>{ setOpen(o=>o?{...o,reversedAt:new Date().toISOString(),canUndo:false,undoneSentence:(r&&r.sentence)||null}:o); apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[])).catch(()=>{}); }}/>
+                        {open.undoUntil&&<div style={{fontSize:11.5,color:T.ink3,marginTop:6}}>Undo is open until {displayDate(open.undoUntil)}.</div>}
+                      </>
+                    : null}
+              </div>
             </div>
           )}
         </Modal>

@@ -18,6 +18,7 @@
 "use strict";
 const express = require("express");
 const inProcess = require("../inProcess");
+const { NOT_DELETED } = require("../campaignMatch");   // FIX-52: a deleted person's money is nobody's
 
 const routers = { r0: express.Router() };
 
@@ -161,10 +162,10 @@ async function readFacts(req, nowMs) {
       // everything given since the season began, this year against the same
       // days last year.
       const [[r], [ly], [lyAll], [ty]] = await Promise.all([
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND campaign_id=? AND date <= ?`, [orgId, c.id, today]),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(today)]),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(end)]),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ?`, [orgId, start, today]),
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND campaign_id=? AND date <= ?`, [orgId, c.id, today]),
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(today)]),
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(end)]),
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, start, today]),
       ]);
       const y = Number(today.slice(0, 4)) - 1;
       const lapsedRows = await query(
@@ -187,9 +188,9 @@ async function readFacts(req, nowMs) {
   // ── An event in the next seven days.
   const events = (await query(
     `SELECT e.id, e.name, to_char(e.date,'YYYY-MM-DD') AS date, e.capacity,
-            COALESCE((SELECT SUM(COALESCE(a.quantity,1)) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND a.status IN ('registered','confirmed','attended')),0)::int AS guests,
-            COALESCE((SELECT COUNT(*) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0)::int AS unpaid,
-            COALESCE((SELECT SUM(a.gift_amount) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0) AS unpaid_amount
+            COALESCE((SELECT SUM(COALESCE(a.quantity,1)) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND ${NOT_DELETED("a")} AND a.status IN ('registered','confirmed','attended')),0)::int AS guests,
+            COALESCE((SELECT COUNT(*) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND ${NOT_DELETED("a")} AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0)::int AS unpaid,
+            COALESCE((SELECT SUM(a.gift_amount) FROM event_attendees a WHERE a.event_id=e.id AND a.org_id=e.org_id AND ${NOT_DELETED("a")} AND a.status IN ('registered','confirmed') AND COALESCE(a.gift_amount,0) > 0 AND a.registration_gift_id IS NULL),0) AS unpaid_amount
        FROM events e WHERE e.org_id=? AND e.is_sample IS NOT TRUE AND COALESCE(e.status,'') NOT IN ('cancelled','canceled','completed')
         AND e.date >= ? AND e.date <= ? ORDER BY e.date LIMIT 1`, [orgId, today, orgTime.addDays(today, 7)]))
     .map(e => ({ id: e.id, name: e.name, capacity: num(e.capacity) || null, guests: num(e.guests), unpaid: num(e.unpaid), unpaidAmount: num(e.unpaid_amount),
@@ -213,8 +214,8 @@ async function readFacts(req, nowMs) {
     // NUMBERS-2: "this year" is the org's own fiscal year (orgTz carries its start month).
     const y0 = orgTime.orgFiscalYearStart(org), ly = d => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;   // ORG_TZ_SEAM_OK
     const [[a], [b]] = await Promise.all([
-      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, y0, today]),
-      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts WHERE org_id=? AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, ly(y0), ly(today === `${today.slice(0, 4)}-02-29` ? `${today.slice(0, 4)}-02-28` : today)]),
+      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, y0, today]),
+      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, ly(y0), ly(today === `${today.slice(0, 4)}-02-29` ? `${today.slice(0, 4)}-02-28` : today)]),
     ]);
     compare = { label: "Giving this year", question: { why: "Why is giving behind last year?", what: "What is working this year?" }, thisYear: num(a.n), lastYear: num(b.n) };
   }

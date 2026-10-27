@@ -53,11 +53,47 @@ async function getDb() {
   return pool;
 }
 
+// FIX-52 · AN AMBIENT TRANSACTION. Inside withAmbientTransaction(fn), every
+// query() and run() (recordGift's included, unchanged) goes to one client
+// inside BEGIN/COMMIT, so a spreadsheet import either lands whole or not at
+// all. When fn ends the scope closes: anything still holding the scope after
+// that (a fire-and-forget) goes back to the pool. queryOutside/runOutside
+// write past it, for progress a reader must see before the commit.
+const { AsyncLocalStorage } = require("async_hooks");
+const ambientTx = new AsyncLocalStorage();
+function target() { const st = ambientTx.getStore(); return st && st.open ? st.client : pool; }
+async function withAmbientTransaction(fn) {
+  const client = await pool.connect();
+  const st = { client, open: true };
+  try {
+    await client.query("BEGIN");
+    const result = await ambientTx.run(st, fn);
+    st.open = false;
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    st.open = false;
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    st.open = false;
+    client.release();
+  }
+}
+async function queryOutside(sql, params = []) {
+  let i = 0;
+  return (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
+}
+async function runOutside(sql, params = []) {
+  let i = 0;
+  return { changes: (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rowCount };
+}
+
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await pool.query(pgSql, params);
+  const result = await target().query(pgSql, params);
   return result.rows;
 }
 
@@ -99,7 +135,7 @@ async function querySetwise(sql, params = []) {
 async function run(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await pool.query(pgSql, params);
+  const result = await target().query(pgSql, params);
   return { changes: result.rowCount };
 }
 
@@ -7134,6 +7170,31 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL,
       created_by_name TEXT
     )`);
+  // FIX-52 · A SPREADSHEET IMPORT IS A JOB. Clicking Import writes this row and
+  // returns; the write runs behind the screen in ONE transaction, and the
+  // modal and the Imports list read the job's real state from here, never
+  // from a request that may have been dropped. request_key is the file and
+  // the preview: while one is running, a second click is the same job.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sheet_import_jobs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      request_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      phase TEXT,
+      done INTEGER NOT NULL DEFAULT 0,
+      total INTEGER NOT NULL DEFAULT 0,
+      file_name TEXT,
+      error TEXT,
+      result JSONB,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_sheet_import_jobs_running ON sheet_import_jobs (org_id, request_key) WHERE status = 'running'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sheet_import_jobs_org ON sheet_import_jobs (org_id, started_at DESC)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS import_recent_work (
       id TEXT PRIMARY KEY,
@@ -9318,5 +9379,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

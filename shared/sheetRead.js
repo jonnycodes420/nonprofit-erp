@@ -47,7 +47,7 @@ export const SHEET_ROLES = Object.keys(ROLE_LABELS).map(k => ({ key: k, label: R
 const HEADER_ROLES = [
   ["first", ["first", "first name", "firstname", "fname", "given name", "contact first name", "primary contact first name", "donor first name", "contact: first name", "first_name"]],
   ["last", ["last", "last name", "lastname", "lname", "surname", "family name", "contact last name", "primary contact last name", "donor last name", "contact: last name", "last_name"]],
-  ["name", ["name", "full name", "donor", "donor name", "contact", "contact name", "constituent", "constituent name", "customer", "customer name", "received from", "from", "giver", "account name", "household name", "supporter", "supporter name", "payer", "donor/organization", "name (full)"]],
+  ["name", ["name", "full name", "donor", "donor name", "contact", "contact name", "constituent", "constituent name", "customer", "customer name", "received from", "from", "giver", "account name", "household name", "supporter", "supporter name", "payer", "donor/organization", "name (full)", "person", "guest", "guest name", "attendee"]],
   ["org", ["organization", "organisation", "company", "company name", "organization name", "business", "business name"]],
   ["email", ["email", "e-mail", "email address", "e-mail address", "from email address", "contact email", "primary email", "donor email", "email_address", "personal email"]],
   ["phone", ["phone", "phone number", "phone #", "mobile", "cell", "telephone", "home phone", "mobile phone", "primary phone"]],
@@ -122,6 +122,20 @@ const IGNORED_HEADERS = new Map([
   ["tax rate", "sales tax, not the gift"], ["tax exempt", "sales tax, not the gift"], ["disclaimer", "the statement's small print"],
   ["year to date venmo fees", "a fee"], ["receipt id", "the processor's receipt"], ["ytd", "a running total"], ["lifetime giving", "a running total from the old system"],
 ]);
+// FIX-52: a sheet of review notes about people already listed ("Check these":
+// Person, What to check, How matched) is not a list of people. These headers
+// are a reviewer's, never a person's field.
+const NOTES_HDR_RE = /^(what to check|to check|check|check this|needs checking|how matched|matched (by|on|how)|match(ed)?|match type|match reason|why|reason|issue|issues|problem|problems|question|questions|review|review note|flag|flags|reviewer note|comment|comments|note|notes|action|to do|todo)$/;
+// The sheet's own counts above a header ("People 443", "Attended (checked in) 172").
+const SHEET_FIGURE_RE = /^(.{2,40}?)[\s:=]+([\d,]+)$/;
+function figureKind(label) {
+  const l = hnorm(label).replace(/[()]/g, " ");
+  if (/\b(attended|checked in|came|present|showed)\b/.test(l)) return "attended";
+  if (/\brsvp/.test(l) || /\b(registered|yes responses|coming)\b/.test(l)) return "rsvp";
+  if (/\binvit/.test(l)) return "invited";
+  if (/^(people|persons|guests|names|contacts|records|rows|households|total people|people listed|on the list)\b/.test(l)) return "people";
+  return null;
+}
 const NUMERIC_TOTAL_RE = /\b(sub-?total|grand total|total|totals|sum)\b/i;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const YES = new Set(["yes", "y", "true", "x", "paid", "done", "complete", "completed", "received", "collected", "1", "✓", "✔"]);
@@ -129,7 +143,8 @@ const NO = new Set(["no", "n", "false", "unpaid", "not yet", "pending", "0", "op
 // Status words, read as stage words (imports rule). Anything not listed is a
 // question for a person, never a guess.
 const STATUS_PAID = new Set(["completed", "complete", "succeeded", "success", "paid", "closed won", "posted", "received", "settled", "cleared", "approved", "captured", "deposited"]);
-const STATUS_PLEDGE = new Set(["pledged", "promised", "open", "outstanding", "committed", "not yet received", "not received", "unpaid", "balance due", "pledge", "awaiting payment"]);
+const STATUS_PLEDGE = new Set(["pledged", "promised", "open", "outstanding", "committed", "not yet received", "not received", "unpaid", "balance due", "pledge", "awaiting payment",
+  "not yet paid", "not paid", "not paid yet", "to be paid", "owed", "due"]);
 const STATUS_ASIDE = new Set(["refunded", "failed", "denied", "declined", "reversed", "canceled", "cancelled", "voided", "void", "pending", "chargeback", "disputed", "closed lost", "partially refunded", "unclaimed", "expired"]);
 const TYPE_GIFT = /^(donation|donation payment|payment|deposit|sales receipt|gift|contribution|charge|website payment|express checkout payment|mobile payment|subscription payment|recurring payment|p2p|merchant transaction|credit card|one-time donation|recurring donation|check|cash)$/i;
 const TYPE_ASIDE = /(withdrawal|transfer|refund|fee|journal|bill|expense|hold|reversal|invoice|payout|authorization|currency conversion)/i;
@@ -708,6 +723,54 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   }
   const roleOf = (t, r) => t.cols.find(c => c.role === r);
   const cellOf = (t, b, c) => (b.raw ? b.raw[c.index] : b.cells[c.index]);
+  // FIX-52 · A NOTES SHEET IS NOT PEOPLE. A table with a reviewer's columns
+  // ("What to check", "How matched") and no money, whose rows mostly name
+  // people another sheet already lists, is notes about those people: not read
+  // as people, and its columns are not kept as fields, unless she says
+  // "Import it anyway" (answers.notesSheets).
+  const notesSheets = [];
+  {
+    const variants = name => {
+      const w = readName({ full: name });
+      const out = new Set([w.name, w.household, ...(w.people || []).map(x => x.name)].filter(Boolean).map(x => x.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " ").trim()));
+      return out;
+    };
+    const rowName = (t, b) => {
+      const g = r => { const c = roleOf(t, r); return c ? s(cellOf(t, b, c)) : ""; };
+      if (g("first") || g("last")) return `${g("first")} ${g("last")}`.trim();
+      return g("name") || g("lastFirst") || g("org");
+    };
+    const wanted = new Set((Array.isArray(answers.notesSheets) ? answers.notesSheets : []).map(String));
+    for (const t of tables) {
+      if (t.kind !== "people" && t.kind !== "other") continue;
+      if (t.cols.some(c => c.role === "amount" || c.role === "pledgeTotal")) continue;
+      const noteCols = t.cols.filter(c => NOTES_HDR_RE.test(hnorm(c.header)));
+      if (!noteCols.length) continue;
+      const nameCol = t.cols.find(c => ["name", "lastFirst", "first", "last", "org"].includes(c.role))
+        || t.cols.find(c => /^(person|who|name|guest|donor)$/.test(hnorm(c.header)));
+      if (!nameCol) continue;
+      const others = tables.filter(o => o !== t && (o.kind === "people" || o.kind === "gifts"));
+      if (!others.length) continue;
+      const known = new Set(), ids = new Set(), emails = new Set();
+      for (const o of others) for (const b of dataRows(o)) {
+        for (const v of variants(rowName(o, b))) known.add(v);
+        const ic = roleOf(o, "externalId"); if (ic) { const v = s(cellOf(o, b, ic)).toLowerCase(); if (v) ids.add(v); }
+        const ec = roleOf(o, "email"); if (ec) { const v = s(cellOf(o, b, ec)).toLowerCase(); if (v) emails.add(v); }
+      }
+      const rows = dataRows(t);
+      let hits = 0;
+      for (const b of rows) {
+        const nm = nameCol.role ? rowName(t, b) : s(cellOf(t, b, nameCol));
+        const cells = b.cells.map(x => s(x).toLowerCase());
+        if ([...variants(nm)].some(v => known.has(v)) || cells.some(v => v && (ids.has(v) || emails.has(v)))) hits++;
+      }
+      if (!rows.length || hits < rows.length * 0.6) continue;
+      const entry = { sheet: t.sheet, key: t.key, rows: rows.length, matched: hits, columns: noteCols.map(c => c.header), imported: wanted.has(t.sheet),
+        sentence: `Sheet '${t.sheet}' looks like notes about people already on the list. Not imported.` };
+      notesSheets.push(entry);
+      if (!entry.imported) t.kind = "notes";
+    }
+  }
   // A shared ID column links sheets: a gift sheet's ID whose values are the
   // people sheet's IDs is the person, never the gift (and gifts attach by it,
   // never by name, when it exists).
@@ -740,7 +803,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const usableT = t.kind === "gifts" || t.kind === "people";
     if (!usableT) {
       c.disposition = "skipped";
-      c.skipReason = t.kind === "summary" ? "a summary of amounts with no names, so it is not people or gifts" : "a table with no names and no amounts";
+      c.skipReason = t.kind === "summary" ? "a summary of amounts with no names, so it is not people or gifts"
+        : t.kind === "notes" ? "notes about people already on the list, not imported" : "a table with no names and no amounts";
       continue;
     }
     if (c.role === "ignore") { c.disposition = "skipped"; c.skipReason = c.reason || "you left it out"; continue; }
@@ -1185,6 +1249,37 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const members = p => Math.max(1, p.people.length);
   const comm = k => peopleList.filter(p => p.comms[k]).length;
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
+  // FIX-52 · THE SHEET'S OWN FIGURES. Counts written above a header ("People
+  // 443", "Invited 422") are notes, never people, and the preview's counts are
+  // checked against them. A sheet counts rows; a couple's row is one row and
+  // two people, so either reading agrees, and a difference is said plainly.
+  const recordCounts = {
+    people: peopleList.length,
+    invited: att.filter(p => p.attendance.invited).length,
+    rsvp: att.filter(p => p.attendance.rsvp === true).length,
+    attended: att.filter(p => p.attendance.attended).length,
+  };
+  const personCounts = {
+    people: persons,
+    invited: att.filter(p => p.attendance.invited).reduce((a, p) => a + members(p), 0),
+    rsvp: att.filter(p => p.attendance.rsvp === true).reduce((a, p) => a + members(p), 0),
+    attended: att.filter(p => p.attendance.attended).reduce((a, p) => a + members(p), 0),
+  };
+  const WORD = { people: "people", invited: "invited", rsvp: "RSVP'd", attended: "attended" };
+  const figureChecks = [];
+  for (const t of tables) if (t.kind === "people") for (const ti of t.titles || []) {
+    const m = s(ti.text).match(SHEET_FIGURE_RE);
+    const kind = m && figureKind(m[1]);
+    if (!kind || figureChecks.some(f => f.kind === kind)) continue;
+    const stated = Number(m[2].replace(/,/g, ""));
+    notes.push({ sheet: t.sheet, line: ti.line, text: s(ti.text), figure: true });
+    const rows = recordCounts[kind], ppl = personCounts[kind];
+    const agrees = stated === rows || stated === ppl;
+    figureChecks.push({ sheet: t.sheet, line: ti.line, label: m[1].trim(), kind, stated, steward: rows, persons: ppl, agrees,
+      sentence: agrees
+        ? (rows !== ppl ? `${t.sheet} says ${m[1].trim()} ${stated}: Steward reads ${rows.toLocaleString("en-US")} rows, ${ppl.toLocaleString("en-US")} people (a couple's row is two).` : `${t.sheet} says ${m[1].trim()} ${stated}, and Steward reads the same.`)
+        : `${t.sheet} says ${m[1].trim()} ${stated}, but Steward reads ${rows.toLocaleString("en-US")} ${WORD[kind] === "people" ? "rows" : WORD[kind]}${rows !== ppl ? ` (${ppl.toLocaleString("en-US")} people)` : ""}. Check before importing.` });
+  }
   return {
     fileKind, ready,
     tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer,
@@ -1193,7 +1288,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
     people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks,
-    columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()],
+    columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
                    ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
     event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement } : null,
@@ -1218,6 +1313,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
       doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
       kept: keptHeaders.size, nearMisses: nearMisses.length,
+      invitedRecords: recordCounts.invited, rsvpRecords: recordCounts.rsvp, attendedRecords: recordCounts.attended,
     },
     totalsSentence, needsDate: undatedCount > 0,
   };
