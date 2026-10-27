@@ -21,9 +21,9 @@
 //
 // Against main it fails at §1 (sendGate.js does not exist; the receipt send
 // carries no org tag) and §2 (every automatic send goes). Planted defects that
-// turned it red: the proxy's sendToDonor branch removed (§2, §3), the confirm
-// check in sendGate.decide skipped (§4 double send), perRecord dropped (§5),
-// `fromImport` removed from recordGift (§7 enrolment).
+// turned it red: the proxy's sendToDonor branch removed (§2, §3, §4),
+// perRecord dropped (§5), `fromImport` removed from recordGift (§7 enrolment).
+// (`liveRead` ignored turns fix36-history's later-QuickBooks-read leg red.)
 "use strict";
 
 const fs = require("fs");

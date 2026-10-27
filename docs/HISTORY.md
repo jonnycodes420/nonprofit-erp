@@ -25,6 +25,16 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## SEND-GATE-1 · Donors get automatic email only if the org turned it on for them (2026-10-27)
+
+- **Why (Justin's Place, 27 Oct).** A real import partly landed through a page that timed out. Nothing went out because Donor mail was off, but that one org switch was the only lock.
+- **The switch.** `donors.auto_email` (default false), with who and when. Turned on only by a person on staff in the org (profile, with a confirm; or the Donors list in bulk: a count first, then a confirm of that count). A super-admin may turn it off, never on. One audit row per person, written by the middleware (`req.audit.perRecord`). "Automatic emails" is a LIST-1 filter and column.
+- **The one gate.** `sendGate.js` `sendToDonor`, called by the wrapped Resend client for every org-tagged donor-family send. Automatic: every recipient's switch must be on. Manual: a `send_confirms` row recorded by the staff click for that exact recipient, used once. Exempt: `express_link` (the portal sign-in link the donor asked for). Blocked = not sent, not queued, permanent (`mailRefusal`), and one `mail_blocked` row with the exact message: the profile's "… not sent: automatic emails are off" line with Send (claimed first, so a double click sends once). The receipt send had no org tag before this build and bypassed the proxy's org gate; it is tagged now. Campaigns are filtered in `donorMailDecision` (reason `auto_email_off`), so the builder's count matches.
+- **Imports.** A gift with an `importId` fires no sequence or journey (`recordGift` `fromImport`); its thank-you draft, if the import's question asked for one, is kept. Imported pledges get no reminders or pledge-due triggers. QuickBooks: only the first reviewed read is an import; later reads pass `liveRead` and fire triggers like live gifts.
+- **Integrations.** The nightly email-tool sync pushes only switched-on people; a person pressing Sync may push everyone eligible.
+- **Deploy change.** `sendGateMigration.js`, once (`steward_once`): everyone starts off; org_creo people with an automatic message in the last 12 months are turned on. Counts logged as `[send-gate-1]`.
+- **Tests.** `tests/send-gate.test.js` (static guard + live legs); failed on main at §1 and §2. Planted and seen red: the proxy branch, perRecord, fromImport, liveRead.
+
 ## FIX-52 · Import undo, honest receipts, no timeouts (2026-10-27)
 
 - **What happened.** On 27 Oct a real event workbook (people, gifts, a "Check these" notes sheet) was imported on prod.
