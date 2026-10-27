@@ -1025,7 +1025,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
 
       {/* Delete confirmation modal — never auto-confirm */}
       {delModal&&(
-        <Modal onClose={()=>setDelModal(false)} width={420} zIndex={900}
+        <Modal className="commit-screen" onClose={()=>setDelModal(false)} width={420} zIndex={900}
           backdrop="rgba(15,26,18,0.72)" blur={false} padding="36px 32px"
           ariaLabel="Delete donors" dialogStyle={{background:T.bg,borderRadius:20}}>
           <div>
@@ -1040,7 +1040,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 style={{flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",minWidth:100}}>
                 Cancel
               </button>
-              <button onClick={bulkDelete} disabled={busy}
+              <button type="button" data-commit onClick={bulkDelete} disabled={busy}
                 style={{flex:1,background:T.terracotta,border:"none",borderRadius:10,padding:"11px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
                 {busy?"Deleting…":`Delete ${delIds.length.toLocaleString("en-US")} ${delIds.length!==1?"people":"person"}`}
               </button>

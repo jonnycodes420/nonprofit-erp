@@ -433,7 +433,9 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   const body = readBody(req.body);
   if (!body.sheets.some(sh => sh.grid.length)) return res.status(400).json({ error: "empty", message: "The file has no cells in it." });
   const out = await buildUnderstanding(req, body);
-  res.json(publicView(out));
+  // HARDEN-1: the preview names the org it was read for; commit sends it back
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ ...publicView(out), org: org ? { id: org.id, name: org.name } : null });
 }));
 
 // FIX-54 · BRING THEM BACK. The one way a person she deleted returns from an
@@ -802,6 +804,10 @@ async function runJob(req, body, importId, who) {
 
 app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  // HARDEN-1: an import is bound to its preview. A preview read in one org
+  // never commits into another, header or no header.
+  const moved = await require("../middleware/orgBound").orgChangedRefusal(req.body && req.body.previewOrgId, orgId);
+  if (moved) return res.status(moved.status).json(moved.body);
   const body = readBody(req.body);
   const background = req.body && req.body.background === true;
   const who = actor(req);

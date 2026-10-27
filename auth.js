@@ -30,6 +30,20 @@ function tokenUserId(req) {
   } catch { return null; }
 }
 
+// HARDEN-1 · the org a request's session is in, read the way requireAuth
+// reads it (the live users row, through the same cache), or null when the
+// token does not verify. middleware/orgBound.js compares it with the org the
+// page was rendered for; requireAuth still decides whether the session lives.
+async function sessionOrgOf(req) {
+  const auth = req.headers && req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+  let p;
+  try { p = jwt.verify(auth.slice(7), SIGNING_SECRET); } catch { return null; }
+  if (!p || !p.userId) return null;
+  const info = await sessionCache.get(p.userId, loadUserSession);
+  return info && info.org_id ? String(info.org_id) : null;
+}
+
 // Loader for the session cache: the live revocation state for one user, or null
 // if the row is gone (deleted/removed → no pass-through, ever).
 async function loadUserSession(userId) {
@@ -171,4 +185,4 @@ function requireAuth404(req, res, next) {
   return requireAuth(req, res, (err) => { res.status = status; next(err); });
 }
 
-module.exports = { signToken, signInternalToken, tokenUserId, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+module.exports = { signToken, signInternalToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
