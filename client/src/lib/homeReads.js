@@ -9,7 +9,9 @@ export const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/jou
   "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
   "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
   "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins",
-  "/donors/birthdays-near","/home/lead"];
+  "/donors/birthdays-near","/home/lead",
+  // HARDEN-2: Home's people counts (lib/people.js peopleCounts), read on every open.
+  "/donors/counts"];
 export const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
   `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
   `/dashboard/retention/breakdown?scope=${scope}`];
