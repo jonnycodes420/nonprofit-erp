@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { peopleCounts } from "../lib/people";
 import { useAuth } from "../main";
-import { DonorImport } from "../components/Donors";
+import SpreadsheetImport from "../components/SpreadsheetImport";
 import { GivingSourcesManager } from "../components/Settings";
 // FIX-10 F — how many users a plan includes, from the one place that answers it.
 import { USERS_SENTENCE, SEAT_REFUSED_SENTENCE } from "../../../shared/seats";
@@ -939,12 +939,9 @@ export default function WelcomePage() {
 
       </div>
 
-      {/* withHistory: onboarding must produce real gifts-table rows, not just
-          aggregate donor fields — otherwise Retention Rate, Stewardship Debt,
-          and Gifts YTD all render blank on Day 1 (see Donors.jsx's
-          DonorImport comment). The regular Donors tab's own "Import Donors"
-          button omits this prop, so its behavior is unchanged. */}
-      {showImportModal && <DonorImport onClose={() => setShowImportModal(false)} onImported={afterImportDone} withHistory/>}
+      {/* HARDEN-1: onboarding opens the one reader, "Import a spreadsheet",
+          which writes every gift through recordGift (real gifts-table rows). */}
+      {showImportModal && <SpreadsheetImport onClose={() => setShowImportModal(false)} onImported={afterImportDone}/>}
     </div>
   );
 }

@@ -1814,7 +1814,9 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   const answerFig = (k, f) => ({ figure: { ...D.answerFigure(key, k), value: f.value, source: f.source } });
 
   if (key === "board") {
-    const cmp = { ...yr, prevFrom: fyPrev.start, prevTo: prevSamePoint };
+    // HARDEN-1: the span Home and Fundraising compare too (numbers.lastYearSpan).
+    const span = require("../numbers").lastYearSpan(fy.start, fy.end, today);
+    const cmp = span ? span.differenceSource.params : { ...yr, prevFrom: fyPrev.start, prevTo: prevSamePoint };
     const [oi] = await query("SELECT other_income_enabled, other_income_this_year FROM orgs WHERE id=?", [orgId]);
     // THE DESIGNATIONS THIS YEAR'S GIFTS NAME, each a figure of its own.
     const funds = await query(
@@ -7029,6 +7031,29 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
   res.json({ deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
+// HARDEN-1: THE UNDO OF A BULK DELETE IS ONE STEP, like the delete. The toast
+// used to put people back ten requests at a time; a dropped network (or a
+// closed tab) half way left some back and some not, and pressing Undo again
+// hit "already back" on the first ten and stopped, so the rest could never
+// come back from the toast. One transaction now: all of them, or none. A
+// person already back counts as back, so a second press finishes the job.
+app.post("/deleted-records/restore-people", requireAuth, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? [...new Set(req.body.ids.map(String))] : [];
+  if (!ids.length || ids.length > 100000) return res.status(400).json({ error: "ids array required" });
+  const orgId = req.user.orgId;
+  const rows = await query("SELECT id, record_id, restored_at, created_by FROM deleted_records WHERE org_id = ? AND table_name = 'donors' AND id = ANY(?)", [orgId, ids]);
+  if (rows.length !== ids.length) return res.status(404).json({ error: "not_found", sentence: "Some of these are no longer in Recent changes. Nobody was put back." });
+  if (rows.some(t => t.created_by !== req.user.userId) && !(await mayEditLogged(req, {}))) return res.status(403).json(NOT_YOURS);
+  const waiting = rows.filter(t => !t.restored_at);
+  await withTransaction(async client => {
+    if (!waiting.length) return;
+    await runTx(client, "UPDATE donors SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.record_id)]);
+    await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.id)]);
+  });
+  if (req.audit) req.audit.entity("donor", waiting.length === 1 ? waiting[0].record_id : null);
+  res.json({ restored: rows.length, newlyRestored: waiting.length, alreadyBack: rows.length - waiting.length });
+}));
+
 // UNDO. Puts the row back exactly as it was. Allowed to whoever deleted it,
 // or an admin, and only once.
 app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
@@ -8053,6 +8078,8 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
   }
 
   const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req), manual: true });
+  if (result.skipped === "undated_gift") return res.status(409).json({ error: "undated_gift",
+    message: "This gift has no date, and a tax receipt names the day a gift was given. Set the date on the gift, then send the receipt." });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
   res.status(201).json(result.receipt);
 }));
@@ -8704,6 +8731,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
                               FROM sheet_import_jobs j WHERE j.org_id=? AND j.status IN ('running','failed') AND j.started_at > NOW() - interval '7 days'
                                AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.id=j.id AND i.org_id=j.org_id)
                              ORDER BY j.started_at DESC LIMIT 20`, [req.user.orgId]);
+  const recent = await recentGiftRuns(req.user.orgId, rows);
   res.json({
     imports: jobs.map(j => ({ id: j.id, name: j.file_name || "Spreadsheet", sourceFilename: j.file_name, shape: "sheet",
       committedOn: new Date(j.started_at).toISOString().slice(0, 10), committedAt: j.started_at, by: j.created_by_name || null,
@@ -8727,10 +8755,12 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         // before this build has a source but nothing to compare.
         migrationSource: r.migration_source || null,
         hasMoveReport: !!(summary && summary.moveFile),
-        // FIX-37: what she answered about the last 30 days' thank-yous.
-        thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+        // FIX-37: what she answered about the last 30 days' thank-yous; HARDEN-1:
+        // only for a run that had gifts from those 30 days to thank.
+        thanks: recent.has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
         state: r.reversed_at ? "undone" : "done",
         pledgesCreated: Number(summary.pledgesCreated) || 0,
+        ...peopleLine(r, summary),
       };
     })),
   });
@@ -8751,6 +8781,35 @@ app.get("/imports/:id/progress", requireAuth, wrap(async (req, res) => {
              readout: ro ? { id: ro.id, headline: ro.headline } : null });
 }));
 
+// HARDEN-1 · A RUN WITH NO RECENT GIFTS THANKED NOBODY. The answer to "have the
+// last 30 days been thanked?" is shown only on a run that had a gift dated in
+// the 30 days before it committed; a contacts file drafted no thank-yous.
+async function recentGiftRuns(orgId, rows) {
+  const ids = rows.filter(r => r.thanks_answer).map(r => r.id);
+  if (!ids.length) return new Set();
+  const hit = await query(`SELECT DISTINCT g.import_id AS id FROM gifts g JOIN imports i ON i.id=g.import_id AND i.org_id=g.org_id
+                            WHERE g.org_id=? AND g.import_id = ANY(?) AND g.date IS NOT NULL
+                              AND g.date::date >= (i.committed_at::date - 30)`, [orgId, ids]);
+  return new Set(hit.map(x => x.id));
+}
+// HARDEN-1 · A FILE OF PEOPLE IS COUNTED IN PEOPLE. Its receipt read "0 rows in
+// the file" after writing 656 people: rows_in counts gift rows. A run with no
+// gift rows says what it did with its people instead (stored on the run, never
+// recomputed: the reader keeps its rows and matches; the old mapper its counts).
+function peopleLine(r, summary) {
+  const gifts = Number(r.gifts_created) || 0, rowsIn = Number(r.rows_in) || 0;
+  const made = Number(r.donors_created) || 0;
+  const matched = summary.peopleMatched != null ? Number(summary.peopleMatched) || 0 : Number(r.donors_merged) || Number(summary.donorsMatched) || 0;
+  if (rowsIn || gifts || !(made + matched)) return { peopleRowsIn: null, peopleSentence: null };
+  const rowsP = summary.personRowsInFile != null ? Number(summary.personRowsInFile) || 0 : null;
+  const folded = rowsP != null ? Math.max(0, rowsP - made - matched) : 0;
+  const n = (k, w) => `${k.toLocaleString("en-US")} ${k === 1 ? w : w + "s"}`;
+  const parts = [`${made.toLocaleString("en-US")} added`, `${matched.toLocaleString("en-US")} already here`];
+  if (folded) parts.push(`${n(folded, "row")} for someone named on another row`);
+  return { peopleRowsIn: rowsP, peopleMatched: matched,
+           peopleSentence: `${rowsP != null ? n(rowsP, "row") + " of people" : `${(made + matched).toLocaleString("en-US")} ${made + matched === 1 ? "person" : "people"}`} in the file = ${parts.join(" + ")}. No gifts in this file.` };
+}
+
 // One run, with the receipt exactly as it was shown.
 app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
   const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -8768,7 +8827,8 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       reconciled: findings.length === 0, findings, notices: importNotices(r),
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
-      thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
+      thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
+      ...peopleLine(r, summary),
       // FIX-52: the pledges it made are part of what it brought in, and every
       // receipt that reverses as a whole offers Undo for its window, whether
       // or not it reconciles: an import that went wrong is when undo matters.
@@ -8835,6 +8895,16 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
   const st = await moveState(req.user.orgId);
   if (!st) return res.status(404).json({ error: "org not found" });
   const undoOpen = M.moveUndoOpen(st.undoUntil, new Date());
+  // HARDEN-1 · HOME'S LINE READS THE FILE AS IT IS NOW. It summed the move's
+  // runs (`donors_created`, `gifts_created`, written at commit), so one move
+  // run of 40 people said "This is your file, 40 people, and no giving history
+  // in it yet" above 1,208 donors whose gifts came in another way. These are
+  // the onboarding card's own two counts (/org/setup-status).
+  const [[livePeople], [liveGifts]] = await Promise.all([
+    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [req.user.orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [req.user.orgId]),
+  ]);
   res.json({
     move: {
       ...st,
@@ -8845,7 +8915,7 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
       undoDays: M.MOVE_UNDO_DAYS,
       homeLine: M.moveHomeLine({
         active: !!st.source && !st.completedAt,
-        imports: st.imports, giftsImported: st.giftsImported, peopleImported: st.peopleImported,
+        imports: st.imports, giftsImported: Number(liveGifts && liveGifts.n) || 0, peopleImported: Number(livePeople && livePeople.n) || 0,
       }),
     },
   });
@@ -8955,15 +9025,19 @@ async function moveRunIds(orgId, imp) {
 
 async function moveHeldFacts(orgId, importId) {
   const [g] = await query(
-    `SELECT COUNT(*)::int gifts, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
-       FROM gifts WHERE org_id=? AND import_id = ANY(?)`, [orgId, importId]);
+    // HARDEN-1: a deleted person's gifts are not held. They stay as rows
+    // (deletion is soft), and this read counted them: on 27 Oct an org whose
+    // people from the move had all been deleted read "3,315 gifts,
+    // $2,887,186.01". Same predicate as the people and top-donor reads below.
+    `SELECT COUNT(*)::int gifts, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+       FROM gifts g WHERE g.org_id=? AND g.import_id = ANY(?) AND ${NOT_DELETED("g")}`, [orgId, importId]);
   const years = await query(
     // `gifts.date` is TEXT in 'YYYY-MM-DD', so the year is LEFT(date,4) -- the
     // same seam every other report here groups by. EXTRACT() does not apply to
     // a text column and answers 42883.
-    `SELECT LEFT(date, 4)::int y, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
-       FROM gifts
-      WHERE org_id=? AND import_id = ANY(?) AND date IS NOT NULL AND date <> ''
+    `SELECT LEFT(g.date, 4)::int y, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+       FROM gifts g
+      WHERE g.org_id=? AND g.import_id = ANY(?) AND g.date IS NOT NULL AND g.date <> '' AND ${NOT_DELETED("g")}
       GROUP BY 1 ORDER BY 1 DESC`, [orgId, importId]);
   const [p] = await query(
     `SELECT COUNT(*)::int people,
@@ -9005,7 +9079,8 @@ app.get("/imports/:id/move-report", requireAuth, wrap(async (req, res) => {
   // has no stored file facts, and the honest answer is to say so rather than
   // to reconstruct the file from the rows it produced and call that a match.
   const file = summary.moveFile || null;
-  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
+  const runIds = await moveRunIds(orgId, r);
+  const held = await moveHeldFacts(orgId, runIds);
   const typed = (r.old_system_gifts != null || r.old_system_cents != null)
     ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
   const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
@@ -9017,7 +9092,7 @@ app.get("/imports/:id/move-report", requireAuth, wrap(async (req, res) => {
       import: { id: r.id, name: r.name, committedAt: r.committed_at, source: r.migration_source || null },
     });
   }
-  const report = M.buildMoveReport({ file, held, typed, vendor });
+  const report = M.buildMoveReport({ file, held, typed, vendor, runs: runIds.length });
   res.json({
     moveReport: report, file, held, vendor,
     since: M.buildSinceLastTime({
@@ -9147,11 +9222,12 @@ app.get("/imports/:id/move-report/pdf", requireAuth, wrap(async (req, res) => {
   const file = summary.moveFile || null;
   if (!file) return res.status(409).json({ error: "no_move_report",
     message: "This import ran before Steward started keeping the file's own figures, so there is no Move Report to print." });
-  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
+  const runIds = await moveRunIds(orgId, r);
+  const held = await moveHeldFacts(orgId, runIds);
   const typed = (r.old_system_gifts != null || r.old_system_cents != null)
     ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
   const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
-  const report = M.buildMoveReport({ file, held, typed, vendor });
+  const report = M.buildMoveReport({ file, held, typed, vendor, runs: runIds.length });
   const org = await orgRow(orgId);
   const pdf = await renderMoveReportPdf({ report, org, vendor, imp: {
     name: r.name, committedAt: r.committed_at, by: r.actor_user_name || null } });
@@ -9553,9 +9629,15 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // undoes as a whole too. Its gifts carry the run id and the people it created
 // carry it as `created_import_id`, which is everything the undo needs, and
 // what it now starts (thank-you drafts, journeys, a readout) is undone with it.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet"]);
+// HARDEN-1: the old "Import Donors" mapper is retired; every door opens the one
+// reader. Its past runs ("aggregate", a contacts or totals file; "wide", a
+// year-columns file; "workbook" and "both", two sheets) carry the run id on
+// their gifts and on the people they made, so each undoes whole from its
+// receipt like the others, for the reader's 30 days.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction", "sheet", "aggregate", "wide", "workbook", "both"]);
 // FIX-52: the spreadsheet import's screen promises Undo for 30 days, and now keeps it.
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30 };
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7, sheet: 24 * 30,
+                              aggregate: 24 * 30, wide: 24 * 30, workbook: 24 * 30, both: 24 * 30 };
 // Whether a receipt offers Undo, and until when. The route below is the judge.
 function importUndoWindow(r) {
   if (!WHOLE_IMPORT_SHAPES.has(r.shape) || !r.committed_at) return { canUndo: false, undoUntil: null };
@@ -9638,7 +9720,17 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
 }));
 
+// HARDEN-1: ONE UNDO. Two presses of "Yes, undo it" (a double-click, a retry
+// after the answer was lost, a second tab) both read reversed_at as empty and
+// both ran the whole undo, each answering "Undone. 40 gifts removed". The undo
+// of one run now waits for any other undo of that run, then reads
+// reversed_at again, so the second press is told it was already undone. Its
+// own key, not `import:<org>`: the recent-gift work holds that one and the
+// undo waits for that work (cancelRecentWork), which would wait forever.
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await withAdvisoryLock(`import-undo:${req.user.orgId}:${req.params.id}`, () => reverseImport(req, res));
+}));
+async function reverseImport(req, res) {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
@@ -9691,7 +9783,10 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     for (const i of ixIds) if (i.donor_id && !donorIds.includes(i.donor_id)) donorIds.push(i.donor_id);
   }
-  const tasksRemoved = (await query("DELETE FROM tasks WHERE org_id=? AND import_id=? RETURNING id", [orgId, req.params.id])).length;
+  // HARDEN-1: the "Review N possible duplicates from the import" task its Data
+  // health run opened is the run's too, while nobody has done it
+  const tasksRemoved = (await query(`DELETE FROM tasks WHERE org_id=? AND (import_id=? OR (created_by=? AND COALESCE(done,0)::int = 0)) RETURNING id`,
+    [orgId, req.params.id, `system:data-health/import/${req.params.id}`])).length;
   await run("DELETE FROM donor_relationships WHERE org_id=? AND import_id=?", [orgId, req.params.id]).catch(() => {});
   // Flags and tags are reverted only where this run turned them on and they
   // are still on: a flag somebody set by hand afterwards is not this run's.
@@ -9803,7 +9898,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
       + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
       + (alreadyDeleted ? ` (${alreadyDeleted} of them already deleted)` : "")
       + `. Nothing was sent. Nothing else was touched.` });
-}));
+}
 
 // The merge review list — every fold the importer made, newest import first.
 app.get("/import-merges", requireAuth, wrap(async (req, res) => {
@@ -10854,7 +10949,12 @@ async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false,
     if (addressesOnly) { letters.push({ donorId: donor.donor_id, name: donor.name, address, text: "", giftIds: giftIdsHere, totalCents: 0 }); continue; }
     const fields = ACK.letterFields({ donor, gifts, org: orgFields });
     const r = ACK.renderLetter(tpl.body, fields);
-    if (r.missing.length) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}` }); continue; }
+    if (r.missing.length) {
+      const why = r.missing.includes("gift_date") && fields._undated
+        ? `${fields._undated === 1 ? "a gift here has" : `${fields._undated} gifts here have`} no date; set the date on the gift first`
+        : `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}`;
+      skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why }); continue;
+    }
     letters.push({ donorId: donor.donor_id, name: donor.name, address, text: r.text, giftIds: giftIdsHere, totalCents: fields._totalCents });
   }
   const found = new Set(rows.map(r => r.id));
@@ -16501,7 +16601,7 @@ function ixAttachmentRow(r, orgId) {
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     createdByName: r.created_by_name || "",
     interactionType: r.interaction_type || null,
-    interactionDate: r.interaction_date ? String(r.interaction_date instanceof Date ? r.interaction_date.toISOString() : r.interaction_date).slice(0, 10) : null,
+    interactionDate: r.interaction_date ? String(r.interaction_date instanceof Date ? orgTime.civilOf(r.interaction_date) : r.interaction_date).slice(0, 10) : null,
     // Minted PER READ, thirty minutes. A stored URL outlives its reason.
     url: IXF.signFileUrl({ orgId, assetId: r.asset_id }),
   };
@@ -19105,7 +19205,7 @@ app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
       detail: TYPE_LABEL[r.type] || r.type,
-      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      value: orgTime.civilLocale(r.date, { month: "short", day: "numeric" }),
     })),
   });
 }));
@@ -19138,7 +19238,7 @@ app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
-      detail: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      detail: orgTime.civilLocale(r.date, { month: "short", day: "numeric", year: "numeric" }),
       value: "$" + Number(r.amount).toLocaleString(),
     })),
   });
@@ -19191,7 +19291,7 @@ app.get("/dashboard/my-stats/lapsed/breakdown", requireAuth, wrap(async (req, re
     count: parseInt(countRow[0]?.cnt || 0),
     rows: rows.map(d => ({
       donorId: d.id, donorName: d.name,
-      detail: d.last_gift_date ? `Last gave ${new Date(d.last_gift_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "No gift date on file",
+      detail: d.last_gift_date ? `Last gave ${orgTime.civilLocale(d.last_gift_date, { month: "short", day: "numeric", year: "numeric" })}` : "No gift date on file",
       value: "$" + Number(d.total_giving || 0).toLocaleString(),
     })),
   });
@@ -19451,7 +19551,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const { eitherContainsTokenRun } = await import("../shared/importShape.js");
   const unconfirmedLargest = (impStats?.largestGifts || []).filter(g => !g.confirmed);
   for (const g of unacked) {
-    const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    const giftDate = orgTime.civilLocale(g.date, { month: "long", day: "numeric" });
     // BUILD-84 census — matching two donor NAMES respects token boundaries.
     // `g.donor_name.includes(x.name)` matched "Ann Lee" inside "Joann Leewood",
     // which here would put a confirm-this-amount flag on the wrong donor's
@@ -19487,7 +19587,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // ran first) when both could apply to the same offline gift.
   if (receiptsEnabled) {
     for (const g of needsReceipt) {
-      const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+      const giftDate = orgTime.civilLocale(g.date, { month: "long", day: "numeric" });
       upsertItem({
         donorId: g.donor_id, donorName: g.donor_name,
         reason: `Gift of $${Number(g.amount).toLocaleString()} on ${giftDate} needs a tax receipt`,
@@ -21479,7 +21579,6 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
   const cur = finPeriodBounds(yearMode, 0, _fpTz);
-  const prior = finPeriodBounds(yearMode, -1, _fpTz);
   const today = orgToday(_fpTz);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
   // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
@@ -21496,7 +21595,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   // the period query above, so both figures foot to Reports.
   const l12Start = orgTime.addDays(orgToday(_fpTz), -364);
   const l12End = orgToday(_fpTz);
-  const [goalRows, curRows, priorRows, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
+  const [goalRows, curRows, vsLast, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
     query(
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
       [orgId, today, today]
@@ -21507,7 +21606,11 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     // cross-surface invariant). Trashing a donor hides them from Reports; the
     // Fundraising header must not keep counting them.
     query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, cur.start, cur.end]),
-    query("SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, prior.start, prior.end]),
+    // HARDEN-1: "vs last year" is this period so far against the SAME DAYS
+    // last year, read through the one computation Home and the Board read.
+    // It was the whole of the prior period ("↓ $210,535.51 vs last period"
+    // beside Home's "$63,984 behind last year at this point").
+    require("../numbers").vsLastYear(orgId, cur.start, cur.end, today),
     query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, wk.start, wk.end]),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
@@ -21518,7 +21621,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     fundraisingCampaignRows(orgId),
     query(
       `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
-              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
+              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND ${NOT_DELETED("gifts")}), 0) AS raised
          FROM giving_pages gp WHERE gp.org_id = ? AND COALESCE(gp.page_kind,'give') = 'give' ORDER BY gp.created_at DESC`,
       [orgId]
     ),
@@ -21576,7 +21679,8 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   }
 
   const periodTotal = parseFloat(curRows[0]?.total) || 0;
-  const priorTotal = parseFloat(priorRows[0]?.total) || 0;
+  // vsLast: numbers.vsLastYear, or null before the period begins.
+  const priorTotal = vsLast ? vsLast.lastYear : 0;
   const activePages = givingPages.filter(p => p.status === "active");
 
   // BUILD-16 Part 2 — the goal portfolio + roll-up header replaces the single
@@ -21598,7 +21702,13 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
       giftCount: parseInt(curRows[0]?.gifts, 10) || 0,
       donorCount: parseInt(curRows[0]?.donors, 10) || 0,
       priorRaised: priorTotal,
-      delta: periodTotal - priorTotal,
+      delta: vsLast ? vsLast.difference : 0,
+      // The comparison and the days it compares, each half a figure source.
+      compare: vsLast ? {
+        thisYear: vsLast.thisYear, lastYear: vsLast.lastYear, difference: vsLast.difference,
+        from: vsLast.from, to: vsLast.to, lastFrom: vsLast.lastFrom, lastTo: vsLast.lastTo,
+        sentence: vsLast.sentence, source: vsLast.differenceSource,
+      } : null,
       // FIX-10 Part B — the bounds this figure was summed over, so the tile can
       // open EXACTLY the rows it claims instead of a whole-Reports link.
       start: cur.start,
@@ -22027,8 +22137,22 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
   const donors = await resolveCampaignRecipients(campaign, req.user.orgId);
   const aud = await campaignAudience(campaign, req.user.orgId);
 
-  // Mark as sending and respond immediately (non-blocking)
-  await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=?", [campaign.id]);
+  // Mark as sending and respond immediately (non-blocking).
+  // HARDEN-1: the mark is a CLAIM. Two presses of Send (a double-click, a
+  // retry after a lost answer, a second tab) both read 'draft', both marked it
+  // sending and both ran the loop below, so every donor got the campaign
+  // twice. One UPDATE now decides which press sends; the other is told it is
+  // already going. A send stuck in 'sending' for 15 minutes (the server died
+  // mid-loop) may be pressed again, as before.
+  const claimed = await query(
+    `UPDATE campaigns SET status='sending', updated_at=NOW()
+      WHERE id=? AND org_id=? AND status IS DISTINCT FROM 'sent'
+        AND (status IS DISTINCT FROM 'sending' OR updated_at < NOW() - interval '15 minutes')
+      RETURNING id`, [campaign.id, req.user.orgId]);
+  if (!claimed.length) {
+    req.audit && req.audit.skip && req.audit.skip("a second press of Send changes nothing");
+    return res.status(409).json({ error: "already_sending", message: "This campaign is already going out. Nothing was sent twice." });
+  }
   res.json({ queued: true, recipientCount: aud.orgGate.send ? aud.recipients.length : 0 });
 
   setImmediate(() => runCampaignSend(campaign, org, donors));
@@ -22135,7 +22259,6 @@ app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(asyn
 app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const year = parseInt(req.query.year) || orgTime.parseCivil(orgToday(await orgTz(orgId))).y; // ORG_TZ_SEAM_OK (BUILD-75 A.4)
-  const prevYear = year - 1;
 
   const goalRows = await query(
     "SELECT goal FROM annual_fund_goals WHERE org_id = ? AND year = ?",
@@ -22143,22 +22266,19 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   );
   const goal = goalRows.length ? goalRows[0].goal : 0;
 
-  const allGifts = await query(
-    "SELECT * FROM gifts WHERE org_id = ?",
+  // HARDEN-1: nobody deleted counts, an amount is a number (pg hands NUMERIC
+  // back as text, so `s + g.amount` was joining strings), and the year and
+  // month are read off the civil date, never through a UTC Date. An undated
+  // gift belongs to no year.
+  const allGifts = (await query(
+    `SELECT g.* FROM gifts g WHERE g.org_id = ? AND ${NOT_DELETED("g")}`,
     [orgId]
-  );
+  )).map(g => ({ ...g, amount: Number(g.amount) || 0 }));
 
   const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const civil = g => (g.date ? String(g.date instanceof Date ? orgTime.civilOf(g.date) : g.date).slice(0, 10) : "");
 
-  const thisYearGifts = allGifts.filter(g => {
-    const d = new Date(g.date);
-    return d.getFullYear() === year;
-  });
-
-  const prevYearGifts = allGifts.filter(g => {
-    const d = new Date(g.date);
-    return d.getFullYear() === prevYear;
-  });
+  const thisYearGifts = allGifts.filter(g => civil(g).slice(0, 4) === String(year));
 
   const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
   const giftCount   = thisYearGifts.length;
@@ -22166,7 +22286,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
 
   const monthly = monthNames.map((month, idx) => {
     const raised = thisYearGifts
-      .filter(g => new Date(g.date).getMonth() === idx)
+      .filter(g => Number(civil(g).slice(5, 7)) === idx + 1)
       .reduce((s, g) => s + g.amount, 0);
     return { month, raised };
   });
@@ -22297,7 +22417,7 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
   const out = [];
   for (const l of levels) out.push(eventLevelPayload(l, await levelTaken(l.id)));
   res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
-    event: { id: ev.id, name: ev.name, date: String(ev.date).slice(0, 10), location: ev.location, description: ev.description },
+    event: { id: ev.id, name: ev.name, date: orgTime.civilOf(ev.date), location: ev.location, description: ev.description },
     levels: out });
 }));
 
@@ -22343,14 +22463,14 @@ const gpOrgSql = where => `SELECT o.id, o.name, o.org_slug, o.legal_name, o.ein,
 const gpPageSql = where => `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
        to_char(c.end_date,'YYYY-MM-DD') AS campaign_end_date, c.match_cents AS campaign_match_cents,
        to_char(gp.ends_on,'YYYY-MM-DD') AS page_ends_on,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
          0   -- FIX-49: filled below by numbers.publicBarRaised, the one public-bar rule
        END AS campaign_raised,
        -- PARITY-2 Part 2: THE DONOR COUNT BESIDE THE BAR, over the SAME rows
        -- the bar sums (the page's, or its campaign's when it counts toward
        -- one): each person once, however many gifts they made.
-       (SELECT COUNT(DISTINCT donor_id)::int FROM gifts WHERE giving_page_id = gp.id AND amount > 0) AS page_donors,
+       (SELECT COUNT(DISTINCT donor_id)::int FROM gifts WHERE giving_page_id = gp.id AND amount > 0 AND ${NOT_DELETED("gifts")}) AS page_donors,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
          (SELECT COUNT(DISTINCT g.donor_id)::int FROM gifts g WHERE g.org_id = gp.org_id AND g.amount > 0 AND ${CAMPAIGN_GIFT_MATCH("g", "c")})
        END AS campaign_donors
@@ -22447,7 +22567,7 @@ async function givingPagePublicPayload(org, page, reqQuery) {
   // fundraiser. Live every call, never cached, same rule as raised_amount.
   const fundraiserRows = await query(
     `SELECT pf.id, pf.name, pf.slug,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount
      FROM peer_fundraisers pf
      WHERE pf.giving_page_id = ? AND pf.status = 'active'
      ORDER BY raised_amount DESC, pf.created_at ASC`,
@@ -22601,7 +22721,7 @@ async function p2pTeamBoard(orgId, pageId) {
 async function p2pIndividualBoard(orgId, pageId) {
   const rows = await query(
     `SELECT pf.id, pf.name, pf.slug, t.name AS team_name, t.slug AS team_slug,
-            COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND org_id = pf.org_id), 0)::float AS raised
+            COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND org_id = pf.org_id AND ${NOT_DELETED("gifts")}), 0)::float AS raised
        FROM peer_fundraisers pf
        LEFT JOIN p2p_teams t ON t.id = pf.team_id AND t.org_id = pf.org_id AND t.status = 'active'
       WHERE pf.org_id = ? AND pf.giving_page_id = ? AND pf.status = 'active'
@@ -22972,7 +23092,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const page = pageRows[0];
 
   const fRows = await query(
-    `SELECT pf.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+    `SELECT pf.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id AND ${NOT_DELETED("gifts")}), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.slug=? AND pf.status='active'`,
     [page.id, req.params.fundraiserSlug]
   );
@@ -23103,7 +23223,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const pqMs = pqb.start, pqMe = pqb.end;
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
-  const toDs = d => d ? (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10) : "";
+  const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
 
   console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
 
@@ -25273,10 +25393,13 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
   let yearsGiving = null;
   let firstGiftLabel = null;
   if (donor.first_gift_date) {
-    const first = new Date(donor.first_gift_date);
-    if (!isNaN(first.getTime())) {
-      yearsGiving = now.getFullYear() - first.getFullYear() - ((now.getMonth() < first.getMonth() || (now.getMonth() === first.getMonth() && now.getDate() < first.getDate())) ? 1 : 0);
-      firstGiftLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    // HARDEN-1: the first gift's own civil day against the org's today, never
+    // through a Date (a January 1 first gift read as December 31 west of UTC).
+    const first = orgTime.parseCivil(orgTime.civilOf(donor.first_gift_date) || "");
+    if (first) {
+      const t = orgTime.parseCivil(orgToday(await orgTz(orgId))); // ORG_TZ_SEAM_OK
+      yearsGiving = t.y - first.y - ((t.m < first.m || (t.m === first.m && t.d < first.d)) ? 1 : 0);
+      firstGiftLabel = orgTime.civilLocale(donor.first_gift_date, { month: "long", year: "numeric" });
     }
   }
 
@@ -25369,7 +25492,7 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
       doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
       doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Recent Gifts", 50, y); y += 18;
       recentGifts.forEach((g, i) => {
-        const d = g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Not set";
+        const d = g.date ? orgTime.civilLocale(g.date, { month: "short", day: "numeric", year: "numeric" }) : "Not set";
         doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(d, 58, y + 5, { width: 90 });
         doc.fillColor(INK3).text(g.campaign || "General", 155, y + 5, { width: 250 });
@@ -27276,7 +27399,7 @@ const evDayWords = iso => {
   // String(it) is "Sat Dec 05 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
   // and slicing ten characters off that gives "Sat Dec 0". The public page
   // printed exactly that. Normalise to the civil day first.
-  const day = iso instanceof Date ? iso.toISOString().slice(0, 10) : String(iso || "").slice(0, 10);
+  const day = iso instanceof Date ? orgTime.civilOf(iso).slice(0, 10) : String(iso || "").slice(0, 10);
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
   if (!m) return String(iso || "");
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
@@ -27518,7 +27641,7 @@ app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
           ORDER BY a.created_at DESC LIMIT 1`, [e.org_id, e.id, String(hold.email).toLowerCase()]);
     }
   }
-  const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
+  const day = e.date instanceof Date ? orgTime.civilOf(e.date).slice(0, 10) : String(e.date).slice(0, 10);
   const CAL = await import("../shared/calendarLinks.js");
   const calEvent = await evCalendarEvent(e);
   const times = EPG.timeRangeWords(e.start_time, e.end_time);

@@ -3,7 +3,7 @@ import { daysToDue } from "../lib/taskDue";
 import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
-import { displayDate } from "../../../shared/displayDate";
+import { displayDate, civilYear } from "../../../shared/displayDate";
 import { driftBadgeLabel } from "../../../shared/driftWords";
 import { phoneDisplay, phoneHref } from "../../../shared/phone.js";
 
@@ -1205,7 +1205,7 @@ export function GivingHistoryChart({gifts:all}) {
   const ys=sorted.map(g=>pad.t+ph-(g.amount/maxAmt)*ph);
   const pts=xs.map((x,i)=>`${x},${ys[i]}`).join(" ");
   const area=sorted.length>1?`M ${xs[0]},${pad.t+ph} L ${xs.map((x,i)=>`${x} ${ys[i]}`).join(" L ")} L ${xs[xs.length-1]},${pad.t+ph} Z`:null;
-  const yearOf=g=>new Date(g.date).getFullYear();
+  const yearOf=g=>civilYear(g.date);   // HARDEN-1: a Jan 1 gift is that year, in every zone
   return(
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
       <defs>

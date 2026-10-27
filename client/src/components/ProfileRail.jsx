@@ -267,7 +267,7 @@ export function AutoEmailCard({ donorId, email, isReadOnly }) {
           {!isReadOnly && (sendAsk === b.id
             ? <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={DIM}>Send this one message{email ? " to " + email : ""}?</span>
-                <button type="button" data-testid="dp-held-send-yes" disabled={busy} style={GO_BTN} onClick={() => send(b.id)}>Send</button>
+                <button type="button" data-commit data-testid="dp-held-send-yes" disabled={busy} style={GO_BTN} onClick={() => send(b.id)}>Send</button>
                 <button type="button" disabled={busy} style={{ ...SMALL_BTN, border: "none", textDecoration: "underline" }} onClick={() => setSendAsk(null)}>Cancel</button>
               </div>
             : <button type="button" data-testid="dp-held-send" style={{ ...SMALL_BTN, marginTop: 4 }} onClick={() => setSendAsk(b.id)}>Send</button>)}

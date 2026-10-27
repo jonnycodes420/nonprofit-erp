@@ -26,7 +26,7 @@ import { DataHealth } from "./DataHealth";
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
 import { EMPTY_WHERE, whereParam } from "./DonorFilters";
-import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
+import { MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
@@ -263,7 +263,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // The setup checklist's "Import your donors" deep link lands with the
     // one-file magical import (Import + History) already open — the exact
     // spot, not the tab root.
-    if(initialOpenImport&&!isReadOnly)setShowCombinedImport(true);
+    if(initialOpenImport&&!isReadOnly)setShowSheetImport(true);
     // A deep-linked selection starts from a summary row — upgrade it to the
     // full record (selectDonor is defined below; safe to call from here).
     if(initialSelectDonorId){
@@ -669,8 +669,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}
         initialOwner={nmFilter.owner} initialMin={nmFilter.min} onFilterChange={setNmFilter}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
-      {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-      {showGiftImport&&<GiftHistoryImport donors={orgPeople||undefined} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
+      {showImport&&<SpreadsheetImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+      {showGiftImport&&<SpreadsheetImport onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
       {/* REPORTS-5: the second door to the one old-reports wizard. */}
@@ -680,12 +680,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showHistory&&<HistoryImport onClose={()=>setShowHistory(false)} onDone={reloadDonors}/>}
       {showSheetImport&&<SpreadsheetImport onClose={()=>setShowSheetImport(false)} onImported={()=>{reloadDonors();setShowSheetImport(false);}}/>}
       {showHours&&<HoursImportModal onClose={()=>setShowHours(false)} onDone={reloadDonors} Modal={Modal} Papa={Papa} presets={HOURS_PRESETS_MOD}/>}
-      {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
-          MAGICAL import (DonorImport withHistory: shape detection + the
-          "Import both" two-sheet CTA). The legacy CombinedImport, whose
-          multi-sheet picker forced ONE sheet, is retired — a pilot following
-          the recommended path gets the good path. */}
-      {showCombinedImport&&<DonorImport withHistory org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
+      {/* HARDEN-1: every door that opened the old mapper (Import + History,
+          Import donors only, Add giving history, Home's and onboarding's
+          openImport) opens the one reader, SpreadsheetImport. */}
+      {showCombinedImport&&<SpreadsheetImport onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)}
         onRecordGift={opts=>{const d=logTarget;setLogTarget(null);selectDonor(d);setGiftHandoff({donorId:d.id,date:opts&&opts.date});}}
@@ -771,10 +769,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
             <div onClick={()=>setToolsOpen(false)} style={{position:"fixed",inset:0,zIndex:180}}/>
             <div role="menu" style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:181,background:T.white,border:"1px solid "+T.bg3,borderRadius:12,boxShadow:T.shadowMd,minWidth:280,padding:6,display:"flex",flexDirection:"column"}}>
               {[
-                {label:"Import + History",hint:"One file in, donors + full gift history out",badge:"Recommended",act:()=>setShowCombinedImport(true)},
-                {label:"Any spreadsheet",hint:"An event night's sheet or any list: Steward reads it and asks only what it can't tell",act:()=>setShowSheetImport(true)},
-                {label:"Import donors only",hint:"A contact list with no gift rows",act:()=>setShowImport(true)},
-                {label:"Add giving history",hint:"Attach a gift export to donors already here",act:()=>setShowGiftImport(true)},
+                // HARDEN-1: one reader for every people or gifts file. The old
+                // "Import Donors" mapper called 656 contacts "656 donors", showed
+                // no matching and balanced only gift rows; its doors are gone.
+                {label:"Import a spreadsheet",hint:"Donors, gifts, contacts or an event night's sheet: Steward reads it, matches the people already here, and asks only what it can't tell",badge:"Recommended",act:()=>setShowSheetImport(true)},
                 {label:"Bring your notes and history",hint:"Notes, calls, meetings, open tasks and letters from your old system",act:()=>setShowHistory(true)},
                 {divider:true},
                 {label:"Import volunteer hours",hint:"A Wranglr or VolunteerHub hours export",act:()=>setShowHours(true)},

@@ -354,7 +354,9 @@ function line(label, sentence, fileVal, heldVal, { money = false, opens = null }
 //   typed  optional: the totals the org typed in from their old system,
 //          { gifts, cents }. A person's own number is never silently
 //          overridden and never folded into the headline; it gets its own row.
-export function buildMoveReport({ file = {}, held = {}, typed = null, vendor = "" } = {}) {
+//   runs   how many imports the held side covers (TRANS-1: the whole move,
+//          this run and every earlier run from the same old system)
+export function buildMoveReport({ file = {}, held = {}, typed = null, vendor = "", runs = 1 } = {}) {
   const lines = [
     line("People", "Every person the file named, counted once each.",
       file.people, held.people, { opens: "move_people" }),
@@ -402,10 +404,18 @@ export function buildMoveReport({ file = {}, held = {}, typed = null, vendor = "
   const giftsMatch = n(file.gifts) === n(held.gifts);
   const centsMatch = n(file.cents) === n(held.cents);
   const clean = giftsMatch && centsMatch && !differences.length && !mismatchedDonors.length;
+  // HARDEN-1 · THE HEADLINE SAYS WHAT IT COMPARES. Its held side is the whole
+  // move (TRANS-1), so a second run's report counts the first run's gifts too;
+  // "3,315 gifts" with no scope read as this one file. It says which, and it
+  // counts only people who are still here (moveHeldFacts).
   const count = `${n(held.gifts).toLocaleString("en-US")} gift${n(held.gifts) === 1 ? "" : "s"}, ${formatCents(n(held.cents))}`;
+  const nRuns = Math.max(1, n(runs));
+  const scope = nRuns > 1
+    ? `Across the whole move${vendor ? ` from ${vendor}` : ""}, ${nRuns.toLocaleString("en-US")} imports so far, Steward holds ${count} from people still on file.`
+    : `From this file, Steward holds ${count} from people still on file.`;
   const headline = clean
-    ? `${count}. Matches your file to the cent.`
-    : `${count}. ${differenceSentence(file, held)}`;
+    ? `${scope} Matches your file to the cent.`
+    : `${scope} ${differenceSentence(file, held)}`;
 
   // The org's own typed figures are a THIRD column, never merged into the
   // headline: a number a person typed from memory is not evidence about the
@@ -425,6 +435,7 @@ export function buildMoveReport({ file = {}, held = {}, typed = null, vendor = "
 
   return {
     vendor: vendor || "",
+    runs: nRuns,
     headline, clean,
     lines, byYear, topDonors,
     differences, mismatchedDonors,

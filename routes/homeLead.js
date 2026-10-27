@@ -161,12 +161,14 @@ async function readFacts(req, nowMs) {
       // Raised is the campaign's own gifts; the comparison is like for like:
       // everything given since the season began, this year against the same
       // days last year.
-      const [[r], [ly], [lyAll], [ty]] = await Promise.all([
+      // HARDEN-1: the season against the same days last year is the one
+      // comparison every screen reads (numbers.vsLastYear).
+      const [[r], vs, [lyAll]] = await Promise.all([
         query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND campaign_id=? AND date <= ?`, [orgId, c.id, today]),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(today)]),
+        require("../numbers").vsLastYear(orgId, start, end, today),
         query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(end)]),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, start, today]),
       ]);
+      const ly = { n: vs ? vs.lastYear : 0 }, ty = { n: vs ? vs.thisYear : 0 };
       const y = Number(today.slice(0, 4)) - 1;
       const lapsedRows = await query(
         `SELECT d.id, d.name, SUM(g.amount) AS amount FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -212,12 +214,12 @@ async function readFacts(req, nowMs) {
   if (season) compare = { label: `Giving since ${season.since}`, thisYear: season.seasonThisYear, lastYear: season.lastYearByToday, question: { why: "Why is year-end giving behind last year?", what: "What is working in year-end giving?" } };
   else {
     // NUMBERS-2: "this year" is the org's own fiscal year (orgTz carries its start month).
-    const y0 = orgTime.orgFiscalYearStart(org), ly = d => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;   // ORG_TZ_SEAM_OK
-    const [[a], [b]] = await Promise.all([
-      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, y0, today]),
-      query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ? AND is_sample IS NOT TRUE`, [orgId, ly(y0), ly(today === `${today.slice(0, 4)}-02-29` ? `${today.slice(0, 4)}-02-28` : today)]),
-    ]);
-    compare = { label: "Giving this year", question: { why: "Why is giving behind last year?", what: "What is working this year?" }, thisYear: num(a.n), lastYear: num(b.n) };
+    // HARDEN-1: against the same days last year, through the one computation
+    // Fundraising and the Board read (numbers.vsLastYear), so the three agree.
+    const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0, new Date(nowMs));   // ORG_TZ_SEAM_OK
+    const vs = await require("../numbers").vsLastYear(orgId, fy.start, fy.end, today);
+    compare = vs ? { label: "Giving this year", question: { why: "Why is giving behind last year?", what: "What is working this year?" }, thisYear: vs.thisYear, lastYear: vs.lastYear,
+      span: { from: vs.from, to: vs.to, lastFrom: vs.lastFrom, lastTo: vs.lastTo }, source: vs.differenceSource } : null;
   }
 
   // ── Dismissals: this person's "Not now"s.

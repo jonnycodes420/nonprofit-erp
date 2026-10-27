@@ -38,6 +38,13 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
+async function surfacesAgree(label, orgId, token) {
+  const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
+  ok(`every surface agrees ${label} (${r.ms}ms)`, r.ok, r.diffs.length);
+  for (const d of r.diffs) console.log("        " + d);
+}
+
 const { MERGE_REFS, NOT_MOVED, KEY_COLS, refMatch } = require("../routes/dataHealth");
 
 const ORG = "org_clean1m";
@@ -268,6 +275,7 @@ async function reset() {
   ok("the kept person's lifetime giving is $1,385.03, the two before to the cent", await centsOf(A) === keptCents + goneCents, await centsOf(A));
   ok("and the gifts behind it foot to the same cent", await giftCents(A) === keptCents + goneCents);
   ok("the route reports the same footing", mj.lifetime && mj.lifetime.keptAfterCents === 138503 && mj.lifetime.keptBeforeCents + mj.lifetime.mergedBeforeCents === 138503, JSON.stringify(mj.lifetime));
+  await surfacesAgree("after the merge", ORG, login.token);
 
   // §4 ─────────────────────────────────────────────────────────────────────
   const undo = await fetch(BASE + `/data-health/merges/${mj.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
@@ -280,6 +288,7 @@ async function reset() {
   }).join(" | "));
   const again = await fetch(BASE + `/data-health/merges/${mj.mergeId}/undo`, { method: "POST", headers: H, body: "{}" });
   ok("a second undo is refused", again.status === 409);
+  await surfacesAgree("after the merge's undo", ORG, login.token);
 
   // §4c FIX-48 (numbers1-foot, 10-run CI): merge, shrink the gift whose soft
   // credit was set aside, then undo. The credit comes back no bigger than its
@@ -303,6 +312,7 @@ async function reset() {
   const [{ n: credits }] = await q(`SELECT COUNT(*)::int AS n FROM gift_soft_credits WHERE org_id=$1 AND gift_id='g_c1m_a1'`, [ORG]);
   const [{ n: back }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE id=$1 AND deleted_at IS NULL`, [B]);
   ok("...the deleted gift's credit stays gone and the merged person is back", credits === 0 && back === 1, { credits, back });
+  await surfacesAgree("after a merge, a gift deleted, and the undo", ORG, login.token);
 
   // §5 ─────────────────────────────────────────────────────────────────────
   for (const [id, who] of [["mem_c1m_d", D], ["mem_c1m_e", E]]) {

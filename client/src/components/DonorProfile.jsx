@@ -3276,7 +3276,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
                   <input value={eraseWord} onChange={e=>setEraseWord(e.target.value)} placeholder="Type ERASE" aria-label="Type ERASE to confirm"
                     style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",fontSize:13,fontFamily:"inherit",width:140}}/>
-                  <button disabled={eraseWord!=="ERASE"||eraseBusy} onClick={erasePerson}
+                  <button type="button" data-commit disabled={eraseWord!=="ERASE"||eraseBusy} onClick={erasePerson}
                     style={{background:eraseWord==="ERASE"?T.terracotta:T.bg3,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:eraseWord==="ERASE"?"pointer":"not-allowed"}}>{eraseBusy?"Erasing…":"Erase for good"}</button>
                   <button onClick={()=>setEraseOpen(false)} style={{background:"none",border:"none",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
                 </div>

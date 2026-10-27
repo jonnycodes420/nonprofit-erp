@@ -78,7 +78,7 @@ function formatMoney(n) {
 }
 function formatDate(d) {
   if (!d) return "";
-  const iso = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  const iso = d instanceof Date ? require("./orgTime").civilOf(d).slice(0, 10) : String(d).slice(0, 10);
   const dt = new Date(iso + "T12:00:00Z");
   if (Number.isNaN(dt.getTime())) return "";
   return dt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });

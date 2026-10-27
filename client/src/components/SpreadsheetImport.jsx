@@ -14,7 +14,8 @@ import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
-import { errorMessage } from "../lib/domainError";
+import { errorMessage, isNetworkFailure } from "../lib/domainError";
+import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES } from "../../../shared/sheetRead";
 
@@ -91,7 +92,12 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         if (j.status === "done") { setResult(j.result); setBusy(""); }
         else if (j.status === "failed") { setFailed(j); setBusy(""); }
         setJob(j);
-      } catch { if (live) setJob(j0 => ({ ...j0 })); }   // a dropped read: ask again, never guess
+      } catch (e) {
+        if (!live) return;
+        // the server has no such job: the commit never reached it
+        if (e && e.status === 404) { setJob(null); setFailed({ sentence: "Not imported. Steward did not receive the file. Nothing was written." }); setBusy(""); return; }
+        setJob(j0 => ({ ...j0 }));   // a dropped read: ask again, never guess
+      }
     }, 700);
     return () => { live = false; clearTimeout(t); };
   }, [job]);
@@ -120,12 +126,15 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const setAnswer = patch => setAnswers(a => ({ ...a, ...patch }));
   const setRow = (key, v) => setAnswers(a => ({ ...a, rows: { ...(a.rows || {}), [key]: v } }));
   const setPerson = (key, v) => setAnswers(a => ({ ...a, people: { ...(a.people || {}), [key]: v } }));
+  const setDeleted = (key, v) => setAnswers(a => ({ ...a, deletedPeople: { ...(a.deletedPeople || {}), [key]: v } }));
 
   const commit = async () => {
     setBusy("commit"); setMsg(""); setFailed(null);
     const importId = "imp_sheet_" + Math.random().toString(36).slice(2, 12);
     // the assistant's proposals from the preview go with it, so the write is this plan
-    const payload = { importId, background: true, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides } };
+    const payload = { importId, background: true, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides },
+      // HARDEN-1: the org this preview was read for; the server refuses the write if the session moved
+      previewOrgId: (u && u.org && u.org.id) || undefined };
     try {
       const j = await apiFetch("/sheet-import/commit", { method: "POST", body: JSON.stringify(payload) });
       setJob(j);
@@ -134,6 +143,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       // server's to say: look for it before saying anything.
       const seen = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(importId)}`).catch(() => null);
       if (seen && seen.id) { setJob(seen); return; }
+      // HARDEN-1: the connection dropped, so the server could not be asked.
+      // The file may be importing: follow its id until the server answers,
+      // rather than say "Nothing was written" about a file that was.
+      if (!seen && isNetworkFailure(e)) {
+        setJob({ id: importId, status: "running", fileName: file.name, phase: "Steward lost the connection. It will show what happened here as soon as it is back" });
+        return;
+      }
       setFailed({ sentence: `Not imported. ${e?.body?.message || errorMessage(e, "Steward did not receive the file.")} Nothing was written.` });
       setBusy("");
     }
@@ -152,15 +168,20 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
   const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate ? dateAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column") : [];
+  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
   const eventName = answers.eventName ?? (eventQ && eventQ.suggestedEventName) ?? (dateQ && dateQ.suggestedEventName) ?? "";
   const tablesRead = u ? u.tables.filter(t => t.kind === "gifts" || t.kind === "people") : [];
+  // HARDEN-1: which org this file goes into, said at the top and on the button
+  const intoOrg = (u && u.org && u.org.name) || pageOrgName() || "";
 
   return (
-    <Modal onClose={finish} title="Import a spreadsheet" width={900} ariaLabel="Import a spreadsheet"
+    <Modal className="commit-screen" onClose={finish} title="Import a spreadsheet" width={900} ariaLabel="Import a spreadsheet"
       subtitle="Steward reads your file the way you would, shows you what it understood, and asks only what it cannot tell.">
       <div data-testid="sheet-import" style={{ display: "flex", flexDirection: "column", gap: 12, color: T.ink }}>
+        {intoOrg && <div data-testid="sheet-import-org" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+          <span style={{ ...small, display: "block", fontFamily: "inherit", fontWeight: 400 }}>Importing into</span>{intoOrg}</div>}
         {!file && (
           <div style={box}>
             <div style={h3}>Your file</div>
@@ -213,6 +234,22 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </div>
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
+            {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
+            {deletedQs.length > 0 && (
+              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-questions">
+                {deletedQs.map(q => {
+                  const cur = (answers.deletedPeople || {})[q.key] || q.default;
+                  return (
+                    <div key={q.id} style={{ padding: "6px 0", fontSize: 13 }}>
+                      <div>{q.text}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                        {(q.options || []).map(o => <button type="button" key={o.key} data-testid={`sheet-deleted-${o.key}`} style={{ ...btn(cur === o.key), padding: "6px 10px", fontSize: 12 }}
+                          onClick={() => setDeleted(q.key, o.key)}>{o.label}</button>)}
+                      </div>
+                    </div>);
+                })}
+              </div>
+            )}
             {(u.deletedMatches || []).length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-matches">
                 <div style={h3}>{u.deletedSentence}</div>
@@ -221,7 +258,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   {new Set(u.deletedMatches.map(x => x.id)).size > 8 ? `, and ${new Set(u.deletedMatches.map(x => x.id)).size - 8} more` : ""}.
                   {" "}Their rows are set aside. Bring them back only if you meant to keep them; their gifts in this file are then imported with the rest.
                 </div>
-                <button type="button" data-testid="sheet-bring-back" disabled={!!busy} style={{ ...btn(false), marginTop: 8 }}
+                <button type="button" data-commit data-testid="sheet-bring-back" disabled={!!busy} style={{ ...btn(false), marginTop: 8 }}
                   onClick={async () => {
                     setBusy("bring");
                     try {
@@ -389,10 +426,10 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </details>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" data-testid="sheet-import-go" disabled={!u.ready || busy === "commit" || (job && job.status === "running")}
+              <button type="button" data-commit data-testid="sheet-import-go" disabled={!u.ready || busy === "commit" || (job && job.status === "running")}
                 onClick={() => (u.button && u.button.review && !asideOpen ? setAsideOpen(true) : commit())}
                 style={{ ...btn(true), opacity: u.ready ? 1 : 0.45, cursor: u.ready ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
-                {busy === "commit" ? "Importing…" : u.button ? (u.button.review && !asideOpen ? u.button.text : u.button.importText || u.button.text) : "Import"}
+                {busy === "commit" ? "Importing…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
               <span style={small}>{u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
@@ -410,7 +447,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 {!dated && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
                     <input type="date" data-testid="sheet-undated-date" value={undatedDate} onChange={e => setUndatedDate(e.target.value)} style={{ ...field, flex: "0 0 auto" }} />
-                    <button type="button" data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
+                    <button type="button" data-commit data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
                       {busy === "date" ? "Dating…" : answers.eventDate && undatedDate === answers.eventDate ? `Use the event date for these ${n(result.undatedGifts, "gift")}` : `Date these ${n(result.undatedGifts, "gift")}`}
                     </button>
                     <span style={small}>Optional. You can also set each one on its profile.</span>

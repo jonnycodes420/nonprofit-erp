@@ -18,6 +18,7 @@
 //   · campaignWindowRefusal: the sentence a write gets when it tries to credit
 //     a campaign with a gift dated outside the window.
 const FS = require("./figureSources");
+const orgTime = require("./orgTime");
 const money = require("./money");
 
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal } = require("./campaignMatch");
@@ -146,9 +147,41 @@ async function publicBarRaised(query, orgId, campaignId) {
   return r ? Number(r.raised) || 0 : null;
 }
 
+// HARDEN-1 · ONE "VS LAST YEAR". Home said "Giving this year is $63,984
+// behind last year at this point" (the same days last year) while Fundraising
+// said "↓ $210,535.51 vs last period" (this year so far against ALL of last
+// year): two answers to one question. Every screen that compares giving with
+// last year reads this, and its sentence says which days it compares.
+//   from, to   the window this year (a running window is cut at today)
+//   today      the org's civil today
+// The span is orgTime.samePointLastYear, the Board's rule (FIX-3 E); both
+// sides are the `gifts` figure source, so each half opens its rows.
+function lastYearSpan(from, to, today) {
+  const w = orgTime.samePointLastYear(from, to, today);
+  if (!w) return null;
+  const cur = { from, to: w.through }, prev = { from: w.from, to: w.to };
+  return {
+    thisSource: { key: "gifts", params: cur },
+    lastSource: { key: "gifts", params: prev },
+    differenceSource: { key: "giving-difference", params: { ...cur, prevFrom: prev.from, prevTo: prev.to } },
+    from: cur.from, to: cur.to, lastFrom: prev.from, lastTo: prev.to,
+  };
+}
+const civilWords = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+async function vsLastYear(orgId, from, to, today) {
+  const s = lastYearSpan(from, to, today);
+  if (!s) return null;
+  const [a, b] = await Promise.all([FS.figureValue(orgId, s.thisSource), FS.figureValue(orgId, s.lastSource)]);
+  const thisYear = Number(a.value) || 0, lastYear = Number(b.value) || 0;
+  return {
+    ...s, thisYear, lastYear, difference: Math.round((thisYear - lastYear) * 100) / 100,
+    sentence: `Giving ${civilWords(s.from)} to ${civilWords(s.to)}, against the same days last year, ${civilWords(s.lastFrom)} to ${civilWords(s.lastTo)}.`,
+  };
+}
+
 // The screens that live inside a route file register here when the server
 // mounts them, so the checker running in the server reads the very function a
 // screen draws (scripts/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, screens };
+module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, screens };

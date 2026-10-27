@@ -97,13 +97,15 @@ function _logOutboundEmail(opts, result, err, statusOverride) {
     String((opts && opts.subject) || "").slice(0, 200),
     statusOverride || (err ? "failed" : "sent"),
     err ? String(err.message || err).slice(0, 300) : null,
+    (opts && opts._stewardGate) || null,
+    (opts && Array.isArray(opts._stewardGateDonors) && opts._stewardGateDonors.length) ? opts._stewardGateDonors.slice(0, 50) : null,
   ];
   // Never let logging break a send, and never let it throw into a caller that
   // is already handling a provider failure. FIX-51: the write is returned (it
   // never rejects), so a caller that reads the log next, or that must not
   // finish before the row is in, awaits it.
-  return run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error)
-       VALUES (?,?,?,?,?,?,?)`, row).catch(() => {});
+  return run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error,gate,donor_ids)
+       VALUES (?,?,?,?,?,?,?,?,?)`, row).catch(() => {});
 }
 
 // A PROXY, NOT A REPLACEMENT. The first cut of this wrapper was an object
@@ -577,6 +579,9 @@ const invitationLimiter = rateLimit("invitationLimiter", {
 // Everything about WHAT a row says lives in auditTrail.js and
 // middleware/auditTrail.js. Nothing about it lives in a route.
 app.use(require("./middleware/auditTrail").auditTrail());
+// HARDEN-1: a write from a page painted for one org never lands in another
+// (middleware/orgBound.js). Beside the audit write, above every router.
+app.use(require("./middleware/orgBound").orgBound());
 // JOURNEYS-4: after a staff write succeeds, the journey triggers that read
 // rows (an auction win, a no-show, a pledge, a finished call) are checked for
 // that org at once, rather than waiting for the hourly sweep. routes/crm.js
@@ -1550,6 +1555,9 @@ async function signInternalToken(userId) {
 const ORG_SUMMARY = require("./orgSummary");
 ORG_SUMMARY.configure({ orgTz, orgToday, signInternalToken });
 require("./jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refreshOrg(payload && payload.orgId));
+// HARDEN-1: the nightly read-only check (nightlyCheck.js; scheduled in routes/jobs.js).
+const NIGHTLY_CHECK = require("./nightlyCheck");
+NIGHTLY_CHECK.configure({ opsAlert, signInternalToken });
 // SCALE-2: the nightly Drift refresh: an org whose stored Drift answers are
 // from an earlier day gets them recomputed for its new day, so the first visit
 // of the morning reads stored rows too. Checked every six hours because each
@@ -3125,6 +3133,14 @@ if (!backgroundTicksDisabled()) {
 app.get("/admin/number-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   res.json({ rows: await require("./numberCheck").latest() });
 }));
+// HARDEN-1: the nightly check, run on demand by a TEST boot only (the suite).
+// On prod it runs from its tick and nothing else; there is no button.
+if (testMode()) app.post("/admin/nightly-check/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const orgIds = Array.isArray(b.orgIds) ? b.orgIds.map(String).slice(0, 50) : null;
+  const night = /^\d{4}-\d{2}-\d{2}[a-z0-9-]*$/i.test(String(b.night || "")) ? String(b.night) : null;
+  res.json(await NIGHTLY_CHECK.runNightlyCheck({ night, orgIds }));
+}));
 app.post("/admin/number-checks/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const out = await require("./numberCheck").runAll({ screens: require("./numbers").screens });
   res.json({ ranOn: out.ranOn, orgs: out.orgs, problems: out.problems, lines: out.lines });
@@ -3827,6 +3843,9 @@ const {
 async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, manual = false } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
+  // HARDEN-1: a tax receipt names the day the gift was given. An undated gift
+  // (IMPORT-4) has none, so no receipt is issued until somebody sets its date.
+  if (gift.date == null || String(gift.date).trim() === "") return { skipped: "undated_gift" };
 
   // Idempotency — a redelivered Stripe event (or a double-click) must never
   // create a second active receipt for the same gift. Enforced here AND by
@@ -5084,7 +5103,7 @@ async function opsAlert(kind, subject, body) {
     await _rawResend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to, subject: `[Steward] ${subject}`,
-      html: `<p>${String(body).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>`,
+      html: `<p>${String(body).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])).replace(/\n/g, "<br>")}</p>`,
     });
     return { sent: true };
   } catch (e) { return { failed: String(e && e.message || e) }; }
@@ -7304,20 +7323,20 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   // this point doesn't just repeat "X years" a second time.
   if (meta.milestone_type === "anniversary") {
     points.push(donor.last_gift_date
-      ? `Most recent gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${new Date(donor.last_gift_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`
+      ? `Most recent gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${orgTime.civilLocale(donor.last_gift_date, { month: "long", day: "numeric", year: "numeric" })}.`
       : `${donor.gift_count || 0} gift(s) total.`);
   } else if (donor.first_gift_date) {
     const first = new Date(donor.first_gift_date);
     if (!isNaN(first.getTime())) {
       const years = Math.floor((Date.now() - first.getTime()) / (365.25 * 86400000));
       points.push(years >= 1
-        ? `They've been giving for ${years} year${years === 1 ? "" : "s"}, since ${first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}.`
-        : `They made their first gift on ${first.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`);
+        ? `They've been giving for ${years} year${years === 1 ? "" : "s"}, since ${orgTime.civilLocale(donor.first_gift_date, { month: "long", year: "numeric" })}.`
+        : `They made their first gift on ${orgTime.civilLocale(donor.first_gift_date, { month: "long", day: "numeric", year: "numeric" })}.`);
     }
   }
   if (points.length < 3) {
     points.push(donor.last_gift_date
-      ? `Last gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${new Date(donor.last_gift_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`
+      ? `Last gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${orgTime.civilLocale(donor.last_gift_date, { month: "long", day: "numeric", year: "numeric" })}.`
       : `${donor.gift_count || 0} gift(s) total.`);
   }
 
@@ -7359,7 +7378,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
   }
 
   const firstName = await greetFor(donor);
-  const sinceMonth = donor.first_gift_date ? new Date(donor.first_gift_date).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : null;
+  const sinceMonth = donor.first_gift_date ? orgTime.civilLocale(donor.first_gift_date, { month: "long", year: "numeric" }) : null;
   const milestoneDesc = meta.milestone_type === "anniversary"
     ? `This marks their ${meta.label || "giving"} anniversary with your organization.`
     : `They just crossed $${(meta.threshold || 0).toLocaleString()} in total lifetime giving.`;
@@ -9011,7 +9030,7 @@ async function processPledgeReminders() {
         await run(
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
           ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",
-           `Pledge reminder sent · $${Number(p.amount).toLocaleString()} pledge due ${new Date(p.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+           `Pledge reminder sent · $${Number(p.amount).toLocaleString()} pledge due ${orgTime.civilLocale(p.due_date, { month: "short", day: "numeric", year: "numeric" })}`,
            orgToday(await orgTz(p.org_id)), JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
         );
 
@@ -10679,12 +10698,15 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
     // An unpaid sponsorship is a promise: a pledge due on the event day,
     // attributed to nothing but itself. It is NOT money until it arrives.
     pledgeId = "pl_" + uuid().slice(0, 8);
+    // HARDEN-1: events.date is a DATE, so pg hands a Date; String(Date) is
+    // "Thu Jan 01 2026 …", which sorted above every ISO day and became the due date.
+    const evDay = orgTime.civilOf(event.date);
     await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
                VALUES (?,?,?,?,?,'open',?,?,?)`,
-      [pledgeId, orgId, donorId, split.totalCents / 100, String(event.date).slice(0, 10) > day ? String(event.date).slice(0, 10) : day,
+      [pledgeId, orgId, donorId, split.totalCents / 100, evDay && evDay > day ? evDay : day,
        `Sponsorship: ${level.name}, ${event.name}`, who.id, who.name]);
     await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-      ["pi_" + uuid().slice(0, 8), orgId, pledgeId, String(event.date).slice(0, 10) > day ? String(event.date).slice(0, 10) : day, split.totalCents / 100]);
+      ["pi_" + uuid().slice(0, 8), orgId, pledgeId, evDay && evDay > day ? evDay : day, split.totalCents / 100]);
   }
   // EVENTS-1 — stamp WHICH EVENT this gift is, so "raised" is a sum over an
   // id rather than a match on a name that somebody may rename tonight.
@@ -10744,7 +10766,7 @@ async function sendEventTicketEmail({ orgId, event, level, attendee, split, gues
   const PASS = await import("./shared/passCode.js");
   const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
   const display = await donorFacingOrgName(orgId, org?.name).catch(() => org?.name || "");
-  const day = event.date instanceof Date ? event.date.toISOString().slice(0, 10) : String(event.date).slice(0, 10);
+  const day = orgTime.civilOf(event.date);   // HARDEN-1: toISOString() on pg's local-midnight Date is the day before east of UTC
   const code = PASS.makePassCode({ kind: "ticket", orgId, id: attendee.id, expiresOn: day, secret: process.env.JWT_SECRET || "" });
   const base = publicAppUrl();
   const when = new Date(day + "T12:00:00Z").toLocaleDateString("en-US",

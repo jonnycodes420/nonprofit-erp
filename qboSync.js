@@ -221,6 +221,25 @@ function pendingRowsSql(orgId, since, opts = {}) {
   };
 }
 
+// HARDEN-1 · AN UNDATED GIFT IS NEVER SENT, AND NEVER SILENTLY MISSING.
+// IMPORT-4 lets a gift land with no date (gifts.date IS NULL). QuickBooks needs
+// the day a gift was given, and an undated gift belongs to no dated period, so
+// it is never pending; the Pending answer counts it and says why instead of
+// letting it vanish, and a gift asked for by id says the same.
+const UNDATED_REASON = "has no date, so it is not sent: QuickBooks needs the day a gift was given. Set the date on the gift and it joins Pending.";
+async function undatedWaiting(orgId) {
+  const [r] = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(ROUND(SUM(g.amount::numeric) * 100), 0)::bigint AS cents
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0
+        AND COALESCE(g.is_sample, false) = false AND (g.date IS NULL OR g.date = '')
+       AND g.read_from_vendor IS NULL
+        AND LOWER(TRIM(COALESCE(g.type, ''))) NOT IN (${NON_CASH_SQL})`, [orgId]);
+  const n = Number(r && r.n) || 0, cents = Number(r && r.cents) || 0;
+  return { count: n, cents,
+    sentence: n ? `${n === 1 ? "1 gift" : `${n.toLocaleString("en-US")} gifts`} (${require("./money").formatCents(cents)}) ${n === 1 ? UNDATED_REASON : UNDATED_REASON.replace(/^has/, "have")}` : null };
+}
+
 // ── TALKING TO QUICKBOOKS ─────────────────────────────────────────────────
 // `ctx.token(force)` is routes/finance.js's accessTokenFor, so the refresh
 // rule (five minutes early, once more on a 401) is the one every provider
@@ -686,13 +705,14 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
       const missing = wanted.filter(id => !seen.has(id));
       if (missing.length) {
         const rows = await query(
-          `SELECT g.id, s.status, s.qbo_id, s.txn_type FROM gifts g
+          `SELECT g.id, g.date, s.status, s.qbo_id, s.txn_type FROM gifts g
              LEFT JOIN gift_bookkeeping_syncs s ON s.org_id=g.org_id AND s.gift_id=g.id AND s.vendor=? AND s.realm_id=?
             WHERE g.org_id=? AND g.id = ANY(?)`, [VENDOR, ctx.realmId, orgId, missing]);
         const byId = new Map(rows.map(r => [r.id, r]));
         for (const id of missing) {
           const r = byId.get(id);
           results.push(!r ? { giftId: id, status: "not_found", sentence: "Steward has no such gift in this organisation." }
+            : (r.date == null || r.date === "") && r.status !== "synced" ? { giftId: id, status: "undated", sentence: "This gift " + UNDATED_REASON }
             : r.status === "synced" ? { giftId: id, status: "already", qboId: r.qbo_id, link: txnLink(r.txn_type, r.qbo_id),
                 sentence: "Already in QuickBooks. Steward did not send it again." }
             : r.status === "skipped" ? { giftId: id, status: "skipped", sentence: "Skipped. Put it back in Pending to send it." }
@@ -823,5 +843,5 @@ async function fetchPreview(ctx) {
 module.exports = {
   VENDOR, NO_FUND, MINOR_VERSION, apiBase, environment, appHost, txnLink,
   RUN_LIMIT, readMapping, startDateOf, landingFor, pendingWhere, pendingRowsSql, plainError, requestId,
-  buildSalesReceipt, buildPayoutDeposit, syncGifts, mappingGaps, sentSummary, sendsSentence, receiptMemo, fetchLists, fetchPreview, qboCall, qboQuery, safeName,
+  undatedWaiting, UNDATED_REASON, buildSalesReceipt, buildPayoutDeposit, syncGifts, mappingGaps, sentSummary, sendsSentence, receiptMemo, fetchLists, fetchPreview, qboCall, qboQuery, safeName,
 };

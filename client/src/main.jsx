@@ -1,4 +1,4 @@
-import React, { useState, createContext, useContext } from "react";
+import React, { useState, useEffect, createContext, useContext } from "react";
 import * as Sentry from "@sentry/react";
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
@@ -10,7 +10,9 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { apiFetch } from "./api";
+import { apiFetch, API } from "./api";
+import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "./lib/orgBinding";
+import { installCommitGuard } from "./lib/commitGuard";
 import { safeNext } from "./lib/appUrls";
 import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
 // The marketing site (LANDING-2) stays an eager import: "/" is the public
@@ -69,6 +71,8 @@ const PAL = {
   cardEdge: "#e0dccf",
   terracotta: "#b8593f",
   bodyMuted: "#5b6b60",
+  brass: "#c9a84c",
+  ink: "#0f1a12",
 };
 
 
@@ -77,6 +81,12 @@ const PAL = {
 // public page draws a card's shape, instead of a bare ground and a spinner.
 // The location is read directly: this sits above the router's own context.
 const APP_PATHS = /^\/(app|dashboard|donors)(\/|$)/;
+
+// HARDEN-1: every write names the org this tab was rendered for, and a sign-in
+// in another tab is heard here (lib/orgBinding.js). Before anything renders.
+installOrgBinding(API);
+// HARDEN-1: only a click on a commit button commits (lib/commitGuard.js).
+installCommitGuard();
 function RouteFallback() {
   const path = typeof window !== "undefined" ? window.location.pathname : "/";
   return APP_PATHS.test(path) ? <SkeletonAppShell /> : <SkeletonPublic />;
@@ -91,13 +101,14 @@ function AuthProvider({ children }) {
     const raw   = localStorage.getItem("npe_user");
     const org   = localStorage.getItem("npe_org");
     if (!token) return null;
-    try { return { token, user: JSON.parse(raw), org: JSON.parse(org) }; }
+    try { const a = { token, user: JSON.parse(raw), org: JSON.parse(org) }; setPageOrg(a.org); return a; }
     catch { return null; }
   });
   const login = (data) => {
     localStorage.setItem("npe_token", data.token);
     localStorage.setItem("npe_user", JSON.stringify(data.user));
     localStorage.setItem("npe_org",  JSON.stringify(data.org));
+    setPageOrg(data.org, { announce: true });
     setAuth(data);
   };
   const logout = () => {
@@ -107,6 +118,7 @@ function AuthProvider({ children }) {
     localStorage.removeItem("npe_token");
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");
+    setPageOrg(null);
     setAuth(null);
   };
   const refreshOrg = async () => {
@@ -114,6 +126,7 @@ function AuthProvider({ children }) {
       const { org } = await apiFetch("/me");
       const next = { ...auth, org };
       localStorage.setItem("npe_org", JSON.stringify(org));
+      setPageOrg(org);
       setAuth(next);
       return org;
     } catch { return null; }
@@ -195,9 +208,29 @@ function RootErrorFallback() {
   );
 }
 
+// HARDEN-1: the tab's org moved under it (a sign-in in another tab, or the
+// server said so on a write). One sentence and one way on: Reload. Writes are
+// refused in the browser until then (lib/orgBinding.js).
+function OrgChangedBanner() {
+  const [changed, setChanged] = useState(orgChanged());
+  useEffect(() => subscribeOrgChanged(setChanged), []);
+  if (!changed) return null;
+  return (
+    <div role="alert" data-testid="org-changed-banner"
+      style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1000, background: PAL.brass, color: PAL.ink,
+               display: "flex", alignItems: "center", justifyContent: "center", gap: 14, flexWrap: "wrap",
+               padding: "10px 16px", fontFamily: "'DM Sans',system-ui,sans-serif", fontSize: 14, fontWeight: 600 }}>
+      <span>{changed.message}</span>
+      <button type="button" onClick={() => window.location.reload()}
+        style={{ background: PAL.emerald, color: PAL.white, border: "none", borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+    </div>
+  );
+}
+
 function Root() {
   return (
     <AuthProvider>
+      <OrgChangedBanner />
       <BrowserRouter>
         <Sentry.ErrorBoundary fallback={<RootErrorFallback />}>
         <React.Suspense fallback={<RouteFallback />}>

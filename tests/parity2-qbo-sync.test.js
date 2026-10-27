@@ -163,6 +163,7 @@ async function reset() {
   await gift("g_p2_mapped", "d_p2_wren", "fnd_p2_youth", 125.5, "2026-09-12");
   await gift("g_p2_unmapped", "d_p2_ash", "fnd_p2_roof", 40, "2026-09-14");
   await gift("g_p2_before", "d_p2_ash", "fnd_p2_youth", 999, "2026-08-01");   // before the start date
+  await gift("g_p2_undated", "d_p2_wren", "fnd_p2_youth", 30, null);           // HARDEN-1: no date (IMPORT-4)
   await q(`INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,mapping,created_by,created_by_name)
            VALUES ($1,$2,'quickbooks','active',$3,$4::jsonb,'system:test','p2 qbo suite')`,
     [CONN, ORG, REALM, JSON.stringify(MAPPING)]);
@@ -207,6 +208,18 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
   ok("§1 …and the rows behind that figure foot to it to the cent",
      fig.status === 200 && fig.body?.cents === 16550 && rowCents === 16550 && fig.body?.totalRows === 2,
      { status: fig.status, cents: fig.body?.cents, rowCents, n: fig.body?.totalRows });
+  // HARDEN-1: an undated gift is never sent (QuickBooks needs the day), and is
+  // never silently missing: Pending counts it and says why. Red before: no
+  // `undated` on the answer, and Sync on it said "before the start date, a
+  // refund, a sample, or not cash", none of which is true.
+  ok("§1 the undated gift is not pending, and Pending says so with its amount and the reason",
+     !ids1.includes("g_p2_undated") && p1.body?.undated?.count === 1 && p1.body?.undated?.cents === 3000
+       && /\$30\.00\) has no date, so it is not sent: QuickBooks needs the day/.test(p1.body?.undated?.sentence || ""), p1.body?.undated);
+  const und = await sync(tok, { giftIds: ["g_p2_undated"] });
+  const undR = (und.body?.results || []).find(r => r.giftId === "g_p2_undated");
+  ok("§1 …and Sync on it by id sends nothing and names the reason",
+     und.status === 200 && und.body?.synced === 0 && undR?.status === "undated" && /no date/.test(undR?.sentence || "") && store.receipts.length === 0,
+     { s: und.status, r: undR, receipts: store.receipts.length });
   const mappedRow = (p1.body?.rows || []).find(r => r.giftId === "g_p2_mapped");
   ok("§1 each row says where it will land", /Donations, class Youth Arts/.test(mappedRow?.lands || ""), mappedRow);
 

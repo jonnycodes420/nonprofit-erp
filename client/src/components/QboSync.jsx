@@ -285,6 +285,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
             {busy === "all" ? "Sending…" : p.count > (d.batchSize || 100) ? `Sync all ${p.count}, ${d.batchSize || 100} at a time` : "Sync all"}</button>}
         </div>
         <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{p.total.definition}</div>
+        {p.undated && p.undated.sentence && <div data-testid="qbo-pending-undated" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{p.undated.sentence}</div>}
         {can && p.count > 0 && d.canSync === false && d.mappingGaps && <div data-testid="qbo-sync-needs-mapping"
           style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>Sync waits for the mapping. {d.mappingGaps.sentence}</div>}
         {!p.rows.length && <div style={{ fontSize: 13, color: T.ink3, marginTop: 6 }}>Nothing is waiting. Every gift since {p.since} is in QuickBooks or skipped.</div>}

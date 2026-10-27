@@ -25,7 +25,7 @@ async function orgCatalog(query, orgId) {
     safe(query(`SELECT id, name FROM audiences WHERE org_id = ? AND kind IS NOT NULL`, [orgId])),
   ]);
   const out = [];
-  for (const e of events) out.push({ kind: "event", id: e.id, name: e.name, date: e.date ? String(e.date).slice(0, 10) : null });
+  for (const e of events) out.push({ kind: "event", id: e.id, name: e.name, date: require("./orgTime").civilOf(e.date) });   // HARDEN-1: a DATE column is a Date; String() of it is not a day
   for (const c of campaigns) out.push({ kind: "campaign", id: c.id, name: c.name, fundraising: Number(c.goal_amount) > 0 });
   for (const j of journeys) out.push({ kind: "journey", id: j.id, name: j.name });
   for (const g of groups) out.push({ kind: "group", id: g.id, name: g.name });
