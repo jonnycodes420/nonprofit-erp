@@ -515,7 +515,7 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     await require("../afterChange").afterChange(orgId, [...touched], { door: "sheet_import", history: true }).catch(e => console.error("[sheet-import] after change:", e.message));
     const parts = [];
     if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
-    if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${money(pledgeCents)})`);
+    if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${money(pledgeCents)}, ${money(u.counts.pledgeOpenCents)} still open)`);
     if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
     const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
       : `Nothing new: every row in this file was already here.`;

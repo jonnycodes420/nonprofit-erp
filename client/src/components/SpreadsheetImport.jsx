@@ -19,6 +19,8 @@ import { gridsFromWorkbook, gridFromText, SHEET_ROLES } from "../../../shared/sh
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
 const small = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
+const field = { flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" };
+const chip = { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: T.bg, color: T.ink, marginLeft: 6 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink,
   border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9, padding: "9px 14px", fontWeight: 800, fontSize: 13,
   cursor: "pointer", fontFamily: "inherit" });
@@ -54,6 +56,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [result, setResult] = useState(null);
   const [undone, setUndone] = useState("");
   const [dateAsked, setDateAsked] = useState(null);   // the date question stays on screen once answered
+  const [asideOpen, setAsideOpen] = useState(false);
+  const [undatedDate, setUndatedDate] = useState("");
+  const [dated, setDated] = useState("");
   const suggestedDate = useMemo(() => {
     const t = file && file.lastModified ? new Date(file.lastModified) : null;
     return t && !isNaN(t) ? localIso(t) : null;
@@ -102,12 +107,22 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     setBusy("");
   };
 
+  const dateUndated = async () => {
+    setBusy("date");
+    try { const r = await apiFetch(`/imports/${encodeURIComponent(result.importId)}/date-undated`, { method: "POST", body: JSON.stringify({ date: undatedDate }) }); setDated(r.sentence); }
+    catch (e) { setMsg(e?.body?.message || errorMessage(e, "Those gifts were not dated.")); }
+    setBusy("");
+  };
+  useEffect(() => { if (result && !undatedDate && answers.eventDate) setUndatedDate(answers.eventDate); }, [result, undatedDate, answers.eventDate]);
+
   const c = u && u.counts;
+  const acct = u && u.columnAccount;
+  const eventQ = u ? u.questions.find(q => q.id === "event") : null;
   const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate ? dateAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.kind !== "column") : [];
+  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
-  const eventName = answers.eventName ?? (dateQ && dateQ.suggestedEventName) ?? "";
+  const eventName = answers.eventName ?? (eventQ && eventQ.suggestedEventName) ?? (dateQ && dateQ.suggestedEventName) ?? "";
   const tablesRead = u ? u.tables.filter(t => t.kind === "gifts" || t.kind === "people") : [];
 
   return (
@@ -130,11 +145,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
           <>
             <div style={box} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
-              <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>
-                {u.fileKind === "gifts" && <>A gifts file: {tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")} from row ${t.headerLine}`).join("; ")}.</>}
-                {u.fileKind === "people" && <>A list of people with no gifts: {tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")}`).join("; ")}.</>}
-                {u.fileKind === "unknown" && <>Steward could not find names or amounts yet. Tell it which columns they are below.</>}
-              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>{fileSentence(u, tablesRead, eventName)}</div>
               {u.totalsSentence && u.totalsSentence.length > 0 && <div data-testid="sheet-totals" style={{ fontSize: 13.5, marginTop: 6 }}>{u.totalsSentence.join(" ")}</div>}
               {u.totals.filter(t => !t.matches).map(t => (
                 <div key={t.sheet + t.line + t.column} style={{ ...small, color: T.gold700, marginTop: 4 }}>
@@ -143,29 +154,54 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               {u.modelUsed && <div style={{ ...small, marginTop: 4 }}>Steward's assistant suggested what some columns are; each suggestion was checked against every row.</div>}
             </div>
 
-            {dateQ && (
-              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-question-date">
-                <div style={h3}>{dateQ.text}</div>
-                <div style={small}>{dateQ.hint}</div>
-                {dateQ.suggestedEventName && suggestedDate && (
-                  <button type="button" data-testid="sheet-date-event" style={{ ...btn(false), marginTop: 8, textAlign: "left" }}
-                    onClick={() => setAnswer({ date: suggestedDate, eventName: dateQ.suggestedEventName, linkEvent: true })}>
-                    {dateQ.suggestedEventName}, {longDate(suggestedDate)}
-                  </button>
-                )}
+            {(eventQ || (u.event && u.event.fromEngagement)) && (
+              <div style={{ ...box, borderColor: eventQ && !eventQ.optional ? T.gold500 : T.bg3 }} data-testid="sheet-question-event">
+                <div style={h3}>{eventQ ? eventQ.text : "The event"}</div>
+                {eventQ && <div style={small}>{eventQ.hint}</div>}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>Date given
-                    <input type="date" data-testid="sheet-date-input" value={answers.date || ""} onChange={e => setAnswer({ date: e.target.value })} style={{ padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" }} />
+                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Called
+                    <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
                   </label>
-                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Event
-                    <input type="text" value={eventName} placeholder="Name of the event (optional)" onChange={e => setAnswer({ eventName: e.target.value })} style={{ flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" }} />
+                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>On (optional)
+                    <input type="date" data-testid="sheet-event-date" value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   </label>
                 </div>
-                {eventName && (
+              </div>
+            )}
+
+            {dateQ && (
+              <div style={box} data-testid="sheet-question-date">
+                <div style={h3}>{dateQ.text}</div>
+                <div style={small}>{dateQ.hint}</div>
+                {(eventQ || u.event) && answers.eventDate && (
                   <label style={{ ...small, display: "flex", gap: 6, alignItems: "center", marginTop: 8, color: T.ink }}>
-                    <input type="checkbox" checked={!!answers.linkEvent} onChange={e => setAnswer({ linkEvent: e.target.checked, eventName })} />
-                    {u.events && u.events.length ? `Link every gift to ${u.events[0].name} on your calendar` : `Create the event "${eventName}" and link every gift to it`}
+                    <input type="checkbox" data-testid="sheet-use-event-date" checked={!!answers.useEventDate} onChange={e => setAnswer({ useEventDate: e.target.checked })} />
+                    Use the event date ({longDate(answers.eventDate)}) for these {n(dateQ.count || c.undatedGifts, "gift")}
                   </label>
+                )}
+                {!eventQ && !(u.event && u.event.fromEngagement) && (
+                  <>
+                    {dateQ.suggestedEventName && suggestedDate && (
+                      <button type="button" data-testid="sheet-date-event" style={{ ...btn(false), marginTop: 8, textAlign: "left" }}
+                        onClick={() => setAnswer({ date: suggestedDate, eventName: dateQ.suggestedEventName, linkEvent: true })}>
+                        {dateQ.suggestedEventName}, {longDate(suggestedDate)}
+                      </button>
+                    )}
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+                      <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>Date them all (optional)
+                        <input type="date" data-testid="sheet-date-input" value={answers.date || ""} onChange={e => setAnswer({ date: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                      </label>
+                      <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Event
+                        <input type="text" value={eventName} placeholder="Name of the event (optional)" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
+                      </label>
+                    </div>
+                    {eventName && (
+                      <label style={{ ...small, display: "flex", gap: 6, alignItems: "center", marginTop: 8, color: T.ink }}>
+                        <input type="checkbox" checked={!!answers.linkEvent} onChange={e => setAnswer({ linkEvent: e.target.checked, eventName })} />
+                        {u.events && u.events.length ? `Link every gift to ${u.events[0].name} on your calendar` : `Create the event "${eventName}" and link every gift to it`}
+                      </label>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -190,7 +226,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             {colQs.length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-help">
                 <div style={h3}>Help me with these</div>
-                <div style={small}>Steward could not tell what {colQs.length === 1 ? "this column is" : "these columns are"}. Pick where each goes, or leave it out. Nothing is imported until you do.</div>
+                <div style={small}>Steward could not tell what {colQs.length === 1 ? "this column is" : "these columns are"}. Pick where each goes, or leave it out with a reason. Nothing is imported until you do.</div>
                 {colQs.map(q => (
                   <div key={q.id} style={{ borderTop: "1px solid " + T.bg2, padding: "8px 0", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <div style={{ flex: "1 1 220px", minWidth: 0 }}>
@@ -208,38 +244,59 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 
             <div style={box} data-testid="sheet-review">
               <div style={h3}>Before anything is written</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-                <Fig label="People" value={n(c.people, "person", "people")} sub={`${u.newPeople} new, ${u.matchedPeople} already in Steward${c.households ? `; ${n(c.households, "household")}` : ""}${c.organizations ? `; ${n(c.organizations, "organization")}` : ""}`} />
-                {u.fileKind !== "people" && <Fig label="Gifts" value={money(c.giftCents)} sub={n(c.gifts, "gift") + " paid"} />}
-                {u.fileKind !== "people" && <Fig label="Pledges" value={money(c.pledgeCents)} sub={`${n(c.pledges, "open pledge")}${c.pledgeCents !== c.pledgeThisYearCents ? `, ${money(c.pledgeThisYearCents)} of it this year` : ""}`} />}
-                {c.monthly > 0 && <Fig label="Monthly givers" value={String(c.monthly)} sub={`"Recurring" in your file: flagged for you to confirm, never charged`} />}
-                {answers.linkEvent && eventName && answers.date && <Fig label="Event" value={eventName} sub={`${longDate(answers.date)}, every gift and pledge linked`} />}
-              </div>
-              {u.pledges.length > 0 && (
-                <details style={{ marginTop: 10 }}>
-                  <summary style={{ fontSize: 12.5, cursor: "pointer" }}>The {n(u.pledges.length, "pledge")}</summary>
-                  {u.pledges.slice(0, 200).map(p => <div key={p.rowId} style={{ ...small, color: T.ink }}>Row {p.line}: {p.who}, {money(p.pledgeCents)}. {p.why}.</div>)}
-                </details>
+              <Layer n={1} title="People" testId="layer-people"
+                main={`${n(c.persons ?? c.people, "person", "people")}${c.households ? `, ${n(c.households, "household")}` : ""}${c.organizations ? `, ${n(c.organizations, "organization")}` : ""}`}
+                sub={`${u.newPeople} new, ${u.matchedPeople} already in Steward. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
+                notes={[...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
+                        ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)]} />
+              <Layer n={2} title="Roles" testId="layer-roles"
+                main={[c.donors && n(c.donors, "donor"), c.pledgers && n(c.pledgers, "pledger"), c.guests && n(c.guests, "event guest"), c.volunteers && n(c.volunteers, "volunteer"),
+                       c.board && `${c.board} board`, c.staff && `${c.staff} staff`, c.prospects && n(c.prospects, "prospect"), c.contacts && n(c.contacts, "contact")].filter(Boolean).join(" · ") || "Contacts"}
+                sub="From the data: a donor gave, a pledger promised, a prospect was invited and never gave. Someone with no gift comes in as a contact, never a donor." />
+              {u.fileKind !== "people" && (
+                <Layer n={3} title="Money" testId="layer-money"
+                  main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")} ${money(c.pledgeOpenCents)} open` : ""}`}
+                  sub={c.undatedGifts ? "A gift with no date still lands on its person, marked No date. It counts in Lifetime and the event's total, and not in This year, a goal or retention until it has a date." : "Every gift on its person, through the one gift path."}
+                  notes={[c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
+                          ...u.pledges.slice(0, 3).map(p => `Row ${p.line}: ${p.who}, ${money(p.pledgeCents)}${p.openCents !== p.pledgeCents ? `, ${money(p.openCents)} to go` : ""}. ${p.why}.`)].filter(Boolean)} />
               )}
+              {(u.event || c.optOuts || c.doNotContact || c.doNotMail || c.doNotCall) ? (
+                <Layer n={4} title="Engagement" testId="layer-engagement"
+                  main={[u.event && `${eventName || u.event.name || "The event"}: ${c.invited.toLocaleString("en-US")} invited, ${c.rsvp.toLocaleString("en-US")} RSVP'd, ${c.attended.toLocaleString("en-US")} attended`,
+                         c.optOuts && n(c.optOuts, "opt-out"), c.doNotContact && `${c.doNotContact} do not contact`, c.doNotMail && `${c.doNotMail} do not mail`, c.doNotCall && `${c.doNotCall} do not call`].filter(Boolean).join(" · ")}
+                  sub="Attendance, table and party size go on each person's event. Every communication choice keeps where it came from." />
+              ) : null}
+              <Layer n={5} title="Everything else" testId="layer-kept"
+                main={(u.keptHeaders || []).length ? `${n(u.keptHeaders.length, "column")} kept on each person: ${u.keptHeaders.map(k => k.header).join(", ")}` : "Nothing left over"}
+                sub="A column Steward has no field for is kept under its own header, as a custom field on the person. Nothing is lost." />
               {u.aside.length > 0 && (
-                <div data-testid="sheet-aside" style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700 }}>Not read as gifts ({u.aside.length})</div>
-                  {u.aside.slice(0, 200).map(a => <div key={a.sheet + a.line} style={small}>Row {a.line}{a.sheet !== "Sheet1" ? ` of ${a.sheet}` : ""}: {a.who ? a.who + ", " : ""}{a.reason}.</div>)}
-                </div>
+                <details data-testid="sheet-aside" style={{ marginTop: 10 }} open={asideOpen} onToggle={e => setAsideOpen(e.currentTarget.open)}>
+                  <summary style={{ fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Set aside ({u.aside.length}), each with its reason</summary>
+                  {u.aside.slice(0, 200).map(a => <div key={a.sheet + a.line} style={small}>Row {a.line}{a.sheet !== "Sheet1" ? ` of ${a.sheet}` : ""}: {a.who ? a.who + ", " : ""}{a.reason}{a.cents != null ? ` (${money(a.cents)})` : ""}.</div>)}
+                  <button type="button" style={{ ...btn(false), marginTop: 6, padding: "5px 10px", fontSize: 12 }} onClick={() => downloadAside(u, file.name)}>Download the set-aside rows</button>
+                </details>
               )}
               {u.notes.filter(x => !x.label).length > 0 && (
                 <div style={{ ...small, marginTop: 8 }}>Notes on the sheet, kept out of the table: {u.notes.filter(x => !x.label).slice(0, 5).map(x => `"${x.text}" (row ${x.line})`).join("; ")}.</div>
               )}
             </div>
 
+            {u.sample && <SampleCard p={u.sample} eventName={eventName || (u.event && u.event.name)} />}
+
             <details style={box} data-testid="sheet-columns">
-              <summary style={{ ...h3, cursor: "pointer", margin: 0 }}>What Steward read in each column</summary>
+              <summary style={{ ...h3, cursor: "pointer", margin: 0 }} data-testid="sheet-column-account">
+                {acct ? `${n(acct.total, "column")}: ${acct.mapped} mapped · ${acct.kept} kept · ${acct.skipped} skipped${acct.question ? ` · ${acct.question} to answer` : ""}` : "What Steward read in each column"}
+              </summary>
+              {acct && <div aria-hidden style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", margin: "8px 0", background: T.bg2 }}>
+                <div style={{ flex: acct.mapped, background: T.greenDk }} /><div style={{ flex: acct.kept, background: T.gold500 }} /><div style={{ flex: acct.skipped, background: T.bg3 }} />
+              </div>}
               {u.tables.map(t => (
                 <div key={t.key} style={{ marginTop: 8 }}>
                   <div style={small}>{t.sheet}, header on row {t.headerLine}{t.kind === "summary" ? ": a table of amounts with no names, read as a summary" : ""}</div>
                   {t.columns.map(col => (
                     <div key={col.index} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid " + T.bg2, padding: "6px 0" }}>
                       <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 12.5 }}><strong>{col.header || `(column ${col.index + 1})`}</strong>
+                        {col.disposition && <span style={{ ...chip, background: col.disposition === "mapped" ? T.bg : col.disposition === "kept" ? T.gold100 : T.bg2 }}>{col.disposition}</span>}
                         <span style={small}> {col.reason ? `· ${col.reason}` : ""}{col.sample && col.sample.length ? ` · ${col.sample.slice(0, 3).join(", ")}` : ""}</span></div>
                       <div style={{ flex: "0 1 220px" }}>
                         <ColumnTargetSelect header={col.header} standardFields={STD_ROLES} allowNew={false} compact placeholder="Choose…"
@@ -251,11 +308,12 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </details>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" data-testid="sheet-import-go" disabled={!u.ready || busy === "commit"} onClick={commit}
-                style={{ ...btn(true), opacity: u.ready ? 1 : 0.45, cursor: u.ready ? "pointer" : "not-allowed" }}>
-                {busy === "commit" ? "Importing…" : "Import"}
+              <button type="button" data-testid="sheet-import-go" disabled={!u.ready || busy === "commit"}
+                onClick={() => (u.button && u.button.review && !asideOpen ? setAsideOpen(true) : commit())}
+                style={{ ...btn(true), opacity: u.ready ? 1 : 0.45, cursor: u.ready ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
+                {busy === "commit" ? "Importing…" : u.button ? (u.button.review && !asideOpen ? u.button.text : u.button.importText || u.button.text) : "Import"}
               </button>
-              <span style={small}>{u.ready ? "Undo removes the whole import." : `Answer ${n(u.questions.length, "question")} above first.`}</span>
+              <span style={small}>{u.ready ? "Undo removes the whole import, for 30 days, from Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}
@@ -264,6 +322,20 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
           <div style={box} data-testid="sheet-result">
             <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
+            {!undone && result.undatedGifts > 0 && (
+              <div data-testid="sheet-undated" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
+                <div style={{ fontSize: 13 }}>{dated || `${n(result.undatedGifts, "gift")} came in with no date. They count in Lifetime and ${result.eventName || "the event"}'s total, not in This year.`}</div>
+                {!dated && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+                    <input type="date" data-testid="sheet-undated-date" value={undatedDate} onChange={e => setUndatedDate(e.target.value)} style={{ ...field, flex: "0 0 auto" }} />
+                    <button type="button" data-testid="sheet-undated-go" style={btn(false)} disabled={!undatedDate || busy === "date"} onClick={dateUndated}>
+                      {busy === "date" ? "Dating…" : answers.eventDate && undatedDate === answers.eventDate ? `Use the event date for these ${n(result.undatedGifts, "gift")}` : `Date these ${n(result.undatedGifts, "gift")}`}
+                    </button>
+                    <span style={small}>Optional. You can also set each one on its profile.</span>
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               {!undone && <button type="button" style={btn(false)} disabled={busy === "undo"} onClick={undo}>{busy === "undo" ? "Undoing…" : "Undo this import"}</button>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
@@ -273,6 +345,70 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       </div>
     </Modal>
   );
+}
+
+// "An event workbook: a list of people and gifts for Finding Joy Dinner."
+function fileSentence(u, tablesRead, eventName) {
+  const ev = eventName || (u.event && u.event.name);
+  const where = tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")} from row ${t.headerLine}`).join("; ");
+  const kinds = new Set(tablesRead.map(t => t.kind));
+  if (u.fileKind === "unknown") return "Steward could not find names or amounts yet. Tell it which columns they are below.";
+  if (u.event && u.event.fromEngagement) {
+    const what = kinds.has("gifts") && kinds.has("people") ? "a guest list and gifts" : kinds.has("gifts") ? "guests and their gifts" : "a guest list";
+    return `An event workbook: ${what}${ev ? ` for ${ev}` : ""} (${where}).`;
+  }
+  if (tablesRead.some(t => t.isVolunteer)) return `A list of volunteers (${where}).`;
+  if (u.fileKind === "gifts") return kinds.has("people") ? `A list of people and their gifts (${where}).` : `A gifts file: ${where}.`;
+  return `A list of people with no gifts: ${tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")}`).join("; ")}.`;
+}
+
+function Layer({ n: num, title, main, sub, notes, testId }) {
+  return (
+    <div data-testid={testId} style={{ display: "flex", gap: 10, borderTop: "1px solid " + T.bg2, padding: "9px 0", minWidth: 0 }}>
+      <div style={{ flex: "0 0 22px", height: 22, borderRadius: 11, background: T.bg, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink3 }}>{num}</div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", color: T.ink3 }}>{title}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>{main}</div>
+        <div style={small}>{sub}</div>
+        {(notes || []).map((x, i) => <div key={i} style={{ ...small, color: T.ink }}>{x}</div>)}
+      </div>
+    </div>
+  );
+}
+
+// The one person shown as they will look after import.
+function SampleCard({ p, eventName }) {
+  const roleWord = { donor: "Donor", pledger: "Pledger", guest: "Event guest", volunteer: "Volunteer", board: "Board", staff: "Staff", prospect: "Prospect", contact: "Contact" };
+  const at = p.attendance;
+  const comm = Object.entries(p.comms || {}).filter(([k]) => k !== "optIn");
+  return (
+    <div style={box} data-testid="sheet-sample">
+      <div style={h3}>One person, as they will look after import</div>
+      <div style={{ fontSize: 15, fontWeight: 800 }}>{p.name}</div>
+      <div style={small}>{[p.email, p.phone, p.household].filter(Boolean).join(" · ")}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>{(p.roles || []).map(r => <span key={r} style={chip}>{roleWord[r] || r}</span>)}</div>
+      {(p.pledges || []).map((pl, i) => <div key={i} style={{ fontSize: 13, marginTop: 6 }}><strong>Open pledge:</strong> {money(pl.pledgeCents)}{pl.years > 1 ? ` over ${pl.years} years` : ""}, {money(pl.paidCents)} received, {money(pl.openCents)} to go{pl.nextDue ? `, next due ${longDate(pl.nextDue)}` : ""}.</div>)}
+      {(p.gifts || []).map((g, i) => (
+        <div key={i} style={{ fontSize: 13, marginTop: 4 }}>{money(g.cents)} · {g.method || "Method not given"}{g.fund ? ` · ${g.fund}` : ""}{eventName ? ` · ${eventName}` : ""}{" "}
+          {!g.date ? <span style={{ ...chip, background: T.gold100, color: T.gold700 }}>No date</span> : <span style={small}>{longDate(g.date)}</span>}
+          {(g.flags || []).includes("method_unknown") && <span style={{ ...chip, marginLeft: 4 }}>Method as written: {g.methodOriginal || "blank"}</span>}
+        </div>))}
+      {at && <div style={{ fontSize: 13, marginTop: 6 }}>{eventName || "The event"}: {[at.invited && "invited", at.rsvp === true && "RSVP'd", at.attended && "attended", at.table, at.party && `party of ${at.party}`].filter(Boolean).join(", ")}</div>}
+      {comm.map(([k, src]) => <div key={k} style={{ fontSize: 13, marginTop: 4 }}>{({ optOut: "Opted out of email", doNotContact: "Do not contact", doNotMail: "Do not mail", doNotCall: "Do not call", doNotEmail: "Do not email", deceased: "Deceased" })[k] || k}: <span style={small}>"{src.header}": {src.value}</span></div>)}
+      {Object.keys(p.kept || {}).length > 0 && <div style={{ ...small, marginTop: 6 }}>From your import: {Object.entries(p.kept).map(([h, v]) => `${h}: ${v}`).join(" · ")}</div>}
+    </div>
+  );
+}
+
+function downloadAside(u, fileName) {
+  const cell = v => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const lines = [["Sheet", "Row", "Who", "Amount", "Reason"].join(",")]
+    .concat(u.aside.map(a => [a.sheet, a.line, a.who || "", a.cents != null ? (a.cents / 100).toFixed(2) : "", a.reason].map(cell).join(",")));
+  const url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
+  const el = document.createElement("a");
+  el.href = url; el.download = `Set aside from ${String(fileName || "your file").replace(/\.[a-z]+$/i, "")}.csv`;
+  document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function Fig({ label, value, sub }) {

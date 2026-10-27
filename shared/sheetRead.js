@@ -780,6 +780,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   // tell people apart and never copied onto them.
   const contactLasts = { email: new Map(), phone: new Map() };
   const contactNames = { email: new Map(), phone: new Map() };
+  const contactShown = { email: new Map(), phone: new Map() };   // the value as the file wrote it
   for (const t of usable) for (const b of dataRows(t)) {
     const who = readName({ first: roleOf(t, "first") && cellOf(t, b, roleOf(t, "first")), last: roleOf(t, "last") && cellOf(t, b, roleOf(t, "last")),
       full: roleOf(t, "name") && cellOf(t, b, roleOf(t, "name")), lastFirst: roleOf(t, "lastFirst") && cellOf(t, b, roleOf(t, "lastFirst")), org: roleOf(t, "org") && cellOf(t, b, roleOf(t, "org")) });
@@ -788,7 +789,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const c = roleOf(t, k); if (!c) continue;
       const v = k === "email" ? s(cellOf(t, b, c)).toLowerCase() : s(cellOf(t, b, c)).replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
       if (!v) continue;
-      if (!contactLasts[k].has(v)) { contactLasts[k].set(v, new Set()); contactNames[k].set(v, new Set()); }
+      if (!contactLasts[k].has(v)) { contactLasts[k].set(v, new Set()); contactNames[k].set(v, new Set()); contactShown[k].set(v, s(cellOf(t, b, c))); }
       if (last) { contactLasts[k].get(v).add(last); contactNames[k].get(v).add((who.name || "").toLowerCase()); }
     }
   }
@@ -1180,6 +1181,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const columnAccount = { total: columnList.length, mapped: 0, kept: 0, skipped: 0, question: 0 };
   for (const c of columnList) columnAccount[c.disposition] = (columnAccount[c.disposition] || 0) + 1;
   const att = peopleList.filter(p => p.attendance);
+  // counted in people, as they land: a couple's row is two attendances
+  const members = p => Math.max(1, p.people.length);
   const comm = k => peopleList.filter(p => p.comms[k]).length;
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
   return {
@@ -1192,7 +1195,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks,
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()],
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
-                   ...[...placeholder.phone].map(v => ({ kind: "phone", value: v, people: contactNames.phone.get(v).size }))],
+                   ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
     event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement } : null,
     counts: {
       people: persons, persons, records: peopleList.length,
@@ -1203,14 +1206,15 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       volunteers: peopleList.filter(p => p.roles.includes("volunteer")).length,
       board: peopleList.filter(p => p.roles.includes("board")).length,
       staff: peopleList.filter(p => p.roles.includes("staff")).length,
-      guests: peopleList.filter(p => p.roles.includes("guest")).length,
+      guests: peopleList.filter(p => p.roles.includes("guest")).reduce((a, p) => a + Math.max(1, p.people.length), 0),
       prospects: peopleList.filter(p => p.roles.includes("prospect")).length,
       contacts: peopleList.filter(p => p.roles.includes("contact")).length,
       gifts: gifts.length, giftCents, undatedGifts: gifts.filter(g => !g.date).length, undatedGiftCents: gifts.filter(g => !g.date).reduce((a, g) => a + g.cents, 0),
       pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear,
       paidInstallmentCents: paidInstallments, rowCents, aside: aside.length, asideCents, monthly: flags.length,
-      invited: att.filter(p => p.attendance.invited).length, rsvp: att.filter(p => p.attendance.rsvp === true).length,
-      attended: att.filter(p => p.attendance.attended).length,
+      invited: att.filter(p => p.attendance.invited).reduce((a, p) => a + members(p), 0),
+      rsvp: att.filter(p => p.attendance.rsvp === true).reduce((a, p) => a + members(p), 0),
+      attended: att.filter(p => p.attendance.attended).reduce((a, p) => a + members(p), 0),
       optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
       doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
       kept: keptHeaders.size, nearMisses: nearMisses.length,
@@ -1264,7 +1268,7 @@ export function importButtonSentence(u, extra = {}) {
   const asideShare = (c.aside || 0) / Math.max(1, (c.records || 0) + (c.aside || 0));
   const money = (c.giftCents || 0) + (c.pledgeThisYearCents || 0);
   const asideMoney = (u.aside || []).reduce((a, x) => a + Math.abs(x.cents || 0), 0);
-  if (c.aside && (asideShare > 0.05 || asideMoney > 0.05 * Math.max(1, money + asideMoney))) return { review: true, text: `Review ${c.aside.toLocaleString("en-US")} set aside first` };
+  const review = !!(c.aside && (asideShare > 0.05 || asideMoney > 0.05 * Math.max(1, money + asideMoney)));
   const parts = [];
   const sub = [];
   if (c.donors) sub.push(plural(c.donors, "donor"));
@@ -1276,7 +1280,8 @@ export function importButtonSentence(u, extra = {}) {
   if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
   if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
   if (extra.matched) parts.push(`${extra.matched.toLocaleString("en-US")} already in Steward`);
-  return { review: false, text: "Import " + parts.join(" · ") };
+  const importText = "Import " + parts.join(" · ");
+  return review ? { review, text: `Review ${c.aside.toLocaleString("en-US")} set aside first`, importText } : { review, text: importText, importText };
 }
 
 function addYears(iso, k) {
