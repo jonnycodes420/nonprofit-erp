@@ -4050,7 +4050,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   {impactOpen&&(
                     <div style={{padding:"2px 16px 12px",background:T.green100}}>
                       {atRisk>0&&brow("At risk right now",fmt(atRisk),
-                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} drifting, not yet lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
+                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)}: lapsing or lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
                       {retried>0&&brow("Failed cards, retried automatically",fmt(retried),
                         `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} whose card failed and which the dunning workflow retried. Tracked per gift, attributable to a retry Steward actually ran.`)}
                       {returned>0&&brow("Gifts after a year-long gap",fmt(returned),

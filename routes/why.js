@@ -21,6 +21,7 @@ const AW = require("../appealWhy");
 const P = require("../prospect");
 const GR = require("../groups");
 const FS = require("../figureSources");
+const lapseRule = require("../lapseRule");   // FIX-51: the one lapse rule
 
 const routers = { r0: express.Router() };
 // POLISH-1: the conversation answer, for the Agent's read (set by mount).
@@ -1113,7 +1114,7 @@ app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
     if (!d) return res.status(404).json({ error: "Donor not found" });
     // "Why did they stop?" is offered only to someone who has: no gift in a year.
     const today = orgToday(await orgTz(orgId));
-    donor = { id: d.id, name: d.name, gave: !!d.last, lapsed: !!d.last && d.last < orgTime.addDays(today, -365) };
+    donor = { id: d.id, name: d.name, gave: !!d.last, lapsed: lapseRule.isLapsed(d.last, today) };   // FIX-51: the one rule
   }
   const [campaigns, canSeeMore, gate] = await Promise.all([
     donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId), aiGate(orgId)]);

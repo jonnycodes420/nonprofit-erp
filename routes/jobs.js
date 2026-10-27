@@ -31,6 +31,7 @@ const {
 // `everyMs`. Which process runs it is jobQueue.js's business (STEWARD_PROCESS).
 // `run` returns its promise and lets errors through, so a failure is retried.
 const Q = require("../jobQueue");
+const bootGate = require("../bootGate");   // FIX-51: boot jobs wait for the migrations
 const every = (name, everyMs, fn, firstMs, opts = {}) => Q.define(name, { everyMs, firstMs, run: fn, ...opts });
 
 // Scheduled sweep — runs on the existing 5-min cadence (same pattern as
@@ -374,8 +375,8 @@ if (!backgroundTicksDisabled()) {
 // BUILD-65 Part 6 — surface the accountsChecked DENOMINATOR even before the
 // first sweep (and even when background ticks are disabled), so /health can
 // show "checked 1 of 6". Refreshed on boot + on the 5-min asset tick below.
-setTimeout(() => refreshReconcileDenominator().catch(() => {}), 8000);
-setInterval(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
+bootGate.afterMigrations(() => refreshReconcileDenominator().catch(() => {}), 8000);   // FIX-51
+bootGate.everyAfterMigrations(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
 if (!backgroundTicksDisabled()) {
   every("checkWebhookSubscriptions", 60 * 60 * 1000, () => checkWebhookSubscriptions(), 95000, { perBoot: true });
 }
@@ -501,10 +502,10 @@ if (!backgroundTicksDisabled()) {
 // one `mailboxSync` row per live connection, keyed by the connection, so one
 // slow mailbox no longer holds the others and a connection is never read by
 // two workers at once. The PUSH-1 test cadence keeps the old in-process loop.
-setTimeout(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
+bootGate.afterMigrations(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
 if (process.env.TEST_MODE === "1" && Number(process.env.MAILBOX_TICK_MS) > 0) {
-  setTimeout(() => syncAllGmail().catch(console.error), 10000);
-  setInterval(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);
+  bootGate.afterMigrations(() => syncAllGmail().catch(console.error), 10000);
+  bootGate.everyAfterMigrations(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);
 } else if (!backgroundTicksDisabled()) {
   every("syncMailboxes", MAILBOX_SYNC_INTERVAL_MS, () => fanOutMailboxes(), 10000);
 }

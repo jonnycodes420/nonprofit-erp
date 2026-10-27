@@ -633,7 +633,10 @@ ok(nulFiles.length === 0,
   {
     const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
     const bodyOf = name => { const i = srv.indexOf(`async function ${name}(`); return i < 0 ? "" : srv.slice(i, i + 400); };
-    ok(/markDbReady\(\)/.test(srv) && /const DB_READY = new Promise/.test(srv), "server.js resolves DB_READY when the schema is ready");
+    // FIX-51: the promise lives in bootGate.js, so a boot timer in any module waits too.
+    const gate = fs.readFileSync(path.join(root, "bootGate.js"), "utf8");
+    ok(/markDbReady\(\)/.test(srv) && /const DB_READY = bootGate\.READY/.test(srv) && /const READY = new Promise/.test(gate),
+      "server.js resolves DB_READY (bootGate.READY) when the schema is ready");
     ok(/if \(!dbReady\) await DB_READY/.test(bodyOf("recordTick")), "every background job (recordTick) waits for the schema before it runs");
     ok(/if \(!dbReady\) await DB_READY/.test(bodyOf("recomputeScoresForOrg")), "the scores recompute waits for the schema before it runs");
   }
