@@ -20,18 +20,18 @@ const PHONE = {
 const SLOW_4G = { offline: false, latency: 562.5, downloadThroughput: (1474.56 * 1024) / 8, uploadThroughput: (675 * 1024) / 8 };
 const REF = 54000, REF_RATE = 4;
 
-// Small-string and array work in 500 ms, unthrottled; the median of three.
+// Small-string and array work in 500 ms, unthrottled; the median of five.
 async function cpuRate(browser) {
   if (process.env.PERF_CPU) return { rate: Number(process.env.PERF_CPU), score: null };
   const page = await browser.newPage();
   const scores = [];
-  for (let i = 0; i < 3; i++) scores.push(await page.evaluate(() => {
+  for (let i = 0; i < 5; i++) scores.push(await page.evaluate(() => {
     const end = performance.now() + 500; let n = 0;
     while (performance.now() < end) { let s = ""; for (let i = 0; i < 1000; i++) s += "a"; const a = []; for (let i = 0; i < 1000; i++) a.push(i); a.sort((x, y) => y - x); n++; }
     return n * 2;
   }));
   await page.close();
-  const score = scores.sort((a, b) => a - b)[1];
+  const score = scores.sort((a, b) => a - b)[2];
   return { rate: Math.max(1, Math.round((REF_RATE * score / REF) * 100) / 100), score };
 }
 

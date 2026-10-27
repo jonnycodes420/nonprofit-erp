@@ -12,10 +12,10 @@
 // 1x, 40 ms round trip, 10 Mbps. Fresh browser and no cache for every run; each
 // number is the median of PERF_RUNS (default 3).
 //
-// USABLE. The page has asked for everything it is going to ask for and drawn it:
-// the later of the last request it made before going quiet for half a second,
-// its last long task, and its Largest Contentful Paint, and the thing that
-// means "this screen" is on it (rows, the profile's rail, Home's main column).
+// USABLE. The thing that means "this screen" is on the page (rows, the
+// profile's rail, Home's own blocks), and the later of: its last long task,
+// its Largest Contentful Paint, and the network going quiet as Lighthouse's
+// Time to Interactive defines it (no more than two requests in flight).
 //
 // The fixture org is this file's own (org_perfapp); it never names the demo.
 // Run by tests/perf-app.test.js. A browser leg.
@@ -94,9 +94,15 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(300);
-  // The last thing the page fetched, on the page's own clock.
-  const r = await page.evaluate(() => ({ ...window.__perf,
-    netQuiet: Math.max(0, ...performance.getEntriesByType("resource").map(e => e.responseEnd)) }));
+  // When the network went quiet, as Lighthouse's Time to Interactive defines
+  // it: from then on no more than two requests are in flight (one trailing
+  // beacon, such as "these cards were seen", is not a page still loading).
+  const r = await page.evaluate(() => {
+    const rs = performance.getEntriesByType("resource").map(e => [e.startTime, e.responseEnd]);
+    let quiet = 0;
+    for (const [, end] of rs) if (rs.filter(([s, e]) => s < end && e >= end).length >= 3) quiet = Math.max(quiet, end);
+    return { ...window.__perf, netQuiet: quiet };
+  });
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
