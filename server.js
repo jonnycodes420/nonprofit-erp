@@ -7039,7 +7039,7 @@ async function computeMilestoneCandidates(orgId) {
 // gift 9 to 12 months ago, on the org's calendar), not its own 300 days on
 // the server clock. The $5,000 floor is who is worth the email, not a lapse rule.
 async function computeAtRiskCandidates(orgId) {
-  const lapsing = lapseRule.sql("lapsing", "LEFT(d.last_gift_date, 10)", orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  const lapsing = lapseRule.sql("lapsing", "LEFT(d.last_gift_date, 10)", orgToday(await orgTz(orgId)), "d.id");   // ORG_TZ_SEAM_OK
   return query(
     `SELECT id, name, email, total_giving, last_gift_date, last_gift_amount
      FROM donors d

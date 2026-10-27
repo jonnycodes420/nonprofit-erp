@@ -146,19 +146,22 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
   );
 }
 
+const AS_OPTIONS = [["purchase", "A purchase"], ["ticket", "Tickets"], ["reimbursement", "A reimbursement"]];
+const suggestedAs = it => /ticket|raffle/i.test(it.reason || "") ? "ticket" : /reimburse|refund/i.test(it.reason || "") ? "reimbursement" : "purchase";
 function ReviewRows({ card, onChanged, isReadOnly }) {
   const [undo, setUndo] = useState(null);
   const [err, setErr] = useState("");
+  const [as, setAs] = useState({});
   const decide = async (it, decision) => {
     setErr("");
     try {
-      const r = await apiFetch(`/insights/review/${encodeURIComponent(it.giftId)}`, { method: "POST", body: JSON.stringify({ decision }) });
-      if (r.undoId) setUndo({ id: r.undoId, sentence: r.sentence });
+      const r = await apiFetch(`/insights/review/${encodeURIComponent(it.giftId)}`, { method: "POST", body: JSON.stringify({ decision, as: as[it.giftId] || suggestedAs(it) }) });
+      setUndo({ giftId: it.giftId, sentence: r.sentence || (decision === "keep" ? "Kept as a gift." : "") });
       onChanged && onChanged();
     } catch (e) { setErr(e.message || "That didn't work."); }
   };
   const doUndo = async () => {
-    await apiFetch(`/deleted-records/${undo.id}/restore`, { method: "POST" });
+    await apiFetch(`/insights/review/${encodeURIComponent(undo.giftId)}/undo`, { method: "POST" });
     setUndo(null);
     onChanged && onChanged();
   };
@@ -170,12 +173,17 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
         <div key={it.key} data-testid="review-row" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
           <div style={{ fontSize: 14, color: T.ink }}><b>{money(it.cents)}</b> · {it.name} · {it.date || "no date"}</div>
           <div style={{ fontSize: 13, color: T.ink3 }}>“{it.memo}”. {it.reason}.</div>
-          {!isReadOnly && <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          {!isReadOnly && <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
             <button type="button" style={B2} onClick={() => decide(it, "keep")}>Keep as gift</button>
+            <select aria-label="What it was" value={as[it.giftId] || suggestedAs(it)} onChange={e => setAs({ ...as, [it.giftId]: e.target.value })}
+              style={{ fontSize: 13, padding: "7px 8px", border: "1px solid " + T.bg3, borderRadius: 8, background: T.white, color: T.ink, fontFamily: "inherit" }}>
+              {AS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
             <button type="button" style={B1} onClick={() => decide(it, "not_gift")}>Not a gift</button>
           </div>}
         </div>
       ))}
+      {!isReadOnly && <p style={{ fontSize: 12, color: T.ink3, margin: "6px 0 0" }}>Not a gift keeps the row: it leaves every giving total and stays in Finance as revenue.</p>}
     </div>
   );
 }
@@ -322,6 +330,8 @@ export function ProfileLadder({ donorId, onNavigate, isReadOnly }) {
         {(u.signals || []).slice(0, 5).map(s => <span key={s} style={{ fontSize: 12, color: T.ink3, marginRight: 8 }}>{s}</span>)}
       </div>
       {u.undatedNote && <div style={{ fontSize: 13, color: T.ink, marginTop: 4, borderLeft: "3px solid " + T.gold, paddingLeft: 8 }}>{u.undatedNote}</div>}
+      {(d.notGifts || []).length > 0 && <div data-testid="profile-not-gifts" style={{ fontSize: 13, color: T.ink3, marginTop: 4 }} title="Marked Not a gift in Review: in Finance as revenue, not in their giving.">
+        Also paid, not gifts: {d.notGifts.map(x => `${x.label} ${money(x.cents)}${x.date ? ` (${x.date})` : ""}`).join(", ")}.</div>}
       {d.combined && <div style={{ fontSize: 13, color: T.ink, marginTop: 4 }} title={d.combined.sentence}>With {d.combined.names.join(", ")}: {money(d.combined.cents)} together.</div>}
       {m && m.item && (
         <div data-testid="profile-next-move" style={{ background: T.bg, borderRadius: 10, padding: "10px 12px", marginTop: 8 }}>

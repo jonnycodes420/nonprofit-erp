@@ -6,8 +6,9 @@
 //   GET  /insights/worked            the "What worked" panel (Reports)
 //   POST /insights/seen              the cards she was shown (the page posts it; a GET writes nothing)
 //   POST /insights/outcome           Done, Not now (with a date), Doesn't fit (with a reason)
-//   POST /insights/review/:giftId    Keep as gift, or Not a gift (moved to the trash; Undo
-//                                    is POST /deleted-records/:id/restore, the one Undo)
+//   POST /insights/review/:giftId    Keep as gift, or Not a gift (a Finance revenue line typed a
+//                                    purchase, tickets or a reimbursement; out of every giving total)
+//   POST /insights/review/:giftId/undo  put the row back as it was
 //   POST /insights/link              Link a suggested family or network, or Not related
 //
 // The facts come from insights.js (pure) over insightsData.js (reads). The
@@ -25,6 +26,11 @@ const D = require("../insightsData");
 const routers = { r0: express.Router() };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATES = new Set(["done", "snoozed", "dismissed"]);
+// Review: what a row that was not a gift was, its words, and its revenue account.
+const AS_TYPE = { tickets: "ticket", ticket: "ticket", auction: "purchase", purchase: "purchase", reimbursement: "reimbursement", refund: "reimbursement" };
+const TYPE_WORD = { purchase: "a purchase", ticket: "tickets", reimbursement: "a reimbursement" };
+const TYPE_LABEL = { purchase: "Purchase", ticket: "Tickets", reimbursement: "Reimbursement" };
+const ACCOUNT_FOR = { purchase: "4050", ticket: "4050", reimbursement: "4060" };
 
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, orgTz, orgToday, testMode, uuid, withTransaction, queryTx, runTx, recalcDonorSummary } = ctx;
@@ -47,7 +53,11 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   const asOf = await asOfFor(req);
   const r = await D.insightsFor(req.user.orgId, asOf);
   const first = req.query.view === "first";
-  const cards = r.cards.filter(c => !(first && c.homeOnly)).slice(0, first ? 7 : 20);
+  // Review leads the first look (the totals in it wait on her); on Home it
+  // follows the cards about people (Jonathan, 27 Oct).
+  let cards = r.cards.filter(c => !(first && c.homeOnly));
+  if (!first) cards = [...cards.filter(c => c.kind !== "review" && c.kind !== "family"), ...cards.filter(c => c.kind === "review"), ...cards.filter(c => c.kind === "family")];
+  cards = cards.slice(0, first ? 7 : 20);
   res.json({
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: r.ladder, centsSentence: r.centsSentence,
     stats: r.stats, cards: cards.map(cardOut),
@@ -75,7 +85,12 @@ app.get("/insights/donor/:id", requireAuth, wrap(async (req, res) => {
     names: linkedUnits.map(u => u.name),
     sentence: "What this person and the records linked to them have given, together, over all time.",
   } : null;
-  res.json({ asOf, coverage: r.coverage, majorLine: r.majorLine, unit, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
+  // what this giver paid that was not a gift (Review), in Finance as revenue
+  const ids = unit ? unit.ids : [d.id];
+  const notGifts = (await query(`SELECT gift_id, as_type, row_data->>'amount' AS amount, row_data->>'date' AS date FROM insight_reviews
+                                  WHERE org_id=? AND decision='not_gift' AND donor_id = ANY(?) ORDER BY row_data->>'date' DESC NULLS LAST`, [req.user.orgId, ids]))
+    .map(x => ({ giftId: x.gift_id, as: x.as_type, label: TYPE_LABEL[x.as_type] || x.as_type, cents: Math.round(Number(x.amount) * 100), date: x.date }));
+  res.json({ asOf, coverage: r.coverage, majorLine: r.majorLine, unit, notGifts, move: move ? { ...move, item: cardOut({ ...move, items: [move.item], words: move.words, facts: [], does: [] }).items[0] } : null, combined,
     rungSentence: unit ? I.RUNG_SENTENCE[unit.rung] : null });
 }));
 
@@ -135,52 +150,101 @@ app.post("/insights/outcome", requireAuth, checkWriteAccess, wrap(async (req, re
   res.json({ ok: true, recorded: keys.length });
 }));
 
-// REVIEW. Keep as gift: recorded, the row leaves the card. Not a gift: the
-// gift row moves to the trash with its ledger stamp (crm.js TRASH_WITH.gifts),
-// the person's totals are recomputed, and the toast offers Undo
-// (POST /deleted-records/:id/restore puts the row and the stamp back).
+// REVIEW. Keep as gift: recorded, the row leaves the card. Not a gift
+// (Jonathan, 27 Oct; the INT-POS rule: a sale is never a gift row): the money
+// stays in Finance as revenue, typed as what it was (a purchase, tickets or a
+// reimbursement), on a ledger line with the person, the date, the amount and
+// the memo, in Special Events Revenue (4050) or Other Revenue (4060). The gift
+// row leaves `gifts`, so it is out of every giving total by construction, and
+// is kept whole in insight_reviews.row_data; Undo puts it back exactly, ledger
+// line and all. A row with anything attached (a receipt, a payment, a pledge,
+// an open thank-you) is changed from the gift itself.
+async function moved(orgId, donorId) {
+  await recalcDonorSummary(donorId, orgId);
+  // a staff click on a page: the gift-form door (afterChange.js DOORS)
+  await require("../afterChange").afterChange(orgId, [donorId], { door: "gift_form", recalc: false });
+}
 app.post("/insights/review/:giftId", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId, giftId = String(req.params.giftId);
-  const decision = (req.body || {}).decision;
-  if (decision !== "keep" && decision !== "not_gift") return res.status(400).json({ error: "bad_decision", sentence: "Pick Keep as gift or Not a gift." });
+  const b = req.body || {};
+  if (b.decision !== "keep" && b.decision !== "not_gift") return res.status(400).json({ error: "bad_decision", sentence: "Pick Keep as gift or Not a gift." });
   const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [giftId, orgId]);
   if (!g) return res.status(404).json({ error: "Not found" });
   const a = actor(req);
-  if (decision === "keep") {
-    await run(`INSERT INTO insight_reviews (org_id, gift_id, decision, created_by, created_by_name) VALUES (?,?,?,?,?)
+  if (b.decision === "keep") {
+    await run(`INSERT INTO insight_reviews (org_id, gift_id, decision, donor_id, created_by, created_by_name) VALUES (?,?,?,?,?,?)
                ON CONFLICT (org_id, gift_id) DO UPDATE SET decision=EXCLUDED.decision, created_by=EXCLUDED.created_by, created_by_name=EXCLUDED.created_by_name, created_at=NOW()`,
-      [orgId, giftId, "keep", a.id, a.name]);
-    return res.json({ ok: true, decision });
+      [orgId, giftId, "keep", g.donor_id, a.id, a.name]);
+    return res.json({ ok: true, decision: "keep" });
   }
-  // Only a plain row: anything attached to it is changed from the gift itself.
+  const memo = [g.memo, g.notes].filter(Boolean).join(" · ");
+  const type = AS_TYPE[String(b.as || "").toLowerCase()] || AS_TYPE[(I.notAGift(memo) || {}).kind] || "purchase";
   const [att] = await query(`SELECT
       (SELECT COUNT(*) FROM receipts WHERE gift_id=? AND org_id=? AND voided_at IS NULL)::int AS receipts,
       (SELECT COUNT(*) FROM threads WHERE opening_gift_id=? AND org_id=? AND closed_at IS NULL)::int AS threads,
-      (SELECT COUNT(*) FROM tasks WHERE source_gift_id=? AND org_id=? AND voided_at IS NULL AND completed IS NOT TRUE)::int AS tasks,
+      (SELECT COUNT(*) FROM tasks WHERE source_gift_id=? AND org_id=? AND voided_at IS NULL)::int AS tasks,
       (SELECT COUNT(*) FROM pledges WHERE fulfilled_gift_id=? AND org_id=?)::int AS pledges,
       (SELECT COUNT(*) FROM pledge_installments WHERE paid_gift_id=? AND org_id=?)::int AS installments`,
-    [giftId, orgId, giftId, orgId, giftId, orgId, giftId, orgId, giftId, orgId]).catch(async () => [{ receipts: 0, threads: 0, tasks: 0, pledges: 0, installments: 0 }]);
+    [giftId, orgId, giftId, orgId, giftId, orgId, giftId, orgId, giftId, orgId]);
   if (g.stripe_payment_id || g.recurring_subscription_id || g.pledge_id || att.receipts || att.threads || att.tasks || att.pledges || att.installments) {
     return res.status(409).json({ error: "attached", sentence: "This gift has a receipt, a payment, a pledge or a thank-you attached, so it is changed from the gift itself. Open it from the person's profile." });
   }
-  const trashId = "del_" + uuid().slice(0, 12);
+  const [acct] = await query("SELECT id FROM accounts WHERE org_id=? AND code=? LIMIT 1", [orgId, ACCOUNT_FOR[type]]);
+  const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [g.donor_id, orgId]);
+  const description = `${TYPE_LABEL[type]}, not a gift${memo ? `: ${memo}` : ""}`.slice(0, 500);
+  let finId = null;
+  try {
+    await withTransaction(async client => {
+      const [stamp] = await queryTx(client, "SELECT * FROM fin_transactions WHERE gift_id=? AND org_id=? FOR UPDATE", [giftId, orgId]);
+      if (stamp) {
+        finId = stamp.id;
+        await runTx(client, `UPDATE fin_transactions SET gift_id=NULL, account_id=COALESCE(?, account_id), description=?, donor_id=?, source='not_a_gift' WHERE id=?`,
+          [acct ? acct.id : null, description, g.donor_id, stamp.id]);
+      } else {
+        finId = "ft_" + uuid().slice(0, 12);
+        await runTx(client, `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,created_by,created_by_name)
+                             VALUES (?,?,?,?,?,?,'income',?,?,?,'not_a_gift',?,?)`,
+          [finId, orgId, g.date || null, description, d ? d.name : null, g.amount, acct ? acct.id : null, g.fund_id || null, g.donor_id, a.id, a.name]);
+      }
+      await runTx(client, `INSERT INTO insight_reviews (org_id, gift_id, decision, as_type, row_data, fin_id, fin_prev, donor_id, created_by, created_by_name)
+                           SELECT ?, ?, 'not_gift', ?, to_jsonb(t), ?, ?::jsonb, ?, ?, ? FROM gifts t WHERE t.id=? AND t.org_id=?
+                           ON CONFLICT (org_id, gift_id) DO UPDATE SET decision=EXCLUDED.decision, as_type=EXCLUDED.as_type, row_data=EXCLUDED.row_data,
+                             fin_id=EXCLUDED.fin_id, fin_prev=EXCLUDED.fin_prev, donor_id=EXCLUDED.donor_id, created_by=EXCLUDED.created_by,
+                             created_by_name=EXCLUDED.created_by_name, created_at=NOW()`,
+        [orgId, giftId, type, finId, stamp ? JSON.stringify(stamp) : null, g.donor_id, a.id, a.name, giftId, orgId]);
+      await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [giftId, orgId]);
+    });
+  } catch (e) {
+    if (e.code === "23503") return res.status(409).json({ error: "attached", sentence: "Something else in Steward points at this gift, so it is changed from the gift itself. Open it from the person's profile." });
+    throw e;
+  }
+  await moved(orgId, g.donor_id);
+  if (req.audit) { req.audit.entity("gift", giftId); req.audit.before(g); req.audit.after({ finance_line: finId, as: type }); }
+  res.json({ ok: true, decision: "not_gift", as: type, finId, undo: `/insights/review/${giftId}/undo`, undoSeconds: 60,
+    sentence: `Marked as ${TYPE_WORD[type]}: ${I.money(Math.round(Number(g.amount) * 100))} is no longer anyone's giving, and stays in Finance as revenue.` });
+}));
+
+app.post("/insights/review/:giftId/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, giftId = String(req.params.giftId);
+  const [r] = await query("SELECT * FROM insight_reviews WHERE org_id=? AND gift_id=?", [orgId, giftId]);
+  if (!r) return res.status(404).json({ error: "Not found" });
   await withTransaction(async client => {
-    const fin = await queryTx(client, "SELECT * FROM fin_transactions WHERE gift_id = ? AND org_id = ?", [giftId, orgId]);
-    await runTx(client, "DELETE FROM fin_transactions WHERE gift_id = ? AND org_id = ?", [giftId, orgId]);
-    await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
-                         SELECT ?, ?, 'gifts', ?, to_jsonb(t) || ?::jsonb, ?, ? FROM gifts t WHERE t.id = ? AND t.org_id = ?`,
-      [trashId, orgId, giftId, JSON.stringify({ __with: { fin } }), a.id, a.name, giftId, orgId]);
-    await runTx(client, "DELETE FROM gifts WHERE id = ? AND org_id = ?", [giftId, orgId]);
-    await runTx(client, `INSERT INTO insight_reviews (org_id, gift_id, decision, trash_id, created_by, created_by_name) VALUES (?,?,?,?,?,?)
-                         ON CONFLICT (org_id, gift_id) DO UPDATE SET decision=EXCLUDED.decision, trash_id=EXCLUDED.trash_id, created_by=EXCLUDED.created_by, created_by_name=EXCLUDED.created_by_name, created_at=NOW()`,
-      [orgId, giftId, "not_gift", trashId, a.id, a.name]);
+    if (r.decision === "not_gift" && r.row_data) {
+      // back on the person the review now points at (a merge since moves it, dataHealth.js MERGE_REFS)
+      await runTx(client, "INSERT INTO gifts SELECT * FROM jsonb_populate_record(NULL::gifts, ?::jsonb)", [JSON.stringify({ ...r.row_data, donor_id: r.donor_id || r.row_data.donor_id })]);
+      if (r.fin_prev) {
+        const f = r.fin_prev;
+        await runTx(client, "UPDATE fin_transactions SET gift_id=?, account_id=?, description=?, donor_id=?, source=? WHERE id=? AND org_id=?",
+          [f.gift_id, f.account_id, f.description, f.donor_id, f.source, f.id, orgId]);
+      } else if (r.fin_id) {
+        await runTx(client, "DELETE FROM fin_transactions WHERE id=? AND org_id=? AND source='not_a_gift'", [r.fin_id, orgId]);
+      }
+    }
+    await runTx(client, "DELETE FROM insight_reviews WHERE org_id=? AND gift_id=?", [orgId, giftId]);
   });
-  await recalcDonorSummary(g.donor_id, orgId);
-  // a staff click on a page: the gift-form door (afterChange.js DOORS)
-  await require("../afterChange").afterChange(orgId, [g.donor_id], { door: "gift_form", recalc: false });
-  if (req.audit) { req.audit.entity("gift", giftId); req.audit.before(g); req.audit.after(null); }
-  res.json({ ok: true, decision, undoId: trashId, undoSeconds: 60,
-    sentence: `Not a gift: ${I.money(Math.round(Number(g.amount) * 100))} no longer counts in any total. Undo puts it back.` });
+  if (r.decision === "not_gift" && r.donor_id) await moved(orgId, r.donor_id);
+  if (req.audit) { req.audit.entity("gift", giftId); req.audit.after(r.decision === "not_gift" ? r.row_data : null); }
+  res.json({ ok: true, sentence: "Put back as it was." });
 }));
 
 // LINK. A suggested family or network becomes "family" relationships from the

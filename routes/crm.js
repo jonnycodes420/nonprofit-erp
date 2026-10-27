@@ -900,7 +900,7 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today) : null;
+  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
@@ -6902,22 +6902,13 @@ const RESTORABLE = new Set(["interactions", "threads", "tasks", "donor_relations
   "pledges", "opportunities", "households",
   // FIX-22: the deletes that used to sit behind a browser confirm and had no
   // way back. Each is now moved aside and offered for Undo instead.
-  "planned_gifts", "donor_materials", "impact_metrics", "event_attendees", "saved_dashboards", "campaigns",
-  // INSIGHTS-1: a row she marks "Not a gift" in Review (routes/insights.js,
-  // which refuses one with a receipt, a payment, a pledge or a thank-you
-  // attached). Its ledger stamp goes with it and comes back with Undo.
-  "gifts"]);
+  "planned_gifts", "donor_materials", "impact_metrics", "event_attendees", "saved_dashboards", "campaigns"]);
 // FIX-14 Part 2b — WHAT GOES WITH A ROW. Some rows take other rows with them
 // when they are deleted (a pledge's instalments cascade, a household's members
 // are unlinked, a calendar meeting points at its logged conversation). The
 // hook runs inside the delete's transaction, BEFORE the row goes, and returns
 // what Undo needs to put those back; RESTORE_WITH puts them back.
 const TRASH_WITH = {
-  gifts: async (client, id, orgId) => {
-    const fin = await queryTx(client, "SELECT * FROM fin_transactions WHERE gift_id = ? AND org_id = ?", [id, orgId]);
-    await runTx(client, "DELETE FROM fin_transactions WHERE gift_id = ? AND org_id = ?", [id, orgId]);
-    return { fin };
-  },
   interactions: async (client, id, orgId) => {
     const ev = await queryTx(client, "SELECT id FROM calendar_events WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
     if (!ev.length) return null;
@@ -6940,13 +6931,6 @@ const TRASH_WITH = {
   }),
 };
 const RESTORE_WITH = {
-  gifts: async (client, x, recordId, orgId) => {
-    if (x && Array.isArray(x.fin) && x.fin.length) {
-      await runTx(client, "INSERT INTO fin_transactions SELECT * FROM jsonb_populate_recordset(NULL::fin_transactions, ?::jsonb) ON CONFLICT DO NOTHING", [JSON.stringify(x.fin)]);
-    }
-    // it is a gift again, so its Review decision goes
-    await runTx(client, "DELETE FROM insight_reviews WHERE org_id = ? AND gift_id = ?", [orgId, recordId]);
-  },
   interactions: async (client, x, recordId, orgId) => {
     if (x && Array.isArray(x.calendar_event_ids) && x.calendar_event_ids.length) {
       await runTx(client, "UPDATE calendar_events SET interaction_id = ?, updated_at = NOW() WHERE id = ANY(?) AND org_id = ? AND interaction_id IS NULL",
@@ -6980,7 +6964,7 @@ const RESTORE_WITH = {
   },
 };
 const TRASH_ENTITY = { interactions: "interaction", threads: "next step", tasks: "task", donor_relationships: "relationship",
-  pledges: "pledge", opportunities: "proposal", households: "household", gifts: "gift",
+  pledges: "pledge", opportunities: "proposal", households: "household",
   planned_gifts: "planned_gift", donor_materials: "material", impact_metrics: "impact_metric",
   event_attendees: "event_attendee", saved_dashboards: "saved_dashboard", campaigns: "campaign" };
 // The audit row's picture of a record: a relationship carries its first
@@ -7104,11 +7088,6 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
     throw e;
   }
   const [row] = await query(`SELECT * FROM ${t.table_name} WHERE id = ? AND org_id = ?`, [t.record_id, req.user.orgId]);
-  // INSIGHTS-1: a gift back from Review moves its person's totals again.
-  if (t.table_name === "gifts" && row && row.donor_id) {
-    await recalcDonorSummary(row.donor_id, req.user.orgId);
-    await require("../afterChange").afterChange(req.user.orgId, [row.donor_id], { door: "gift_form", recalc: false });
-  }
   // The audit row is about the record that came back, not the trash row.
   if (req.audit) {
     req.audit.entity(TRASH_ENTITY[t.table_name], t.record_id);
@@ -13261,7 +13240,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   // history). The event key is the last gift date, so each lapse fires once
   // and a new gift starts a new episode.
   if (key === "lapsed" || key === "lapsing") {
-    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today);
+    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
     const crossed = key === "lapsed" ? `(LEFT(d.last_gift_date, 10)::date + ${lapseRule.LAPSED_DAYS})`
       : `(LEFT(d.last_gift_date, 10)::date + INTERVAL '${lapseRule.LAPSING_MONTHS} months')::date`;
     return P(`SELECT d.id AS donor_id, '${key}:' || d.id || ':' || LEFT(d.last_gift_date, 10) AS event_key
@@ -26282,6 +26261,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // or before the day nine months ago.
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
+  const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
@@ -26295,9 +26275,11 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
         AND d.total_giving > 0
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) IS NOT NULL
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
+        -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
+        AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
       ORDER BY d.total_giving DESC
       LIMIT 50`,
-    [orgId, _quietCutoff]
+    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 

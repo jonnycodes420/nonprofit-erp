@@ -30,7 +30,8 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 - **Why.** On 27 Oct Home said "Call Lois Doan" and "$63,984 behind last year" on a real file. A number is not advice: a director needs, per donor, what is happening, why it matters and what to do, in the order keep, second gift, upgrade, major, planned.
 - **What.** `insights.js` (pure, takes `asOf`) computes the ladder (rung, status, planned flag per giving unit), the signals (memo, method, rhythm, coverage, relations) and ten cards with What, Why, How, the ask and its rule. Home leads with the ladder strip and the cards; the import receipt shows "What your file says"; the profile header shows rung, status, signals and the next move; the Donors list has a rung column and filters; Ask answers "slipping donors"; Reports has What worked. New: `gift_type` on gifts and pledges, `orgs.ladder_major_line_cents`, and four `insight_*` tables. No existing row changed.
 - **Found on the way.** Home's "Gone quiet" called a donor with an undated $10,000 gift lapsed; Drift now leaves anyone with an undated gift out (`undated_gift`).
-- **Guard.** `tests/insights.test.js` imports the three real-shaped files into one empty org with asOf 2026-10-27. Seven checks wait on the memo-kept gift file (NEEDS-JONATHAN).
+- **Jonathan's changes (27 Oct).** Not a gift is a Finance revenue line, never a gift row (the INT-POS rule), with an exact Undo; the truth check holds Finance's money in to gifts plus what was marked. Lapsing respects rhythm: a yearly giver whose usual time is ahead is not Lapsing. Review follows the people cards on Home.
+- **Guard.** `tests/insights.test.js` imports the three real-shaped files (the gift history now the memo-kept copy) into one empty org with asOf 2026-10-27.
 
 ## HARDEN-1 · Imports, deletes, undo and sending that cannot go wrong (2026-10-27)
 

@@ -7163,7 +7163,8 @@ async function runSchemaInit(pool) {
   // their words instead. The ladder's major-gift line is a setting (NULL: the
   // default); it is not Capture's big-gift alert line (major_gift_line_cents).
   // What she did with each card, her Review and Link decisions: new tables, so
-  // nothing that was here changes.
+  // nothing that was here changes. A row she marks Not a gift is kept whole in
+  // insight_reviews.row_data while it lives in Finance (routes/insights.js).
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS gift_type TEXT`);
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS gift_type TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ladder_major_line_cents INTEGER`);
@@ -7198,12 +7199,18 @@ async function runSchemaInit(pool) {
       org_id TEXT NOT NULL,
       gift_id TEXT NOT NULL,
       decision TEXT NOT NULL,
-      trash_id TEXT,
+      as_type TEXT,
+      row_data JSONB,
+      fin_id TEXT,
+      fin_prev JSONB,
+      donor_id TEXT,
       created_by TEXT NOT NULL,
       created_by_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (org_id, gift_id)
     )`);
+  for (const c of ["as_type TEXT", "row_data JSONB", "fin_id TEXT", "fin_prev JSONB", "donor_id TEXT"])
+    await pool.query(`ALTER TABLE insight_reviews ADD COLUMN IF NOT EXISTS ${c}`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS insight_links (
       org_id TEXT NOT NULL,

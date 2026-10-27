@@ -18,8 +18,9 @@
 //      $25,577.60 (2026). Upgrade names Ashham: $1,000 (Jan 2025), $5,000
 //      (Dec 2025) through The Ashham Family Foundation; ask $7,500.
 //   §4 Review: rows that look like purchases are listed with a reason; nothing
-//      moves until she decides; Not a gift moves Lifetime and the truth check
-//      agrees; Undo restores it to the cent.
+//      moves until she decides; Not a gift makes the row a Finance revenue line
+//      (out of every giving total, still money in) and the truth check agrees,
+//      and can fail; Undo restores the gift exactly. Ashham is not Lapsing.
 //   §5 after the dinner: Belley Wilah's undated $10,000 keeps her off
 //      slipping, off Drift and off Home's "Gone quiet"; Marshaw's $20,000 pledge is in Collect pledges; Stock,
 //      Retirement Dist, Investment Dist and Foundation are planned signals
@@ -199,27 +200,49 @@ async function main() {
     ok(`§M Review lists "${memo}"`, !!it && (!who || norm(it.name) === norm(who)) && (!c || it.cents === c), it);
   }
   if (rv && rv.items.length) {
-    const it = rv.items.slice().sort((a, b) => b.cents - a.cents)[0];
+    const it = rv.items.find(i => /Reimbursement/.test(i.memo)) || rv.items.slice().sort((a, b) => b.cents - a.cents)[0];
     const lifeOf = async () => Number((await q(`SELECT COALESCE(SUM(total_giving),0) AS s FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, it.ids]))[0].s);
-    const before = await lifeOf();
-    ok("§4 nothing moved before she decides", before > 0 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1, before);
-    const no = await api("POST", `/insights/review/${it.giftId}`, tok, { decision: "not_gift" });
-    ok("§4 Not a gift answers with an Undo", no.status === 200 && !!no.body.undoId, JSON.stringify(no.body).slice(0, 200));
-    const after = await lifeOf();
-    ok(`§4 …Lifetime moved by exactly ${it.cents} cents`, Math.round((before - after) * 100) === it.cents, [before, after]);
-    ok("§4 …the row is out of gifts and its ledger stamp with it", (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 0
-       && (await q(`SELECT 1 FROM fin_transactions WHERE gift_id=$1`, [it.giftId])).length === 0, "");
-    ok("§4 …and it leaves the Review card", !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), "");
+    const giftRow = async () => (await q(`SELECT * FROM gifts WHERE id=$1`, [it.giftId]))[0];
+    const before = await lifeOf(), row0 = await giftRow();
+    ok("§4 nothing moved before she decides", before > 0 && !!row0, before);
+    const as = /reimburse/i.test(it.reason) ? "reimbursement" : /ticket/i.test(it.reason) ? "ticket" : "purchase";
+    const no = await api("POST", `/insights/review/${it.giftId}`, tok, { decision: "not_gift", as });
+    ok(`§4 Not a gift: ${as}, with an Undo`, no.status === 200 && no.body.as === as && !!no.body.undo && !!no.body.finId, JSON.stringify(no.body).slice(0, 200));
+    const [line] = await q(`SELECT t.amount, t.date, t.donor_id, t.type, t.source, t.description, a.code FROM fin_transactions t LEFT JOIN accounts a ON a.id=t.account_id WHERE t.id=$1`, [no.body.finId]);
+    ok(`§4 …the money stays in Finance as revenue: one line, same amount, date and person, in ${as === "reimbursement" ? "Other" : "Special Events"} Revenue`,
+       !!line && Math.round(Number(line.amount) * 100) === it.cents && line.date === row0.date && line.donor_id === row0.donor_id && line.type === "income"
+       && line.source === "not_a_gift" && /not a gift/.test(line.description) && (line.code == null || line.code === (as === "reimbursement" ? "4060" : "4050")), line);
+    ok("§4 …and it is out of every giving total: no longer a gift row", !(await giftRow()), "");
+    ok(`§4 …Lifetime moved by exactly ${it.cents} cents`, Math.round((before - (await lifeOf())) * 100) === it.cents, [before, await lifeOf()]);
+    ok("§4 …it leaves the Review card, and the profile says it was not a gift",
+       !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId)
+       && ((await api("GET", `/insights/donor/${it.lead}?asOf=${AS_OF}`, tok)).body.notGifts || []).some(x => x.giftId === it.giftId && x.cents === it.cents), "");
     await truth("after Not a gift");
-    const undo = await api("POST", `/deleted-records/${no.body.undoId}/restore`, tok);
-    ok("§4 Undo puts it back", undo.status === 200 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1, undo.status);
+    // Planted: the Finance line goes missing. The truth check's money-in check must see it.
+    if (Number(String(row0.date || "").slice(0, 4)) >= 2025) {
+      await q(`UPDATE fin_transactions SET source='planted' WHERE id=$1`, [no.body.finId]);
+      let caught = false;
+      try { await assertSurfacesAgree(ORG, { token: tok, step: "planted" }); } catch (e) { caught = /money in/.test(e.message); }
+      await q(`UPDATE fin_transactions SET source='not_a_gift' WHERE id=$1`, [no.body.finId]);
+      ok("§4 the truth check can fail: a Not a gift line missing from Finance's money in is caught", caught, "");
+    }
+    const undo = await api("POST", `/insights/review/${it.giftId}/undo`, tok);
+    const row2 = await giftRow();
+    ok("§4 Undo puts the gift back exactly, and its Finance line goes", undo.status === 200 && !!row2 && JSON.stringify({ ...row2, updated_at: 0 }) === JSON.stringify({ ...row0, updated_at: 0 })
+       && (await q(`SELECT 1 FROM fin_transactions WHERE id=$1`, [no.body.finId])).length === 0, undo.status);
     ok("§4 …Lifetime is restored to the cent", Math.round((await lifeOf()) * 100) === Math.round(before * 100), "");
     ok("§4 …and the row is back in Review, undecided", (card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), "");
     await truth("after Undo");
     const keep = await api("POST", `/insights/review/${it.giftId}`, tok, { decision: "keep" });
-    ok("§4 Keep as gift: recorded, the row stays a gift and leaves the card", keep.status === 200 && (await q(`SELECT 1 FROM gifts WHERE id=$1`, [it.giftId])).length === 1
+    ok("§4 Keep as gift: recorded, the row stays a gift and leaves the card", keep.status === 200 && !!(await giftRow())
        && !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), keep.status);
   }
+  // The Lapsing tag respects rhythm: a yearly giver whose usual time is ahead is not Lapsing.
+  const [ash] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Alin Ashham' AND deleted_at IS NULL`, [ORG]);
+  const ashSt = ash && (await api("GET", `/donors/${ash.id}/status`, tok)).body;
+  const ashU = ash && (await api("GET", `/insights/donor/${ash.id}?asOf=${AS_OF}`, tok)).body.unit;
+  ok("§4 Ashham (a yearly giver, next gift expected Nov 2026) is not tagged Lapsing; the ladder says Moving up",
+     !!ashSt && !JSON.stringify(ashSt).includes('"lapsing"') && !!ashU && ashU.status === "up", [JSON.stringify(ashSt).match(/"key":"[a-z_]+"/g), ashU && ashU.status]);
 
   // ── §5 the dinner file ──────────────────────────────────────────────────
   const d = await importFile(tok, "jp-dinner-gifts-106.xlsx");
@@ -293,6 +316,9 @@ async function main() {
   ok("§7 with Atlas off every card has its template words", r4.body.cards.length >= 5 && r4.body.cards.every(x => x.wordsFrom === "template" && x.words.what && x.words.why), r4.body.cards.map(x => x.kind));
   const first = await get("&view=first");
   ok("§7 the first look: 5 to 7 cards, no Home-only card, the coverage line first", first.body.cards.length >= 5 && first.body.cards.length <= 7 && !first.body.cards.some(x => x.homeOnly) && !!first.body.coverage.sentence, first.body.cards.map(x => x.kind));
+  const homeKinds = r4.body.cards.map(x => x.kind), lastPeople = Math.max(...r4.body.cards.map((x, i) => (x.rung ? i : -1)));
+  ok("§7 Review leads the first look, and on Home it follows the cards about people",
+     first.body.cards[0].kind === "review" && homeKinds.indexOf("review") > lastPeople, [first.body.cards[0].kind, homeKinds]);
   const ranks = first.body.cards.map(x => x.rung).filter(Boolean);
   const order = ["retain", "second", "upgrade", "major", "planned"];
   ok("§7 cards rank by rung (Retain, Second gift, Upgrade, Major, Planned)", ranks.every((x, i) => i === 0 || order.indexOf(x) >= order.indexOf(ranks[i - 1])), ranks);

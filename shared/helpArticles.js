@@ -745,7 +745,7 @@ export const HELP_ARTICLES = [
       { h: `The ladder`, p: [
         `Every giver sits on one rung, from their own giving. A household is one giver. New: no gift yet. Second gift: one gift so far. Retain: two or more gifts, your regular base. Upgrade: a regular donor whose last 12 months are at least 1.5 times the 12 before, or who moved their giving into a family foundation, or designated a program. Major: a last 12 months, or any single gift, at or above your major-gift line.`,
         `Your major-gift line is the smaller of $5,000 and what your top 5% of donors reach, unless you set your own. Planned sits beside a rung: a gift of stock, an IRA or investment distribution, a donor-advised fund or foundation gift, a memorial or honor gift, or 5 or more years in a row of giving.`,
-        `Each rung has a status: Steady, Slipping (past their own usual time, lapsing, or far below last year) or Moving up. A December giver is not slipping in October. Someone with an undated gift or an open pledge is never called slipping because of time.`,
+        `Each rung has a status: Steady, Slipping (past their own usual time, lapsing, or far below last year) or Moving up. A December giver is not slipping, or Lapsing, in October. Someone with an undated gift or an open pledge is never called slipping because of time.`,
         `The order matters: keep the donors you have first, then turn first gifts into second gifts, then upgrade, then major gifts, then planned gifts. Suggestions are ranked that way, then by the dollars at stake.`,
       ]},
       { h: `The ask`, p: [
@@ -758,7 +758,7 @@ export const HELP_ARTICLES = [
         `Read What (the facts), Why (one sentence) and How (who reaches out, when, how, what to say and the ask).`,
         `Use a "Steward can" button to make tasks with dates, a call list or a group, or to open a draft or a visit briefing. Nothing is sent.`,
         `Click Done when it's handled, Not now to bring it back on a date you pick, or Doesn't fit to set it aside.`,
-        `In "Rows that may not be gifts", choose Keep as gift or Not a gift for each row. Totals change only after you choose, and Undo puts a row back.`,
+        `In "Rows that may not be gifts", choose Keep as gift, or say what it was (a purchase, tickets or a reimbursement) and click Not a gift. Not a gift takes it out of everyone's giving and keeps it in Finance as revenue. Totals change only after you choose, and Undo puts it back as it was.`,
         `In "Family or network to link", choose Link or Not related. Steward links nothing on its own.`,
       ]},
       { h: `What worked`, p: [

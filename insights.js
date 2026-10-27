@@ -26,6 +26,7 @@
 // lifetime and gift counts, never toward a time window, and a giver whose
 // gifts include an undated one is never called slipping on time.
 "use strict";
+const CT = require("./creditTypes");
 
 const RUNGS = ["new", "second", "retain", "upgrade", "major"];
 const RUNG_LABEL = { new: "New", second: "Second gift", retain: "Retain", upgrade: "Upgrade", major: "Major", planned: "Planned" };
@@ -270,6 +271,8 @@ function computeInsights(input) {
   for (const g of input.gifts || []) {
     const u = unitOf.get(g.donor_id);
     if (!u) continue;
+    // a soft or matching credit is nobody's giving (creditTypes.js)
+    if (CT.isCredit(g.type)) continue;
     const cents = g.amount_cents != null ? g.amount_cents : Math.round(Number(g.amount || 0) * 100);
     const row = { ...g, amount_cents: cents, date: ymd(g.date), unit: u };
     row.sig = readGift(row, programs);

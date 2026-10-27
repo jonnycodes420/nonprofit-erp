@@ -109,7 +109,8 @@ function windowsFor(today, cuts = null) {
 // retained. `donorId` narrows it to one person.
 function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   const w = windowsFor(today, cuts);
-  const args = [w.lapsingFrom, w.lapsingTo, cuts.majorCents, cuts.midCents, w.w0From,
+  const ahead = lapseRule.rhythmAheadSql("a.donor_id", w.today);   // INSIGHTS-1: lapsing respects rhythm
+  const args = [w.lapsingFrom, w.lapsingTo, ...ahead.args, cuts.majorCents, cuts.midCents, w.w0From,
     w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.w0From, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
@@ -117,7 +118,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   // lapsing and lapsed exactly as the stored last gift date does (lapseRule.js).
   const sql = `
     SELECT a.donor_id, a.last12, LEAST(a.first_date, a.imp_first) AS first_date, GREATEST(a.last_date, a.imp_last) AS last_date,
-           (GREATEST(a.last_date, a.imp_last)::date BETWEEN ?::date AND ?::date) AS lapsing,
+           (GREATEST(a.last_date, a.imp_last)::date BETWEEN ?::date AND ?::date AND NOT ${ahead.sql}) AS lapsing,
            CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
            CASE WHEN a.w0 AND a.prev_date IS NULL AND a.imp_prev IS NULL THEN 'new'
                 -- The gift that brought them back is the first in the last 12
