@@ -473,7 +473,7 @@ async function originalGiftFor(orgId, read) {
   if (m.status !== "matched") return { state: "ask", giftId: null, choices: [] };
   const gifts = await D.query(
     `SELECT id, amount::float AS amount, date FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0
-      ORDER BY date DESC LIMIT 6`, [orgId, m.id]);
+      ORDER BY date DESC NULLS LAST LIMIT 6`, [orgId, m.id]);
   const want = read.originalGiftDate ? String(read.originalGiftDate) : null;
   const hit = want ? gifts.filter(g => String(g.date).slice(0, 10) === want.slice(0, 10)) : [];
   const toC = g => ({ id: g.id, amountCents: Math.round(g.amount * 100), date: String(g.date).slice(0, 10) });

@@ -273,7 +273,7 @@ async function buildUnderstanding(req, body) {
   // an event already on the calendar with the suggested name
   let events = [];
   const nm = (body.answers && body.answers.eventName) || (u.questions.find(q => q.id === "date") || {}).suggestedEventName;
-  if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC LIMIT 5", [orgId, nm]);
+  if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC NULLS LAST LIMIT 5", [orgId, nm]);
   u.ready = u.questions.filter(q => !q.optional).length === 0;
   const button = Rm.importButtonSentence(u, { matched: matchedPeople });
   if (!u.ready) button.text = `Answer ${u.questions.filter(q => !q.optional).length === 1 ? "1 question" : u.questions.filter(q => !q.optional).length + " questions"} first`;

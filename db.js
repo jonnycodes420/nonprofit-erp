@@ -5693,6 +5693,9 @@ async function runSchemaInit(pool) {
   // a FALLBACK for rows written before this column existed; nothing is
   // rewritten behind anybody's back.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  // IMPORT-4: a gift whose day the file never gave is stored with no date (an
+  // undated gift). It counts in Lifetime and its event, never in a period.
+  await pool.query(`ALTER TABLE gifts ALTER COLUMN date DROP NOT NULL`);
   // IMPORT-3: what one spreadsheet import made, so Undo removes the whole file:
   // its pledges, the households and the event it created. A pledge made at an
   // event remembers which.

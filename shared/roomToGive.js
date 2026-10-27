@@ -131,7 +131,10 @@ export function assess(facts) {
   else if (signals.length >= 3 && (signals.includes("bigGift") || signals.includes("rising"))) word = "strong";
   else word = signals.length ? "some" : "unknown";
   if (falling && word === "strong") word = "some";
-  if (!gifts.length && !signals.length) reasons.unshift({ key: "noGifts", text: "No gifts on file yet" });
+  if (!gifts.length && !signals.length) reasons.unshift(f.undated > 0
+    // IMPORT-4: their gifts came with no date, and room to give reads gifts by year.
+    ? { key: "noGifts", text: "Their gifts on file have no date, so there is no pattern to read yet" }
+    : { key: "noGifts", text: "No gifts on file yet" });
   else if (!signals.length) reasons.push({ key: "nothingYet", text: "Nothing on their own file points to more room yet" });
 
   const s = f.screening;

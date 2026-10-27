@@ -27,7 +27,7 @@
 // the total nor the count (creditTypes.js).
 // Only creditTypes.js is required, so server.js, afterChange.js and the seed all load it.
 const { NOT_CREDIT } = require("./creditTypes");
-const LAST_GIFT_ORDER = "g.date DESC, g.created_at DESC, g.id DESC";
+const LAST_GIFT_ORDER = "g.date DESC NULLS LAST, g.created_at DESC, g.id DESC";
 
 // FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
 // gave one; when it gave only a last gift date, that date, because the person
@@ -37,7 +37,9 @@ const LAST_GIFT_ORDER = "g.date DESC, g.created_at DESC, g.id DESC";
 const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
 
 // A gift on file that the imported total does not already cover.
-const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date > dd.imported_through)";
+// IMPORT-4: an undated gift (date IS NULL) is never inside the old system's
+// period, because nobody knows its day: it is always counted.
+const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date IS NULL OR g.date > dd.imported_through)";
 
 const DONOR_SUMMARY_UPDATE = (scope = "") => `
   UPDATE donors d SET
@@ -62,7 +64,7 @@ const DONOR_SUMMARY_UPDATE = (scope = "") => `
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS before_n,
                        MIN(g.date) FILTER (WHERE g.amount > 0) AS row_first,
                        MAX(g.date) AS row_last,
-                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}))[1] AS row_last_amt
+                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL))[1] AS row_last_amt
                   FROM donors dd LEFT JOIN gifts g ON g.donor_id = dd.id AND g.org_id = dd.org_id
                  WHERE dd.org_id = $1 ${scope.replace(/\bd\./g, "dd.")}
                  GROUP BY dd.id) x) s

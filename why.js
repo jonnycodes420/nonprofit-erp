@@ -83,7 +83,7 @@ async function defaultCampaign(orgId) {
   const rows = await query(`SELECT id, name, start_date::text AS start_date FROM campaigns
      WHERE org_id = ? AND start_date IS NOT NULL AND start_date <= ? AND sent_at IS NULL
        AND COALESCE(subject,'') = '' AND COALESCE(goal_amount,0) > 0
-     ORDER BY start_date DESC, name LIMIT 12`, [orgId, t]);
+     ORDER BY start_date DESC NULLS LAST, name LIMIT 12`, [orgId, t]);
   for (const c of rows) {
     const full = await AW.campaignRow(orgId, c.id);
     const { compare } = await AW.comparableFor(orgId, full);
@@ -97,7 +97,7 @@ async function comparableCampaigns(orgId, limit = 2) {
   const t = await today(orgId);
   const rows = await query(`SELECT id, name, start_date::text AS start_date FROM campaigns
      WHERE org_id = ? AND start_date IS NOT NULL AND start_date <= ? AND sent_at IS NULL
-       AND COALESCE(subject,'') = '' ORDER BY start_date DESC, name LIMIT 12`, [orgId, t]);
+       AND COALESCE(subject,'') = '' ORDER BY start_date DESC NULLS LAST, name LIMIT 12`, [orgId, t]);
   const out = [];
   for (const c of rows) {
     const { compare } = await AW.comparableFor(orgId, await AW.campaignRow(orgId, c.id));
@@ -351,12 +351,12 @@ async function retentionCohort(orgId, year, md) {
   const first = new Map(), base = new Map(), kept = new Set();
   for (const g of gifts) {
     if (!first.has(g.donor_id)) first.set(g.donor_id, g);
-    if (g.date.slice(0, 4) === py) {
+    if (String(g.date || "").slice(0, 4) === py) {
       const b = base.get(g.donor_id) || { cents: 0, last: g.date, monthly: false };
       b.cents += toC(g.amount); b.last = g.date; if (g.recurring_subscription_id) b.monthly = true;
       base.set(g.donor_id, b);
     }
-    if (g.date.slice(0, 4) === y && g.date.slice(5) <= md) kept.add(g.donor_id);
+    if (String(g.date || "").slice(0, 4) === y && String(g.date || "").slice(5) <= md) kept.add(g.donor_id);
   }
   return { first, base, kept };
 }
@@ -425,7 +425,7 @@ async function stopped(orgId, { donor } = {}) {
   if (!d) return null;
   const t = await today(orgId);
   const H = await homeNote();
-  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, acknowledgement_sent FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC, id`, [orgId, d.id]);
+  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount, acknowledgement_sent FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 ORDER BY date DESC NULLS LAST, id`, [orgId, d.id]);
   const subject = { donor: { id: d.id, name: d.name } };
   if (!gifts.length) return { ...subject, facts: { name: d.name, lastGift: null }, reasons: [], who: [], step: null, cantSee: null };
   const last = gifts[0];
@@ -453,7 +453,7 @@ async function stopped(orgId, { donor } = {}) {
     measure: "count", phrase: `they were asked for ${fmt(toC(asks[0].target_amount))}, more than their largest gift of ${fmt(maxC)}`,
     definition: "Each ask of theirs for more than the largest gift they had made." }));
   // No contact for months before the last gift, or since.
-  const contact = await query(`SELECT id, type, LEFT(date,10) AS date FROM interactions WHERE org_id = ? AND donor_id = ? AND type IN ('call','meeting','email','stewardship') ORDER BY date DESC LIMIT 5`, [orgId, d.id]);
+  const contact = await query(`SELECT id, type, LEFT(date,10) AS date FROM interactions WHERE org_id = ? AND donor_id = ? AND type IN ('call','meeting','email','stewardship') ORDER BY date DESC NULLS LAST LIMIT 5`, [orgId, d.id]);
   const lastContact = contact[0] ? contact[0].date : null;
   const months = Math.floor(orgTime.daysBetween(lastContact || gifts[gifts.length - 1].date, t) / 30);
   if (months >= 6) reasons.push(reason("contact", lastContact ? `No contact in ${months} months` : "No contact ever logged", contact.map(i => row(i.id, "interaction", d.id, d.name, i.date, null, i.type)), {
@@ -685,14 +685,14 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const [gifts, contact, steps, events, hours, subs] = await Promise.all([
     query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, g.acknowledgement_sent, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
              FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
-            WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 ORDER BY g.date DESC, g.id`, [orgId, d.id]),
+            WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]),
     query(`SELECT id, type, LEFT(date,10) AS date, logged_by_name FROM interactions WHERE org_id = ? AND donor_id = ?
-             AND type IN ('call','meeting','email','stewardship','note') ORDER BY date DESC LIMIT 5`, [orgId, d.id]),
+             AND type IN ('call','meeting','email','stewardship','note') ORDER BY date DESC NULLS LAST LIMIT 5`, [orgId, d.id]),
     query(`SELECT id, next_step_label, LEFT(due_date::text,10) AS due, owner_name FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
             ORDER BY due_date NULLS LAST LIMIT 1`, [orgId, d.id]),
     query(`SELECT a.id, e.name, LEFT(e.date::text,10) AS date FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
-            WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC`, [orgId, d.id]).catch(() => []),
-    query(`SELECT id, LEFT(date,10) AS date, hours, role FROM volunteer_shifts WHERE org_id = ? AND person_id = ? ORDER BY date DESC`, [orgId, d.id]).catch(() => []),
+            WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC NULLS LAST`, [orgId, d.id]).catch(() => []),
+    query(`SELECT id, LEFT(date,10) AS date, hours, role FROM volunteer_shifts WHERE org_id = ? AND person_id = ? ORDER BY date DESC NULLS LAST`, [orgId, d.id]).catch(() => []),
     query(`SELECT id, amount, status, COALESCE(last_failed_at, first_failed_at)::date::text AS failed FROM recurring_subscriptions
             WHERE org_id = ? AND donor_id = ? AND first_failed_at IS NOT NULL AND status IN ('past_due','recovering','canceled','lost')`, [orgId, d.id]),
   ]);
@@ -733,9 +733,9 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
     phrase: plain(drift.reason) || "they are past their usual gap between gifts", definition: "Their last gift; they are past their own usual gap between gifts (the same engine as Drifting on Home)." }));
   // This year against last year, calendar years to today.
   const y = Number(t.slice(0, 4)), md = t.slice(5);
-  const thisYear = gifts.filter(g => g.date.slice(0, 4) === String(y));
-  const lastYearAll = gifts.filter(g => g.date.slice(0, 4) === String(y - 1));
-  const lastYearToDate = lastYearAll.filter(g => g.date.slice(5) <= md);
+  const thisYear = gifts.filter(g => String(g.date || "").slice(0, 4) === String(y));
+  const lastYearAll = gifts.filter(g => String(g.date || "").slice(0, 4) === String(y - 1));
+  const lastYearToDate = lastYearAll.filter(g => String(g.date || "").slice(5) <= md);
   const thisC = thisYear.reduce((s, g) => s + toC(g.amount), 0), lastAllC = lastYearAll.reduce((s, g) => s + toC(g.amount), 0);
   const lastToDateC = lastYearToDate.reduce((s, g) => s + toC(g.amount), 0);
   if (intent === "changed" || (thisC < lastToDateC && !reasons.some(r => r.key === "campaign"))) {
@@ -792,7 +792,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   return {
     ...subject, intent,
     facts: {
-      name, intent, lifetimeCents: lifetime, giftCount: gifts.length, firstYear: first.date.slice(0, 4),
+      name, intent, lifetimeCents: lifetime, giftCount: gifts.length, firstYear: String(first.date || "").slice(0, 4),
       lastGift: { cents: toC(last.amount), date: last.date, campaign: last.campaign || null }, lastGiftPhrase: `${fmt(toC(last.amount))} ${whenPhrase(H, last.date, t)}`,
       stand, askCents: askC, thisYearCents: thisC, lastYearCents: lastAllC, lastYearToDateCents: lastToDateC, year: y,
       openStep: open ? { label: plain(open.next_step_label || "a follow-up"), due: open.due, owner: open.owner_name || null } : null,

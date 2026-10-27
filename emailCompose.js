@@ -96,7 +96,7 @@ async function personFields(ctx, donor, { campaignName = "" } = {}) {
   let last = null;
   if (donor && donor.id) {
     [last] = await query(
-      "SELECT amount, date FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC, created_at DESC LIMIT 1",
+      "SELECT amount, date FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1",
       [donor.id, ctx.orgId]).catch(() => []);
   }
   return {

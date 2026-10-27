@@ -16,10 +16,13 @@ const { NOT_CREDIT } = require("./creditTypes");
 // the caller's; the donor join is inside, so a caller cannot forget it.
 // gifts.date is TEXT (YYYY-MM-DD) and the campaign's dates are DATE, so the
 // comparison is on the first ten characters, cast once.
+// IMPORT-4: a gift with no date (an import that gave none) attributed to the
+// campaign counts toward it: it is not known to be outside the window, and the
+// file said it was given to this campaign or event.
 const CAMPAIGN_GIFT_MATCH = (g = "g", c = "c") =>
   `(${g}.campaign_id = ${c}.id OR (${g}.campaign_id IS NULL AND ${g}.campaign = ${c}.name))
-   AND (${c}.start_date IS NULL OR LEFT(${g}.date, 10)::date >= ${c}.start_date)
-   AND (${c}.end_date IS NULL OR LEFT(${g}.date, 10)::date <= ${c}.end_date)
+   AND (${c}.start_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date >= ${c}.start_date)
+   AND (${c}.end_date IS NULL OR ${g}.date IS NULL OR LEFT(${g}.date, 10)::date <= ${c}.end_date)
    AND ${NOT_CREDIT(g)}
    AND NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${g}.donor_id AND dx.org_id = ${g}.org_id AND dx.deleted_at IS NOT NULL)`;
 
@@ -39,6 +42,7 @@ const day = v => v == null || v === "" ? null
 
 function inWindow(date, start, end) {
   const d = day(date), s = day(start), e = day(end);
+  if (!d) return true;   // IMPORT-4: an undated gift is never outside a window
   return (!s || d >= s) && (!e || d <= e);
 }
 
