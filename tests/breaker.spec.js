@@ -81,7 +81,7 @@ function startMock(name, port) {
       let b = ""; req.on("data", c => (b += c));
       req.on("end", () => {
         let body = b; try { body = JSON.parse(b); } catch { }
-        st.calls.push({ method: req.method, url: req.url, body, at: Date.now() });
+        st.calls.push({ method: req.method, url: req.url, body, at: performance.now() });
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify({ id: `${name}_${st.calls.length}` }));
       });
@@ -200,7 +200,7 @@ async function chooseFile(page, file) {
   await page.waitForSelector('[data-testid="sheet-import-go"]:not([disabled])', { timeout: 60000 });
 }
 const textOf = async (page, sel) => (await page.locator(sel).first().textContent({ timeout: 2000 }).catch(() => "")) || "";
-async function waitForDb(fn, ms = 30000) { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await fn(); if (v) return v; await wait(250); } return v; }
+async function waitForDb(fn, ms = 30000) { const t0 = performance.now(); let v; while (performance.now() - t0 < ms) { v = await fn(); if (v) return v; await wait(250); } return v; }
 
 // ═════════════════════════════════════════════════════════════════════════
 // CASE 1 · EVERY BUTTON THAT WRITES, PRESSED TWO AND THREE TIMES
@@ -824,7 +824,7 @@ async function caseEnter() {
 }
 
 async function main() {
-  const t0 = Date.now();
+  const t0 = performance.now();
   console.log(`breaker (HARDEN-1 item 4) · sleep ${SLEEP_SECS}s · org binding expected: ${EXPECT_BINDING ? "yes" : "no"}${assertSurfacesAgree ? " · assertSurfacesAgree loaded" : " · assertSurfacesAgree not on this branch: minimal check only"}`);
   const why = browserReady();
   if (browserLegOrSkip(why, "(breaker)")) { await closeDb(); return summary(); }
@@ -853,7 +853,7 @@ async function main() {
   await sleeper;
   await browser.close();
   for (const s of Object.values(mocks)) if (s.srv) s.srv.close();
-  console.log(`  wall time ${Math.round((Date.now() - t0) / 1000)}s`);
+  console.log(`  wall time ${Math.round((performance.now() - t0) / 1000)}s`);
   await closeDb();
   summary();
 }
