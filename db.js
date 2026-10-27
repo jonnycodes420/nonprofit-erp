@@ -8467,6 +8467,36 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
 
+  // LIST-1 · THE DONOR LIST'S COLUMNS. One layout per person (user_id), and
+  // one org default (user_id ''), set by an admin. A saved view is a name for
+  // a set of columns plus a filter, kept per person. Columns are field keys
+  // from donorList.js, a custom field as "cf:<key>".
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS county TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_zip ON donors (org_id, zip)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_list_layouts (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+      widths JSONB NOT NULL DEFAULT '{}'::jsonb,
+      page_size INTEGER NOT NULL DEFAULT 50,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, user_id))`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_list_views (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+      widths JSONB NOT NULL DEFAULT '{}'::jsonb,
+      filters JSONB,
+      page_size INTEGER NOT NULL DEFAULT 50,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_list_views_user ON donor_list_views (org_id, user_id)`);
+
   // FIX-49 decision 8 · ONE HOUSEHOLD GROUPING. Spouses and household links
   // become household records (the only grouping); the links themselves stay.
   await householdsFromLinks(pool);

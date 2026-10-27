@@ -2,7 +2,7 @@
 //
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { Figure } from "./Figure";
 import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
 import { apiFetch, API, getToken } from "../api";
@@ -10,6 +10,8 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, MIN_WIDTH, alignFor, cleanColumns, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
+import { FilterBuilder, ViewsMenu } from "./DonorFilters";
 import { AddToGroup, SaveAsGroup } from "./Groups";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
@@ -239,7 +241,34 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
     </Modal>
   );
 }
-function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
+// LIST-1 · the Room to give column, by either key the setup may use.
+const isRoomKey=k=>k==="room_to_give"||k==="room";
+// LIST-1 · one tag on everyone ticked (or everyone matching the filter).
+function BulkTag({ids,disabled,onDone}){
+  const [open,setOpen]=useState(false);
+  const [tag,setTag]=useState("");
+  const [busy,setBusy]=useState(false);
+  const go=async()=>{
+    const t=tag.trim();
+    if(!t||!ids.length)return;
+    setBusy(true);
+    try{const r=await apiFetch("/donors/bulk-tag",{method:"POST",body:JSON.stringify({ids,tag:t})});setOpen(false);setTag("");onDone&&onDone(`Tagged ${Number(r&&r.tagged||0).toLocaleString("en-US")} ${Number(r&&r.tagged)===1?"person":"people"} "${t}".`);}
+    catch(e){onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nobody was tagged."));}
+    setBusy(false);
+  };
+  if(!open)return<button type="button" data-testid="bulk-add-tag" onClick={()=>setOpen(true)} disabled={disabled}
+    style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Add tag</button>;
+  return(
+    <span style={{display:"inline-flex",gap:6,alignItems:"center"}}>
+      <input autoFocus data-testid="bulk-tag-input" value={tag} onChange={e=>setTag(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")go();if(e.key==="Escape")setOpen(false);}}
+        placeholder="Tag" aria-label="Tag" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12,color:T.ink,width:130,outline:"none"}}/>
+      <button type="button" data-testid="bulk-tag-apply" onClick={go} disabled={busy||!tag.trim()}
+        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy||!tag.trim()?0.6:1}}>Tag {ids.length.toLocaleString("en-US")}</button>
+      <button type="button" onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:T.inkInverse,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Cancel</button>
+    </span>
+  );
+}
+function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).length>1?r:null;})();
@@ -268,6 +297,66 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
   useEffect(()=>{localStorage.setItem("steward_dir_density",density);},[density]);
   const compact=density==="compact";
+  // ── LIST-1 · HER COLUMNS ─────────────────────────────────────────────────
+  const setup=listSetup||FALLBACK_SETUP;
+  const lay=layout||setup.layout;
+  const fieldByKey=useMemo(()=>Object.fromEntries((setup.fields||[]).map(f=>[f.key,f])),[setup]);
+  const allCols=cleanColumns(lay.columns,setup.fields);
+  // Room to give is only ever drawn for someone who may see it.
+  const visCols=allCols.filter(k=>!(isRoomKey(k)&&!canMajorGifts));
+  const colWidths=lay.widths||{};
+  const [editingCols,setEditingCols]=useState(false);
+  const [dragCol,setDragCol]=useState(null);
+  const [matchingIds,setMatchingIds]=useState(null);   // every id matching the filter, once she asks for them
+  const [matchingBusy,setMatchingBusy]=useState(false);
+  const paramsKey=JSON.stringify(exportParams||{});
+  useEffect(()=>{setMatchingIds(null);},[paramsKey]);
+  function headerSort(k){
+    const f=fieldByKey[k];
+    if(!f||!f.sortable||!setSort)return;
+    const textual=!f.format||["text","name","list","stage","owner"].includes(f.format);
+    const active=sortBy===k||(k==="lifetime"&&(!sortBy||sortBy==="total_giving"));
+    const cur=active?(sortDir||(k==="lifetime"?"desc":textual?"asc":"desc")):"";
+    const next=active?(cur==="asc"?"desc":"asc"):(textual?"asc":"desc");
+    setSort(k,next);
+  }
+  function sortMark(k){
+    const active=sortBy===k||(k==="lifetime"&&(!sortBy||sortBy==="total_giving"));
+    if(!active)return "";
+    const f=fieldByKey[k];
+    const textual=!f||!f.format||["text","name","list","stage","owner"].includes(f.format);
+    const d=sortDir||(k==="lifetime"?"desc":textual?"asc":"desc");
+    return d==="asc"?" ↑":" ↓";
+  }
+  function startResize(k){
+    return e=>{
+      e.preventDefault();e.stopPropagation();
+      const cell=e.currentTarget.parentElement;
+      const startW=cell.getBoundingClientRect().width;
+      const startX=e.clientX;
+      let latest=colWidths;
+      function move(ev){const w=Math.max(MIN_WIDTH,Math.round(startW+ev.clientX-startX));latest={...colWidths,[k]:w};if(setLayoutLocal)setLayoutLocal(l=>({...(l||lay),widths:latest}));}
+      function up(){window.removeEventListener("mousemove",move);window.removeEventListener("mouseup",up);
+        if(persistLayout)persistLayout({widths:latest}).catch(err=>console.warn("[list-layout]",err&&err.message));}
+      window.addEventListener("mousemove",move);window.addEventListener("mouseup",up);
+    };
+  }
+  function dropCol(target){
+    if(!dragCol||dragCol===target||target===NAME_KEY){setDragCol(null);return;}
+    const next=moveKey(allCols,dragCol,target);
+    setDragCol(null);
+    if(persistLayout)persistLayout({columns:next}).catch(err=>console.warn("[list-layout]",err&&err.message));
+  }
+  async function selectAllMatching(){
+    setMatchingBusy(true);
+    try{
+      const qs=new URLSearchParams();
+      Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
+      const r=await apiFetch(`/donors/ids?${qs.toString()}`);
+      setMatchingIds(Array.isArray(r&&r.ids)?r.ids:[]);
+    }catch(e){flash((e&&e.sentence)||errorMessage(e,"Steward could not gather everyone matching."));}
+    setMatchingBusy(false);
+  }
 
   // Stage/owner already applied server-side; the rows arrive filtered.
   const filtered=donors;
@@ -398,7 +487,9 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   const showPortfolios=officers.length>1; // single-user shop: no color clutter at all
 
   const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
-  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 88px 60px"+(canMajorGifts?" 104px":"")+(isAdmin?" 80px":"");
+  // LIST-1: one track per chosen column, her widths where she has set them.
+  const colGrid="36px "+visCols.map(k=>columnTrack(k,colWidths)).join(" ")+(isAdmin?" 80px":"");
+  const gridMin=72+gridMinWidth(visCols,colWidths)+(isAdmin?80:0);
   const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:T.ink,cursor:"pointer",borderBottom:"1px solid "+T.bg2,fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(totalDonors===0&&!hasSampleData){
@@ -461,6 +552,15 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <option value="generosity">Sort: generosity</option>
           {canMajorGifts&&<option value="room_to_give">Sort: room to give</option>}
         </select>}
+        {/* LIST-1: her columns, her saved views, rows per page. */}
+        {listSetup&&<button type="button" data-testid="dir-edit-columns" onClick={()=>setEditingCols(true)}
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          Edit columns
+        </button>}
+        {listSetup&&onPickView&&<ViewsMenu views={views} activeId={activeViewId} onPick={onPickView} onSave={onSaveView} onDelete={onDeleteView}/>}
+        {onPageSize&&<select data-testid="dir-page-size" aria-label="Rows per page" value={pageSize} onChange={e=>onPageSize(Number(e.target.value))} style={filterSel}>
+          {PAGE_SIZES.map(n=><option key={n} value={n}>{n} per page</option>)}
+        </select>}
         {household&&<span data-testid="dir-household" style={{fontSize:12,color:T.ink,fontWeight:700,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",display:"inline-flex",gap:8,alignItems:"center"}}>
           One household
           {clearHousehold&&<button onClick={clearHousehold} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,fontSize:12,cursor:"pointer"}}>Show everyone</button>}
@@ -473,8 +573,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             because a count of 40 that says "donors" is a lie about 28 of them. */}
         <span style={{fontSize:12,color:T.ink3}}>
           {donorsOnlyPage
-            ? `${serverTotal} donor${serverTotal!==1?"s":""}`
-            : `${serverTotal} ${serverTotal!==1?"people":"person"}`}
+            ? `${Number(serverTotal).toLocaleString("en-US")} donor${serverTotal!==1?"s":""}`
+            : `${Number(serverTotal).toLocaleString("en-US")} ${serverTotal!==1?"people":"person"}`}
         </span>
         {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only, server-side filtering for these is not available yet."
           style={{fontSize:11,color:T.terracotta,fontWeight:700,background:T.terracotta+"14",border:"1px solid "+T.terracotta+"40",borderRadius:99,padding:"3px 10px"}}>
@@ -516,6 +616,11 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         </div>
       </div>
 
+      {/* LIST-1: filter by anything, as chips; the server runs it. */}
+      {listSetup&&setWhere&&<FilterBuilder setup={setup} where={where} setWhere={setWhere} error={filterError} total={serverTotal}/>}
+      {editingCols&&<ColumnEditor setup={setup} layout={lay} onClose={()=>setEditingCols(false)}
+        onSave={cols=>persistLayout({columns:cols})} onReset={resetLayout} onSaveOrg={saveOrgLayout}/>}
+
       {/* Officer portfolios (BUILD-14) — color legend + rollups. Team plan
           gets color assignment; Core sees a lock hint; a 1-person shop sees
           nothing (graceful, no empty "assign" clutter). */}
@@ -542,12 +647,23 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       )}
 
       {/* Bulk action bar — shown when ≥1 rows selected */}
-      {selIds.size>0&&(
-        <div style={{background:T.ink,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:13,fontWeight:700,color:T.inkInverse,whiteSpace:"nowrap"}}>{selFiltered.length} selected</span>
-          <button onClick={()=>setSelIds(new Set())} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
+      {(selIds.size>0||matchingIds)&&(
+        <div data-testid="dir-bulk-bar" style={{background:T.ink,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.inkInverse,whiteSpace:"nowrap"}}>{matchingIds?`All ${matchingIds.length.toLocaleString("en-US")} matching selected`:`${selFiltered.length} selected`}</span>
+          <button onClick={()=>{setSelIds(new Set());setMatchingIds(null);}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
           <div style={{flex:1,minWidth:8}}/>
 
+          {/* LIST-1: everyone matching the filter: a group, a tag, or the file. */}
+          {matchingIds&&<>
+            {!isReadOnly&&<AddToGroup donorIds={matchingIds}/>}
+            {!isReadOnly&&<BulkTag ids={matchingIds} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
+            <button type="button" data-testid="bulk-export" onClick={exportCsv} disabled={exporting}
+              style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+              {exporting?"Exporting…":"Export"}
+            </button>
+          </>}
+          {!matchingIds&&<>
+          {!isReadOnly&&<BulkTag ids={selFiltered.map(d=>d.id)} disabled={busy} onDone={m=>{flash(m);if(onBulkDone)onBulkDone();}}/>}
           {/* BUILD-85 — PLAN A FOLLOW-UP for the selection. "Call these twenty
               lapsed donors this month" had nowhere to live before this; it
               lived in Tasks, which is what kept two follow-up systems running
@@ -634,6 +750,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
               Delete
             </button>
           )}
+          </>}
         </div>
       )}
 
@@ -645,6 +762,17 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       {planSel&&<PlanFollowUpModal donors={planSel}
         onSaved={()=>{setSelIds(new Set());}} onClose={()=>setPlanSel(null)}/>}
 
+      {/* LIST-1: the whole page is ticked; offer everyone the filter matches. */}
+      {!loading&&!matchingIds&&allChecked&&serverTotal>filtered.length&&(
+        <div style={{fontSize:12.5,color:T.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          All {filtered.length} on this page are selected.
+          <button type="button" data-testid="dir-select-all-matching" onClick={selectAllMatching} disabled={matchingBusy}
+            style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>
+            {matchingBusy?"Gathering everyone…":`Select all ${serverTotal.toLocaleString("en-US")} matching`}
+          </button>
+        </div>
+      )}
+
       {/* Donor table */}
       {loading
         ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"48px 0",color:T.ink3,fontSize:13}}>
@@ -652,31 +780,43 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         </div>
         :filtered.length===0
         ?<EmptyState title="No donors found" message="Try adjusting your filters or search term."/>
-        :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
+        :<div data-testid="dir-table" style={{background:T.white,borderRadius:14,overflowX:"auto",overflowY:"hidden",border:"1px solid "+T.bg3}}>
           {/* Header — light treatment (not a solid green fill) so Directory
               reads as its own surface instead of blurring into the Kanban
               stage headers and Home hero banner, which are both solid dark
               green. Green identity stays via text color + underline accent. */}
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:T.ground,borderBottom:"2px solid "+T.bg3,alignItems:"center"}}>
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:"10px 18px",background:T.ground,borderBottom:"2px solid "+T.bg3,alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last gift",ENGAGEMENT_LABEL,GIVING_STRENGTH_LABEL,...(canMajorGifts?[ROOM_HEAD]:[]),...(isAdmin?[""]:[])]
-              .map((h,i)=>h===ROOM_HEAD?(
-                <button key={i} type="button" data-testid="dir-room-sort" aria-pressed={roomSort} onClick={()=>setSortBy&&setSortBy(roomSort?"":"room_to_give")}
-                  title={roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"}
-                  style={{...HEAD,color:roomSort?T.greenDk:T.ink3,textAlign:"right",background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",textDecoration:roomSort?"underline":"none"}}>
-                  Room to give{roomSort?" ↓":""}
-                </button>
-              ):(
-                <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{...HEAD,color:T.ink3,textAlign:i>=3?"right":"left"}}>
-                  {h}
-                  {h===GIVING_STRENGTH_LABEL&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
-                  {h===ENGAGEMENT_LABEL&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
+            {visCols.map(k=>{
+              const f=fieldByKey[k]||{key:k,label:k};
+              const room=isRoomKey(k);
+              const label=k===NAME_KEY?"Donor":k==="generosity"?GIVING_STRENGTH_LABEL:k==="engagement"?ENGAGEMENT_LABEL:room?ROOM_HEAD:f.label;
+              const align=k===NAME_KEY||k==="stage"||k==="owner"?"left":["engagement","generosity","lifetime","last_gift_date"].includes(k)||room?"right":alignFor(f);
+              const sortable=room||(f.sortable&&!!setSort);
+              return(
+                <div key={k} data-testid={`dir-col-head-${k}`} role="columnheader"
+                  draggable={k!==NAME_KEY} aria-sort={sortMark(k)?(sortMark(k)===" ↑"?"ascending":"descending"):undefined}
+                  onDragStart={e=>{setDragCol(k);e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",k);}catch{/* old browsers */}}}
+                  onDragOver={e=>{if(dragCol&&k!==NAME_KEY)e.preventDefault();}}
+                  onDrop={e=>{e.preventDefault();dropCol(k);}}
+                  onDragEnd={()=>setDragCol(null)}
+                  onClick={()=>{if(room){setSortBy&&setSortBy(roomSort?"":"room_to_give");return;}if(sortable)headerSort(k);}}
+                  title={room?(roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"):sortable?"Sort by this column. Drag to move it.":"Drag to move this column."}
+                  className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":""}
+                  style={{...HEAD,position:"relative",color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,textAlign:align,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",padding:"0 10px 0 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",background:dragCol===k?T.bg2:"transparent"}}>
+                  {label}{room?(roomSort?" ↓":""):sortMark(k)}
+                  {k==="generosity"&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
+                  {k==="engagement"&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
+                  <span role="separator" aria-orientation="vertical" aria-label={`Resize ${label}`} data-testid={`dir-col-resize-${k}`}
+                    onMouseDown={startResize(k)} onClick={e=>e.stopPropagation()} draggable={false}
+                    style={{position:"absolute",right:0,top:-6,bottom:-6,width:7,cursor:"col-resize",borderRight:"2px solid "+T.bg3}}/>
                 </div>
-              ))}
+              );
+            })}
+            {isAdmin&&<div className="dir-col-assign"/>}
           </div>
           {/* Rows */}
           {shownRows.map((d,idx)=>{
@@ -687,13 +827,18 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
             return[
               <div key={d.id} className="dir-donor-row" onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}
-                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
+                style={{display:"grid",gridTemplateColumns:colGrid,minWidth:gridMin,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?T.green100:T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
                 <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
                   <input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}}
                     style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}} onClick={e=>e.stopPropagation()}/>
                 </div>
+                {(()=>{
+                  // LIST-1: the cells the list always drew keep their own
+                  // drawing; any other column is the server's value, by key.
+                  const special={
+                  name:()=>(<>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   {/* BUILD-98 — her face, on the list she reads every day.
                       The photo was on the profile and nowhere else, which is
@@ -711,9 +856,13 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>
+                  </>),
+                  stage:()=>(<>
                 <div className="dir-col-stage">
                   <span style={{...stageChip(stage),borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
+                  </>),
+                  owner:()=>(<>
                 <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   {(()=>{
                     // A donor assigned to an invited-but-not-yet-accepted officer
@@ -735,27 +884,47 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     </>);
                   })()}
                 </div>
+                  </>),
+                  lifetime:()=>(<>
                 <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
+                  </>),
+                  last_gift_date:()=>(<>
                 <div style={{textAlign:"right"}}>
                   {d.lastGift
                     ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
                     :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
                 </div>
+                  </>),
+                  engagement:()=>(<>
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
                   {d.engagement!=null
                     ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
                     :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
+                  </>),
+                  generosity:()=>(<>
                 <div style={{textAlign:"right"}}>
                   {sc!=null
                     ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                     :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
+                  </>),
+                  room_to_give:()=>(<>
                 {/* FIX-33: the word rides on the row (GET /donors), from the same
                     prospect.roomToGive the profile reads; never a map loaded once. */}
-                {canMajorGifts&&<div data-testid="dir-room" data-room-word={(d.room||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
+                <div data-testid="dir-room" data-room-word={(d.room||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
                   {(d.room||{}).label||ROOM_LABEL.unknown}
-                </div>}
+                </div>
+                  </>),
+                  };
+                  special.room=special.room_to_give;
+                  return visCols.map(k=>{
+                    if(special[k])return <Fragment key={k}>{special[k]()}</Fragment>;
+                    const f=fieldByKey[k];
+                    const txt=formatCell(f,d.cells?d.cells[k]:undefined);
+                    return <div key={k} data-testid={`dir-cell-${k}`} title={txt} style={{textAlign:alignFor(f),fontSize:12.5,color:txt?T.ink:T.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:10,minWidth:0}}>{txt}</div>;
+                  });
+                })()}
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
                   {/* Reassigning the owner is Team (server 403s for Core). */}
                   {teamPortfolios&&(d.assignedToName||d.pendingAssigneeName)&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}

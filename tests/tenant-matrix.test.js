@@ -432,6 +432,10 @@ async function seedOrg(o, tag) {
   // are probed against org B's real batch (org A must get 404, never touch it).
   await q(`INSERT INTO old_report_batches (id,org_id,created_by,created_by_name) VALUES ($1,$2,'system:test','test') ON CONFLICT (id) DO NOTHING`,
     [`orb_${o}`, o]).catch(() => {});
+  // LIST-1 — a saved view of the Donors list. Org A deleting org B's view
+  // would take away a list somebody else built.
+  await q(`INSERT INTO donor_list_views (id,org_id,user_id,name,created_by,created_by_name) VALUES ($1,$2,$3,'Probe view','system:test','test')
+           ON CONFLICT (id) DO NOTHING`, [`lv_${o}`, o, `u_${o}_staff`]).catch(e => console.error("list view seed:", e.message));
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -446,6 +450,7 @@ function bResolver(routePath, param) {
   // rather than by the segment, or the delivery probe would aim an endpoint id
   // at it and 404 for the wrong reason.
   if (seg1 === "calendar" && param === "id") return `cal_${B}`;
+  if (seg1 === "donors" && routePath.includes("/list-views/") && param === "id") return `lv_${B}`;   // LIST-1
   if (seg1 === "me" && routePath.includes("/sessions/") && param === "id") return `ses_${B}`;
   // ONBOARD-1 — two kinds of row under /setup: a run and a prepared invitation.
   if (seg1 === "setup" && param === "id") return routePath.includes("/invites/") ? `si_${B}` : `sr_${B}`;

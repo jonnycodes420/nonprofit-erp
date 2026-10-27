@@ -78,7 +78,12 @@ const DONOR_METRIC_RULES = {
   lapsed_count: { lifecycle: "lapsed", notDeceased: "1" },
   recurring_donors: { monthly: "1", notDeceased: "1" },
   volunteer_count: { role: "volunteer" },   // FIX-31: on the roster, the Volunteers tile's number
+  donor_list: { role: "donor" },             // LIST-1: the Donors list, with the question's own rules
 };
+// The rules a donor-level metric reads: its own, and for the Donors list the
+// rules the question named (zip, an event they came to, a city...).
+const donorMetricRules = plan => (plan.metric === "donor_list"
+  ? { ...DONOR_METRIC_RULES.donor_list, ...((plan.filters && plan.filters.rules) || {}) } : DONOR_METRIC_RULES[plan.metric]);
 // The rows a donor-level metric counts (lapsed, monthly), from the shared filter.
 async function donorRows(orgId, rules) {
   const df = await GR.buildDonorFilter(orgId, rules);
@@ -199,7 +204,7 @@ async function runPlan(orgId, plan, ctx, deps = {}) {
 
   if (m.base === "source") return runSourceMetric(orgId, plan, ctx, out, m, deps);
   if (m.base === "donors") {
-    const rows = await donorRows(orgId, DONOR_METRIC_RULES[plan.metric]);
+    const rows = await donorRows(orgId, donorMetricRules(plan));
     out.value = { label: m.label, value: rows.length, kind: "count", definition: m.sentence, source: src("cur") };
     out.counted = m.sentence;
     out.people = rows.slice(0, 50).map(r => ({ donorId: r.donor_id, name: r.name, cents: cents(r.amount) }));
@@ -397,7 +402,7 @@ async function cellRows(orgId, rawPlan, cell) {
   if (!chk.ok) return [];
   const plan = { ...chk.plan, ...(rawPlan.top ? { top: rawPlan.top } : {}) };
   const m = C.METRICS[plan.metric];
-  if (m.base === "donors") return donorRows(orgId, DONOR_METRIC_RULES[plan.metric]);
+  if (m.base === "donors") return donorRows(orgId, donorMetricRules(plan));
   if (plan.metric === "first_year_retention") { const r = await firstYearRetention(orgId, ctx.today); return cell === "kept" ? r.kept : cell === "prior" ? r.prior : []; }
   if (m.base !== "gifts") return [];
   const cur = C.resolvePeriod(plan.period, ctx);

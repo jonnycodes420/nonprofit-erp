@@ -3961,6 +3961,7 @@ async function buildDonorListFilter(req) {
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const filter = await buildDonorListFilter(req);
+  if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
@@ -4021,7 +4022,12 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
-  res.json({ donors: donors.map(mapDonor(tpMap, driftMap)), total: parseInt(cnt[0].c, 10) });
+  // LIST-1: the columns she chose, for this page only (donorList.js cellsFor).
+  const cols = String(req.query.cols || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 40);
+  const cells = cols.length ? await require("../donorList").cellsFor(req.user.orgId, donors, cols) : null;
+  const out = donors.map(mapDonor(tpMap, driftMap));
+  if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
+  res.json({ donors: out, total: parseInt(cnt[0].c, 10) });
 }));
 
 // Lightweight whole-org list for consumers that need every donor but not the
@@ -4150,6 +4156,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 // already see), never checkWriteAccess-gated (export-routes convention).
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   const filter = await buildDonorListFilter(req);
+  if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
