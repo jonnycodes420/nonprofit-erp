@@ -22,7 +22,7 @@ let W = null;
 async function weights() { if (!W) W = await import("./shared/engagementWeights.js"); return W; }
 
 const DAY = 86400000;
-const civil = d => (d == null ? null : String(d instanceof Date ? d.toISOString() : d).slice(0, 10));
+const civil = d => (d == null ? null : String(d instanceof Date ? require("./orgTime").civilOf(d) : d).slice(0, 10));
 function ageDays(today, date) {
   const a = Date.parse(today + "T00:00:00Z"), b = Date.parse(civil(date) + "T00:00:00Z");
   return Number.isFinite(a) && Number.isFinite(b) ? Math.round((a - b) / DAY) : Infinity;

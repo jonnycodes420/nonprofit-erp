@@ -32,7 +32,7 @@ const orgTime = require("../orgTime");
 
 const PASSWORD = "loadtest1234";
 const STAMP = require("crypto").randomBytes(5).toString("hex");
-const ORG_A = "org_hs1sa_" + STAMP, ORG_B = "org_hs1sb_" + STAMP;
+const ORG_A = "org_hs1sa_" + STAMP, ORG_B = "org_hs1sb_" + STAMP, ORG_C = "org_hs1sc_" + STAMP;
 
 async function freshOrg(id) {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,'active','team')`, [id, "Surfaces " + id, id.replace(/_/g, "-")]);
@@ -138,6 +138,139 @@ async function main() {
   const mv = (await api("GET", "/move", tokB)).body.move || {};
   ok("B: Home's file line reads the file as it is now", !/3 people/.test(mv.homeLine || ""), mv.homeLine);
   await agrees("B: every surface agrees", ORG_B, tokB);
+  await janFirst();
+}
+
+// ── ORG C: HARDEN-1, A GIFT DATED JANUARY 1 COUNTS IN JANUARY ──────────────
+// gifts.date is text, and `new Date("2026-01-01")` is UTC midnight: every zone
+// west of UTC reads it with a local getter or formatter as Dec 31, 2025. The
+// mirror: pg hands a DATE column back as a Date at LOCAL midnight, so
+// toISOString() reads the day before east of UTC, and String() of it is not a
+// day at all. Org C keeps a January year. Pia gave on Jan 1 of last year and
+// of this year; Quin gave on Dec 31 of last year, so a one-day shift is seen;
+// Rae gave $7 on Jan 1 of the two years before, for Reports' completed years.
+//
+// HOW IT GOES RED ON THE UNFIXED CODE: the public event page answers the date
+// "Thu Jan 01" (String of a pg Date); /billing/status answers the custom
+// price's end as a UTC timestamp; the helpers below do not exist; the static
+// scan lists every `new Date(<stored day>)` read in local time. The API
+// checks run in the battery server's zone (New York on the scratch box, UTC
+// on CI), so the pure ones also run in a child at TZ=America/New_York and
+// TZ=Asia/Tokyo, where the bug shows whatever zone the runner is in.
+const ROOT = require("path").join(__dirname, "..");
+function zoneProbe(tz, Y) {
+  const code = `
+    import { createRequire } from "module";
+    const require = createRequire(${JSON.stringify(ROOT + "/")});
+    const O = require("./orgTime.js");
+    const D = await import(${JSON.stringify("file://" + ROOT + "/shared/displayDate.js")});
+    const jan = "${Y}-01-01", dec = "${Y - 1}-12-31";
+    console.log(JSON.stringify({
+      year: D.civilYear(jan), decYear: D.civilYear(dec), month: D.displayMonth(jan), day: D.displayDate(jan),
+      longMonth: O.civilLocale(jan, { month: "long", year: "numeric" }), longDay: O.civilLocale(jan, { month: "long", day: "numeric" }),
+      text: O.civilOf(jan), pgDate: O.civilOf(new Date(${Y}, 0, 1)), stamp: O.civilOf("${Y}-01-01T00:00:00.000Z"),
+      blank: O.civilOf(""), bad: O.civilLocale("not a day") }));`;
+  const out = require("child_process").execFileSync(process.execPath, ["--input-type=module", "-e", code],
+    { env: { ...process.env, TZ: tz, NODE_OPTIONS: "" }, encoding: "utf8" });
+  return JSON.parse(out.trim().split("\n").pop());
+}
+// A stored day (a field named for one) built into a Date and read in local
+// time, or pg's DATE turned into a day with toISOString(). The two allowed
+// below are moments, not days: a CSV cell of any value, and a grant file's
+// saved-at stamp.
+const SCAN_SKIP = /(^|\/)(node_modules|dist[^/]*|tests|scripts|docs|audit|marketing|\.git|\.claude)(\/|$)/;
+const SCAN_ALLOW = [/^routes\/crm\.js: const cell = v => reportCsvCell\(v instanceof Date/, /^routes\/grantLibrary\.js: const iso = d => \(d instanceof Date/];
+function localDayReads() {
+  const fs = require("fs"), path = require("path");
+  const FIELD = String.raw`(?:[\w$]+\??\.)*(?:date|due_date|dueDate|last_gift_date|first_gift_date|lastGift|firstGift|lastGiftDate|firstGiftDate|start_date|end_date|ends_on|endsOn|deadline|expected_close)`;
+  const LOCAL = String.raw`\.(?:getFullYear|getMonth|getDate|getDay|toLocaleDateString|toLocaleString|toDateString)\(`;
+  const INLINE = new RegExp(String.raw`new Date\(\s*${FIELD}\s*\)\s*${LOCAL}`);
+  const ASSIGN = new RegExp(String.raw`(?:const|let|var)\s+([\w$]+)\s*=\s*new Date\(\s*${FIELD}\s*\)\s*;`);
+  const MIRROR = /([\w$]+(?:\.[\w$]+)*) instanceof Date \? \1\.toISOString\(\)/;
+  const hits = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name), rel = path.relative(ROOT, p);
+      if (SCAN_SKIP.test(rel)) continue;
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(c|m)?jsx?$/.test(e.name)) continue;
+      const L = fs.readFileSync(p, "utf8").split("\n");
+      const hit = (i, l) => { const h = `${rel}: ${l.trim()}`; if (!SCAN_ALLOW.some(a => a.test(h))) hits.push(`${rel}:${i + 1}: ${l.trim().slice(0, 120)}`); };
+      L.forEach((l, i) => {
+        if (/^\s*\/\//.test(l)) return;
+        if (INLINE.test(l) && !/timeZone/.test(l)) hit(i, l);
+        const a = ASSIGN.exec(l);
+        if (a) for (let j = i; j < Math.min(L.length, i + 8); j++) {
+          if (new RegExp(String.raw`\b${a[1].replace(/\$/g, "\\$")}${LOCAL}`).test(L[j]) && !/timeZone/.test(L[j])) { hit(j, L[j]); break; }
+        }
+        const m = MIRROR.exec(l);
+        if (m && !/(_at|current_period_end)\b/.test(m[1])) hit(i, l);
+      });
+    }
+  })(ROOT);
+  return hits;
+}
+
+async function janFirst() {
+  const Y = orgTime.parseCivil(civilToday()).y, P = Y - 1;
+  const tokC = await freshOrg(ORG_C);
+  await q(`UPDATE orgs SET vocabulary_json=$2, custom_price_cents=4900, custom_price_ends_on=$3 WHERE id=$1`,
+    [ORG_C, JSON.stringify({ fiscal_year_start_month: 1 }), `${Y}-12-31`]);
+  const r = await api("POST", "/donors/import-combined", tokC, { donors: [{ name: "Pia January", email: "pia@hs1.test" }, { name: "Quin December", email: "quin@hs1.test" }, { name: "Rae Early", email: "rae@hs1.test" }],
+    gifts: [{ donorIndex: 0, amount: 100, date: `${P}-01-01` }, { donorIndex: 0, amount: 300, date: `${Y}-01-01` }, { donorIndex: 1, amount: 50, date: `${P}-12-31` },
+      { donorIndex: 2, amount: 7, date: `${P - 1}-01-01` }, { donorIndex: 2, amount: 7, date: `${P}-01-01` }] });
+  ok("C: Jan 1 and Dec 31 gifts land", r.status === 200, r.status);
+  const c = v => Math.round(Number(v) * 100);
+  const get = path => api("GET", path, tokC).then(x => x.body || {});
+
+  // /annual-fund: the year, its January, and retention
+  const [afY, afP] = await Promise.all([get(`/annual-fund?year=${Y}`), get(`/annual-fund?year=${P}`)]);
+  ok("C: /annual-fund counts this year's Jan 1 gift in this year's January", c(afY.totalRaised) === 30000 && c(afY.monthly?.[0]?.raised) === 30000,
+     { total: afY.totalRaised, jan: afY.monthly?.[0] });
+  ok("C: /annual-fund counts last year's Jan 1 in its January and Dec 31 in its December", c(afP.totalRaised) === 15700
+     && c(afP.monthly?.[0]?.raised) === 10700 && c(afP.monthly?.[11]?.raised) === 5000, { total: afP.totalRaised, jan: afP.monthly?.[0], dec: afP.monthly?.[11] });
+  ok("C: retention: Pia, who gave only on Jan 1 each year, is retained (1 of 3)", afY.donors?.retained === 1 && afY.donors?.retentionRate === 33, afY.donors);
+
+  // Reports: the giving summary by year and by month, and retention by year
+  const [gsY, gsP, ret] = await Promise.all([get(`/reports/giving-summary?year=${Y}&yearMode=calendar`),
+    get(`/reports/giving-summary?year=${P}&yearMode=calendar`), get(`/reports/retention?year=${Y}&yearMode=calendar`)]);
+  const mo = (gs, ym) => c((gs.monthly || []).find(m => m.month === ym)?.total || 0);
+  ok("C: Reports' giving summary puts each Jan 1 in its year and its January", c(gsY.total) === 30000 && c(gsP.total) === 15700
+     && mo(gsY, `${Y}-01`) === 30000 && mo(gsP, `${P}-01`) === 10700 && mo(gsP, `${P}-12`) === 5000 && mo(gsP, `${P - 1}-12`) === 0,
+     { y: gsY.total, p: gsP.total, monthsY: gsY.monthly, monthsP: gsP.monthly });
+  const rowP = (ret.rows || []).find(x => x.year === P) || {};   // completed years only
+  ok("C: Reports' retention counts Rae, who gave only on Jan 1, retained last year", rowP.priorDonors === 1 && rowP.retainedDonors === 1, (ret.rows || []).map(x => [x.year, x.label, x.priorDonors, x.retainedDonors]));
+
+  // Home, Fundraising and the Board: one this-year figure, one difference
+  const f = await agrees("C: every surface agrees", ORG_C, tokC);
+  const thisYear = f.facts["giving this year so far"] || {};
+  const ahead = Object.entries(f.facts).find(([k]) => /^ahead of or behind/.test(k))?.[1] || {};
+  ok("C: Home, Fundraising and the Board all count the Jan 1 gift this year", Object.keys(thisYear).length >= 3
+     && Object.values(thisYear).every(v => v === 30000), thisYear);
+  ok("C: and last year's Jan 1 in the same days last year", Object.keys(ahead).length >= 2 && Object.values(ahead).every(v => v === 19300), ahead);
+  const prof = await get(`/donors/${(await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Pia January'`, [ORG_C]))[0].id}`);
+  ok("C: the profile's first and last gift are Jan 1", String(prof.first_gift_date).slice(0, 10) === `${P}-01-01` && String(prof.last_gift_date).slice(0, 10) === `${Y}-01-01`,
+     [prof.first_gift_date, prof.last_gift_date]);
+
+  // A DATE column, read as its day: an event on Jan 1 and a price that ends Dec 31
+  const EV = "ev_hs1c_" + STAMP;
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status,created_by,created_by_name) VALUES ($1,$2,'New Year Walk','walk',$3,'upcoming','system:test','test')`,
+    [EV, ORG_C, `${Y}-01-01`]);
+  const pub = (await api("GET", `/org/${ORG_C.replace(/_/g, "-")}/event/${EV}/public`, null)).body || {};
+  ok("C: the public event page dates a Jan 1 event Jan 1", pub.event?.date === `${Y}-01-01`, pub.event);
+  const bill = await get("/billing/status");
+  ok("C: Billing says the agreed price ends on its own day", bill.customPrice?.endsOn === `${Y}-12-31`, bill.customPrice);
+
+  // The helpers every fixed place reads through, in a zone west and east of UTC
+  for (const tz of ["America/New_York", "Asia/Tokyo"]) {
+    let z = null; try { z = zoneProbe(tz, Y); } catch (e) { z = { error: String(e.message).slice(0, 300) }; }
+    ok(`C: at TZ=${tz}, a Jan 1 day stays Jan 1 through the civil helpers`, z && z.year === Y && z.decYear === P && z.month === `Jan ${Y}`
+       && z.day === `Jan 1, ${Y}` && z.longMonth === `January ${Y}` && z.longDay === "January 1" && z.text === `${Y}-01-01`
+       && z.pgDate === `${Y}-01-01` && z.stamp === `${Y}-01-01` && z.blank === null && z.bad === "", z);
+  }
+  const reads = localDayReads();
+  ok("C: no source file reads a stored day through a Date in local time", reads.length === 0, reads.length);
+  for (const h of reads) console.log("        " + h);
 }
 
 main().then(async () => { await closeDb(); summary(); }).catch(async e => { console.error(e); await closeDb(); process.exit(1); });

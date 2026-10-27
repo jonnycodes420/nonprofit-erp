@@ -4379,20 +4379,27 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
   ]);
   // Sustainer anniversaries worth a note: an active subscription whose start
   // date's month/day lands inside the next 14 days, at least a year in.
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // HARDEN-1: read in the org's civil days. It built local-midnight Dates in
+  // the server's zone and printed them with toISOString(), the day before
+  // anywhere east of UTC. A Feb 29 start falls on Mar 1 in a common year, as before.
+  const tzAnniv = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const today = orgToday(tzAnniv);
+  const annivIn = (y, mmdd) => orgTime.parseCivil(`${y}-${mmdd}`) && (mmdd !== "02-29" || (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0))) ? `${y}-${mmdd}` : `${y}-03-01`;
   const anniversaries = [];
   for (const s of activeSubs) {
-    const start = new Date(s.created_at);
-    if (Number.isNaN(start.getTime())) continue;
-    const anniv = new Date(today.getFullYear(), start.getMonth(), start.getDate());
-    if (anniv < today) anniv.setFullYear(anniv.getFullYear() + 1);
-    const years = anniv.getFullYear() - start.getFullYear();
-    const daysOut = Math.round((anniv - today) / 86400000);
+    const start = s.created_at ? new Date(s.created_at) : null;
+    if (!start || Number.isNaN(start.getTime())) continue;
+    const startDay = orgToday(tzAnniv, start);
+    const ty = Number(today.slice(0, 4));
+    let anniv = annivIn(ty, startDay.slice(5, 10));
+    if (anniv < today) anniv = annivIn(ty + 1, startDay.slice(5, 10));
+    const years = Number(anniv.slice(0, 4)) - Number(startDay.slice(0, 4));
+    const daysOut = orgTime.daysBetween(today, anniv);
     if (years >= 1 && daysOut <= 14) {
       anniversaries.push({
         subId: s.id, donorId: s.donor_id, donorName: s.donor_name,
         amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
-        years, date: anniv.toISOString().slice(0, 10), daysOut,
+        years, date: anniv, daysOut,
       });
     }
   }

@@ -21,7 +21,7 @@ import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
-import { displayDate } from "../../../shared/displayDate.js";
+import { displayDate, displayMonth } from "../../../shared/displayDate.js";
 import { displayName } from "../../../shared/displayName.js";
 // FIX-49: the one lapse rule, on the org's own calendar.
 import lapseRuleMod from "../../../lapseRule.js";
@@ -123,8 +123,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
 
   const fmtGiftDate=s=>{
     if(!s)return null;
-    const dt=new Date(s);
-    return isNaN(dt)?null:dt.toLocaleDateString("en-US",{month:"short",year:"numeric"});
+    return displayMonth(s)||null;   // HARDEN-1: the gift's own month, in every zone
   };
 
   const cols=["Donor","Lifetime giving","Last gift","Days lapsed",GIVING_STRENGTH_LABEL,""];
@@ -938,7 +937,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   last_gift_date:()=>(<>
                 <div style={{textAlign:"right"}}>
                   {d.lastGift
-                    ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
+                    ?<><div style={{fontSize:12,color:T.ink}}>{displayMonth(d.lastGift)}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
                     :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
                 </div>
                   </>),
@@ -997,7 +996,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   </div>
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
                     {fmtFull(d.total)}
-                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</>:" · no gifts yet"}
+                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{displayMonth(d.lastGift)}</>:" · no gifts yet"}
                   </div>
                 </div>
                 {sc!=null

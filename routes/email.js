@@ -12,6 +12,7 @@
 
 const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
 const mailRefusal = require("../mailRefusal"); // FIX-48: refused, waiting or an outage
+const { civilLocale } = require("../orgTime"); // HARDEN-1: a stored date is its own day
 // FIX-46: what a reminder calls somebody (shared/greeting.js), loaded once.
 let GREET = null;
 const GREET_READY = import("../shared/greeting.js").then(m => { GREET = m; return m; });
@@ -703,7 +704,7 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
     .replace(/{{first_name}}/g, firstName)
     .replace(/{{org_name}}/g, displayNameCase(org.name) || "")
     .replace(/{{amount}}/g, amount != null ? `$${Number(amount).toLocaleString()}` : "your pledge")
-    .replace(/{{due_date}}/g, dueDate ? new Date(dueDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "")
+    .replace(/{{due_date}}/g, dueDate ? civilLocale(dueDate, { month: "long", day: "numeric", year: "numeric" }) : "")
     .replace(/{{give_url}}/g, giveUrl);
 }
 

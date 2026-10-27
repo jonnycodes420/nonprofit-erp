@@ -299,11 +299,11 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
     const cards = [];
     for (const t of have.tickets) {
       const code = PASS.makePassCode({ kind: "ticket", orgId: org.id, id: t.id,
-        expiresOn: String(t.date instanceof Date ? t.date.toISOString() : t.date).slice(0, 10), secret: passSecret() });
+        expiresOn: String(t.date instanceof Date ? require("../orgTime").civilOf(t.date) : t.date).slice(0, 10), secret: passSecret() });
       const qr = await qrDataUri(code);
       cards.push(`<div class="card">
         <div class="row"><h2>${esc(t.event_name)}</h2>${t.checked_in_at ? `<span class="pill open">Checked in</span>` : ""}</div>
-        <p class="muted">${esc(SP.dayWordsFull(t.date instanceof Date ? t.date.toISOString() : t.date))}${t.location ? " · " + esc(t.location) : ""}</p>
+        <p class="muted">${esc(SP.dayWordsFull(t.date instanceof Date ? require("../orgTime").civilOf(t.date) : t.date))}${t.location ? " · " + esc(t.location) : ""}</p>
         <p class="small">${esc(t.level_name || "Ticket")}${Number(t.quantity) > 1 ? ` · ${t.quantity} places` : ""}</p>
         ${qr ? `<img src="${qr}" alt="Your ticket code" style="width:170px;height:170px;display:block;margin:10px auto 4px">` : ""}
         <p class="small" style="text-align:center">Show this at the door.</p>
@@ -318,7 +318,7 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
       <div class="row"><h2>${esc(s.opp_name)}</h2>${s.status === "waitlisted"
         ? `<span class="pill full">Waiting list${s.position ? ", number " + s.position : ""}</span>`
         : `<span class="pill open">Confirmed</span>`}</div>
-      <p class="muted">${esc(SP.dayWordsFull(s.date instanceof Date ? s.date.toISOString() : s.date))}${s.start_time ? " · " + esc(String(s.start_time).slice(0, 5)) : ""}</p>
+      <p class="muted">${esc(SP.dayWordsFull(s.date instanceof Date ? require("../orgTime").civilOf(s.date) : s.date))}${s.start_time ? " · " + esc(String(s.start_time).slice(0, 5)) : ""}</p>
       ${s.location ? `<p class="small">${esc(s.location)}</p>` : ""}
     </div>`).join("");
     const notes = (have.volNotes || []).map(n => `<p class="small">${esc(n.body)}<br><span class="muted">${esc(n.created_by_name || "")}</span></p>`).join("");
@@ -378,7 +378,7 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
     }).join("");
     const total = have.gifts.reduce((a, g) => a + Math.round(Number(g.amount) * 100), 0);
     const rows = have.gifts.slice(0, 40).map(g => `<div class="row" style="border-top:1px solid #efece4;padding:9px 0">
-      <span>${esc(SP.dayWordsFull(g.date instanceof Date ? g.date.toISOString() : g.date))}${g.fund_name ? ` · ${esc(g.fund_name)}` : ""}</span>
+      <span>${esc(SP.dayWordsFull(g.date instanceof Date ? require("../orgTime").civilOf(g.date) : g.date))}${g.fund_name ? ` · ${esc(g.fund_name)}` : ""}</span>
       <span><strong>${esc(SP.money(Math.round(Number(g.amount) * 100)))}</strong>${g.receipt_id
         ? ` · <a href="/you/${esc(org.org_slug)}/receipt/${esc(g.receipt_id)}.pdf">receipt</a>` : ""}</span>
     </div>`).join("");

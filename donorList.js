@@ -504,7 +504,7 @@ async function cellsFor(orgId, rows, columns) {
         let x = r[ROW_CELL[k]];
         if (BOOL_COL[k]) x = x === true;
         else if (["lifetime", "last_gift_amount"].includes(k)) x = x == null ? null : Number(x);
-        else if (["added", "last_gift_date", "first_gift_date"].includes(k)) x = x == null ? null : (x instanceof Date ? x.toISOString() : String(x)).slice(0, 10);
+        else if (["added", "last_gift_date", "first_gift_date"].includes(k)) x = x == null ? null : (x instanceof Date ? require("./orgTime").civilOf(x) : String(x)).slice(0, 10);
         cell[k] = x ?? null;
       }
     }

@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { displayDate } from "../../../shared/displayDate";
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 const day = d => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
@@ -38,7 +39,7 @@ export function BillingBand({ billing, isAdmin, onChanged }) {
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
         {b.customPrice
           ? cell("Price", b.customPrice.usd === 0 ? "Free" : `${usd(b.customPrice.usd)}/month`,
-              b.customPrice.endsOn ? `Your agreed price, until ${day(b.customPrice.endsOn)}.` : "Your agreed price.", "billing-price")
+              b.customPrice.endsOn ? `Your agreed price, until ${displayDate(b.customPrice.endsOn)}.` : "Your agreed price.", "billing-price")
           : cell("Band", b.band ? b.band.label : "Agreed by hand", b.band && b.band.legacy ? "Your earlier plan. It stays until you change it." : null, "billing-band-label")}
         {!b.customPrice && b.priceUsd != null && cell("Price", `${usd(b.priceUsd)}${per}`, null, "billing-price")}
         {cell("Records", Number(b.records).toLocaleString("en-US"), b.recordSentence, "billing-records")}
