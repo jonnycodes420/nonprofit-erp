@@ -146,7 +146,7 @@ export function useUndo() {
     } catch (e) { setState(cur => (cur ? { ...cur, busy: false, err: errorMessage(e, "It could not be put back.") } : cur)); }
   };
   const dismiss = () => setState(null);
-  return [<UndoToastView key="undo" state={state} onUndo={undo} onHold={hold} onDismiss={dismiss} />, offer];
+  return [<UndoToastView key="undo" state={state} onUndo={undo} onHold={hold} onDismiss={dismiss} />, offer, dismiss];
 }
 
 function UndoToastView({ state, onUndo, onHold, onDismiss }) {
@@ -173,15 +173,24 @@ function UndoToastView({ state, onUndo, onHold, onDismiss }) {
 // re-rendered away, and a transformed ancestor can trap a fixed toast; one
 // host on document.body has neither problem.
 let undoHostOffer = null;
+let undoHostDismiss = null;
 let undoHostMounted = false;
 const undoWaiting = [];
 function UndoHost() {
-  const [toast, offer] = useUndo();
+  const [toast, offer, dismiss] = useUndo();
   useEffect(() => {
     undoHostOffer = offer;
+    undoHostDismiss = dismiss;
     while (undoWaiting.length) offer(...undoWaiting.shift());
   });
   return toast;
+}
+// FIX-54: a screen that starts something else (an import) takes the last
+// delete's Undo down first, so that Undo is never pressed for the wrong thing.
+// The delete is still in Recent changes.
+export function dismissUndo() {
+  undoWaiting.length = 0;
+  if (undoHostDismiss) undoHostDismiss();
 }
 export function offerUndo(resp, label, onRestored) {
   if (!resp || !(resp.undoId || typeof resp.undoAction === "function")) return;

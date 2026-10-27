@@ -161,6 +161,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   Today, /impact, search tasks and the export sheets. `/org/export/full` stays a whole-table dump on purpose.
   A new reader of gifts, pledges or attendance carries it. Undoing an import finishes removing the people it made
   that were deleted by hand, and says how many.
+- **Someone deleted stays deleted (FIX-54).** Only a person's own Undo (the toast, Recent changes) or an
+  import preview's Bring them back, each pressed by her, clears `deleted_at`. An import that names a person
+  deleted by hand (ID, email or exact name; a record merged away does not count) makes nothing for them and
+  sets their rows aside. Bulk delete takes the count she confirmed and refuses any other. Opening Import
+  takes the last delete's Undo toast down.
 - **Every Undo toast comes from the one host** (`offerUndo` in `EditHistory.jsx`, mounted on
   document.body). A screen never renders its own toast: one drawn inside the screen dies when that screen
   re-renders away. The ten seconds stop while the pointer or focus is on it or the tab is hidden. (FIX-25)
