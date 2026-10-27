@@ -9,12 +9,47 @@
     "file_total": 566183.93,
     "distinct_donor_names": 190,
     "undated_gifts": 0,
-    "years": { "2024": 258033.90, "2025": 234378.07, "2026": 73771.96 }
+    "years": {
+      "2024": 258033.9,
+      "2025": 234378.07,
+      "2026": 73771.96
+    }
   },
   "jp-contacts-656.xlsx": {
     "rows": 656,
     "gifts": 0,
     "rows_without_email": 365,
     "notes": "No gifts: everyone here is a contact unless matched to a donor from the gift file. Contains near-duplicate rows (same first and last name, one row blank) and businesses or farms written in the Last Name column with First Name empty."
+  },
+  "jp-dinner-gifts-106.xlsx": {
+    "rows": 106,
+    "file_total_row": 124290,
+    "three_year_total_row": 152890,
+    "received": {
+      "rows": 63,
+      "dollars": 45340.0
+    },
+    "not_yet_received": {
+      "rows": 43,
+      "dollars": 78950.0,
+      "note": "Completed = No (42 rows) or NO (1 row): pledges, never gifts"
+    },
+    "multi_year_pledges": {
+      "rows": 7,
+      "note": "Frequency 'x 3 years' / 'x 3 Years': pledge of Amount per year for 3 years; 3 Yr Total = Amount x 3"
+    },
+    "recurring": {
+      "rows": 1,
+      "note": "Frequency 'Reccuring' (sic), $100, 3 Yr Total 3600: monthly"
+    },
+    "methods_that_are_gift_types": [
+      "Stock",
+      "Stock Transfer",
+      "Retirement Dist",
+      "Investment Dist",
+      "Investment Pledge",
+      "Foundation"
+    ],
+    "notes": "Last row has no name and holds the column totals: it is a total, never a person. 'Online (Miss)' means a missed online payment. No dates anywhere in this file. Should match many people from the other two files by name."
   }
 }
