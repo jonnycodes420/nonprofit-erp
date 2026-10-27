@@ -2067,6 +2067,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {form.templateId && !readOnlySent && (
                     <button type="button" data-testid="edit-in-editor" onClick={() => {
                       const cid = editingId, src = form.source, name = form.name || (src && src.name) || "this campaign";
+                      const kept = form;   // what she had typed here and not saved yet comes back with her
                       // Back takes the template's words into this campaign (it keeps its own
                       // copy), then reopens it, so its preview shows the change.
                       openTemplateEditor(form.templateId, async () => {
@@ -2077,7 +2078,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           fresh = await apiFetch(`/campaigns/${cid}`).catch(() => src);
                           loadCampaigns();
                         }
-                        if (fresh) openBuilder(fresh);
+                        if (fresh) {
+                          openBuilder(fresh);
+                          // The template owns the words; the name, the audience and the
+                          // schedule are the campaign's, so her unsaved edits to them stay.
+                          // The subject stays hers unless the template changed it.
+                          const tplSubject = fresh.subject !== (src && src.subject);
+                          setForm(f => ({ ...f, name: kept.name, seg: kept.seg, scheduledAt: kept.scheduledAt, ...(tplSubject ? {} : { subject: kept.subject }) }));
+                        }
                       }, { title: `Editing the email for ${name}`, backLabel: "Back to campaign" });
                     }}
                       style={{ ...S.btn("ghost") }}>Edit in editor</button>
