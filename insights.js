@@ -307,14 +307,17 @@ function computeInsights(input) {
 
   // per unit giving
   const U = [];
+  const giftsOfUnit = new Map(), pledgesOfUnit = new Map();
+  for (const g of gifts) (giftsOfUnit.get(g.unit) || giftsOfUnit.set(g.unit, []).get(g.unit)).push(g);
+  for (const p of pledges) (pledgesOfUnit.get(p.unit) || pledgesOfUnit.set(p.unit, []).get(p.unit)).push(p);
   for (const u of units.values()) {
-    const gs = gifts.filter(g => g.unit === u && g.amount_cents > 0 && reviewed[g.id] !== "not_gift");
+    const gs = (giftsOfUnit.get(u) || []).filter(g => g.amount_cents > 0 && reviewed[g.id] !== "not_gift");
     const dated = gs.filter(g => g.date).sort((a, b) => (a.date < b.date ? -1 : 1));
     const sum = arr => arr.reduce((n, g) => n + g.amount_cents, 0);
     const inSpan = (a, b) => dated.filter(g => g.date >= a && g.date <= b);
     const byYear = {};
     for (const g of dated) byYear[g.date.slice(0, 4)] = (byYear[g.date.slice(0, 4)] || 0) + g.amount_cents;
-    const ps = pledges.filter(p => p.unit === u);
+    const ps = pledgesOfUnit.get(u) || [];
     const openPledges = ps.filter(p => p.status !== "fulfilled" && p.status !== "cancelled" && p.status !== "written_off" && p.balance > 0);
     const x = {
       unit: u, key: u.key, name: u.name, ids: u.people.map(p => p.id),
@@ -784,14 +787,18 @@ const LIBRARY = [
       if (!edges.has(k)) edges.set(k, { a, b, why: [] });
       edges.get(k).why.push(why);
     };
+    // A memo names someone when both their first and last name are words in it.
+    // Indexed by last name, so this is one pass over each giver's memo words.
+    const byLast = new Map();
+    for (const n of nameKeys) (byLast.get(n.last) || byLast.set(n.last, []).get(n.last)).push(n);
+    const wordsOf = t => new Set(String(t).split(/[^\p{L}\p{N}'’-]+/u).filter(Boolean).flatMap(w => [w, w.replace(/['’]s$/, "")]));
     for (const x of U) {
-      const words = x.gifts.map(g => [g.memo, g.notes].filter(Boolean).join(" ")).join(" · ");
-      if (!words) continue;
-      for (const n of nameKeys) {
-        if (n.x === x) continue;
-        const re = w => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
-        if (re(n.first).test(words) && re(n.last).test(words)) {
-          const rel = x.sig.relations.find(r => re(n.last).test(r.of));
+      const words = wordsOf(x.gifts.map(g => [g.memo, g.notes].filter(Boolean).join(" ")).join(" "));
+      if (!words.size) continue;
+      for (const w of words) {
+        for (const n of byLast.get(w) || []) {
+          if (n.x === x || !words.has(n.first)) continue;
+          const rel = x.sig.relations.find(r => wordsOf(r.of).has(n.last));
           edge(x, n.x, rel ? `${x.name}'s memo says "${rel.of}'s ${rel.word}"` : `${x.name}'s memo names ${n.first} ${n.last}`);
         }
       }

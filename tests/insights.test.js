@@ -155,13 +155,23 @@ async function main() {
   ok("§2 GET /insights answers", r1.status === 200 && Array.isArray(r1.body.cards), r1.status);
   if (r1.status !== 200) { summary(); await closeDb(); process.exit(1); }
   // each file name -> the unit the import put its gifts on (matched by date and amount)
-  const landed = await q(`SELECT g.date::text AS d, ROUND(g.amount*100)::bigint AS c, COALESCE('h:'||d.household_id, 'p:'||d.id) AS u
-                            FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.import_id=$2`, [ORG, g.importId]);
+  const landed = await q(`SELECT g.date::text AS d, ROUND(g.amount*100)::bigint AS c, COALESCE('h:'||d.household_id, 'p:'||d.id) AS u,
+                                   d.name AS dn, h.name AS hn
+                            FROM gifts g JOIN donors d ON d.id=g.donor_id LEFT JOIN households h ON h.id=d.household_id
+                           WHERE g.org_id=$1 AND g.import_id=$2 ORDER BY g.id`, [ORG, g.importId]);
   const pool = new Map();
-  for (const l of landed) { const k = `${l.d}|${l.c}`; (pool.get(k) || pool.set(k, []).get(k)).push(l.u); }
+  for (const l of landed) { const k = `${l.d}|${l.c}`; (pool.get(k) || pool.set(k, []).get(k)).push(l); }
+  // Two people can give the same amount on the same day: of the rows with that
+  // date and amount, take the one whose record's name shares the most words
+  // with the file's name (never the database's row order).
+  const words = t => new Set(norm(t).split(" ").filter(w => w.length > 1));
+  const overlap = (a, b) => { const B = words(b); return [...words(a)].filter(w => B.has(w)).length; };
   const votes = new Map();
   for (const fr of fileRows.filter(x => x.c > 0)) {
-    const u = (pool.get(`${fr.d}|${fr.c}`) || []).shift();
+    const cands = pool.get(`${fr.d}|${fr.c}`) || [];
+    let bi = -1, bs = -1;
+    cands.forEach((l, i) => { const sc = Math.max(overlap(fr.n, l.dn), overlap(fr.n, l.hn || "")); if (sc > bs) { bs = sc; bi = i; } });
+    const u = bi >= 0 ? cands.splice(bi, 1)[0].u : null;
     if (!u) continue;
     const v = votes.get(fr.n) || votes.set(fr.n, new Map()).get(fr.n);
     v.set(u, (v.get(u) || 0) + 1);
