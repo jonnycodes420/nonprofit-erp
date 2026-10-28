@@ -159,6 +159,7 @@ CORE=(
   surfaces-agree
   org-bound-writes
   real-shaped
+  insights
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof

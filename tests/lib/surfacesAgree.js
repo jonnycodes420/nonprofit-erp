@@ -24,7 +24,7 @@
 //   skip      [names] of checks to leave out, e.g. ["atlas"] for a suite
 //             whose org pauses Atlas. Names: people, gifts, thisYear,
 //             vsLastYear, homeLine, drift, groups, events, campaigns,
-//             moveReport, search, ask, atlas, exports, deleted
+//             moveReport, search, ask, atlas, exports, deleted, finance
 //
 // Returns { ok: true, diffs: [], facts, ms } when every surface agrees.
 // Speed: the reads run in parallel; a small org takes well under a second or
@@ -158,7 +158,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const ASK_N = "How many donors do we have?", ASK_Y = "How much have we raised this year?";
   const want = (name, p) => (skip.has(name) ? Promise.resolve(null) : p.catch(e => ({ __error: String(e && e.message || e) })));
   const [list, counts, setup, move, lead, dashHome, fund, board, drift, lapsedList, groups, events, campaigns,
-         csv, workbook, zip, askN, askY, atlasN, atlasY, reports, searches] = await Promise.all([
+         csv, workbook, zip, askN, askY, atlasN, atlasY, reports, searches, finance] = await Promise.all([
     get("/donors?limit=200&offset=0"),
     get("/donors/counts"),
     get("/org/setup-status"),
@@ -181,6 +181,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     want("atlas", org && org.agent_paused_at ? Promise.resolve(null) : H.api("POST", "/atlas", token, { text: ASK_Y }).then(r => r.body)),
     want("moveReport", Promise.all(imports.map(i => get(`/imports/${encodeURIComponent(i.id)}/move-report`).then(b => [i, b])))),
     want("search", Promise.all(deleted.slice(0, 5).map(d => get(`/search?q=${encodeURIComponent(d.name || "")}`).then(b => [d, b])))),
+    want("finance", get("/finance/overview")),
   ]);
 
   // Atlas writes the request it answered (voice_memos, atlas_actions,
@@ -293,6 +294,26 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         diffs.push(`vs last year: Fundraising's comparison does not name the span it compares (${JSON.stringify(fundCmp || { priorRaised: fp.priorRaised, delta: fp.delta })}); the Board compares ${w.from} to ${w.to}`);
       }
     }
+  }
+
+  // ── FINANCE: MONEY IN IS GIFTS AND THE ROWS THAT WERE NOT GIFTS ──────────
+  // INSIGHTS-1: a row she marks Not a gift in Review leaves `gifts` (so every
+  // giving check above holds without it) and stays money in, as a Finance line
+  // (fin_transactions.source 'not_a_gift'). Finance's twelve months of money
+  // in must be both, to the cent; what she marked (insight_reviews) is the
+  // ground truth, so a lost Finance line is caught.
+  if (!skip.has("finance") && finance && Array.isArray(finance.byMonth) && finance.byMonth.length && finance.month) {
+    const from = `${finance.byMonth[0].month}-01`, to = finance.month.to;
+    const [fin] = await q(`SELECT
+        (SELECT COALESCE(SUM(ROUND(g.amount*100)),0) FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+          WHERE g.org_id = $1 AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> '' AND g.date >= $2 AND g.date <= $3)
+      + (SELECT COALESCE(SUM(ROUND((r.row_data->>'amount')::numeric*100)),0) FROM insight_reviews r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
+          WHERE r.org_id = $1 AND r.decision = 'not_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+            AND COALESCE(r.row_data->>'date','') <> '' AND r.row_data->>'date' >= $2 AND r.row_data->>'date' <= $3) AS c`, [orgId, from, to]).catch(() => [{ c: null }]);
+    agree(`money in, gifts and the rows that were not gifts (${from} to ${to})`, [
+      ["the database (gifts + the rows marked Not a gift)", fin.c == null ? undefined : Number(fin.c)],
+      ["Finance's money in by month", finance.byMonth.reduce((a, m) => a + Number(m.cents || 0), 0)],
+    ], money);
   }
 
   // ── HOME'S SENTENCES: a count in a sentence equals the list beside it ────

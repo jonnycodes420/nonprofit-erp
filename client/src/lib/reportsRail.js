@@ -65,8 +65,10 @@ export const BOARD_PACK_ID = "board-pack";
 export const NEW_DASH_ID = "new-dashboard";
 // SHEETS-1: board reports brought in from old spreadsheets, with their files.
 export const STORED_REPORTS_ID = "board-files";
+// INSIGHTS-1: what happened after each kind of suggestion.
+export const WHAT_WORKED_ID = "what-worked";
 export const isDashboardGroupId = id =>
-  isDashboard(id) || isSavedDashboard(id) || id === BOARD_PACK_ID || id === NEW_DASH_ID || id === STORED_REPORTS_ID;
+  isDashboard(id) || isSavedDashboard(id) || id === BOARD_PACK_ID || id === NEW_DASH_ID || id === STORED_REPORTS_ID || id === WHAT_WORKED_ID;
 
 export const RAIL_GROUPS = [
   { id: "dashboards", question: "Dashboards", items: [] },
@@ -124,6 +126,7 @@ export function railGroups(tabDefs = [], standard = [], saved = [], dashboards =
            sub: d.mine && !d.shared ? "just you" : (d.shared && !d.mine ? d.ownerName || "shared" : null) })),
          { id: BOARD_PACK_ID, label: "Board pack", sub: null },
          { id: STORED_REPORTS_ID, label: "Past reports", sub: null },
+         { id: WHAT_WORKED_ID, label: "What worked", sub: null },
          { id: NEW_DASH_ID, label: "New dashboard", sub: null }]
       : g.id === "saved"
       ? saved.map(s => ({ id: s.id, label: s.name, sub: s.schedule === "weekly" ? "weekly" : (s.mine && !s.shared ? "just you" : null) }))
@@ -136,6 +139,7 @@ export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboa
   if (id === BOARD_PACK_ID) return "Board pack";
   if (id === NEW_DASH_ID) return "New dashboard";
   if (id === STORED_REPORTS_ID) return "Past reports";
+  if (id === WHAT_WORKED_ID) return "What worked";
   if (isSavedDashboard(id)) return (savedDashboards.find(d => SDASH_PREFIX + d.id === id) || {}).name || null;
   if (isDashboard(id)) return (dashboards.find(d => DASH_PREFIX + d.key === id) || {}).label || null;
   return (tabDefs.find(r => r.key === id) || {}).label

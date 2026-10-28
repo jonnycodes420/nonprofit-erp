@@ -900,7 +900,7 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today) : null;
+  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
@@ -13240,7 +13240,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   // history). The event key is the last gift date, so each lapse fires once
   // and a new gift starts a new episode.
   if (key === "lapsed" || key === "lapsing") {
-    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today);
+    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
     const crossed = key === "lapsed" ? `(LEFT(d.last_gift_date, 10)::date + ${lapseRule.LAPSED_DAYS})`
       : `(LEFT(d.last_gift_date, 10)::date + INTERVAL '${lapseRule.LAPSING_MONTHS} months')::date`;
     return P(`SELECT d.id AS donor_id, '${key}:' || d.id || ':' || LEFT(d.last_gift_date, 10) AS event_key
@@ -26261,6 +26261,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // or before the day nine months ago.
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
+  const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
@@ -26274,9 +26275,11 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
         AND d.total_giving > 0
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) IS NOT NULL
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
+        -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
+        AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
       ORDER BY d.total_giving DESC
       LIMIT 50`,
-    [orgId, _quietCutoff]
+    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 

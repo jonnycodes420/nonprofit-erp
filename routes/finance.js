@@ -132,16 +132,20 @@ function monthRange(today) {
 // query. `rows` true returns the rows; false returns the total in cents.
 async function finFigure(orgId, key, { from, to }, rows = false) {
   if (key === "moneyInThisMonth") {
-    const sel = rows
-      ? `g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund`
-      : `COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents`;
-    const r = await query(
-      `SELECT ${sel} FROM gifts g
+    // INSIGHTS-1: money in is the gifts AND the rows she marked Not a gift in
+    // Review (a purchase, tickets, a reimbursement): revenue, not giving.
+    const NOT_GIFT = `SELECT t.id, t.date, t.amount, 'not a gift' AS type, COALESCE(d.name, t.vendor_donor) AS who, f.name AS fund
+                        FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id LEFT JOIN fin_funds f ON f.id=t.fund_id
+                       WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+                         AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?`;
+    const GIFTS = `SELECT g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund FROM gifts g
          JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
          LEFT JOIN fin_funds f ON f.id=g.fund_id
         WHERE g.org_id=? AND d.deleted_at IS NULL
-          AND g.date IS NOT NULL AND g.date <> '' AND g.date >= ? AND g.date <= ?
-        ${rows ? "ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000" : ""}`, [orgId, from, to]);
+          AND g.date IS NOT NULL AND g.date <> '' AND g.date >= ? AND g.date <= ?`;
+    const r = rows
+      ? await query(`SELECT * FROM (${GIFTS} UNION ALL ${NOT_GIFT}) x ORDER BY x.date DESC NULLS LAST, x.id LIMIT 2000`, [orgId, from, to, orgId, from, to])
+      : await query(`SELECT COALESCE(SUM(ROUND(x.amount*100)),0)::bigint AS cents FROM (${GIFTS} UNION ALL ${NOT_GIFT}) x`, [orgId, from, to, orgId, from, to]);
     return rows ? r : Number(r[0].cents);
   }
   if (key === "restricted" || key === "unrestricted") {
@@ -204,15 +208,22 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
       WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
         AND g.date >= ? AND g.date <= ?
-      GROUP BY 1 ORDER BY 1`,
-    [orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to]);
+      GROUP BY 1
+      UNION ALL
+     -- INSIGHTS-1: the rows marked Not a gift are money in too
+     SELECT substring(t.date from 1 for 7) AS month, COALESCE(SUM(ROUND(t.amount*100)),0)::bigint AS cents, COUNT(*)::int AS n
+       FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
+      WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+        AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?
+      GROUP BY 1`,
+    [orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to, orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to]);
   const byMonth = [];
   for (let i = 11; i >= 0; i--) {
     const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 - i, 1));
     const key = d.toISOString().slice(0, 7);
-    const hit = rawMonths.find(r => r.month === key);
-    byMonth.push({ month: key, cents: Number(hit ? hit.cents : 0), gifts: hit ? hit.n : 0,
-                   amount: toDollars(Number(hit ? hit.cents : 0)) });
+    const hits = rawMonths.filter(r => r.month === key);
+    const c = hits.reduce((n, r) => n + Number(r.cents), 0);
+    byMonth.push({ month: key, cents: c, gifts: hits.reduce((n, r) => n + r.n, 0), amount: toDollars(c) });
   }
 
   // ── NEEDS YOU ─────────────────────────────────────────────────────────
