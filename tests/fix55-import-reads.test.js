@@ -31,6 +31,7 @@ const os = require("os");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, api, q, closeDb, BASE, browserLegOrSkip } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ROOT = path.join(__dirname, "..");
 const XLSX = require(path.join(ROOT, "client", "node_modules", "xlsx"));
@@ -136,7 +137,7 @@ async function apiLegs() {
   ok("§5 Empty trash deletes them for good", purge.status === 200 && purge.body.purged === ids.length
      && (await q("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND id = ANY($2)", [B.id, ids]))[0].n === 0, JSON.stringify(purge.body).slice(0, 200));
   // the audit row is written as the response finishes: give it a moment
-  const since = new Date(Date.now() - 60000).toISOString();
+  const since = new Date(testNow() - 60000).toISOString();
   let aud = [];
   for (let i = 0; i < 30 && !aud.length; i++) {
     aud = await q(`SELECT summary, record_count, entity_id, entity_label, changes::text AS changes, before_fields::text AS b, after_fields::text AS a
@@ -256,9 +257,9 @@ async function browserLegs() {
     await page.check('[data-testid="sheet-use-event-date"]');
     // the stale preview may never be imported: the button waits for the re-read
     const during = await page.$eval('[data-testid="sheet-import-go"]', b => ({ disabled: b.disabled, text: b.textContent })).catch(() => null);
-    const t0 = Date.now();
+    const t0 = performance.now();
     await page.waitForFunction(() => { const b = document.querySelector('[data-testid="sheet-import-go"]'); return b && !b.disabled && !/undated/.test(b.textContent); }, null, { timeout: 15000 }).catch(() => {});
-    const reread = Date.now() - t0;
+    const reread = performance.now() - t0;
     const money1 = await page.textContent('[data-testid="layer-money"]');
     ok("§2 while the re-read is out, Import waits and says so", !during || during.disabled === true || !/undated/.test(during.text), JSON.stringify(during));
     ok("§2 after ticking: no gift without a date on the Money line or the button", !/no date/.test(money1) && !/undated/.test(await goText()), [money1, await goText()]);

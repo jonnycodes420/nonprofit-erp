@@ -11,6 +11,7 @@ const P = require("../tests/lib/previewPerfOrg");
 
 (async () => {
   if (!/localhost|127\.0\.0\.1/.test(process.env.BASE || "http://localhost:5601")) throw new Error("scratch servers only");
+  if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL || "")) throw new Error("Refused: scratch database only (a loopback DATABASE_URL)");
   const { token } = await P.freshPerfOrg(q, login, "org_fix55perf", "Preview perf (test)");
   const seeded = await P.seedPreviewOrg(q, "org_fix55perf", XLSX);
   console.log(`org: ${seeded.people} people, ${seeded.deleted} deleted`);

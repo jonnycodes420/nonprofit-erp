@@ -70,6 +70,7 @@ async function shot(pages, name, note) {
 
 (async () => {
   if (!/localhost|127\.0\.0\.1/.test(BASE)) throw new Error("scratch servers only");
+  if (!/@(localhost|127\.0\.0\.1)[:/]/.test(process.env.DATABASE_URL || "")) throw new Error("Refused: scratch database only (a loopback DATABASE_URL)");
   fs.mkdirSync(OUT, { recursive: true });
   const login = await freshOrg();
   const browser = await PW.chromium.launch();

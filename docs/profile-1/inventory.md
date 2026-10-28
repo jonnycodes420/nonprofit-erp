@@ -34,7 +34,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | more-draft-email | Draft an email (team) | `getAI(donor,"email")` + Suggested modal (Copy the draft `dp-copy-draft`) | menuitem "Draft an email" || more · `[role=menuitem]:has-text("Draft an email")` · exists |
 | more-call-script | Call script (team) | `getAI(donor,"callscript")` + Suggested modal | menuitem "Call script" || more · `[role=menuitem]:has-text("Call script")` · exists |
 | more-suggested | Suggested (n) | Suggested modal `dp-suggested` (Try again `dp-suggested-retry-<kind>`) | menuitem "Suggested" || more · `[role=menuitem]:has-text("Suggested")` · exists |
-| more-brief | Brief me | modal with `BriefPanel` (MajorGifts.jsx) → `POST /donors/:id/brief` | menuitem "Brief me" || more · `[role=menuitem]:has-text("Brief me")` · exists |
+| more-brief | Brief me | modal with `BriefPanel` (MajorGifts.jsx) → `POST /donors/:id/brief` | menuitem "Brief me", only when AI is on (FIX-55 item 6) || more · `setBriefOpen(true)` · code |
 | more-prospect-brief | Write a prospect brief (major gifts) | `ProspectBriefModal` (RoomToGive.jsx) | `[data-testid=dp-prospect-brief]` || more · `dp-prospect-brief` · code |
 | more-filing | Look up public filing (major gifts, organisation) | `PublicFilingLookupModal` | `[data-testid=dp-filing-lookup]` || more · `dp-filing-lookup` · code |
 | more-video | Record a video thank-you (when email, not deceased/DNC) | `VideoThanksModal` | `[data-testid=dp-video-thanks]` || more · `[data-testid=dp-video-thanks]` · exists |
