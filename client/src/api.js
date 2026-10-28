@@ -408,6 +408,12 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       // dropped on every refresh because the adapter did not name it.
       isDemoOrg:     org.demo === true,   // FIX-50: the server's one rule (orgKind.isDemoOrg)
       emailsEnabled: org.emails_enabled !== false,
+      // FIX-55 item 6: what the server has connected, booleans only.
+      capabilities: {
+        geocoding: !!(org.capabilities && org.capabilities.geocoding),
+        ai:        !!(org.capabilities && org.capabilities.ai),
+        stripe:    !!(org.capabilities && org.capabilities.stripe),
+      },
     },
     donors: donors.map(adaptDonor),
     grants: grants.map(adaptGrant),
