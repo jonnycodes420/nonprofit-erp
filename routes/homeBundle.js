@@ -32,6 +32,8 @@ const HOME_READS = new Set([
   "/billing/donor-band", "/atlas/status", "/me/nav-layout", "/people/photos", "/capture/count", "/status/summary",
   "/org/sample-data-status", "/org/welcome", "/atlas/activity", "/changelog/hidden", "/thank-yous/clock",
   "/volunteer-hub/crossover", "/atlas/notes",
+  // HARDEN-2: Home's ladder and cards (INSIGHTS-1), asked for on its own at boot.
+  "/insights",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot

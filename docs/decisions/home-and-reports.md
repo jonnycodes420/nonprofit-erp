@@ -3,6 +3,24 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **The ladder and the cards are one engine (INSIGHTS-1).** `insights.js` is pure (every input, `asOf`
+  included, is a parameter); `insightsData.js` reads; `routes/insights.js` serves Home, the first look, the
+  profile, the Donors list's rung column and filter, and Ask (through the list's `rung`, `ladder_status` and
+  `planned` fields). Nothing is stored: a rung is computed from the gifts each time (an in-process memo keyed
+  by the org's gift fingerprint). A household is one giver. Every number in a card's words must be in its
+  facts (`numbersOk`); a GET writes nothing (the page POSTs `/insights/seen`). Review leads the first look and
+  follows the people cards on Home. A person with an undated gift is never in Drift or "Gone quiet"
+  (`excludedReason: undated_gift`).
+- **Not a gift is Finance revenue, never a gift row (INSIGHTS-1, Jonathan 27 Oct; the INT-POS rule).** Review's
+  Not a gift makes the money a `fin_transactions` line (`source 'not_a_gift'`, type income, the person, date,
+  amount and memo; 4050 Special Events for a purchase or tickets, 4060 Other Revenue for a reimbursement) and
+  removes the gift row, kept whole in `insight_reviews.row_data`; `/insights/review/:id/undo` puts both back
+  exactly. Out of every giving total by construction; Finance's money in counts the line. The truth check
+  holds Finance's money in to gifts plus what she marked. Refused for a gift with a receipt, a payment, a
+  pledge or an open thank-you.
+- **Lapsing respects rhythm (INSIGHTS-1).** `lapseRule.js`: a yearly or year-end giver (`donor_rhythm`)
+  whose expected next gift has not come yet is not Lapsing; the tags, groups, the at-risk email, the journey
+  trigger and the dashboard's at-risk list read it (`rhythmAheadSql`). Lapsed is unchanged.
 - **A next step is one record in three views (FIX-31).** Every thread has one `link_kind='next_step'` task written
   by `trg_thread_task_sync`; Tasks, the Thread and the Calendar read that one pair. Ticking the task logs
   "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws

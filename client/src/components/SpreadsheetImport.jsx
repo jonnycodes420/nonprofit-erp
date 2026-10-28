@@ -14,6 +14,7 @@ import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
+import { FirstLook } from "./Insights";   // INSIGHTS-1 the first look
 import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
@@ -464,6 +465,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               {!undone && result.importId && <div style={{ flex: "1 1 260px" }}><ImportUndo importId={result.importId} onUndone={r => setUndone(r.sentence || "Undone.")} /></div>}
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
+            {/* INSIGHTS-1: what the file says, before Home */}
+            {!undone && <div style={{ marginTop: 14 }}><FirstLook isReadOnly={false} /></div>}
           </div>
         )}
       </div>

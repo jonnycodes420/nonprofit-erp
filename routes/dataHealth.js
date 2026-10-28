@@ -54,6 +54,7 @@ const MERGE_REFS = [
   ["donor_address_history", "donor_id"], ["donor_designations", "donor_id"], ["donor_materials", "donor_id"],
   ["donor_relationships", "donor_id_a"], ["donor_relationships", "donor_id_b"], ["donor_scores", "donor_id"],
   ["donor_rhythm", "donor_id"], ["group_crossings", "donor_id"], ["readout_events", "donor_id"],   // LIVE-1
+  ["insight_reviews", "donor_id"],   // INSIGHTS-1: a row marked Not a gift follows the person (its Undo lands on them)
   ["privacy_holds", "donor_id"], ["client_email_removals", "donor_id"],   // CLIENT-SAFE-1
   ["email_marketing_activity", "donor_id"], ["event_attendees", "donor_id"], ["fin_transactions", "donor_id"],
   ["gift_duplicate_questions", "donor_id"], ["gift_soft_credits", "donor_id"], ["gifts", "donor_id"],
@@ -116,9 +117,11 @@ const NOT_MOVED = {
   "workflow_runs.entity_id": "the run's dedupe key part; the person on a run is workflow_runs.donor_id, which moves",
   "asset_pointer_history.entity_id": "a log of photo and file pointer changes as they happened; history is never rewritten",
   "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
+  "insight_outcomes.donor_ids": "INSIGHTS-1: who a suggestion was about when she marked it Done, Not now or Doesn't fit; a record of what happened, never rewritten",
+  "insight_shown.donor_ids": "INSIGHTS-1: who a suggestion showed when it was first shown, for What worked; a record of what happened, never rewritten",
 };
 // Tables with no `id` column: a row is found by these columns plus the pointer.
-const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"] };
+const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"], insight_reviews: ["gift_id"] };
 const REFUSE_WORDS = {
   memberships: "Both people have a current membership. End one of them on the person's record, then merge.",
   receipts: "Both people have a year-end statement for the same year. Void one, then merge.",

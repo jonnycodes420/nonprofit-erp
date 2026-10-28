@@ -32,6 +32,9 @@ export function startShellReads(home) {
 // On Home, its two bundles too: the first, then (from /dashboard/my-stats in
 // it, by Home's own rule) the scoped one. Their answers are parked for Home.
 export function startHomeReads() {
+  // Home's ladder and cards (Insights.jsx useInsights("")) on their own: the
+  // heaviest read on Home, so it does not hold the first bundle back.
+  prefetch(["/insights"], { keep: true }).catch(() => {});
   prefetch(HOME_FIRST_READS, { keep: true }).then(b => {
     const r = b && b["/dashboard/my-stats"];
     prefetch(homeScopeReads(initialScope(r && r.status === 200 ? r.body : null)), { keep: true });

@@ -7180,6 +7180,70 @@ async function runSchemaInit(pool) {
       computed_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (org_id, donor_id)
     )`);
+  // INSIGHTS-1 · gift type on a gift and a pledge (Stock, IRA, DAF, …), written
+  // by the import from now on; existing rows keep NULL and the engine reads
+  // their words instead. The ladder's major-gift line is a setting (NULL: the
+  // default); it is not Capture's big-gift alert line (major_gift_line_cents).
+  // What she did with each card, her Review and Link decisions: new tables, so
+  // nothing that was here changes. A row she marks Not a gift is kept whole in
+  // insight_reviews.row_data while it lives in Finance (routes/insights.js).
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS gift_type TEXT`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS gift_type TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ladder_major_line_cents INTEGER`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS insight_outcomes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      item_key TEXT NOT NULL,
+      donor_ids TEXT[] NOT NULL DEFAULT '{}',
+      state TEXT NOT NULL,
+      until DATE,
+      reason TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_insight_outcomes_org ON insight_outcomes (org_id, kind, created_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS insight_shown (
+      org_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      item_key TEXT NOT NULL,
+      donor_ids TEXT[] NOT NULL DEFAULT '{}',
+      first_shown_on DATE NOT NULL,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      PRIMARY KEY (org_id, kind, item_key)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS insight_reviews (
+      org_id TEXT NOT NULL,
+      gift_id TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      as_type TEXT,
+      row_data JSONB,
+      fin_id TEXT,
+      fin_prev JSONB,
+      donor_id TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, gift_id)
+    )`);
+  for (const c of ["as_type TEXT", "row_data JSONB", "fin_id TEXT", "fin_prev JSONB", "donor_id TEXT"])
+    await pool.query(`ALTER TABLE insight_reviews ADD COLUMN IF NOT EXISTS ${c}`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS insight_links (
+      org_id TEXT NOT NULL,
+      network_key TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      relationship_ids TEXT[] NOT NULL DEFAULT '{}',
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, network_key)
+    )`);
   // Any write to gifts forgets the stored answer of every person it touched,
   // in the same transaction, whichever door wrote it.
   await pool.query(`
