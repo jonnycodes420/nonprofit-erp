@@ -290,7 +290,6 @@ CORE=(
   support1-answers
   fix49-decisions
   list1-columns-filters
-  nightly-check
   breaker
   perf-giving
   perf-app

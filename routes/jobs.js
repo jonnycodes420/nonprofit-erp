@@ -390,13 +390,6 @@ if (!backgroundTicksDisabled()) {
 if (!backgroundTicksDisabled()) {
   every("processTrialReminders", 6 * 60 * 60 * 1000, () => processTrialReminders(), 45000);
 }
-// HARDEN-1: the nightly read-only check. The tick runs every five minutes on
-// the worker and does something only between 3:30 and 5:00 AM New York time
-// (DST-correct, orgTime), once a night across every instance (nightlyCheck.js
-// claims the night with one row). It mails only Jonathan, only when red.
-if (!backgroundTicksDisabled()) {
-  every("runNightlyCheck", 5 * 60 * 1000, () => recordTick("runNightlyCheck", () => require("../nightlyCheck").tick()), 85000);
-}
 // PRICING-1: once a day, measure each banded org's records and apply only the
 // band moves an owner agreed to. Never a price change on its own.
 if (!backgroundTicksDisabled()) {

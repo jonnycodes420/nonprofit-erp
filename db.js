@@ -80,54 +80,6 @@ async function withAmbientTransaction(fn) {
     client.release();
   }
 }
-// HARDEN-1 · A READ-ONLY AMBIENT TRANSACTION, for the nightly check
-// (nightlyCheck.js). Every query() and run() inside fn, the routes it calls in
-// process included, goes to one client inside BEGIN; SET TRANSACTION READ
-// ONLY; ... ROLLBACK, so a write anywhere in it fails instead of landing.
-// With NIGHTLY_CHECK_DATABASE_URL set (a role that can only SELECT), the
-// client comes from that role's own pool, so it is read-only twice over.
-let _readOnlyPool = null;
-function readOnlyPool() {
-  const url = process.env.NIGHTLY_CHECK_DATABASE_URL;
-  if (!url) return pool;
-  if (!_readOnlyPool) {
-    _readOnlyPool = new Pool({
-      connectionString: url,
-      ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
-      options: "-c steward.app_connection=on -c default_transaction_read_only=on",
-      max: 2,
-    });
-    _readOnlyPool.on("error", err => console.error("[db] read-only pool connection dropped:", err.message));
-  }
-  return _readOnlyPool;
-}
-// A write inside it is refused HERE, before it reaches the database, so a
-// route that stores a cache on the way (Drift, the org summary) carries on
-// with its answer instead of aborting the whole transaction. Anything this
-// pattern misses still meets SET TRANSACTION READ ONLY in the database and
-// fails there, loudly. `st.refused` counts the refusals for the caller.
-const WRITE_SQL_RE = /^\s*(insert|update|delete|truncate|alter|create|drop|merge|copy|grant|revoke|lock|vacuum|analyze|refresh|reindex|cluster|comment|security|reset|set\s+(?!transaction))\b|^\s*with\b[\s\S]*\b(insert|update|delete)\b|\bfor\s+(update|share|no\s+key\s+update|key\s+share)\b|\bnextval\s*\(|\bpg_advisory_(xact_)?lock\b|\bset_config\s*\(/i;
-function refuseWriteInReadOnly(sql) {
-  const st = ambientTx.getStore();
-  if (!st || !st.open || !st.readOnly || !WRITE_SQL_RE.test(sql)) return;
-  st.refused = (st.refused || 0) + 1;
-  const e = new Error(`read_only: a write was refused inside the read-only check (${String(sql).trim().slice(0, 60)})`);
-  e.code = "25006";   // read_only_sql_transaction, the code Postgres would give
-  throw e;
-}
-async function withReadOnlyTransaction(fn) {
-  const client = await readOnlyPool().connect();
-  const st = { client, open: true, readOnly: true, refused: 0 };
-  try {
-    await client.query("BEGIN");
-    await client.query("SET TRANSACTION READ ONLY");
-    return await ambientTx.run(st, () => fn(client, st));
-  } finally {
-    st.open = false;
-    await client.query("ROLLBACK").catch(() => {});
-    client.release();
-  }
-}
 async function queryOutside(sql, params = []) {
   let i = 0;
   return (await pool.query(sql.replace(/\?/g, () => `$${++i}`), params)).rows;
@@ -139,7 +91,6 @@ async function runOutside(sql, params = []) {
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
-  refuseWriteInReadOnly(sql);
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -182,7 +133,6 @@ async function querySetwise(sql, params = []) {
 }
 
 async function run(sql, params = []) {
-  refuseWriteInReadOnly(sql);
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -5483,8 +5433,8 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_org ON email_log (org_id, created_at DESC)`);
   // HARDEN-1: which arm of the donor-mail gate let a send go (sendGate.js:
   // exempt, staff_confirm, auto_email_on) and the people it went to (ids,
-  // never addresses), so the nightly check can prove no automatic message
-  // reached a person whose Automatic emails switch was off.
+  // never addresses), so scripts/auto-mail-switches-readonly.sql can prove no
+  // automatic message reached a person whose Automatic emails switch was off.
   await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS gate TEXT`);
   await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS donor_ids TEXT[]`);
 
@@ -6673,15 +6623,15 @@ async function runSchemaInit(pool) {
       restored_at TIMESTAMPTZ
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_org ON deleted_records (org_id, created_at DESC)`);
-  // HARDEN-2: a person's OPEN deletion records, by person (the nightly check's
-  // check a, personTrash.js, and the trigger below all ask exactly this).
+  // HARDEN-2: a person's OPEN deletion records, by person (personTrash.js,
+  // scripts/stale-deletions-readonly.sql and the trigger below all ask this).
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_open_person ON deleted_records (org_id, record_id)
                       WHERE table_name = 'donors' AND restored_at IS NULL`);
   // HARDEN-2: an open deletion record is about one row. When a new row takes a
   // deleted person's id (Load sample data reuses its ids after Clear), that
   // person is live again, so the record is closed, in the same statement,
   // whichever door did it. Without this, Clear and then Load sample data put a
-  // person back on the list whom the nightly check still read as deleted.
+  // person back on the list whose deletion record was still open.
   // Closed, never deleted: the record of who deleted them stays.
   await pool.query(`
     CREATE OR REPLACE FUNCTION steward_person_row_forgets_trash() RETURNS TRIGGER AS $fn$
@@ -7437,21 +7387,9 @@ async function runSchemaInit(pool) {
       hour_key TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
-  // HARDEN-2 · one row per nightly check run (nightlyCheck.js), the only
-  // thing that job writes besides its bookkeeping. Platform-wide, so no
-  // org_id: red_checks holds letters and titles, never an org's id or name.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS nightly_check_runs (
-      id TEXT PRIMARY KEY,
-      night TEXT,
-      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      finished_at TIMESTAMPTZ,
-      ok BOOLEAN,
-      red_checks JSONB NOT NULL DEFAULT '[]'::jsonb,
-      orgs_read INTEGER,
-      error TEXT
-    )`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_nightly_check_runs_started ON nightly_check_runs (started_at DESC)`);
+  // The nightly check (HARDEN-1/2) is gone, and its one result table with it.
+  // Its read-only queries live on as scripts/*-readonly.sql.
+  await pool.query(`DROP TABLE IF EXISTS nightly_check_runs`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`
@@ -9566,5 +9504,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, withReadOnlyTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

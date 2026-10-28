@@ -874,4 +874,3 @@ hand.
   then show it. PayPal inside Stripe Checkout is the same switch only where Stripe offers it to the org's country.
   Cards, Apple Pay, Google Pay and Link need nothing. Venmo is not offered by Stripe.
 
-- **HARDEN-1: a read-only database role for the nightly check.** In Supabase's SQL editor run the six lines in the header of `nightlyCheck.js` (CREATE ROLE steward_nightly_check … GRANT SELECT …) with a new password, then in Railway set `NIGHTLY_CHECK_DATABASE_URL` on the worker to DATABASE_URL with that role and password. Until then the check runs on the normal connection, inside a read-only transaction.
