@@ -2959,7 +2959,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           ))}
         </div>
-        {!editMode&&thankClockLow&&<div style={{marginTop:14}}><HomeThankClock onNavigate={onNavigate}/></div>}
         {/* FIX-22: one quiet line, only when somebody has a birthday this week. */}
         {birthdaysThisWeek.length>0&&(
           <div {...interactive(()=>setRailView({kind:"list",key:"birthdays"}),{label:`${birthdaysThisWeek.length} birthday${birthdaysThisWeek.length===1?"":"s"} this week`})}
@@ -2971,23 +2970,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         )}
         {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
         <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
-        {/* HOME-3 — the rail is Today, Calls to make, To confirm and the
-            mailbox notice. The day's meetings and the thank-you clock follow
-            when there is something in them; the moves are the deck's. */}
-        {homeDay&&homeDay.toConfirm&&homeDay.toConfirm.count>0&&(
-          <div data-testid="home-rail-confirm" style={{marginTop:16,paddingTop:14,borderTop:"1px solid "+T.bg2}}>
-            <span style={{...sSerif,display:"block",marginBottom:6}}>To confirm</span>
-            <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.5}}>
-              {homeDay.toConfirm.from} {homeDay.toConfirm.count===1?"is":"are"} waiting, {fmtFull(homeDay.toConfirm.amount)}. None of it is in your totals until you confirm it.
-            </div>
-            <button type="button" onClick={()=>onNavigate&&onNavigate("fundraising",{frSection:"toconfirm"})}
-              style={{background:"none",border:"none",padding:0,marginTop:6,color:T.greenDk,fontWeight:700,fontSize:13,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:3,fontFamily:"inherit"}}>Review them</button>
-          </div>
-        )}
+        {/* HOME-3 — the rail is Today, Calls to make, To confirm (the
+            thank-you clock) and the mailbox notice, then the day's meetings;
+            the moves are the deck's. */}
         {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+          <HomeThankClock onNavigate={onNavigate}/>
           <MailboxBanner onNavigate={onNavigate}/>
           <div data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
-          {!thankClockLow&&<HomeThankClock onNavigate={onNavigate}/>}
         </div>}
       </div>
     );

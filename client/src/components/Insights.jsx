@@ -316,13 +316,18 @@ const DECK_CSS = `
 @keyframes movesInNext { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
 @keyframes movesInPrev { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .moves-card[data-slide] { animation: none; } }
+.moves-swipe { display: none; }
 .moves-facts { display: flex; gap: 28px; flex-wrap: wrap; font-size: 14.5px; }
 .moves-btn { border-radius: 12px; padding: 12px 20px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; min-height: 44px; }
 .moves-round { width: 44px; height: 44px; border-radius: 999px; border: 1px solid ${T.bg3}; background: ${T.white}; color: ${T.ink}; font-size: 20px; cursor: pointer; line-height: 1; }
 @media (max-width: 640px) {
   .moves-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -2px; padding-bottom: 2px; }
   .moves-tab { min-width: 0; flex: none; padding: 9px 14px; border-radius: 999px; }
-  .moves-tab .moves-stake { display: none; }
+  .moves-tab .moves-stake { display: none !important; }
+  .moves-acts { display: grid !important; grid-template-columns: 1fr 1fr; }
+  .moves-acts .moves-spacer { display: none; }
+  .moves-swipe { display: inline !important; }
+  .moves-nav { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
   .moves-card { padding: 20px 18px; border-radius: 16px; }
   .moves-name { font-size: 26px !important; }
 }
@@ -332,6 +337,12 @@ const BTN_QUIET = { background: T.white, color: T.ink, border: "1px solid " + T.
 const TASK_TITLE = {
   draft: m => `Note to ${m.name}`, calls: m => `Call ${m.name}`, visit: m => `Visit ${m.name}`,
   brief: m => `Visit ${m.name}: the briefing`, coffee: m => `Coffee with ${m.name}`, collect: m => `Collect from ${m.name}`,
+};
+// "between Dec 17, 2026 and Dec 31, 2026" reads "Dec 17 – Dec 31, 2026"
+const whenWords = w => {
+  const b = /^between (\w+ \d+), (\d{4}) and (\w+ \d+, (\d{4}))$/.exec(w || "");
+  if (b) return b[2] === b[4] ? `${b[1]} – ${b[3]}` : `${b[1]}, ${b[2]} – ${b[3]}`;
+  return String(w || "").replace(/^between /, "").replace(/ and /, " – ").replace(/^on /, "");
 };
 const shortDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
@@ -457,7 +468,7 @@ export function HomeMoves({ onNavigate, isReadOnly, footer }) {
             {m.say && <blockquote style={{ margin: 0, background: T.white, borderRadius: 12, padding: "14px 16px", fontSize: 15.5, lineHeight: 1.55, fontStyle: "italic", color: T.ink }}>“{m.say}”</blockquote>}
             <div className="moves-facts">
               {m.who && <div><span style={{ color: T.ink3 }}>Who</span><br /><b>{m.who}{m.channel ? ` · ${m.channel.toLowerCase()}` : ""}</b></div>}
-              {m.when && <div><span style={{ color: T.ink3 }}>When</span><br /><b>{m.when.replace(/^between /, "").replace(/^on /, "")}</b></div>}
+              {m.when && <div><span style={{ color: T.ink3 }}>When</span><br /><b>{whenWords(m.when)}</b></div>}
               {m.ask && <div style={{ flex: "1 1 260px" }}><span style={{ color: T.ink3 }}>Ask</span><br /><b data-testid="move-ask">{m.ask.words}</b><div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{m.ask.rule}</div></div>}
             </div>
             {(m.also || []).length > 0 && (
@@ -480,14 +491,17 @@ export function HomeMoves({ onNavigate, isReadOnly, footer }) {
                 <button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => setMode(null)}>Cancel</button>
               </div>
             )}
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+            <div className="moves-acts" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
               {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-action" style={BTN_PRIMARY} disabled={busy} onClick={doAction}>{m.action.label}</button>}
               {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-now" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "snooze" ? null : "snooze")}>Not now</button>}
               {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-fit" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "dismiss" ? null : "dismiss")}>Doesn't fit</button>}
               {!isReadOnly && <button type="button" data-testid="move-done" style={LNK} disabled={busy} onClick={() => act("done", {}, `Done. ${m.name} is off your moves.`)}>Done</button>}
-              <div style={{ flex: 1 }} />
-              <button type="button" className="moves-round" data-testid="move-prev" aria-label="Previous move" disabled={moves.length < 2} onClick={() => go(-1)}>‹</button>
-              <button type="button" className="moves-round" data-testid="move-next" aria-label="Next move" disabled={moves.length < 2} onClick={() => go(1)}>›</button>
+              <div className="moves-spacer" style={{ flex: 1 }} />
+              <div className="moves-nav" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button type="button" className="moves-round" data-testid="move-prev" aria-label="Previous move" disabled={moves.length < 2} onClick={() => go(-1)}>‹</button>
+                <span className="moves-swipe" style={{ fontSize: 12, color: T.ink3 }}>{moves.length > 1 ? "Swipe for the next move" : ""}</span>
+                <button type="button" className="moves-round" data-testid="move-next" aria-label="Next move" disabled={moves.length < 2} onClick={() => go(1)}>›</button>
+              </div>
             </div>
             {m.group && m.group.count > 1 && (
               <div style={{ fontSize: 13, color: T.ink3 }}>

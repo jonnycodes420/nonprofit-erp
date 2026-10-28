@@ -251,10 +251,7 @@ app.get("/home/lead", requireAuth, wrap(async (req, res) => {
   const screen = HL.forScreen(out);
   // TEST_MODE: the order of every candidate, so a suite can see a rank move.
   if (testMode() && req.query.explain) screen.ranked = out.ranked.map(c => ({ kind: c.kind, key: c.key, score: c.score }));
-  // HOME-3: the rail's To confirm reads the same facts the lead did.
-  const tc = facts.toConfirm;
-  res.json({ role: facts.role, today: facts.today, ...screen,
-    toConfirm: tc ? { count: tc.count, amount: tc.cents / 100, from: tc.from } : null });
+  res.json({ role: facts.role, today: facts.today, ...screen });
 }));
 
 app.post("/home/lead/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
