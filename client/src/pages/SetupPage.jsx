@@ -4,13 +4,18 @@
 // plain sentences, one Start, progress she can leave, and "Steward is ready".
 // Every count and total on this page comes from the server's plan and the
 // steps' own results; this file formats them and computes nothing.
+//
+// FIX-55: every spreadsheet goes to the one reader. A file is read here the
+// way the import screen reads it (readSheetFile); the plan shows what POST
+// /sheet-import/understand found in it, and its button opens the import
+// screen (SpreadsheetImport) with that very file, for its questions, receipt
+// and Undo. Start imports nothing and does only the steps left ticked.
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import * as XLSX from "xlsx";
 import { apiFetch } from "../api";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
-import { extractWorkbookFromSheetJS } from "../../../shared/importShape.js";
+import SpreadsheetImport, { readSheetFile } from "../components/SpreadsheetImport";
 
 const TOOLS = [
   ["stripe", "Stripe"], ["paypal", "PayPal"], ["zeffy", "Zeffy"], ["givebutter", "Givebutter"],
@@ -41,14 +46,26 @@ function Btn({ children, onClick, disabled, secondary, testid, danger }) {
   );
 }
 
-// A spreadsheet is read in the browser into rows; a CSV goes as its text.
+// FIX-55: a file goes as the import screen reads it (its sheets of cells), with
+// its own bytes so the plan can hand that very file to the import screen after
+// a closed tab, and the date that screen would suggest for undated rows.
+const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 async function readFile(file) {
-  if (/\.(xlsx|xls)$/i.test(file.name)) {
-    const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellNF: true, cellFormula: true });
-    return extractWorkbookFromSheetJS(wb, XLSX).filter(s => s.records && s.records.length)
-      .map(s => ({ name: `${file.name}: ${s.name}`, records: s.records }));
-  }
-  return [{ name: file.name, text: await file.text() }];
+  const sheets = await readSheetFile(file);
+  const t = file.lastModified ? new Date(file.lastModified) : null;
+  return { name: file.name, sheets, bytes: toBase64(await file.arrayBuffer()), lastModified: file.lastModified || null,
+    suggestedDate: t && !isNaN(t) ? localIso(t) : null };
+}
+// The stored file back as a File, for the import screen.
+function fileFromStored(f) {
+  const parts = f.bytes ? [Uint8Array.from(atob(f.bytes), c => c.charCodeAt(0))] : [f.text || ""];
+  return new File(parts, f.name, f.lastModified ? { lastModified: f.lastModified } : undefined);
 }
 
 function Intake({ onMade }) {
@@ -61,9 +78,9 @@ function Intake({ onMade }) {
   const go = async () => {
     setBusy(true); setErr("");
     try {
-      const read = (await Promise.all(files.map(readFile))).flat();
+      const read = await Promise.all(files.map(readFile));
       const r = await apiFetch("/setup/runs", { method: "POST", body: JSON.stringify({ files: read, siteUrl, tools }) });
-      onMade(r);
+      onMade(r, files);
     } catch (e) { setErr(errorMessage(e, "Steward could not read those files.")); }
     setBusy(false);
   };
@@ -75,8 +92,8 @@ function Intake({ onMade }) {
       </p>
       <div style={card}>
         <div style={kicker}>Your donor files</div>
-        <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Any number, in any format the import reads: CSV or Excel, a Salesforce Contacts and Donations pair, DonorPerfect, Bloomerang, Neon, or a spreadsheet you kept.</p>
-        <input type="file" multiple accept=".csv,.txt,.xlsx,.xls" data-testid="setup-files"
+        <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Any number, CSV or Excel, from your old system or a spreadsheet you kept. Each one is read by the import screen, which shows what it found and asks what it cannot tell before anything is written.</p>
+        <input type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xls,.ods" data-testid="setup-files"
           onChange={e => setFiles([...e.target.files])} style={{ fontSize: 13 }} />
         {files.length > 0 && <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 8 }}>{files.map(f => f.name).join(", ")}</div>}
       </div>
@@ -124,39 +141,97 @@ function Question({ q, value, onChange }) {
   );
 }
 
-function Plan({ run, onChange, onStart }) {
+// One spreadsheet in the plan: what the one reader found in it, and the button
+// that opens the import screen with it. The import happens there, never here.
+function SheetStep({ f, imported, onOpen, opening }) {
+  const rd = f.reader;
+  return (
+    <div data-testid={`setup-file-${f.id}`} style={{ ...line, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <span style={{ flex: "1 1 260px", minWidth: 0 }}>
+        <strong>{f.name}</strong>
+        <span data-testid="setup-file-reader" style={{ display: "block", fontSize: 13, color: T.ink2, marginTop: 2 }}>
+          {!rd ? "Steward is reading it with the import screen's reader…" : rd.ok === false ? rd.sentence
+            : `${rd.button || "Nothing to import"}${rd.questions ? `. ${rd.questions === 1 ? "One question" : `${rd.questions} questions`} to answer on the import screen.` : "."}`}
+        </span>
+      </span>
+      {imported
+        ? <span style={{ fontSize: 12.5, fontWeight: 700, color: T.green600 }}>Imported. Its receipt and Undo are in Imports.</span>
+        : <Btn secondary onClick={onOpen} disabled={opening} testid={`setup-file-open-${f.id}`}>{opening ? "Opening…" : "Review and import"}</Btn>}
+    </div>
+  );
+}
+
+function Plan({ run, held, onRun, onChange, onStart }) {
   const p = run.plan || {};
   const [answers, setAnswers] = useState(run.answers || {});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Every step she can leave out starts ticked; Start sends only the ticked ones.
+  const [ticked, setTicked] = useState(() => new Set(p.choosable || []));
+  const [importing, setImporting] = useState(null);   // { id, file }
+  const [opening, setOpening] = useState(null);
+  const [imported, setImported] = useState({});
+  const sheets = (p.files || []).filter(f => f.role === "sheet");
+  const reports = (p.files || []).filter(f => f.role === "old_report");
+  // A plan a super-admin prepared has no reader numbers yet: read them as her.
+  const unread = sheets.some(f => !f.reader);
+  useEffect(() => {
+    if (!unread) return;
+    apiFetch(`/setup/runs/${run.id}/read`, { method: "POST", body: "{}" }).then(onRun).catch(e => setErr(errorMessage(e, "Steward could not read your files.")));
+  }, [run.id, unread]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const open = async f => {
+    setOpening(f.id); setErr("");
+    try {
+      const file = (held && held[f.name]) || fileFromStored(await apiFetch(`/setup/runs/${run.id}/files/${encodeURIComponent(f.id)}`));
+      setImporting({ id: f.id, file });
+    } catch (e) { setErr(errorMessage(e, "That file could not be opened.")); }
+    setOpening(null);
+  };
+  const tick = k => setTicked(t => { const n = new Set(t); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const start = async () => {
     setBusy(true); setErr("");
     try {
       await apiFetch(`/setup/runs/${run.id}/answers`, { method: "PUT", body: JSON.stringify({ answers }) });
-      onStart(await apiFetch(`/setup/runs/${run.id}/start`, { method: "POST", body: "{}" }));
+      onStart(await apiFetch(`/setup/runs/${run.id}/start`, { method: "POST", body: JSON.stringify({ steps: [...ticked] }) }));
     } catch (e) { setErr(errorMessage(e, "Setup could not start.")); setBusy(false); }
+  };
+  const stepLine = (a, i) => {
+    const can = (p.choosable || []).includes(a.step) && !a.fixed;
+    return (
+      <label key={i} data-testid={`setup-step-choice-${a.step}`} style={{ ...line, display: "flex", gap: 10, alignItems: "flex-start", cursor: can ? "pointer" : "default" }}>
+        {can
+          ? <input type="checkbox" checked={ticked.has(a.step)} onChange={() => tick(a.step)} style={{ marginTop: 4, accentColor: T.green600 }} aria-label={a.sentence} />
+          : <span style={{ width: 13, flex: "0 0 13px" }} />}
+        <span style={{ flex: 1, minWidth: 0, color: can && !ticked.has(a.step) ? T.ink3 : T.ink }}>{a.sentence}</span>
+      </label>
+    );
   };
   return (
     <div data-testid="setup-plan">
       <h1 style={h1}>Here is the plan</h1>
-      <p style={{ fontSize: 14.5, color: T.ink2, margin: "0 0 18px" }}>Nothing has happened yet. Read it, answer what you can, and press Start.</p>
-      {p.files && p.files.length > 0 && (
+      <p style={{ fontSize: 14.5, color: T.ink2, margin: "0 0 18px" }}>Nothing has happened yet. Bring in your files, untick anything you don't want, and press Start.</p>
+      {sheets.length > 0 && (
+        <div style={card} data-testid="setup-plan-files">
+          <div style={kicker}>Your files, read by the import screen</div>
+          <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 6px", lineHeight: 1.5 }}>
+            Each file opens the import screen: it shows what it found, asks what it cannot tell, and gives you a receipt and Undo. Start does not import anything.
+          </p>
+          {sheets.map(f => <SheetStep key={f.id} f={f} imported={!!imported[f.id]} opening={opening === f.id} onOpen={() => open(f)} />)}
+        </div>
+      )}
+      {reports.length > 0 && (
         <div style={card}>
-          <div style={kicker}>What Steward read</div>
-          {p.files.map(f => (
-            <div key={f.name} style={line}>
-              <strong>{f.name}</strong>: {f.rows.toLocaleString("en-US")} rows{f.system ? `, from ${f.system}` : ""}{f.because ? `, known by ${f.because}` : ""}.
-            </div>
-          ))}
+          <div style={kicker}>Old reports</div>
+          {reports.map(f => <div key={f.id} style={line}><strong>{f.name}</strong>: an old report{f.rows ? ` of ${f.rows.toLocaleString("en-US")} rows` : ""}, not gifts. It is kept under Reports and checked against what Steward has.</div>)}
         </div>
       )}
       <div style={card} data-testid="setup-plan-auto">
-        <div style={kicker}>What Steward will do on its own</div>
-        {(p.auto || []).map((a, i) => <div key={i} style={line}>{a.sentence}</div>)}
+        <div style={kicker}>What Steward will do when you press Start</div>
+        {(p.auto || []).map(stepLine)}
       </div>
       <div style={card} data-testid="setup-plan-prepared">
         <div style={kicker}>Prepared for your click</div>
-        {(p.prepared || []).map((a, i) => <div key={i} style={line}>{a.sentence}</div>)}
+        {(p.prepared || []).map(stepLine)}
       </div>
       {(p.questions || []).length > 0 && (
         <div style={card} data-testid="setup-plan-questions">
@@ -170,6 +245,8 @@ function Plan({ run, onChange, onStart }) {
         <Btn onClick={start} disabled={busy} testid="setup-start">{busy ? "Starting…" : "Start"}</Btn>
         <Btn onClick={onChange} secondary testid="setup-change">Change what I gave</Btn>
       </div>
+      {importing && <SpreadsheetImport file={importing.file} onClose={() => setImporting(null)}
+        onImported={() => { setImported(d => ({ ...d, [importing.id]: true })); setImporting(null); }} />}
     </div>
   );
 }
@@ -303,6 +380,8 @@ export default function SetupPage() {
   const [run, setRun] = useState(undefined);
   const [fresh, setFresh] = useState(false);
   const [note, setNote] = useState("");
+  // The files she picked, by name, so the plan opens the import screen with them.
+  const [held, setHeld] = useState({});
   const timer = useRef(null);
   const load = useCallback(async () => {
     try { const r = await apiFetch("/setup/current"); setRun(r.run || null); }
@@ -317,8 +396,8 @@ export default function SetupPage() {
   const resume = async () => { try { setRun(await apiFetch(`/setup/runs/${run.id}/resume`, { method: "POST", body: "{}" })); } catch { load(); } };
   let body;
   if (run === undefined) body = <div style={{ color: T.ink3, fontSize: 14 }}>Opening setup…</div>;
-  else if (!run || fresh || run.status === "undone") body = <Intake onMade={r => { setFresh(false); setRun(r); }} />;
-  else if (run.status === "planned") body = <Plan run={run} onChange={() => setFresh(true)} onStart={setRun} />;
+  else if (!run || fresh || run.status === "undone") body = <Intake onMade={(r, files) => { setHeld(Object.fromEntries((files || []).map(f => [f.name, f]))); setFresh(false); setRun(r); }} />;
+  else if (run.status === "planned") body = <Plan run={run} held={held} onRun={setRun} onChange={() => setFresh(true)} onStart={setRun} />;
   else if (run.status === "running" || run.status === "failed") body = <Progress run={run} onResume={resume} />;
   else body = <Ready run={run} onReload={load} onUndone={s => { setNote(s); setRun(null); }} />;
   return (

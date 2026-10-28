@@ -2,10 +2,11 @@
 //
 // Donor data, money and email in one suite. On a fresh org, a two-file
 // Salesforce export (Contacts + Donations) and a saved website served from
-// localhost (no live fetch) must produce, after ONE Start:
-//   * every donor and gift, to the cent, with the Closed Lost row left out by
-//     name; the funds the file names; the receipt details with the site's EIN
-//     (and receipts still OFF);
+// localhost (no live fetch) must produce a plan whose spreadsheet lines are the
+// one reader's own counts (FIX-55: setup never reads a file its own way and
+// Start imports nothing; she imports each file from the import screen), and,
+// after ONE Start:
+//   * the receipt details with the site's EIN (and receipts still OFF);
 //   * three journeys, every one paused; three thank-you drafts; three
 //     PREPARED invitations and no invites row;
 //   * a "Steward is ready" readout with five people to call;
@@ -16,8 +17,9 @@
 // presses Send. With no AI key, every step still runs on template words.
 //
 // Planted defects that turned this red: `enabled: true` on the journey step
-// ("no journey active"); the Closed Won filter removed from setupFiles
-// ("to the cent"); setup calling /auth/invite in its invites step ("zero
+// ("no journey active"); setup counting a spreadsheet its own way (FIX-55:
+// the plan read 443 people and 0 gifts from the event workbook, "the one
+// reader's own counts"); setup calling /auth/invite in its invites step ("zero
 // emails"); undo skipping fin_funds ("no funds after undo").
 "use strict";
 
@@ -110,27 +112,70 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   const mail0 = mail.length;
 
   // ── §1 the plan, before anything happens ────────────────────────────────
+  // FIX-55: the plan hands every spreadsheet to the one reader. Each file's
+  // line is what POST /sheet-import/understand says about it, and the plan
+  // counts nothing itself. Start imports nothing.
   console.log("\n§1 a plan first, and nothing written");
-  const files = ["salesforce-contacts.csv", "salesforce-donations.csv"].map(f => ({ name: f, text: fs.readFileSync(path.join(FX, f), "utf8") }));
+  const R0 = await import("../shared/sheetRead.js");
+  const texts = Object.fromEntries(["salesforce-contacts.csv", "salesforce-donations.csv"].map(f => [f, fs.readFileSync(path.join(FX, f), "utf8")]));
+  const files = Object.entries(texts).map(([name, text]) => ({ name, text }));
   const made = await api("POST", "/setup/runs", tok, { files, siteUrl: `http://localhost:${SITE}/`, tools: ["stripe", "checks"] });
   const R = made.body || {};
   ok("§1 the plan is made", made.status === 201 && R.status === "planned" && R.plan, { status: made.status, body: made.body });
-  ok("§1 both files are Salesforce, said with the columns that gave it away",
-    !!R.plan && R.plan.files.length === 2 && R.plan.files.every(f => f.system === "Salesforce" && f.because), R.plan && R.plan.files);
-  ok("§1 the plan counts 40 people and 99 gifts, $29,536.00, in code",
-    !!R.plan && R.plan.counts.donors === 40 && R.plan.counts.gifts === 99 && R.plan.counts.giftCents === 2953600 && R.plan.counts.setAside === 1, R.plan && R.plan.counts);
-  ok("§1 it says what it will do, what it prepares, and asks at most ten questions",
-    !!R.plan && R.plan.auto.length >= 4 && R.plan.prepared.length >= 2 && R.plan.questions.length >= 1 && R.plan.questions.length <= 10,
-    R.plan && { auto: R.plan.auto.length, prepared: R.plan.prepared.length, q: R.plan.questions.map(x => x.key) });
-  ok("§1 every question arrives with a default already picked", !!R.plan && R.plan.questions.every(x => x.default !== undefined), R.plan && R.plan.questions);
+  const pick = c => ({ people: c.people, gifts: c.gifts, giftCents: c.giftCents, pledges: c.pledges });
+  const readerSays = {};
+  for (const [name, text] of Object.entries(texts))
+    readerSays[name] = pick(((await api("POST", "/sheet-import/understand", tok, { fileName: name, sheets: [{ name: "Sheet1", grid: R0.gridFromText(text) }] })).body || {}).counts || {});
+  ok("§1 each file is a spreadsheet step carrying the one reader's own counts, the same as the import screen's",
+    !!R.plan && R.plan.files.length === 2 && R.plan.files.every(f => f.role === "sheet" && f.reader && f.reader.ok
+      && JSON.stringify(pick(f.reader.counts)) === JSON.stringify(readerSays[f.name])),
+    R.plan && { files: R.plan.files.map(f => [f.name, f.role, f.reader && pick(f.reader.counts || {})]), readerSays });
+  ok("§1 the plan counts nothing itself and has no import step", !!R.plan && !R.plan.counts && !R.plan.auto.some(a => a.step === "import" || /^Import /.test(a.sentence)),
+    R.plan && { counts: R.plan.counts, auto: R.plan.auto.map(a => a.sentence) });
+  ok("§1 every other step is listed on its own, each with a tick she can take off",
+    !!R.plan && ["profile", "groups", "templates", "journeys", "invites", "connections"].every(k => R.plan.choosable.includes(k)
+      && [...R.plan.auto, ...R.plan.prepared].some(a => a.step === k)), R.plan && R.plan.choosable);
+  ok("§1 it asks at most ten questions, each with a default already picked",
+    !!R.plan && R.plan.questions.length <= 10 && R.plan.questions.every(x => x.default !== undefined), R.plan && R.plan.questions);
   ok("§1 the site's EIN is a fact, not a question", !!R.site && R.site.facts.ein && R.site.facts.ein.value === EIN && !R.plan.questions.some(x => x.key === "ein"), R.site && R.site.facts.ein);
   ok("§1 nothing was written before Start: no donor, no gift, no fund",
     (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`)) === 0 && (await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`)) === 0
     && (await n(`SELECT COUNT(*)::int n FROM fin_funds WHERE org_id=$1`)) === 0);
+  const back = await api("GET", `/setup/runs/${R.id}/files/${R.plan && R.plan.files[0].id}`, tok);
+  ok("§1 the plan hands the file back as she gave it, for the import screen", back.status === 200 && back.body.text === texts[back.body.name], { status: back.status, name: back.body && back.body.name });
+
+  // ── §1b she imports from the plan's import screen ──────────────────────
+  // The import screen's own write (POST /sheet-import/commit), its receipt
+  // and its Undo. The contacts file, then the Closed Won gifts as a list of
+  // her own (the reader asks which columns a bare Salesforce Opportunities
+  // file holds; that question is the import screen's, not setup's).
+  console.log("\n§1b the import screen imports, not Start");
+  const commit = async (fileName, text) => {
+    const r = await api("POST", "/sheet-import/commit", tok, { background: true, fileName, sheets: [{ name: "Sheet1", grid: R0.gridFromText(text) }], answers: {} });
+    if (r.status !== 202) return { r, end: null };
+    let j = null;
+    await waitFor(async () => { j = (await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok)).body; return j && j.status !== "running"; }, { timeout: 120000, interval: 200 });
+    return { r, end: j, importId: r.body.importId };
+  };
+  const contacts = Object.fromEntries(R0.gridFromText(texts["salesforce-contacts.csv"]).slice(1).map(c => [c[0], c]));
+  const won = R0.gridFromText(texts["salesforce-donations.csv"]).slice(1).filter(d => d[5] === "Closed Won");
+  const iso = d => { const [m, dd, y] = String(d).split("/"); return `${y}-${m.padStart(2, "0")}-${dd.padStart(2, "0")}`; };
+  const giftsCsv = ["First Name,Last Name,Email,Gift Date,Amount,Fund",
+    ...won.map(d => { const c = contacts[d[1]]; return [c[1], c[2], c[3], iso(d[4]), d[3], d[6]].join(","); })].join("\n");
+  const imports = [];
+  for (const [nm, text] of [["salesforce-contacts.csv", texts["salesforce-contacts.csv"]], ["gift-list.csv", giftsCsv]]) {
+    const c = await commit(nm, text);
+    ok(`§1b ${nm} imports through the import screen's own write`, c.end && c.end.status === "done", c.end || c.r.body);
+    if (c.importId) imports.push(c.importId);
+  }
+  const g0 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
+  ok("§1b 99 gifts, $29,536.00 to the cent, and 40 people", g0.n === 99 && Number(g0.c) === 2953600
+    && (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`)) === 40, g0);
+  const before = { gifts: g0.n, donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`) };
 
   // ── §2 one Start, and the work runs on the server ────────────────────────
   console.log("\n§2 Start");
-  const st = await api("POST", `/setup/runs/${R.id}/start`, tok, {});
+  const st = await api("POST", `/setup/runs/${R.id}/start`, tok, { steps: R.plan.choosable });
   ok("§2 Start is accepted and the work runs on its own", st.status === 202 && st.body.status === "running", { status: st.status, body: st.body && st.body.error });
   let cur = null;
   await waitFor(async () => { cur = (await api("GET", "/setup/current", tok)).body.run; return cur && ["done", "failed"].includes(cur.status); }, { timeout: 90000, interval: 300 });
@@ -138,15 +183,11 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
 
   if (process.env.ONBOARD1_DEBUG) console.log(JSON.stringify({ plan: R.plan, steps: cur && cur.steps.map(s => ({ k: s.key, st: s.status, sentence: s.result && s.result.sentence })), readout: cur && cur.readout }, null, 1));
 
-  // ── §3 to the cent ──────────────────────────────────────────────────────
-  console.log("\n§3 donors and gifts, to the cent");
-  const gifts = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
-  ok("§3 99 gifts, $29,536.00 to the cent; the Closed Lost row is not among them", gifts.n === 99 && Number(gifts.c) === 2953600, gifts);
-  ok("§3 40 donors", (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`)) === 40);
-  const imp = cur && cur.steps.find(s => s.key === "import");
-  ok("§3 the import step reads its numbers back from the database and says it footed", !!imp && imp.result && imp.result.footed === true && imp.result.setAside.length === 1, imp && imp.result);
-  const funds = (await q(`SELECT name FROM fin_funds WHERE org_id=$1`, [ORG])).map(r => r.name);
-  ok("§3 the three funds the file names exist", ["Weekend Backpacks", "Mobile Pantry", "General Operating"].every(f => funds.includes(f)), funds);
+  // ── §3 Start imported nothing ────────────────────────────────────────────
+  console.log("\n§3 Start writes no person and no gift");
+  ok("§3 the same gifts and people as the import screen left", (await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`)) === before.gifts
+    && (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`)) === before.donors);
+  ok("§3 there is no import step", !!cur && !cur.steps.some(s => s.key === "import" || s.key === "funds"), cur && cur.steps.map(s => s.key));
 
   // ── §4 profile, receipt, journeys, templates, invites ─────────────────────
   console.log("\n§4 the basics");
@@ -242,6 +283,11 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   console.log("\n§8 Undo all of setup");
   const u = await api("POST", `/setup/runs/${R.id}/undo`, tok, {});
   ok("§8 undo reports nothing kept", u.status === 200 && u.body.ok === true, u.body);
+  ok("§8 setup's undo leaves her imports alone: each has its own receipt and Undo",
+    (await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`)) === before.gifts);
+  const rev = [];
+  for (const id of [...imports].reverse()) rev.push((await api("POST", `/imports/${id}/reverse`, tok, {})).status);
+  ok("§8 each import undoes from its own receipt", rev.length === 2 && rev.every(x => x === 200), rev);
   const left = {
     donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
     gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`),
@@ -255,15 +301,16 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   const [after] = await q(`SELECT ein, legal_name, mission, logo_data, setup_started_at FROM orgs WHERE id=$1`, [ORG]);
   ok("§8 the profile is back as it was", !after.ein && !after.legal_name && !after.mission && !after.logo_data && !after.setup_started_at, after);
 
-  // ── §9 FIX-43 Parts 3 and 4: a gifts-only file, and an old report ───────
-  // One gift per row with the donor's name on each row (no people file)
-  // imports the Import screen's way; a giving summary among the files is kept
-  // out of the import and checked by RECONCILE-1, its one line in the readout.
-  // Planted defects that turned this red: setupFiles back to `giftAlone`
-  // with no people from the rows ("gifts-only file imports"); readFilesFor
-  // passing the report to the import ("the report is not gifts"); the finish
-  // step skipping the check ("one line in the readout").
-  console.log("\n§9 a gifts-only file and an old report");
+  // ── §9 FIX-43 Part 3 + FIX-55: a gift list, an old report, and the ticks ─
+  // The gift list is the reader's (its plan line is the reader's own counts,
+  // and it is imported from the import screen); a giving summary among the
+  // files is an old report, kept out of the import and checked by RECONCILE-1,
+  // its one line in the readout. Start with only the old-report check ticked
+  // makes no groups, drafts or journeys.
+  // Planted defects that turned this red: readFilesFor passing the report to
+  // the import ("the report is not gifts"); the finish step skipping the check
+  // ("one line in the readout"); chosenSteps ignoring the ticks ("unticked").
+  console.log("\n§9 a gift list, an old report, and only one step ticked");
   {
     const giftsCsv = ["Donor Name,Email,Gift Date,Amount,Fund",
       "Ada Lovelace,ada@example.org,2025-03-02,500.50,General Operating",
@@ -273,20 +320,29 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
     const reportCsv = "Year,Total Raised,Gifts,Donors\n2025,1500.50,3,2\n";
     const made2 = await api("POST", "/setup/runs", tok, { files: [{ name: "gift-history.csv", text: giftsCsv }, { name: "giving-summary-2025.csv", text: reportCsv }], tools: [] });
     const R2 = made2.body || {};
-    ok("§9 the plan counts the gifts-only file as 3 people and 4 gifts, $1,533.83", made2.status === 201 && R2.plan && R2.plan.counts.donors === 3
-      && R2.plan.counts.gifts === 4 && R2.plan.counts.giftCents === 153383 && !R2.plan.giftAlone, { status: made2.status, counts: R2.plan && R2.plan.counts, giftAlone: R2.plan && R2.plan.giftAlone, err: made2.body && made2.body.error });
+    const gf = R2.plan && R2.plan.files.find(f => f.name === "gift-history.csv");
+    const want2 = (((await api("POST", "/sheet-import/understand", tok, { fileName: "gift-history.csv", sheets: [{ name: "Sheet1", grid: R0.gridFromText(giftsCsv) }] })).body || {}).counts) || {};
+    ok("§9 the gift list's plan line is the reader's: 4 gifts, $1,533.83", made2.status === 201 && gf && gf.role === "sheet" && gf.reader
+      && gf.reader.counts.gifts === 4 && gf.reader.counts.giftCents === 153383 && gf.reader.counts.gifts === want2.gifts && gf.reader.counts.giftCents === want2.giftCents,
+      { status: made2.status, gf, want2: { gifts: want2.gifts, giftCents: want2.giftCents } });
     ok("§9 the giving summary is an old report, not gifts", !!R2.plan && R2.plan.files.some(f => f.name === "giving-summary-2025.csv" && f.role === "old_report")
-      && R2.plan.auto.some(a => /giving-summary-2025\.csv/.test(a.sentence)), R2.plan && R2.plan.files);
-    await api("POST", `/setup/runs/${R2.id}/start`, tok, {});
+      && R2.plan.auto.some(a => a.step === "old_reports" && /giving-summary-2025\.csv/.test(a.sentence)), R2.plan && R2.plan.files);
+    const c9 = await (async () => {
+      const r = await api("POST", "/sheet-import/commit", tok, { background: true, fileName: "gift-history.csv", sheets: [{ name: "Sheet1", grid: R0.gridFromText(giftsCsv) }], answers: {} });
+      let j = null;
+      if (r.status === 202) await waitFor(async () => { j = (await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok)).body; return j && j.status !== "running"; }, { timeout: 60000, interval: 200 });
+      return { j, importId: r.body && r.body.importId };
+    })();
+    const g2 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
+    ok("§9 the gift list imported from the import screen: 4 gifts, $1,533.83 to the cent, the report's line not among them", c9.j && c9.j.status === "done" && g2.n === 4 && Number(g2.c) === 153383, { g2, j: c9.j && c9.j.status });
+    await api("POST", `/setup/runs/${R2.id}/start`, tok, { steps: ["old_reports"] });
     let c2 = null;
     await waitFor(async () => { c2 = (await api("GET", "/setup/current", tok)).body.run; return c2 && c2.id === R2.id && ["done", "failed"].includes(c2.status); }, { timeout: 90000, interval: 300 });
     ok("§9 setup finished", c2 && c2.status === "done", c2 && { status: c2.status, steps: c2.steps.map(x => `${x.key}:${x.status}${x.error ? " " + x.error : ""}`) });
-    const g2 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
-    const people = (await q(`SELECT name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY name`, [ORG]));
-    ok("§9 the gifts-only file imported: 4 gifts, $1,533.83 to the cent, and the report's line is not a gift", g2.n === 4 && Number(g2.c) === 153383, g2);
-    ok("§9 one person per identity, as the Import screen groups them (Ada's two rows are one person)", people.length === 3 && people.filter(x => x.email === "ada@example.org").length === 1, people);
-    const [imp2] = await q(`SELECT shape FROM imports WHERE org_id=$1 AND reversed_at IS NULL ORDER BY created_at DESC LIMIT 1`, [ORG]);
-    ok("§9 recorded as one import that undoes as one", imp2 && imp2.shape === "gift_file_with_donors", imp2);
+    const made9 = { groups: await n(`SELECT COUNT(*)::int n FROM audiences WHERE org_id=$1`), templates: await n(`SELECT COUNT(*)::int n FROM email_templates WHERE org_id=$1`),
+      journeys: await n(`SELECT COUNT(*)::int n FROM cultivation_templates WHERE org_id=$1`) };
+    ok("§9 Start did only the ticked step: the unticked groups, drafts and journeys were skipped and made nothing",
+      Object.values(made9).every(v => v === 0) && ["groups", "templates", "journeys"].every(k => (c2.steps.find(x => x.key === k) || {}).status === "skipped"), { made9, steps: c2 && c2.steps.map(x => `${x.key}:${x.status}`) });
     const [sheet] = await q(`SELECT id, report_kind FROM stored_sheets WHERE org_id=$1 AND kind='old_report' AND removed_at IS NULL`, [ORG]);
     const [chk] = sheet ? await q(`SELECT result FROM old_report_checks WHERE org_id=$1 AND sheet_id=$2`, [ORG, sheet.id]) : [];
     ok("§9 the old report is kept under Reports and RECONCILE-1 checked it: it matches to the cent", !!sheet && sheet.report_kind === "giving_summary" && chk && chk.result.status === "matches", { sheet, chk: chk && { s: chk.result.status, t: chk.result.sentence } });
@@ -294,9 +350,10 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
     ok("§9 \"Steward is ready\" carries the check in one line, linking to the full check", !!line && /giving-summary-2025\.csv: Matches Steward to the cent\./.test(line.sentence)
       && line.open && line.open.kind === "old_report_check" && sheet && line.open.id === sheet.id, line);
     const u2 = await api("POST", `/setup/runs/${R2.id}/undo`, tok, {});
+    const r9 = c9.importId ? await api("POST", `/imports/${c9.importId}/reverse`, tok, {}) : { status: 0 };
     const left2 = { gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`), donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
       sheets: await n(`SELECT COUNT(*)::int n FROM stored_sheets WHERE org_id=$1 AND removed_at IS NULL`), totals: await n(`SELECT COUNT(*)::int n FROM historical_totals WHERE org_id=$1`) };
-    ok("§9 undo takes the import AND the old report back out", u2.status === 200 && Object.values(left2).every(v => v === 0), { u: u2.body, left2 });
+    ok("§9 setup's undo takes the old report back out, and the import's own Undo the gifts", u2.status === 200 && r9.status === 200 && Object.values(left2).every(v => v === 0), { u: u2.body, r9: r9.status, left2 });
   }
 
   await reset();

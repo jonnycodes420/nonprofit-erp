@@ -755,7 +755,7 @@ export const HELP_DOCS = [
    {
     "h": "Start setup",
     "steps": [
-     "Under \"Your donor files\", add your files. Any number, in any format the import reads: CSV or Excel, a Salesforce Contacts and Donations pair, DonorPerfect, Bloomerang, Neon, or a spreadsheet you kept.",
+     "Under \"Your donor files\", add your files. Any number, CSV or Excel, from your old system or a spreadsheet you kept.",
      "Under \"Your website\", give your address. Steward reads a few public pages for your mission, logo, colors, address, EIN and team. Anything it is not sure of becomes a question.",
      "Under \"How you take gifts\", tick the tools you use, such as Stripe, PayPal, Zeffy, Givebutter, Square or checks.",
      "Click \"Read my files and show me the plan\"."
@@ -765,6 +765,8 @@ export const HELP_DOCS = [
     "h": "Read the plan and press Start",
     "steps": [
      "Under \"Here is the plan\", read what Steward will do. Nothing has happened yet.",
+     "Under \"Your files, read by the import screen\", each file shows what the import found in it. Click \"Review and import\" on each: the import screen asks what it cannot tell, imports the file, and gives you a receipt and Undo. Start does not import anything.",
+     "Untick any step you don't want. Start does only the ticked ones.",
      "Answer any questions it asks. \"Change what I gave\" takes you back to the files.",
      "Click \"Start\".",
      "You can close the tab. Setup keeps going, and the page picks up where it is when you come back. If it stops, click \"Carry on from where it stopped\"."
