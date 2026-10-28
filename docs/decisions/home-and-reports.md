@@ -440,3 +440,11 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - No step of the check, and no fix-it, writes a gift. Adding a missing person writes a person.
 - Checkable kinds and the reason for each that is not are `CHECKABLE` / `NOT_CHECKABLE` in reconcile.js.
 
+
+## HOME-3 · greeting first, then one move at a time (2026-10-28)
+
+- Nothing renders above Home's greeting except the trial banner: org and greeting, the date, the pace sentence, Ask, then Your moves. On a phone: greeting, tabs, the card, then Today.
+- Pace is said once, in the greeting, from `numbers.vsLastYear` over the org's fiscal year (`shared/homeLead.js paceLine`). The insights engine has no pace card. `assertSurfacesAgree` compares Home's greeting with the Board and Fundraising.
+- The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
+- A move's button makes a task dated for its window (kind write, call or meeting) with the line and the ask in its notes, and records Done. Home never sends.
+- Sentences treat one giver's gifts on one day as one gift (`giftDays`). Planned excludes organisations, foundations, companies and funds.
