@@ -1684,34 +1684,6 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
   );
 }
 
-// HARDEN-2 — the last nightly check (nightlyCheck.js, 3:30 AM New York on the
-// worker): when, green or which checks went red, how many orgs it read. Red
-// (A.red, this panel's own danger token) when it has not run in 26 hours or
-// never ran: a job that quietly stopped is the failure it exists to catch.
-const etTime = iso => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
-function NightlyCheckLine() {
-  const [nc, setNc] = useState(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => { adminFetch("/admin/nightly-check/latest").then(setNc).catch(() => setFailed(true)); }, []);
-  const orgs = n => n == null ? "" : ` It read ${n.toLocaleString("en-US")} organization${n === 1 ? "" : "s"}.`;
-  let text, color = A.ink;
-  if (failed) { text = "Steward could not read the last nightly check."; color = A.red; }
-  else if (!nc) text = "Reading the last nightly check…";
-  else if (nc.neverRan) { text = "The nightly check has never run. It should run every night at 3:30 AM New York time."; color = A.red; }
-  else if (nc.stale) { text = `The nightly check has not run in the last 26 hours. It last ran ${etTime(nc.lastRunAt)}.${orgs(nc.orgsRead)}`; color = A.red; }
-  else if (nc.ok) { text = `Green: ran ${etTime(nc.lastRunAt)}, every check passed.${orgs(nc.orgsRead)}`; color = A.green; }
-  else {
-    const names = (nc.redChecks || []).map(c => `${c.key}. ${c.title}`).join("; ");
-    text = `Red: ran ${etTime(nc.lastRunAt)}. ${(nc.redChecks || []).length === 1 ? "This check" : "These checks"} found something wrong: ${names || "unnamed"}.${orgs(nc.orgsRead)} The details went to the founder address.`;
-    color = A.red;
-  }
-  return <div data-testid="nightly-check-line" style={{ background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-    <div style={{ fontWeight: 700, marginBottom: 6 }}>Last nightly check</div>
-    <div style={{ fontSize: 13, color, lineHeight: 1.5 }}>{text}</div>
-    <div style={{ fontSize: 11.5, color: A.secondary, marginTop: 6 }}>Five read-only checks across every organization, each night at 3:30 AM New York time. It changes nothing and mails only the founder, only when one is red.</div>
-  </div>;
-}
-
 // TRUST-2 — write an incident in plain language (what's affected, what we are
 // doing), post updates, resolve it; and hide a What's new entry.
 function TrustAdmin() {
@@ -1729,7 +1701,6 @@ function TrustAdmin() {
   const box = { background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 16 };
   const field = { width: "100%", boxSizing: "border-box", padding: 8, marginBottom: 8, fontFamily: "inherit", fontSize: 13 };
   return <div>
-    <NightlyCheckLine />
     <div style={box}>
       <div style={{ fontWeight: 700, marginBottom: 8 }}>Open an incident</div>
       <input style={field} placeholder="What is affected, in plain words" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />

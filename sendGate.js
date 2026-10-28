@@ -137,7 +137,7 @@ async function sendToDonor(opts, deliver) {
     return { data: null, error: { name: "send_gate_unreadable", message: "send_gate_unreadable: " + e.message } };
   }
   // HARDEN-1: the arm that let it go, and to whom (ids, never addresses), ride
-  // to the email_log row, which the nightly check reads.
+  // to the email_log row (scripts/auto-mail-switches-readonly.sql reads it).
   if (d.send) return deliver(Object.assign(opts, { _stewardGate: d.why, _stewardGateDonors: d.donorIds || null }));
   try { await recordBlocked(opts, d.donorId); }
   catch (e) { console.error("[send-gate] blocked line not written:", e.message); }

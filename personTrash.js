@@ -3,10 +3,10 @@
 //
 // A person's delete is soft (donors.deleted_at) and leaves a trash row in
 // deleted_records (table_name 'donors', record_id = the person). That row is
-// OPEN while restored_at IS NULL. The nightly check (nightlyCheck.js, check a,
-// deletedAmong) counts a person as deleted if EITHER deleted_at is set OR an
-// open trash row names them, so a live person with an open trash row reads as
-// "a deleted person on the Donors list".
+// OPEN while restored_at IS NULL. A person counts as deleted if EITHER
+// deleted_at is set OR an open trash row names them, so a live person with an
+// open trash row reads as "a deleted person on the Donors list"
+// (scripts/stale-deletions-readonly.sql counts them).
 //
 // Every door that clears deleted_at goes through bringPeopleBack: the Undo
 // (POST /deleted-records/:id/restore), the bulk Undo (POST
@@ -15,7 +15,7 @@
 // row for the people it brought back, not only the one the Undo named, in the
 // same transaction. (Before HARDEN-2 the Undo closed only its own row, so a
 // person with an older open row, left by a path that never closed it, stayed
-// "deleted" to the nightly check after a perfectly good Undo.)
+// "deleted" after a perfectly good Undo.)
 //
 // A person whose id is taken again by a new row (Load sample data reuses its
 // ids after Clear) has their open trash rows closed by the trigger in db.js
@@ -23,11 +23,11 @@
 // gone for good is never live, so its record is left as it is.
 //
 // STALE_DELETIONS_SQL is the read-only count by org, the same definition as
-// check a, used by scripts/close-stale-deletions.js and the FIX-54 suite.
+// scripts/stale-deletions-readonly.sql, used by scripts/close-stale-deletions.js and the FIX-54 suite.
 "use strict";
 
 // The people who are live (deleted_at IS NULL) and still named by an open
-// deletion record, per org: exactly check a's "deleted" side of deletedAmong.
+// deletion record, per org.
 // $1 = an org id, or NULL for every org.
 const STALE_DELETIONS_SQL = `
   SELECT d.org_id, COUNT(DISTINCT d.id)::int AS people

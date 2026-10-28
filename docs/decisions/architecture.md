@@ -107,6 +107,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   with the clock inside a day (`NOW()`, an expiry): it is not a function of the data. A table added
   to `UNWATCHED` must be one whose writes cannot move a figure; a GET that writes must write only
   when the value moved (`metric_snapshots`), or it invalidates its own answer. (SCALE-2)
+- **A stored answer is written before it is sent, and never trusted below its org's floor.** Housekeeping
+  deletes an org's `org_changes` rows only by raising `org_changes_floor` in the same statement; an
+  answer marked below the floor is neither stored nor served, because a computation still running when
+  the rows went could otherwise store a stale Home and have it served all day. Never delete
+  `org_changes` rows any other way. (NIGHTLY-OFF, `tests/scale2-same-numbers.test.js` §5)
 - **A screen's first reads are one request.** `prefetch(paths)` (client/src/api.js) asks
   `GET /home/bundle` for them and parks each answer where the component's own `apiFetch(path)`
   finds it; the bundle answers each path by running its route in-process (`inProcess.js`) as the

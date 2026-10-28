@@ -73,7 +73,7 @@ async function seedCapture1(q, ORG) {
                state=EXCLUDED.state, zip=EXCLUDED.zip, deleted_at=NULL`,
       [id, ORG, name, email, address, city, state, zip, kind, ...WHO]);
     // HARDEN-2: a person this seed brings back (deleted_at cleared above) keeps
-    // no open deletion record, or the nightly check reads them as deleted.
+    // no open deletion record, or scripts/stale-deletions-readonly.sql counts them.
     await q(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=$1 AND table_name='donors' AND record_id=$2 AND restored_at IS NULL`, [ORG, id]);
     return id;
   };
