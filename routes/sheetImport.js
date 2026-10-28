@@ -489,7 +489,10 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   const key = fileFingerprint(body);
   PREVIEW_FILES.set(`${req.user.orgId}|${key}`, { at: Date.now(), sheets: body.sheets, fileName: body.fileName });
   trimCache(PREVIEW_FILES);
-  const out = await buildUnderstanding(req, body);
+  // FIX-55: under TEST_MODE the answer says how many statements it took
+  // (X-Steward-Round-Trips), which the preview budgets charge at prod's round trip
+  const { result: out, trips } = await require("../db").countRoundTrips(() => buildUnderstanding(req, body));
+  if (trips != null) res.set("X-Steward-Round-Trips", String(trips));
   // HARDEN-1: the file's fingerprint (its cells, not its name or org) on this
   // preview's audit row, so the nightly check can see a file previewed in one
   // org and imported into another (nightlyCheck.js, check e).

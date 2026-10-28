@@ -75,4 +75,33 @@ async function freshPerfOrg(q, login, id, name, password = "loadtest1234") {
   return { email, token: await login(email, password) };
 }
 
-module.exports = { FILES, WORKBOOK, sheetsOf, seedPreviewOrg, freshPerfOrg };
+// The budgets: the first preview under 4 seconds and each re-read after an
+// answer under 2, at prod's round trip. The scratch database answers in well
+// under a millisecond, so each preview is charged what it took here PLUS its
+// statements (X-Steward-Round-Trips, TEST_MODE) at ROUND_TRIP_MS each, which is
+// what made the 656-row preview 38 seconds on prod. A preview that goes back
+// to asking the matcher once per person fails here, not on a customer's file.
+const ROUND_TRIP_MS = 17, FIRST_MS = 4000, REREAD_MS = 2000;
+async function timedPreview(base, token, body) {
+  const t0 = performance.now();
+  const r = await fetch(base + "/sheet-import/understand", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(body) });
+  const json = await r.json().catch(() => ({}));
+  const ms = performance.now() - t0, trips = Number(r.headers.get("x-steward-round-trips"));
+  return { status: r.status, body: json, ms, trips: Number.isFinite(trips) ? trips : null, atProd: ms + (Number.isFinite(trips) ? trips : 0) * ROUND_TRIP_MS };
+}
+async function previewBudgets({ ok, base, token, XLSX }) {
+  const out = [];
+  for (const f of [...FILES, WORKBOOK]) {
+    const sheets = await sheetsOf(f, XLSX), fileName = path.basename(f);
+    const first = await timedPreview(base, token, { fileName, sheets, answers: {} });
+    const again = await timedPreview(base, token, { fileName, fileKey: first.body.fileKey, answers: { eventDate: "2026-10-22", useEventDate: true } });
+    ok(`preview budget ${fileName}: first ${Math.round(first.atProd)}ms (${Math.round(first.ms)}ms + ${first.trips} round trips × ${ROUND_TRIP_MS}ms) under ${FIRST_MS}ms`,
+       first.status === 200 && first.trips != null && first.atProd < FIRST_MS, JSON.stringify({ status: first.status, ms: first.ms, trips: first.trips }));
+    ok(`preview budget ${fileName}: re-read ${Math.round(again.atProd)}ms (${Math.round(again.ms)}ms + ${again.trips} round trips) under ${REREAD_MS}ms`,
+       again.status === 200 && again.trips != null && again.atProd < REREAD_MS, JSON.stringify({ status: again.status, ms: again.ms, trips: again.trips }));
+    out.push({ fileName, first, again });
+  }
+  return out;
+}
+
+module.exports = { FILES, WORKBOOK, ROUND_TRIP_MS, sheetsOf, seedPreviewOrg, freshPerfOrg, timedPreview, previewBudgets };
