@@ -104,6 +104,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   the end, not a document per part. None of this loosens what protects money, donors or
   production: the actor stamp, one gift path, the mail rules, the prod-write guard and the
   deploy gate are unchanged and are not what a build is allowed to go faster through.
+- **Every build that changes a screen ends with a walk:** drive the changed flow in a browser on the real-shaped files, screenshot each step, and check every number and sentence on screen against what actually happened. Report anything that reads wrong, even when the data is right.
 - **Every build adds one What's new file.** `docs/changelog/YYYY-MM-DD-build.md`: date, title,
   product, then two or three plain sentences for a customer (format in `docs/changelog/README.md`).
   The public page and the in-app panel read only these files, never commit messages.

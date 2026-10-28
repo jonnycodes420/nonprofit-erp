@@ -25,6 +25,12 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-55 · The import screen reads right, and every build ends with a walk (2026-10-27)
+
+- **Why (27 Oct).** After HARDEN-1 the import's numbers were right; what Jonathan read was wrong. Ticking "Use the event date" left "(63 undated)" on screen, "Bring them back" said 506 people were back while their questions stayed, and answered questions left Import disabled. All of it was one cause: with prod's database about 17 ms away, the preview asked the matcher three or four questions per person, so a 656-row file took 38.6 seconds per read and every answer read it again. The screen kept showing the last answer's plan the whole time.
+- **What changed.** The matcher reads the org once per preview (`DM.orgSnapshot`, `snapshotQuery`): 38.6 s → 0.3 s on the contacts file, same answers. A re-read sends the file's key, not its cells; the model is asked once per file. The preview is stale from the moment an answer changes and Import waits. The window always closes. Drop a file on the start screen, Donors, or Settings, Imports. Pledge money is "$X due this year · $Y over N years" (`shared/pledgeWords.js`). Deleted matches have Same people for all / Bring them all back, and Settings, Imports has Empty trash. The move plan hands every spreadsheet to the one reader and Start imports nothing. With no geocoding provider the Map tab and the miles filter are hidden, and AI and Stripe features that errored are hidden or say "Not set up yet".
+- **Measured with** `TEST_DB_LATENCY_MS` (db.js, TEST_MODE only) and `scripts/preview-perf.js`; the budgets are in `tests/perf-app.spec.js`.
+
 ## HARDEN-1 · Imports, deletes, undo and sending that cannot go wrong (2026-10-27)
 
 - **Why (27 Oct).** Every serious bug of the day sat between features: an import that timed out but committed, a receipt with no Undo, pledges from the wrong column, deleted people re-created, and three imports that landed in the wrong org. Every build's tests passed because each tested its own feature against a file it wrote itself. This build changes how Steward is tested.
