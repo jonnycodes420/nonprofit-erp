@@ -449,7 +449,9 @@ function OrgSetup({ orgId, PSH, PBTN }) {
     try {
       const read = await Promise.all(files.map(async f => ({ name: f.name, text: await f.text() })));
       const r = await adminFetch("/admin/orgs/" + orgId + "/setup", { method: "POST", body: JSON.stringify({ files: read, siteUrl: site }) });
-      setNote(`Plan ready (${r.plan && r.plan.counts ? `${r.plan.counts.donors} people, ${r.plan.counts.gifts} gifts` : "no files"}). They open Setup in their account and press Start.`);
+      // FIX-55: the plan counts nothing itself; the import reader reads each file when they open the plan.
+      const nf = (r.plan && r.plan.files || []).length;
+      setNote(`Plan ready (${nf ? `${nf} ${nf === 1 ? "file" : "files"}, read by the import screen when they open it` : "no files"}). They open Setup in their account, import each file from there, and press Start.`);
     } catch (e) { setNote(errorMessage(e)); }
     setBusy(false);
   };
