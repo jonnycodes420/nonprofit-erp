@@ -311,11 +311,14 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     const [fin] = await q(`SELECT
         (SELECT COALESCE(SUM(ROUND(g.amount*100)),0) FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
           WHERE g.org_id = $1 AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> '' AND g.date >= $2 AND g.date <= $3)
-      + (SELECT COALESCE(SUM(ROUND((r.row_data->>'amount')::numeric*100)),0) FROM insight_reviews r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
-          WHERE r.org_id = $1 AND r.decision = 'not_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
+      + (SELECT COALESCE(SUM(ROUND((CASE WHEN r.decision = 'partly' THEN r.received ELSE (r.row_data->>'amount')::numeric END)*100)),0)
+           FROM insight_reviews r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
+          WHERE r.org_id = $1 AND r.decision IN ('not_gift','partly') AND (d.id IS NULL OR d.deleted_at IS NULL)
             AND COALESCE(r.row_data->>'date','') <> '' AND r.row_data->>'date' >= $2 AND r.row_data->>'date' <= $3) AS c`, [orgId, from, to]).catch(() => [{ c: null }]);
+    // HOME-3: a row marked Partly a gift stays a gift at the rest; the value
+    // received (insight_reviews.received) is the Finance line beside it.
     agree(`money in, gifts and the rows that were not gifts (${from} to ${to})`, [
-      ["the database (gifts + the rows marked Not a gift)", fin.c == null ? undefined : Number(fin.c)],
+      ["the database (gifts + the rows marked Not a gift + the value received on rows marked Partly)", fin.c == null ? undefined : Number(fin.c)],
       ["Finance's money in by month", finance.byMonth.reduce((a, m) => a + Number(m.cents || 0), 0)],
     ], money);
   }

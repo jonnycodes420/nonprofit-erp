@@ -134,7 +134,23 @@ export function letterFields({ donor, gifts, org }) {
     year: dated.length ? String(dated[dated.length - 1].date).slice(0, 4) : "",
     _totalCents: totalCents,
     _undated: undated,
+    _goodsServices: goodsServicesLines(list),
   };
+}
+
+// HOME-3: the quid-pro-quo disclosure. A gift that bought something (a
+// sponsorship's tickets, a gala seat, a Review row marked Partly a gift) says
+// what was received and what is deductible, printed under the letter, so no
+// template can leave it out. The deductible part is the receipt's
+// (statementTotals.js): what was stored, never more than the gift.
+export function goodsServicesLines(gifts) {
+  const qs = (gifts || []).filter(g => toCents(g.qpqValue || 0) > 0);
+  return qs.map(g => {
+    const amt = toCents(g.amount), val = toCents(g.qpqValue);
+    const ded = g.deductible != null && g.deductible !== "" ? Math.max(0, Math.min(toCents(g.deductible), amt)) : Math.max(0, amt - val);
+    const s = `You received goods or services valued at ${formatCents(val)}; the deductible amount is ${formatCents(ded)}.`;
+    return qs.length > 1 ? `For your gift of ${formatLetterDate(g.date) || "an undated day"}: ${s}` : s;
+  }).join("\n");
 }
 
 // Render one letter. Returns the text and the fields that were needed and

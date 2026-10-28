@@ -10921,7 +10921,7 @@ async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false,
   if (!tpl) return { notFound: true };
   const org = await ackOrg(orgId);
   const rows = await query(
-    `SELECT g.id, g.donor_id, g.amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund,
+    `SELECT g.id, g.donor_id, g.amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund, g.quid_pro_quo_value, g.deductible_amount,
             d.name, d.kind, d.salutation, d.address, d.address2, d.city, d.state, d.zip, d.country, d.deceased
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        LEFT JOIN fin_funds f ON f.id = g.fund_id
@@ -10930,7 +10930,8 @@ async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false,
   const byDonor = new Map();
   for (const r of rows) {
     const e = byDonor.get(r.donor_id) || { donor: r, gifts: [] };
-    e.gifts.push({ id: r.id, amount: r.amount, date: r.date, fund: r.fund, tributeType: r.tribute_type, tributeName: r.tribute_name });
+    e.gifts.push({ id: r.id, amount: r.amount, date: r.date, fund: r.fund, tributeType: r.tribute_type, tributeName: r.tribute_name,
+                   qpqValue: r.quid_pro_quo_value, deductible: r.deductible_amount });
     byDonor.set(r.donor_id, e);
   }
   // The letter is signed by the org's receipt signer when one is set, and
@@ -10957,7 +10958,9 @@ async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false,
         : `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}`;
       skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why }); continue;
     }
-    letters.push({ donorId: donor.donor_id, name: donor.name, address, text: r.text, giftIds: giftIdsHere, totalCents: fields._totalCents });
+    // HOME-3: what was received in exchange, and what is deductible, under every letter that needs it
+    const text = fields._goodsServices ? `${r.text}\n\n${fields._goodsServices}` : r.text;
+    letters.push({ donorId: donor.donor_id, name: donor.name, address, text, giftIds: giftIdsHere, totalCents: fields._totalCents });
   }
   const found = new Set(rows.map(r => r.id));
   return { template: { id: tpl.id, name: tpl.name, builtIn: !!tpl.builtIn }, org, letters, skipped,
