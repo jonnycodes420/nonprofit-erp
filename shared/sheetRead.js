@@ -704,6 +704,11 @@ export function mapMethodWord(raw) { return methodOf(raw); }
 export function eventNameFromFile(fileName) {
   let n = s(fileName).replace(/\.(xlsx|xls|csv|tsv|txt)$/i, "").replace(/[_]+/g, " ");
   n = n.replace(/[-]+/g, " ").replace(/\b(gifts?|donations?|pledges?|export|final|copy|v\d+|\(\d+\)|list|sheet|results|totals?|scrubbed|tally|combined|guests?|guest list|rsvps?|attendance|seating|name tags?|invites?|invitations?|workbook)\b/gi, " ").replace(/\s+/g, " ").trim();
+  // FIX-55: a row count or an id in the name ("jp dinner 106") is not the event's
+  // name; a name with no capitals is a file name, so its short codes go and it
+  // reads as a name ("Dinner"), which she can still change
+  n = n.replace(/\b(?!(?:19|20)\d\d\b)\d+\b/g, " ").replace(/\s+/g, " ").trim();
+  if (n && !/[A-Z]/.test(n)) n = n.split(" ").filter(w => w.length > 2).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
   if (/^(event|events|file|data|book\d*|sheet\d*)$/i.test(n)) return null;
   return n || null;
 }
