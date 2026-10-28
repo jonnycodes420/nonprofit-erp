@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-28T01:26:51.408Z",
- "count": 1387,
+ "generatedAt": "2026-10-28T01:46:32.621Z",
+ "count": 1388,
  "routes": [
   {
    "method": "POST",
@@ -1045,6 +1045,27 @@
    "identifiers": [],
    "frontend": {
     "probe": "/admin/number-checks",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/nightly-check/run",
+   "line": 9081,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/nightly-check/run",
     "referenced": false
    }
   },
