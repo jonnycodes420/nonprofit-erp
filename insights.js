@@ -100,7 +100,10 @@ const NOT_GIFT = [
   [/reimburse/i, "reimbursement", "The memo says it is a reimbursement"],
   [/\brefund/i, "refund", "The memo says it is a refund"],
   [/\bpurchase(d)? of\b|\bpurchased?\b/i, "purchase", "The memo says it is a purchase"],
-  [/\btickets?\b|\braffle\b/i, "tickets", "The memo says it paid for tickets or a raffle"],
+  // HOME-3: a raffle ticket is never a gift, not even in part (it buys a
+  // chance to win), so Review never offers Partly a gift on one.
+  [/\braffle\b/i, "raffle", "The memo says it paid for raffle tickets. Raffle tickets are never a gift, not even in part"],
+  [/\btickets?\b/i, "tickets", "The memo says it paid for tickets"],
   [/\bauction\b/i, "auction", "The memo names an auction"],
   [/\b(basket|table|session|set)\b/i, "auction", "The memo names an item (basket, table, session or set)"],
 ];
@@ -566,13 +569,16 @@ const LIBRARY = [
       reason: g.sig.notGift.why, memo: [g.memo, g.notes].filter(Boolean).join(" · "), date: g.date,
       facts: [["amount", money(g.amount_cents)], ["date", g.date ? longDate(g.date) : "no date"], ["memo", [g.memo, g.notes].filter(Boolean).join(" · ")], ["reason", g.sig.notGift.why]],
       how: null,
+      // HOME-3: Partly a gift (a sponsorship with tickets, an item bought
+      // above its value) is offered on every row but a raffle.
+      partly: g.sig.notGift.kind !== "raffle",
     }));
     return {
       kind: "review", rung: null, title: "Rows that may not be gifts",
       what: c => `${plural(c.items.length, "row")} (${money(c.items.reduce((n, i) => n + i.cents, 0))}) look like purchases, tickets or reimbursements, not gifts.`,
       why: "A purchase or a reimbursement counted as a gift makes every total and every ask built on it wrong. Nothing changes until you decide each one.",
       cardFacts: [["rows", String(items.length)], ["dollars", money(items.reduce((n, i) => n + i.cents, 0))]],
-      items, does: [{ action: "keep", label: "Keep as gift" }, { action: "not_gift", label: "Not a gift" }],
+      items, does: [{ action: "keep", label: "Keep as gift" }, { action: "partly", label: "Partly a gift" }, { action: "not_gift", label: "Not a gift" }],
     };
   },
   // 10. Pace vs the same days last year (Home only)

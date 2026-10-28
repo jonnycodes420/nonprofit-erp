@@ -152,10 +152,19 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
   const [undo, setUndo] = useState(null);
   const [err, setErr] = useState("");
   const [as, setAs] = useState({});
+  const [partlyOpen, setPartlyOpen] = useState(null);   // the row whose value received is being entered
+  const [value, setValue] = useState("");
   const decide = async (it, decision) => {
     setErr("");
+    if (decision === "partly") {
+      // HOME-3: the value received, in dollars, more than $0 and less than the row
+      const v = Number(String(value).replace(/[$,\s]/g, ""));
+      if (!(v > 0) || Math.round(v * 100) >= it.cents) { setErr(`Enter the value they received: more than $0 and less than ${money(it.cents)}.`); return; }
+    }
     try {
-      const r = await apiFetch(`/insights/review/${encodeURIComponent(it.giftId)}`, { method: "POST", body: JSON.stringify({ decision, as: as[it.giftId] || suggestedAs(it) }) });
+      const r = await apiFetch(`/insights/review/${encodeURIComponent(it.giftId)}`, { method: "POST",
+        body: JSON.stringify({ decision, as: as[it.giftId] || suggestedAs(it), ...(decision === "partly" ? { value: String(value).replace(/[$,\s]/g, "") } : {}) }) });
+      if (decision === "partly") { setPartlyOpen(null); setValue(""); }
       setUndo({ giftId: it.giftId, sentence: r.sentence || (decision === "keep" ? "Kept as a gift." : "") });
       onChanged && onChanged();
     } catch (e) { setErr(e.message || "That didn't work."); }
@@ -179,11 +188,22 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
               style={{ fontSize: 13, padding: "7px 8px", border: "1px solid " + T.bg3, borderRadius: 8, background: T.white, color: T.ink, fontFamily: "inherit" }}>
               {AS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+            {it.partly !== false && partlyOpen !== it.giftId && <button type="button" style={B2} onClick={() => { setPartlyOpen(it.giftId); setValue(""); setErr(""); }}>Partly a gift</button>}
             <button type="button" style={B1} onClick={() => decide(it, "not_gift")}>Not a gift</button>
           </div>}
+          {!isReadOnly && it.partly !== false && partlyOpen === it.giftId && (
+            <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <label style={{ fontSize: 13, color: T.ink }}>Value they received $
+                <input aria-label="Value they received" inputMode="decimal" autoFocus value={value} onChange={e => setValue(e.target.value)} placeholder="0.00"
+                  style={{ width: 96, marginLeft: 4, fontSize: 13, padding: "7px 8px", border: "1px solid " + T.bg3, borderRadius: 8, background: T.white, color: T.ink, fontFamily: "inherit" }} />
+              </label>
+              <button type="button" style={B1} onClick={() => decide(it, "partly")}>Save: partly a gift</button>
+              <button type="button" style={LNK} onClick={() => setPartlyOpen(null)}>Cancel</button>
+            </div>
+          )}
         </div>
       ))}
-      {!isReadOnly && <p style={{ fontSize: 12, color: T.ink3, margin: "6px 0 0" }}>Not a gift keeps the row: it leaves every giving total and stays in Finance as revenue.</p>}
+      {!isReadOnly && <p style={{ fontSize: 12, color: T.ink3, margin: "6px 0 0" }}>Not a gift keeps the row: it leaves every giving total and stays in Finance as revenue. Partly a gift moves only the value they received (two tickets, a dinner, an item's worth) to Finance; the rest stays a gift, and its receipt says what they received. Raffle tickets are never a gift, not even in part.</p>}
     </div>
   );
 }
