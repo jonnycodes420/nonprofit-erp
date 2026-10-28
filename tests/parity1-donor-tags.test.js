@@ -19,7 +19,7 @@
 // Standard scratch stack (tests/README.md), on the battery's own server.
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, q, closeDb, login, api, civilToday, civilPlusDays } = require("./helpers");
+const { ok, summary, q, closeDb, login, api, civilToday, civilPlusDays, waitFor } = require("./helpers");
 
 const ORG = "org_par1t";
 const ADMIN = "admin@par1t.local";
@@ -236,7 +236,11 @@ const id = k => `d_par1t_${k}`;
   const as11 = await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_par1t_staff" });
   const after11 = await ownerOf();
   ok("§11 Assign sets the owner to a person in the org, by name", as11.status === 200 && after11.owner_label === "Parity Staff" && after11.assigned_to === "u_par1t_staff", { status: as11.status, label: after11.owner_label });
-  const [aud11] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]);
+  // The audit row is written on the response's finish, after the answer has
+  // gone out, so a loaded database can still be writing it here (HARDEN-2: CI
+  // read 0 and 0). Wait for it, up to 10 s, rather than read once.
+  const audAfter = async () => (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]))[0];
+  const aud11 = (await waitFor(async () => { const r = await audAfter(); return r.n === aud11a.n + 1 ? r : null; })) || await audAfter();
   ok("§11 and the audit trail recorded it", aud11a.n >= 0 && aud11.n === aud11a.n + 1, { before: aud11a.n, after: aud11.n });
   ok("§11 a user from no org of theirs is refused", (await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_nobody" })).status === 400);
 

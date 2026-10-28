@@ -36,8 +36,10 @@
     <!-- HARDEN-2 item 1: the giving page's own entry (src/giveMain.jsx), served
          for /give/* by vercel.json. The page's payload is asked for here, while
          the script downloads, instead of after it has run; Donate.jsx takes it
-         from window.__givePrefetch (src/lib/givePrefetch.js) by its URL. -->
-    <link rel="preconnect" href="%VITE_API_URL%" crossorigin />
+         from window.__givePrefetch (src/lib/givePrefetch.js) by its URL. The
+         fetch itself opens the API connection; no preconnect link, because an
+         unset VITE_API_URL left "%VITE_API_URL%" in an href and Vite's HTML
+         build stops on it ("URI malformed"). -->
     <script>
       (function () {
         try {
