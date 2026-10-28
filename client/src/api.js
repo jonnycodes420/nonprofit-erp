@@ -127,7 +127,19 @@ const SHARED_TTL_MS = 60000;
 const inFlight = new Map();
 const kept = new Map();
 const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
-export function forgetReads() { kept.clear(); }
+// HARDEN-2: answers asked for before the screen that reads them has mounted
+// (prefetch with keep, from lib/bootReads.js). Each is handed over ONCE, if
+// asked for within PARKED_TTL_MS: a second reader, or a re-read to refresh,
+// gets a fresh answer. A write forgets them like `kept`.
+const parked = new Map();
+const PARKED_TTL_MS = 30000;
+// HARDEN-2: writes that only record that something was looked at, and change
+// no answer any read here is holding, so they forget nothing. Home's cards
+// marked seen the moment they drew, and that threw away Home's own reads
+// still parked for it, which then went out again. A seen-write whose own read
+// is kept or re-read (/org/welcome/seen, /gift-starts/notice/seen) is NOT here.
+const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/];
+export function forgetReads() { kept.clear(); parked.clear(); }
 
 // ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
 // Home opened with 25 requests. prefetch(paths) asks for them in ONE
@@ -136,23 +148,33 @@ export function forgetReads() { kept.clear(); }
 // instead of making its own trip. Nothing in the component changes. A path
 // the bundle could not answer (any status but 200) is fetched on its own, so
 // an error reaches the caller exactly as it did before.
-export function prefetch(paths) {
+//
+// HARDEN-2: `keep` parks each answer for the screen that has not mounted yet
+// (see `parked` above), and the bundle's own answer is returned so the caller
+// can read one of them (Home's scope) without taking it from the screen.
+export function prefetch(paths, { keep = false } = {}) {
   const token = getToken();
-  if (!token) return;
+  if (!token) return Promise.resolve(null);
   const want = [...new Set(paths)].filter(p => {
     const key = token + " " + p;
-    const hit = kept.get(key);
-    return !inFlight.has(key) && !(hit && Date.now() - hit.at < SHARED_TTL_MS);
+    const hit = kept.get(key), held = parked.get(key);
+    return !inFlight.has(key) && !(hit && Date.now() - hit.at < SHARED_TTL_MS) && !(held && Date.now() - held.at < PARKED_TTL_MS);
   });
-  if (!want.length) return;
+  if (!want.length) return Promise.resolve(null);
   const bundle = apiFetchNow("/home/bundle?" + want.map(p => "p=" + encodeURIComponent(p)).join("&")).catch(() => null);
   for (const p of want) {
     const key = token + " " + p;
     inFlight.set(key, bundle
       .then(b => (b && b[p] && b[p].status === 200 && "body" in b[p]) ? b[p].body : apiFetchNow(p))
-      .then(v => { if (SHARED_READS.some(r => r.test(p))) kept.set(key, { at: Date.now(), value: v }); return v; })
+      .then(v => {
+        if (SHARED_READS.some(r => r.test(p))) kept.set(key, { at: Date.now(), value: v });
+        else if (keep) parked.set(key, { at: Date.now(), value: v });
+        return v;
+      })
       .finally(() => inFlight.delete(key)));
+    inFlight.get(key).catch(() => {});   // the screen reads the error when it asks
   }
+  return bundle;
 }
 
 // FIX-46 · A WRITE FORGETS EVERY LIST HELD FOR THE SESSION. lib/people.js
@@ -170,11 +192,14 @@ export async function apiFetch(path, options = {}) {
   // write must not be handed the answer to a read that left before it, or a
   // list re-read after "Approve all" comes back as it was before the approval.
   // FIX-46: and the lists held for the session, before and after the write.
-  if (method !== "GET") { kept.clear(); inFlight.clear(); forgetLists(); return apiFetchNow(path, options).finally(forgetLists); }
+  if (method !== "GET" && SEEN_ONLY.some(r => r.test(path))) return apiFetchNow(path, options);
+  if (method !== "GET") { kept.clear(); parked.clear(); inFlight.clear(); forgetLists(); return apiFetchNow(path, options).finally(forgetLists); }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
   const hit = kept.get(key);
   if (hit && Date.now() - hit.at < SHARED_TTL_MS) return copy(hit.value);
+  const held = parked.get(key);
+  if (held) { parked.delete(key); if (Date.now() - held.at < PARKED_TTL_MS) return copy(held.value); }
   if (!inFlight.has(key)) {
     inFlight.set(key, apiFetchNow(path, options)
       .then(v => { if (SHARED_READS.some(r => r.test(path))) kept.set(key, { at: Date.now(), value: v }); return v; })

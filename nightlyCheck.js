@@ -32,7 +32,12 @@
 // can only SELECT. The only writes the job makes are its own bookkeeping,
 // outside the checks and never to org data: the night's claim (one
 // ops_alert_marks row, so several instances run it once), the tick_log row
-// every job gets (recordTick), and opsAlert's own hourly mark.
+// every job gets (recordTick), opsAlert's own hourly mark, and (HARDEN-2) ONE
+// nightly_check_runs row per run: when it ran, green or which checks went
+// red, how many orgs it read. That row is written after the read-only
+// transactions have closed, on the main pool (db.queryOutside), never through
+// the read-only role. It is how the super-admin Status page and
+// `npm run status` know the job ran at all.
 //
 // THE READ-ONLY ROLE JONATHAN CREATES ON PROD (once; then set
 // NIGHTLY_CHECK_DATABASE_URL on the worker to its connection string):
@@ -62,6 +67,9 @@ const NY = { timezone: "America/New_York" };
 // (a deploy, a slow queue) still runs that night; the claim keeps it to one.
 const WINDOW = { from: 3 * 60 + 30, to: 5 * 60 };
 const NO_STORE = Symbol.for("steward.orgSummary.noStore");
+// A night is missed when the last run started more than 26 hours ago: a day,
+// plus the 1.5-hour window, plus room for a slow tick.
+const STALE_MS = 26 * 3600e3;
 const FRESH = Symbol.for("steward.orgSummary.fresh");
 
 let deps = null;   // { opsAlert, signInternalToken }
@@ -301,18 +309,70 @@ function alertText(results, night) {
   return { subject, body: body.join("\n") };
 }
 
-// One run: the checks, then at most one alert, to Jonathan, only when red.
+// The orgs a run reads: a count only, never an id or a name.
+async function orgsInScope(orgIds) {
+  return db.withReadOnlyTransaction(async () =>
+    Number((await db.query(`SELECT COUNT(*)::int AS n FROM orgs ${orgIds ? "WHERE id = ANY(?)" : ""}`, orgIds ? [orgIds] : []))[0].n));
+}
+
+// HARDEN-2 · THE RUN'S ONE ROW. Written outside every read-only transaction,
+// on the main pool. Which checks went red is stored by letter and title only;
+// the sentences (which name orgs) go to Jonathan's alert and nowhere else.
+async function recordRun({ night, startedAt, results, orgsRead, error }) {
+  const red = (results || []).filter(r => !r.ok).map(r => ({ key: r.key, title: r.title }));
+  const errs = [error, ...(results || []).filter(r => r.error).map(r => `${r.key}: ${r.lines[0] || "could not run"}`)].filter(Boolean);
+  const id = "ncr_" + db.uuid().replace(/-/g, "").slice(0, 16);
+  await db.queryOutside(
+    `INSERT INTO nightly_check_runs (id, night, started_at, finished_at, ok, red_checks, orgs_read, error)
+     VALUES (?, ?, ?, NOW(), ?, ?::jsonb, ?, ?)`,
+    [id, night, startedAt, !error && red.length === 0, JSON.stringify(red), orgsRead, errs.length ? errs.join(" · ").slice(0, 2000) : null]);
+  return id;
+}
+
+// One run: the checks, its one result row, then at most one alert, to
+// Jonathan, only when red.
 async function runNightlyCheck({ night = null, orgIds = null, now = new Date() } = {}) {
   const n = night || orgTime.orgClock(NY, now).date;
-  const results = await runChecks({ orgIds });
+  const startedAt = new Date();
+  let results, orgsRead = null;
+  try {
+    orgsRead = await orgsInScope(orgIds);
+    results = await runChecks({ orgIds });
+  } catch (e) {
+    await recordRun({ night: n, startedAt, results: [], orgsRead, error: String(e && e.message || e).slice(0, 300) }).catch(() => {});
+    throw e;
+  }
   const red = results.filter(r => !r.ok);
+  const runId = await recordRun({ night: n, startedAt, results, orgsRead });
   let alert = null;
   if (red.length) {
     const t = alertText(results, n);
     alert = await deps.opsAlert(`nightly_check:${n}`, t.subject, t.body);
   }
-  return { night: n, results, red: red.map(r => r.key), alert };
+  return { night: n, runId, orgsRead, results, red: red.map(r => r.key), alert };
 }
+
+// The latest run, as the Status page, /health and `npm run status` read it.
+// `stale` is true when there is no run, or the last one started more than 26
+// hours ago. `publicView` is counts and letters only (it goes on /health).
+async function latestRun() {
+  const [r] = await db.queryOutside(
+    `SELECT id, night, started_at, finished_at, ok, red_checks, orgs_read, error
+       FROM nightly_check_runs ORDER BY started_at DESC, id DESC LIMIT 1`);
+  return r || null;
+}
+function statusOf(row, now = Date.now()) {
+  if (!row) return { lastRunAt: null, finishedAt: null, ok: null, red: [], redChecks: [], orgsRead: null, stale: true, neverRan: true, staleHours: 26 };
+  const at = new Date(row.started_at);
+  const reds = Array.isArray(row.red_checks) ? row.red_checks : [];
+  return {
+    lastRunAt: at.toISOString(), finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
+    ok: row.ok === true, red: reds.map(x => x.key), redChecks: reds,
+    orgsRead: row.orgs_read == null ? null : Number(row.orgs_read),
+    stale: now - at.getTime() > STALE_MS, neverRan: false, staleHours: 26,
+  };
+}
+const publicView = s => s && ({ lastRunAt: s.lastRunAt, ok: s.ok, red: s.red, orgsRead: s.orgsRead, stale: s.stale, neverRan: s.neverRan });
 
 // The tick (routes/jobs.js, every 5 minutes on the worker): inside the window,
 // claim the night once across every instance, then run.
@@ -331,4 +391,4 @@ async function tick(now = new Date()) {
   return out.red.length ? `RED ${out.red.join(",")} (alert: ${JSON.stringify(out.alert)})` : `clean for ${w.night}`;
 }
 
-module.exports = { configure, runNightlyCheck, runChecks, tick, inWindow, alertText, CHECKS, WINDOW };
+module.exports = { configure, runNightlyCheck, runChecks, tick, inWindow, alertText, latestRun, statusOf, publicView, CHECKS, WINDOW, STALE_MS, deletedAmong };

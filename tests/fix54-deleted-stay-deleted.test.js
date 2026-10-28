@@ -18,6 +18,10 @@
 //      are their rows imported, onto them.
 //   §4 import, delete some of its people (and one who was already here) by
 //      hand, undo the import: the hand-deleted stay deleted.
+//   §5 HARDEN-2: every door that brings someone back (Undo, the bulk Undo,
+//      Bring them back, and Load sample data after Clear) leaves no deletion
+//      record open, so check a of the nightly check stays green; and
+//      scripts/close-stale-deletions.js closes the ones left from before.
 //
 // HOW IT GOES RED ON MAIN: the bulk delete ignores the confirmed count (§1),
 // and the import makes the deleted person again as someone new, with no
@@ -178,6 +182,86 @@ async function main() {
   await surfacesAgree("after the import undo", ORG, tok);
   ok("§4 the Donors list holds no one the undo should not bring back", (await listTotal(tok)) === 202,
      await listTotal(tok));   // the 200, Brand Newperson, and the one person she brought back
+
+  await deletionRecordsClose(tok);
+}
+
+// §5 HARDEN-2 item 4 · EVERY DOOR THAT BRINGS SOMEONE BACK CLOSES THEIR
+// DELETION RECORD. The nightly check (check a) counts a person as deleted
+// while an open trash row names them, so a live person with an open one reads
+// as "a deleted person on the Donors list". `opened` is the shape a door that
+// never closed it left: a trash row still open on someone already back.
+const openFor = async (org, id) => (await one(
+  "SELECT COUNT(*)::int AS n FROM deleted_records WHERE org_id=$1 AND table_name='donors' AND record_id=$2 AND restored_at IS NULL", [org, id])).n;
+async function opened(org, id, tag) {
+  await q(`INSERT INTO deleted_records (id,org_id,table_name,record_id,row_data,created_by,created_by_name)
+           VALUES ($1,$2,'donors',$3,'{"__soft":true}'::jsonb,'system:test','test')`, ["del_f54_" + tag, org, id]);
+}
+const STALE_SQL = () => {
+  const sql = require("fs").readFileSync(require("path").join(__dirname, "..", "scripts", "stale-deletions-readonly.sql"), "utf8")
+    .replace(/--.*$/gm, "").replace(/BEGIN TRANSACTION READ ONLY;|ROLLBACK;/g, "").trim().replace(/;$/, "");
+  return sql;
+};
+const staleIn = async org => ((await q(STALE_SQL())).find(r => r.org_id === org) || { people: 0 }).people;
+async function deletionRecordsClose(tok) {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
+  const NC = require("../nightlyCheck");
+  const live = (await q("SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND name LIKE 'Quillon Newfamily%' ORDER BY id LIMIT 3", [ORG])).map(r => r.id);
+  const [a, b, c] = live;
+
+  // §5a the Undo (one person): the toast's own row and any older open one close
+  await opened(ORG, a, "a_old");
+  const da = await api("DELETE", `/donors/${a}`, tok);
+  const ua = await api("POST", `/deleted-records/${da.body.undoId}/restore`, tok, {});
+  ok("§5a Undo brings them back and leaves no deletion record open", ua.status === 200 && (await openFor(ORG, a)) === 0, [da.status, ua.status, await openFor(ORG, a)]);
+  // §5b the bulk Undo
+  await opened(ORG, b, "b_old");
+  const db5 = await api("POST", "/donors/bulk-delete", tok, { ids: [b], count: 1 });
+  const ub = await api("POST", "/deleted-records/restore-people", tok, { ids: db5.body.undoIds || [] });
+  ok("§5b the bulk Undo brings them back and leaves no deletion record open", ub.status === 200 && (await openFor(ORG, b)) === 0, [db5.status, ub.status, await openFor(ORG, b)]);
+  // §5c an import's Bring them back
+  await opened(ORG, c, "c_old");
+  await api("POST", "/donors/bulk-delete", tok, { ids: [c], count: 1 });
+  const bc = await api("POST", "/sheet-import/bring-back", tok, { ids: [c] });
+  ok("§5c Bring them back leaves no deletion record open", bc.status === 200 && bc.body.restored === 1 && (await openFor(ORG, c)) === 0, [bc.status, await openFor(ORG, c)]);
+  const shown = (await api("GET", "/donors/ids", tok)).body.ids || [];
+  ok("§5 the nightly check's check a finds no deleted person on the Donors list", (await NC.deletedAmong(ORG, shown)).length === 0 && (await staleIn(ORG)) === 0,
+     [await NC.deletedAmong(ORG, shown), await staleIn(ORG)]);
+  await surfacesAgree("after three restores", ORG, tok);
+
+  // §5d Clear sample data, Load it again: the same ids come back as new rows,
+  // and the deletion record of the one deleted before the clear is gone with
+  // the row it was about (the trigger in db.js).
+  const ORG_S = "org_fix54s";
+  const stok = await freshOrg(ORG_S, "Sample reload (test)");
+  const l1 = await api("POST", "/org/load-sample-data", stok, {});
+  const sample = (await q("SELECT id FROM donors WHERE org_id=$1 AND is_sample=true ORDER BY id", [ORG_S])).map(r => r.id);
+  let gone = null;
+  for (const id of sample) { const d = await api("DELETE", `/donors/${id}`, stok); if (d.status === 200) { gone = id; break; } }
+  ok("§5d setup: sample people loaded, one deleted", l1.status === 200 && !!gone && (await openFor(ORG_S, gone)) === 1, [l1.status, gone]);
+  const cl = await api("POST", "/org/clear-sample-data", stok, {});
+  const l2 = await api("POST", "/org/load-sample-data", stok, {});
+  const again = await one("SELECT deleted_at FROM donors WHERE org_id=$1 AND id=$2", [ORG_S, gone]);
+  ok("§5d reloaded, the person is a new row and no deletion record names them", cl.status === 200 && l2.status === 200 && again && again.deleted_at === null
+     && (await openFor(ORG_S, gone)) === 0 && (await staleIn(ORG_S)) === 0, [cl.status, l2.status, again, await openFor(ORG_S, gone)]);
+
+  // §5e scripts/close-stale-deletions.js: --org required, a dry run writes
+  // nothing, --apply closes exactly the open records of people already back.
+  const s = sample.find(id => id !== gone);
+  await opened(ORG_S, s, "s_old");
+  const { spawnSync } = require("child_process");
+  const script = require("path").join(__dirname, "..", "scripts", "close-stale-deletions.js");
+  const runScript = args => spawnSync(process.execPath, [script, ...args], { env: { ...process.env, DB_SSL: "disable" }, encoding: "utf8" });
+  const noOrg = runScript(["--apply"]);
+  ok("§5e the script refuses to run without --org", noOrg.status === 2 && (await openFor(ORG_S, s)) === 1, [noOrg.status, noOrg.stderr]);
+  const dry = runScript(["--org", ORG_S]);
+  ok("§5e a dry run names the record and changes nothing", dry.status === 0 && dry.stdout.includes("del_f54_s_old") && /1 live person with 1 open deletion record/.test(dry.stdout)
+     && !/@|Sample Person/.test(dry.stdout) && (await openFor(ORG_S, s)) === 1, [dry.status, dry.stdout, dry.stderr]);
+  const app = runScript(["--org", ORG_S, "--apply"]);
+  const audit = await one("SELECT user_id, record_count FROM fin_audit_log WHERE org_id=$1 AND request_path='scripts/close-stale-deletions.js' ORDER BY created_at DESC LIMIT 1", [ORG_S]);
+  ok("§5e --apply closes it, stamped system:scripts/close-stale-deletions", app.status === 0 && (await openFor(ORG_S, s)) === 0 && (await staleIn(ORG_S)) === 0
+     && audit && audit.user_id === "system:scripts/close-stale-deletions" && audit.record_count === 1, [app.status, app.stdout, app.stderr, audit]);
+  await api("POST", "/org/clear-sample-data", stok, {});
 }
 
 main().then(async () => { await closeDb(); summary(); }).catch(async e => { console.error(e); await closeDb(); process.exit(1); });

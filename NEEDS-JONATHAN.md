@@ -21,6 +21,10 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-HARDEN-2 · COUNT THE PEOPLE RESTORED THE OLD WAY (2026-10-27)
+
+- **Run the read-only count on prod:** `psql "$PROD_DATABASE_URL" -f scripts/stale-deletions-readonly.sql` (it begins READ ONLY and rolls back; it prints org id and a count, nothing else). For any org it lists, a dry run shows what would close: `DATABASE_URL=… node scripts/close-stale-deletions.js --org <org id>`; add `--apply --i-know-this-is-prod` only when you want it closed. Not run by the build.
+
 ## 0-FIX-49 · RE-SEED THE PROD DEMO (2026-10-26)
 
 - **Re-seed Harborlight.** The seed changed: a past Harbor Run (last year's, 12 people marked attended) now sits beside next year's, so "I went to the Harbor Run" marks attendance. Same command as the earlier re-seeds.

@@ -6673,6 +6673,28 @@ async function runSchemaInit(pool) {
       restored_at TIMESTAMPTZ
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_org ON deleted_records (org_id, created_at DESC)`);
+  // HARDEN-2: a person's OPEN deletion records, by person (the nightly check's
+  // check a, personTrash.js, and the trigger below all ask exactly this).
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_open_person ON deleted_records (org_id, record_id)
+                      WHERE table_name = 'donors' AND restored_at IS NULL`);
+  // HARDEN-2: an open deletion record is about one row. When a new row takes a
+  // deleted person's id (Load sample data reuses its ids after Clear), that
+  // person is live again, so the record is closed, in the same statement,
+  // whichever door did it. Without this, Clear and then Load sample data put a
+  // person back on the list whom the nightly check still read as deleted.
+  // Closed, never deleted: the record of who deleted them stays.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_person_row_forgets_trash() RETURNS TRIGGER AS $fn$
+    BEGIN
+      UPDATE deleted_records r SET restored_at = NOW()
+        FROM (SELECT DISTINCT org_id, id FROM new_rows) x
+       WHERE r.org_id = x.org_id AND r.record_id = x.id AND r.table_name = 'donors' AND r.restored_at IS NULL;
+      RETURN NULL;
+    END; $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_person_row_forgets_trash_delete ON donors`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_person_row_forgets_trash_insert ON donors`);
+  await pool.query(`CREATE TRIGGER trg_person_row_forgets_trash_insert AFTER INSERT ON donors
+                      REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION steward_person_row_forgets_trash()`);
 
   // FIX-41 REMOVAL. Something with money or people attached is RETIRED, not
   // deleted: hidden from new use, kept on every past record (removal.js).
@@ -7325,7 +7347,13 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL,
       created_by_name TEXT
     )`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_sheet_import_jobs_running ON sheet_import_jobs (org_id, request_key) WHERE status = 'running'`);
+  // HARDEN-2: the key under "the same file is the same job while it runs"
+  // (routes/sheetImport.js takes the org's commit lock above it). Over running
+  // rows only, so finished history never blocks it; and a table that somehow
+  // holds two running rows for one file logs and boots rather than failing.
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_sheet_import_jobs_running ON sheet_import_jobs (org_id, request_key) WHERE status = 'running'`);
+  } catch (e) { console.error("[harden-2] uq_sheet_import_jobs_running not created:", e.message); }
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sheet_import_jobs_org ON sheet_import_jobs (org_id, started_at DESC)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS import_recent_work (
@@ -7409,6 +7437,21 @@ async function runSchemaInit(pool) {
       hour_key TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
+  // HARDEN-2 · one row per nightly check run (nightlyCheck.js), the only
+  // thing that job writes besides its bookkeeping. Platform-wide, so no
+  // org_id: red_checks holds letters and titles, never an org's id or name.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS nightly_check_runs (
+      id TEXT PRIMARY KEY,
+      night TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      ok BOOLEAN,
+      red_checks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      orgs_read INTEGER,
+      error TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_nightly_check_runs_started ON nightly_check_runs (started_at DESC)`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`

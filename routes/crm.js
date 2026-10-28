@@ -7047,8 +7047,9 @@ app.post("/deleted-records/restore-people", requireAuth, wrap(async (req, res) =
   const waiting = rows.filter(t => !t.restored_at);
   await withTransaction(async client => {
     if (!waiting.length) return;
-    await runTx(client, "UPDATE donors SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.record_id)]);
-    await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE org_id = ? AND id = ANY(?)", [orgId, waiting.map(t => t.id)]);
+    // HARDEN-2: one door back for a person; it closes every open deletion record of theirs.
+    await require("../personTrash").bringPeopleBack(orgId, waiting.map(t => t.record_id), { client });
+    await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE org_id = ? AND id = ANY(?) AND restored_at IS NULL", [orgId, waiting.map(t => t.id)]);
   });
   if (req.audit) req.audit.entity("donor", waiting.length === 1 ? waiting[0].record_id : null);
   res.json({ restored: rows.length, newlyRestored: waiting.length, alreadyBack: rows.length - waiting.length });
@@ -7063,9 +7064,10 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
   if (t.created_by !== req.user.userId && !(await mayEditLogged(req, {}))) return res.status(403).json(NOT_YOURS);
   // A soft-deleted donor comes back by clearing deleted_at (FIX-22).
   if (t.table_name === "donors") {
+    // HARDEN-2: one door back for a person; it closes every open deletion record of theirs.
     await withTransaction(async client => {
-      await runTx(client, "UPDATE donors SET deleted_at = NULL WHERE id = ? AND org_id = ?", [t.record_id, req.user.orgId]);
-      await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ?", [t.id]);
+      await require("../personTrash").bringPeopleBack(req.user.orgId, [t.record_id], { client });
+      await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ? AND restored_at IS NULL", [t.id]);
     });
     const [d] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [t.record_id, req.user.orgId]);
     if (req.audit) { req.audit.entity("donor", t.record_id); req.audit.after(d || null); }

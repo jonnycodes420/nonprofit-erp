@@ -15,12 +15,18 @@ import { installOrgBinding, setPageOrg, subscribeOrgChanged, orgChanged } from "
 import { installCommitGuard } from "./lib/commitGuard";
 import { safeNext } from "./lib/appUrls";
 import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
-// The marketing site (LANDING-2) stays an eager import: "/" is the public
-// entry page and must not wait on a second network hop. Everything else is
-// route-split (React.lazy) so visiting "/" does not download the
-// authenticated app bundle (the shell + Donors/Grants/Comms/etc.).
-import MarketingPage from "./marketing/Site";
-import { ROUTES as MARKETING_ROUTES } from "./marketing/routes";
+// The marketing site (LANDING-2) is route-split too since HARDEN-2: main.jsx
+// holds only its paths (computed from marketing/routes.js at build time), and
+// a marketing page waits for its chunk before the first render (see the
+// bottom of this file and marketing/lazySite.jsx), so a prerendered page never
+// flashes. Its stylesheets stay here, so that page is styled from the start.
+// Everything else is route-split (React.lazy) so visiting "/" does not
+// download the authenticated app bundle (the shell + Donors/Grants/Comms/etc.).
+import MARKETING_PATHS from "virtual:marketing-paths";
+import { MarketingRoute, loadMarketing } from "./marketing/lazySite";
+import { startBootReads, startShellReads, startHomeReads } from "./lib/bootReads";
+import "./marketing/site.css";
+import "./marketing/content.css";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const SetupPage          = React.lazy(() => import("./pages/SetupPage"));   // ONBOARD-1
@@ -63,6 +69,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react'
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
+const MARKETING_ROUTES = MARKETING_PATHS.map(path => ({ path }));
 const PAL = {
   cream: "#f0ede6",
   cream3: "#d4cfc6",
@@ -241,7 +248,7 @@ function Root() {
               routes are not in that table and are untouched below. */}
           {MARKETING_ROUTES.map(r => (
             <Route key={r.path} path={r.path}
-              element={r.path === "/" ? <PublicOnly><MarketingPage route={r} /></PublicOnly> : <MarketingPage route={r} />} />
+              element={r.path === "/" ? <PublicOnly><MarketingRoute path={r.path} /></PublicOnly> : <MarketingRoute path={r.path} />} />
           ))}
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
           {/* GTM-1a 2 — SIGNUP REOPENS, AS THE PATH IT ALWAYS SHOULD HAVE BEEN.
@@ -342,9 +349,24 @@ function Root() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
+// HARDEN-2: a marketing page's chunk is in hand before React draws over its
+// prerendered HTML; anything else draws at once.
+const draw = () => ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><Root /></React.StrictMode>
 );
+const here = window.location.pathname.replace(/(.)\/+$/, "$1");
+if (MARKETING_PATHS.includes(here)) loadMarketing().then(draw, draw);
+else {
+  // HARDEN-2: on the app with a session, its code and its boot reads start
+  // now, side by side, instead of one after the other (lib/bootReads.js).
+  if (APP_PATHS.test(here) && localStorage.getItem("npe_token")) {
+    startBootReads();
+    startShellReads(here === "/dashboard");
+    if (here === "/dashboard") startHomeReads();
+    import("./App").catch(() => {});
+  }
+  draw();
+}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

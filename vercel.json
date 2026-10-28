@@ -127,6 +127,10 @@
       "destination": "/giving.html"
     },
     {
+      "source": "/give/:path*",
+      "destination": "/give.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/app.html"
     }

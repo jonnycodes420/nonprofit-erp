@@ -72,6 +72,9 @@ async function seedCapture1(q, ORG) {
              ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, email=EXCLUDED.email, address=EXCLUDED.address, city=EXCLUDED.city,
                state=EXCLUDED.state, zip=EXCLUDED.zip, deleted_at=NULL`,
       [id, ORG, name, email, address, city, state, zip, kind, ...WHO]);
+    // HARDEN-2: a person this seed brings back (deleted_at cleared above) keeps
+    // no open deletion record, or the nightly check reads them as deleted.
+    await q(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=$1 AND table_name='donors' AND record_id=$2 AND restored_at IS NULL`, [ORG, id]);
     return id;
   };
   const f1 = FIXTURES["check-1.png"], f2 = FIXTURES["check-2.png"], f3 = FIXTURES["check-3.png"];
