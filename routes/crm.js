@@ -6703,11 +6703,36 @@ const PURGE_CHILD_TABLES = [
   "payment_recovery_events", "recurring_subscriptions",
   "tasks", "interaction_attachments", "interactions", "gifts",
 ];
+// FIX-55 · EMPTY TRASH (Settings, Imports). People deleted by hand, older than
+// the days she chose (or all), are deleted for good, so they never match an
+// import again. Someone merged into another record is not in the trash (the
+// merge's Undo needs them). The count comes first (GET .../preview) and the
+// write needs a second confirm (`confirm: "empty"`). The audit row says that a
+// delete happened and how many, never who.
+async function purgeableIds(orgId, olderThanDays) {
+  const days = olderThanDays == null || olderThanDays === "" ? null : Math.max(0, Math.floor(Number(olderThanDays)));
+  if (days != null && !Number.isFinite(days)) return null;
+  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+                         ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}
+                         AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`,
+    days != null ? [orgId, days] : [orgId])).map(r => r.id);
+}
+const trashSentence = (n, days) => n
+  ? `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} deleted ${days != null && days !== "" ? `more than ${days} ${Number(days) === 1 ? "day" : "days"} ago` : "from Steward"} will be deleted for good. They will never match an import again, and this cannot be undone.`
+  : "Nobody in the trash matches that.";
+app.get("/donors/purge-trash/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const ids = await purgeableIds(req.user.orgId, req.query.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  res.json({ count: ids.length, sentence: trashSentence(ids.length, req.query.olderThanDays) });
+}));
 app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
-  const ids = trashed.map(r => r.id);
-  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {} });
+  const b = req.body || {};
+  if (b.confirm !== "empty") return res.status(400).json({ error: "confirm_required", sentence: "Confirm emptying the trash first." });
+  const ids = await purgeableIds(orgId, b.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  if (req.audit) req.audit.summary(`Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`, { count: ids.length, entityType: "donors" });
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {}, sentence: "The trash had nobody to delete." });
   const { MERGE_REFS, REF_SHAPE } = require("./dataHealth");
   const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
   const { purged, children, unlinked } = await withTransaction(async (client) => {
@@ -6739,10 +6764,13 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
       const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
       if (r.changes) children[t] = (children[t] || 0) + r.changes;
     }
+    // the trash's own copies go too, so no Undo or Recent change offers them back
+    const tr = await runTx(client, "DELETE FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)", [orgId, ids]);
+    if (tr.changes) children.deleted_records = tr.changes;
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
     return { purged: d.changes, children, unlinked };
   });
-  res.json({ purged, children, unlinked });
+  res.json({ purged, children, unlinked, sentence: `${purged.toLocaleString("en-US")} ${purged === 1 ? "person was" : "people were"} deleted for good.` });
 }));
 
 // ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
@@ -7544,15 +7572,29 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
      WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
     [req.user.orgId, req.params.id, req.user.orgId]
   );
+  // FIX-55: a pledge over several years says this year's installments and the
+  // open total, so the profile never shows one number without saying which
+  const yearEnd = `${String(orgToday(await orgTz(req.user.orgId))).slice(0, 4)}-12-31`;   // ORG_TZ_SEAM_OK
+  const inst = rows.length ? await query(
+    `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1,
+            COALESCE(SUM(amount) FILTER (WHERE paid_gift_id IS NULL AND due_date <= ?),0) AS due_this_year
+       FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [yearEnd, req.user.orgId, rows.map(r => r.id)]) : [];
+  const instBy = new Map(inst.map(x => [x.pledge_id, x]));
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
     const surplus = round2(parseFloat(r.surplus) || 0);
+    const balance = round2(parseFloat(r.balance) || 0);
+    const ix = instBy.get(r.id);
+    const years = ix ? Number(ix.y1) - Number(ix.y0) + 1 : 1;
+    const dueThisYear = r.status !== "open" ? 0 : ix ? Math.min(balance, round2(parseFloat(ix.due_this_year) || 0))
+      : (String(r.due_date || "").slice(0, 10) <= yearEnd ? balance : 0);
     return {
       ...r,
-      paid, balance: round2(parseFloat(r.balance) || 0),
+      paid, balance,
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
+      installmentCount: ix ? ix.n : 1, years, dueThisYear,
     };
   }));
 }));

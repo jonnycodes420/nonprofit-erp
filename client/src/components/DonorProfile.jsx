@@ -17,6 +17,7 @@ import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
+import { pledgeMoneyWords } from "../../../shared/pledgeWords.js";   // FIX-55
 import { censusById } from "../../../shared/numberCensus.js";
 import { stepAgainstProposals } from "../../../shared/nextStepAgree.js";   // FIX-24 2c
 import { renderCustomValue } from "../../../shared/customFieldShape";
@@ -2931,6 +2932,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         <div>
                           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                             <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(pl.amount)}</span>
+                            {/* FIX-55: a pledge over years says this year's installments and what is open in all */}
+                            {pl.status==="open"&&pl.years>1&&<span data-testid="pledge-money" style={{fontSize:12,color:T.ink2,fontWeight:600}}>{pledgeMoneyWords({dueThisYearCents:Math.round((pl.dueThisYear||0)*100),openCents:Math.round((pl.balance||0)*100),years:pl.years},c=>fmtFull(c/100))}</span>}
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>

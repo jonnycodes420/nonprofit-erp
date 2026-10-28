@@ -17,14 +17,14 @@ const { query } = require("./db");
 async function findPersonId(orgId, { email, name } = {}, q = query) {
   const e = String(email || "").trim().toLowerCase();
   if (e) {
-    const m = await q(
+    const m = q.snapshot ? q.snapshot.byEmail(e, 1) : await q(
       `SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(email))=?
         ORDER BY created_at ASC NULLS LAST, id LIMIT 1`, [orgId, e]);
     if (m.length) return m[0].id;
   }
   const n = String(name || "").trim();
   if (n) {
-    const m = await q(
+    const m = q.snapshot ? q.snapshot.byExactName(n, 2) : await q(
       `SELECT id, email FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(name))=LOWER(?) LIMIT 2`, [orgId, n]);
     if (m.length === 1) {
       const theirs = String(m[0].email || "").trim().toLowerCase();

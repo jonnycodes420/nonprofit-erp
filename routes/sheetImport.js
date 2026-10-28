@@ -33,6 +33,20 @@ const R = () => import("../shared/sheetRead.js");
 const DM = require("../donorMatch");
 const PM = require("../personMatch");
 
+// FIX-55 · THE FILE IS SENT ONCE. The first preview keeps the cells it read
+// under their fingerprint (`fileKey`), for this org, for half an hour; a re-read
+// after an answer sends the key and the answers, not the whole workbook again.
+// A key this server does not hold (a restart, another instance) answers 409
+// file_needed and the screen sends the cells once more.
+const PREVIEW_TTL_MS = 30 * 60 * 1000;
+const PREVIEW_FILES = new Map();   // org|fileKey → { at, sheets, fileName }
+function trimCache(m, max = 200) {
+  const now = Date.now();
+  for (const [k, v] of m) if (now - v.at > PREVIEW_TTL_MS) m.delete(k);
+  while (m.size > max) m.delete(m.keys().next().value);
+}
+const MODEL_SEEN = new Map();   // org|file|columns → the model's proposal, for PREVIEW_TTL_MS
+
 function readBody(b) {
   b = b || {};
   const sheets = (Array.isArray(b.sheets) ? b.sheets : []).slice(0, MAX_SHEETS).map(sh => ({
@@ -47,9 +61,19 @@ function readBody(b) {
 
 // A model's proposal for the columns the rules could not place. Only those
 // columns, only a role each; applyOverrides refuses a role the cells refute.
+// FIX-55: the model is asked once per file and set of unplaced columns, not on
+// every answer she gives on the preview (each re-read used to ask again).
 async function modelOverrides(orgId, sheets, u, Rm) {
   const unplaced = (u.help || []).filter(h => h.kind === "column");
   if (!unplaced.length) return { overrides: {}, used: false };
+  const seenKey = `${orgId}|${fileFingerprint({ sheets })}|${unplaced.map(h => h.key).sort().join(",")}`;
+  const seen = MODEL_SEEN.get(seenKey);
+  if (seen && Date.now() - seen.at < PREVIEW_TTL_MS) return seen.out;
+  const out0 = await askModel(orgId, sheets, unplaced, Rm);
+  if (!out0.off) { MODEL_SEEN.set(seenKey, { at: Date.now(), out: out0 }); trimCache(MODEL_SEEN); }
+  return out0;
+}
+async function askModel(orgId, sheets, unplaced, Rm) {
   const gate = await aiGate(orgId).catch(() => ({ ok: false }));
   if (!gate.ok) return { overrides: {}, used: false, off: true };
   const out = {};
@@ -151,36 +175,39 @@ async function matchPeople(orgId, u, answers, privacy) {
   const deletedPicks = (answers && answers.deletedPeople) || {};
   const idx = await orgPeopleIndex(orgId);
   const gone = await deletedPeopleIndex(orgId);
+  // FIX-55: the matcher's reads come from the org read once (DM.orgSnapshot);
+  // the preview of a 650-name file was 38 seconds of one-at-a-time questions
+  const snap = await DM.orgSnapshot(orgId);
+  const sq = DM.snapshotQuery(snap);
+  const living = id => { const d = id && snap.byId(id); return d ? { id: d.id, name: d.name, isClient: d.is_client === true } : null; };
   for (const p of u.people) {
     const names = p.people.length ? p.people.map(x => x.name) : [p.name];
     const members = [];
     for (const nm of names) {
       const pick = picks[`${p.key}|${nm}`];
       if (pick && pick !== "new") {
-        const [d] = await query("SELECT id, name, is_client FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [pick, orgId]);
-        if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "you", isClient: d.is_client === true }); continue; }
+        const d = living(pick);
+        if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "you", isClient: d.isClient }); continue; }
       }
       if (pick === "new") { members.push({ name: nm, status: "new", id: null, by: "you" }); continue; }
       // TRANS-1: the old system's own id matches first, for the record it names
       if (p.externalId && nm === names[0] && idx.idFor(p.externalId)) {
-        const [d] = await query(`SELECT id, is_client FROM donors WHERE org_id=? AND deleted_at IS NULL
-                                    AND (LOWER(external_donor_id)=LOWER(?) OR COALESCE(external_donor_ids,'[]'::jsonb) @> ?::jsonb) LIMIT 2`,
-          [orgId, p.externalId, JSON.stringify([p.externalId])]);
+        const [d] = snap.byExternalId(p.externalId, 1);
         if (d) { members.push({ name: nm, status: "matched", id: d.id, by: "the ID in your file", isClient: d.is_client === true }); continue; }
       }
       if (!idx.mightMatch(p.email, nm)) { members.push({ name: nm, status: "new", id: null }); continue; }
-      const m = await DM.matchDonor(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip });
+      const m = await DM.matchDonor(orgId, { email: p.email, name: nm, line1: p.address, postal: p.zip }, sq);
       if (m.state === "matched" && m.selectedId) {
-        const [d] = await query("SELECT is_client FROM donors WHERE id=?", [m.selectedId]);
-        members.push({ name: nm, status: "matched", id: m.selectedId, by: m.by || "name", isClient: !!(d && d.is_client === true) });
+        const d = living(m.selectedId);
+        members.push({ name: nm, status: "matched", id: m.selectedId, by: m.by || "name", isClient: !!(d && d.isClient) });
       } else if (m.state === "choices") members.push({ name: nm, status: "ambiguous", id: null, candidates: m.choices || [] });
       else {
         // A one-word name ("Arnold") is weak to CHECK-2 by design; the record
         // with exactly that name, when there is only one, is still that record.
-        const exact = await PM.findPersonId(orgId, { email: p.email, name: nm });
+        const exact = await PM.findPersonId(orgId, { email: p.email, name: nm }, sq);
         if (exact) {
-          const [d] = await query("SELECT is_client FROM donors WHERE id=?", [exact]);
-          members.push({ name: nm, status: "matched", id: exact, by: "the same name", isClient: !!(d && d.is_client === true) });
+          const d = living(exact);
+          members.push({ name: nm, status: "matched", id: exact, by: "the same name", isClient: !!(d && d.isClient) });
         } else members.push({ name: nm, status: "new", id: null });
       }
     }
@@ -450,8 +477,18 @@ function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, ev
 }
 
 app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
-  const body = readBody(req.body);
+  let body = readBody(req.body);
+  const fileKey = typeof (req.body && req.body.fileKey) === "string" ? req.body.fileKey.slice(0, 64) : "";
+  if (!body.sheets.length && fileKey) {
+    const kept = PREVIEW_FILES.get(`${req.user.orgId}|${fileKey}`);
+    if (!kept || Date.now() - kept.at > PREVIEW_TTL_MS) return res.status(409).json({ error: "file_needed", message: "Send the file again." });
+    kept.at = Date.now();
+    body = { ...body, sheets: kept.sheets, fileName: body.fileName || kept.fileName };
+  }
   if (!body.sheets.some(sh => sh.grid.length)) return res.status(400).json({ error: "empty", message: "The file has no cells in it." });
+  const key = fileFingerprint(body);
+  PREVIEW_FILES.set(`${req.user.orgId}|${key}`, { at: Date.now(), sheets: body.sheets, fileName: body.fileName });
+  trimCache(PREVIEW_FILES);
   const out = await buildUnderstanding(req, body);
   // HARDEN-1: the file's fingerprint (its cells, not its name or org) on this
   // preview's audit row, so the nightly check can see a file previewed in one
@@ -459,7 +496,7 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   if (req.audit) req.audit.after({ file: fileFingerprint(body) });
   // HARDEN-1: the preview names the org it was read for; commit sends it back
   const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
-  res.json({ ...publicView(out), org: org ? { id: org.id, name: org.name } : null });
+  res.json({ ...publicView(out), fileKey: key, org: org ? { id: org.id, name: org.name } : null });
 }));
 
 // FIX-54 · BRING THEM BACK. The one way a person she deleted returns from an
@@ -704,6 +741,9 @@ async function writePlan({ req, body, importId, who, report }) {
   // pledges first, so a paid first year lands on its own instalment. Each
   // pledge is its own row's amount, never a total column (FIX-52).
   let giftsCreated = 0, giftCents = 0, pledgesCreated = 0, pledgeCents = 0, duplicates = 0, duplicateCents = 0, installmentGifts = 0;
+  // FIX-55: the receipt says this year's installments, then the open total over the years
+  let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0;
+  const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
   const pledgeIdByRow = new Map();
   const PCOLS = ["id", "org_id", "donor_id", "amount", "due_date", "status", "notes", "idempotency_key", "frequency", "installment_count",
                  "created_by", "created_by_name", "import_id", "event_id"];
@@ -723,6 +763,8 @@ async function writePlan({ req, body, importId, who, report }) {
       for (const i of p.installments) inst.push(["pli_" + uuid().slice(0, 10), orgId, pid, i.seq, i.dueDate, i.cents / 100]);
       pledgeIdByRow.set(p.rowId, pid);
       pledgesCreated++; pledgeCents += p.pledgeCents;
+      pledgeOpenMade += p.openCents; pledgeYearsMade = Math.max(pledgeYearsMade, p.years || 1);
+      pledgeDueMade += p.installments.filter(i => !i.paid && i.dueDate && i.dueDate <= yearEndToday).reduce((a, i) => a + i.cents, 0);
       summary.pledges.push(pid);
     }
     await insertRows("INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)", ["id", "org_id", "pledge_id", "seq", "due_date", "amount"], inst);
@@ -800,7 +842,7 @@ async function writePlan({ req, body, importId, who, report }) {
      rowsIn, giftsCreated, donorsCreated, u.aside.length + duplicates, dollarsInCents / 100, giftCents / 100, who.id, who.name, JSON.stringify(summary)]);
   const parts = [];
   if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
-  if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${money(pledgeCents)}, ${money(u.counts.pledgeOpenCents)} still open)`);
+  if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${Rm.pledgeMoneyWords({ dueThisYearCents: pledgeDueMade, openCents: pledgeOpenMade, years: pledgeYearsMade }, money)})`);
   if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
     : `Nothing new: every row in this file was already here.`;

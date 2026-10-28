@@ -22,6 +22,8 @@
 // silent drop. Nothing here writes; routes/sheetImport.js does, through
 // recordGift.
 import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importShape.js";
+import { pledgeMoneyWords } from "./pledgeWords.js";
+export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
 const ROLE_LABELS = {
@@ -1310,6 +1312,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const pledgeCents = pledges.reduce((a, p) => a + p.pledgeCents, 0);
   const pledgeOpenCents = pledges.reduce((a, p) => a + p.openCents, 0);
   const pledgeThisYear = pledges.reduce((a, p) => a + p.thisYearCents, 0);
+  // FIX-55: what is still to come this calendar year (unpaid installments due
+  // by Dec 31), and the longest pledge in years, so money says which it is
+  const yearEndT = `${T.slice(0, 4)}-12-31`;
+  const pledgeDueThisYear = pledges.reduce((a, p) => a + (p.installments || []).filter(i => !i.paid && i.dueDate && i.dueDate <= yearEndT).reduce((x, i) => x + i.cents, 0), 0);
+  const pledgeYears = pledges.reduce((a, p) => Math.max(a, p.years || 1), 0);
   const paidInstallments = gifts.filter(g => g.kind === "installment").reduce((a, g) => a + g.cents, 0);
   const unpaidRowCents = pledges.filter(p => !p.firstPaid).reduce((a, p) => a + p.thisYearCents, 0);
   // "raised" in the file's own terms: this year's amount on every row read
@@ -1391,7 +1398,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       prospects: peopleList.filter(p => p.roles.includes("prospect")).length,
       contacts: peopleList.filter(p => p.roles.includes("contact")).length,
       gifts: gifts.length, giftCents, undatedGifts: gifts.filter(g => !g.date).length, undatedGiftCents: gifts.filter(g => !g.date).reduce((a, g) => a + g.cents, 0),
-      pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear,
+      pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear, pledgeDueThisYearCents: pledgeDueThisYear, pledgeYears,
       paidInstallmentCents: paidInstallments, rowCents, aside: aside.length, asideCents, monthly: flags.length,
       invited: att.filter(p => p.attendance.invited).reduce((a, p) => a + members(p), 0),
       rsvp: att.filter(p => p.attendance.rsvp === true).reduce((a, p) => a + members(p), 0),
@@ -1457,7 +1464,7 @@ export function importButtonSentence(u, extra = {}) {
   if (c.volunteers) sub.push(plural(c.volunteers, "volunteer"));
   parts.push(`${plural(c.persons || 0, "person", "people")}${sub.length ? ` (${sub.join(", ")})` : ""}`);
   if (c.gifts) parts.push(`${plural(c.gifts, "gift")} ${fmt$(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} undated)` : ""}`);
-  if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${fmt$(c.pledgeOpenCents)} open`);
+  if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears }, fmt$)}`);
   if (u.event && u.event.name && u.event.fromEngagement) parts.push(`${u.event.name}: ${c.attended.toLocaleString("en-US")} attended`);
   if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
   if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
