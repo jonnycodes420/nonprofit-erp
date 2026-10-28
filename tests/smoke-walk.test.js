@@ -458,6 +458,61 @@ async function demoDoor(browser) {
     await look("groups · click anywhere");
   }
 
+  // FIX-55 item 6 · HIDE WHAT ISN'T CONNECTED. The Donors Map tab drew an
+  // empty US map and a configuration error when no address lookup provider
+  // was set up. GET /org now says, as a boolean only, whether one is
+  // (capabilities.geocoding, from geocode.js's own rule), and the tab exists
+  // only when it is. shard.sh boots with no provider, so the server says
+  // false and there is no tab; the same answer rewritten to true (what a
+  // GEOCODIO_API_KEY gives) brings the tab back and the map opens.
+  // Red when the tab is always shown, or when the flag is always true.
+  {
+    trouble = [];
+    const org = await api("GET", "/org", auth.token);
+    const caps = (org.body && org.body.capabilities) || {};
+    ok("§connected GET /org says address lookup is not set up (no provider on this server), as a boolean",
+       caps.geocoding === false, caps);
+    ok("§connected …and the same rule says it is with a key", require("../geocode").geocodingConfigured({ GEOCODIO_API_KEY: "fake" }) === true);
+    ok("§connected …and the answer carries no key", !/GEOCODIO|api_key|NOMINATIM/i.test(JSON.stringify(caps)), caps);
+    // Its own page with the service worker blocked: the app's worker answers
+    // fetches itself, and a route on the walk's page never sees /org.
+    const p2 = await browser.newPage({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await p2.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+    const p2errors = [];
+    p2.on("pageerror", e => p2errors.push(e.message.slice(0, 160)));
+    const mapTabs = () => p2.locator(".donors-view-toggle button").filter({ hasText: /^Map$/ }).count();
+    const openDonors = async () => {
+      await p2.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await p2.locator(".donors-view-toggle").waitFor({ timeout: 15000 }).catch(() => {});
+      await p2.waitForTimeout(800);
+    };
+    let orgSeen = 0;
+    const isOrg = u => { try { return new URL(u).pathname === "/org"; } catch { return false; } };
+    await p2.route(isOrg, async route => { orgSeen++; await route.continue(); });
+    await openDonors();
+    ok("§connected with no address lookup provider the Donors page has no Map tab", orgSeen > 0 && (await mapTabs()) === 0,
+       { orgSeen, tabs: await mapTabs() });
+    await p2.unroute(isOrg);
+    await p2.route(isOrg, async route => {
+      const r = await route.fetch();
+      const j = await r.json();
+      await route.fulfill({ response: r, json: { ...j, capabilities: { ...(j.capabilities || {}), geocoding: true } } });
+    });
+    await openDonors();
+    ok("§connected with a provider set up the Map tab appears", (await mapTabs()) === 1, await mapTabs());
+    if (await mapTabs()) {
+      await p2.locator(".donors-view-toggle button").filter({ hasText: /^Map$/ }).first().click();
+      await p2.waitForTimeout(1500);
+      const t = await p2.evaluate(() => (document.querySelector(".app-content") || document.body).innerText || "");
+      ok("§connected …and the map opens, with no error boundary and nothing thrown",
+         !/Something went wrong|An error occurred in this part/i.test(t) && p2errors.length === 0, p2errors.slice(0, 3));
+    }
+    await p2.close();
+    trouble = [];
+  }
+
   ok("the walk visited a DIFFERENT screen each time (not the dashboard N times)",
      new Set(seen).size === seen.length, seen);
 

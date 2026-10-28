@@ -1653,7 +1653,16 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   // FIX-50: `demo` is the one rule (orgKind.isDemoOrg); the banner reads it.
-  res.json({ ...org, demo: require("../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org) });
+  // FIX-55 item 6: what this server has connected, as booleans only (never a
+  // key). A screen whose feature needs a service that is not set up hides it.
+  res.json({ ...org, demo: require("../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org),
+    capabilities: {
+      geocoding: geocode.geocodingConfigured(),
+      // aiClient.aiGate's rule without the budget: a key, and the org's switch.
+      ai: !!process.env.ANTHROPIC_API_KEY && org.ai_enabled !== false,
+      // server.js builds the donation Stripe client from this one key.
+      stripe: !!require("../stripeKeys").donationStripeKey(),
+    } });
 }));
 
 // ── BUILD-86 C.3 — FOUR DASHBOARDS, FOUR QUESTIONS ─────────────────────────
@@ -14901,7 +14910,8 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
   // and the honest answer is that the control is unavailable — never a 500 and
   // never an invented brief.
   if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason,
-    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
+      : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -17243,7 +17253,8 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
 
   const gate = await agentGate(orgId);
   if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason,
-    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
+      : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
