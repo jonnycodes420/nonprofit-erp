@@ -9758,6 +9758,7 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
     notes: await n("SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=? AND import_id=?", [orgId, id]),
     customFields: (sj.customFieldsCreated || []).length,
     peopleRestored: (sj.personChanges || []).length,
+    peopleMatched: Number(sj.peopleMatched) || 0,
   };
   const parts = [];
   const add = (k, one, many) => { if (counts[k]) parts.push(`${counts[k].toLocaleString("en-US")} ${counts[k] === 1 ? one : many}`); };
@@ -9766,7 +9767,13 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   add("customFields", "custom field", "custom fields");
   const sentence = (parts.length ? `Undo removes ${parts.join(", ")}` : "Undo removes what is left of this import")
     + (counts.alreadyDeleted ? ` (${counts.alreadyDeleted.toLocaleString("en-US")} of the people were already deleted)` : "")
-    + (counts.peopleRestored ? `, and puts ${counts.peopleRestored.toLocaleString("en-US")} ${counts.peopleRestored === 1 ? "person who was already here" : "people who were already here"} back as they were` : "")
+    // FIX-55: the receipt counts everyone in the file who was already here; Undo
+    // puts back only those the import changed, and says which of them it is
+    + (counts.peopleRestored ? (() => {
+        const r = counts.peopleRestored, m = Number(sj.peopleMatched) || 0, rs = r.toLocaleString("en-US");
+        if (m > r) return `, and puts back as they were the ${rs} of the ${m.toLocaleString("en-US")} people already here that this import changed (it changed nothing on the other ${(m - r).toLocaleString("en-US")})`;
+        return `, and puts ${rs} ${r === 1 ? "person who was already here" : "people who were already here"} back as they were`;
+      })() : "")
     + ". It sends nothing and starts nothing.";
   res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
 }));

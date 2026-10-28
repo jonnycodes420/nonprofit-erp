@@ -13,6 +13,8 @@
 //      nothing is written
 //   §4 the browser: a file dropped on the start screen, and on the Donors
 //      page, opens the same preview as choosing it
+//   §6 the undo confirm says which of the people already here it puts back,
+//      in the receipt's own count (it said 75 where the receipt said 79)
 //   §5 "Bring them all back" on a file whose 82 givers were deleted gives the
 //      file's full gifts and pledges; Empty trash then stops them matching
 //
@@ -146,6 +148,20 @@ async function apiLegs() {
   pv = (await api("POST", "/sheet-import/understand", B.token, wbBody)).body;
   ok("§5 after Empty trash nobody in the file matches someone deleted", !(pv.deletedMatches || []).length && !(pv.questions || []).some(x => x.kind === "deletedPerson")
      && pv.counts.gifts === WKEY.gifts, JSON.stringify([(pv.deletedMatches || []).length, pv.counts.gifts]));
+  // §6 the undo confirm and the receipt agree on the people already here
+  const D = await freshOrg("org_fix55undo", "Undo words (test)");
+  const RS = path.join(__dirname, "fixtures", "import", "real-shaped");
+  const g = await importJob(D.token, { fileName: "jp-gift-history-287.xlsx", sheets: await sheetsOf(path.join(RS, "jp-gift-history-287.xlsx")) });
+  const c = await importJob(D.token, { fileName: "jp-contacts-656.xlsx", sheets: await sheetsOf(path.join(RS, "jp-contacts-656.xlsx")) });
+  const rcpt = (await api("GET", `/imports/${c.importId}`, D.token)).body.import || {};
+  const up = (await api("GET", `/imports/${c.importId}/undo-preview`, D.token)).body || {};
+  const matched = Number(up.counts && up.counts.peopleMatched) || 0, restored = Number(up.counts && up.counts.peopleRestored) || 0;
+  const said = (up.sentence || "").match(/(\d[\d,]*) (?:people|person)(?: who (?:were|was))? already here/);
+  ok("§6 both imports end done", g.end && g.end.status === "done" && c.end && c.end.status === "done");
+  ok("§6 the undo confirm names the receipt's count of people already here, and how many of them it puts back",
+     matched > 0 && restored > 0 && (restored === matched ? !!said && Number(said[1].replace(/,/g, "")) === matched
+       : new RegExp(`${restored.toLocaleString("en-US")} of the ${matched.toLocaleString("en-US")} people already here`).test(up.sentence))
+     && JSON.stringify(rcpt).includes(String(matched)), JSON.stringify({ matched, restored, sentence: up.sentence }));
   return { A, B };
 }
 
