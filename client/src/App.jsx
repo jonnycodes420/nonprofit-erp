@@ -17,6 +17,7 @@ import { Dashboard } from "./components/Dashboard";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { SkeletonPage } from "./components/Skeleton";
 import { bootRead } from "./lib/bootReads";
+import { useStewardTold } from "./lib/stewardTold";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
@@ -476,6 +477,10 @@ function AppShell() {
     loadData();
     bootRead("/billing/status").then(setBilling).catch(()=>{});
   },[]);
+  // HOME-3 item 4: an import that finished (SpreadsheetImport tells, on close
+  // and when its job ends) re-reads the app's own data too, not only the page
+  // that opened the window.
+  useStewardTold(d=>{if(d&&d.import)loadData();});
 
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 

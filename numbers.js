@@ -20,6 +20,7 @@
 const FS = require("./figureSources");
 const orgTime = require("./orgTime");
 const money = require("./money");
+const { query } = require("./db");
 
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal } = require("./campaignMatch");
 
@@ -179,9 +180,60 @@ async function vsLastYear(orgId, from, to, today) {
   };
 }
 
+// HOME-3 · "RAISED" THE WAY SHE SAYS IT. Allie said the Finding Joy Dinner
+// raised $124,290 on Oct 22; the report said $45,340 for October, because it
+// counted received gifts only. Both are right, so both are said:
+//   "Finding Joy Dinner: $124,290 raised ($45,340 received, $78,950 pledged)"
+// raised = received (event-received) + pledged for the event's year
+// (event-pledged); installments due in later years are said apart (later).
+// The event page, the first look and Reports read this one function, and each
+// figure carries the source that opens its rows.
+//   opts.ids     only these events
+//   opts.from/to only events dated in this window
+//   opts.withMoney  leave out events with nothing received or pledged
+//   opts.limit   the most recent N
+async function eventsRaised(orgId, { ids = null, from = null, to = null, withMoney = false, limit = null } = {}) {
+  const args = [orgId];
+  let where = "";
+  if (ids) { where += " AND e.id = ANY(?)"; args.push(ids); }
+  if (from) { where += " AND e.date >= ?::date AND e.date_unknown IS NOT TRUE"; args.push(from); }
+  if (to) { where += " AND e.date <= ?::date"; args.push(to); }
+  const pledgeSum = later => `(SELECT COALESCE(SUM(i.amount), 0) FROM pledges p
+       JOIN pledge_installments i ON i.pledge_id = p.id AND i.org_id = p.org_id
+      WHERE p.org_id = e.org_id AND p.event_id = e.id AND ${FS.EVENT_PLEDGE_OPEN("i", "p", "e", later)})::text`;
+  const rows = await query(
+    `SELECT e.id, e.name, LEFT(e.date::text, 10) AS date, e.date_unknown,
+            (SELECT COALESCE(SUM(g.amount), 0) FROM gifts g WHERE g.org_id = e.org_id AND ${FS.EVENT_GIFT_MATCH("g", "e")})::text AS received,
+            ${pledgeSum(false)} AS pledged, ${pledgeSum(true)} AS later
+       FROM events e WHERE e.org_id = ?${where}
+      ORDER BY e.date DESC, e.id`, args);
+  const out = rows.map(r => {
+    const c = v => money.toCents(String(v)) ?? 0;
+    const receivedCents = c(r.received), pledgedCents = c(r.pledged), laterCents = c(r.later);
+    const raisedCents = receivedCents + pledgedCents;
+    const src = (key, extra) => ({ key, params: { event: r.id, ...(extra || {}) } });
+    const m = money.formatCentsPlain;
+    return {
+      id: r.id, name: r.name, date: r.date_unknown ? null : r.date,
+      raised: raisedCents / 100, received: receivedCents / 100, pledged: pledgedCents / 100, later: laterCents / 100,
+      raisedCents, receivedCents, pledgedCents, laterCents,
+      sources: { raised: src("event-raised"), received: src("event-received"), pledged: src("event-pledged"), later: src("event-pledged", { later: true }) },
+      definitions: {
+        raised: "What this event raised: every gift received for it, and every unpaid installment pledged at it that falls due within a year of it.",
+        received: "Every gift attributed to this event that has been received. A refund comes off.",
+        pledged: "Promised at this event and not yet paid, falling due within a year of it. A pledge of so much a year counts its first year here.",
+        later: "Installments pledged at this event that fall due in later years. Not counted in what the event raised.",
+      },
+      words: `${r.name}: ${m(raisedCents)} raised (${m(receivedCents)} received, ${m(pledgedCents)} pledged)`
+        + (laterCents ? `, and ${m(laterCents)} more pledged for later years` : ""),
+    };
+  }).filter(e => !withMoney || e.receivedCents || e.pledgedCents || e.laterCents);
+  return limit ? out.slice(0, limit) : out;
+}
+
 // The screens that live inside a route file register here when the server
 // mounts them, so the checker running in the server reads the very function a
 // screen draws (scripts/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, screens };
+module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, eventsRaised, screens };

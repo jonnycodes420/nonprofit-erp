@@ -27,7 +27,7 @@
 //                                 Reload to continue.", or held in the tab under
 //                                 the cross-tab banner). Set 0 to only record
 //                                 where the writes landed.
-//   BREAKER_ONLY=clicks,drop,...  run some cases (clicks, drop, twotabs, toast, orders, enter, sleep)
+//   BREAKER_ONLY=clicks,drop,...  run some cases (clicks, drop, twotabs, toast, orders, enter, refresh, sleep)
 //
 // HOW IT GOES RED ON MAIN (each planted and watched, see the HARDEN-1 report):
 //   · two presses of a campaign's Send emailed every donor twice (crm.js claim)
@@ -735,6 +735,43 @@ async function caseSleep() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════
+// CASE 8 · HOME-3 item 4: THE PAGE BEHIND THE IMPORT WINDOW KEEPS UP
+// ═════════════════════════════════════════════════════════════════════════
+// Justin's Place, 27 Oct: after a successful import the Donors page still said
+// "No donors yet" until a reload. The window was closed while the import was
+// still writing (a job on the server), and nothing behind it was told when it
+// finished. Here: an empty org, the real-shaped gift file, the window closed
+// the moment the import starts; the Donors page must fill in on its own.
+// RED ON MAIN: the page says "No donors yet." until it is reloaded.
+async function caseRefresh() {
+  const L = "refresh";
+  // its own org each run: an import writes to tables freshOrg does not clear
+  const o = await freshOrg("org_brk_refresh_" + Date.now().toString(36), "Breaker Refresh (test)");
+  const ctx = await signedIn(o);
+  const page = await newPage(ctx);
+  await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  const empty = await page.waitForSelector("text=No donors yet.", { timeout: 30000 }).then(() => true).catch(() => false);
+  ok(`${L} §8 an empty org's Donors page says "No donors yet."`, empty, "");
+  await openSheetImport(page);
+  await chooseFile(page, path.join(__dirname, "fixtures", "import", "real-shaped", "jp-gift-history-287.xlsx"));
+  const started = page.waitForResponse(r => /\/sheet-import\/commit$/.test(r.url()), { timeout: 60000 }).catch(() => null);
+  await page.locator('[data-testid="sheet-import-go"]').click();
+  await started;
+  await page.keyboard.press("Escape");
+  const closed = await page.waitForSelector('[data-testid="sheet-import"]', { state: "detached", timeout: 10000 }).then(() => true).catch(() => false);
+  const atClose = await one("SELECT status FROM sheet_import_jobs WHERE org_id=$1", [o.orgId]);
+  console.log(`  ...  ${L}: the window closed with the job ${atClose ? atClose.status : "not yet written"}`);
+  const job = await waitForDb(async () => { const j = await one("SELECT status FROM sheet_import_jobs WHERE org_id=$1", [o.orgId]); return j && j.status !== "running" ? j : null; }, 120000);
+  const c = await counts(o.orgId);
+  ok(`${L} §8 the import, closed mid-way, finished on the server (278 gifts)`, closed && job && job.status === "done" && c.gifts === 278 && c.alive > 0, { closed, job, c });
+  const filled = await page.waitForFunction(() => !document.body.innerText.includes("No donors yet."), null, { timeout: 20000 }).then(() => true).catch(() => false);
+  ok(`${L} §8 the Donors page behind it fills in on its own, with no reload`, filled, (await page.locator("body").innerText().catch(() => "")).slice(0, 200));
+  await surfacesAgree(L, o);
+  await noProviderCalls(L, o.orgId);
+  await ctx.close();
+}
+
+// ═════════════════════════════════════════════════════════════════════════
 // CASE 7 · ENTER IN EVERY FIELD OF EVERY SCREEN THAT COMMITS
 // ═════════════════════════════════════════════════════════════════════════
 // A key press meant for a field is never the click that imports, undoes,
@@ -860,7 +897,7 @@ async function main() {
   browser = await chromium.launch();
   const guard = (name, fn) => fn().catch(e => ok(`${name}: the case ran to the end`, false, String(e && e.stack || e).slice(0, 500)));
   const sleeper = want("sleep") ? guard("sleep", caseSleep) : Promise.resolve();
-  for (const [name, fn] of [["clicks", caseClicks], ["drop", caseDrop], ["twotabs", caseTwoTabs], ["toast", caseToast], ["orders", caseOrders], ["enter", caseEnter]])
+  for (const [name, fn] of [["clicks", caseClicks], ["drop", caseDrop], ["twotabs", caseTwoTabs], ["toast", caseToast], ["orders", caseOrders], ["enter", caseEnter], ["refresh", caseRefresh]])
     if (want(name)) await guard(name, fn);
   await sleeper;
   await browser.close();

@@ -61,6 +61,14 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   source. Home's Why and What line, the season card, Fundraising's Raised tile (`period.compare`) and the
   Board read it, and each sentence says it compares the same days. Fundraising once compared the year so far
   with all of last year beside Home's same-point figure. (HARDEN-1)
+- **An event's "raised" is received + pledged for its year, said both ways: `numbers.eventsRaised` (HOME-3).**
+  "Finding Joy Dinner: $124,290 raised ($45,340 received, $78,950 pledged)". Received is `event-received`, pledged
+  is `event-pledged` (unpaid installments due before the event's first anniversary), raised is `event-raised` (both,
+  one list); installments due later are said apart (`later: true`), never added. The event card and page, the first
+  look and Reports' giving summary read it and draw it with `EventRaised.jsx`. A figure that counts gifts only says
+  "received". Fundraising's "Are we on pace?" leads with `numbers.vsLastYear` (received), splits pledges "due this
+  year (`pledges-due`) · over all years (`pledges-open`)", drops the grant clause for an org with no grants and hides
+  "Pledged and paid" at $0. (HOME-3)
 - **Home's file line reads live counts.** `/move`'s `homeLine` counts the onboarding card's people and gifts
   now, never the move runs' stored counters. (HARDEN-1)
 - **Every surface agrees, and a suite proves it.** `tests/lib/surfacesAgree.js assertSurfacesAgree(orgId, ctx)`

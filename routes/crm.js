@@ -1987,12 +1987,38 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
         })).then(rows => rows.sort((a, b) => b.value - a.value)) : null;
       })(),
     ]);
-    const due = await fig({ key: "grants-due", params: grantWin });
-    answer = { parts: [
-      answerFig("pledgedOutstanding", pledged), { text: " is pledged and still to come, and " },
-      answerFig("grantDeadlineCount", due),
-      { text: due.value === 1 ? " grant deadline falls in the next ninety days." : " grant deadlines fall in the next ninety days." },
-    ] };
+    // HOME-3 · THE ANSWER TO ITS OWN QUESTION. "Are we on pace?" used to say
+    // "$104,050 is pledged and still to come, and 0 grant deadlines fall in
+    // the next ninety days": no pace, and a clause about grants for an org
+    // that keeps none. It leads with received since the fiscal year began
+    // against the same days last year (numbers.vsLastYear, the number Home
+    // and the Board read), then splits the pledges: due this year · over all
+    // years. A clause about a feature the org does not use is left out.
+    const [vs, dueThisYear, [grantUse]] = await Promise.all([
+      require("../numbers").vsLastYear(orgId, fy.start, fy.end, today),
+      fig({ key: "pledges-due", params: { to: fy.end } }),
+      query("SELECT EXISTS (SELECT 1 FROM grants WHERE org_id=?) AS used", [orgId]),
+    ]);
+    // "Pledged and paid $0" beside open pledges read as if nothing was paid:
+    // at $0 it is absent (an optional metric), never a zero tile.
+    if (!(Number(values.pledgedPaid) > 0)) values.pledgedPaid = undefined;
+    const parts = [];
+    if (vs) {
+      const thisF = { value: vs.thisYear, source: vs.thisSource }, lastF = { value: vs.lastYear, source: vs.lastSource };
+      parts.push({ text: "Received since the fiscal year began: " }, answerFig("receivedThisYear", thisF),
+        lastF.value > 0 ? { text: ", against " } : { text: "." },
+        ...(lastF.value > 0 ? [answerFig("receivedSamePointLastYear", lastF), { text: " by the same day last year." }] : []));
+    }
+    if (pledged.value > 0) {
+      parts.push({ text: (parts.length ? " " : "") + "Pledged and still to come: " }, answerFig("pledgedDueThisYear", dueThisYear),
+        { text: " due this year · " }, answerFig("pledgedOutstanding", pledged), { text: " over all years." });
+    }
+    if (grantUse && grantUse.used) {
+      const due = await fig({ key: "grants-due", params: grantWin });
+      parts.push({ text: parts.length ? " " : "" }, answerFig("grantDeadlineCount", due),
+        { text: due.value === 1 ? " grant deadline falls in the next ninety days." : " grant deadlines fall in the next ninety days." });
+    }
+    answer = { parts: parts.length ? parts : [{ text: "Nothing has been received or pledged yet this fiscal year." }] };
   }
 
   if (key === "people") {
@@ -23762,12 +23788,16 @@ async function reportGivingSummary(orgId, p) {
     onlineTotal: G({ online: true }), onlineCount: G({ online: true, measure: "count" }),
     offlineTotal: G({ online: false }), offlineCount: G({ online: false, measure: "count" }),
   });
-  const [monthly, comparison, importedThisPeriod, [priorTotals], figures] =
-    await Promise.all([pMonthly, pComparison, pImported, pPrior, pFigures]);
+  // HOME-3: the events dated in the period, each with what it raised the way
+  // she says it (received + pledged), beside the gifts received above.
+  const pEvents = require("../numbers").eventsRaised(orgId, { from: p.from, to: p.to, withMoney: true });
+  const [monthly, comparison, importedThisPeriod, [priorTotals], figures, events] =
+    await Promise.all([pMonthly, pComparison, pImported, pPrior, pFigures, pEvents]);
   const fv = k => figures[k].value;
   return {
     figures,
     importedThisPeriod,
+    events,
     from: p.from, to: p.to,
     total: fv("total"),
     giftCount: fv("giftCount"),
@@ -27912,7 +27942,10 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   for (const [key, sql] of Object.entries(EVENT_ROW_SQL)) {
     counts[key] = await query(sql, [orgId, event.id]);
   }
-  const raisedCents = counts.raised.reduce((a, g) => a + Math.round(Number(g.amount) * 100), 0);
+  // HOME-3: raised is received + pledged for the event's year, from the one
+  // function the card, the first look and Reports read (numbers.eventsRaised).
+  const [money] = await require("../numbers").eventsRaised(orgId, { ids: [event.id] });
+  const raisedCents = money ? money.raisedCents : 0;
   // `|| 1` COUNTS A ZERO AS A ONE. A named guest brought on somebody else's
   // ticket carries quantity 0 on purpose — they have a seat and a name tag and
   // they are not a second place — and `Number(0) || 1` turned every one of
@@ -27926,7 +27959,7 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   res.json({
     event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
              goalAmount: event.goal_amount == null ? null : Number(event.goal_amount) },
-    progress, attendance,
+    progress, attendance, money,
     figures: [
       { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
         count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
@@ -28213,7 +28246,10 @@ app.get("/events", requireAuth, async (req, res) => {
       GROUP BY e.id
       ORDER BY e.date DESC NULLS LAST
     `, [orgId]);
-    res.json(rows);
+    // HOME-3: raised the way she says it (received + pledged for the event's
+    // year), one function for the card, the event page, the first look and Reports.
+    const money = new Map((await require("../numbers").eventsRaised(orgId, { ids: rows.map(r => r.id) })).map(m => [m.id, m]));
+    res.json(rows.map(r => ({ ...r, money: money.get(r.id) || null })));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

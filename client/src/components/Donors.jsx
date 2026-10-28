@@ -14,6 +14,7 @@ import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
+import { useStewardTold } from "../lib/stewardTold";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
@@ -532,6 +533,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       if(orgPeople)setOrgPeople(await allPeople());
     }catch(e){console.error(e);}
   };
+
+  // HOME-3 item 4: an import finished (or anything Tell Steward did): the
+  // count, the directory and the whole-org list re-read, so "No donors yet"
+  // never outlives the file that filled the page.
+  useStewardTold(()=>{reloadDonors();});
 
   // SCALE-2: open someone only if they are still on file (the old list's
   // .find()), asked of the server by id; otherwise run `orElse`.

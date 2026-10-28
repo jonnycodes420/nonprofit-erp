@@ -19,6 +19,7 @@ import { RecordLink } from "./RecordLink";
 import { WhyLink } from "./WhyAnswer";
 import { AskBox } from "./AskPanel";
 import { WhatWorked } from "./Insights";   // INSIGHTS-1
+import EventRaised from "./EventRaised";   // HOME-3
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -98,6 +99,16 @@ const cellFig = (kind, label, valueKey = "total") => r => r.source
   ? <Figure variant="cell" kind={kind} value={r[valueKey]} label={label} definition={undefined} source={r.source} />
   : kind === "money" ? fmtFull(r[valueKey]) : r[valueKey];
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+// HOME-3: a figure that counts only received money says "received".
+const RECEIVED_WORDS = "Every gift received and dated in the period you picked. A pledge counts when it is paid; what an event raised, pledges included, is said under Events in this period.";
+// HOME-3 item 3: an amount, then its count on the line under it ("99 gifts"),
+// each with its own "?" beside it, never "$119,111.96 ? ( 99 ? )".
+const AmountAndCount = ({ total, count, label }) => <>
+  <div><RF f={total} kind="money" label={label} /></div>
+  {count && <div data-testid="amount-count" style={{ fontSize: 13, fontWeight: 600, color: T.ink3, marginTop: 2 }}>
+    <Figure variant="inline" kind="count" value={count.value} suffix={count.value === 1 ? " gift" : " gifts"} label={`${label} gifts`} definition={count.definition} source={count.source} />
+  </div>}
+</>;
 
 // The rail at desktop width; below 760px the list folds into one <select>
 // (the compact picker), so nothing on Reports ever scrolls sideways.
@@ -448,24 +459,28 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // the Board's figure through the Board's own source, and the sentence
       // says so. Both figures open onto the gifts that make them.
       const c = d.comparison;
-      narrative = <span data-testid="gs-narrative">You've raised <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
-          label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
+      // HOME-3: every figure here counts gifts RECEIVED, and says so; what an
+      // event raised (received + pledged) is its own line, below.
+      narrative = <span data-testid="gs-narrative">You've received <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
+          label="Received this period" definition={RECEIVED_WORDS} source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
         {c && c.value > 0 && <>, {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year{c.imported ? " (from your old system)" : ""}</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
         {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
         {d.importedThisPeriod && <> Your old system's report said <Figure variant="inline" kind="money" value={d.importedThisPeriod.value} label="This period, from your old system" definition={d.importedThisPeriod.note} source={d.importedThisPeriod.source} /> for this period{d.importedThisPeriod.system ? ` (${d.importedThisPeriod.system})` : ""}, kept beside Steward's number.</>}
-        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave (<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning); the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
+        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave: <RF f={d.figures?.newDonors} label="New donors" /> new and <RF f={d.figures?.returningDonors} label="Returning donors" /> returning; the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {/* WIRE-1: the two cards that are the period's gifts open them. */}
-          {[["Total raised", d.totalSource ? <Figure variant="inline" kind="money" value={d.total} label="Total raised" definition="Every gift dated in the period you picked." source={d.totalSource} /> : fmtFull(d.total)],
+          {[["Total received", d.totalSource ? <Figure variant="inline" kind="money" value={d.total} label="Total received" definition={RECEIVED_WORDS} source={d.totalSource} /> : fmtFull(d.total)],
             ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />], ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />],
             ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />], ["Median gift", <RF f={d.figures?.medianGift} kind="money" label="Median gift" />],
             ["New donors", <RF f={d.figures?.newDonors} label="New donors" />], ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />],
-            ["Online", <><RF f={d.figures?.onlineTotal} kind="money" label="Online" /> (<RF f={d.figures?.onlineCount} label="Online gifts" />)</>],
-            ["Offline", <><RF f={d.figures?.offlineTotal} kind="money" label="Offline" /> (<RF f={d.figures?.offlineCount} label="Offline gifts" />)</>],
+            // HOME-3 item 3: the amount, then the count on its own line, each
+            // with its "?" beside it and never inside parentheses.
+            ["Online", <AmountAndCount total={d.figures?.onlineTotal} count={d.figures?.onlineCount} label="Online" />],
+            ["Offline", <AmountAndCount total={d.figures?.offlineTotal} count={d.figures?.offlineCount} label="Offline" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
@@ -482,18 +497,23 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         <ReportTable cols={[
           { key: "month", label: "Month", type: "month" },
           { key: "gifts", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.gifts} label={`Gifts in ${r.month}`} source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.gifts },
-          { key: "total", label: "Total", type: "money", render: cellFig("money", "Given that month") },
+          { key: "total", label: "Received", type: "money", render: cellFig("money", "Received that month") },
           // FIX-40: each month's givers open, through the same "givers" source the period's count uses.
           { key: "donors", label: "Unique donors", type: "number", render: r => r.source ? <Figure variant="cell" kind="count" value={r.donors} label={`Donors who gave in ${r.month}`} source={{ key: "givers", params: (({ measure, ...rest }) => rest)(r.source.params || {}) }} /> : r.donors },
         ]} rows={d.monthly} />
+        {/* HOME-3: what each event in the period raised, the way she says it. */}
+        {(d.events || []).length > 0 && <div data-testid="gs-events" style={{ marginTop: 18 }}>
+          {subhead("Events in this period")}
+          {d.events.map(e => <EventRaised key={e.id} e={e} />)}
+        </div>}
       </>;
     } else if (active === "by-group") {
       empty = d.rows.length === 0;
       const top = d.rows[0];
-      narrative = top && <>Your largest {groupBy === "funds" ? "fund" : groupBy === "campaigns" ? "campaign" : "giving page"} this period is <strong>{top.name}</strong> at <strong>{top.source ? <Figure variant="inline" kind="money" value={top.total} label={top.name} source={top.source} /> : fmtFull(top.total)}</strong>, {top.pct}% of the <RF f={d.figures?.grandTotal} kind="money" label="Raised this period" /> raised.</>;
+      narrative = top && <>Your largest {groupBy === "funds" ? "fund" : groupBy === "campaigns" ? "campaign" : "giving page"} this period is <strong>{top.name}</strong> at <strong>{top.source ? <Figure variant="inline" kind="money" value={top.total} label={top.name} source={top.source} /> : fmtFull(top.total)}</strong>, {top.pct}% of the <RF f={d.figures?.grandTotal} kind="money" label="Received this period" /> received.</>;
       table = <ReportTable cols={[
         { key: "name", label: groupBy === "funds" ? "Fund" : groupBy === "campaigns" ? "Campaign" : "Giving page", type: "text" },
-        { key: "total", label: "Total", type: "money", render: cellFig("money", "Raised") },
+        { key: "total", label: "Received", type: "money", render: cellFig("money", "Received") },
         { key: "giftCount", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.giftCount} label="Gifts" source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.giftCount },
         { key: "uniqueDonors", label: "Unique donors", type: "number" },
         { key: "pct", label: "% of total", type: "pct", render: r => <PctBar pct={r.pct} /> },
@@ -519,7 +539,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const latest = [...d.rows].reverse().find(r => r.retentionRate !== null);
       const earlier = latest ? [...d.rows].reverse().filter(r => r.retentionRate !== null)[1] : null;
       narrative = latest
-        ? <>In <strong>{latest.label}</strong> you retained <strong><RF f={latest.figures?.retentionRate} kind="percent" label="Retention" /></strong> of the prior year's donors (<RF f={latest.figures?.retainedDonors} label="Retained" /> of <RF f={latest.figures?.priorDonors} label="Prior-year donors" />) and <strong><RF f={latest.figures?.dollarRetentionRate} kind="percent" label="Dollars retained" /></strong> of their dollars.{earlier && latest.retentionRate < earlier.retentionRate && <WhyLink payload={{ key: "retention" }} />}{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong><RF f={latest.figures?.firstYearRetentionRate} kind="percent" label="First-year retention" /></strong>; that number is what stewardship moves.</>}</>
+        ? <>In <strong>{latest.label}</strong> you retained <strong><RF f={latest.figures?.retentionRate} kind="percent" label="Retention" /></strong> of the prior year's donors, <RF f={latest.figures?.retainedDonors} label="Retained" /> of <RF f={latest.figures?.priorDonors} label="Prior-year donors" />, and <strong><RF f={latest.figures?.dollarRetentionRate} kind="percent" label="Dollars retained" /></strong> of their dollars.{earlier && latest.retentionRate < earlier.retentionRate && <WhyLink payload={{ key: "retention" }} />}{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong><RF f={latest.figures?.firstYearRetentionRate} kind="percent" label="First-year retention" /></strong>; that number is what stewardship moves.</>}</>
         : <>Not enough multi-year giving history yet to compute retention.</>;
       // Each row is a different year's cohort; they do not add up, so no foot.
       table = <ReportTable foot={false} cols={[
@@ -575,13 +595,13 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "annual") {
       empty = d.giftCount === 0;
-      narrative = <>In <strong>{d.label}</strong> you raised <strong><RF f={d.figures?.total} kind="money" label={`Raised in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"}
+      narrative = <>In <strong>{d.label}</strong> you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"}
         {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up" : "down"} <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> from {d.priorLabel}</>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
         {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
-          {[["Total raised", <RF f={d.figures?.total} kind="money" label="Total raised" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
+          {[["Total received", <RF f={d.figures?.total} kind="money" label="Total received" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
             ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />], ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />],
             ["Growth vs prior", <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
             ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />], ["Donor retention", <RF f={d.figures?.retentionRate} kind="percent" label="Donor retention" />],

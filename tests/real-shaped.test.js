@@ -32,6 +32,12 @@
 //   §7 a name-only match to someone deleted is a question (Same person by
 //      default, stays out; Different person, imported as new); a match by
 //      email stays blocked with no question.
+//   §10 HOME-3: an event's raised is received + pledged for its year, one
+//      function (numbers.eventsRaised) on the event page, the first look and
+//      Reports, each figure opening and footing; "Are we on pace?" leads with
+//      received against the same days last year and splits the pledges; the
+//      Offline box has no "?" inside parentheses; closing the import window
+//      tells the pages behind it.
 //
 // assertSurfacesAgree(orgId, ctx) (tests/lib/surfacesAgree.js, another HARDEN-1
 // item) is called after each import and each undo when it exists.
@@ -420,7 +426,102 @@ async function main() {
   ok("§9 the Donors page, Settings and onboarding each open SpreadsheetImport", doors.slice(0, 3).every(f => /<SpreadsheetImport\b/.test(src(f)))
      && /setShowSheetImport\(true\)/.test(src("components/Donors.jsx").match(/initialOpenImport&&[^\n]*/)[0]), "");
 
+  // §10 HOME-3 (Justin's Place, 27 Oct): the gift file, then the dinner file
+  // answered as the Finding Joy Dinner on Oct 22, into a fresh org.
+  await homeThree();
+
   await closeDb();
   summary();
+}
+
+// ── §10 HOME-3 · "raised" the way she says it, "Are we on pace?", the
+// Offline box, and the pages behind the import window ────────────────────
+// HOW IT GOES RED ON MAIN: there is no event-raised figure and no `money` on
+// an event, the first look or the giving summary (§10a); the Fundraising
+// answer reads "$104,050 is pledged and still to come, and 0 grant deadlines
+// fall in the next ninety days" with "Pledged and paid $0" beside it (§10b);
+// the Offline box draws "(<count>)" with its "?" inside (§10c); closing the
+// import window while the job runs tells no page behind it (§10d, and the
+// breaker's "refresh" case in a browser).
+async function homeThree() {
+  const src = f => fs.readFileSync(path.join(__dirname, "..", "client", "src", f), "utf8");
+  const ORG = "org_hs1home3";
+  const tok = await freshOrg(ORG, "Home three (test)");
+  const fmt = c => "$" + (c / 100).toLocaleString("en-US", c % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
+  const dSheets = await sheetsOf("jp-dinner-gifts-106.xlsx");
+  const dPeople = dSheets[0].grid.slice(1).filter(r => r[0] || r[1]);
+  const notYet = dPeople.filter(r => /^no$/i.test(String(r[5]).trim()));
+  const receivedC = centsOf(DK.gift_dollars), firstYearC = centsOf(DK.pledge_first_year_dollars);
+  const allYearsC = notYet.reduce((n, r) => n + (/x\s*3\s*years/i.test(String(r[4])) ? 3 : 1) * centsOf(r[2]), 0);
+  const laterC = allYearsC - firstYearC;
+  ok("§10 the key: $124,290 = $45,340 received + $78,950 pledged; $104,050 pledged over all years",
+     receivedC + firstYearC === DK.totals_row_amount * 100 && receivedC === 4534000 && firstYearC === 7895000 && allYearsC === 10405000, [receivedC, firstYearC, allYearsC]);
+  const g = await importJob(tok, { fileName: "jp-gift-history-287.xlsx", sheets: await sheetsOf("jp-gift-history-287.xlsx") });
+  const dBody = { fileName: "jp-dinner-gifts-106.xlsx", sheets: dSheets, answers: { date: "2026-10-22", eventName: "Finding Joy Dinner", linkEvent: true } };
+  const du = (await api("POST", "/sheet-import/understand", tok, dBody)).body || {};
+  const d = await importJob(tok, dBody);
+  ok("§10 both files import, the dinner as the Finding Joy Dinner on Oct 22", g.end && g.end.status === "done" && du.ready === true && d.end && d.end.status === "done",
+     JSON.stringify([g.end && g.end.status, du.ready, (du.questions || []).filter(x => !x.optional).map(x => x.id), d.end && d.end.status]));
+  const [ev] = await q("SELECT id, LEFT(date::text,10) AS date FROM events WHERE org_id=$1 AND name='Finding Joy Dinner'", [ORG]);
+  ok("§10 the event exists, dated Oct 22", !!ev && ev.date === "2026-10-22", ev);
+  const evId = ev && ev.id;
+  const WORDS = `Finding Joy Dinner: ${fmt(receivedC + firstYearC)} raised (${fmt(receivedC)} received, ${fmt(firstYearC)} pledged), and ${fmt(laterC)} more pledged for later years`;
+
+  // §10a one function, three surfaces, every figure opens and foots
+  const list = ((await api("GET", "/events", tok)).body || []).find(e => e.id === evId) || {};
+  const m = list.money || {};
+  ok(`§10a the event card: "${WORDS}"`, m.words === WORDS && m.raisedCents === 12429000 && m.receivedCents === receivedC && m.pledgedCents === firstYearC, m.words || JSON.stringify(list).slice(0, 200));
+  const foot = async (src, want) => {
+    if (!src) return false;
+    const qs = Object.entries(src.params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    let cents = 0, page = 1, r;
+    do { r = (await api("GET", `/figures/${src.key}/rows?${qs}&page=${page}&pageSize=200`, tok)).body || {}; cents += (r.rows || []).reduce((n, x) => n + centsOf(x.amount), 0); page++; }
+    while (r.rows && r.rows.length === 200);
+    return centsOf(r.value) === want && cents === want && !!r.sentence;
+  };
+  const S = m.sources || {};
+  ok("§10a raised, received, pledged and later each open their rows, and the rows foot to the figure",
+     await foot(S.raised, 12429000) && await foot(S.received, receivedC) && await foot(S.pledged, firstYearC) && await foot(S.later, laterC), S);
+  const rep = (await api("GET", `/events/${evId}/report`, tok)).body || {};
+  ok("§10a the event page says the same, and its goal progress counts raised", rep.money && rep.money.words === WORDS
+     && centsOf((rep.figures || []).find(f => f.key === "raised").value) === 12429000, rep.money && rep.money.words);
+  const fl = (await api("GET", "/insights?asOf=2026-10-27&view=first", tok)).body || {};
+  ok("§10a the first look (What your file says) says the same", (fl.events || []).some(e => e.id === evId && e.words === WORDS), (fl.events || []).map(e => e.words));
+  const gs = (await api("GET", "/reports/giving-summary?from=2026-10-01&to=2026-10-31", tok)).body || {};
+  ok("§10a Reports, October: $45,340 received, and the dinner's line beside it", centsOf(gs.total) === receivedC
+     && (gs.events || []).some(e => e.id === evId && e.words === WORDS), [gs.total, (gs.events || []).map(e => e.words)]);
+  const rsrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Reports.jsx"), "utf8");
+  ok("§10a Reports labels the gifts it counts as received (no \"Total raised\", no \"You've raised\")",
+     !/"Total raised"|You've raised|label="Raised this period"/.test(rsrc) && /"Total received"/.test(rsrc) && /<EventRaised\b/.test(rsrc), "");
+
+  // §10b Are we on pace? Received against the same days last year, pledges split, no grant clause
+  const fr = (await api("GET", "/dashboards/fundraising", tok)).body || {};
+  const board = (await api("GET", "/dashboards/board", tok)).body || {};
+  const parts = (fr.answer && fr.answer.parts) || [];
+  const figOf = k => (parts.find(p => p.figure && p.figure.key === k) || {}).figure;
+  const thisY = figOf("receivedThisYear"), lastY = figOf("receivedSamePointLastYear");
+  const bThis = (board.metrics || []).find(x => x.key === "revenueThisYear") || {}, bLast = (board.metrics || []).find(x => x.key === "revenueLastYear") || {};
+  ok("§10b the answer leads with received since the fiscal year began against the same days last year: the Board's two numbers",
+     /^Received since the fiscal year began: /.test(fr.answer && fr.answer.text || "") && !!thisY && !!lastY
+     && centsOf(thisY.value) === centsOf(bThis.value) && centsOf(lastY.value) === centsOf(bLast.value) && lastY.value > 0, fr.answer && fr.answer.text);
+  ok(`§10b pledges are split: ${fmt(firstYearC)} due this year · ${fmt(allYearsC)} over all years`,
+     (fr.answer.text || "").includes(`Pledged and still to come: ${fmt(firstYearC)} due this year · ${fmt(allYearsC)} over all years.`), fr.answer && fr.answer.text);
+  ok("§10b an org with no grants hears nothing about grant deadlines", !/grant/i.test(fr.answer.text || ""), fr.answer && fr.answer.text);
+  ok("§10b no \"Pledged and paid $0\" beside the open pledges", !(fr.metrics || []).some(x => x.key === "pledgedPaid"), (fr.metrics || []).map(x => x.key));
+  ok("§10b every figure in the answer opens and foots", (await Promise.all(parts.filter(p => p.figure).map(p => foot(p.figure.source, centsOf(p.figure.value))))).every(Boolean), parts.filter(p => p.figure).map(p => p.figure.key));
+
+  // §10c the Offline box: the amount, then the count, no "?" inside parentheses
+  ok("§10c the Online and Offline boxes draw no figure inside parentheses", !/\(\s*<RF\b|<RF[^>]*\/>\s*\)/.test(rsrc) && /<AmountAndCount\b/.test(rsrc), "");
+  const year = (await api("GET", "/reports/giving-summary?from=2025-01-01&to=2025-12-31", tok)).body || {};
+  const offC = (await q("SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount),0)::numeric AS s FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND d.deleted_at IS NULL AND g.date BETWEEN '2025-01-01' AND '2025-12-31'", [ORG]))[0];
+  ok("§10c on the gift file's 2025, Offline is every gift (imported, so not paid online), amount and count", year.figures && centsOf(year.figures.offlineTotal.value) === centsOf(offC.s)
+     && year.figures.offlineCount.value === offC.n && offC.n > 0, [year.figures && year.figures.offlineTotal.value, year.figures && year.figures.offlineCount.value, offC]);
+
+  // §10d closing the import window tells the pages behind it, even mid-import
+  const si = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "SpreadsheetImport.jsx"), "utf8");
+  const fin = (si.match(/const finish = \(\) => \{[\s\S]*?\n  \};/) || [""])[0];
+  ok("§10d closing the window after (or during) an import tells the pages behind it (told), and Donors and the App listen",
+     /told\(/.test(fin) && /tellWhenDone\(job\.id\)/.test(fin) && /useStewardTold\(\(\)=>\{reloadDonors\(\);\}\)/.test(src("components/Donors.jsx"))
+     && /useStewardTold\(d=>\{if\(d&&d\.import\)loadData\(\);\}\)/.test(src("App.jsx")), fin.slice(0, 200));
 }
 main().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });
