@@ -7,7 +7,7 @@
 // here sends anything: a draft opens the person's profile, a task and a group
 // are made by her button. The facts and the words come from the server
 // (insights.js); this file draws them.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
@@ -259,37 +259,264 @@ function useSeen(cards) {
   }, [key]);
 }
 
-export function useInsights(view) {
+export function useInsights(view, skip) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const load = () => apiFetch(`/insights${view ? "?view=" + view : ""}`).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
-  useEffect(() => { load(); }, [view]);
+  useEffect(() => { if (!skip) load(); }, [view, skip]);
   return [data, load, err];
 }
 
-// HOME: the ladder first, then the cards in rank order.
-export function HomeInsights({ onNavigate, isReadOnly }) {
-  const [data, load, err] = useInsights("");
-  const [showAll, setShowAll] = useState(false);
+// THE FULL LADDER: the ladder, then every card in rank order. Home keeps it
+// one click away ("See your ladder"); the deck is what Home leads with.
+export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, only }) {
+  const [own, load, err] = useInsights("", !!given);
+  const data = given || own;
+  const reload = onChanged || load;
   const [look, setLook] = useState(false);
   useSeen(data && data.cards);
-  if (err) return null;
+  if (err && !given) return null;
   if (!data) return <div style={{ ...CARD, color: T.ink3, fontSize: 13 }}>Reading your donors…</div>;
-  const cards = data.cards || [];
+  const cards = (data.cards || []).filter(c => !only || c.kind === only);
   return (
     <section data-testid="home-insights" style={{ marginBottom: 18 }}>
-      {data.coverage && data.coverage.stale && (
+      {!only && data.coverage && data.coverage.stale && (
         <div role="note" style={{ ...CARD, borderLeft: "4px solid " + T.gold, fontSize: 14, color: T.ink }}>{data.coverage.sentence}</div>
       )}
       {look && <div role="dialog" aria-modal="true" aria-label="What your data says" onClick={e => { if (e.target === e.currentTarget) setLook(false); }}
         style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
-        <FirstLook onNavigate={(...a) => { setLook(false); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} onClose={() => { setLook(false); load(); }} />
+        <FirstLook onNavigate={(...a) => { setLook(false); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} onClose={() => { setLook(false); reload(); }} />
       </div>}
-      <LadderStrip data={data} onNavigate={onNavigate} />
-      <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>
-      {(showAll ? cards : cards.slice(0, 4)).map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={load} isReadOnly={isReadOnly} />)}
-      {cards.length > 4 && <button type="button" style={LNK} onClick={() => setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${cards.length} suggestions`}</button>}
+      {!only && <LadderStrip data={data} onNavigate={onNavigate} />}
+      {!only && <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>}
+      {cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={reload} isReadOnly={isReadOnly} />)}
       <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences && data.sentences.never}</p>
+    </section>
+  );
+}
+
+// ── HOME-3 · YOUR MOVES ─────────────────────────────────────────────────────
+// The ladder as tabs over one card. Each card is one person or organisation
+// (GET /insights deck, insights.js buildDeck): the kind, the name, what is
+// happening, why it matters, the line to say, who, when and the ask with its
+// rule. One button does the card's thing (it makes a task dated for when to
+// reach out; nothing sends), and Done, Not now and Doesn't fit are recorded as
+// outcomes. Every move in a tab is reachable by the buttons; the arrow keys
+// work while the deck has focus, and a phone swipes. All the moves arrive in
+// one read, so the next card is already here when she advances.
+const DECK_CSS = `
+.moves-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
+.moves-tab { text-align: left; border-radius: 14px; padding: 11px 16px; min-width: 132px; min-height: 44px; cursor: pointer; font-family: inherit;
+  background: ${T.white}; color: ${T.ink}; border: 1px solid ${T.bg3}; }
+.moves-tab[aria-selected="true"] { background: ${T.greenDk}; color: ${T.white}; border-color: ${T.greenDk}; }
+.moves-tab:focus-visible, .moves-deck:focus-visible, .moves-btn:focus-visible { outline: 2px solid ${T.greenDk}; outline-offset: 2px; }
+.moves-card { background: ${T.bg}; border-radius: 18px; padding: 28px 30px; display: flex; flex-direction: column; gap: 14px; touch-action: pan-y; }
+.moves-card[data-slide="next"] { animation: movesInNext 180ms ease-out; }
+.moves-card[data-slide="prev"] { animation: movesInPrev 180ms ease-out; }
+@keyframes movesInNext { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes movesInPrev { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .moves-card[data-slide] { animation: none; } }
+.moves-facts { display: flex; gap: 28px; flex-wrap: wrap; font-size: 14.5px; }
+.moves-btn { border-radius: 12px; padding: 12px 20px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; min-height: 44px; }
+.moves-round { width: 44px; height: 44px; border-radius: 999px; border: 1px solid ${T.bg3}; background: ${T.white}; color: ${T.ink}; font-size: 20px; cursor: pointer; line-height: 1; }
+@media (max-width: 640px) {
+  .moves-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 0 -2px; padding-bottom: 2px; }
+  .moves-tab { min-width: 0; flex: none; padding: 9px 14px; border-radius: 999px; }
+  .moves-tab .moves-stake { display: none; }
+  .moves-card { padding: 20px 18px; border-radius: 16px; }
+  .moves-name { font-size: 26px !important; }
+}
+`;
+const BTN_PRIMARY = { background: T.greenDk, color: T.white, border: "1px solid " + T.greenDk };
+const BTN_QUIET = { background: T.white, color: T.ink, border: "1px solid " + T.bg3 };
+const TASK_TITLE = {
+  draft: m => `Note to ${m.name}`, calls: m => `Call ${m.name}`, visit: m => `Visit ${m.name}`,
+  brief: m => `Visit ${m.name}: the briefing`, coffee: m => `Coffee with ${m.name}`, collect: m => `Collect from ${m.name}`,
+};
+const shortDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+export function HomeMoves({ onNavigate, isReadOnly, footer }) {
+  const [data, load, err] = useInsights("");
+  const [tab, setTab] = useState(null);
+  const [pos, setPos] = useState({});            // tab -> index
+  const [gone, setGone] = useState(() => new Set());   // move ids acted on here
+  const [slide, setSlide] = useState(null);
+  const [mode, setMode] = useState(null);
+  const [until, setUntil] = useState(plusDays(14));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [panel, setPanel] = useState(null);      // null | "ladder" | a card kind
+  const touch = useRef(null);
+  const deck = data && data.deck;
+  // posted once per load: the moves she was shown (a GET writes nothing)
+  const seenKey = deck ? deck.tabs.map(t => t.key + t.count).join("|") : "";
+  useEffect(() => {
+    if (!deck) return;
+    const items = deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids })));
+    if (items.length) apiFetch("/insights/seen", { method: "POST", body: JSON.stringify({ items }) }).catch(() => {});
+  }, [seenKey]);
+  if (err) return null;
+  if (!deck) return <section aria-label="Your moves" data-testid="home-moves" style={{ ...CARD, color: T.ink3, fontSize: 14 }}>Reading your donors…</section>;
+
+  const live = t => t.moves.filter(m => !gone.has(m.id));
+  const tabs = deck.tabs.map(t => ({ ...t, left: live(t) }));
+  const cur = tabs.find(t => t.key === (tab || deck.open)) || tabs[0];
+  const moves = cur.left;
+  const i = Math.min(pos[cur.key] || 0, Math.max(moves.length - 1, 0));
+  const m = moves[i] || null;
+  const total = moves.length + Math.max(0, cur.count - cur.moves.length);
+  const go = step => {
+    if (moves.length < 2) return;
+    setMode(null); setMsg(null);
+    setSlide(step > 0 ? "next" : "prev");
+    setPos({ ...pos, [cur.key]: (i + step + moves.length) % moves.length });
+  };
+  // the move leaves this deck; the next one takes its place
+  const advance = () => {
+    setGone(new Set([...gone, m.id]));
+    setSlide("next");
+    setPos({ ...pos, [cur.key]: moves.length - 1 > i ? i : 0 });
+    setMode(null); setReason("");
+  };
+  const outcome = async (state, extra) => {
+    await apiFetch("/insights/outcome", { method: "POST", body: JSON.stringify({ kind: m.kind, itemKeys: [m.itemKey], donorIds: m.ids, state, ...extra }) });
+  };
+  const act = async (state, extra, said) => {
+    if (!m || busy) return;
+    setBusy(true); setMsg(null);
+    try { await outcome(state, extra); advance(); setMsg(said ? { text: said } : null); }
+    catch (e) { setMsg({ text: e.message || "That didn't work. Nothing was changed.", err: true }); }
+    finally { setBusy(false); }
+  };
+  const doAction = async () => {
+    if (!m || busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const due = m.whenFrom && m.whenFrom > today() ? m.whenFrom : today();
+      const notes = [m.what, m.say ? `Say: "${m.say}"` : null, m.ask ? `Ask: ${m.ask.words} (${m.ask.rule})` : null, m.why ? `Why: ${m.why}` : null].filter(Boolean).join("\n\n");
+      await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: TASK_TITLE[m.action.key](m).slice(0, 240), due, type: "donor", donorId: m.lead, priority: "medium", kind: m.action.taskKind, notes }) });
+      await outcome("done");
+      advance();
+      setMsg({ text: `${TASK_TITLE[m.action.key](m)} is on your tasks for ${shortDay(due)}${m.action.key === "draft" ? ", with the note drafted in it" : ""}. Nothing was sent.`, tasks: true });
+    } catch (e) { setMsg({ text: e.message || "That didn't work. Nothing was changed.", err: true }); }
+    finally { setBusy(false); }
+  };
+  const onKey = e => {
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if (e.key === "ArrowRight") { e.preventDefault(); go(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); go(-1); }
+  };
+  const onTouchStart = e => { const t = e.touches[0]; touch.current = { x: t.clientX, y: t.clientY }; };
+  const onTouchEnd = e => {
+    const s = touch.current; touch.current = null;
+    if (!s) return;
+    const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
+  };
+  const pick = k => { setTab(k); setMode(null); setMsg(null); setSlide(null); };
+  const anyMoves = tabs.some(t => t.count > 0);
+
+  return (
+    <section aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey}
+      style={{ display: "flex", flexDirection: "column", gap: 18, borderRadius: 12 }}>
+      <style>{DECK_CSS}</style>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0, fontFamily: SERIF, fontSize: 28, fontWeight: 400, color: T.ink }}>Your moves</h2>
+        <div style={{ fontSize: 13, color: T.ink3 }}>{data.sentences && data.sentences.never}</div>
+      </div>
+      {data.coverage && data.coverage.stale && <div role="note" style={{ fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10 }}>{data.coverage.sentence}</div>}
+      {!anyMoves ? (
+        <div data-testid="moves-empty" style={{ background: T.bg, borderRadius: 16, padding: "26px 24px", fontSize: 15, color: T.ink, lineHeight: 1.55 }}>
+          No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time.
+        </div>
+      ) : <>
+        <div role="tablist" aria-label="Your moves by rung" className="moves-tabs">
+          {tabs.map(t => (
+            <button key={t.key} type="button" role="tab" className="moves-tab" data-testid={`moves-tab-${t.key}`} data-count={t.left.length + Math.max(0, t.count - t.moves.length)}
+              aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={deck.sentence}>
+              <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {t.left.length + Math.max(0, t.count - t.moves.length)}</span>
+              <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
+                {t.key === "planned" ? `${(t.left.length).toLocaleString("en-US")} ${t.left.length === 1 ? "person" : "people"}` : `${money(t.left.reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
+            </button>
+          ))}
+        </div>
+        {m ? (
+          <article key={m.id} className="moves-card" data-testid="move-card" data-move={m.id} data-slide={slide || undefined}
+            onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} aria-roledescription="move" aria-label={`${m.name}, ${i + 1} of ${total}`}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ ...EYEBROW, color: T.gold700 }}>{m.label}</div>
+              <div data-testid="move-pos" style={{ fontSize: 13, color: T.ink3 }}>{i + 1} of {total}</div>
+            </div>
+            <h3 className="moves-name" style={{ margin: 0, fontFamily: SERIF, fontSize: 34, fontWeight: 400, lineHeight: 1.12, color: T.ink }}>
+              <DonorLink id={m.lead} onOpen={() => onNavigate && onNavigate("donors", { selectDonorId: m.lead })} style={{ color: T.ink, textDecoration: "none" }}>{m.name}</DonorLink>
+            </h3>
+            <p data-testid="move-what" style={{ margin: 0, fontSize: 16.5, lineHeight: 1.55, color: T.ink }}>{m.what}</p>
+            <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55, color: T.ink3 }}><b style={{ color: T.ink }}>Why:</b> {m.why}</p>
+            {m.say && <blockquote style={{ margin: 0, background: T.white, borderRadius: 12, padding: "14px 16px", fontSize: 15.5, lineHeight: 1.55, fontStyle: "italic", color: T.ink }}>“{m.say}”</blockquote>}
+            <div className="moves-facts">
+              {m.who && <div><span style={{ color: T.ink3 }}>Who</span><br /><b>{m.who}{m.channel ? ` · ${m.channel.toLowerCase()}` : ""}</b></div>}
+              {m.when && <div><span style={{ color: T.ink3 }}>When</span><br /><b>{m.when.replace(/^between /, "").replace(/^on /, "")}</b></div>}
+              {m.ask && <div style={{ flex: "1 1 260px" }}><span style={{ color: T.ink3 }}>Ask</span><br /><b data-testid="move-ask">{m.ask.words}</b><div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{m.ask.rule}</div></div>}
+            </div>
+            {(m.also || []).length > 0 && (
+              <div data-testid="move-also" style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.5 }}>
+                {m.also.map(a => <div key={a.kind}><b style={{ color: T.ink }}>Also {a.label.toLowerCase()}:</b> {a.line}</div>)}
+              </div>
+            )}
+            {mode === "snooze" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
+                <label htmlFor="move-until">Show again on</label>
+                <input id="move-until" type="date" value={until} min={today()} onChange={e => setUntil(e.target.value)} style={{ fontSize: 14, padding: 8, border: "1px solid " + T.bg3, borderRadius: 10 }} />
+                <button type="button" className="moves-btn" style={BTN_PRIMARY} disabled={busy} onClick={() => act("snoozed", { until }, `${m.name} comes back on ${shortDay(until)}.`)}>Snooze</button>
+                <button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => setMode(null)}>Cancel</button>
+              </div>
+            )}
+            {mode === "dismiss" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
+                <input aria-label="Why it doesn't fit (optional)" placeholder="Why (optional)" value={reason} onChange={e => setReason(e.target.value)} style={{ fontSize: 14, padding: 9, border: "1px solid " + T.bg3, borderRadius: 10, flex: "1 1 200px" }} />
+                <button type="button" className="moves-btn" style={BTN_PRIMARY} disabled={busy} onClick={() => act("dismissed", { reason }, `Set aside. ${m.name} won't show here again.`)}>Set aside</button>
+                <button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => setMode(null)}>Cancel</button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+              {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-action" style={BTN_PRIMARY} disabled={busy} onClick={doAction}>{m.action.label}</button>}
+              {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-now" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "snooze" ? null : "snooze")}>Not now</button>}
+              {!isReadOnly && <button type="button" className="moves-btn" data-testid="move-not-fit" style={BTN_QUIET} disabled={busy} onClick={() => setMode(mode === "dismiss" ? null : "dismiss")}>Doesn't fit</button>}
+              {!isReadOnly && <button type="button" data-testid="move-done" style={LNK} disabled={busy} onClick={() => act("done", {}, `Done. ${m.name} is off your moves.`)}>Done</button>}
+              <div style={{ flex: 1 }} />
+              <button type="button" className="moves-round" data-testid="move-prev" aria-label="Previous move" disabled={moves.length < 2} onClick={() => go(-1)}>‹</button>
+              <button type="button" className="moves-round" data-testid="move-next" aria-label="Next move" disabled={moves.length < 2} onClick={() => go(1)}>›</button>
+            </div>
+            {m.group && m.group.count > 1 && (
+              <div style={{ fontSize: 13, color: T.ink3 }}>
+                One of {m.group.count} in {m.group.title.toLowerCase()} · <button type="button" style={LNK} onClick={() => setPanel(m.kind)}>See all {m.group.count}</button>
+              </div>
+            )}
+          </article>
+        ) : (
+          <div data-testid="moves-caught-up" style={{ background: T.bg, borderRadius: 18, padding: "36px 28px", textAlign: "center", fontSize: 16, color: T.ink }}>All caught up on this one.</div>
+        )}
+        {msg && <div role="status" style={{ fontSize: 13.5, color: T.ink, ...(msg.err ? { borderLeft: "3px solid " + T.gold, paddingLeft: 8 } : {}) }}>
+          {msg.text}{msg.tasks && onNavigate && <> <button type="button" style={LNK} onClick={() => onNavigate("tasks")}>Open Tasks</button></>}</div>}
+      </>}
+      <div data-testid="moves-quiet" style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5, color: T.ink3 }}>
+        {deck.review && <div data-testid="moves-review">{deck.review.count.toLocaleString("en-US")} {deck.review.count === 1 ? "row may not be a gift" : "rows may not be gifts"} · <button type="button" style={LNK} onClick={() => setPanel("review")}>Review</button></div>}
+        {deck.family && <div>{deck.family.count.toLocaleString("en-US")} {deck.family.count === 1 ? "group of records looks" : "groups of records look"} like one family · <button type="button" style={LNK} onClick={() => setPanel("family")}>Check</button></div>}
+        {anyMoves && <div><button type="button" style={LNK} data-testid="moves-ladder" onClick={() => setPanel("ladder")}>See your ladder</button></div>}
+        {footer}
+      </div>
+      {panel && (
+        <div role="dialog" aria-modal="true" aria-label={panel === "ladder" ? "Your donor ladder" : "Every move of this kind"} onClick={e => { if (e.target === e.currentTarget) setPanel(null); }}
+          onKeyDown={e => { if (e.key === "Escape") setPanel(null); e.stopPropagation(); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
+          <div style={{ background: T.ground || T.bg, borderRadius: 16, padding: "18px 18px 8px", maxWidth: 880, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => { setPanel(null); load(); setGone(new Set()); }}>Close</button></div>
+            <HomeInsights data={data} onChanged={() => { load(); setGone(new Set()); }} onNavigate={(...a) => { setPanel(null); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} only={panel === "ladder" ? null : panel} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -347,7 +574,8 @@ export function ProfileLadder({ donorId, onNavigate, isReadOnly }) {
 
 // REPORTS: what happened after each kind of card.
 const KIND_LABEL = { review: "Rows that may not be gifts", year_end: "Year-end givers due", sponsors: "Sponsors to renew", second_gift: "First gift, no second yet",
-  upgraded: "Upgraded on their own", major_slipping: "Major donor slipping", pledges: "Open pledges to collect", planned: "Planned-gift signals", family: "Family or network to link" };
+  upgraded: "Upgraded on their own", major_slipping: "Major donor slipping", pledges: "Open pledges to collect", planned: "Planned-gift signals", family: "Family or network to link",
+  lapsing: "Lapsing donors" };
 export function WhatWorked() {
   const [d, setD] = useState(null);
   useEffect(() => { apiFetch("/insights/worked").then(setD).catch(() => setD(null)); }, []);

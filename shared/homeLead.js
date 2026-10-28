@@ -174,7 +174,28 @@ export function rankLead(f) {
   // One card of a kind: the second gift waits in the rail, not in the lead.
   const lead = ranked.filter((c, i) => ranked.findIndex(x => x.kind === c.kind) === i).slice(0, 2);
   if (!lead.length) lead.push(quietCard(f));
-  return { lead, ranked: all, rail: railOrder(f, lead), doors: doors(f), tries: tries(f) };
+  return { lead, ranked: all, rail: railOrder(f, lead), doors: doors(f), tries: tries(f), pace: paceLine(f.pace) };
+}
+
+// HOME-3 · THE GREETING'S ONE SENTENCE ON PACE. numbers.vsLastYear over the
+// org's fiscal year (the number Fundraising and the Board show), in whole
+// dollars. "This fiscal year" when the year doesn't start January 1. None
+// without a year of history.
+export function paceLine(p) {
+  if (!p || !(p.lastYear > 0)) return null;
+  const diff = Math.round((p.thisYear - p.lastYear) * 100) / 100;
+  const subject = p.fiscal ? "Giving this fiscal year" : "Giving this year";
+  const even = Math.abs(diff) < Math.max(100, p.lastYear * 0.01);
+  const dir = even ? "even" : diff < 0 ? "behind" : "ahead";
+  return {
+    dir, amount: Math.abs(diff), thisYear: p.thisYear, lastYear: p.lastYear, fiscal: !!p.fiscal, span: p.span, source: p.source,
+    lead: `${subject} is `,
+    figure: even ? null : money(Math.abs(diff)),
+    tail: even ? "on pace with last year at this point." : dir === "behind" ? " behind last year at this point." : " ahead of last year at this point.",
+    after: dir === "behind" ? "Here's where most of it comes back." : null,
+    line: even ? `${subject} is on pace with last year at this point.` : `${subject} is ${money(Math.abs(diff))} ${dir === "behind" ? "behind" : "ahead of"} last year at this point.`,
+    definition: p.definition || "Giving since the year began, against the same days last year.",
+  };
 }
 
 // The Today rail reorders the same way: a meeting soon goes to the top, the
@@ -218,5 +239,5 @@ export function tries(f) {
 // What the screen gets: the cards without their arithmetic.
 export function forScreen(out) {
   const strip = c => { const { score, points, ...rest } = c; return rest; };
-  return { lead: out.lead.map(strip), rail: out.rail, doors: out.doors, tries: out.tries };
+  return { lead: out.lead.map(strip), rail: out.rail, doors: out.doors, tries: out.tries, pace: out.pace || null };
 }

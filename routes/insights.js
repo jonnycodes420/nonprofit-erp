@@ -46,7 +46,7 @@ const cardOut = c => ({
   words: c.words, how: c.how, does: c.does, facts: c.facts, wordsFrom: "template",
   items: c.items.map(it => ({ key: it.key, name: it.name, ids: it.ids, lead: it.lead, cents: it.cents, facts: it.facts, how: it.how,
     giftId: it.giftId, reason: it.reason, memo: it.memo, date: it.date, members: it.members, reasons: it.reasons, pledgeId: it.pledgeId,
-    installments: it.installments, state: it.state })),
+    installments: it.installments, state: it.state, down: it.down, levels: it.levels, what: it.what })),
 });
 
 app.get("/insights", requireAuth, wrap(async (req, res) => {
@@ -60,7 +60,7 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   cards = cards.slice(0, first ? 7 : 20);
   res.json({
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: r.ladder, centsSentence: r.centsSentence,
-    stats: r.stats, cards: cards.map(cardOut),
+    stats: r.stats, cards: cards.map(cardOut), deck: first ? undefined : r.deck,
     sentences: {
       ladder: "Each giving unit (a household, or a person on their own) sits on one rung, from their own giving. Planned sits beside a rung.",
       never: "Steward never sends anything for you. Every draft waits for your click.",

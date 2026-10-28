@@ -183,6 +183,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     want("search", Promise.all(deleted.slice(0, 5).map(d => get(`/search?q=${encodeURIComponent(d.name || "")}`).then(b => [d, b])))),
     want("finance", get("/finance/overview")),
   ]);
+  // HOME-3: a suite proves a comparison can fail by having one surface say a
+  // different number (ctx.plant gets the bodies it may change, before any check).
+  if (typeof ctx.plant === "function") ctx.plant({ lead, board, fund });
 
   // Atlas writes the request it answered (voice_memos, atlas_actions,
   // agent_instructions). The check leaves no trace in the org, so a suite that
@@ -271,7 +274,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ], money);
     }
     if (!skip.has("vsLastYear") && w) {
-      const doorLine = (lead && lead.doors && ((lead.doors.why && lead.doors.why.line) || (lead.doors.what && lead.doors.what.line))) || "";
+      // HOME-3: Home says pace once, in the greeting (lead.pace, numbers.vsLastYear).
+      const doorLine = (lead && lead.pace && lead.pace.line) || (lead && lead.doors && ((lead.doors.why && lead.doors.why.line) || (lead.doors.what && lead.doors.what.line))) || "";
       const door = /is \$([\d,.]+) (behind|ahead of) last year/.exec(doorLine);
       const seasonal = /^Giving since /.test(doorLine);
       const boardDiff = board.answer && (board.answer.parts || []).find(p => p.figure && p.figure.key === "givingDifference");
@@ -286,8 +290,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (door && !seasonal) {
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
         const dbCents = /\./.test(door[1]) ? thisYear - lastYear : Math.round((thisYear - lastYear) / 100) * 100;
-        facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's Why and What line"] = homeCents;
-        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the database says ${money(thisYear - lastYear)}, Home's Why and What line says ${money(homeCents)} ("${doorLine}")`);
+        facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's greeting"] = homeCents;
+        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the database says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
       }
       // Every "vs last year" says which days it compares.
       if (fp && fp.priorRaised > 0 && !(fundCmp && fundCmp.sentence && fundCmp.lastFrom === w.from && fundCmp.lastTo === w.to)) {

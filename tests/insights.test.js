@@ -31,6 +31,14 @@
 //      card has template words; outcomes take a card away and What worked
 //      counts what followed.
 //   §8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds.
+//   §9 HOME-3: the moves deck (tabs in rung order, one person one move with
+//      "also" lines, ranked by dollars, the December card's 20 givers each
+//      once, every move's numbers in its facts), Planned is for people, same-day
+//      gifts read as one gift, a top-level sponsor gets no offer, downgrades
+//      across any two years, Done/Not now/Doesn't fit advance and are recorded,
+//      and the greeting's pace is the one number (the truth check can fail).
+//      Red on main: there is no deck, OAKVILLE's upgrade says "$20,000", and
+//      RINGBURY's ask says "renew at Platinum ($8,000), and offer Platinum".
 //   §M (needs the memo-kept gift file Jonathan gives with the brief): the
 //      reimbursement, auction-table and ticket rows in Review; "Stable Moments"
 //      designated; FOXWOOD and Redwick in the Warbury network. When the
@@ -321,6 +329,69 @@ async function main() {
   ok("§7 every card's words hold only numbers its facts hold", bad.length === 0, bad.slice(0, 5));
   const planted = numbersOk("Ask $7,512 by Nov 3.", [["ask", "$7,500"]]);
   ok("§7 the number check can fail (a planted $7,512 is caught)", !planted.ok && planted.bad.includes("7512"), planted);
+  {
+  // ── §9 HOME-3: the moves deck, and the words fixed on 27 Oct ──────────
+  const deck = r3.body.deck;
+  ok("§9 the deck: Keep, Grow, Major and Planned, in rung order", !!deck && deck.tabs.map(t => t.key).join() === "keep,grow,major,planned", deck && deck.tabs.map(t => t.key));
+  const moves = deck ? deck.tabs.flatMap(t => t.moves) : [];
+  const moveUnit = m => m.itemKey.split(":").slice(0, 2).join(":");
+  const dupes = moves.map(moveUnit).filter((u, i, a) => a.indexOf(u) !== i);
+  ok("§9 one person, one move: nobody leads two cards", moves.length > 0 && dupes.length === 0, dupes.slice(0, 5));
+  const multi = moves.filter(m => (m.also || []).length);
+  ok("§9 …their other moves ride on that card as 'also' lines", multi.length > 0 && multi.every(m => m.also.every(a => a.kind !== m.kind || a.line)), multi.length);
+  ok("§9 each tab counts its moves, ranked by dollars; Keep opens first", deck.tabs.every(t => t.moves.length === Math.min(t.count, 150) && t.moves.every((m, i) => i === 0 || t.moves[i - 1].cents >= m.cents)) && deck.open === "keep",
+     deck.tabs.map(t => `${t.key} ${t.count}/${t.moves.length}`));
+  const yeCard = card(r3, "year_end");
+  const yePlaced = yeCard.items.filter(it => moves.some(m => (m.kind === "year_end" && m.itemKey === it.key) || (moveUnit(m) === it.key && (m.also || []).some(a => a.kind === "year_end"))));
+  const yeLead = moves.filter(m => m.kind === "year_end");
+  ok(`§9 the ${yeCard.items.length}-giver December card is ${yeCard.items.length} people, each once, ranked by dollars`,
+     yeCard.items.length === 20 && yePlaced.length === 20 && yeLead.every((m, i) => i === 0 || yeLead[i - 1].cents >= m.cents), [yeCard.items.length, yePlaced.length]);
+  const deckBad = [];
+  for (const m of moves) for (const w of [m.what, m.why, m.say, m.ask && m.ask.words, ...(m.also || []).map(a => a.line)]) {
+    if (!w) continue;
+    const chk = numbersOk(w, m.facts);
+    if (!chk.ok) deckBad.push(`${m.kind}/${m.name}: ${chk.bad.join(",")} in "${w}"`);
+  }
+  ok("§9 every move's words hold only numbers its facts hold", deckBad.length === 0, deckBad.slice(0, 5));
+  const plannedTab = deck.tabs.find(t => t.key === "planned");
+  const orgKinds = new Map((await q(`SELECT id, kind, name FROM donors WHERE org_id=$1`, [ORG])).map(r => [r.id, r]));
+  const orgy = plannedTab.moves.filter(m => m.ids.some(id => /organi[sz]ation/.test((orgKinds.get(id) || {}).kind || "") || /\b(foundation|fund|inc|llc|company)\b/i.test((orgKinds.get(id) || {}).name || "")));
+  ok("§9 Planned is for people: no foundation, company or fund, and it counts people, not dollars", orgy.length === 0 && plannedTab.cents === null && /\b(person|people)$/.test(plannedTab.atStake),
+     { orgs: orgy.map(m => m.name), atStake: plannedTab.atStake });
+  const oak = (r3.body.cards.find(x => x.kind === "upgraded") || { items: [] }).items.find(i => /OAKVILLE/i.test(i.name));
+  ok("§9 same-day gifts are one gift in the words: OAKVILLE's $5,000 and $20,000 on Dec 16, 2025 read as $25,000", !!oak && /\$25,000/.test(oak.how.say) && !/\$20,000/.test(oak.how.say)
+     && !moves.filter(m => /OAKVILLE/i.test(m.name)).some(m => /\$20,000/.test(m.what + m.say)), oak && oak.how.say);
+  const oakUnit = oak && (await api("GET", `/insights/donor/${oak.lead}?asOf=${AS_OF}`, tok)).body.unit;
+  ok("§9 …and a foundation never gets the Planned flag", !!oakUnit && oakUnit.planned === false, oakUnit && oakUnit.plannedWhy);
+  const spCard = card(r3, "sponsors");
+  const topLevel = spCard.items.filter(i => i.levels && /platinum/i.test(i.levels.last.level) && i.state === "not_renewed");
+  ok("§9 a sponsor already at Platinum is asked to renew at Platinum, with no offer", topLevel.length > 0 && topLevel.every(i => /^Ask to renew at Platinum \(\$[\d,]+\)\.$/.test(i.how.ask.words) && !/offer/i.test(i.how.ask.words) && !/level this year/.test(i.how.say)),
+     topLevel.map(i => i.how.ask.words));
+  const lower = spCard.items.filter(i => i.down);
+  ok("§9 downgrades across any two years: the sponsors who dropped a level are counted", lower.length >= 2 && new RegExp(`${lower.length} sponsors at a lower level`).test(spCard.words.what)
+     && lower.every(i => i.levels.prev && i.levels.prev.year < i.levels.last.year), [spCard.words.what, lower.map(i => `${i.name}: ${i.levels.prev.level} ${i.levels.prev.year} to ${i.levels.last.level} ${i.levels.last.year}`)]);
+  // Done, Not now and Doesn't fit each advance the deck and are recorded as outcomes
+  const pick = k => deck.tabs.find(t => t.key === k).moves;
+  const [m1, m2, m3] = [...pick("grow"), ...pick("major")].slice(0, 3);
+  const deckAfter = async (at) => (await api("GET", `/insights?asOf=${at || AS_OF}`, tok)).body.deck.tabs.flatMap(t => t.moves).map(m => m.id);
+  await api("POST", "/insights/outcome", tok, { kind: m1.kind, itemKeys: [m1.itemKey], donorIds: m1.ids, state: "done" });
+  await api("POST", "/insights/outcome", tok, { kind: m2.kind, itemKeys: [m2.itemKey], donorIds: m2.ids, state: "snoozed", until: "2026-11-20" });
+  await api("POST", "/insights/outcome", tok, { kind: m3.kind, itemKeys: [m3.itemKey], donorIds: m3.ids, state: "dismissed", reason: "test" });
+  const after9 = await deckAfter();
+  const rec = await q(`SELECT kind, item_key, state FROM insight_outcomes WHERE org_id=$1 AND item_key = ANY($2)`, [ORG, [m1.itemKey, m2.itemKey, m3.itemKey]]);
+  ok("§9 Done, Not now and Doesn't fit take the move off the deck, each recorded as its outcome",
+     ![m1, m2, m3].some(m => after9.includes(m.id)) && ["done", "snoozed", "dismissed"].every(st => rec.some(r => r.state === st)), rec);
+  ok("§9 …and Not now brings it back on its date", (await deckAfter("2026-11-20")).includes(m2.id), m2.id);
+  // the greeting's pace is the one number (numbers.vsLastYear), and the truth check fails if Home says another
+  const lead9 = (await api("GET", "/home/lead", tok)).body;
+  ok("§9 the greeting says pace in one sentence", !!lead9.pace && /^Giving this (fiscal )?year is (\$[\d,]+ (behind|ahead of)|on pace with) last year at this point\.$/.test(lead9.pace.line), lead9.pace && lead9.pace.line);
+  let paceCaught = false;
+  try {
+    await assertSurfacesAgree(ORG, { token: tok, step: "planted pace", plant: ({ lead }) => { if (lead && lead.pace) lead.pace.line = lead.pace.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
+  } catch (e) { paceCaught = /Home's greeting/.test(e.message); }
+  ok("§9 the truth check can fail: Home saying a different pace from the Board is caught", paceCaught, "");
+  }
+
   await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]).catch(() => {});
   const r4 = await get();
   ok("§7 with Atlas off every card has its template words", r4.body.cards.length >= 5 && r4.body.cards.every(x => x.wordsFrom === "template" && x.words.what && x.words.why), r4.body.cards.map(x => x.kind));

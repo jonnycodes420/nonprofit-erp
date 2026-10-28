@@ -165,7 +165,7 @@ const DOORS = { why: "The reasons behind your numbers", what: "Results, and who 
 // year at this point."); otherwise they fold into the questions under Ask.
 // `lead` is the lead slot, drawn between Ask and the agent's daily line.
 // Before the day has loaded, the two doors show as they always have.
-export function AskHero({ isReadOnly, onStepTaken, agent, day, lead }) {
+export function AskHero({ isReadOnly, onStepTaken, agent, day, lead, doors: showDoors = true }) {
   const [open, setOpen] = useState(null);
   const [text, setText] = useState("");
   const [kept, setKept] = useState(() => readKept());
@@ -191,7 +191,7 @@ export function AskHero({ isReadOnly, onStepTaken, agent, day, lead }) {
       <span aria-hidden="true" style={{ fontSize: 22, color: T.greenDk, lineHeight: 1 }}>›</span>
     </button>
   );
-  const doorsShown = !said ? ["why", "what"] : ["why", "what"].filter(m => said[m]);
+  const doorsShown = showDoors === false ? [] : !said ? ["why", "what"] : ["why", "what"].filter(m => said[m]);
   const tries = day && Array.isArray(day.tries) ? day.tries.slice(0, narrow ? 2 : 3) : [];
   return (
     <div data-testid="ask-hero" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
