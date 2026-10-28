@@ -85,6 +85,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **`STEWARD_PROCESS` decides the role:** unset runs the web and the jobs in one process (how prod
   ran before the worker service), `web` runs no jobs, `worker` runs the scheduler and the jobs. Code
   must work in all three. (SCALE-1)
+- **A job whose answer lives in this process's memory is `perBoot` and runs in every process, off the
+  queue.** The /health guards (`reconcileStripeVsGifts`, `checkWebhookSubscriptions`) run on their own
+  timer `firstMs` after boot in whichever process answers /health, web included (`jobQueue.startLocal`).
+  Queued, the run went to whichever process claimed it, so the answer landed in another process's
+  memory and /health read `notRun`. It must be read-only: every replica runs it. (GUARDS-1)
 - **Nothing a request reads may live only in one process's memory** when a second replica would read
   it differently: rate limits (`rateLimitStore.js`, Postgres), OAuth state (`oauth_states`), an
   import in flight (`import_in_flight`), an alert's hourly mark (`ops_alert_marks`). Pure caches of

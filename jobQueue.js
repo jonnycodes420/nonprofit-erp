@@ -50,13 +50,35 @@ const runsJobs = () => role() !== "web";
 
 // A periodic job. `run` is what the old setInterval called.
 // `perBoot`: the job keeps its answer in this process's memory (the /health
-// guards), so every process that boots must run it `firstMs` after boot, as the
-// old setTimeout did. Without it the schedule row a previous process left kept
-// its slot, and after every deploy the guard read "notRun" until that slot came
-// round, up to a whole interval later (FIX-47).
+// guards), so it runs IN THIS PROCESS, `firstMs` after it starts and every
+// `everyMs` after that, on its own timer, whatever STEWARD_PROCESS says. It
+// never goes through the queue: a queued run goes to whichever process claims
+// it, and its answer then sits in that process's memory, not the one answering
+// /health (the draining old container, a worker, or nobody for minutes behind a
+// deploy's backlog; with STEWARD_PROCESS=web, nobody ever). FIX-47 moved the
+// queued slot to each boot; GUARDS-1 takes it off the queue. Each web replica
+// then makes its own read-only calls, which is the price of a true answer.
 function define(name, { everyMs, firstMs = null, perBoot = false, run: fn }) {
-  schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, perBoot, booted: false, run: fn });
+  schedules.set(name, { everyMs, firstMs: firstMs == null ? everyMs : firstMs, perBoot, local: false, run: fn });
+  // A per-boot run a previous deploy queued still has a handler, so it drains
+  // once (read-only) instead of waiting forever.
   handlers.set(name, () => fn());
+}
+// Start every per-boot job's own timer in this process (once each). A run that
+// is still going when the next is due is skipped, never doubled.
+function startLocal() {
+  for (const [name, s] of schedules) {
+    if (!s.perBoot || s.local) continue;
+    s.local = true;
+    let busyNow = false;
+    const go = async () => {
+      if (busyNow) return;
+      busyNow = true;
+      try { await s.run(); } catch (e) { console.error(`[jobs] ${name}:`, e.message); } finally { busyNow = false; }
+    };
+    const t = setTimeout(() => { go(); const i = setInterval(go, s.everyMs); if (i.unref) i.unref(); }, s.firstMs);
+    if (t.unref) t.unref();
+  }
 }
 // A job that is only ever enqueued (one org's sync, an import's recent gifts).
 function handle(name, fn) { handlers.set(name, fn); }
@@ -157,14 +179,11 @@ async function runOne(job) {
 // ── The scheduler: enqueue each due periodic job, once across all processes.
 async function scheduleDue() {
   for (const [name, s] of schedules) {
-    // A per-boot job's first pass in this process brings its slot forward to
-    // firstMs from now (never later than the slot it already had).
-    const bootNow = s.perBoot && !s.booted;
+    if (s.perBoot) continue;   // runs on its own timer in each process (startLocal)
     await run(
       `INSERT INTO job_schedule (name, every_ms, next_run_at) VALUES (?, ?, NOW() + (?::int * INTERVAL '1 millisecond'))
-       ON CONFLICT (name) DO UPDATE SET every_ms = EXCLUDED.every_ms${bootNow ? ", next_run_at = LEAST(job_schedule.next_run_at, EXCLUDED.next_run_at)" : ""}`,
+       ON CONFLICT (name) DO UPDATE SET every_ms = EXCLUDED.every_ms`,
       [name, s.everyMs, s.firstMs]);
-    s.booted = true;
     const due = await query(
       `UPDATE job_schedule SET next_run_at = NOW() + (every_ms * INTERVAL '1 millisecond'), last_enqueued_at = NOW()
         WHERE name = ? AND next_run_at <= NOW() RETURNING name`, [name]);
@@ -187,6 +206,7 @@ let started = false, wake = null, busy = 0;
 function poke() { if (wake) { const w = wake; wake = null; w(); } }
 
 function start({ scheduler = true } = {}) {
+  if (scheduler) startLocal();   // every role, the web included: its /health reads these
   if (started || !runsJobs()) return;
   started = true;
   if (scheduler) {
@@ -258,5 +278,5 @@ async function keyBusy(key) {
   return rows.length > 0;
 }
 
-module.exports = { define, handle, enqueue, start, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
+module.exports = { define, handle, enqueue, start, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
   scheduleDue, claim, MAX_ATTEMPTS, WORKER_ID, _busy: () => busy };
