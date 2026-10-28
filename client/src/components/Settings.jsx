@@ -23,7 +23,7 @@ import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import { PrivacyPanel } from "./PrivacyPanel";
 import JourneyBuilder from "./JourneyBuilder";
-import { displayDate } from "../../../shared/displayDate";
+import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
 import { fmtInZone } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
@@ -2018,7 +2018,7 @@ function ImportsHistory(){
           {open.loading?<div style={{fontSize:13,color:T.ink3}}>Loading…</div>:(
             <div data-testid="import-receipt">
               <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Donors</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>{/* FIX-55: a contacts file adds people, not donors */}People added</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftsCreated)}</div></div>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
               </div>
@@ -2029,7 +2029,7 @@ function ImportsHistory(){
               </div>}
               {open.pledgesCreated>0&&(
                 <div style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
-                  {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges, plus anything set aside.
+                  {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges (every year of each pledge, so more than a total row that counts one year), plus anything set aside.
                 </div>
               )}
               {(open.notices||[]).map((n,i)=>(
@@ -2041,7 +2041,7 @@ function ImportsHistory(){
               {open.summary&&open.summary.leadSentence&&(
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
-              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDateTime(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
               {/* FIX-52: every receipt that undoes as a whole offers Undo for its
                   window, whether or not it reconciles. */}
               <div style={{marginTop:14,borderTop:"1px solid "+T.bg3,paddingTop:12}}>
