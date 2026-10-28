@@ -75,7 +75,7 @@ const RULES = {
   "foots": { words: "Every number that opens its rows foots to those rows.",
     screens: "every figure drawer" },
   // FIX-49 decisions 6 to 8 (Jonathan, 25 Oct).
-  "lapse": { words: "Lapsed is no gift in the last 12 months after giving before; lapsing is a last gift 9 to 12 months ago. The tags, the Directory's counts and every list name the same people by that one rule.",
+  "lapse": { words: "Lapsed is no gift in the last 12 months after giving before; lapsing is a last gift 9 to 12 months ago, unless they give once a year and their usual time is still ahead. The tags, the Directory's counts and every list name the same people by that one rule.",
     screens: "profile tags, Directory and its Re-engage badge, groups, Drift, journey triggers, Lost & Found" },
   // FIX-51
   "credit-totals": { words: "The profile's census lines are the header's own figures: their own giving is Lifetime, soft credit is the Soft credit figure, and with soft credit is the two added.",
@@ -239,11 +239,13 @@ async function checkOrg(orgId, opts = {}) {
     const tagged = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
     // FIX-51: the Communications segment's people are the tags' Lapsing and Lapsed.
     const quiet = await DS.quietIds(orgId, today);
+    // INSIGHTS-1: lapsing respects the person's rhythm (lapseRule.js), so the check reads it too
+    const rhythms = new Map((await query(`SELECT donor_id, rhythm, expected_next FROM donor_rhythm WHERE org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
     for (const [donorId, gs] of byDonor) {
       const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
       if (!pos.length) continue;
       const last = pos.map(g => day(g.date)).sort().pop();
-      const want = lapseRule.lapseState(last, today);
+      const want = lapseRule.lapseState(last, today, rhythms.get(donorId) || null);
       const t = tagged.get(donorId);
       const d = donors.find(x => x.id === donorId);
       const imported = d && d.imported_total != null;

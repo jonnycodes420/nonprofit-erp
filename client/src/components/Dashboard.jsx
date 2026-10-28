@@ -44,6 +44,7 @@ import { openTellSteward } from "./TellSteward";   // AGENT-5: one input, Atlas 
 import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
 import { HomeLead } from "./HomeLead";   // HOME-2
+import { HomeInsights } from "./Insights";   // INSIGHTS-1
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -3287,6 +3288,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           single hairline between them. Everything inside the panel is a
           block separated by air and a rule — no card carries its own border,
           because the panel already drew it. */}
+      {/* INSIGHTS-1 — Home leads with the ladder, then the cards in rank order,
+          then what Home shows today. */}
+      {surface==="home"&&!editMode&&<HomeInsights onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
       <div className={surface==="home"?"home-shell":""}>
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
       <div className={surface==="home"?"home-shell-top":""}>

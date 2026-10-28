@@ -15,6 +15,7 @@
 // A second import of the same file adds nothing: every gift and pledge carries
 // a key made from its own row.
 "use strict";
+const { giftTypeOf } = require("../insights");   // INSIGHTS-1: a gift type from the file's words
 const express = require("express");
 
 const routers = { r0: express.Router() };
@@ -749,14 +750,16 @@ async function writePlan({ req, body, importId, who, report }) {
   const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
   const pledgeIdByRow = new Map();
   const PCOLS = ["id", "org_id", "donor_id", "amount", "due_date", "status", "notes", "idempotency_key", "frequency", "installment_count",
-                 "created_by", "created_by_name", "import_id", "event_id"];
+                 "created_by", "created_by_name", "import_id", "event_id", "gift_type"];
   for (let k = 0; k < u.pledges.length; k += JOB_BATCH) {
     const batch = u.pledges.slice(k, k + JOB_BATCH).map(p => ({ p, pid: "pl_" + uuid().slice(0, 8) }));
     const rows = batch.map(({ p, pid }) => [pid, orgId, personId.get(p.personKey), p.pledgeCents / 100, p.installments[p.installments.length - 1].dueDate || p.dueDate, "open",
       // HARDEN-1: a pledge has no payment-method column, so how it will be paid ("Stock", "Foundation") rides its note
       [p.why, p.note, p.methodOriginal && !/Method in your file/.test(p.note || "") ? `Method in your file: ${p.methodOriginal}` : null,
        eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ").slice(0, 1000), "sheet:" + p.rowId + ":pledge",
-      p.years > 1 ? "annual" : null, p.installments.length, who.id, who.name, importId, eventId]);
+      p.years > 1 ? "annual" : null, p.installments.length, who.id, who.name, importId, eventId,
+      // INSIGHTS-1: "Stock", "Retirement Dist", "Foundation"… is the pledge's gift type
+      giftTypeOf([p.methodOriginal, p.note].filter(Boolean).join(" "))]);
     const ins = await query(`INSERT INTO pledges (${PCOLS.join(",")}) VALUES ${rows.map(() => "(" + PCOLS.map(() => "?").join(",") + ")").join(",")}
                               ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, rows.flat());
     const made = new Set(ins.map(r => r.id));
@@ -797,6 +800,9 @@ async function writePlan({ req, body, importId, who, report }) {
     }
     const r = await recordGift(args);
     if (r.duplicate) { duplicates++; if (g.kind !== "installment") duplicateCents += g.cents; continue; }
+    // INSIGHTS-1: the gift type the file's method or memo names, on the row just written
+    const gType = giftTypeOf([g.methodOriginal, g.note].filter(Boolean).join(" "));
+    if (gType && r.gift && r.gift.id) await run("UPDATE gifts SET gift_type=? WHERE id=? AND org_id=?", [gType, r.gift.id, orgId]);
     if (inst) {
       await run("UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW() WHERE id=? AND org_id=? AND paid_gift_id IS NULL", [r.gift.id, inst.id, orgId]);
       await recalcPledgePayment(args.pledgeId, orgId);
