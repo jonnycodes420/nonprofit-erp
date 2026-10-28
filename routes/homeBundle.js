@@ -26,6 +26,14 @@ const HOME_READS = new Set([
   "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins", "/donors/birthdays-near", "/donors/counts",
   "/dashboard/today", "/metrics/stewardship-summary", "/dashboard/home", "/thank-yous",
   "/dashboard/stewardship-debt/breakdown", "/dashboard/retention/breakdown", "/home/lead",
+  // HARDEN-2 item 2: the shell's own reads on every app page (the top bar,
+  // the rail's badges, Atlas), asked for in one request while the app's code
+  // downloads (client/src/lib/bootReads.js SHELL_READS). All plain GETs.
+  "/billing/donor-band", "/atlas/status", "/me/nav-layout", "/people/photos", "/capture/count", "/status/summary",
+  "/org/sample-data-status", "/org/welcome", "/atlas/activity", "/changelog/hidden", "/thank-yous/clock",
+  "/volunteer-hub/crossover", "/atlas/notes",
+  // HARDEN-2: Home's ladder and cards (INSIGHTS-1), asked for on its own at boot.
+  "/insights",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot

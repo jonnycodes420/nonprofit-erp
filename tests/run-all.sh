@@ -292,6 +292,8 @@ CORE=(
   list1-columns-filters
   nightly-check
   breaker
+  perf-giving
+  perf-app
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

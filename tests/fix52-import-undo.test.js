@@ -24,6 +24,11 @@
 //      snapshot, the three people already here exactly as they were.
 //   §8 an import whose receipt does not reconcile still undoes.
 //   §9 a job that fails partway rolls back whole and says why.
+//   §10 HARDEN-2: twenty requests at once for one preview (the same click,
+//      retries, the API's waiting call, and two that reached the server with
+//      no file, as a tab closed mid-send did on CI): one job, one receipt, the
+//      file's counts to the cent. Then a failed first run and twenty retries
+//      at once: it runs again exactly once.
 //
 // HOW IT GOES RED ON MAIN: the commit takes no background job (no 202, no
 // /sheet-import/jobs), the preview counts 465 records and 440 invited and
@@ -310,10 +315,78 @@ async function failsPartway() {
   }
 }
 
+// §10 HARDEN-2 · ONE PREVIEW IS ONE JOB, HOWEVER MANY TIMES IT ARRIVES. On CI
+// the breaker's closed tab left a second, failed job: the browser sent the
+// commit again as the tab went, the connection was gone before the body was
+// read, and the server started a job for a request that carried no file.
+const commitNoFile = tok => fetch(BASE + "/sheet-import/commit", { method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok } }).then(r => ({ status: r.status })).catch(e => ({ status: 0, e: e.message }));
+async function fileCounts(org, run) {
+  return one(`SELECT (SELECT COUNT(*)::int FROM gifts WHERE org_id=$1 AND import_id=$2) AS gifts,
+                     (SELECT COALESCE(SUM(ROUND(amount*100)),0)::bigint FROM gifts WHERE org_id=$1 AND import_id=$2) AS "giftCents",
+                     (SELECT COUNT(*)::int FROM pledges WHERE org_id=$1 AND import_id=$2) AS pledges,
+                     (SELECT COALESCE(SUM(ROUND(amount*100)),0)::bigint FROM pledges WHERE org_id=$1 AND import_id=$2) AS "pledgeCents",
+                     (SELECT COUNT(*)::int FROM donors WHERE org_id=$1 AND deleted_at IS NULL) AS people,
+                     (SELECT COUNT(*)::int FROM imports WHERE org_id=$1) AS receipts,
+                     (SELECT COUNT(*)::int FROM sheet_import_jobs WHERE org_id=$1) AS jobs`, [org, run]);
+}
+async function twentyAtOnce(ORG, RUN, tok, body) {
+  const asks = Array.from({ length: 20 }, (_, i) =>
+    i === 7 || i === 13 ? commitNoFile(tok)                                                     // the tab closed as it was sent
+    : i % 6 === 5 ? api("POST", "/sheet-import/commit", tok, { ...body, importId: RUN })        // a caller that waits for the receipt
+    : api("POST", "/sheet-import/commit", tok, { ...body, importId: RUN, background: true }));   // the click, again and again
+  const out = await Promise.all(asks);
+  const withFile = out.filter((_, i) => i !== 7 && i !== 13), noFile = [out[7], out[13]];
+  return { out, withFile, noFile, end: await jobEnd(tok, RUN) };
+}
+async function manyAtOnce() {
+  const ORG = "org_fix52d";
+  const tok = await freshOrg(ORG, "Harbor Lights D (test)");
+  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")) };
+  const RUN = "imp_fix52_many";
+  const r = await twentyAtOnce(ORG, RUN, tok, body);
+  ok("§10 twenty requests at once for one preview: every one that carried the file answers the same job",
+     r.withFile.every(x => (x.status === 202 || x.status === 201) && x.body && x.body.importId === RUN), JSON.stringify(r.withFile.map(x => [x.status, x.body && x.body.importId])).slice(0, 400));
+  ok("§10 a request that reached the server with no file starts nothing (400)", r.noFile.every(x => x.status === 400), JSON.stringify(r.noFile));
+  ok("§10 the job ends done, with its receipt", r.end.status === "done" && r.end.result && r.end.result.importId === RUN, JSON.stringify(r.end).slice(0, 300));
+  await new Promise(res => setTimeout(res, 500));   // a straggler has time to land
+  const c = await fileCounts(ORG, RUN);
+  ok("§10 one job and one receipt", c.jobs === 1 && c.receipts === 1, JSON.stringify(await q("SELECT id, status, error FROM sheet_import_jobs WHERE org_id=$1", [ORG])));
+  ok(`§10 the file's counts: ${E.gifts} gifts, ${E.pledges} pledges, ${E.persons} people`, c.gifts === E.gifts && c.pledges === E.pledges && c.people === E.persons, JSON.stringify(c));
+  ok(`§10 the money foots to the cent: gifts ${E.giftCents / 100} + pledges ${E.pledgeCents / 100} = the file's ${E.fileCents / 100}`,
+     Number(c.giftCents) === E.giftCents && Number(c.pledgeCents) === E.pledgeCents && Number(c.giftCents) + Number(c.pledgeCents) === E.fileCents
+     && r.end.result && r.end.result.giftCents === E.giftCents, JSON.stringify([c.giftCents, c.pledgeCents, r.end.result && r.end.result.giftCents]));
+  await surfacesAgree("after twenty requests for one preview", ORG, tok);
+}
+// A first run that failed may be retried, and runs again exactly once, never
+// twice side by side.
+async function failedThenRetried() {
+  const ORG = "org_fix52e";
+  const tok = await freshOrg(ORG, "Harbor Lights E (test)");
+  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")) };
+  const RUN = "imp_fix52_again";
+  await q(`CREATE OR REPLACE FUNCTION fix52_refuse_gift_e() RETURNS trigger AS $$ BEGIN
+             IF NEW.org_id = 'org_fix52e' THEN RAISE EXCEPTION 'fix52 planted failure'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+  await q(`DROP TRIGGER IF EXISTS fix52_refuse_gift_e ON gifts`);
+  await q(`CREATE TRIGGER fix52_refuse_gift_e BEFORE INSERT ON gifts FOR EACH ROW EXECUTE FUNCTION fix52_refuse_gift_e()`);
+  let first;
+  try { first = await importJob(tok, { ...body, importId: RUN }); }
+  finally { await q(`DROP TRIGGER IF EXISTS fix52_refuse_gift_e ON gifts`); await q(`DROP FUNCTION IF EXISTS fix52_refuse_gift_e()`); }
+  ok("§10 the first run failed and wrote nothing", first.end && first.end.status === "failed" && (await fileCounts(ORG, RUN)).receipts === 0, JSON.stringify(first.end).slice(0, 200));
+  const r = await twentyAtOnce(ORG, RUN, tok, body);
+  await new Promise(res => setTimeout(res, 500));
+  const c = await fileCounts(ORG, RUN);
+  ok("§10 twenty retries at once after a failure: it runs again exactly once (one job, done, one receipt)",
+     r.end.status === "done" && c.jobs === 1 && c.receipts === 1 && r.withFile.every(x => x.body && x.body.importId === RUN),
+     JSON.stringify({ c, jobs: await q("SELECT id, status, error FROM sheet_import_jobs WHERE org_id=$1", [ORG]), answers: r.withFile.map(x => x.status) }).slice(0, 500));
+  ok("§10 and the retried run's counts and money are the file's", c.gifts === E.gifts && c.pledges === E.pledges && Number(c.giftCents) === E.giftCents && Number(c.pledgeCents) === E.pledgeCents,
+     JSON.stringify(c));
+}
+
 (async () => {
-  try { await main(); await dropped(); await failsPartway(); }
+  try { await main(); await dropped(); await failsPartway(); await manyAtOnce(); await failedThenRetried(); }
   catch (e) { ok("suite ran without throwing", false, e.stack); }
-  finally { for (const o of ["org_fix52a", "org_fix52b", "org_fix52c"]) for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
-            for (const o of ["org_fix52a", "org_fix52b", "org_fix52c"]) await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {}); await closeDb(); }
+  finally { for (const o of ["org_fix52a", "org_fix52b", "org_fix52c", "org_fix52d", "org_fix52e"]) for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
+            for (const o of ["org_fix52a", "org_fix52b", "org_fix52c", "org_fix52d", "org_fix52e"]) await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {}); await closeDb(); }
   summary();
 })();

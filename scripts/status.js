@@ -59,9 +59,27 @@ function mailboxReport(mailboxSync, { now = Date.now(), backendUp = true } = {})
   if (stale > lines.length) lines.push(`${stale - lines.length} more mailbox(es) not read in 2 hours, reconnect in Connections`);
   return { ok: stale === 0, detail: `${mailboxSync.connections} connection(s), ${stale} not read in 2 hours · checked ${mailboxSync.checkedAt}`, lines };
 }
+// HARDEN-2 · THE NIGHTLY CHECK RAN. /health carries the last run (letters and
+// counts only). A run more than 26 hours old is a red line AND a flag (exit 1):
+// a job that quietly stopped is the failure it exists to catch. A check that
+// never ran is a red line but not a flag: on the first deploy of this table
+// nothing can have run until the next 3:30 AM in New York, and the push that
+// deploys it should not read as broken. CI does not run this script (it runs
+// prod-ai-smoke.js on its own), so the exit code is Jonathan's to read.
+function nightlyReport(nc, { now = Date.now(), backendUp = true } = {}) {
+  if (nc === undefined) return { ok: null, flag: false, detail: backendUp ? "no nightlyCheck on /health (older deploy)" : "backend unreachable" };
+  if (nc === null) return { ok: null, flag: false, detail: "not read since the deploy yet; re-run in a minute" };
+  if (nc.neverRan || !nc.lastRunAt) return { ok: false, flag: false, never: true, detail: "has NEVER run (it runs at 3:30 AM New York on the worker)" };
+  const when = new Date(nc.lastRunAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
+  const orgs = nc.orgsRead == null ? "" : ` · read ${nc.orgsRead} org${nc.orgsRead === 1 ? "" : "s"}`;
+  const ago = agoWords(nc.lastRunAt, now);
+  if (nc.stale) return { ok: false, flag: true, detail: `has NOT run in 26 hours: last ran ${when} (${ago})${orgs}` };
+  const verdict = nc.ok ? "green" : `RED: check${(nc.red || []).length === 1 ? "" : "s"} ${(nc.red || []).join(", ") || "?"}`;
+  return { ok: nc.ok === true, flag: false, red: !nc.ok, detail: `${verdict} · ran ${when} (${ago})${orgs}` };
+}
 // The smoke verdict is the routes' alone.
 const smokeVerdict = (routesOk) => routesOk;
-module.exports = { mailboxReport, smokeVerdict };
+module.exports = { mailboxReport, nightlyReport, smokeVerdict };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -82,8 +100,8 @@ if (require.main === module) (async () => {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null, guards = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, nightlyCheck;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; nightlyCheck = h.nightlyCheck; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -149,6 +167,7 @@ if (require.main === module) (async () => {
   const mail = mailboxReport(mailboxSync, { backendUp: !!backendSha });
   const mailOk = mail.ok, mailDetail = mail.detail;
   smokeOk = smokeVerdict(smokeOk);
+  const nightly = nightlyReport(nightlyCheck, { backendUp: !!backendSha });
 
   // ── report ───────────────────────────────────────────────────────────────────
   const row = (label, val, note = "") => console.log(`  ${label.padEnd(18)} ${val}${note ? "  " + DIM + note + RESET : ""}`);
@@ -165,6 +184,7 @@ if (require.main === module) (async () => {
   // never needs a hunt. Reported, not a smoke failure: a guard is a page.
   row("guards", !guards ? `${YELLOW}unverified${RESET}` : guards.ok === true ? `${GREEN}ok${RESET}` : `${RED}FALSE${RESET}`,
       guards && guards.ok !== true ? (Array.isArray(guards.failed) ? `failing: ${guards.failed.join(", ") || "none named"}` : "no guardsFailed on /health (older deploy)") : "");
+  row("nightly check", nightly.ok === true ? `${GREEN}ok${RESET}` : nightly.ok === false ? `${RED}${nightly.flag ? "STALE" : nightly.never ? "NEVER RAN" : "RED"}${RESET}` : `${YELLOW}unverified${RESET}`, nightly.detail);
   row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
@@ -178,6 +198,7 @@ if (require.main === module) (async () => {
   if (backendSha && frontendSha && backendSha !== frontendSha) {
     flags.push(`SPLIT-BRAIN: prod backend (${short(backendSha)}) and frontend (${short(frontendSha)}) are on DIFFERENT commits.`);
   }
+  if (nightly.flag) flags.push(`NIGHTLY CHECK STALE: it ${nightly.detail}. Look at the worker's runNightlyCheck tick.`);
   if (smokeOk === false) {
     flags.push(`PROD SMOKE FAILING: the deployed commit does not WORK — ${smokeDetail}. Aligned means nothing while this is red.`);
   }

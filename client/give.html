@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Steward</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <!-- BUILD-28: preconnect to the font hosts so the (non-render-blocking,
+         JS-injected) font stylesheet resolves fast. The stylesheet itself is
+         injected by Landing.jsx with display=OPTIONAL — NOT a render-blocking
+         <link> in <head> (that spiked FCP/LCP). optional = no mid-load swap, so
+         the hero headline never reflows → CLS≈0, while first paint stays fast. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- BUILD-41: the hero photo (and its route-scoped preload that lived
+         here) was retired — the hero is a solid ink field; nothing to preload. -->
+    <meta name="theme-color" content="#0f1a12">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Steward">
+    <link rel="apple-touch-startup-image" href="/android-chrome-512x512.png">
+    <meta property="og:title" content="Steward · The Fundraising OS for Nonprofits" />
+    <meta property="og:description" content="Steward tells you who to call today, and what to say. Replace your spreadsheets with a system built for nonprofit fundraising." />
+    <meta property="og:image" content="https://stewardapp.dev/og-image.png" />
+    <meta property="og:url" content="https://stewardapp.dev" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Steward · The Fundraising OS for Nonprofits" />
+    <meta name="twitter:description" content="Steward tells you who to call today, and what to say." />
+    <meta name="twitter:image" content="https://stewardapp.dev/og-image.png" />
+    <!-- HARDEN-2 item 1: the giving page's own entry (src/giveMain.jsx), served
+         for /give/* by vercel.json. The page's payload is asked for here, while
+         the script downloads, instead of after it has run; Donate.jsx takes it
+         from window.__givePrefetch (src/lib/givePrefetch.js) by its URL. The
+         fetch itself opens the API connection; no preconnect link, because an
+         unset VITE_API_URL left "%VITE_API_URL%" in an href and Vite's HTML
+         build stops on it ("URI malformed"). -->
+    <script>
+      (function () {
+        try {
+          var api = "%VITE_API_URL%";
+          if (!/^https?:\/\//.test(api)) api = "https://nonprofit-erp-production.up.railway.app";
+          var seg = location.pathname.replace(/\/+$/, "").split("/").slice(2);
+          if (!seg[0] || seg.length > 3) return;
+          var url = api + "/org/" + seg[0] + (seg[2] ? "/giving-page/" + seg[1] + "/fundraiser/" + seg[2] + "/public"
+            : seg[1] ? "/giving-page/" + seg[1] + "/public" : "/public");
+          var m = /(?:^|; )steward_give_ab=([ab])(?:;|$)/.exec(document.cookie);
+          if (m) url += "?v=" + m[1];
+          var box = window.__givePrefetch = {};
+          var ask = function (u) {
+            box[u] = fetch(u).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }, function () { return { ok: false, data: null }; }); });
+            box[u].catch(function () {});
+          };
+          ask(url);
+          if (!seg[1] && /[?&]memberships(=|&|$)/.test(location.search)) ask(api + "/org/" + seg[0] + "/memberships/public");
+        } catch (e) { /* Donate.jsx asks for the payload itself */ }
+      })();
+    </script>
+    <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
+  </head>
+  <body style="background:#0f1a12">
+    <div id="root"></div>
+    <script type="module" src="/src/giveMain.jsx"></script>
+  </body>
+</html>

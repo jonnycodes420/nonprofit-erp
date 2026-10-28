@@ -170,7 +170,9 @@ async function connect(c, o, adminId) {
     [`gs_${o.slug}`, o.id, sealBag({ apiKey: `gb-load-${o.slug}` }, { aad: o.id })]);
 }
 
-(async () => {
+// HARDEN-2: tests/perf-app.spec.js seeds its one org with this same seedOrg.
+module.exports = { seedOrg, pool };
+if (require.main === module) (async () => {
   const t0 = Date.now();
   const orgs = plan();
   const have = (await pool.query(`SELECT id FROM orgs WHERE id LIKE 'org_load%'`)).rows.map(r => r.id);

@@ -511,13 +511,10 @@ app.post("/sheet-import/bring-back", requireAuth, checkWriteAccess, wrap(async (
   const orgId = req.user.orgId;
   const ids = [...new Set((Array.isArray(req.body && req.body.ids) ? req.body.ids : []).map(String))].slice(0, 5000);
   if (!ids.length) return res.status(400).json({ error: "ids_required", sentence: "Nobody was named to bring back." });
-  const back = await query(`UPDATE donors d SET deleted_at = NULL, updated_at = NOW()
-                             WHERE d.org_id=? AND d.id = ANY(?) AND d.deleted_at IS NOT NULL
-                               AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)
-                           RETURNING d.id`, [orgId, ids]);
-  const backIds = back.map(r => r.id);
+  // HARDEN-2: the one door back (personTrash.js): deleted_at and every open
+  // deletion record of theirs, in one transaction.
+  const backIds = await require("../personTrash").bringPeopleBack(orgId, ids, { exceptMerged: true, touch: true });
   if (backIds.length) {
-    await run(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=? AND table_name='donors' AND record_id = ANY(?) AND restored_at IS NULL`, [orgId, backIds]);
     await require("../afterChange").afterChange(orgId, backIds, { door: "sheet_import_bring_back" }).catch(e => console.error("[sheet-import] bring back:", e.message));
   }
   if (req.audit) req.audit.after({ broughtBack: backIds });
@@ -895,34 +892,54 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
   const body = readBody(req.body);
   const background = req.body && req.body.background === true;
   const who = actor(req);
+  // HARDEN-2: a commit that carries no file starts nothing. On CI a tab
+  // closed while its commit was held, the browser sent the request again as
+  // the tab went, and the connection was gone before the body was read
+  // (body-parser leaves req.body unset for a request whose socket has
+  // closed). The server made a job of that empty request, which failed with
+  // "1 question needs an answer first": the second job nobody explained.
+  if (!body.sheets.some(sh => sh.grid.length)) {
+    return res.status(400).json({ error: "no_file", message: "Steward did not receive the file." });
+  }
   const key = requestKeyOf(orgId, body);
   const asked = RUN_ID_RE.test(String(req.body && req.body.importId || "")) ? String(req.body.importId) : null;
-  // the same click, a retry, or a refresh: the job that is already there
-  // A job by its id is the answer while it runs, or once done while its run is
-  // on file. A job whose run is gone (an org reset, a purge) or that failed is
-  // history, and a new attempt under that id starts afresh.
-  const byId = async () => {
-    const j = asked && await readJob(orgId, asked);
-    if (!j) return null;
-    if (j.status === "running") return j;
-    if (j.status === "done" && (await DB.queryOutside("SELECT 1 FROM imports WHERE id=? AND org_id=?", [j.id, orgId])).length) return j;
-    await DB.runOutside("DELETE FROM sheet_import_jobs WHERE id=? AND org_id=? AND status<>'running'", [j.id, orgId]);
-    return null;
-  };
-  const find = async () => (await byId())
-    || (await DB.queryOutside(`SELECT * FROM sheet_import_jobs WHERE org_id=? AND request_key=? AND status='running' ORDER BY started_at DESC LIMIT 1`,
-      [orgId, key]))[0] || null;
-  let job = await find();
-  if (!job) {
+  // HARDEN-2: one preview is one job, however many times it arrives (a second
+  // click, a retry, a refresh, a reconnect), even while the first is still
+  // writing. Finding the job and starting one happen in one transaction under
+  // the org's commit lock, so no request reads "nothing here" while another
+  // is starting it, and a failed run is retried at most once at a time. The
+  // primary key (the preview's run id) and uq_sheet_import_jobs_running (the
+  // same file and answers while one runs) are the keys underneath. Every
+  // query in here uses the lock's own client: a waiter holds a pool
+  // connection, so the holder must not need another one.
+  const stale = j => j.status === "running" && !RUNNING.has(j.id) && Date.now() - new Date(j.updated_at).getTime() > STALE_MS;
+  const claim = await DB.withTransaction(async c => {
+    await DB.queryTx(c, "SELECT pg_advisory_xact_lock(hashtext(?))", ["sheet-import-commit:" + orgId]);
+    const restarted = "The server restarted while this file was being written, so it was rolled back. Import the file again.";
+    // A job by its id is the answer while it runs, or once done while its run
+    // is on file. A job whose run is gone (an org reset, a purge) or that
+    // failed is history, and a new attempt under that id starts afresh.
+    if (asked) {
+      const [j] = await DB.queryTx(c, "SELECT * FROM sheet_import_jobs WHERE id=? AND org_id=?", [asked, orgId]);
+      if (j && j.status === "running" && !stale(j)) return { job: j };
+      if (j && j.status === "done" && (await DB.queryTx(c, "SELECT 1 FROM imports WHERE id=? AND org_id=?", [j.id, orgId])).length) return { job: j };
+      if (j) await DB.runTx(c, "DELETE FROM sheet_import_jobs WHERE id=? AND org_id=?", [j.id, orgId]);
+    }
+    // the same file and answers, still running: that job
+    const [same] = await DB.queryTx(c, "SELECT * FROM sheet_import_jobs WHERE org_id=? AND request_key=? AND status='running' ORDER BY started_at DESC LIMIT 1", [orgId, key]);
+    if (same && !stale(same)) return { job: same };
+    if (same) await DB.runTx(c, "UPDATE sheet_import_jobs SET status='failed', error=?, finished_at=NOW(), updated_at=NOW() WHERE id=? AND status='running'", [restarted, same.id]);
     const id = asked || "imp_" + uuid().replace(/-/g, "").slice(0, 16);
-    const ins = await DB.queryOutside(`INSERT INTO sheet_import_jobs (id, org_id, request_key, status, phase, file_name, created_by, created_by_name)
-                                       VALUES (?,?,?,'running','Starting',?,?,?) ON CONFLICT DO NOTHING RETURNING *`,
+    const ins = await DB.queryTx(c, `INSERT INTO sheet_import_jobs (id, org_id, request_key, status, phase, file_name, created_by, created_by_name)
+                                     VALUES (?,?,?,'running','Starting',?,?,?) ON CONFLICT DO NOTHING RETURNING *`,
       [id, orgId, key, (body.fileName || "Spreadsheet").slice(0, 200), who.id, who.name]);
-    if (ins.length) {
-      job = ins[0];
-      const p = runJob(req, body, job.id, who).finally(() => RUNNING.delete(job.id));
-      RUNNING.set(job.id, p);
-    } else job = await find();
+    return { job: ins[0] || null, start: !!ins.length };
+  });
+  let job = claim.job;
+  // started only once the row is committed, so its progress writes land
+  if (claim.start) {
+    const p = runJob(req, body, job.id, who).finally(() => RUNNING.delete(job.id));
+    RUNNING.set(job.id, p);
   }
   if (!job) return res.status(409).json({ error: "busy", message: "Another import of this file is starting. Open Import again in a moment." });
   // HARDEN-1: nightlyCheck.js check e reads this row: the run, the file's

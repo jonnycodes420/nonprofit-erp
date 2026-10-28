@@ -752,6 +752,15 @@ app.use(require("./routes/push").router(() => ({ query, run, syncMailbox, syncCa
 // webhook routes are never buffered by the compressor. Mounting on "/donors"
 // prefix-matches the whole family (list, summaries, export, :id).
 app.use("/donors", compression());
+// HARDEN-2 item 2: every read is compressed too. The app's boot reads and
+// Home's bundles went out as raw JSON (65 KB for /tasks on a 2,000-person org),
+// which on a phone is seconds. Reads only, and never an event stream, so the
+// AI stream (a POST) and anything that streams events are never buffered.
+app.use(compression({
+  filter: (req, res) => (req.method === "GET" || req.method === "HEAD")
+    && !/event-stream/i.test(String(res.getHeader("Content-Type") || ""))
+    && compression.filter(req, res),
+}));
 
 // ── BUILD-94 Part 2 — the person-type module, eagerly ──────────────────────
 // shared/personType.js is ESM (the shared/ convention) but its predicate is
@@ -1558,6 +1567,21 @@ require("./jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refre
 // HARDEN-1: the nightly read-only check (nightlyCheck.js; scheduled in routes/jobs.js).
 const NIGHTLY_CHECK = require("./nightlyCheck");
 NIGHTLY_CHECK.configure({ opsAlert, signInternalToken });
+// HARDEN-2: the last run, for /health (letters and counts only: /health is
+// public). The worker writes the row and the web process reads it, so it is
+// re-read at most once a minute, in the background; `stale` is worked out at
+// answer time from the run's start, so a cached row still goes stale on time.
+let nightlyCheckRow = undefined, nightlyCheckReadAt = 0;
+function refreshNightlyCheckHealth() {
+  nightlyCheckReadAt = Date.now();
+  return NIGHTLY_CHECK.latestRun().then(r => { nightlyCheckRow = r; }).catch(() => {});
+}
+function nightlyCheckHealth() {
+  if (Date.now() - nightlyCheckReadAt > 60e3) refreshNightlyCheckHealth();
+  if (nightlyCheckRow === undefined) return null;   // not read since boot yet
+  return NIGHTLY_CHECK.publicView(NIGHTLY_CHECK.statusOf(nightlyCheckRow));
+}
+bootGate.afterMigrations(() => refreshNightlyCheckHealth(), 1000, { unref: true });
 // SCALE-2: the nightly Drift refresh: an org whose stored Drift answers are
 // from an earlier day gets them recomputed for its new day, so the first visit
 // of the morning reads stored rows too. Checked every six hours because each
@@ -3052,6 +3076,10 @@ app.get("/health", (req, res) => {
     // Cached (refreshed every 15s), so /health stays a synchronous read.
     queue: require("./jobQueue").healthNow().queue,
     tick: require("./jobQueue").healthNow().tick,
+    // HARDEN-2: the last nightly check: when it started, green or which
+    // checks (by letter) went red, how many orgs it read, and stale when it
+    // has not run in 26 hours. No org id or name. null = not read since boot.
+    nightlyCheck: nightlyCheckHealth(),
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -3140,6 +3168,13 @@ if (testMode()) app.post("/admin/nightly-check/run", requireAuth, requireSuperAd
   const orgIds = Array.isArray(b.orgIds) ? b.orgIds.map(String).slice(0, 50) : null;
   const night = /^\d{4}-\d{2}-\d{2}[a-z0-9-]*$/i.test(String(b.night || "")) ? String(b.night) : null;
   res.json(await NIGHTLY_CHECK.runNightlyCheck({ night, orgIds }));
+}));
+// HARDEN-2: the last nightly check, for super-admin's Status page. Read fresh
+// from its one row each time; stale when it has not run in 26 hours.
+app.get("/admin/nightly-check/latest", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const row = await NIGHTLY_CHECK.latestRun();
+  nightlyCheckRow = row; nightlyCheckReadAt = Date.now();
+  res.json({ ...NIGHTLY_CHECK.statusOf(row), night: row ? row.night : null, error: row ? row.error : null });
 }));
 app.post("/admin/number-checks/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const out = await require("./numberCheck").runAll({ screens: require("./numbers").screens });

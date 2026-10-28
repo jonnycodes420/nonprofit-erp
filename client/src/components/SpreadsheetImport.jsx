@@ -128,6 +128,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     const t = file && file.lastModified ? new Date(file.lastModified) : null;
     return t && !isNaN(t) ? localIso(t) : null;
   }, [file]);
+  // HARDEN-2: one run id per preview, not per click. A second click, a retry
+  // after a failure or a reconnect sends the same id, so the server answers
+  // with the job already there; a new preview (another file, another answer)
+  // is a new run.
+  const previewRun = useMemo(() => "imp_sheet_" + Math.random().toString(36).slice(2, 12), [u]);
 
   // FIX-55: the X, Escape and a click outside always close. Before Import
   // nothing has been written; while an import runs it keeps going on the server.
@@ -215,7 +220,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 
   const commit = async () => {
     setBusy("commit"); setMsg(""); setFailed(null);
-    const importId = "imp_sheet_" + Math.random().toString(36).slice(2, 12);
+    const importId = previewRun;
     // the assistant's proposals from the preview go with it, so the write is this plan
     const payload = { importId, background: true, fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides: { ...((u && u.modelOverrides) || {}), ...overrides },
       // HARDEN-1: the org this preview was read for; the server refuses the write if the session moved

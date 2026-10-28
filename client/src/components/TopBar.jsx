@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
 import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
 import { CHANGELOG, LAST_SEEN_KEY } from "../lib/changelog";
-import { HelpPanel } from "./HelpPanel";
 import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
@@ -23,6 +22,9 @@ import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
 // WIRE-1 search scope: every kind of record, by GET /search?q= (routes/
 // search.js), plus static quick-nav actions. All matching happens
 // server-side, org-scoped; nothing is fuzzy-matched over client caches.
+// HARDEN-2: the Help panel (Support chat and every help article) loads when
+// it is opened, not with the top bar on every first look.
+const HelpPanel = lazy(() => import("./HelpPanel").then(m => ({ default: m.HelpPanel })));
 const QUICK_NAV = [
   { id:"nav_reports", label:"Reports", hint:"Open the Reports tab",
     keywords:"reports report giving summary lybunt sybunt retention top donors",
@@ -412,7 +414,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     <AtlasBell onNavigate={onNavigate}/>
     <button data-testid="topbar-help" onClick={()=>setHelpOpen(true)} title="Help for this screen" aria-label="Help for this screen"
       style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid "+T.green650,color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
-    {helpOpen && <HelpPanel screen={screen} onClose={()=>setHelpOpen(false)}/>}
+    {helpOpen && <Suspense fallback={null}><HelpPanel screen={screen} onClose={()=>setHelpOpen(false)}/></Suspense>}
 
     {/* User chip + sign out (moved from sidebar bottom).
         INT-BUILD-1 Part 0 — THE CHIP OPENS A MENU NOW. INT-4 said the inbox

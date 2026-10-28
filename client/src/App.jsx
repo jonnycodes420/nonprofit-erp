@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
-import { HelpPanel } from "./components/HelpPanel";
 import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
 import { CheckSnapHost, openCheckSnap } from "./components/CheckSnap";   // CHECK-2
 import { Camera } from "lucide-react";
@@ -15,22 +14,9 @@ import { CAPTURE_CHANGED } from "./components/CaptureInbox";
 // button, and modal render below, and the matching import above:
 // `VoiceMemoModal` from "./components/shared").
 import { Dashboard } from "./components/Dashboard";
-import { Donors } from "./components/Donors";
-import { Grants } from "./components/Grants";
-import { Communications } from "./components/Communications";
-import { Reports } from "./components/Reports";
-import { VolunteersHub } from "./components/VolunteersHub";
-import { Board } from "./components/Board";
-import { Finance } from "./components/Finance";
-import { Fundraising } from "./components/Fundraising";
-import { Tasks } from "./components/Tasks";
-import { Settings } from "./components/Settings";
-import JourneyBuilder from "./components/JourneyBuilder";
-import GroupsPage from "./components/Groups";
-import CalendarPage from "./components/Calendar";
-import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
-import { Events } from "./components/Events";
+import { SkeletonPage } from "./components/Skeleton";
+import { bootRead } from "./lib/bootReads";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
@@ -44,6 +30,26 @@ import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
 import { openRecentChanges } from "./components/RecentChanges";
+// HARDEN-2 item 2: every tab but Home is its own chunk, fetched when it is
+// opened, so the first look downloads Home and the shell, not the whole CRM.
+// The tabs below are rendered under one Suspense with SkeletonPage.
+const named = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+const Donors = named(() => import("./components/Donors"), "Donors");
+const Grants = named(() => import("./components/Grants"), "Grants");
+const Communications = named(() => import("./components/Communications"), "Communications");
+const Reports = named(() => import("./components/Reports"), "Reports");
+const VolunteersHub = named(() => import("./components/VolunteersHub"), "VolunteersHub");
+const Finance = named(() => import("./components/Finance"), "Finance");
+const Fundraising = named(() => import("./components/Fundraising"), "Fundraising");
+const Tasks = named(() => import("./components/Tasks"), "Tasks");
+const Settings = named(() => import("./components/Settings"), "Settings");
+const JourneyBuilder = lazy(() => import("./components/JourneyBuilder"));
+const GroupsPage = lazy(() => import("./components/Groups"));
+const CalendarPage = lazy(() => import("./components/Calendar"));
+const DonorPortalHub = named(() => import("./components/DonorPortalHub"), "DonorPortalHub");
+const Events = named(() => import("./components/Events"), "Events");
+// The Help panel (Support chat and every help article) exists only while open.
+const HelpPanel = named(() => import("./components/HelpPanel"), "HelpPanel");
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
@@ -412,17 +418,17 @@ function AppShell() {
       // login. /org failing is still fatal; for everything else a portal_tier
       // 403 (or any failure on a portal-tier org) falls back to empty data.
       const results = await Promise.allSettled([
-        apiFetch("/org"),
+        bootRead("/org"),   // HARDEN-2: started by main.jsx (lib/bootReads.js)
         // SCALE-2: THE SHELL NO LONGER DOWNLOADS EVERY DONOR. This read was
         // /donors/summaries: 24 MB for a 25,000-donor org, on every sign-in.
         // Every reader of that list now asks the server for what it shows
         // (lib/people.js, routes/donorLookups.js); `data.donors` stays an
         // empty list so nothing that still names it breaks.
-        apiFetch("/grants"),
-        apiFetch("/volunteers"),
-        apiFetch("/tasks"),
-        apiFetch("/board"),
-        apiFetch("/financials"),
+        bootRead("/grants"),
+        bootRead("/volunteers"),
+        bootRead("/tasks"),
+        bootRead("/board"),
+        bootRead("/financials"),
       ]);
       const [orgR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
       if(orgR.status==="rejected")throw orgR.reason;
@@ -468,7 +474,7 @@ function AppShell() {
 
   useEffect(()=>{
     loadData();
-    apiFetch("/billing/status").then(setBilling).catch(()=>{});
+    bootRead("/billing/status").then(setBilling).catch(()=>{});
   },[]);
 
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
@@ -969,6 +975,7 @@ function AppShell() {
           usable and switching tabs (resetKey=tab) recovers — instead of a black
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
+    <Suspense fallback={<SkeletonPage/>}>
       {/* POLISH-3: what Atlas waits on is a card in Home's For you today (HomeLead), not a strip above it. */}
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="home"/>}
       {/* BUILD-86 — the same component, the other surface. One Dashboard, one
@@ -1023,6 +1030,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope} initialView={tasksIntent?.view}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
+    </Suspense>
     </ErrorBoundary>
     </div>
     </div>{/* /app-main */}
@@ -1102,7 +1110,7 @@ function AppShell() {
       </div>
     </div>}
 
-    {mobileHelp&&<HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/>}
+    {mobileHelp&&<Suspense fallback={null}><HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/></Suspense>}
     {/* VOICE-2 option B: the floating square mic, bottom right, on every screen
         and every width. It opens the same Tell Steward window; the rail keeps
         its own Tell Steward row. */}

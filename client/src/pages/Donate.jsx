@@ -19,6 +19,7 @@ import { thankYouText } from "../../../shared/formConfig.js";
 // BUILD-102 Part 6 — which side of an A/B this visitor is on, decided before the
 // page's own fetch so the server can serve the right variant in one round trip.
 import { assignVariant, currentVariant } from "../lib/abVariant";
+import { takePrefetched } from "../lib/givePrefetch";
 import { displayDate } from "../../../shared/displayDate";
 // PARITY-2 Part 1: the share row and the membership page live in their own files
 // so the membership page can use the row too.
@@ -914,8 +915,9 @@ export default function Donate({ preview = null }) {
     // one and fetch again — so a form with no test never sets a cookie at all.
     const had = currentVariant();
     const withV = v => (v ? url + (url.includes("?") ? "&" : "?") + "v=" + v : url);
-    fetch(withV(had))
-      .then(r => r.json())
+    // HARDEN-2: give.html asked for this exact URL while the script downloaded.
+    const early = takePrefetched(withV(had));
+    (early ? early.then(x => x.data) : fetch(withV(had)).then(r => r.json()))
       .then(async d => {
         if (!d.error && d.givingPage && d.givingPage.abRunning && !had) {
           const v = assignVariant(true);

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { execSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 // Deploy verification (deploy rewire, 2026-08-11): stamp the built page with
 // the exact commit it was built from, so `curl | grep build-sha` against the
@@ -29,6 +30,9 @@ export default defineConfig({
     // deleted from dist (sourcemaps.filesToDeleteAfterUpload) — the bundle
     // Vercel actually serves never has raw source maps in either case.
     sourcemap: !!process.env.SENTRY_AUTH_TOKEN,
+    // HARDEN-2: read by scripts/prerender.mjs (app.html preloads the app's
+    // chunks) and deleted by it, so it is never served.
+    manifest: true,
     // BUILD-49 — /giving gets its own HTML entry so crawlers and social
     // scrapers (which don't run JS) see a real title/description/OG in the
     // served bytes. Same SPA bundle either way; the vercel.json rewrite
@@ -37,11 +41,27 @@ export default defineConfig({
       input: {
         main: new URL("./index.html", import.meta.url).pathname,
         giving: new URL("./giving.html", import.meta.url).pathname,
+        // HARDEN-2 item 1: /give/* is served give.html, which loads only the
+        // giving page (src/giveMain.jsx), not the CRM's entry.
+        give: new URL("./give.html", import.meta.url).pathname,
       },
     },
   },
   plugins: [
     react(),
+    // HARDEN-2 item 2: main.jsx routes the marketing site by its paths alone,
+    // so the site's pages and content load only on a marketing page. The list
+    // is read from marketing/routes.js here, at build time: one table still.
+    {
+      name: "marketing-paths",
+      resolveId(id) { return id === "virtual:marketing-paths" ? "\0marketing-paths" : null; },
+      async load(id) {
+        if (id !== "\0marketing-paths") return null;
+        const file = new URL("./src/marketing/routes.js", import.meta.url);
+        const { ROUTES } = await import(pathToFileURL(file.pathname).href + "?t=" + Date.now());
+        return `export default ${JSON.stringify(ROUTES.map(r => r.path))};`;
+      },
+    },
     // FIX-44 · Lost & Found under `vite dev`. The build converts drift.js and
     // orgTime.js through commonjsOptions above, but the dev server converts
     // CommonJS only inside node_modules, so the worker's import of Drift had no

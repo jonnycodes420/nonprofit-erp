@@ -20,6 +20,7 @@ import { useState, useEffect } from "react";
 import { API } from "../api";
 import { T } from "./publicTheme";
 import { errorMessage } from "../lib/domainError";
+import { takePrefetched } from "../lib/givePrefetch";
 import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
 import Picture from "../components/Picture";
@@ -136,8 +137,10 @@ export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, s
   const [err, setErr] = useState("");
   const [me, setMe] = useState(null);   // { membership, prefill } for a signed-in visitor
   useEffect(() => {
-    fetch(`${API}/org/${orgSlug}/memberships/public`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error("This page is not available.")))
+    const url = `${API}/org/${orgSlug}/memberships/public`;
+    const early = takePrefetched(url);   // HARDEN-2: asked for by give.html
+    (early || fetch(url).then(r => r.ok ? r.json().then(data => ({ ok: true, data })) : { ok: false }))
+      .then(x => x.ok ? x.data : Promise.reject(new Error("This page is not available.")))
       .then(setData)
       .catch(e => setErr(errorMessage(e, "This page is not available.")));
   }, [orgSlug]);
