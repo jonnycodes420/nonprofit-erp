@@ -127,10 +127,10 @@ async function measureN(browser, machine, auth, url, ready, rows) {
     return null;
   })();
   if (browserLegOrSkip(why, "(perf-app)")) { summary(); await closeDb(); return; }
-  const t0 = Date.now();
+  const t0 = performance.now();
   await seed();
   const [{ d, g }] = await q(`SELECT (SELECT COUNT(*) FROM donors WHERE org_id=$1)::int d, (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int g`, [ORG.id]);
-  ok(`the fixture org has 2,000 people and 10,000 gifts (seeded in ${Math.round((Date.now() - t0) / 1000)} s)`, d === 2000 && g === 10000, { d, g });
+  ok(`the fixture org has 2,000 people and 10,000 gifts (seeded in ${Math.round((performance.now() - t0) / 1000)} s)`, d === 2000 && g === 10000, { d, g });
   const login = await api("POST", "/auth/login", null, { email: `admin@${ORG.slug}.load`, password: "loadtest1234" });
   ok("the fixture admin signs in", login.status === 200 && !!login.body.token, login.status);
   const auth = { token: login.body.token, user: login.body.user, org: login.body.org };
@@ -153,10 +153,10 @@ async function measureN(browser, machine, auth, url, ready, rows) {
   const listUrl = list.apiUrls.find(u => /\/donors\?/.test(u));
   const serverMs = [];
   if (listUrl) for (let i = 0; i < 5; i++) {
-    const s = Date.now();
+    const s = performance.now();
     const r = await fetch(listUrl, { headers: { Authorization: "Bearer " + auth.token } });
     await r.arrayBuffer();
-    serverMs.push(r.ok ? Date.now() - s : Infinity);
+    serverMs.push(r.ok ? performance.now() - s : Infinity);
   }
   const listServer = serverMs.length ? median(serverMs) : Infinity;
 

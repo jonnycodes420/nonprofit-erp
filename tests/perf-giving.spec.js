@@ -116,7 +116,7 @@ async function measure(browser, p) {
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
   let readyAt = null;
-  const t0 = Date.now();
+  const t0 = performance.now();
   await page.goto(APP + p.url, { waitUntil: "load", timeout: 60000 });
   await page.waitForSelector(p.ready, { state: "visible", timeout: 30000 }).then(() => { readyAt = true; }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 30000 }).catch(() => {});
@@ -127,7 +127,7 @@ async function measure(browser, p) {
   const out = {
     name: p.name, url: p.url, lcp: Math.round(r.lcp), usable: r.readyAt ? Math.round(Math.max(r.readyAt, r.longEnd)) : 0,
     jsKB: Math.round(bytes.js / 1024), totalKB: Math.round(bytes.all / 1024), requests: bytes.requests, ready: !!(readyAt && r.ready),
-    wall: Date.now() - t0, errors,
+    wall: performance.now() - t0, errors,
   };
   await ctx.close();
   return out;

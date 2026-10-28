@@ -311,7 +311,7 @@ async function main() {
   await plantRow("ncr_test_27h", 27, true, []);
   const old27 = await latest(), old27H = await health();
   ok("§7 last run 27 hours ago: the route says stale, with when and how many orgs", old27.stale === true && old27.neverRan === false && old27.orgsRead === 7 && old27.ok === true
-     && Math.abs(Date.now() - 27 * 3600e3 - new Date(old27.lastRunAt).getTime()) < 120e3, old27);
+     && Math.abs(require("./clock").testNow() - 27 * 3600e3 - new Date(old27.lastRunAt).getTime()) < 120e3, old27);
   ok("§7 …and /health says stale", old27H && old27H.stale === true && old27H.orgsRead === 7, old27H);
   const staleR = STATUS.nightlyReport(old27H);
   ok("§7 …and npm run status flags it (a red line and exit 1)", staleR.ok === false && staleR.flag === true && /NOT run in 26 hours/.test(staleR.detail), staleR);
