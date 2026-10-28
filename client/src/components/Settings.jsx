@@ -3149,6 +3149,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   useEffect(()=>{apiFetch("/org/voice-samples").then(r=>{
     setVoice(r); setVoiceDraft([(r.samples||[])[0]||"",(r.samples||[])[1]||"",(r.samples||[])[2]||""]);
   }).catch(()=>setVoice({samples:[],ready:false,needs:3}));},[]);
+  // FIX-55: Home's "Teach Steward your voice" lands here (section account, focus voice).
+  const voiceRef=useRef(null);
+  useEffect(()=>{ if(wantFocus==="voice"&&voice!==null&&voiceRef.current&&voiceRef.current.scrollIntoView) voiceRef.current.scrollIntoView({behavior:"smooth",block:"start"}); },[voice]); // eslint-disable-line react-hooks/exhaustive-deps
   async function saveVoice(){
     setVoiceSaved("");
     try{ const r=await apiFetch("/org/voice-samples",{method:"PUT",body:JSON.stringify({samples:voiceDraft})});
@@ -4267,7 +4270,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             lifted: copying somebody's habits is defensible, copying their
             sentences into a letter they did not write is not. */}
         {isAdmin&&voice!==null&&(
-          <div style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
+          <div ref={voiceRef} id="settings-voice" data-testid="settings-voice" style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
             <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Your voice, for the thank-yous Steward drafts</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2,maxWidth:560,lineHeight:1.55}}>
               Paste three thank-yous you have already sent. Steward takes your greeting and your sign-off and
