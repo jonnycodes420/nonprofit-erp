@@ -1540,7 +1540,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   if (undatedPledges.length && !pledgeDueAnswered) {
     const multi = undatedPledges.filter(p => p.years > 1).length;
     questions.push({ id: "pledgeDue", kind: "pledgeDue", count: undatedPledges.length, multiYear: multi,
-                     text: `When are ${undatedPledges.length === 1 ? "this pledge" : `these ${undatedPledges.length.toLocaleString("en-US")} pledges`} due?`,
+                     text: undatedPledges.length === 1 ? "When is this pledge due?" : `When are these ${undatedPledges.length.toLocaleString("en-US")} pledges due?`,
                      hint: (eventDateAnswer ? `From the event's date: a one-year pledge is due by ${longIso(yearEnd(eventDateAnswer))}` : "Your file gives no due dates")
                        + (multi ? `; ${plural(multi, "multi-year pledge")} ${multi === 1 ? "gets" : "get"} a yearly installment from the first date.` : ".")
                        + " Steward never counts from the day of the import.",
