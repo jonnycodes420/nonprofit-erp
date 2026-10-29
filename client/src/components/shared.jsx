@@ -281,9 +281,12 @@ export const STAGES = [
   {id:"lapsed",    label:"Lapsed",    color:T.gold600, hint:"Needs re-engagement"},   // FIX-2 C: overdue is brass, never red
 ];
 // POLISH-1 — a phone number on a screen: formatted, and a tap dials it.
-export function Phone({ value, style }) {
+// IMPORT-5 (7d): a number marked wrong ("Incorrect number" in her notes) is
+// kept as history, struck through, and never a link to dial or text.
+export function Phone({ value, style, bad, badWhy }) {
   const href = phoneHref(value);
   const text = phoneDisplay(value);
+  if (bad) return <span data-phone-bad="" title={badWhy || "Marked wrong. Steward will not dial or text it."} style={{ textDecoration: "line-through", ...style }}>{text}</span>;
   return href ? <a href={href} data-phone="" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: 3, ...style }}>{text}</a> : <span style={style}>{text}</span>;
 }
 // POLISH-1 — a stage's name on a screen, from STAGES: never its stored key.

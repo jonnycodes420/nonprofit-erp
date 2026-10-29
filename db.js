@@ -2354,6 +2354,10 @@ async function runSchemaInit(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_org_due ON pledge_installments (org_id, due_date) WHERE paid_gift_id IS NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_pledge ON pledge_installments (pledge_id)`);
+  // IMPORT-5: a pledge may have "No set due date" (she said so on import);
+  // Steward never makes one up. Schema only: no row changes.
+  await pool.query(`ALTER TABLE pledges ALTER COLUMN due_date DROP NOT NULL`);
+  await pool.query(`ALTER TABLE pledge_installments ALTER COLUMN due_date DROP NOT NULL`);
   // A pledge that states a cadence but no schedule can generate one; a SHELL
   // pledge (BUILD-88a A.7, inferred from payments) states neither and says so.
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);
@@ -7448,6 +7452,9 @@ async function runSchemaInit(pool) {
       created_by_name TEXT,
       UNIQUE (org_id, shape_key)
     )`);
+  // IMPORT-5: the one reader's saved mappings share the table ('sheet'; shape
+  // key "sheet:<headers>", mapping header → role); the old mapper's are 'mapper'
+  await pool.query(`ALTER TABLE import_shape_mappings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'mapper'`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS import_value_mappings (
       id TEXT PRIMARY KEY,
@@ -8080,6 +8087,27 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (org_id, kind, key)
     )`);
+  // IMPORT-5: a couple written with a comma, fixed from Data health on her
+  // click. One row per record changed, a batch per click, so Undo puts the
+  // name back and removes the second person and the household it made.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS name_fixes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      before_name TEXT NOT NULL,
+      before_spouse_name TEXT,
+      before_household_id TEXT,
+      after_name TEXT NOT NULL,
+      created_donor_id TEXT,
+      created_household_id TEXT,
+      undone_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_name_fixes_batch ON name_fixes (org_id, batch_id)`);
   // AGENT-2: A MERGE SOMEBODY PROPOSED. The Agent never merges two people;
   // told "merge the two Ellen Parks" it puts the pair at the top of CLEAN-1's
   // duplicate queue with the instruction as the reason, and a person commits
@@ -8171,6 +8199,10 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_reason TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_at TIMESTAMPTZ`);
+  // IMPORT-5 (7d): a phone a note says is wrong ("Incorrect number") is kept
+  // as history and never dialed or texted from Steward. Schema only.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS phone_unreachable BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS phone_unreachable_reason TEXT`);
 
   // ── PROSPECT-1 · ROOM TO GIVE ────────────────────────────────────────────
   // Who may see it: admins always, and staff an admin has given the major

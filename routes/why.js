@@ -905,6 +905,34 @@ async function readoutAnswer(orgId, typed) {
 
 app.post("/ask", whyAskLimiter, requireAuth, wrap((req, res) => askHandler(req, res)));
 app.post("/ask/preview", whyAskLimiter, requireAuth, wrap((req, res) => ASK_PREVIEW.run(true, () => askHandler(req, res))));
+// IMPORT-5 · WHO CAME AND DIDN'T GIVE. The event she names, or the latest
+// event with anyone marked as attending. Reads only; the count opens its rows.
+const CAME_RE = /\b(came|attended|showed up|turned up|went|were there)\b.*\b(didn'?t|did not|never|without|not)\b.*\b(give|gave|giving|donate|donated|pledge)/i;
+const CAME_GAVE_RE = /\b(came|attended)\b.*\b(and )?(gave|donated)\b/i;
+async function cameAnswer(orgId, typed) {
+  const noGift = CAME_RE.test(typed);
+  if (!noGift && !CAME_GAVE_RE.test(typed)) return null;
+  const today = await AQ.orgToday(orgId);
+  const all = (await require("../numbers").eventGuests(orgId, { asOf: today })).filter(e => e.cameGave.length + e.cameNoGift.length);
+  if (!all.length) return null;
+  const low = typed.toLowerCase();
+  const named = all.filter(e => low.includes(String(e.name).toLowerCase()));
+  const ev = (named.length ? named : all).sort((a, b) => String(b.date || "9999").localeCompare(String(a.date || "9999")))[0];
+  const list = noGift ? ev.cameNoGift : ev.cameGave;
+  const n = list.length;
+  const on = ev.date ? ` on ${AQ.dayWords ? AQ.dayWords(ev.date) : ev.date}` : "";
+  const fig = { value: n, kind: "count", label: noGift ? "Came, didn't give" : "Came, gave", definition: ev.definitions[noGift ? "cameNoGift" : "cameGave"],
+                source: { key: "event-guests", params: { event: ev.id, list: noGift ? "cameNoGift" : "cameGave" } } };
+  const people = list.map(p => ({ donorId: p.id, name: p.name, cents: 0 }));
+  return { answered: true, kind: "answer",
+    sentence: noGift ? `${n} ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and didn't give.` : `${n} ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and gave.`,
+    sentenceParts: [{ fig: "value" }, noGift ? ` ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and didn't give.` : ` ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and gave.`],
+    figures: { value: fig }, table: null, people, peopleCount: n, peopleSource: fig.source,
+    steps: noGift ? [{ kind: "plan", label: "Thank them for coming", items: people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Thank" })), dueIn: 2 },
+                     { kind: "open", label: `Open the ${ev.name}`, href: `/app/events?event=${encodeURIComponent(ev.id)}` }] : [],
+    counted: `${ev.definitions[noGift ? "cameNoGift" : "cameGave"]} Steward can't see who came unless someone marked them as attending. Steward wrote nothing.` };
+}
+
 async function askHandler(req, res) {
   const C = await askCat();
   const Sx = await shape();
@@ -937,6 +965,10 @@ async function askHandler(req, res) {
     if (nope) return askRefuse(req, res, typed, nope[1], C);
     // LIVE-1 — "what did the September import tell us?", "who came back this
     // month?": answered from the readouts and the rows behind them.
+    // IMPORT-5 — "who came and didn't give?": numbers.eventGuests, the answer
+    // the event page and Home's Grow moves read
+    const came = await cameAnswer(orgId, typed);
+    if (came) { await logQuestion(orgId, typed, "event guests", came.answered); return res.json(came); }
     const ro = await readoutAnswer(orgId, typed);
     if (ro) { await logQuestion(orgId, typed, "readout", ro.answered); return res.json(ro); }
     let intent = G.personIntent(typed);

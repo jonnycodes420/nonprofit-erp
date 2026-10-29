@@ -49,6 +49,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
+import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
 import { useDonorStatus, statusTagItems, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
@@ -2300,6 +2301,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
             bottom edge; the other four head the Gifts & pledges tab. */}
         {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
+        {/* IMPORT-5 — an open pledge sits up top, under the header */}
+        {pledges.some(p=>p.status==="open"&&Number(p.balance)>0)&&<div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}>
+          <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
+            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
+        </div>}
         <div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
@@ -3766,7 +3772,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/></dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone} bad={donor.phone_unreachable===true} badWhy={donor.phone_unreachable_reason||undefined}/>{donor.phone_unreachable===true&&<span style={{display:"block",fontSize:11.5,color:RAIL.dim}}>Marked wrong. Never dialed or texted from Steward.</span>}</dd></>}
               {/* PROFILE-1 (header): the birthday is under the name and in Coming
                   up; a monthly plan is the Recurring card. */}
               <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}/>

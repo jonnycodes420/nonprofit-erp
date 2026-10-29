@@ -319,6 +319,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   set-wise), never a new computation. Layouts are per person; only an admin sets the org default. A filter
   Steward cannot run is refused with a sentence, never dropped.
 
+- **An open pledge sits at the top of the profile (IMPORT-5).** `OpenPledgeBanner.jsx`: "Open pledge: $20,000 · $0
+  received · next due Dec 31, 2026 · 2 more installments", each installment with its state, Record a payment (the gift
+  form on that pledge, the one gift path) and Send a reminder (a task with the reminder drafted; nothing sends). Its
+  figure is Fundraising's `pledges-open` source for that person; `assertSurfacesAgree` checks profile = Fundraising =
+  Home ("pledges"). The Donors list column is "Open pledge" (`pledge_balance`) with the "Has an open pledge" filter.
+
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy
   `/person-photos` and every bare backend path before the SPA catch-all. `scripts/local-preview.js`

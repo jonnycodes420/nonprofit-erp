@@ -1,0 +1,4 @@
+Transaction ID,Campaign Title,Campaign Code,First Name,Last Name,Email,Phone,Amount,Fee,Fee Covered,Payout,Method,Status,Transaction Date,Fund Code
+gb_7Q1x,Fall Fun Run,FUNRUN25,Sela,Morrow,sela.morrow@example.org,(555) 301-0001,50.00,2.20,2.20,50.00,card,succeeded,2025-10-04 14:22:10,GENERAL
+gb_7Q2y,Fall Fun Run,FUNRUN25,Dax,Prentiss,dax.prentiss@example.org,(555) 301-0002,100.00,3.20,0.00,96.80,paypal,succeeded,2025-10-05 09:01:44,GENERAL
+gb_7Q3z,Year End Giving,YE25,Sela,Morrow,sela.morrow@example.org,(555) 301-0001,25.00,1.03,1.03,25.00,card,succeeded,2025-12-29 18:40:02,PROGRAMS

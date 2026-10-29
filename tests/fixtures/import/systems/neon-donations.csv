@@ -1,0 +1,4 @@
+Account ID,First Name,Last Name,Email 1,Donation ID,Donation Date,Donation Amount,Fund,Campaign Name,Purpose,Tender Type
+3301,Lio,Sandquist,lio.sandquist@example.org,61001,2025-02-14,$60.00,General Fund,Valentine Appeal,Unrestricted,Credit Card
+3302,Hollis,Varga,hollis.varga@example.org,61002,2025-05-01,$500.00,Youth Programs,Spring Campaign,Restricted,Check
+3301,Lio,Sandquist,lio.sandquist@example.org,61003,2025-11-28,$40.00,General Fund,Giving Tuesday,Unrestricted,Credit Card

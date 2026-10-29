@@ -17,12 +17,26 @@
 //      in the receipt's own count (it said 75 where the receipt said 79)
 //   §5 "Bring them all back" on a file whose 82 givers were deleted gives the
 //      file's full gifts and pledges; Empty trash then stops them matching
+//   §7 IMPORT-5: another system's export reads with no column question. One
+//      fake file per system (tests/fixtures/import/systems/) says which system
+//      it is and lands its gifts to the cent (the key below is the files' own
+//      cells); the Salesforce Contacts + Donations pair is one import, each
+//      gift on the person its Contact ID names
+//   §7b IMPORT-5: a column answer is saved per org against the file's header
+//      set; the next export (headers in any order) asks nothing; Change turns
+//      it off for one preview; Settings lists, edits and deletes it
 //
 // HOW IT GOES RED ON MAIN: §1 the re-read by key is refused (no fileKey on
 // main, so the screen sent the whole workbook every time); §2 the button
 // keeps "(63 undated)" while the re-read is out and Import can be pressed on
 // the stale preview; §4 there is no drop zone; §5 there is no
-// purge-trash preview and Bring them all back does not exist.
+// purge-trash preview and Bring them all back does not exist. §7 on main: no
+// file says which system wrote it; eTapestry's "Received" is a column
+// question, Neon reads its Donation ID as the amount ($183,006), Donorbox's
+// dates are blank, and the Salesforce Donations file and QuickBooks report
+// read as no names at all.
+// §7b (IMPORT-5):
+// the second export asks the column question again, and /import-mappings is a 404.
 //
 // Standard scratch stack (tests/README.md), APP_URL for the browser legs. Sends nothing.
 "use strict";
@@ -98,12 +112,40 @@ async function apiLegs() {
   ok("§1 with every question answered the preview is ready and the button enables", u.ready === true && !/^Answer/.test(u.button.text), JSON.stringify([u.ready, u.button && u.button.text, (u.questions || []).filter(x => !x.optional)]));
   ok("§1 the deleted match answered Same person stays out", (u.deletedMatches || []).some(x => x.id === "d_f55_gone") && u.counts.gifts === 2, JSON.stringify([u.counts.gifts, u.deletedMatches]));
   const wb = await sheetsOf(WORKBOOK);
-  const ev = (await api("POST", "/sheet-import/understand", A.token, { fileName: "event.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true } })).body;
+  const ev = (await api("POST", "/sheet-import/understand", A.token, { fileName: "event.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true, pledgeDue: "event" } })).body;
   ok("§1 the event date answered: no gift undated, the button says so", ev.counts.undatedGifts === 0 && !/undated/.test(ev.button.text) && ev.ready === true, ev.button && ev.button.text);
+
+  // §7 IMPORT-5: a column she answered is saved against the file's headers, so
+  // the next export with the same headers (in any order) asks nothing
+  const E = await freshOrg("org_fix55maps", "Saved mappings (test)");
+  const f1 = { fileName: "export-1.csv", sheets: gridOf([["Name", "Date", "Figure"], ["Rory Penn", "2026-09-03", "40.75"], ["Ada Quill", "2026-09-04", "12.00"]]) };
+  const u1 = (await api("POST", "/sheet-import/understand", E.token, f1)).body;
+  const c1 = (u1.questions || []).find(x => x.kind === "column");
+  ok("§7 the first export asks what Figure is", !!c1 && u1.ready === false && !u1.savedMapping, JSON.stringify((u1.questions || []).map(x => x.kind)));
+  const i1 = await importJob(E.token, { ...f1, overrides: { [c1.key]: "amount" } });
+  ok("§7 it imports with her answer", i1.end && i1.end.status === "done", JSON.stringify(i1.end || i1.start.body).slice(0, 200));
+  const f2 = { fileName: "export-2.csv", sheets: gridOf([["Figure", "Name", "Date"], ["99.50", "Bea Vance", "2026-09-05"]]) };
+  const u2 = (await api("POST", "/sheet-import/understand", E.token, f2)).body;
+  ok("§7 the next export, columns in another order, asks nothing and reads the amount", u2.ready === true && !(u2.questions || []).some(x => x.kind === "column")
+     && u2.counts.giftCents === 9950 && u2.savedMapping && u2.savedMapping.id, JSON.stringify([u2.ready, (u2.questions || []).map(x => x.kind), u2.counts && u2.counts.giftCents, u2.savedMapping]));
+  const off = (await api("POST", "/sheet-import/understand", E.token, { ...f2, answers: { savedMapping: "off" } })).body;
+  ok("§7 Change (savedMapping off) asks the column question again", off.ready === false && (off.questions || []).some(x => x.kind === "column") && !off.savedMapping);
+  const list = (await api("GET", "/import-mappings", E.token)).body;
+  const m = (list.mappings || [])[0] || {};
+  ok("§7 Settings, Imports lists it: Figure is the amount", (list.mappings || []).length === 1 && m.columns.some(c => c.header === "Figure" && c.role === "amount"), JSON.stringify(list.mappings));
+  const other = await freshOrg("org_fix55maps2", "Saved mappings, other org (test)");
+  ok("§7 another org neither sees nor uses it", ((await api("GET", "/import-mappings", other.token)).body.mappings || []).length === 0
+     && (await api("POST", "/sheet-import/understand", other.token, f2)).body.ready === false
+     && (await api("DELETE", `/import-mappings/${m.id}`, other.token)).status === 404);
+  const ed = await api("PATCH", `/import-mappings/${m.id}`, E.token, { columns: { figure: "keep" } });
+  ok("§7 a saved answer can be changed", ed.status === 200 && ed.body.mapping.columns.some(c => c.key === "figure" && c.role === "keep"), JSON.stringify(ed.body).slice(0, 200));
+  const del2 = await api("DELETE", `/import-mappings/${m.id}`, E.token);
+  const u3 = (await api("POST", "/sheet-import/understand", E.token, f2)).body;
+  ok("§7 deleted, the next export asks again", del2.status === 200 && u3.ready === false && !u3.savedMapping, JSON.stringify([del2.status, u3.ready]));
 
   // §5 bring them all back, then empty the trash
   const B = await freshOrg("org_fix55back", "Bring back (test)");
-  const wbBody = { fileName: "event-workbook-shape.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true } };
+  const wbBody = { fileName: "event-workbook-shape.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true, pledgeDue: "event" } };
   const first = await importJob(B.token, wbBody);
   ok("§5 the event workbook imports", first.end && first.end.status === "done", JSON.stringify(first.end || first.start.body).slice(0, 300));
   const givers = (await q(`SELECT DISTINCT donor_id AS id FROM (SELECT donor_id FROM gifts WHERE org_id=$1 UNION SELECT donor_id FROM pledges WHERE org_id=$1) x`, [B.id])).map(r => r.id);
@@ -163,7 +205,48 @@ async function apiLegs() {
      matched > 0 && restored > 0 && (restored === matched ? !!said && Number(said[1].replace(/,/g, "")) === matched
        : new RegExp(`${restored.toLocaleString("en-US")} of the ${matched.toLocaleString("en-US")} people already here`).test(up.sentence))
      && JSON.stringify(rcpt).includes(String(matched)), JSON.stringify({ matched, restored, sentence: up.sentence }));
+  await systemsLeg();
   return { A, B };
+}
+
+// §7 IMPORT-5 · other systems' exports. The key is each file's own cells,
+// written by hand: system, gift rows, and their dollars.
+const SYSTEMS = path.join(__dirname, "fixtures", "import", "systems");
+const SYSTEM_KEY = [
+  ["bloomerang-transactions.csv", "Bloomerang", 3, 40000], ["donorperfect-gifts.csv", "DonorPerfect", 3, 135000],
+  ["littlegreenlight-gifts.csv", "Little Green Light", 3, 50000], ["neon-donations.csv", "Neon CRM", 3, 60000],
+  ["etapestry-journal.csv", "Blackbaud eTapestry", 3, 41500], ["raisers-edge-gifts.csv", "Raiser's Edge", 3, 625000],
+  ["givebutter-transactions.csv", "Givebutter", 3, 17500], ["donorbox-donations.csv", "Donorbox", 3, 17000],
+  ["paypal-giving-fund.csv", "PayPal Giving Fund", 3, 10500], ["quickbooks-sales-by-customer.csv", "QuickBooks", 3, 52500],
+  [["salesforce-npsp-contacts.csv", "salesforce-npsp-donations.csv"], "Salesforce", 4, 92500],
+];
+async function systemsLeg() {
+  const R0 = await import("../shared/sheetRead.js");
+  const S = await freshOrg("org_import5sys", "Other systems (test)");
+  const bodyOf = files => {
+    const fs1 = [].concat(files);
+    return { fileName: fs1.join(" + "), sheets: fs1.map(f => ({ name: fs1.length > 1 ? f.replace(/\.csv$/, "") : "Sheet1", grid: R0.gridFromText(fs.readFileSync(path.join(SYSTEMS, f), "utf8")) })) };
+  };
+  for (const [files, system, gifts, cents] of SYSTEM_KEY) {
+    const u = (await api("POST", "/sheet-import/understand", S.token, bodyOf(files))).body || {};
+    const colQs = (u.questions || []).filter(x => x.kind === "column");
+    ok(`§7 ${[].concat(files).join(" + ")} reads as ${system} with no column question: ${gifts} gifts, $${cents / 100}`,
+       u.ready === true && colQs.length === 0 && u.knownShape && u.knownShape.system === system && /^Read as an? /.test(u.knownShape.sentence)
+       && u.counts.gifts === gifts && u.counts.giftCents === cents && u.counts.undatedGifts === 0,
+       JSON.stringify({ ready: u.ready, colQs: colQs.map(x => x.header), shape: u.knownShape, counts: u.counts && [u.counts.gifts, u.counts.giftCents, u.counts.undatedGifts] }));
+  }
+  const pair = bodyOf(["salesforce-npsp-contacts.csv", "salesforce-npsp-donations.csv"]);
+  const pv = (await api("POST", "/sheet-import/understand", S.token, pair)).body || {};
+  ok("§7 the Salesforce pair says so: \"Read as a Salesforce Contacts + Donations export.\"", pv.knownShape && pv.knownShape.sentence === "Read as a Salesforce Contacts + Donations export.", pv.knownShape);
+  const done = await importJob(S.token, pair);
+  ok("§7 the Salesforce pair imports as one", done.end && done.end.status === "done"
+     && (await q("SELECT COUNT(*)::int AS n FROM imports WHERE org_id=$1", [S.id]))[0].n === 1, JSON.stringify(done.end || done.start.body).slice(0, 300));
+  const by = await q(`SELECT d.external_donor_id AS cid, d.name, ROUND(SUM(g.amount)*100)::int AS c, COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
+                       WHERE g.org_id=$1 GROUP BY 1,2 ORDER BY 1`, [S.id]);
+  const want = { "0035e00000AbCd1AAF": ["Orla Fenwick", 75000, 2], "0035e00000AbCd2AAF": ["Tobin Marsh", 10000, 1], "0035e00000AbCd3AAF": ["Wren Halloway", 7500, 1] };
+  ok("§7 each Salesforce donation is on the person its Contact ID names (3 people, $925.00)", by.length === 3
+     && by.every(r => want[r.cid] && want[r.cid][0] === r.name && want[r.cid][1] === r.c && want[r.cid][2] === r.n)
+     && (await q("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL", [S.id]))[0].n === 3, JSON.stringify(by));
 }
 
 function browserReady() {
@@ -195,6 +278,9 @@ async function browserLegs() {
   };
   const goText = () => page.textContent('[data-testid="sheet-import-go"]');
   const settle = () => page.waitForSelector('[data-testid="sheet-import-go"]:not([disabled])', { timeout: 60000 });
+  // IMPORT-5: the event workbook asks its date before Import is enabled, so
+  // the window legs wait for the preview to be read, not for Import
+  const previewed = () => page.waitForFunction(() => { const b = document.querySelector('[data-testid="sheet-import-go"]'); return b && /^(Import|Answer)/.test(b.textContent.trim()); }, null, { timeout: 60000 });
   try {
     // §3 the window always closes, and closing writes nothing
     const w0 = await writes(C.id);
@@ -203,17 +289,17 @@ async function browserLegs() {
     ok("§3 the X closes the empty import window", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.click('button[aria-label="Close"]');
     ok("§3 the X closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.keyboard.press("Escape");
     ok("§3 Escape closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.mouse.click(8, 500);
     ok("§3 a click outside closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     const w1 = await writes(C.id);
@@ -222,7 +308,7 @@ async function browserLegs() {
     // §4 a dropped file is the same file
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     const chosen = await goText();
     await page.keyboard.press("Escape");
     const bytes = fs.readFileSync(WORKBOOK).toString("base64");
@@ -238,23 +324,27 @@ async function browserLegs() {
     };
     await open();
     await drop('[data-testid="sheet-drop"]');
-    await settle();
+    await previewed();
     ok("§4 a file dropped on the start screen gives the same preview as choosing it", (await goText()) === chosen, [await goText(), chosen]);
     await page.keyboard.press("Escape");
     await drop('[data-testid="sheet-drop-page"]');
-    await settle();
+    await previewed();
     ok("§4 a file dropped on the Donors page opens the same reader with that file", (await goText()) === chosen, [await goText(), chosen]);
     await page.keyboard.press("Escape");
 
     // §2 the date box: the summary and the button change before Import, and Import dates the gifts
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     const money0 = await page.textContent('[data-testid="layer-money"]');
     ok("§2 before the answer: 63 gifts with no date, on the Money line and the button", /63 with no date/.test(money0) && /63 undated/.test(await goText()), [money0, await goText()]);
     await page.fill('[data-testid="sheet-event-date"]', "2026-10-22");
-    await settle();
-    await page.check('[data-testid="sheet-use-event-date"]');
+    // IMPORT-5: the pledges' due dates, then Yes to "Use the event date for these 63 gifts?"
+    await page.click('[data-testid="sheet-pledge-due-event"]');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="sheet-question-pledge-due"]')
+      || document.querySelector('[data-testid="sheet-pledge-due-event"][aria-pressed="true"]'), null, { timeout: 15000 });
+    await previewed();
+    await page.click('[data-testid="sheet-event-gifts-yes"]');
     // the stale preview may never be imported: the button waits for the re-read
     const during = await page.$eval('[data-testid="sheet-import-go"]', b => ({ disabled: b.disabled, text: b.textContent })).catch(() => null);
     const t0 = performance.now();

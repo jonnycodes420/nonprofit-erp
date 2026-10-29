@@ -92,8 +92,9 @@ async function eventSheet() {
   ok("§1 Last and First are a person's name; 3 Yr Total is the pledge total", roles.Last === "last" && roles.First === "first" && roles.Amount === "amount"
      && roles.Method === "method" && roles.Frequency === "frequency" && roles.Completed === "paid" && roles["3 Yr Total"] === "pledgeTotal", JSON.stringify(roles));
   const qs = (U.questions || []).map(x => x.id);
-  ok("§1 it asks when (no date column), offering the event by the file's name", qs[0] === "date" && U.questions[0].suggestedEventName === "Finding Joy Dinner", JSON.stringify(U.questions && U.questions[0]));
-  ok("§1 and the one blank Completed, by row number, and nothing else", qs.length === 2 && qs[1] === "row:Sheet1:26", JSON.stringify(qs));
+  const evQ = (U.questions || []).find(x => x.id === "event") || {};
+  ok("§1 it asks when (no date column), naming the event by the file's name (IMPORT-5: required)", evQ.required === true && evQ.suggestedEventName === "Finding Joy Dinner", JSON.stringify(evQ));
+  ok("§1 and the one blank Completed, by row number, the pledges' due date, and nothing else", qs.length === 3 && qs.includes("row:Sheet1:26") && qs.includes("pledgeDue"), JSON.stringify(qs));
   ok("§1 the stray note in column K is a note, not a column", (U.notes || []).some(n => /matching gift/.test(n.text)) && !(U.tables[0].columns || []).some(c => c.index === 10), JSON.stringify(U.notes));
 
   const answers = { date: "2026-10-22", eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } };

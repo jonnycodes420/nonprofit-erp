@@ -34,7 +34,12 @@
 //   column accounted for, no duplicate people, the checker passes after import,
 //   and undo leaves the org exactly as it was. Prints the report table.
 //
-// HOW IT WOULD GO RED (run against main): the combined workbook imports 0 gifts
+// import4-comma-couples (IMPORT-5) · "Alex, Brad Hubbard" in a file is two
+//   people, one household; a record already here is proposed in Data health,
+//   fixed on her click, undone exactly.
+//
+// HOW IT WOULD GO RED (run against main): "Alex, Brad Hubbard" reads as "Brad
+// Hubbard Alex" and there is no couples line in Data health; the combined workbook imports 0 gifts
 // (blank dates were refused), no event or attendance, no opt-outs, and the
 // columns are questions; with the ID link removed, gifts land on new people;
 // with the placeholder rule removed, 30 people get the org's own phone; with
@@ -46,6 +51,9 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+// IMPORT-5: the answers a person gives an event file with no dates: the event's
+// day, its gifts left "No date", its pledges due from the event's date
+const IMPORT5_DATES = { eventDate: "2026-10-22", useEventDate: false, pledgeDue: "event" };
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
 async function surfacesAgree(label, orgId, token) {
   const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
@@ -61,7 +69,7 @@ const EXPECTED = JSON.parse(fs.readFileSync(path.join(FX4, "expected.json"), "ut
 const PASSWORD = "loadtest1234";
 // every org-child table an import can touch, children first
 const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", "pledges", "thank_you_drafts", "interactions", "gifts", "events",
-  "fin_transactions", "imports", "donor_scores", "readouts", "tasks", "cultivation_plans", "donors", "households", "custom_field_defs",
+  "fin_transactions", "imports", "donor_scores", "readouts", "tasks", "cultivation_plans", "name_fixes", "donors", "households", "custom_field_defs",
   "fin_funds", "budgets", "accounts", "users"];
 const { checkOrg } = require("../scripts/check-numbers");
 const NUM = require("../numbers");
@@ -136,7 +144,12 @@ async function combined() {
   ok("§0 the fixture's matched people are who this suite says", row("JP-1013") && row("JP-1022")[3] === "marisol.sorensen22@example.org"
      && peopleRows.some(r => `${r[1]} ${r[2]}` === "Odette Valdivia" && !r[3]), JSON.stringify([row("JP-1013"), row("JP-1022")]));
   const before = await snapshot(ORG);
-  const body = { fileName: "Finding_Joy_Combined.xlsx", sheets };
+  // IMPORT-5: an event's date is asked, never invented; the first preview asks it
+  const asked = await api("POST", "/sheet-import/understand", tok, { fileName: "Finding_Joy_Combined.xlsx", sheets });
+  const askedQ = ((asked.body || {}).questions || []);
+  ok("§1 with no date in the file, the event's date is a required question and Import waits", (asked.body || {}).ready === false
+     && askedQ.some(x => x.id === "event" && x.required && !x.optional) && askedQ.some(x => x.id === "pledgeDue"), JSON.stringify(askedQ.map(x => [x.id, x.optional])));
+  const body = { fileName: "Finding_Joy_Combined.xlsx", sheets, answers: IMPORT5_DATES };
 
   // §1 the preview
   const t0 = performance.now();
@@ -164,8 +177,8 @@ async function combined() {
   ok("§1 the button never offers 0 gifts", !/\b0 gifts\b/.test(btn));
   ok("§1 the totals row is checked and explained", /Your total row says \$178,240.*106 gifts \(\$124,290\), \$53,950 promised and not yet received/.test((U.totalsSentence || [])[0] || ""), JSON.stringify(U.totalsSentence));
   ok("§1 the shared phone is flagged as a placeholder on 30 people", (U.placeholders || []).some(p => p.kind === "phone" && p.people === E.placeholderPeople), JSON.stringify(U.placeholders));
-  ok("§1 the event is named from the title row; the date question is optional", U.event && U.event.name === E.eventName
-     && (U.questions || []).filter(x => ["date", "event"].includes(x.id)).every(x => x.optional), JSON.stringify([U.event, (U.questions || []).map(x => [x.id, x.optional])]));
+  ok("§1 the event is named from the title row; once dated, nothing about dates blocks", U.event && U.event.name === E.eventName
+     && (U.questions || []).filter(x => ["date", "event", "eventGifts", "pledgeDue"].includes(x.id)).every(x => x.optional), JSON.stringify([U.event, (U.questions || []).map(x => [x.id, x.optional])]));
   ok("§1 the sample person shows the most layers", U.sample && U.sample.roles.includes("donor") && U.sample.attendance && U.sample.attendance.attended, String(JSON.stringify(U.sample)).slice(0, 300));
   ok("§1 understand wrote nothing", (await one("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [ORG])).n === 0);
 
@@ -192,7 +205,7 @@ async function combined() {
   ok("§3 This year does not", !f.thisYear || !f.thisYear.cents, JSON.stringify(f.thisYear));
   ok("§3 and the profile says why", JSON.stringify(prof.body).includes("no date not counted"), JSON.stringify(f.thisYear));
   const ev = await q("SELECT * FROM events WHERE org_id=$1", [ORG]);
-  ok("§4 the event is created once, by its name, its date not known", ev.length === 1 && ev[0].name === E.eventName && ev[0].date_unknown === true, JSON.stringify(ev));
+  ok("§4 the event is created once, by its name, on the day she gave (IMPORT-5)", ev.length === 1 && ev[0].name === E.eventName && ev[0].date_unknown === false && JSON.stringify(ev[0].date).startsWith("\"2026-10-2"), JSON.stringify(ev));
   const evId = ev[0] && ev[0].id;
   const evg = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND event_id=$2", [ORG, evId]);
   ok("§3 the event total counts every undated gift", evg.n === E.gifts && centsOf(evg.s) === E.giftCents, JSON.stringify(evg));
@@ -282,9 +295,9 @@ async function combined() {
 // ── import4-either-order ──────────────────────────────────────────────────
 async function eitherOrder() {
   const gifts = { fileName: "Finding Joy Dinner Gifts.xlsx", sheets: await sheetsOf(path.join(FX, "event-gifts-sheet-scrubbed.xlsx")),
-                  answers: { eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } } };
+                  answers: { ...IMPORT5_DATES, eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } } };
   const guests = { fileName: "Finding Joy Dinner Guest List.xlsx", sheets: await sheetsOf(path.join(FX, "event-guest-list-scrubbed.xlsx")),
-                   answers: { eventName: "Finding Joy Dinner" } };
+                   answers: { ...IMPORT5_DATES, eventName: "Finding Joy Dinner" } };
   const E = EXPECTED["event-guest-list-scrubbed.xlsx"];
   const out = {};
   for (const [tag, order] of [["a", [gifts, guests]], ["b", [guests, gifts]]]) {
@@ -317,7 +330,7 @@ async function everyFixture(rows) {
     const ORG = `org_import4f_${String(i).padStart(2, "0")}`;
     const tok = await freshOrg(ORG, "Fixture " + file);
     const full = file.startsWith("event-") ? path.join(FX, file) : path.join(FX4, file);
-    const body = { fileName: file, sheets: await sheetsOf(full), answers: e.answers || {} };
+    const body = { fileName: file, sheets: await sheetsOf(full), answers: { ...IMPORT5_DATES, ...(e.answers || {}) } };
     const before = await snapshot(ORG);
     const t0 = performance.now();
     const u = await api("POST", "/sheet-import/understand", tok, body);
@@ -372,6 +385,50 @@ async function everyFixture(rows) {
   }
 }
 
+// ── import4-comma-couples (IMPORT-5) ──────────────────────────────────────
+// "Alex, Brad Hubbard" (Justin's Place's dinner list) is a couple, not "Last,
+// First". A file reads it as two people in one household; a record already
+// here is only proposed in Data health, fixed on her click, and undone whole.
+async function commaCouples() {
+  const ORG = "org_import4cc";
+  const tok = await freshOrg(ORG, "Comma couples (test)");
+  const file = "u03-names-every-way.csv";
+  const c = await api("POST", "/sheet-import/commit", tok, { fileName: file, sheets: await sheetsOf(path.join(FX4, file)), importId: "imp_import4cc_1" });
+  const hh = await q(`SELECT h.name AS household, ARRAY_AGG(d.name ORDER BY d.name) AS people FROM donors d JOIN households h ON h.id=d.household_id
+                       WHERE d.org_id=$1 AND (d.name ~ 'Hubbard' OR d.name ~ 'Dorman') GROUP BY h.name ORDER BY h.name`, [ORG]);
+  ok("comma couples: \"Alex, Brad Hubbard\" and \"Leslie, Kelly Dorman\" are two people each, in one household each", c.status === 201
+     && JSON.stringify(hh) === JSON.stringify([{ household: "Alex & Brad Hubbard", people: ["Alex Hubbard", "Brad Hubbard"] }, { household: "Leslie & Kelly Dorman", people: ["Kelly Dorman", "Leslie Dorman"] }]),
+     JSON.stringify([c.status, hh]));
+  // records already here, as the old reading left them, and two that are not couples
+  const ORG2 = "org_import4cc2";
+  const tok2 = await freshOrg(ORG2, "Comma couples, already here (test)");
+  await q(`INSERT INTO donors (id, org_id, name, created_import_id, created_by, created_by_name) VALUES
+           ('d_cc_1',$1,'Brad Hubbard Alex','imp_old','system:test','Test'), ('d_cc_2',$1,'Leslie, Kelly Dorman',NULL,'system:test','Test'),
+           ('d_cc_3',$1,'Paul James Thomas','imp_old','system:test','Test'), ('d_cc_4',$1,'Brad Hubbard Alex',NULL,'system:test','Test')`, [ORG2]);
+  await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ('g_cc_1',$1,'d_cc_1',150,'2026-04-06','system:test','Test')`, [ORG2]);
+  // the person's totals as the gift makes them, so the snapshot is the org's true state
+  await q(`UPDATE donors SET total_giving=150, gift_count=1, last_gift_amount=150, first_gift_date='2026-04-06', last_gift_date='2026-04-06' WHERE id='d_cc_1'`);
+  const before = await snapshot(ORG2);
+  const health = (await api("GET", "/data-health", tok2)).body || {};
+  const list = (await api("GET", "/data-health/couples", tok2)).body || {};
+  ok("comma couples: Data health counts 2 names that look like couples, nothing changed yet", health.counts && health.counts.couples === 2 && (list.rows || []).length === 2
+     && /2 names look like couples written with a comma/.test(list.sentence) && snapDiff(before, await snapshot(ORG2)).length === 0, JSON.stringify([health.counts, list]));
+  const r1 = (list.rows || []).find(r => r.donorId === "d_cc_1") || {};
+  ok("comma couples: before and after are shown", r1.before === "Brad Hubbard Alex" && r1.after === "Alex & Brad Hubbard" && JSON.stringify(r1.people) === JSON.stringify(["Alex Hubbard", "Brad Hubbard"]), JSON.stringify(r1));
+  const ap = await api("POST", "/data-health/couples/apply", tok2, { donorIds: ["d_cc_1", "d_cc_2", "d_cc_3"] });
+  const after = await q(`SELECT d.id, d.name, h.name AS household, (SELECT COUNT(*) FROM gifts g WHERE g.donor_id=d.id)::int AS gifts FROM donors d LEFT JOIN households h ON h.id=d.household_id
+                          WHERE d.org_id=$1 AND (d.name ~ 'Hubbard' OR d.name ~ 'Dorman') ORDER BY d.name`, [ORG2]);
+  ok("comma couples: Fix makes each two people in one household; the gift stays with the first; the others are untouched", ap.status === 201 && ap.body.applied === 2
+     && JSON.stringify(after.map(x => [x.name, x.household, x.gifts])) === JSON.stringify([["Alex Hubbard", "Alex & Brad Hubbard", 1], ["Brad Hubbard", "Alex & Brad Hubbard", 0],
+       ["Brad Hubbard Alex", null, 0], ["Kelly Dorman", "Leslie & Kelly Dorman", 0], ["Leslie Dorman", "Leslie & Kelly Dorman", 0]])
+     && (await one("SELECT name FROM donors WHERE id='d_cc_3'")).name === "Paul James Thomas", JSON.stringify([ap.status, ap.body, after]));
+  const un = await api("POST", "/data-health/couples/undo", tok2, { batchId: ap.body.batchId });
+  const afterUndo = await snapshot(ORG2);
+  delete afterUndo.name_fixes; delete before.name_fixes;   // the fix's own log, kept as history like an import's run
+  const d = snapDiff(before, afterUndo);
+  ok("comma couples: Undo puts every name back and removes the people and households the fix made", un.status === 200 && d.length === 0, JSON.stringify([un.status, d]));
+}
+
 (async () => {
   const rows = [];
   try {
@@ -379,6 +436,8 @@ async function everyFixture(rows) {
     const c = await combined();
     console.log("import4-either-order");
     await eitherOrder();
+    console.log("import4-comma-couples");
+    await commaCouples();
     console.log("import4-every-fixture");
     await everyFixture(rows);
     const money = c => "$" + (c / 100).toLocaleString("en-US");
