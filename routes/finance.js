@@ -171,6 +171,8 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
     // deposit lives. The window is the last ninety days: an eighteen month
     // old cheque is history, not an open item, and a figure that counts it
     // is a figure nobody can ever drive to zero.
+    // FIX-59: a gift with a deposit_ref is on a deposit (a payout, a deposit
+    // sheet, or an import she said was already deposited), so it is not here.
     const sel = rows
       ? `g.id, g.date, g.amount, g.payment_method, d.name AS who`
       : `COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents`;
