@@ -495,8 +495,8 @@ app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
   const { result: out, trips } = await require("../db").countRoundTrips(() => buildUnderstanding(req, body));
   if (trips != null) res.set("X-Steward-Round-Trips", String(trips));
   // HARDEN-1: the file's fingerprint (its cells, not its name or org) on this
-  // preview's audit row, so the nightly check can see a file previewed in one
-  // org and imported into another (nightlyCheck.js, check e).
+  // preview's audit row, so a file previewed in one org and imported into
+  // another can be found (scripts/cross-org-import-readonly.sql).
   if (req.audit) req.audit.after({ file: fileFingerprint(body) });
   // HARDEN-1: the preview names the org it was read for; commit sends it back
   const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
@@ -942,7 +942,7 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
     RUNNING.set(job.id, p);
   }
   if (!job) return res.status(409).json({ error: "busy", message: "Another import of this file is starting. Open Import again in a moment." });
-  // HARDEN-1: nightlyCheck.js check e reads this row: the run, the file's
+  // HARDEN-1: scripts/cross-org-import-readonly.sql reads this row: the run, the file's
   // fingerprint, and the org the page said its preview was read in.
   if (req.audit) req.audit.after({ importId: job.id, file: fileFingerprint(body),
     previewOrgId: (req.body && req.body.previewOrgId) ? String(req.body.previewOrgId).slice(0, 80) : null });

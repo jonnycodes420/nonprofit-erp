@@ -20,7 +20,7 @@
 //      hand, undo the import: the hand-deleted stay deleted.
 //   §5 HARDEN-2: every door that brings someone back (Undo, the bulk Undo,
 //      Bring them back, and Load sample data after Clear) leaves no deletion
-//      record open, so check a of the nightly check stays green; and
+//      record open, so scripts/stale-deletions-readonly.sql counts none; and
 //      scripts/close-stale-deletions.js closes the ones left from before.
 //
 // HOW IT GOES RED ON MAIN: the bulk delete ignores the confirmed count (§1),
@@ -187,7 +187,7 @@ async function main() {
 }
 
 // §5 HARDEN-2 item 4 · EVERY DOOR THAT BRINGS SOMEONE BACK CLOSES THEIR
-// DELETION RECORD. The nightly check (check a) counts a person as deleted
+// DELETION RECORD. A person counts as deleted
 // while an open trash row names them, so a live person with an open one reads
 // as "a deleted person on the Donors list". `opened` is the shape a door that
 // never closed it left: a trash row still open on someone already back.
@@ -202,10 +202,15 @@ const STALE_SQL = () => {
     .replace(/--.*$/gm, "").replace(/BEGIN TRANSACTION READ ONLY;|ROLLBACK;/g, "").trim().replace(/;$/, "");
   return sql;
 };
+// Deleted means either: the row says so, or the delete is on record and was
+// never undone (an open deletion record).
+const deletedAmong = async (org, ids) => ids.length ? (await q(
+  `SELECT id FROM donors WHERE org_id = $1 AND id = ANY($2) AND deleted_at IS NOT NULL
+   UNION
+   SELECT record_id FROM deleted_records WHERE org_id = $1 AND table_name = 'donors' AND restored_at IS NULL AND record_id = ANY($2)`,
+  [org, ids])).map(r => r.id) : [];
 const staleIn = async org => ((await q(STALE_SQL())).find(r => r.org_id === org) || { people: 0 }).people;
 async function deletionRecordsClose(tok) {
-  process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
-  const NC = require("../nightlyCheck");
   const live = (await q("SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND name LIKE 'Quillon Newfamily%' ORDER BY id LIMIT 3", [ORG])).map(r => r.id);
   const [a, b, c] = live;
 
@@ -225,8 +230,8 @@ async function deletionRecordsClose(tok) {
   const bc = await api("POST", "/sheet-import/bring-back", tok, { ids: [c] });
   ok("§5c Bring them back leaves no deletion record open", bc.status === 200 && bc.body.restored === 1 && (await openFor(ORG, c)) === 0, [bc.status, await openFor(ORG, c)]);
   const shown = (await api("GET", "/donors/ids", tok)).body.ids || [];
-  ok("§5 the nightly check's check a finds no deleted person on the Donors list", (await NC.deletedAmong(ORG, shown)).length === 0 && (await staleIn(ORG)) === 0,
-     [await NC.deletedAmong(ORG, shown), await staleIn(ORG)]);
+  ok("§5 no deleted person on the Donors list (deleted_at set, or an open deletion record)", (await deletedAmong(ORG, shown)).length === 0 && (await staleIn(ORG)) === 0,
+     [await deletedAmong(ORG, shown), await staleIn(ORG)]);
   await surfacesAgree("after three restores", ORG, tok);
 
   // §5d Clear sample data, Load it again: the same ids come back as new rows,

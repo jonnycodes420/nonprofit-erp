@@ -23,7 +23,7 @@ const DROP = new Set(["content-length", "content-type", "if-none-match", "if-mod
 
 // GET `path` as the person behind `headers` (their Authorization travels with
 // it). Resolves { status, body } where body is the exact text the route sent.
-function get(path, { headers = {}, remoteAddress = "127.0.0.1", mark = null, marks = null } = {}) {
+function get(path, { headers = {}, remoteAddress = "127.0.0.1", mark = null } = {}) {
   if (!app) return Promise.reject(new Error("inProcess not configured"));
   return new Promise((resolve) => {
     const sock = new net.Socket();
@@ -34,7 +34,6 @@ function get(path, { headers = {}, remoteAddress = "127.0.0.1", mark = null, mar
     req.headers = {};
     for (const [k, v] of Object.entries(headers)) if (!DROP.has(k.toLowerCase())) req.headers[k.toLowerCase()] = v;
     if (mark) req[mark] = true;
-    for (const m of marks || []) req[m] = true;   // HARDEN-1: the nightly check marks fresh AND no-store
     req.push(null);
     const res = new http.ServerResponse(req);
     const chunks = [];

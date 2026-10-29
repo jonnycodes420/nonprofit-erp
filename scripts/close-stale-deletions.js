@@ -3,7 +3,7 @@
 //
 // A person restored through a door that never closed their deletion record
 // (deleted_records, table_name 'donors', restored_at IS NULL) is live but
-// still "deleted" to the nightly check (nightlyCheck.js, check a). Every door
+// still "deleted" (scripts/stale-deletions-readonly.sql counts them). Every door
 // closes it now (personTrash.js bringPeopleBack); this closes the ones left
 // from before, ONE ORG AT A TIME.
 //

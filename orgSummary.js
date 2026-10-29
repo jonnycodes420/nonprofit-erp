@@ -23,6 +23,15 @@
 // after a change, so the next visit finds them ready, and a nightly job
 // compares every stored answer with a fresh computation and logs any
 // difference.
+//
+// NIGHTLY-OFF: two holes in that, closed. (1) The answer was stored after it
+// had been sent, so the next read could still miss it; now it is stored
+// first. (2) Housekeeping deleted change rows below the lowest stored mark,
+// but a computation still running holds an older mark, and when it stored
+// its answer the change rows that should have stopped it were gone: a stale
+// Home for the rest of the day. Now housekeeping raises a per-org FLOOR in the
+// same statement that deletes, and an answer marked below its org's floor is
+// never stored or served.
 "use strict";
 const { query, run } = require("./db");
 const inProcess = require("./inProcess");
@@ -31,8 +40,8 @@ let deps = null;   // { orgTz, orgToday, signInternalToken }
 function configure(d) { deps = d; }
 
 const off = () => process.env.ORG_SUMMARY_OFF === "1";
-// The flag the nightly check and the refresh set on their own request, so the
-// route computes fresh instead of answering from the store.
+// The flag the refresh and the check set on their own request, so the route
+// computes fresh instead of answering from the store.
 const FRESH = Symbol.for("steward.orgSummary.fresh");
 
 // Tables whose writes never move a figure a person sees: the queue, sessions,
@@ -68,6 +77,12 @@ function schemaSql() {
     // A route whose answer turns over at a known moment inside the day (an
     // invite expiring) says when, in res.locals.orgSummaryValidUntil.
     `ALTER TABLE org_summary ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ`,
+    // NIGHTLY-OFF: per org, the mark below which change rows may have been
+    // deleted (housekeep). An answer marked below it can't be trusted.
+    `CREATE TABLE IF NOT EXISTS org_changes_floor (
+       org_key TEXT PRIMARY KEY,
+       xid XID8 NOT NULL,
+       at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
     `CREATE OR REPLACE FUNCTION steward_note_org_change() RETURNS TRIGGER AS $fn$
      BEGIN
        IF TG_OP = 'INSERT' THEN
@@ -150,6 +165,7 @@ function cached(name, { perUser = true, when = null } = {}) {
           `SELECT s.body FROM org_summary s
             WHERE s.org_key = ? AND s.key = ? AND s.computed_for = ?
               AND (s.valid_until IS NULL OR s.valid_until > NOW())
+              AND s.snap_xmin >= COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
               AND NOT EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin)`,
           [orgId, key, today]);
         if (hit.length) {
@@ -163,21 +179,24 @@ function cached(name, { perUser = true, when = null } = {}) {
       const [{ x }] = await query(`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS x`);
       const t0 = Date.now();
       const json = res.json.bind(res);
+      // The answer is stored BEFORE it is sent, so a read that follows this
+      // one finds it. Never below the org's floor: change rows under it may
+      // be gone, so nothing could tell this answer it is stale.
       res.json = (body) => {
-        if (res.statusCode === 200 && !req[Symbol.for("steward.orgSummary.noStore")]) {
-          const text = JSON.stringify(body);
-          query(
-            `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms, valid_until)
-             VALUES (?,?,?,?,?,?::xid8,?,?,?)
-             ON CONFLICT (org_key, key) DO UPDATE SET body = EXCLUDED.body, path = EXCLUDED.path, user_id = EXCLUDED.user_id,
-               snap_xmin = EXCLUDED.snap_xmin, computed_for = EXCLUDED.computed_for, computed_at = NOW(), ms = EXCLUDED.ms,
-               valid_until = EXCLUDED.valid_until
-             WHERE org_summary.snap_xmin <= EXCLUDED.snap_xmin`,
-            [orgId, key, req.originalUrl, perUser ? req.user.userId : null, text, x, today, Date.now() - t0,
-             res.locals.orgSummaryValidUntil || null])
-            .then(() => { stats.stores++; }).catch(e => console.error("[org-summary] store", e.message));
-        }
-        return json(body);
+        if (res.statusCode !== 200) return json(body);
+        query(
+          `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms, valid_until)
+           SELECT ?::text, ?::text, ?::text, ?::text, ?::text, ?::xid8, ?::text, ?::int, ?::timestamptz
+            WHERE ?::xid8 >= COALESCE((SELECT xid FROM org_changes_floor WHERE org_key = ?), '0'::xid8)
+           ON CONFLICT (org_key, key) DO UPDATE SET body = EXCLUDED.body, path = EXCLUDED.path, user_id = EXCLUDED.user_id,
+             snap_xmin = EXCLUDED.snap_xmin, computed_for = EXCLUDED.computed_for, computed_at = NOW(), ms = EXCLUDED.ms,
+             valid_until = EXCLUDED.valid_until
+           WHERE org_summary.snap_xmin <= EXCLUDED.snap_xmin`,
+          [orgId, key, req.originalUrl, perUser ? req.user.userId : null, JSON.stringify(body), x, today, Date.now() - t0,
+           res.locals.orgSummaryValidUntil || null, x, orgId])
+          .then(() => { stats.stores++; }, e => console.error("[org-summary] store", e.message))
+          .then(() => json(body));
+        return res;
       };
       return next();
     } catch (e) {
@@ -206,7 +225,8 @@ async function refreshOrg(orgId) {
   const rows = await query(
     `SELECT s.org_key, s.key, s.path, s.user_id FROM org_summary s
       WHERE s.org_key = ? AND s.computed_for = ?
-        AND EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin)`, [orgId, today]);
+        AND (s.snap_xmin < COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8)
+             OR EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin))`, [orgId, today]);
   for (const r of rows) { await computeFresh(r).catch(e => console.error("[org-summary] refresh", e.message)); stats.refreshes++; }
   return rows.length;
 }
@@ -220,17 +240,18 @@ function scheduleRefresh(orgId) {
   } catch (e) { console.error("[org-summary] enqueue", e.message); }
 }
 
-// THE NIGHTLY CHECK. Every stored answer that is still current is compared,
+// THE NIGHTLY COMPARISON. Every stored answer that is still current is compared,
 // byte for byte, with a fresh computation through the same route. A
 // difference is logged with the org, the route and the first place the two
 // differ; nothing is silently corrected without a line saying so.
 async function checkAll({ log = console, orgId = null } = {}) {
-  const rows = await query(`SELECT org_key, key, path, user_id, body, snap_xmin::text AS snap_xmin, computed_for, valid_until FROM org_summary
-                             ${orgId ? "WHERE org_key = ?" : ""}`, orgId ? [orgId] : []);
+  const rows = await query(`SELECT s.org_key, s.key, s.path, s.user_id, s.body, s.snap_xmin::text AS snap_xmin, s.computed_for, s.valid_until,
+                                    s.snap_xmin < COALESCE((SELECT f.xid FROM org_changes_floor f WHERE f.org_key = s.org_key), '0'::xid8) AS below_floor
+                               FROM org_summary s ${orgId ? "WHERE s.org_key = ?" : ""}`, orgId ? [orgId] : []);
   const out = { compared: 0, differences: [], skipped: 0 };
   for (const r of rows) {
     const today = deps.orgToday(await deps.orgTz(r.org_key));   // ORG_TZ_SEAM_OK
-    const stillCurrent = r.computed_for === today && !(r.valid_until && new Date(r.valid_until) <= new Date()) && !(await query(
+    const stillCurrent = r.computed_for === today && !r.below_floor && !(r.valid_until && new Date(r.valid_until) <= new Date()) && !(await query(
       `SELECT 1 FROM org_changes WHERE org_key = ? AND xid >= ?::xid8 LIMIT 1`, [r.org_key, r.snap_xmin])).length;
     if (!stillCurrent) { out.skipped++; continue; }
     const fresh = await computeFresh(r).catch(() => null);
@@ -247,14 +268,28 @@ async function checkAll({ log = console, orgId = null } = {}) {
       log.error(`[org-summary] DIFFERENCE ${r.org_key} ${r.key} at ${at}: stored …${d.stored}… fresh …${d.fresh}…`);
     }
   }
-  if (orgId) return out;   // a one-org check (the suite) leaves housekeeping to the nightly run
-  // Housekeeping: answers from an earlier day are never served again, and a
-  // change row older than every stored answer's mark can no longer matter.
+  if (orgId) { await housekeep(orgId); return out; }   // a one-org check (the suite) tidies that org only
+  // Housekeeping: answers from an earlier day are never served again, and
+  // each org's change rows below its floor can no longer matter.
   await run(`DELETE FROM org_summary WHERE computed_for < ?`, [addDaysUtc(-2)]);
-  await run(`DELETE FROM org_changes WHERE xid < COALESCE((SELECT MIN(snap_xmin) FROM org_summary), pg_snapshot_xmin(pg_current_snapshot()))`);
-  log.log(`[org-summary] nightly check: ${out.compared} compared, ${out.differences.length} different, ${out.skipped} skipped`);
+  for (const { org_key } of await query(`SELECT DISTINCT org_key FROM org_changes`)) await housekeep(org_key);
+  log.log(`[org-summary] nightly comparison: ${out.compared} compared, ${out.differences.length} different, ${out.skipped} skipped`);
   return out;
+}
+
+// One org's housekeeping, in ONE statement: the floor rises to the lowest mark
+// of the org's stored answers (or the current mark when it has none), and the
+// change rows below it go. A computation still running with an older mark
+// can then neither store nor be served (cached, above), so deleting the rows
+// that would have stopped it is safe.
+async function housekeep(orgId) {
+  return run(
+    `WITH cut AS (SELECT COALESCE((SELECT MIN(snap_xmin) FROM org_summary WHERE org_key = ?), pg_snapshot_xmin(pg_current_snapshot())) AS x),
+          f AS (INSERT INTO org_changes_floor (org_key, xid) SELECT ?, x FROM cut
+                ON CONFLICT (org_key) DO UPDATE SET xid = GREATEST(org_changes_floor.xid, EXCLUDED.xid), at = NOW()
+                RETURNING xid)
+     DELETE FROM org_changes WHERE org_key = ? AND xid < (SELECT xid FROM f)`, [orgId, orgId, orgId]);
 }
 function addDaysUtc(n) { const d = new Date(Date.now() + n * 86400000); return d.toISOString().slice(0, 10); }
 
-module.exports = { configure, cached, installTriggers, refreshOrg, scheduleRefresh, checkAll, computeFresh, stats, FRESH, UNWATCHED };
+module.exports = { configure, cached, installTriggers, refreshOrg, scheduleRefresh, checkAll, housekeep, computeFresh, stats, FRESH, UNWATCHED };

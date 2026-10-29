@@ -85,6 +85,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **`STEWARD_PROCESS` decides the role:** unset runs the web and the jobs in one process (how prod
   ran before the worker service), `web` runs no jobs, `worker` runs the scheduler and the jobs. Code
   must work in all three. (SCALE-1)
+- **A job whose answer lives in this process's memory is `perBoot` and runs in every process, off the
+  queue.** The /health guards (`reconcileStripeVsGifts`, `checkWebhookSubscriptions`) run on their own
+  timer `firstMs` after boot in whichever process answers /health, web included (`jobQueue.startLocal`).
+  Queued, the run went to whichever process claimed it, so the answer landed in another process's
+  memory and /health read `notRun`. It must be read-only: every replica runs it. (GUARDS-1)
 - **Nothing a request reads may live only in one process's memory** when a second replica would read
   it differently: rate limits (`rateLimitStore.js`, Postgres), OAuth state (`oauth_states`), an
   import in flight (`import_in_flight`), an alert's hourly mark (`ops_alert_marks`). Pure caches of
@@ -107,6 +112,11 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   with the clock inside a day (`NOW()`, an expiry): it is not a function of the data. A table added
   to `UNWATCHED` must be one whose writes cannot move a figure; a GET that writes must write only
   when the value moved (`metric_snapshots`), or it invalidates its own answer. (SCALE-2)
+- **A stored answer is written before it is sent, and never trusted below its org's floor.** Housekeeping
+  deletes an org's `org_changes` rows only by raising `org_changes_floor` in the same statement; an
+  answer marked below the floor is neither stored nor served, because a computation still running when
+  the rows went could otherwise store a stale Home and have it served all day. Never delete
+  `org_changes` rows any other way. (NIGHTLY-OFF, `tests/scale2-same-numbers.test.js` §5)
 - **A screen's first reads are one request.** `prefetch(paths)` (client/src/api.js) asks
   `GET /home/bundle` for them and parks each answer where the component's own `apiFetch(path)`
   finds it; the bundle answers each path by running its route in-process (`inProcess.js`) as the

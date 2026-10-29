@@ -28,6 +28,9 @@
 //       recomputed for today, and the queue re-stores the org's answers
 //   §4  the nightly comparison finds no difference, and finds the one
 //       planted in a stored answer (the check is proven able to fail)
+//   §5  (NIGHTLY-OFF) Home's answer is stored before it is sent; an answer
+//       stored late with a mark from before a write is not served once
+//       housekeeping has deleted the change rows below the org's floor
 //
 // HOW IT WOULD GO RED: drop the gifts trigger and §3's direct write leaves
 // Drift listing someone who just gave; drop a table from the change triggers
@@ -291,7 +294,47 @@ async function fireStripe(evtId, piId, cents, email, name) {
   ok("§4 a planted difference in a stored answer is found and named", c2.status === 200 && r2.differences.length === 1
     && /impact/.test(r2.differences[0].key) && r2.lines.some(l => /DIFFERENCE/.test(l)), r2.differences);
 
+  // §5 NIGHTLY-OFF · the store is written before the answer is sent, and an
+  // answer marked before a write never comes back after housekeeping.
+  await quiet();
   await forgetStore();
+  let missing = 0;
+  for (let i = 0; i < 10; i++) {
+    await q(`DELETE FROM org_summary WHERE org_key=$1 AND key LIKE 'setup-status|%'`, [ORG]);
+    const r = await raw("/org/setup-status", tok);
+    const [row] = await q(`SELECT 1 FROM org_summary WHERE org_key=$1 AND key LIKE 'setup-status|%'`, [ORG]);
+    if (r.status !== 200 || !row) missing++;
+  }
+  ok("§5 Home's answer is stored before it is sent (the next read finds it, 10 of 10)", missing === 0, { missing });
+  // A computation takes its mark, a person is added that it did not see, a
+  // fresh answer is stored, housekeeping deletes the change rows below the
+  // org's floor, and THEN the first computation's store lands. Before the
+  // floor that late answer was served. Housekeeping only deletes when no
+  // other session's transaction holds the mark back, so it is tried again.
+  const peopleOf = b => { try { return (JSON.parse(b).items || []).find(i => i.key === "donors").count; } catch { return null; } };
+  let lateRun = null;
+  for (let attempt = 0; attempt < 4 && !lateRun; attempt++) {
+    await quiet();
+    const before = await raw("/org/setup-status", tok);
+    const [{ x: oldMark }] = await q(`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS x`);
+    await q(`INSERT INTO donors (id,org_id,name,email,person_types) VALUES ($1,$2,'Late Mark ' || $3,$4,'["donor"]'::jsonb)`,
+      [`d_s2_late${attempt}`, ORG, String(attempt), `late${attempt}@example.org`]);
+    await raw("/org/setup-status", tok);
+    await fetch(BASE + "/org-summary/check", { method: "POST", headers: { authorization: `Bearer ${tok}` } });
+    const [{ n: left }] = await q(`SELECT COUNT(*)::int AS n FROM org_changes WHERE org_key=$1 AND xid >= $2::xid8`, [ORG, oldMark]);
+    if (left) continue;   // a transaction elsewhere held the floor below the write: nothing was deleted
+    const [row] = await q(`SELECT key, path, user_id, computed_for FROM org_summary WHERE org_key=$1 AND key LIKE 'setup-status|%'`, [ORG]);
+    await q(`DELETE FROM org_summary WHERE org_key=$1 AND key=$2`, [ORG, row.key]);
+    await q(`INSERT INTO org_summary (org_key,key,path,user_id,body,snap_xmin,computed_for) VALUES ($1,$2,$3,$4,$5,$6::xid8,$7)`,
+      [ORG, row.key, row.path, row.user_id, before.body, oldMark, row.computed_for]);
+    lateRun = { before: peopleOf(before.body), seen: await raw("/org/setup-status", tok) };
+  }
+  ok("§5 an answer stored late, marked before a write, is not served once housekeeping has run",
+    !!lateRun && !lateRun.seen.stored && peopleOf(lateRun.seen.body) === lateRun.before + 1,
+    lateRun ? { before: lateRun.before, seen: peopleOf(lateRun.seen.body), stored: lateRun.seen.stored } : "housekeeping never ran clear in 4 tries");
+
+  await forgetStore();
+  await q(`DELETE FROM org_changes_floor WHERE org_key=$1`, [ORG]).catch(() => {});
   await wipe();
   await closeDb();
   summary();

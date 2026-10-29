@@ -13,7 +13,8 @@
 //   §5 the scheduler enqueues a due job once, however many processes ask
 //   §6 an OAuth sign-in started on one web process completes on the other
 //   §7 a sign-in rate limit is one count across both web processes
-//   §8 a guard job runs after each boot, not at the slot the last process left (FIX-47)
+//   §8 a guard job runs after each boot, not at the slot the last process left (FIX-47),
+//      and in the booting process itself, never through the queue (GUARDS-1)
 //
 // The suite's own server (if one is running against the same database) may
 // also claim jobs; that is just one more worker, and every assertion holds.
@@ -192,22 +193,30 @@ const settled = (keys) => waitFor(async () => {
   // §8 FIX-47 · A job that answers /health from memory runs after each boot.
   // prod read reconciliation.notRun for up to an interval after every deploy:
   // the schedule row the last process left kept its slot, and the boot's own
-  // first run (90s) never came. In-process, with a probe only this process
-  // has a handler for, so no worker ever takes it.
+  // first run (90s) never came.
+  // GUARDS-1: FIX-47 still queued that run, and a queued run goes to whichever
+  // process claims it first: the old container still draining, a worker, or no
+  // one for minutes behind the deploy's backlog. With STEWARD_PROCESS=web it
+  // never ran at all. The answer lives in one process's memory, so it must run
+  // in THAT process: on its own timer, never through the queue. This process
+  // starts no lanes, as a web process starts none.
   const Q = require("../jobQueue");
   const probes = ["testBootProbe", "testSlotProbe"];
   await q(`DELETE FROM job_queue WHERE name = ANY($1::text[])`, [probes]);
   await q(`DELETE FROM job_schedule WHERE name = ANY($1::text[])`, [probes]);
   for (const name of probes) await q(`INSERT INTO job_schedule (name, every_ms, next_run_at) VALUES ($1, 3600000, NOW() + INTERVAL '1 hour')`, [name]);
-  Q.define("testBootProbe", { everyMs: 3600000, firstMs: 0, perBoot: true, run: async () => {} });
+  let ranHere = 0;
+  Q.define("testBootProbe", { everyMs: 3600000, firstMs: 0, perBoot: true, run: async () => { ranHere++; } });
   Q.define("testSlotProbe", { everyMs: 3600000, firstMs: 0, run: async () => {} });
+  if (typeof Q.startLocal === "function") Q.startLocal();
   await Q.scheduleDue();
-  const queued = async name => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE name = $1 AND status = 'waiting'`, [name]))[0].n;
-  ok("§8 a per-boot job left an hour out by the last process runs at this boot", await queued("testBootProbe") === 1);
+  await waitFor(async () => ranHere > 0, { timeout: 3000, interval: 50 });
+  const queued = async name => (await q(`SELECT COUNT(*)::int AS n FROM job_queue WHERE name = $1 AND status IN ('waiting','running')`, [name]))[0].n;
+  ok("§8 a per-boot job runs in the process that booted, with no lane of its own (as a web process)", ranHere === 1, { ranHere });
+  ok("§8 it leaves no queue row another process could take", await queued("testBootProbe") === 0);
   ok("§8 an ordinary job keeps the slot it had (a deploy does not rerun every job)", await queued("testSlotProbe") === 0);
   await Q.scheduleDue();
-  ok("§8 and only once per boot: the next pass finds it already enqueued and its slot an interval out",
-    await queued("testBootProbe") === 1 && (await q(`SELECT (next_run_at > NOW() + INTERVAL '50 minutes') AS later FROM job_schedule WHERE name = 'testBootProbe'`))[0].later === true);
+  ok("§8 and only once per boot: the next pass runs it no more and queues nothing", ranHere === 1 && await queued("testBootProbe") === 0);
   await q(`DELETE FROM job_queue WHERE name = ANY($1::text[])`, [probes]);
   await q(`DELETE FROM job_schedule WHERE name = ANY($1::text[])`, [probes]);
 
