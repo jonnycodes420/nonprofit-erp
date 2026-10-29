@@ -99,6 +99,8 @@ const { ok, summary, api, q, closeDb } = require("./helpers");
   ok("§5 a giving page and the volunteer confirmation email exist", gp.status === 201 && (tplRes.status === 201 || tplRes.status === 200) && tpl.id, [gp.status, tplRes.status, tplRes.body]);
   await api("PUT", "/portal-settings", tok, { primaryColor: "#7A3B69", primary_color: "#7A3B69" });
   const volPrimary = ((await read()).theme || {}).primary;
+  // FUNDRAISING-2: a giving page is public only once payments are connected.
+  await q(`UPDATE orgs SET stripe_connected=true, stripe_account_id='acct_volpage1_test' WHERE id=$1`, [orgId]);
   const givePrimary = (((await api("GET", `/org/${slug}/giving-page/${gp.body.slug}/public`, null)).body.org || {}).theme || {}).primary;
   const html = (await api("POST", `/email-templates/${tpl.id}/preview`, tok, { device: "desktop" })).body.html || "";
   ok("§5 after ONE change: the volunteer page follows", /#7a3b69/i.test(volPrimary || ""), volPrimary);

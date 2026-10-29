@@ -23,6 +23,9 @@
 // recordGift.
 import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importShape.js";
 import { pledgeMoneyWords } from "./pledgeWords.js";
+import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
+import { isGivenName } from "./givenNames.js";
+import { splitAddress, contactNoteFlags } from "./addressSplit.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -209,6 +212,33 @@ function commaIsLastFirst(before, after) {
   if (before.split(/\s+/).filter(w => !/^(van|von|de|del|der|da|di|la|le|st\.?|mac|mc|o')$/i.test(w)).length >= 3) return false;
   return true;
 }
+// IMPORT-5 · A COUPLE WRITTEN WITH A COMMA. "Alex, Brad Hubbard": one first
+// name before the comma, a first name and a surname after it, is two people of
+// one household ("Alex & Brad Hubbard"), never "Last, First". The last word must
+// not itself be a first name ("Thomas, Paul James" stays Paul James Thomas).
+function commaCouple(before, after) {
+  const b = s(before).split(/\s+/).filter(Boolean), a = s(after).split(/\s+/).filter(Boolean);
+  if (b.length !== 1 || a.length < 2 || a.length > 3) return null;
+  if (a.length === 3 && !/^[A-Za-z]\.?$/.test(a[1])) return null;
+  if (!isGivenName(b[0]) || !isGivenName(a[0]) || isGivenName(a[a.length - 1])) return null;
+  return { first: `${b[0]} & ${a.slice(0, -1).join(" ")}`, last: a[a.length - 1] };
+}
+// The same couple on a record already here, for Data health's review: written
+// as typed ("Alex, Brad Hubbard"), or as the old reading left it ("Brad Hubbard
+// Alex", only on a record an import made). Never applied without her click.
+export function commaCoupleFix(name, { imported = false } = {}) {
+  const n = s(name);
+  let c = null;
+  const m = n.match(/^([^,]+),\s*(.+)$/);
+  if (m) c = commaCouple(m[1], m[2]);
+  else if (imported) {
+    const w = n.split(/\s+/);
+    if (w.length === 3 && isGivenName(w[0]) && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
+  }
+  if (!c) return null;
+  const r = readName({ first: c.first, last: c.last });
+  return r.kind === "household" && r.people.length === 2 ? { before: n, household: r.household, people: r.people.map(p => p.name) } : null;
+}
 const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
@@ -249,7 +279,8 @@ function dateOf(v, ctx = {}) {
   if (v == null || v === "") return null;
   if (v instanceof Date) return isNaN(v) ? null : v.toISOString().slice(0, 10);
   if (typeof v === "number") return ctx.serials ? serialToIso(v) : null;
-  const t = s(v);
+  // IMPORT-5: an export's timestamp may name its zone ("2025-04-02 10:11:12 UTC")
+  const t = s(v).replace(/\s+(utc|gmt)$/i, "");
   if (/^\d{5}(\.\d+)?$/.test(t)) return ctx.serials ? serialToIso(Number(t)) : null;
   const md = t.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?$/) || null;
   const dm = !md && t.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?$/);
@@ -594,6 +625,30 @@ export function mapColumns(table, opts = {}) {
   return cols;
 }
 
+// IMPORT-5: a known export's shape places the columns it knows. Each role is
+// still checked against the cells; a role the cells refuse is left to the
+// reader. A role the shape gives one column is let go by any other.
+const MULTI_ROLES = new Set(["ignore", "note", "giftNote", "keep", "logistics", "totalOf"]);
+function applyShape(table, cols, shape) {
+  const placed = [];
+  for (const col of cols) {
+    const spec = shapeColumn(shape, col.header, dataRows(table).map(b => (b.raw ? b.raw[col.index] : b.cells[col.index])));
+    if (!spec || !ROLE_LABELS[spec.role]) continue;
+    // a column of the system's own codes fits when its cells are those codes
+    const fits = spec.values
+      ? (() => { const v = dataRows(table).map(b => s(b.raw ? b.raw[col.index] : b.cells[col.index]).toLowerCase()).filter(Boolean); return v.length > 0 && v.filter(x => spec.values[x]).length >= v.length * 0.6; })()
+      : MULTI_ROLES.has(spec.role) || contentFits(spec.role, col.profile);
+    if (!fits) continue;
+    placed.push([col, spec]);
+  }
+  for (const [col, spec] of placed) {
+    if (!MULTI_ROLES.has(spec.role)) for (const o of cols) if (o !== col && o.role === spec.role && !placed.some(([p]) => p === o)) { o.role = null; o.by = null; o.reason = ""; }
+    col.role = spec.role; col.by = "shape"; col.mismatch = null; col.duplicateOf = null;
+    col.reason = spec.reason || `${shape.system}'s "${col.header}" column`;
+    if (spec.values) col.values = spec.values;
+  }
+}
+
 // Apply a person's (or a model's) overrides: {headerOrIndex: role}. Each is
 // checked against the contents; a role that does not fit is refused by name.
 export function applyOverrides(cols, overrides = {}) {
@@ -635,6 +690,8 @@ export function readName({ first, last, full, lastFirst, org }) {
     // or anything else that is not a first name, keeps the name as written
     if (comma && nameTokens(comma[2]).length && nameTokens(comma[2]).every(w => ORG_SUFFIX.has(w))) return { kind: "organization", name: full, people: [] };
     if (comma && !commaIsLastFirst(comma[1].trim(), comma[2].trim())) return { kind: "person", name: full, people: [{ name: full }] };
+    const couple = comma && commaCouple(comma[1], comma[2]);
+    if (couple) return readName({ first: couple.first, last: couple.last });
     // "S & S Westford", "R & R Hardware": initials joined are a business's name, never two people of one initial
     if (!comma && /^([A-Za-z]\.?\s*(&|and|\+)\s*)+[A-Za-z]\.?\s+\S/.test(full)) return { kind: "organization", name: full, people: [] };
     if (comma) { last = comma[1]; first = comma[2]; }
@@ -659,6 +716,9 @@ export function readName({ first, last, full, lastFirst, org }) {
   }
   if (first && !last) return { kind: "person", name: cleanPart(first), people: [{ name: cleanPart(first) }] };
   const L = cleanPart(last);
+  // IMPORT-5: "Alex, Brad" in a First Name column is two first names, a couple
+  const firstComma = first.match(/^([^,\s]+),\s*([^,\s]+)$/);
+  if (firstComma && isGivenName(firstComma[1]) && isGivenName(firstComma[2])) first = `${firstComma[1]} & ${firstComma[2]}`;
   const parts = first.split(JOINT_RE).map(cleanPart).filter(Boolean);
   if (parts.length >= 2) {
     // titles only ("Mr. and Mrs. Walt") → one named person and a spouse by title
@@ -723,6 +783,26 @@ function eventNameFromTitles(tables) {
   return null;
 }
 
+// IMPORT-5: two files from one system that go together (a Salesforce Contacts
+// export and its Donations export) are one import. files: [{ id, name, sheets }]
+// → groups, each { ids, name, sheets }; a pair's sheets carry their file's name
+// (as the import screen names them, readSheetFile), every other file stands alone.
+export function pairExportFiles(files = []) {
+  const keysOf = f => new Set((f.sheets || []).flatMap(sh => findTables(sh.name, reshapeKnownGrid(sh.grid || [])).tables
+    .map(t => shapeOfTable(t.header, dataRows(t).map(b => b.raw || b.cells))).filter(Boolean).map(x => x.key)));
+  const shapes = files.map(f => ({ f, keys: keysOf(f) }));
+  const used = new Set(), out = [];
+  const named = f => (f.sheets || []).map(sh => ({ ...sh, name: f.sheets.length === 1 ? String(f.name || "file").replace(/\.[a-z]+$/i, "") : `${String(f.name || "file").replace(/\.[a-z]+$/i, "")} · ${sh.name}` }));
+  for (const a of shapes) {
+    if (used.has(a.f)) continue;
+    const want = EXPORT_SHAPES.filter(x => a.keys.has(x.key) && x.pairWith).map(x => x.pairWith);
+    const b = want.length ? shapes.find(o => o !== a && !used.has(o.f) && want.some(k => o.keys.has(k))) : null;
+    if (b) { used.add(a.f); used.add(b.f); out.push({ ids: [a.f.id, b.f.id], name: `${a.f.name} + ${b.f.name}`, sheets: [...named(a.f), ...named(b.f)], files: [a.f, b.f] }); }
+    else { used.add(a.f); out.push({ ids: [a.f.id], name: a.f.name, sheets: a.f.sheets, files: [a.f] }); }
+  }
+  return out;
+}
+
 // ── 4. the plan ───────────────────────────────────────────────────────────
 // understand({sheets:[{name, grid}], fileName, today, overrides, answers})
 // → everything the review screen shows and everything the write does.
@@ -749,16 +829,20 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const T = today || new Date().toISOString().slice(0, 10);
   const all = [], notes = [];
   for (const sh of sheets) {
-    const f = findTables(sh.name, sh.grid || []);
+    // IMPORT-5: a report that writes its customer above their lines (QuickBooks) gives each line its customer
+    const f = findTables(sh.name, reshapeKnownGrid(sh.grid || []));
     f.tables.forEach((t, i) => { t.key = `${sh.name}#${i + 1}`; all.push(t); });
     notes.push(...f.notes);
   }
   const tables = all.map(t => {
     const auto = mapColumns(t, { today: T });
+    // IMPORT-5: another system's known export places its own columns; her answers still win
+    const shape = shapeOfTable(t.header, dataRows(t).map(b => b.raw || b.cells));
+    if (shape) applyShape(t, auto, shape);
     const ov = {};
     for (const [k, v] of Object.entries(overrides || {})) { const [tk, idx] = String(k).split("|"); if (tk === t.key) ov[idx] = v; }
     const { cols, refused } = applyOverrides(auto, ov);
-    return { ...t, cols, refused };
+    return { ...t, cols, refused, shape };
   });
   // what each table is
   for (const t of tables) {
@@ -852,7 +936,15 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const giftTables = usable.filter(t => t.kind === "gifts");
   const fileKind = giftTables.length ? "gifts" : usable.length ? "people" : "unknown";
   const dateAnswer = answers.date && /^\d{4}-\d{2}-\d{2}$/.test(answers.date) ? answers.date : null;
-  const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : null;
+  // "Date them all" with the event linked is the event's date too (the write reads it the same way)
+  const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : (answers.linkEvent && dateAnswer) || null;
+  // IMPORT-5: a pledge with no date of its own is due from the event's date
+  // (counted as before: a one-year pledge by that year's end, a multi-year one
+  // yearly from it), from a date she chose (that day, then yearly), or has no
+  // set due date. Unanswered, it has none, and the question blocks.
+  const pledgeDueDate = answers.pledgeDueDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.pledgeDueDate) ? answers.pledgeDueDate : null;
+  const pledgeDueBase = answers.pledgeDue === "event" ? eventDateAnswer : answers.pledgeDue === "choose" ? pledgeDueDate : null;
+  const singleDue = base => !base ? null : answers.pledgeDue === "choose" && base === pledgeDueDate ? base : yearEnd(base);
   const questions = [];
   const help = [];
   const hasEngagement = usable.some(t => t.cols.some(c => ENGAGE_ROLES.has(c.role)));
@@ -945,6 +1037,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const byId = new Map(), byEmail = new Map(), byName = new Map();
   const gifts = [], pledges = [], aside = [], totals = [], flags = [];
   const nearMisses = [];
+  const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
   const occ = new Map();
   const sourceFile = s(fileName) || "your file";
   const personGiftCents = new Map();   // for "Gave at dinner" checks
@@ -956,6 +1049,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const dctx = dateCol ? { serials: true, dayFirst: dateCol.profile.dayFirst, today: T } : null;
     const nameCols = ["name", "first", "last", "lastFirst", "org", "email"].map(role).filter(Boolean);
     const moneyCols = t.cols.filter(c => c.role === "amount" || c.role === "pledgeTotal");
+    // IMPORT-5 (7a): the whole address in one column, with no city, state or ZIP column beside it
+    const oneColumnAddress = !!role("address") && !role("city") && !role("state") && !role("zip");
+    const noteCols = t.cols.filter(c => c.role === "note" || c.role === "keep");
     t.readCount = 0;   // rows that are people or gifts: not titles, labels or totals
     const tableSums = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
     const sinceSubtotal = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
@@ -1027,6 +1123,21 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                       address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: stateV || null,
                       zip: fixZip(s(get(b, "zip")), stateV) || null, externalId: extId || null, lines: [],
                       roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [] };
+      if (oneColumnAddress && fresh.address) {
+        const sp = splitAddress(fresh.address);
+        if (sp.split) {
+          fresh.addressFrom = fresh.address;
+          Object.assign(fresh, { address: sp.address, address2: sp.address2, city: sp.city, state: sp.state, zip: sp.zip });
+        } else if (sp.check) { fresh.addressCheck = fresh.address; fresh.flags.push(`Check this address: "${fresh.address}" could not be split into street, city, state and ZIP for sure, so it is kept whole`); }
+      }
+      // IMPORT-5 (7d): a note that says the phone or the address is bad flags that field (the note itself is kept as before)
+      for (const c of noteCols) {
+        const v = s(cellOf(t, b, c)); if (!v) continue;
+        const nf = contactNoteFlags(v);
+        const src = { header: c.header, value: v, sheet: t.sheet, line: b.line };
+        if (nf.phoneBad && fresh.phone && !fresh.phoneBad) fresh.phoneBad = src;
+        if (nf.addressBad && fresh.address && !fresh.addressBad) fresh.addressBad = src;
+      }
       const zipRaw = s(get(b, "zip"));
       if (zipRaw && fresh.zip && fresh.zip !== zipRaw) fresh.flags.push(`ZIP ${zipRaw} read as ${fresh.zip} (the leading zero was lost)`);
       if (phonePlaceholder) fresh.flags.push(`the phone ${phoneRaw} is on ${contactNames.phone.get(phoneKey(phoneRaw)).size} different people in this file, so it was not copied`);
@@ -1095,7 +1206,14 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           }
         }
         const person = people.get(pkey);
+        // IMPORT-5 (7c): a row read into someone already on this list of people is accounted for, never silently gone
+        if (person !== fresh && t.kind === "people") merged.push({ sheet: t.sheet, line: b.line, name: who.name, into: person.name, intoLine: person.lines[0], by: linkedBy || "name" });
+        // the address is one block: it comes from one row, never a street from one and a city from another
+        if (!person.address && fresh.address) for (const f of ["address", "address2", "city", "state", "zip", "addressFrom", "addressCheck", "addressBad"]) person[f] = fresh[f];
         for (const f of ["email", "phone", "address", "address2", "city", "state", "zip", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
+        // a bad-number note is about the number on its own row
+        if (fresh.phoneBad && person.phone && phoneKey(person.phone) === phoneKey(fresh.phone) && !person.phoneBad) person.phoneBad = fresh.phoneBad;
+        if (fresh.addressBad && person.address === fresh.address && !person.addressBad) person.addressBad = fresh.addressBad;
         for (const fl of fresh.flags) if (!person.flags.includes(fl)) person.flags.push(fl);
         person.lines.push(`${t.sheet}:${b.line}`);
         if (person.externalId) byId.set(person.externalId.toLowerCase(), pkey);
@@ -1120,7 +1238,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      reason: out ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
         continue;
       }
-      const status = s(get(b, "status")).toLowerCase();
+      const statusCol = role("status");
+      const statusWord = s(get(b, "status")).toLowerCase();
+      // a known export's own codes (DonorPerfect's G and P) read as the words they stand for
+      const status = statusCol && statusCol.values && statusCol.values[statusWord] ? statusCol.values[statusWord] : statusWord;
       const type = s(get(b, "type"));
       if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
       if (status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
@@ -1218,10 +1339,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });
-      // a pledge needs due dates: with no date in the file they count from the
-      // event's date, or else the day of the import, and the pledge says so
-      const dueBase = date || eventDateAnswer || T;
-      if (!date) noteParts.push(`Your file gave no date, so its due dates count from ${dueBase}`);
+      // IMPORT-5: a pledge's due dates come from the file, or from her answer
+      // (the event's date, a date she chose, or "No set due date"). Never from
+      // the day of the import: Steward does not make up a day.
+      const ownDate = datedBy === "file" || datedBy === "you" ? date : null;
+      const dueBase = ownDate || pledgeDueBase;
+      if (!ownDate) noteParts.push(dueBase ? `Your file gave no date. Due dates count from ${dueBase}, ${answers.pledgeDue === "choose" ? "the date you chose" : "the event's date"}` : "No set due date");
       if (freq.kind === "multiYear" && freq.years > 1) {
         const yearly = cents(amt);
         const total = multiTotal != null && cents(multiTotal) > 0 ? cents(multiTotal) : yearly * freq.years;
@@ -1230,9 +1353,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         for (let k = 0; k < freq.years; k++) {
           const amtK = k === freq.years - 1 ? remaining : Math.min(yearly, remaining);
           remaining -= amtK;
-          installments.push({ seq: k + 1, dueDate: addYears(dueBase, k), cents: amtK, paid: k === 0 && paid });
+          installments.push({ seq: k + 1, dueDate: dueBase ? addYears(dueBase, k) : null, cents: amtK, paid: k === 0 && paid });
         }
-        pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
+        pledges.push({ ...base, datedBy: ownDate ? datedBy : (dueBase ? answers.pledgeDue : "none"), note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
                        paidCents: paid ? yearly : 0, openCents: total - (paid ? yearly : 0),
                        thisYearCents: yearly, dueDate: dueBase, why: `"${freq.original}": ${fmt$(total)} over ${freq.years} years, ${fmt$(yearly)} a year` + (paid ? ", the first year paid" : "") });
         person.roles.add("pledger");
@@ -1241,8 +1364,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       }
       if (!paid) {
         pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: cents(amt), years: 1, thisYearCents: cents(amt), paidCents: 0, openCents: cents(amt),
-                       installments: [{ seq: 1, dueDate: yearEnd(dueBase), cents: cents(amt), paid: false }],
-                       dueDate: yearEnd(dueBase), why: paidSource === "you" ? "you said not yet paid" : /^pledge$/i.test(methodRaw) ? `Method "Pledge": a promise, not yet paid`
+                       installments: [{ seq: 1, dueDate: singleDue(dueBase), cents: cents(amt), paid: false }],
+                       dueDate: singleDue(dueBase), datedBy: ownDate ? datedBy : (dueBase ? answers.pledgeDue : "none"), why: paidSource === "you" ? "you said not yet paid" : /^pledge$/i.test(methodRaw) ? `Method "Pledge": a promise, not yet paid`
                          : pledgeList && !paidCol ? `"${t.header[role("amount").index]}": a promise, not yet paid` : `"${t.header[(paidCol || role("status") || {}).index] || "Status"}" says not yet paid` });
         person.roles.add("pledger");
         continue;
@@ -1280,19 +1403,55 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     }
   }
 
-  // ── the event: named by a title row, the file name, or her answer. Its date
-  // is optional; the gifts stay undated unless she says to use it.
+  // ── the event: named by a title row, the file name, or her answer.
+  // IMPORT-5 · DATES ARE ASKED, NEVER INVENTED. When the file names an event
+  // (a guest list, a title row, or a file name with an event word) and holds
+  // no dates, the event's date is a question that blocks: without it, every
+  // gift would land "No date" and every pledge be due from a made-up day.
   const undatedCount = gifts.filter(g => !g.date).length;
   const suggestedEventName = eventNameFromTitles(tables) || eventNameFromFile(fileName);
-  const eventWanted = hasEngagement || (answers.linkEvent && answers.eventName);
-  if (hasEngagement) {
-    // a name Steward cannot guess is a real question: attendance needs an event
-    questions.push({ id: "event", kind: "event", optional: !!(answers.eventName || suggestedEventName), text: "What was this event called, and when?",
-                     hint: "Steward found who was invited and who came. The date is optional.",
-                     suggestedEventName: answers.eventName || suggestedEventName, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
+  const evName = s(answers.eventName) || suggestedEventName || "";
+  const fileHasDates = usable.some(t => t.cols.some(c => c.role === "date"));
+  // a title row or a file name names the event only for a file with no dates:
+  // a dated gift export called "Gala gifts" is gifts, not an event to create
+  const eventNamed = !answers.notEvent && (hasEngagement || !!(answers.linkEvent && answers.eventName)
+    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || EVENT_WORD_RE.test(suggestedEventName)))));
+  const eventWanted = eventNamed || (answers.linkEvent && answers.eventName);
+  // the gifts that would take the event's date: no date of their own
+  const eventGiftCount = gifts.filter(g => !g.date || g.datedBy === "event").length;
+  const undatedPledges = pledges.filter(p => p.datedBy !== "file" && p.datedBy !== "you");
+  const rowsInFile = usable.reduce((a, t) => a + (t.readCount != null ? t.readCount : dataRows(t).length), 0);
+  const eventNeedsDate = eventNamed && !eventDateAnswer && (eventGiftCount + undatedPledges.length > 0 || (hasEngagement && !fileHasDates));
+  if (eventNamed) {
+    const named = evName ? `the ${evName}` : "this event";
+    questions.push({ id: "event", kind: "event", optional: !!evName && !eventNeedsDate, required: eventNeedsDate,
+                     text: eventNeedsDate ? `When was ${named}?` : "What was this event called, and when?",
+                     holds: fileHasDates ? null : `${rowsInFile.toLocaleString("en-US")} ${rowsInFile === 1 ? "row" : "rows"}, no dates`,
+                     hint: eventNeedsDate ? `Your file names ${named} but gives no date, so Steward asks rather than make one up. Import waits for it.`
+                       : "Steward found who was invited and who came.",
+                     canSayNotEvent: !hasEngagement,
+                     suggestedEventName: evName || null, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
   }
-  // undated gifts are one optional question for the whole file, never a block
-  if (undatedCount && !dateAnswer) {
+  if (eventNamed && eventDateAnswer && eventGiftCount && typeof answers.useEventDate !== "boolean") {
+    questions.push({ id: "eventGifts", kind: "useEventDate", count: eventGiftCount, eventName: evName || null, eventDate: eventDateAnswer,
+                     text: `Use the ${evName || "event"} date for ${eventGiftCount === 1 ? "this gift" : `these ${eventGiftCount.toLocaleString("en-US")} gifts`}?`,
+                     hint: "Yes dates them on the event's day. No leaves them No date: they count in Lifetime and the event's total, not in This year, a goal or retention.",
+                     options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, leave them No date" }] });
+  }
+  // pledges: each needs a due date or an explicit "No set due date", asked once
+  const pledgeDueAnswered = answers.pledgeDue === "none" || (answers.pledgeDue === "event" && !!eventDateAnswer) || (answers.pledgeDue === "choose" && !!pledgeDueDate);
+  if (undatedPledges.length && !pledgeDueAnswered) {
+    const multi = undatedPledges.filter(p => p.years > 1).length;
+    questions.push({ id: "pledgeDue", kind: "pledgeDue", count: undatedPledges.length, multiYear: multi,
+                     text: `When are ${undatedPledges.length === 1 ? "this pledge" : `these ${undatedPledges.length.toLocaleString("en-US")} pledges`} due?`,
+                     hint: (eventDateAnswer ? `From the event's date: a one-year pledge is due by ${longIso(yearEnd(eventDateAnswer))}` : "Your file gives no due dates")
+                       + (multi ? `; ${plural(multi, "multi-year pledge")} ${multi === 1 ? "gets" : "get"} a yearly installment from the first date.` : ".")
+                       + " Steward never counts from the day of the import.",
+                     options: [...(eventNamed ? [{ key: "event", label: "Same as the event date", needs: eventDateAnswer ? null : "the event's date" }] : []),
+                               { key: "choose", label: "A date I choose" }, { key: "none", label: "No set due date" }] });
+  }
+  // undated gifts with no event are one optional question, never a block
+  if (!eventNamed && undatedCount && !dateAnswer) {
     questions.unshift({ id: "date", kind: "date", optional: true, count: undatedCount,
                         text: undatedCount === 1 ? "1 gift has no date." : `${undatedCount.toLocaleString("en-US")} gifts have no date.`,
                         hint: "They import either way, each marked No date. They count in Lifetime and the event's total, never in This year, a goal or retention, until they have a date.",
@@ -1322,6 +1481,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const yearEndT = `${T.slice(0, 4)}-12-31`;
   const pledgeDueThisYear = pledges.reduce((a, p) => a + (p.installments || []).filter(i => !i.paid && i.dueDate && i.dueDate <= yearEndT).reduce((x, i) => x + i.cents, 0), 0);
   const pledgeYears = pledges.reduce((a, p) => Math.max(a, p.years || 1), 0);
+  const pledgeUndatedCents = pledges.reduce((a, p) => a + (p.installments || []).filter(i => !i.paid && !i.dueDate).reduce((x, i) => x + i.cents, 0), 0);
   const paidInstallments = gifts.filter(g => g.kind === "installment").reduce((a, g) => a + g.cents, 0);
   const unpaidRowCents = pledges.filter(p => !p.firstPaid).reduce((a, p) => a + p.thisYearCents, 0);
   // "raised" in the file's own terms: this year's amount on every row read
@@ -1347,6 +1507,19 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const members = p => Math.max(1, p.people.length);
   const comm = k => peopleList.filter(p => p.comms[k]).length;
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
+  // IMPORT-5 (7c): every row of a list of people is a person, a row merged into
+  // one, or a row set aside, and the line says so: "656 rows · 650 people · 6 merged"
+  const rowAccount = (() => {
+    const pt = usable.filter(t => t.kind === "people");
+    if (!pt.length || giftTables.length) return null;
+    const keys = new Set(pt.map(t => t.sheet));
+    const rows = pt.reduce((a, t) => a + (t.readCount || 0), 0);
+    const asideRows = aside.filter(x => keys.has(x.sheet)).length;
+    const parts = [plural(rows, "row"), plural(peopleList.length, "person", "people")];
+    if (merged.length) parts.push(`${merged.length.toLocaleString("en-US")} merged with a near-duplicate`);
+    if (asideRows) parts.push(`${asideRows.toLocaleString("en-US")} set aside`);
+    return { rows, people: peopleList.length, merged: merged.length, aside: asideRows, balanced: rows === peopleList.length + merged.length + asideRows, sentence: parts.join(" · ") };
+  })();
   // FIX-52 · THE SHEET'S OWN FIGURES. Counts written above a header ("People
   // 443", "Invited 422") are notes, never people, and the preview's counts are
   // checked against them. A sheet counts rows; a couple's row is one row and
@@ -1379,17 +1552,18 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         : `${t.sheet} says ${m[1].trim()} ${stated}, but Steward reads ${rows.toLocaleString("en-US")} ${WORD[kind] === "people" ? "rows" : WORD[kind]}${rows !== ppl ? ` (${ppl.toLocaleString("en-US")} people)` : ""}. Check before importing.` });
   }
   return {
-    fileKind, ready,
+    fileKind, ready, knownShape: knownShapeSentence(tables.filter(t => t.kind === "gifts" || t.kind === "people").map(t => t.shape)),
     tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer,
       rows: t.readCount != null ? t.readCount : dataRows(t).length,
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks,
+    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, merged, rowAccount,
+    addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
                    ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
-    event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement } : null,
+    event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement, named: eventNamed } : null,
     counts: {
       people: persons, persons, records: peopleList.length,
       households: peopleList.filter(p => p.household).length,
@@ -1403,14 +1577,16 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       prospects: peopleList.filter(p => p.roles.includes("prospect")).length,
       contacts: peopleList.filter(p => p.roles.includes("contact")).length,
       gifts: gifts.length, giftCents, undatedGifts: gifts.filter(g => !g.date).length, undatedGiftCents: gifts.filter(g => !g.date).reduce((a, g) => a + g.cents, 0),
-      pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear, pledgeDueThisYearCents: pledgeDueThisYear, pledgeYears,
+      pledges: pledges.length, pledgeCents, pledgeOpenCents, pledgeThisYearCents: pledgeThisYear, pledgeDueThisYearCents: pledgeDueThisYear, pledgeYears, pledgeUndatedCents,
       paidInstallmentCents: paidInstallments, rowCents, aside: aside.length, asideCents, monthly: flags.length,
       invited: att.filter(p => p.attendance.invited).reduce((a, p) => a + members(p), 0),
       rsvp: att.filter(p => p.attendance.rsvp === true).reduce((a, p) => a + members(p), 0),
       attended: att.filter(p => p.attendance.attended).reduce((a, p) => a + members(p), 0),
       optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
       doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
-      kept: keptHeaders.size, nearMisses: nearMisses.length,
+      kept: keptHeaders.size, nearMisses: nearMisses.length, merged: merged.length,
+      addressesSplit: peopleList.filter(p => p.addressFrom).length, addressesToCheck: peopleList.filter(p => p.addressCheck).length,
+      phonesMarkedWrong: peopleList.filter(p => p.phoneBad).length, addressesMarkedReturned: peopleList.filter(p => p.addressBad).length,
       invitedRecords: recordCounts.invited, rsvpRecords: recordCounts.rsvp, attendedRecords: recordCounts.attended,
     },
     totalsSentence, needsDate: undatedCount > 0,
@@ -1469,11 +1645,12 @@ export function importButtonSentence(u, extra = {}) {
   if (c.volunteers) sub.push(plural(c.volunteers, "volunteer"));
   parts.push(`${plural(c.persons || 0, "person", "people")}${sub.length ? ` (${sub.join(", ")})` : ""}`);
   if (c.gifts) parts.push(`${plural(c.gifts, "gift")} ${fmt$(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} undated)` : ""}`);
-  if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears }, fmt$)}`);
+  if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears, undatedCents: c.pledgeUndatedCents }, fmt$)}`);
   if (u.event && u.event.name && u.event.fromEngagement) parts.push(`${u.event.name}: ${c.attended.toLocaleString("en-US")} attended`);
   if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
   if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
   if (extra.matched) parts.push(`${extra.matched.toLocaleString("en-US")} already in Steward`);
+  if (extra.waiting) parts.push(`${extra.waiting.toLocaleString("en-US")} waiting on your answer`);
   const importText = "Import " + parts.join(" · ");
   return review ? { review, text: `Review ${c.aside.toLocaleString("en-US")} set aside first`, importText } : { review, text: importText, importText };
 }
@@ -1484,6 +1661,8 @@ function addYears(iso, k) {
   return `${y + k}-${String(m).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 function yearEnd(iso) { return `${iso.slice(0, 4)}-12-31`; }
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function longIso(iso) { return `${MONTH_NAMES[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}, ${iso.slice(0, 4)}`; }
 // FNV-1a, 32-bit, twice with different seeds → 16 hex. Stable across Node and browsers.
 function hash(str) {
   let h1 = 0x811c9dc5, h2 = 0x01000193 ^ 0x5bd1e995;
@@ -1517,6 +1696,43 @@ export function tablesForModel(sheets) {
   for (const sh of sheets || []) findTables(sh.name, sh.grid || []).tables.forEach((t, i) => out.push({ key: `${sh.name}#${i + 1}`, table: t }));
   return out;
 }
+
+// IMPORT-5 · SAVED MAPPINGS. Her answers about a file's columns are kept per
+// org against the file's header set (every table's headers, normalised, order
+// and sheet names ignored), by header, never by position, so the next export
+// from the same system reads with no column questions.
+const mapHeader = h => s(h).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export function headerSetKey(sheets) {
+  const hs = new Set();
+  for (const { table } of tablesForModel(sheets)) for (const h of table.header) { const k = mapHeader(h); if (k) hs.add(k); }
+  return hs.size ? "sheet:" + [...hs].sort().join("|") : null;
+}
+export function fileHeaders(sheets) {
+  const hs = [];
+  for (const { table } of tablesForModel(sheets)) for (const h of table.header) if (s(h) && !hs.includes(s(h))) hs.push(s(h));
+  return hs;
+}
+// overrides { "<table>|<index>": role } → { "<normalised header>": role }
+export function mappingFromOverrides(sheets, overrides = {}) {
+  const out = {};
+  for (const { key, table } of tablesForModel(sheets)) for (const [k, role] of Object.entries(overrides || {})) {
+    const [tk, idx] = String(k).split("|");
+    if (tk !== key || !(role in ROLE_LABELS)) continue;
+    const h = mapHeader(table.header[+idx]);
+    if (h) out[h] = role;
+  }
+  return out;
+}
+// the reverse, for this file's positions
+export function overridesFromMapping(sheets, mapping = {}) {
+  const out = {};
+  for (const { key, table } of tablesForModel(sheets)) table.header.forEach((h, i) => {
+    const role = mapping[mapHeader(h)];
+    if (role && role in ROLE_LABELS) out[`${key}|${i}`] = role;
+  });
+  return out;
+}
+export function roleLabel(role) { return ROLE_LABELS[role] || null; }
 
 // When the file should be read by this reader rather than the column mapper:
 // whenever the mapper would dead-end ("shape unclear", "0 donors + 0 gift

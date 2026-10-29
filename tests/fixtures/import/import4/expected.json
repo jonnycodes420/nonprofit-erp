@@ -128,13 +128,13 @@
   },
   "u03-names-every-way.csv": {
     "ugly": true,
-    "persons": 6,
-    "households": 2,
-    "gifts": 5,
-    "giftCents": 105000,
+    "persons": 10,
+    "households": 4,
+    "gifts": 7,
+    "giftCents": 127500,
     "undatedGifts": 0,
     "asideCents": 0,
-    "fileCents": 105000,
+    "fileCents": 127500,
     "columns": {
       "total": 3,
       "mapped": 3,

@@ -154,12 +154,12 @@ export function interactive(onClick, opts = {}) {
 // module's scope — shared.jsx itself calls fmt()/fmtFull() (GivingHistoryChart,
 // buildContext). A re-export alone left them undefined here and crashed the
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
-import { fmt, fmtFull, quietPhrase } from "../lib/money";
+import { fmt, fmtFull, fmtTotal, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
 import { rowOpenProps } from "../lib/rowOpen";
 import { civilDaysAgo } from "../lib/orgToday";
 import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
-export { fmt, fmtFull, quietPhrase };
+export { fmt, fmtFull, fmtTotal, quietPhrase };
 // FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
 // `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
 // York, so a meeting stored a day ahead read "(Today)" at 11pm.
@@ -281,9 +281,12 @@ export const STAGES = [
   {id:"lapsed",    label:"Lapsed",    color:T.gold600, hint:"Needs re-engagement"},   // FIX-2 C: overdue is brass, never red
 ];
 // POLISH-1 — a phone number on a screen: formatted, and a tap dials it.
-export function Phone({ value, style }) {
+// IMPORT-5 (7d): a number marked wrong ("Incorrect number" in her notes) is
+// kept as history, struck through, and never a link to dial or text.
+export function Phone({ value, style, bad, badWhy }) {
   const href = phoneHref(value);
   const text = phoneDisplay(value);
+  if (bad) return <span data-phone-bad="" title={badWhy || "Marked wrong. Steward will not dial or text it."} style={{ textDecoration: "line-through", ...style }}>{text}</span>;
   return href ? <a href={href} data-phone="" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: 3, ...style }}>{text}</a> : <span style={style}>{text}</span>;
 }
 // POLISH-1 — a stage's name on a screen, from STAGES: never its stored key.

@@ -15,7 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
-import SpreadsheetImport, { readSheetFile } from "../components/SpreadsheetImport";
+import SpreadsheetImport, { readSheetFile, filesAsOne } from "../components/SpreadsheetImport";
 
 const TOOLS = [
   ["stripe", "Stripe"], ["paypal", "PayPal"], ["zeffy", "Zeffy"], ["givebutter", "Givebutter"],
@@ -182,7 +182,9 @@ function Plan({ run, held, onRun, onChange, onStart }) {
   const open = async f => {
     setOpening(f.id); setErr("");
     try {
-      const file = (held && held[f.name]) || fileFromStored(await apiFetch(`/setup/runs/${run.id}/files/${encodeURIComponent(f.id)}`));
+      const stored = async (id, name) => (held && held[name]) || fileFromStored(await apiFetch(`/setup/runs/${run.id}/files/${encodeURIComponent(id)}`));
+      // IMPORT-5: a pair from one system opens as one import, both files together
+      const file = f.fileIds ? filesAsOne(await Promise.all(f.fileIds.map((id, i) => stored(id, (f.fileNames || [])[i])))) : await stored(f.id, f.name);
       setImporting({ id: f.id, file });
     } catch (e) { setErr(errorMessage(e, "That file could not be opened.")); }
     setOpening(null);

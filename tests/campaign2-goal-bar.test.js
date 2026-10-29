@@ -39,8 +39,9 @@ async function reset() {
   for (const t of ["donors", "campaigns", "fin_funds", "accounts", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone)
-           VALUES ($1,'Harbor Bar Trust',$2,1,'active','growth','America/New_York')`, [ORG, SLUG]);
+  // FUNDRAISING-2: a giving page opens only once the org can take money.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_connected,stripe_account_id)
+           VALUES ($1,'Harbor Bar Trust',$2,1,'active','growth','America/New_York',true,'acct_c2bar')`, [ORG, SLUG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role)
            VALUES ($1,$2,$3,$4,'Bar Admin','admin')`,
     ["u_c2bar", ORG, "c2bar@example.org", bcrypt.hashSync("demo1234", 10)]);

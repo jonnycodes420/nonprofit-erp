@@ -51,10 +51,11 @@ ok(/function StatTile\(\{[^}]*onClick/.test(fund), "StatTile accepts onClick");
 ok(/<div \{\.\.\.interactive\(onClick/.test(fund), "StatTile applies interactive(onClick)");
 // All four Overview stat tiles route somewhere
 ok(count(fund, 'onNavigate && onNavigate("reports")') >= 2, "Raised + Gifts tiles → Reports");
-ok(has(fund, 'onClick={() => onGoto && onGoto("campaigns")}'), "Active campaigns tile → Campaigns");
+// FUNDRAISING-2: the Active campaigns tile is gone (the roll-up is the one total); Pledges took its place.
+ok(has(fund, '<PledgeTile p={pledges} onOpen={() => onGoto && onGoto("pledges")}'), "Pledges tile → Pledges");
 ok(has(fund, 'onClick={() => onGoto && onGoto("pages")}'), "Live giving pages tile → Giving Pages");
 // Leading campaign card interactive; recent-gift rows deep-link to donor
-ok(has(fund, 'interactive(() => onGoto && onGoto("campaigns"), { label: `View campaign'), "Leading campaign card → Campaigns");
+ok(has(fund, 'interactive(onOpen, { label: `View campaign'), "Leading campaign card → its campaign");
 ok(has(fund, 'onNavigate("donors", { selectDonorId: g.donorId })'), "Recent-gift row → donor profile");
 // The old dead hidden button is gone
 ok(!has(fund, 'style={{ display: "none" }}'), "dead hidden nav button removed");

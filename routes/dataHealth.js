@@ -119,6 +119,8 @@ const NOT_MOVED = {
   "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
   "insight_outcomes.donor_ids": "INSIGHTS-1: who a suggestion was about when she marked it Done, Not now or Doesn't fit; a record of what happened, never rewritten",
   "insight_shown.donor_ids": "INSIGHTS-1: who a suggestion showed when it was first shown, for What worked; a record of what happened, never rewritten",
+  "name_fixes.donor_id": "IMPORT-5: the record a comma-couple fix renamed, for its Undo; a record of what that click did, never moved",
+  "name_fixes.created_donor_id": "IMPORT-5: the second person a comma-couple fix made, for its Undo; a record of what that click did, never moved",
 };
 // Tables with no `id` column: a row is found by these columns plus the pointer.
 const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"], insight_reviews: ["gift_id"] };
@@ -211,13 +213,30 @@ function unreachableRows(people) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// IMPORT-5 · couples written with a comma ("Alex, Brad Hubbard", or the old
+// reading "Brad Hubbard Alex" on a record an import made). Proposed only; a
+// record already in a household or fixed before is left alone.
+const SR = () => import("../shared/sheetRead.js");
+async function coupleRows(orgId, people) {
+  const R = await SR();
+  const dismissed = await dismissedKeys(orgId, "couple");
+  const out = [];
+  for (const d of people) {
+    if (d.household_id || d.kind === "organization" || dismissed.has(`${d.id}:${d.name}`)) continue;
+    const f = R.commaCoupleFix(d.name, { imported: !!d.created_import_id });
+    if (f) out.push({ donorId: d.id, name: d.name, before: f.before, after: f.household, people: f.people });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // The counts, computed once. The page, the nightly run and the import hook
 // all read this, so a count and the rows it opens cannot disagree.
 async function healthCounts(orgId) {
   const people = await livePeople(orgId);
-  const [pairs, addresses, emails, moves] = await Promise.all([
+  const [pairs, addresses, emails, moves, couples] = await Promise.all([
     duplicatePairs(orgId, people), addressRows(orgId, people), emailRows(orgId, people),
     query("SELECT COUNT(*)::int AS n FROM ncoa_moves WHERE org_id=? AND status='pending'", [orgId]),
+    coupleRows(orgId, people),
   ]);
   const [{ n: ncoaFiles } = { n: 0 }] = await query("SELECT COUNT(*)::int AS n FROM ncoa_batches WHERE org_id=?", [orgId]);
   return {
@@ -230,6 +249,7 @@ async function healthCounts(orgId) {
     hasNcoaFile: ncoaFiles > 0,
     emails: emails.length,
     unreachable: unreachableRows(people).length,
+    couples: couples.length,
     _pairs: pairs, _people: people,
   };
 }
@@ -776,6 +796,64 @@ app.post("/data-health/addresses/dismiss", requireAuth, checkWriteAccess, wrap(a
 app.get("/donors/:id/address-history", requireAuth, wrap(async (req, res) => {
   const rows = await query(`SELECT id, source, before, after, created_by_name, created_at FROM donor_address_history WHERE org_id=? AND donor_id=? ORDER BY created_at DESC`, [req.user.orgId, req.params.id]);
   res.json({ history: rows });
+}));
+
+// ── Couples written with a comma (IMPORT-5) ────────────────────────────────
+app.get("/data-health/couples", requireAuth, wrap(async (req, res) => {
+  const rows = await coupleRows(req.user.orgId, await livePeople(req.user.orgId));
+  res.json({ rows, sentence: `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name looks like a couple" : "names look like couples"} written with a comma` });
+}));
+// Her click: each record becomes the first person, a second person is made
+// beside them, and both share a new household. Re-decided from the record as
+// it is now, never from the screen. One batch, undone whole.
+app.post("/data-health/couples/apply", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body?.donorIds) ? [...new Set(req.body.donorIds.map(String))].slice(0, 2000) : [];
+  if (!ids.length) return res.status(400).json({ error: "Choose at least one name." });
+  const orgId = req.user.orgId, me = await who(req);
+  const people = await query(`SELECT ${PERSON_COLS}, stage, status, person_types, spouse_name FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
+  const props = new Map((await coupleRows(orgId, people)).map(r => [r.donorId, r]));
+  const batchId = "nfb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const touched = [];
+  await withTransaction(async (client) => {
+    for (const d of people) {
+      const p = props.get(d.id);
+      if (!p) continue;
+      const hh = "hh_" + uuid().slice(0, 10), other = "d_" + uuid().replace(/-/g, "").slice(0, 16);
+      await runTx(client, "INSERT INTO households (id, org_id, name, primary_donor_id) VALUES (?,?,?,?)", [hh, orgId, p.after.slice(0, 200), d.id]);
+      await runTx(client, `INSERT INTO donors (id, org_id, name, kind, address, address2, city, state, zip, stage, status, person_types, household_id, spouse_name, created_by, created_by_name)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?)`,
+        [other, orgId, p.people[1], d.kind || null, d.address || null, d.address2 || null, d.city || null, d.state || null, d.zip || null, d.stage || null, d.status || "active",
+         JSON.stringify(typeof d.person_types === "string" ? JSON.parse(d.person_types) : (d.person_types || [])), hh, p.people[0], me.id, me.name]);
+      await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.people[0], p.people[1], hh, d.id, orgId]);
+      await runTx(client, `INSERT INTO name_fixes (id, org_id, batch_id, kind, donor_id, before_name, before_spouse_name, before_household_id, after_name, created_donor_id, created_household_id, created_by, created_by_name)
+                           VALUES (?,?,?,'comma_couple',?,?,?,?,?,?,?,?,?)`,
+        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.spouse_name || null, d.household_id || null, p.people[0], other, hh, me.id, me.name]);
+      touched.push(d.id, other);
+    }
+  });
+  if (touched.length) await require("../afterChange").afterChange(orgId, touched, { door: "data_health_couples" }).catch(e => console.error("[data-health] couples after change:", e.message));
+  const n = touched.length / 2;
+  res.status(201).json({ applied: n, batchId, sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "name is" : "names are"} now two people in one household.` });
+}));
+app.post("/data-health/couples/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, batchId = String(req.body?.batchId || "");
+  const rows = await query("SELECT * FROM name_fixes WHERE org_id=? AND batch_id=? AND undone_at IS NULL", [orgId, batchId]);
+  if (!rows.length) return res.status(404).json({ error: "Nothing to undo." });
+  const touched = [];
+  await withTransaction(async (client) => {
+    for (const r of rows) {
+      await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
+        [r.before_name, r.before_spouse_name, r.before_household_id, r.donor_id, orgId]);
+      // the person the fix made goes, with what the after-change step wrote about them
+      for (const t of ["donor_scores", "donor_drift", "donor_rhythm"]) await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id=?`, [orgId, r.created_donor_id]).catch(() => {});
+      await runTx(client, "DELETE FROM donors WHERE id=? AND org_id=?", [r.created_donor_id, orgId]);
+      await runTx(client, "DELETE FROM households WHERE id=? AND org_id=?", [r.created_household_id, orgId]);
+      await runTx(client, "UPDATE name_fixes SET undone_at=NOW() WHERE id=? AND org_id=?", [r.id, orgId]);
+      touched.push(r.donor_id);
+    }
+  });
+  await require("../afterChange").afterChange(orgId, touched, { door: "data_health_couples_undo" }).catch(() => {});
+  res.json({ undone: rows.length, sentence: `Undone. ${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name is" : "names are"} back as they were.` });
 }));
 
 // ── Emails ─────────────────────────────────────────────────────────────────

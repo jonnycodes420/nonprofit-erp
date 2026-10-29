@@ -24,7 +24,7 @@
 //   skip      [names] of checks to leave out, e.g. ["atlas"] for a suite
 //             whose org pauses Atlas. Names: people, gifts, thisYear,
 //             vsLastYear, homeLine, drift, groups, events, campaigns,
-//             moveReport, search, ask, atlas, exports, deleted, finance,
+//             moveReport, search, ask, atlas, exports, deleted, finance, pledges,
 //             mailCampaigns (SECURE-2: a sent email campaign says what it did,
 //             the same on every surface, from campaign_recipients)
 //
@@ -381,6 +381,62 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     }
   }
 
+  // ── PLEDGES: open, due this fiscal year, overdue (FUNDRAISING-2) ─────────
+  // One answer from the database, Fundraising's Overview, its Pledges view
+  // (totals and rows), Home's "Are we on pace?", each profile, and each event
+  // page: what is still to come at the event equals the Pledges rows made there.
+  if (!skip.has("pledges")) {
+    const pl = await get("/fundraising/pledges");
+    if (pl && pl.yearEnd && Array.isArray(pl.pledges)) {
+      const LIVEP = `p.org_id = $1 AND p.status = 'open' AND EXISTS (SELECT 1 FROM donors d WHERE d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL)`;
+      const PAID = `COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = p.org_id AND g.pledge_id = p.id), 0)`;
+      const NOSCHED = `NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)`;
+      const dueBy = (op) => `(SELECT COALESCE(SUM(ROUND(i.amount*100)),0) FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+                               WHERE ${LIVEP} AND i.paid_gift_id IS NULL AND i.due_date ${op} $2)
+                           + (SELECT COALESCE(SUM(ROUND(GREATEST(p.amount - ${PAID}, 0)*100)),0) FROM pledges p
+                               WHERE ${LIVEP} AND ${NOSCHED} AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} $2))`;
+      const [[open], [due], [overdue]] = await Promise.all([
+        q(`SELECT COALESCE(SUM(ROUND(GREATEST(p.amount - ${PAID}, 0)*100)),0)::bigint AS c FROM pledges p WHERE ${LIVEP}`, [orgId]),
+        q(`SELECT (${dueBy("<=")})::bigint AS c`, [orgId, pl.yearEnd]),
+        q(`SELECT (${dueBy("<")})::bigint AS c`, [orgId, pl.today]),
+      ]);
+      const dash = await get("/dashboards/fundraising").catch(() => null);
+      const answerFigs = {};
+      for (const part of ((dash && dash.answer && dash.answer.parts) || [])) if (part.figure && part.figure.key) answerFigs[part.figure.key] = part.figure.value;
+      const fp = (fund && fund.pledges) || {};
+      const rowsSum = k => pl.pledges.reduce((n, r) => n + cents(r[k]), 0);
+      // every profile with an open pledge, in parallel
+      const donorIds = [...new Set(pl.pledges.map(r => r.donorId))].slice(0, 200);
+      const profiles = await Promise.all(donorIds.map(id => get(`/donors/${encodeURIComponent(id)}/pledges`).then(b => Array.isArray(b) ? b : []).catch(() => [])));
+      const prof = k => profiles.flat().filter(r => r.status === "open").reduce((n, r) => n + cents(r[k]), 0);
+      agree("pledged, still to come", [["the database", Number(open.c)], ["Pledges", cents(pl.open)], ["Pledges' rows", rowsSum("balance")],
+        ["Fundraising's Overview", fp.open === undefined ? undefined : cents(fp.open)], ["Home", answerFigs.pledgedOutstanding === undefined ? undefined : cents(answerFigs.pledgedOutstanding)],
+        ["the profiles", donorIds.length ? prof("balance") : undefined]], money);
+      agree("pledged, due this fiscal year", [["the database", Number(due.c)], ["Pledges", cents(pl.dueThisYear)], ["Pledges' rows", rowsSum("dueThisYear")],
+        ["Fundraising's Overview", fp.dueThisYear === undefined ? undefined : cents(fp.dueThisYear)], ["Home", answerFigs.pledgedDueThisYear === undefined ? undefined : cents(answerFigs.pledgedDueThisYear)],
+        ["the profiles", donorIds.length ? prof("dueThisYear") : undefined]], money);
+      agree("pledged, overdue", [["the database", Number(overdue.c)], ["Pledges", cents(pl.overdue)], ["Pledges' rows", rowsSum("overdue")],
+        ["Fundraising's Overview", fp.overdue === undefined ? undefined : cents(fp.overdue)]], money);
+      // each event: its page's pledges over all years = the Pledges rows made there;
+      // its page's "came" = the people marked as having come
+      const evIds = [...new Set([...pl.pledges.filter(r => r.madeAt && r.madeAt.kind === "event").map(r => r.madeAt.id),
+                                 ...eventRows.filter(e => e.attended > 0).map(e => e.id)])].slice(0, 20);
+      const evReports = await Promise.all(evIds.map(id => get(`/events/${encodeURIComponent(id)}/report`).catch(() => null)));
+      evIds.forEach((id, i) => {
+        const st = evReports[i] && evReports[i].story;
+        if (!st) return;
+        const rows = pl.pledges.filter(r => r.madeAt && r.madeAt.kind === "event" && r.madeAt.id === id);
+        const e = eventRows.find(x => x.id === id) || {};
+        agree(`event "${st.name}" pledged, all years`, [["its event page", st.pledgedAllCents], ["Pledges' rows made there", rows.reduce((n, r) => n + cents(r.balance), 0)]], money);
+        agree(`event "${st.name}" came`, [["the database", e.attended], ["its event page", st.attended]]);
+        if (fund && fund.leadEvent && fund.leadEvent.id === id) {
+          agree(`event "${st.name}" on Fundraising's lead card`, [["its event page", st.raisedCents], ["Fundraising's Overview", fund.leadEvent.raisedCents]], money);
+          agree(`event "${st.name}" came and didn't give, on the lead card`, [["its event page", st.cameDidntGive], ["Fundraising's Overview", fund.leadEvent.cameDidntGive]]);
+        }
+      });
+    }
+  }
+
   // ── THE MOVE REPORT: what Steward holds is live people's gifts ───────────
   if (!skip.has("moveReport") && Array.isArray(reports)) {
     for (const [imp, body] of reports) {
@@ -464,6 +520,29 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skip.has("ask") && askN && askN.answered === false) diffs.push(`Ask could not answer "${ASK_N}": ${askN.sentence}`);
   agree("people who gave this year", [["the Board's People who gave", donorCount],
     ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]]);
+
+  // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
+  // open-pledge rows for that person and Home's pledge move say one number.
+  // Up to five people with an open pledge, the largest first.
+  if (!skip.has("pledges")) {
+    const owed = await q(`SELECT p.donor_id, d.name, ROUND(SUM(GREATEST(p.amount - COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = p.org_id AND g.pledge_id = p.id), 0), 0)) * 100)::bigint AS c
+                            FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+                           WHERE p.org_id = $1 AND p.status = 'open' GROUP BY 1, 2 HAVING SUM(p.amount) > 0 ORDER BY 3 DESC, 1 LIMIT 5`, [orgId]);
+    if (owed.length) {
+      const deck = (await get("/insights?view=deck")) || {};
+      const moves = ((deck.deck && deck.deck.tabs) || []).flatMap(t => t.moves || []);
+      for (const o of owed) {
+        const prof = await get(`/donors/${encodeURIComponent(o.donor_id)}/pledges`);
+        const profC = (Array.isArray(prof) ? prof : []).filter(x => x.status === "open").reduce((n, x) => n + cents(x.balance), 0);
+        const fr = await get(`/figures/pledges-open/rows?donor=${encodeURIComponent(o.donor_id)}&page=1&pageSize=200`);
+        const m = moves.find(x => (x.ids || []).includes(o.donor_id));
+        const homeC = m ? (m.facts || []).filter(f => f[0] === "still to come").reduce((n, f) => n + cents(num(f[1])), 0) : undefined;
+        const shown = [["the database", Number(o.c)], ["the profile's open pledge", profC], ["Fundraising's open pledges for them", fr ? cents(fr.value) : undefined],
+          ...(m ? [["Home's move", homeC]] : [])];
+        for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);
+      }
+    }
+  }
 
   for (const [name, b] of [["the Donors list", list], ["Home", lead], ["Fundraising", fund], ["the Board", board], ["the workbook export", workbook]]) {
     if (b && b.__error) diffs.push(`${name} did not answer: ${b.__error}`);

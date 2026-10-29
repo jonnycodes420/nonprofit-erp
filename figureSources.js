@@ -312,18 +312,59 @@ const ONLINE_GIFT_SQL = "(g.stripe_payment_id IS NOT NULL OR g.giving_page_id IS
 // never a soft or matching credit. A pledge's unpaid installment belongs by
 // the pledge's event; "this year" is before the event's first anniversary
 // (every installment when the event's date is not known), "later" after.
+// The unpaid installments of open pledges falling due on or before (<=) or
+// before (<) a day, plus what is left on a pledge with no schedule by its due
+// date. Overdue and due-this-year differ only in the day and the comparison.
+function pledgesDueSql(orgId, day, op) {
+  return {
+    sql: `SELECT i.id, 'pledge' AS type, p.donor_id, d.name, i.due_date AS date, ROUND(i.amount::numeric, 2) AS amount, 'Due' AS detail
+            FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+            JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+           WHERE i.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL AND i.paid_gift_id IS NULL AND i.due_date ${op} ?
+          UNION ALL
+          SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
+            FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+            LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+           WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
+             AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} ?)`,
+    args: [orgId, day, orgId, orgId, day],
+    order: "date ASC NULLS LAST, id",
+  };
+}
+
 const EVENT_GIFT_MATCH = (g = "g", e = "e") =>
   `(${g}.event_id = ${e}.id
      OR (${g}.event_id IS NULL AND ${e}.campaign_id IS NOT NULL AND ${g}.campaign_id = ${e}.campaign_id)
      OR (${g}.event_id IS NULL AND ${e}.campaign_id IS NULL AND ${g}.campaign = ${e}.name))
    AND ${NOT_CREDIT(g)}
    AND NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${g}.donor_id AND dx.org_id = ${g}.org_id AND dx.deleted_at IS NOT NULL)`;
+// IMPORT-5: an installment with no set due date counts by its place in the
+// pledge: the first is pledged at the event, the later ones are later years.
+// FUNDRAISING-2: every gift for an event and every pledge made at it, by
+// person. Takes (orgId, eventId) twice.
+const EVENT_GIVERS_SQL = `SELECT g.donor_id, g.amount FROM events e JOIN gifts g ON g.org_id = e.org_id AND ${EVENT_GIFT_MATCH("g", "e")}
+                            WHERE e.org_id = ? AND e.id = ?
+                          UNION ALL
+                          SELECT p.donor_id, p.amount FROM pledges p
+                            WHERE p.org_id = ? AND p.event_id = ? AND p.status <> 'cancelled'`;
 const EVENT_PLEDGE_OPEN = (i = "i", p = "p", e = "e", later = false) => {
   const due = `${i}.due_date < TO_CHAR((${e}.date + INTERVAL '1 year')::date, 'YYYY-MM-DD')`;
   return `${p}.status = 'open' AND ${i}.paid_gift_id IS NULL
    AND NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${p}.donor_id AND dx.org_id = ${p}.org_id AND dx.deleted_at IS NOT NULL)
-   AND ${later ? `${e}.date_unknown IS NOT TRUE AND NOT (${due})` : `(${e}.date_unknown IS TRUE OR ${due})`}`;
+   AND ${later ? `${e}.date_unknown IS NOT TRUE AND (${i}.due_date IS NULL AND ${i}.seq > 1 OR ${i}.due_date IS NOT NULL AND NOT (${due}))`
+              : `(${e}.date_unknown IS TRUE OR (${i}.due_date IS NULL AND ${i}.seq = 1) OR ${due})`}`;
 };
+// IMPORT-5: a guest "gave" to an event when a gift (the event's own gift match)
+// or a pledge is tied to it for them or anyone in their household. One
+// predicate for numbers.eventGuests and the "event-guests" source.
+const EVENT_GUEST_GAVE = (d = "d", e = "e") =>
+  `(EXISTS (SELECT 1 FROM gifts g JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+             WHERE g.org_id = ${e}.org_id AND g.amount > 0 AND ${EVENT_GIFT_MATCH("g", e)}
+               AND (gd.id = ${d}.id OR (${d}.household_id IS NOT NULL AND gd.household_id = ${d}.household_id)))
+    OR EXISTS (SELECT 1 FROM pledges p JOIN donors pd ON pd.id = p.donor_id AND pd.org_id = p.org_id
+                WHERE p.org_id = ${e}.org_id AND p.event_id = ${e}.id AND p.status <> 'cancelled' AND pd.deleted_at IS NULL
+                  AND (pd.id = ${d}.id OR (${d}.household_id IS NOT NULL AND pd.household_id = ${d}.household_id))))`;
 function giftsWhere(p, args) {
   let w = "";
   if (p.fund === "none") w += " AND f.id IS NULL";
@@ -1979,8 +2020,8 @@ const SOURCES = {
   "pledges-open": {
     label: "Pledged, not yet paid",
     measure: () => "sum",
-    params: { campaign: "id" },
-    sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""} from a person still on file, at what is still to come on it. A pledge part-paid counts only the remainder.`,
+    params: { campaign: "id", donor: "id" },
+    sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""}${p.donor ? " from this person" : " from a person still on file"}, at what is still to come on it. A pledge part-paid counts only the remainder.`,
     sql: (orgId, p) => ({
       sql: `SELECT p.id, 'pledge' AS type, p.donor_id, d.name, p.due_date AS date,
                    ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
@@ -1988,8 +2029,8 @@ const SOURCES = {
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
               LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
                      ON pp.pledge_id = p.id
-             WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}`,
-      args: p && p.campaign ? [orgId, orgId, p.campaign] : [orgId, orgId],
+             WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}${p && p.donor ? " AND p.donor_id = ?" : ""}`,
+      args: [orgId, orgId, ...(p && p.campaign ? [p.campaign] : []), ...(p && p.donor ? [p.donor] : [])],
       order: "date ASC NULLS LAST, id",
     }),
   },
@@ -2028,8 +2069,11 @@ const SOURCES = {
   "event-pledged": {
     label: "Pledged at the event",
     measure: () => "sum",
-    params: { event: "id:required", later: "bool" },
-    sentence: p => p.later
+    params: { event: "id:required", later: "bool", all: "bool" },
+    // FUNDRAISING-2: all=true is every year of it, the event page's "over all years".
+    sentence: p => p.all
+      ? "Every unpaid installment of an open pledge made at this event, in every year it falls due."
+      : p.later
       ? "Every unpaid installment of an open pledge made at this event that falls due a year or more after the event: promised for later years, not counted in what the event raised."
       : "Every unpaid installment of an open pledge made at this event that falls due within a year of it (all of them when the event's date is not known). A pledge of so much a year for three years counts its first year here.",
     sql: (orgId, p) => ({
@@ -2038,9 +2082,30 @@ const SOURCES = {
               FROM events e JOIN pledges p ON p.org_id = e.org_id AND p.event_id = e.id
               JOIN pledge_installments i ON i.pledge_id = p.id AND i.org_id = p.org_id
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-             WHERE e.org_id = ? AND e.id = ? AND ${EVENT_PLEDGE_OPEN("i", "p", "e", !!p.later)}`,
+             WHERE e.org_id = ? AND e.id = ? AND ${p.all ? `(${EVENT_PLEDGE_OPEN("i", "p", "e", false)} OR ${EVENT_PLEDGE_OPEN("i", "p", "e", true)})` : EVENT_PLEDGE_OPEN("i", "p", "e", !!p.later)}`,
       args: [orgId, p.event],
       order: "date ASC, id",
+    }),
+  },
+  // IMPORT-5 · the guests who came and didn't give (and who came and gave,
+  // and who was on the list and didn't come): numbers.eventGuests's lists
+  "event-guests": {
+    label: "Guests",
+    measure: () => "count",
+    params: { event: "id:required", list: "word:required" },
+    sentence: p => ({ cameGave: "Marked as attending, with a gift or pledge tied to this event for them or someone in their household.",
+                      invitedNoShow: "On the event's list and not marked as attending." }[p.list]
+                    || "Marked as attending, with no gift or pledge tied to this event for them or anyone in their household."),
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (d.id) d.id, 'person' AS type, d.id AS donor_id, d.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+              FROM event_attendees a
+              JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+              JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
+             WHERE a.org_id = ? AND e.id = ? AND a.status <> 'cancelled'
+               AND ${p.list === "invitedNoShow" ? `NOT EXISTS (SELECT 1 FROM event_attendees a2 WHERE a2.org_id = a.org_id AND a2.event_id = e.id AND a2.donor_id = d.id AND a2.status = 'attended')`
+                 : `a.status = 'attended' AND ${p.list === "cameGave" ? "" : "NOT "}${EVENT_GUEST_GAVE("d", "e")}`}`,
+      args: [orgId, p.event],
+      order: "name, id",
     }),
   },
   "event-raised": {
@@ -2063,6 +2128,37 @@ const SOURCES = {
       order: "amount DESC, id",
     }),
   },
+  // FUNDRAISING-2 · THE NIGHT'S STORY. Who came, who gave or pledged at the
+  // event. "Gave" is anyone with a gift for the event (EVENT_GIFT_MATCH) or a
+  // pledge made at it. Who came and did not give is IMPORT-5's event-guests.
+  "event-attended": {
+    label: "Came to the event",
+    measure: () => "count",
+    params: { event: "id:required" },
+    sentence: () => "Each person marked as having come to this event, once. Nobody is counted until somebody said they came.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, 'Came' AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND a.status = 'attended'
+              JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
+             WHERE e.org_id = ? AND e.id = ?
+             GROUP BY d.id, d.name, e.date`,
+      args: [orgId, p.event],
+      order: "name ASC, id",
+    }),
+  },
+  "event-gave": {
+    label: "Gave or pledged at the event",
+    measure: () => "count",
+    params: { event: "id:required" },
+    sentence: () => "Each person with a gift for this event or a pledge made at it, once, with what they gave and pledged there.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, NULL::text AS date, ROUND(SUM(x.amount)::numeric, 2) AS amount, 'Gave or pledged' AS detail
+              FROM (${EVENT_GIVERS_SQL}) x JOIN donors d ON d.id = x.donor_id AND d.org_id = ?
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.event, orgId, p.event, orgId],
+      order: "amount DESC NULLS LAST, id",
+    }),
+  },
   // HOME-3 · "Are we on pace?": the pledged money due by a day (the end of the
   // fiscal year), beside the open balance over all years (pledges-open).
   "pledges-due": {
@@ -2070,21 +2166,17 @@ const SOURCES = {
     measure: () => "sum",
     params: { to: "date:required" },
     sentence: (p, dd) => `Every unpaid installment of an open pledge, from a person still on file, due on or before ${dd(p.to)} (overdue ones included). A pledge with no schedule counts what is left on it, by its due date.`,
-    sql: (orgId, p) => ({
-      sql: `SELECT i.id, 'pledge' AS type, p.donor_id, d.name, i.due_date AS date, ROUND(i.amount::numeric, 2) AS amount, 'Due' AS detail
-              FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
-              JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-             WHERE i.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL AND i.paid_gift_id IS NULL AND i.due_date <= ?
-            UNION ALL
-            SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
-              FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-              LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
-             WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
-               AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
-               AND (p.due_date IS NULL OR p.due_date = '' OR LEFT(p.due_date::text, 10) <= ?)`,
-      args: [orgId, p.to, orgId, orgId, p.to],
-      order: "date ASC NULLS LAST, id",
-    }),
+    sql: (orgId, p) => pledgesDueSql(orgId, p.to, "<="),
+  },
+  // FUNDRAISING-2: the part of it already past due. Fundraising's Pledges,
+  // its Overview and the event page read this beside pledges-due and
+  // pledges-open (numbers.pledgeSummary).
+  "pledges-overdue": {
+    label: "Pledged, overdue",
+    measure: () => "sum",
+    params: { before: "date:required" },
+    sentence: (p, dd) => `Every unpaid installment of an open pledge, from a person still on file, that fell due before ${dd(p.before)}. A pledge with no schedule counts what is left on it, by its due date.`,
+    sql: (orgId, p) => pledgesDueSql(orgId, p.before, "<"),
   },
   "goal-raised": {
     label: "Raised toward the goal",
@@ -3022,4 +3114,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { EVENT_GIFT_MATCH, EVENT_PLEDGE_OPEN, sameDatesLastYear, AVERAGE_WORDS, RETENTION_WORDS, RETENTION_SAME_POINT_WORDS, SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
+module.exports = { EVENT_GIFT_MATCH, EVENT_PLEDGE_OPEN, EVENT_GUEST_GAVE, sameDatesLastYear, AVERAGE_WORDS, RETENTION_WORDS, RETENTION_SAME_POINT_WORDS, SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };

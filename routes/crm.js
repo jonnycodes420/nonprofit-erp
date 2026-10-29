@@ -4498,8 +4498,9 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // that only had `fund_id` had to either print an id at a fundraiser or load
   // the fund list a second time to translate it.
   d.gifts = await query(
-    `SELECT g.*, f.name AS fund_name
+    `SELECT g.*, f.name AS fund_name, ev.name AS event_name
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+       LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
       WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC NULLS LAST`, [d.id, req.user.orgId]);
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
@@ -4570,7 +4571,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   const [d] = await query(
     `SELECT id, name, email, phone, address, address2, city, state, zip, country, birth_month, birth_day,
             deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable,
-            is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
+            phone_unreachable, is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
        FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
@@ -4704,9 +4705,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   if (d.do_not_email || suppressed.length) flags.push({ key: "do_not_email", label: "No email: opted out" });
   if (d.email_unreachable) flags.push({ key: "email_unreachable", label: "Email bounced" });
   if (d.address_unmailable) flags.push({ key: "address_unmailable", label: "Address returned mail" });
+  if (d.phone_unreachable) flags.push({ key: "phone_unreachable", label: "Phone marked wrong" });
   // CLIENT-SAFE-1: the client flag has its own row (ContactExtras), shown when
   // the org's privacy mode is on or the flag is already set.
-  const contact = { email: d.email || null, phone: d.phone || null, address, preferred: null, flags,
+  const contact = { email: d.email || null, phone: d.phone || null, address, addressBad: d.address_unmailable === true, preferred: null, flags,
     isClient: d.is_client === true, privacyOn: d.client_privacy === true };
 
   res.json({ today, rhythm, recurring, thankYous, thankYousSource: thankYous.length ? thankYousSource : null,
@@ -7646,12 +7648,21 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   );
   // FIX-55: a pledge over several years says this year's installments and the
   // open total, so the profile never shows one number without saying which
-  const yearEnd = `${String(orgToday(await orgTz(req.user.orgId))).slice(0, 4)}-12-31`;   // ORG_TZ_SEAM_OK
+  // FUNDRAISING-2: "this year" is the fiscal year, to the day Home and
+  // Fundraising's Pledges count to (numbers.pledgeSummary).
+  const yearEnd = orgTime.orgPeriodBounds(await orgForYears(req.user.orgId), "fiscal_year", 0).end;   // ORG_TZ_SEAM_OK
   const inst = rows.length ? await query(
     `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1,
             COALESCE(SUM(amount) FILTER (WHERE paid_gift_id IS NULL AND due_date <= ?),0) AS due_this_year
        FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [yearEnd, req.user.orgId, rows.map(r => r.id)]) : [];
   const instBy = new Map(inst.map(x => [x.pledge_id, x]));
+  // IMPORT-5: each installment with its state, for the open pledge up top
+  const instRows = rows.length ? await query(
+    `SELECT pledge_id, seq, due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) ORDER BY pledge_id, seq`,
+    [req.user.orgId, rows.map(r => r.id)]) : [];
+  const listBy = new Map();
+  for (const i of instRows) (listBy.get(i.pledge_id) || listBy.set(i.pledge_id, []).get(i.pledge_id))
+    .push({ seq: i.seq, dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null, amount: round2(parseFloat(i.amount) || 0), paid: !!i.paid_gift_id });
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
@@ -7667,6 +7678,9 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
       installmentCount: ix ? ix.n : 1, years, dueThisYear,
+      installments: listBy.get(r.id) || [],
+      // the open-pledge figure opens Fundraising's own rows for this person
+      openSource: { key: "pledges-open", params: { donor: r.donor_id } },
     };
   }));
 }));
@@ -9945,7 +9959,8 @@ async function reverseImport(req, res) {
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
     const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
-      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased"]);
+      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",
+      "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"]);
     for (const pc of (sj.personChanges || [])) {
       const cols = Object.keys(pc.before || {}).filter(k => SAFE_COLS.has(k));
       if (!cols.length) continue;
@@ -21500,6 +21515,13 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
 // computeFundraisingPace: shared pace/thermometer math. Degrades gracefully —
 // no goal → no thermometer (percent null); no dates → progress with no
 // "days left"/pace; goal met → celebratory state. Never invents a number.
+// FUNDRAISING-2: an org can take a gift through its own pages once Stripe
+// Connect is linked and Stripe has said it can charge (the webhook keeps
+// stripe_connected to Stripe's charges_enabled).
+const orgTakesGifts = org => !!(org && org.stripe_connected && org.stripe_account_id);
+// A DATE column comes back as a Date at local midnight; its own calendar day.
+const civilDay = d => d instanceof Date
+  ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : String(d || "").slice(0, 10);
 function computeFundraisingPace(raised, goal, startDate, endDate) {
   const g = parseFloat(goal) || 0;
   const r = parseFloat(raised) || 0;
@@ -21539,8 +21561,11 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   // FIX-34: "On pace" beside "$0 of $25,000, 0%" said two things. Nothing
   // counted yet is never on pace; the bar says $0 and no badge rides it.
   if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }
+  // FUNDRAISING-2: a goal that has not started has no pace. It says when it
+  // starts, and the card shows what was pledged or given early.
+  if (lifecycle === "upcoming") { paceState = null; paceSentence = null; expected = null; paceRaisedPct = null; paceElapsedPct = null; }
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
-           paceSentence, paceRaisedPct, paceElapsedPct };
+           paceSentence, paceRaisedPct, paceElapsedPct, startsOn: lifecycle === "upcoming" ? civilDay(startDate) : null };
 }
 
 // Live totals for a set of campaigns, matched the same way
@@ -21571,7 +21596,7 @@ async function fundraisingCampaignRows(orgId) {
     [orgId]
   );
   if (!campaigns.length) return [];
-  const [sums, pledgeSums, grantSums, rollSums] = await Promise.all([
+  const [sums, pledgeSums, grantSums, rollSums, earlySums] = await Promise.all([
     // NUMBERS-1: the one function every campaign total and the checker read.
     require("../numbers").campaignGiftTotals(query, orgId),
     query(
@@ -21592,7 +21617,18 @@ async function fundraisingCampaignRows(orgId) {
     ),
     // FIX-49: a parent goal's own gifts plus its children's, each gift once.
     require("../numbers").goalRollupGiftTotals(query, orgId),
+    // FUNDRAISING-2: gifts given to a goal before it starts. They are outside
+    // its window, so not in raised; a goal that has not started says them.
+    query(
+      `SELECT g.campaign_id AS cid, COALESCE(SUM(g.amount), 0) AS early, COUNT(*)::int AS n
+         FROM gifts g JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
+         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND c.start_date IS NOT NULL AND g.date < to_char(c.start_date, 'YYYY-MM-DD')
+        GROUP BY g.campaign_id`,
+      [orgId]
+    ),
   ]);
+  const earlyById = Object.fromEntries(earlySums.map(s => [s.cid, parseFloat(s.early) || 0]));
   const byId = Object.fromEntries(sums.map(s => [s.cid, s]));
   const rollById = Object.fromEntries(rollSums.map(s => [s.pid, parseFloat(s.raised) || 0]));
   const pledgeById = Object.fromEntries(pledgeSums.map(s => [s.cid, s]));
@@ -21615,6 +21651,7 @@ async function fundraisingCampaignRows(orgId) {
       grantCount: parseInt(grantById[c.id]?.grant_count, 10) || 0,
       pledged,
       pledgeCount: parseInt(pledgeById[c.id]?.pledge_count, 10) || 0,
+      earlyGiven: earlyById[c.id] || 0,
       donorCount: parseInt(s.donor_count, 10) || 0,
       startDate: c.start_date,
       endDate: c.end_date,
@@ -21696,7 +21733,9 @@ function fundraisingGoalsPortfolio(rows) {
   // only (a child's raised is already inside its parent's roll-up — counting
   // both would double-count). Top-level = has no parent_goal_id; active = not
   // ended. Computed over the ENRICHED goals (so rolledRaised is present).
-  const topActive = goals.filter(g => !g.parentGoalId && g.lifecycle !== "ended");
+  // FUNDRAISING-2: active means running today. A goal that has not started
+  // and a goal that has ended are not in the roll-up, and not in its count.
+  const topActive = goals.filter(g => !g.parentGoalId && g.lifecycle === "active");
   const totalGoal = topActive.reduce((s, g) => s + g.goalAmount, 0);
   const totalRaised = topActive.reduce((s, g) => s + g.rolledRaised, 0);
   const rollup = topActive.length ? {
@@ -21713,7 +21752,10 @@ function fundraisingGoalsPortfolio(rows) {
 // needs in one call: the active org goal with pace, this-period momentum vs
 // the prior period (same FY/calendar basis as Finance — one source of truth),
 // campaign + giving-page rollups, and recent real gifts.
-app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"), wrap(async (req, res) => {
+// FUNDRAISING-2: the stored answer's name carries its shape, so a deploy that
+// changes the shape never serves yesterday's body (stored answers are not
+// keyed by build).
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -21754,8 +21796,10 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     require("../numbers").vsLastYear(orgId, cur.start, cur.end, today),
     query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, wk.start, wk.end]),
     query(
-      `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
+      `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.giving_page_id, g.payment_method, g.campaign, g.donor_id, d.name AS donor_name,
+              ev.name AS event_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
+         LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
         WHERE g.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 8`,
       [orgId]
     ),
@@ -21822,7 +21866,9 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   const periodTotal = parseFloat(curRows[0]?.total) || 0;
   // vsLast: numbers.vsLastYear, or null before the period begins.
   const priorTotal = vsLast ? vsLast.lastYear : 0;
-  const activePages = givingPages.filter(p => p.status === "active");
+  // FUNDRAISING-2: live means it can take money: active, and payments connected.
+  const [payOrg] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id = ?", [orgId]);
+  const activePages = orgTakesGifts(payOrg) ? givingPages.filter(p => p.status === "active") : [];
 
   // BUILD-16 Part 2 — the goal portfolio + roll-up header replaces the single
   // org goal as the Fundraising Overview centerpiece.
@@ -21831,10 +21877,47 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
   // IMPORT-4: gifts with no date are in no period's figure; the tiles say how many.
   const [undatedRow] = await query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId]);
+  const N = require("../numbers");
+  // FUNDRAISING-2: pledges, the same three figures Home and Pledges read.
+  const pledges = await N.pledgeSummary(orgId, { yearEnd: orgTime.orgPeriodBounds(await orgForYears(orgId), "fiscal_year", 0).end, today });
+  // The leading campaign is the running one that has raised most; one that
+  // has ended leads only when nothing is running.
+  const running = campaigns.filter(c => c.lifecycle === "active");
+  const top = (running.length ? running : campaigns).slice().sort((a, b) => b.raised - a.raised)[0] || null;
+  let lead = null;
+  if (top && top.lifecycle === "active") {
+    const monthStart = String(today).slice(0, 8) + "01";
+    const givers = await query(
+      `SELECT d.id, d.name, SUM(g.amount)::text AS total FROM campaigns c
+         JOIN gifts g ON g.org_id = c.org_id AND ${N.CAMPAIGN_GIFT_MATCH("g", "c")}
+         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
+        WHERE c.org_id = ? AND c.id = ? AND g.date >= ? AND g.date <= ?
+        GROUP BY d.id, d.name ORDER BY SUM(g.amount) DESC, d.id LIMIT 3`, [orgId, top.id, monthStart, today]);
+    const left = Math.max(0, Math.round((top.goalAmount - top.raised) * 100) / 100);
+    const weeks = top.daysLeft ? Math.max(1, Math.ceil(top.daysLeft / 7)) : null;
+    lead = { left, perWeek: left > 0 && weeks ? Math.ceil(left / weeks) : 0, weeksLeft: weeks,
+             topGivers: givers.map(x => ({ id: x.id, name: x.name, total: parseFloat(x.total) || 0 })) };
+  }
+  // FUNDRAISING-2: with no campaign running, the card shows the event that
+  // raised most in the last twelve months, as its own page tells it.
+  let leadEvent = null;
+  if (!running.length) {
+    const recent = await N.eventsRaised(orgId, { withMoney: true });
+    const inYear = recent.filter(e => !e.date || (e.date >= l12Start && e.date <= l12End));
+    const best = inYear.sort((a, b) => b.raisedCents - a.raisedCents)[0];
+    if (best) leadEvent = await N.eventStory(orgId, best.id);
+  }
+  const methodWord = g => g.giving_page_id ? "Online form" : g.stripe_payment_id ? "Stripe"
+    : (/^(check|card|cash|ach|daf|stock)$/i.test(String(g.payment_method || "").trim()) ? (/^(ach|daf)$/i.test(g.payment_method.trim()) ? g.payment_method.trim().toUpperCase()
+      : g.payment_method.trim()[0].toUpperCase() + g.payment_method.trim().slice(1).toLowerCase()) : null);
   res.json({
     undated: undatedRow && undatedRow.n ? { count: undatedRow.n, words: require("../numbers").undatedWords(undatedRow.n), source: { key: "undated-gifts", params: {} } } : null,
     yearMode,
     periodLabel: cur.chartLabel,
+    // "this fiscal year": what "this period" means, in words.
+    periodWords: yearMode === "fiscal" ? "this fiscal year" : "this year",
+    pledges,
+    leadEvent,
     goal,
     rollup: portfolio.rollup,
     goals: portfolio.goals,
@@ -21882,21 +21965,71 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"),
     },
     campaigns: {
       count: campaigns.length,
-      activeCount: campaigns.filter(c => c.lifecycle === "active").length,
+      activeCount: running.length,
       raised: campaigns.reduce((s, c) => s + c.raised, 0),
-      top: campaigns.slice().sort((a, b) => b.raised - a.raised)[0] || null,
+      top: top ? { ...top, lead } : null,
     },
     givingPages: {
+      takesGifts: orgTakesGifts(payOrg),
       count: activePages.length,
       raised: activePages.reduce((s, p) => s + (parseFloat(p.raised) || 0), 0),
       pages: activePages.map(p => ({ id: p.id, title: p.title, slug: p.slug, goalAmount: p.goal_amount != null ? parseFloat(p.goal_amount) : null, raised: parseFloat(p.raised) || 0 })),
     },
     recentGifts: recentGifts.map(g => ({
       id: g.id, amount: parseFloat(g.amount) || 0, date: g.date,
-      source: g.stripe_payment_id ? "online" : "offline", campaign: g.campaign || null,
+      source: g.stripe_payment_id ? "online" : "offline", campaign: g.campaign || g.event_name || null,
+      eventName: g.event_name || null, method: methodWord(g),
       donorId: g.donor_id || null,
       donorName: g.donor_name || "Anonymous",
     })),
+  });
+}));
+
+// FUNDRAISING-2 · PLEDGES. Every open pledge with what is left on it, what
+// falls due this fiscal year, what is overdue, and each installment. The
+// three totals are numbers.pledgeSummary (Home and the Overview read it), and
+// each pledge's dueThisYear is the profile's, to the same day.
+app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const org = await orgForYears(orgId);
+  const today = orgToday(org);   // ORG_TZ_SEAM_OK
+  const yearEnd = orgTime.orgPeriodBounds(org, "fiscal_year", 0).end;   // the day Home's "due this year" counts to
+  const [summary, rows] = await Promise.all([
+    require("../numbers").pledgeSummary(orgId, { yearEnd, today }),
+    query(
+      `SELECT p.id, p.donor_id, d.name AS donor_name, p.amount, p.due_date, p.created_at, p.notes,
+              p.event_id, ev.name AS event_name, p.campaign_id, c.name AS campaign_name,
+              COALESCE(pp.paid, 0) AS paid, GREATEST(p.amount - COALESCE(pp.paid, 0), 0) AS balance
+         FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN events ev ON ev.id = p.event_id AND ev.org_id = p.org_id
+         LEFT JOIN campaigns c ON c.id = p.campaign_id AND c.org_id = p.org_id
+        WHERE p.org_id = ? AND p.status = 'open'
+        ORDER BY GREATEST(p.amount - COALESCE(pp.paid, 0), 0) DESC, d.name, p.id`, [orgId, orgId]),
+  ]);
+  const inst = rows.length ? await query(
+    `SELECT id, pledge_id, LEFT(due_date::text, 10) AS due_date, amount, paid_gift_id FROM pledge_installments
+      WHERE org_id = ? AND pledge_id = ANY(?) ORDER BY due_date, id`, [orgId, rows.map(r => r.id)]) : [];
+  const by = new Map();
+  for (const i of inst) (by.get(i.pledge_id) || by.set(i.pledge_id, []).get(i.pledge_id)).push(i);
+  const r2 = v => Math.round((parseFloat(v) || 0) * 100) / 100;
+  res.json({
+    ...summary,
+    pledges: rows.map(r => {
+      const list = by.get(r.id) || [];
+      const balance = r2(r.balance), due = String(r.due_date || "").slice(0, 10);
+      const unpaid = list.filter(i => !i.paid_gift_id);
+      const dueThisYear = list.length ? Math.min(balance, r2(unpaid.filter(i => i.due_date <= yearEnd).reduce((n, i) => n + r2(i.amount), 0)))
+        : (!due || due <= yearEnd ? balance : 0);
+      const overdue = list.length ? Math.min(balance, r2(unpaid.filter(i => i.due_date < today).reduce((n, i) => n + r2(i.amount), 0)))
+        : (due && due < today ? balance : 0);
+      return {
+        id: r.id, donorId: r.donor_id, donorName: r.donor_name, amount: r2(r.amount), paid: r2(r.paid), balance,
+        dueThisYear: r2(dueThisYear), overdue: r2(overdue), dueDate: due || null,
+        madeAt: r.event_name ? { kind: "event", id: r.event_id, name: r.event_name } : r.campaign_name ? { kind: "campaign", id: r.campaign_id, name: r.campaign_name } : null,
+        installments: list.map(i => ({ id: i.id, dueDate: i.due_date, amount: r2(i.amount), paid: !!i.paid_gift_id, overdue: !i.paid_gift_id && i.due_date < today })),
+      };
+    }),
   });
 }));
 
@@ -22596,7 +22729,7 @@ app.get("/giving-pages/:id/volunteer-data", requireAuth, wrap(async (req, res) =
 // editor's preview (GET /giving-pages/:id/page/preview) select the same rows
 // and build the same payload in givingPagePublicPayload, so the component
 // that draws them cannot be handed two different shapes.
-const gpOrgSql = where => `SELECT o.id, o.name, o.org_slug, o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+const gpOrgSql = where => `SELECT o.id, o.name, o.org_slug, o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.stripe_connected, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
@@ -22626,6 +22759,11 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const pageRows = await query(gpPageSql("gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'"),
     [org.id, req.params.pageSlug]);
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
+  // FUNDRAISING-2: a page is not open to the public until the org can take
+  // money through it. Until payments are connected it is a draft, and its
+  // address says so kindly instead of showing a form that cannot work.
+  if (!orgTakesGifts(org)) return res.status(404).json({ notOpen: true, orgName: org.name,
+    error: `${org.name}'s giving page isn't open yet. Please check back soon.` });
   res.json(await givingPagePublicPayload(org, pageRows[0], req.query));
 }));
 
@@ -28069,11 +28207,19 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   const progress = EV.eventProgress({ raisedCents,
     goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
   const attendance = EV.attendanceRate({ registered, attended: counts.attended.length });
+  // IMPORT-5: who came and gave, who came and didn't, who was invited and didn't
+  // come: numbers.eventGuests, the answer Home's Grow moves and Ask read too
+  const [guests] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+  const G = guests || { cameNoGift: [], cameGave: [], invitedNoShow: [], past: true, definitions: {} };
 
   res.json({
     event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
              goalAmount: event.goal_amount == null ? null : Number(event.goal_amount) },
     progress, attendance, money,
+    guests: { past: G.past, cameNoGift: G.cameNoGift, cameGave: G.cameGave, invitedNoShow: G.invitedNoShow,
+              sentence: G.cameNoGift.length ? `${G.cameNoGift.length} ${G.cameNoGift.length === 1 ? "person" : "people"} came and didn't give. Thank them for coming; the ask can wait.` : null },
+    // FUNDRAISING-2: the night's story, each count opening its people.
+    story: await require("../numbers").eventStory(orgId, event.id),
     figures: [
       { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
         count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
@@ -28081,6 +28227,9 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
         count: counts.registered.length, sentence: EV.EVENT_FIGURES.registered },
       { key: "attended", label: "Came", value: counts.attended.length,
         count: counts.attended.length, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence },
+      { key: "cameNoGift", label: "Came, didn't give", value: G.cameNoGift.length, count: G.cameNoGift.length, sentence: G.definitions.cameNoGift },
+      { key: "cameGave", label: "Came, gave", value: G.cameGave.length, count: G.cameGave.length, sentence: G.definitions.cameGave },
+      ...(G.past ? [{ key: "invitedNoShow", label: "Invited, didn't come", value: G.invitedNoShow.length, count: G.invitedNoShow.length, sentence: G.definitions.invitedNoShow }] : []),
       { key: "firstTime", label: "First-time givers", value: counts.firstTime.length,
         count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime },
       { key: "sponsors", label: "Sponsors", value: counts.sponsors.length,
@@ -28098,6 +28247,11 @@ app.get("/events/:id/rows", requireAuth, wrap(async (req, res) => {
   const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const key = String(req.query.rows || "");
+  if (["cameNoGift", "cameGave", "invitedNoShow"].includes(key)) {
+    const [g] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+    const list = g ? g[key] : [];
+    return res.json({ eventId: event.id, rows: key, count: list.length, donors: list.map(p => ({ donor_id: p.id, name: p.name })) });
+  }
   const sql = EVENT_ROW_SQL[key];
   if (!sql) return res.status(400).json({ error: "unknown_rows",
     message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(EVENT_ROW_SQL).join(", ")}.` });

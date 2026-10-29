@@ -465,3 +465,13 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Setup: `HomeSetup.jsx setupStage` places it: "first" (under Ask) for a new org, "rail" mid-way or after "I'll finish later", nothing when done or dismissed.
 - Home reads `/insights?view=deck` (the deck, no cards); panels read the cards when they open.
 
+
+## IMPORT-5 · the guests who came and didn't give (2026-10-29)
+
+- Who came and gave, who came and didn't, and who was invited and didn't come are one answer: `numbers.eventGuests`
+  (predicate `figureSources.EVENT_GUEST_GAVE`, source `event-guests`). A guest gave when a gift (the event's own gift
+  match) or a pledge is tied to the event for them or anyone in their household. The event page, Home and Ask read it.
+- Home: each guest who came to an event in the last 120 days and didn't give is a Grow move ("Came to the {event} on
+  {date} and didn't give. Thank them for coming."), no ask on the first touch, the action a thank-you-for-coming task
+  with the note drafted. One person, one move (otherwise an "also" line). "See all N" opens the event page. Grow draws
+  150 cards by dollars, so $0 thank-yous can sit past the cap, still counted on the tab.

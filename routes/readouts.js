@@ -233,7 +233,7 @@ app.post("/import-shapes/match", requireAuth, wrap(async (req, res) => {
   const headers = Array.isArray(req.body?.headers) ? req.body.headers.map(String) : [];
   const norm = headers.map(normHeader);
   const have = new Set(norm.filter(Boolean));
-  const rows = await query(`SELECT * FROM import_shape_mappings WHERE org_id=? ORDER BY last_used_at DESC`, [orgId]);
+  const rows = await query(`SELECT * FROM import_shape_mappings WHERE org_id=? AND kind='mapper' ORDER BY last_used_at DESC`, [orgId]);
   let best = null;
   for (const r of rows) {
     const hs = (typeof r.headers === "string" ? JSON.parse(r.headers) : r.headers).map(normHeader);

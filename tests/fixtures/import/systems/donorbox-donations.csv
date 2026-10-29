@@ -1,0 +1,4 @@
+Name,Donor First Name,Donor Last Name,Donor Email,Make Donation Anonymous,Campaign,Amount,Converted Amount,Processing Fee,Platform Fee,Total Fee,Net Amount,Fee Covered,Currency,Donation Date,Donation Type,Recurring Donation,Designation,Comment
+Ines Calder,Ines,Calder,ines.calder@example.com,no,Clean Water 2025,50.0,50.0,1.75,0.0,1.75,48.25,false,USD,2025-04-02 10:11:12 UTC,stripe,false,Wells,For the kids
+Otto Rennick,Otto,Rennick,otto.rennick@example.com,no,Clean Water 2025,20.0,20.0,0.88,0.0,0.88,19.12,false,USD,2025-04-03 08:00:00 UTC,paypal,true,General,
+Ines Calder,Ines,Calder,ines.calder@example.com,no,Year End,100.0,100.0,3.2,0.0,3.2,96.8,true,USD,2025-12-15 21:30:00 UTC,stripe,false,General,

@@ -1,0 +1,4 @@
+Payout Transaction ID,Payout Date,Donation Date,Donor First Name,Donor Last Name,Donor Email,Program Name,Reference Information,Currency Code,Donation Amount
+PPGF-88120,2025-05-15,2025-04-21,Mina,Torvald,mina.torvald@example.org,PayPal Giving Fund,GoFundMe,USD,35.00
+PPGF-88120,2025-05-15,2025-04-28,Grady,Lisle,grady.lisle@example.org,PayPal Giving Fund,,USD,20.00
+PPGF-90410,2025-12-15,2025-11-30,Mina,Torvald,mina.torvald@example.org,Facebook Fundraisers,Giving Tuesday,USD,50.00

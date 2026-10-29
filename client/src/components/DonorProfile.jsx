@@ -49,6 +49,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
+import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
 import { useDonorStatus, statusTagItems, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
@@ -143,6 +144,8 @@ const giftFundName = g => (g && g.fund_name) || "";
 const giftTimelineLine = (g, fundName) => {
   if (!g) return "";
   const parts = [fmtFull(g.amount)];
+  // FUNDRAISING-2: a gift for an event says the event, ahead of its fund.
+  if (g.event_name) parts.push(g.event_name);
   if (fundName) parts.push(fundName);
   // "Needs you" is the sentinel a gift carries when nobody said how the money
   // arrived (server.js GIFT_METHOD_UNKNOWN). It is a prompt, not a payment
@@ -1529,7 +1532,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       const g=(raw.gifts||[]).map(g=>({
         id:g.id,amount:parseFloat(g.amount)||0,date:g.date||null,   // IMPORT-4: no date is "No date", never the day it was entered
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
-        fund_id:g.fund_id||"",fund_name:g.fund_name||"",payment_method:g.payment_method||"",
+        fund_id:g.fund_id||"",fund_name:g.fund_name||"",event_name:g.event_name||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
         // FIX-49: the gift is the full amount paid; the processor's fee and the
         // net (what Finance reconciles to the bank) show beside it.
@@ -2308,6 +2311,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
             bottom edge; the other four head the Gifts & pledges tab. */}
         {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
+        {/* IMPORT-5 — an open pledge sits up top, under the header */}
+        {pledges.some(p=>p.status==="open"&&Number(p.balance)>0)&&<div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}>
+          <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
+            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
+        </div>}
         <div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
@@ -2876,6 +2884,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date?displayDate(g.date):<UndatedGiftDate giftId={g.id} readOnly={isReadOnly} onSaved={loadGiftsFull}/>}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
+                              {/* FUNDRAISING-2: a gift for an event names it. */}
+                              {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
@@ -3772,7 +3782,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}<ContactFlag flags={donor.contact_flags} field="email"/></dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/><ContactFlag flags={donor.contact_flags} field="phone"/></dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone} bad={donor.phone_unreachable===true} badWhy={donor.phone_unreachable_reason||undefined}/><ContactFlag flags={donor.contact_flags} field="phone"/>{donor.phone_unreachable===true&&<span style={{display:"block",fontSize:11.5,color:RAIL.dim}}>Marked wrong. Never dialed or texted from Steward.</span>}</dd></>}
               {/* PROFILE-1 (header): the birthday is under the name and in Coming
                   up; a monthly plan is the Recurring card. */}
               <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}/>
