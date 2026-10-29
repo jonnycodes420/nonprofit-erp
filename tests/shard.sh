@@ -86,6 +86,10 @@ if [ -n "${STEWARD_TEST_NOW:-}" ]; then
 CREATE SCHEMA IF NOT EXISTS testclock;
 CREATE OR REPLACE FUNCTION testclock.now() RETURNS timestamptz LANGUAGE sql STABLE
   AS \$\$ SELECT pg_catalog.now() + interval '$off_ms milliseconds' \$\$;
+-- FIX-57: the bid path reads clock_timestamp() (routes/auctions.js), and an
+-- unmoved one read every pinned auction as "not open yet".
+CREATE OR REPLACE FUNCTION testclock.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE
+  AS \$\$ SELECT pg_catalog.clock_timestamp() + interval '$off_ms milliseconds' \$\$;
 ALTER DATABASE "$DBNAME" SET search_path = public, testclock, pg_catalog;
 SQL
   export TEST_MODE=1 STEWARD_TEST_OFFSET_MS="$off_ms" NODE_OPTIONS="${NODE_OPTIONS:-} -r $(pwd)/tests/clock.js"
