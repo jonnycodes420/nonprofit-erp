@@ -98,12 +98,12 @@ async function apiLegs() {
   ok("§1 with every question answered the preview is ready and the button enables", u.ready === true && !/^Answer/.test(u.button.text), JSON.stringify([u.ready, u.button && u.button.text, (u.questions || []).filter(x => !x.optional)]));
   ok("§1 the deleted match answered Same person stays out", (u.deletedMatches || []).some(x => x.id === "d_f55_gone") && u.counts.gifts === 2, JSON.stringify([u.counts.gifts, u.deletedMatches]));
   const wb = await sheetsOf(WORKBOOK);
-  const ev = (await api("POST", "/sheet-import/understand", A.token, { fileName: "event.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true } })).body;
+  const ev = (await api("POST", "/sheet-import/understand", A.token, { fileName: "event.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true, pledgeDue: "event" } })).body;
   ok("§1 the event date answered: no gift undated, the button says so", ev.counts.undatedGifts === 0 && !/undated/.test(ev.button.text) && ev.ready === true, ev.button && ev.button.text);
 
   // §5 bring them all back, then empty the trash
   const B = await freshOrg("org_fix55back", "Bring back (test)");
-  const wbBody = { fileName: "event-workbook-shape.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true } };
+  const wbBody = { fileName: "event-workbook-shape.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true, pledgeDue: "event" } };
   const first = await importJob(B.token, wbBody);
   ok("§5 the event workbook imports", first.end && first.end.status === "done", JSON.stringify(first.end || first.start.body).slice(0, 300));
   const givers = (await q(`SELECT DISTINCT donor_id AS id FROM (SELECT donor_id FROM gifts WHERE org_id=$1 UNION SELECT donor_id FROM pledges WHERE org_id=$1) x`, [B.id])).map(r => r.id);

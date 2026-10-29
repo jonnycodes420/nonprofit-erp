@@ -250,7 +250,10 @@ async function main() {
 
   // §D the dinner file
   const dSheets = await sheetsOf("jp-dinner-gifts-106.xlsx");
-  const dBody = { fileName: "jp-dinner-gifts-106.xlsx", sheets: dSheets };
+  // IMPORT-5: the file names a dinner and no date, so its date is asked, as are
+  // the gifts (No: they stay No date) and the pledges (from the event's date)
+  const dBody = { fileName: "jp-dinner-gifts-106.xlsx", sheets: dSheets,
+                  answers: { eventName: "Finding Joy Dinner", eventDate: "2026-10-22", useEventDate: false, pledgeDue: "event" } };
   const dRows = dSheets[0].grid.slice(1).filter(r => r.some(x => x != null && String(x).trim() !== ""));
   const dPeople = dRows.filter(r => r[0] || r[1]);
   const notYet = dPeople.filter(r => /^no$/i.test(String(r[5]).trim()));
@@ -261,7 +264,7 @@ async function main() {
   ok(`§D the dinner fixture: ${DK.personRows} person rows and ${DK.totalsRows} totals row`, dRows.length === DK.personRows + DK.totalsRows && !dRows[dRows.length - 1][0] && !dRows[dRows.length - 1][1], dRows.length);
   const du = await api("POST", "/sheet-import/understand", tok, dBody);
   const DU = du.body || {}, dc = DU.counts || {};
-  ok("§D the dinner preview is ready (the undated-gifts question is optional)", du.status === 200 && DU.ready === true, du.status + " " + JSON.stringify((DU.questions || []).filter(x => !x.optional)).slice(0, 300));
+  ok("§D the dinner preview is ready once its date, its gifts and its pledges are answered", du.status === 200 && DU.ready === true, du.status + " " + JSON.stringify((DU.questions || []).filter(x => !x.optional)).slice(0, 300));
   ok(`§D the preview: ${DK.gifts} gifts $${DK.gift_dollars}, ${DK.pledges} pledges $${DK.pledged_total_dollars} ($${DK.pledge_first_year_dollars} this year)`,
      dc.gifts === DK.gifts && dc.giftCents === centsOf(DK.gift_dollars) && dc.pledges === DK.pledges && dc.pledgeCents === centsOf(DK.pledged_total_dollars)
      && dc.pledgeThisYearCents === centsOf(DK.pledge_first_year_dollars), JSON.stringify(dc));

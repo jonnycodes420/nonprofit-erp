@@ -42,6 +42,8 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+// IMPORT-5: an event file with no dates is answered: the day, gifts left "No date", pledges due from the event's date
+const IMPORT5_DATES = { eventDate: "2026-10-22", useEventDate: false, pledgeDue: "event" };
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
 async function surfacesAgree(label, orgId, token) {
   const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
@@ -135,7 +137,7 @@ async function main() {
            VALUES ('g_f52_other',$1,'d_f52_other1',500,'2026-03-01','cash','','','Check','system:test','test')`, [ORG]);
   await q(`UPDATE donors SET total_giving=500, last_gift_date='2026-03-01' WHERE id='d_f52_other1'`);
   const before = await snapshot(ORG);
-  const body = { fileName: E.file, sheets };
+  const body = { fileName: E.file, sheets, answers: IMPORT5_DATES };
 
   // §1 the preview
   const u = await api("POST", "/sheet-import/understand", tok, body);
@@ -260,7 +262,7 @@ async function dropped() {
   const ORG = "org_fix52b";
   const tok = await freshOrg(ORG, "Harbor Lights B (test)");
   const before = await snapshot(ORG);
-  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")) };
+  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")), answers: IMPORT5_DATES };
   const RUN = "imp_fix52_drop";
   const ac = new AbortController();
   const req = fetch(BASE + "/sheet-import/commit", { method: "POST", signal: ac.signal,
@@ -301,7 +303,7 @@ async function failsPartway() {
   await q(`DROP TRIGGER IF EXISTS fix52_refuse_gift ON gifts`);
   await q(`CREATE TRIGGER fix52_refuse_gift BEFORE INSERT ON gifts FOR EACH ROW EXECUTE FUNCTION fix52_refuse_gift()`);
   try {
-    const r = await importJob(tok, { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")), importId: "imp_fix52_fail" });
+    const r = await importJob(tok, { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")), answers: IMPORT5_DATES, importId: "imp_fix52_fail" });
     ok("§9 a job that fails partway ends \"Not imported\", saying it was rolled back", r.end && r.end.status === "failed" && /Not imported\..*rolled back.*Nothing was written/.test(r.end.sentence || ""),
        JSON.stringify(r.end).slice(0, 300));
     const diff = snapDiff(before, await snapshot(ORG));
@@ -342,7 +344,7 @@ async function twentyAtOnce(ORG, RUN, tok, body) {
 async function manyAtOnce() {
   const ORG = "org_fix52d";
   const tok = await freshOrg(ORG, "Harbor Lights D (test)");
-  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")) };
+  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")), answers: IMPORT5_DATES };
   const RUN = "imp_fix52_many";
   const r = await twentyAtOnce(ORG, RUN, tok, body);
   ok("§10 twenty requests at once for one preview: every one that carried the file answers the same job",
@@ -363,7 +365,7 @@ async function manyAtOnce() {
 async function failedThenRetried() {
   const ORG = "org_fix52e";
   const tok = await freshOrg(ORG, "Harbor Lights E (test)");
-  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")) };
+  const body = { fileName: E.file, sheets: await sheetsOf(path.join(FX, "event-workbook-shape.xlsx")), answers: IMPORT5_DATES };
   const RUN = "imp_fix52_again";
   await q(`CREATE OR REPLACE FUNCTION fix52_refuse_gift_e() RETURNS trigger AS $$ BEGIN
              IF NEW.org_id = 'org_fix52e' THEN RAISE EXCEPTION 'fix52 planted failure'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);

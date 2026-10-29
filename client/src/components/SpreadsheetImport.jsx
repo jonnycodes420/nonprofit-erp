@@ -25,6 +25,7 @@ const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 1
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
 const small = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
 const field = { flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" };
+const linkBtn = { background: "none", border: "none", padding: 0, color: T.greenDk, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontFamily: "inherit" };
 const chip = { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: T.bg, color: T.ink, marginLeft: 6 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink,
   border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9, padding: "9px 14px", fontWeight: 800, fontSize: 13,
@@ -288,9 +289,19 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const c = u && u.counts;
   const acct = u && u.columnAccount;
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
-  const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate ? dateAsked : null);
+  const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate && !(u.event && u.event.named) ? dateAsked : null);
+  // IMPORT-5: the event's gifts and the file's pledges, each asked once; the
+  // box stays on screen once answered so she can change her answer
+  const eventGiftsQ = u ? u.questions.find(q => q.id === "eventGifts") : null;
+  const pledgeDueQ = u ? u.questions.find(q => q.id === "pledgeDue") : null;
+  const [giftsAsked, setGiftsAsked] = useState(null);
+  const [pledgeAsked, setPledgeAsked] = useState(null);
+  useEffect(() => { if (eventGiftsQ) setGiftsAsked(eventGiftsQ); }, [eventGiftsQ]);
+  useEffect(() => { if (pledgeDueQ) setPledgeAsked(pledgeDueQ); }, [pledgeDueQ]);
+  const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
+  const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
   const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
   // everyone in the file who matches a person she deleted: blocked, or asked by name
@@ -432,18 +443,58 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
-            {(eventQ || (u.event && u.event.fromEngagement)) && (
+            {(eventQ || (u.event && (u.event.fromEngagement || u.event.named))) && (
               <div style={{ ...box, borderColor: eventQ && !eventQ.optional ? T.gold500 : T.bg3 }} data-testid="sheet-question-event">
                 <div style={h3}>{eventQ ? eventQ.text : "The event"}</div>
+                {eventQ && eventQ.holds && <div style={{ ...small, color: T.ink }} data-testid="sheet-event-holds">Your file: {eventQ.holds}{eventName ? ` · ${eventName}` : ""}</div>}
                 {eventQ && <div style={small}>{eventQ.hint}</div>}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
                   <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Called
                     <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
                   </label>
-                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>On (optional)
-                    <input type="date" data-testid="sheet-event-date" value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>{eventQ && eventQ.required ? "On" : "On (optional)"}
+                    <input type="date" data-testid="sheet-event-date" required={!!(eventQ && eventQ.required)} value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   </label>
                 </div>
+                {eventQ && eventQ.canSayNotEvent && (
+                  <button type="button" data-testid="sheet-not-event" style={{ ...linkBtn, marginTop: 8 }} onClick={() => setAnswer({ notEvent: true, eventDate: "", useEventDate: undefined, pledgeDue: answers.pledgeDue === "event" ? undefined : answers.pledgeDue })}>
+                    This file isn't from an event
+                  </button>
+                )}
+              </div>
+            )}
+            {answers.notEvent && !eventQ && (
+              <div style={{ ...small, marginTop: -4 }}>Read as gifts, not an event. <button type="button" style={linkBtn} onClick={() => setAnswer({ notEvent: false })}>It was an event</button></div>
+            )}
+
+            {giftsQ && (
+              <div style={{ ...box, borderColor: eventGiftsQ ? T.gold500 : T.bg3 }} data-testid="sheet-question-event-gifts">
+                <div style={h3}>{giftsQ.text}</div>
+                <div style={small}>{giftsQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  <button type="button" data-testid="sheet-event-gifts-yes" aria-pressed={answers.useEventDate === true} style={{ ...btn(answers.useEventDate === true), padding: "6px 12px", fontSize: 12.5 }}
+                    onClick={() => setAnswer({ useEventDate: true })}>Yes, date them {answers.eventDate ? longDate(answers.eventDate) : "on the event's day"}</button>
+                  <button type="button" data-testid="sheet-event-gifts-no" aria-pressed={answers.useEventDate === false} style={{ ...btn(answers.useEventDate === false), padding: "6px 12px", fontSize: 12.5 }}
+                    onClick={() => setAnswer({ useEventDate: false })}>No, leave them No date</button>
+                </div>
+              </div>
+            )}
+
+            {pledgeQ && (
+              <div style={{ ...box, borderColor: pledgeDueQ ? T.gold500 : T.bg3 }} data-testid="sheet-question-pledge-due">
+                <div style={h3}>{pledgeQ.text}</div>
+                <div style={small}>{pledgeQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  {(pledgeQ.options || []).map(o => (
+                    <button type="button" key={o.key} data-testid={`sheet-pledge-due-${o.key}`} aria-pressed={answers.pledgeDue === o.key}
+                      style={{ ...btn(answers.pledgeDue === o.key), padding: "6px 12px", fontSize: 12.5 }}
+                      onClick={() => setAnswer({ pledgeDue: o.key })}>{o.label}{o.key === "event" && answers.eventDate ? ` (${longDate(answers.eventDate)})` : ""}</button>
+                  ))}
+                  {answers.pledgeDue === "choose" && (
+                    <input type="date" data-testid="sheet-pledge-due-date" aria-label="First due date" value={answers.pledgeDueDate || ""} onChange={e => setAnswer({ pledgeDueDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                  )}
+                </div>
+                {answers.pledgeDue === "event" && !answers.eventDate && <div style={{ ...small, marginTop: 6 }}>Give the event's date above first.</div>}
               </div>
             )}
 

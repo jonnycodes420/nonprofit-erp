@@ -852,7 +852,15 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const giftTables = usable.filter(t => t.kind === "gifts");
   const fileKind = giftTables.length ? "gifts" : usable.length ? "people" : "unknown";
   const dateAnswer = answers.date && /^\d{4}-\d{2}-\d{2}$/.test(answers.date) ? answers.date : null;
-  const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : null;
+  // "Date them all" with the event linked is the event's date too (the write reads it the same way)
+  const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : (answers.linkEvent && dateAnswer) || null;
+  // IMPORT-5: a pledge with no date of its own is due from the event's date
+  // (counted as before: a one-year pledge by that year's end, a multi-year one
+  // yearly from it), from a date she chose (that day, then yearly), or has no
+  // set due date. Unanswered, it has none, and the question blocks.
+  const pledgeDueDate = answers.pledgeDueDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.pledgeDueDate) ? answers.pledgeDueDate : null;
+  const pledgeDueBase = answers.pledgeDue === "event" ? eventDateAnswer : answers.pledgeDue === "choose" ? pledgeDueDate : null;
+  const singleDue = base => !base ? null : answers.pledgeDue === "choose" && base === pledgeDueDate ? base : yearEnd(base);
   const questions = [];
   const help = [];
   const hasEngagement = usable.some(t => t.cols.some(c => ENGAGE_ROLES.has(c.role)));
@@ -1218,10 +1226,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      note: noteParts.join(". ") || null, frequency: freq.kind, frequencyOriginal: freq.original || null, flags: giftFlags };
       const person = ensure();
       if (freq.kind === "monthly") flags.push({ personKey: pkey, who: who.name, flag: "monthly", cents: cents(amt), line: b.line, sheet: t.sheet });
-      // a pledge needs due dates: with no date in the file they count from the
-      // event's date, or else the day of the import, and the pledge says so
-      const dueBase = date || eventDateAnswer || T;
-      if (!date) noteParts.push(`Your file gave no date, so its due dates count from ${dueBase}`);
+      // IMPORT-5: a pledge's due dates come from the file, or from her answer
+      // (the event's date, a date she chose, or "No set due date"). Never from
+      // the day of the import: Steward does not make up a day.
+      const ownDate = datedBy === "file" || datedBy === "you" ? date : null;
+      const dueBase = ownDate || pledgeDueBase;
+      if (!ownDate) noteParts.push(dueBase ? `Your file gave no date. Due dates count from ${dueBase}, ${answers.pledgeDue === "choose" ? "the date you chose" : "the event's date"}` : "No set due date");
       if (freq.kind === "multiYear" && freq.years > 1) {
         const yearly = cents(amt);
         const total = multiTotal != null && cents(multiTotal) > 0 ? cents(multiTotal) : yearly * freq.years;
@@ -1230,9 +1240,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         for (let k = 0; k < freq.years; k++) {
           const amtK = k === freq.years - 1 ? remaining : Math.min(yearly, remaining);
           remaining -= amtK;
-          installments.push({ seq: k + 1, dueDate: addYears(dueBase, k), cents: amtK, paid: k === 0 && paid });
+          installments.push({ seq: k + 1, dueDate: dueBase ? addYears(dueBase, k) : null, cents: amtK, paid: k === 0 && paid });
         }
-        pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
+        pledges.push({ ...base, datedBy: ownDate ? datedBy : (dueBase ? answers.pledgeDue : "none"), note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: total, years: freq.years, installments, firstPaid: paid,
                        paidCents: paid ? yearly : 0, openCents: total - (paid ? yearly : 0),
                        thisYearCents: yearly, dueDate: dueBase, why: `"${freq.original}": ${fmt$(total)} over ${freq.years} years, ${fmt$(yearly)} a year` + (paid ? ", the first year paid" : "") });
         person.roles.add("pledger");
@@ -1241,8 +1251,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       }
       if (!paid) {
         pledges.push({ ...base, note: noteParts.join(". ") || null, kind: "pledge", pledgeCents: cents(amt), years: 1, thisYearCents: cents(amt), paidCents: 0, openCents: cents(amt),
-                       installments: [{ seq: 1, dueDate: yearEnd(dueBase), cents: cents(amt), paid: false }],
-                       dueDate: yearEnd(dueBase), why: paidSource === "you" ? "you said not yet paid" : /^pledge$/i.test(methodRaw) ? `Method "Pledge": a promise, not yet paid`
+                       installments: [{ seq: 1, dueDate: singleDue(dueBase), cents: cents(amt), paid: false }],
+                       dueDate: singleDue(dueBase), datedBy: ownDate ? datedBy : (dueBase ? answers.pledgeDue : "none"), why: paidSource === "you" ? "you said not yet paid" : /^pledge$/i.test(methodRaw) ? `Method "Pledge": a promise, not yet paid`
                          : pledgeList && !paidCol ? `"${t.header[role("amount").index]}": a promise, not yet paid` : `"${t.header[(paidCol || role("status") || {}).index] || "Status"}" says not yet paid` });
         person.roles.add("pledger");
         continue;
@@ -1280,19 +1290,55 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     }
   }
 
-  // ── the event: named by a title row, the file name, or her answer. Its date
-  // is optional; the gifts stay undated unless she says to use it.
+  // ── the event: named by a title row, the file name, or her answer.
+  // IMPORT-5 · DATES ARE ASKED, NEVER INVENTED. When the file names an event
+  // (a guest list, a title row, or a file name with an event word) and holds
+  // no dates, the event's date is a question that blocks: without it, every
+  // gift would land "No date" and every pledge be due from a made-up day.
   const undatedCount = gifts.filter(g => !g.date).length;
   const suggestedEventName = eventNameFromTitles(tables) || eventNameFromFile(fileName);
-  const eventWanted = hasEngagement || (answers.linkEvent && answers.eventName);
-  if (hasEngagement) {
-    // a name Steward cannot guess is a real question: attendance needs an event
-    questions.push({ id: "event", kind: "event", optional: !!(answers.eventName || suggestedEventName), text: "What was this event called, and when?",
-                     hint: "Steward found who was invited and who came. The date is optional.",
-                     suggestedEventName: answers.eventName || suggestedEventName, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
+  const evName = s(answers.eventName) || suggestedEventName || "";
+  const fileHasDates = usable.some(t => t.cols.some(c => c.role === "date"));
+  // a title row or a file name names the event only for a file with no dates:
+  // a dated gift export called "Gala gifts" is gifts, not an event to create
+  const eventNamed = !answers.notEvent && (hasEngagement || !!(answers.linkEvent && answers.eventName)
+    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || EVENT_WORD_RE.test(suggestedEventName)))));
+  const eventWanted = eventNamed || (answers.linkEvent && answers.eventName);
+  // the gifts that would take the event's date: no date of their own
+  const eventGiftCount = gifts.filter(g => !g.date || g.datedBy === "event").length;
+  const undatedPledges = pledges.filter(p => p.datedBy !== "file" && p.datedBy !== "you");
+  const rowsInFile = usable.reduce((a, t) => a + (t.readCount != null ? t.readCount : dataRows(t).length), 0);
+  const eventNeedsDate = eventNamed && !eventDateAnswer && (eventGiftCount + undatedPledges.length > 0 || (hasEngagement && !fileHasDates));
+  if (eventNamed) {
+    const named = evName ? `the ${evName}` : "this event";
+    questions.push({ id: "event", kind: "event", optional: !!evName && !eventNeedsDate, required: eventNeedsDate,
+                     text: eventNeedsDate ? `When was ${named}?` : "What was this event called, and when?",
+                     holds: fileHasDates ? null : `${rowsInFile.toLocaleString("en-US")} ${rowsInFile === 1 ? "row" : "rows"}, no dates`,
+                     hint: eventNeedsDate ? `Your file names ${named} but gives no date, so Steward asks rather than make one up. Import waits for it.`
+                       : "Steward found who was invited and who came.",
+                     canSayNotEvent: !hasEngagement,
+                     suggestedEventName: evName || null, suggestedDate: eventDateAnswer || answers.suggestedDate || null });
   }
-  // undated gifts are one optional question for the whole file, never a block
-  if (undatedCount && !dateAnswer) {
+  if (eventNamed && eventDateAnswer && eventGiftCount && typeof answers.useEventDate !== "boolean") {
+    questions.push({ id: "eventGifts", kind: "useEventDate", count: eventGiftCount, eventName: evName || null, eventDate: eventDateAnswer,
+                     text: `Use the ${evName || "event"} date for ${eventGiftCount === 1 ? "this gift" : `these ${eventGiftCount.toLocaleString("en-US")} gifts`}?`,
+                     hint: "Yes dates them on the event's day. No leaves them No date: they count in Lifetime and the event's total, not in This year, a goal or retention.",
+                     options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, leave them No date" }] });
+  }
+  // pledges: each needs a due date or an explicit "No set due date", asked once
+  const pledgeDueAnswered = answers.pledgeDue === "none" || (answers.pledgeDue === "event" && !!eventDateAnswer) || (answers.pledgeDue === "choose" && !!pledgeDueDate);
+  if (undatedPledges.length && !pledgeDueAnswered) {
+    const multi = undatedPledges.filter(p => p.years > 1).length;
+    questions.push({ id: "pledgeDue", kind: "pledgeDue", count: undatedPledges.length, multiYear: multi,
+                     text: `When are ${undatedPledges.length === 1 ? "this pledge" : `these ${undatedPledges.length.toLocaleString("en-US")} pledges`} due?`,
+                     hint: (eventDateAnswer ? `From the event's date: a one-year pledge is due by ${longIso(yearEnd(eventDateAnswer))}` : "Your file gives no due dates")
+                       + (multi ? `; ${plural(multi, "multi-year pledge")} ${multi === 1 ? "gets" : "get"} a yearly installment from the first date.` : ".")
+                       + " Steward never counts from the day of the import.",
+                     options: [...(eventNamed ? [{ key: "event", label: "Same as the event date", needs: eventDateAnswer ? null : "the event's date" }] : []),
+                               { key: "choose", label: "A date I choose" }, { key: "none", label: "No set due date" }] });
+  }
+  // undated gifts with no event are one optional question, never a block
+  if (!eventNamed && undatedCount && !dateAnswer) {
     questions.unshift({ id: "date", kind: "date", optional: true, count: undatedCount,
                         text: undatedCount === 1 ? "1 gift has no date." : `${undatedCount.toLocaleString("en-US")} gifts have no date.`,
                         hint: "They import either way, each marked No date. They count in Lifetime and the event's total, never in This year, a goal or retention, until they have a date.",
@@ -1389,7 +1435,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
                    ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
-    event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement } : null,
+    event: eventWanted ? { name: answers.eventName || suggestedEventName || null, date: eventDateAnswer, fromEngagement: hasEngagement, named: eventNamed } : null,
     counts: {
       people: persons, persons, records: peopleList.length,
       households: peopleList.filter(p => p.household).length,
@@ -1484,6 +1530,8 @@ function addYears(iso, k) {
   return `${y + k}-${String(m).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 function yearEnd(iso) { return `${iso.slice(0, 4)}-12-31`; }
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function longIso(iso) { return `${MONTH_NAMES[+iso.slice(5, 7) - 1]} ${+iso.slice(8, 10)}, ${iso.slice(0, 4)}`; }
 // FNV-1a, 32-bit, twice with different seeds → 16 hex. Stable across Node and browsers.
 function hash(str) {
   let h1 = 0x811c9dc5, h2 = 0x01000193 ^ 0x5bd1e995;

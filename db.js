@@ -2354,6 +2354,10 @@ async function runSchemaInit(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_org_due ON pledge_installments (org_id, due_date) WHERE paid_gift_id IS NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_pledge ON pledge_installments (pledge_id)`);
+  // IMPORT-5: a pledge may have "No set due date" (she said so on import);
+  // Steward never makes one up. Schema only: no row changes.
+  await pool.query(`ALTER TABLE pledges ALTER COLUMN due_date DROP NOT NULL`);
+  await pool.query(`ALTER TABLE pledge_installments ALTER COLUMN due_date DROP NOT NULL`);
   // A pledge that states a cadence but no schedule can generate one; a SHELL
   // pledge (BUILD-88a A.7, inferred from payments) states neither and says so.
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);

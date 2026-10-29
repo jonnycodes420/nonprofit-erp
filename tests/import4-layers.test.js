@@ -46,6 +46,9 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+// IMPORT-5: the answers a person gives an event file with no dates: the event's
+// day, its gifts left "No date", its pledges due from the event's date
+const IMPORT5_DATES = { eventDate: "2026-10-22", useEventDate: false, pledgeDue: "event" };
 const { assertSurfacesAgree } = require("./lib/surfacesAgree");   // HARDEN-1
 async function surfacesAgree(label, orgId, token) {
   const r = await assertSurfacesAgree(orgId, { token, soft: true, label });
@@ -136,7 +139,12 @@ async function combined() {
   ok("§0 the fixture's matched people are who this suite says", row("JP-1013") && row("JP-1022")[3] === "marisol.sorensen22@example.org"
      && peopleRows.some(r => `${r[1]} ${r[2]}` === "Odette Valdivia" && !r[3]), JSON.stringify([row("JP-1013"), row("JP-1022")]));
   const before = await snapshot(ORG);
-  const body = { fileName: "Finding_Joy_Combined.xlsx", sheets };
+  // IMPORT-5: an event's date is asked, never invented; the first preview asks it
+  const asked = await api("POST", "/sheet-import/understand", tok, { fileName: "Finding_Joy_Combined.xlsx", sheets });
+  const askedQ = ((asked.body || {}).questions || []);
+  ok("§1 with no date in the file, the event's date is a required question and Import waits", (asked.body || {}).ready === false
+     && askedQ.some(x => x.id === "event" && x.required && !x.optional) && askedQ.some(x => x.id === "pledgeDue"), JSON.stringify(askedQ.map(x => [x.id, x.optional])));
+  const body = { fileName: "Finding_Joy_Combined.xlsx", sheets, answers: IMPORT5_DATES };
 
   // §1 the preview
   const t0 = performance.now();
@@ -164,8 +172,8 @@ async function combined() {
   ok("§1 the button never offers 0 gifts", !/\b0 gifts\b/.test(btn));
   ok("§1 the totals row is checked and explained", /Your total row says \$178,240.*106 gifts \(\$124,290\), \$53,950 promised and not yet received/.test((U.totalsSentence || [])[0] || ""), JSON.stringify(U.totalsSentence));
   ok("§1 the shared phone is flagged as a placeholder on 30 people", (U.placeholders || []).some(p => p.kind === "phone" && p.people === E.placeholderPeople), JSON.stringify(U.placeholders));
-  ok("§1 the event is named from the title row; the date question is optional", U.event && U.event.name === E.eventName
-     && (U.questions || []).filter(x => ["date", "event"].includes(x.id)).every(x => x.optional), JSON.stringify([U.event, (U.questions || []).map(x => [x.id, x.optional])]));
+  ok("§1 the event is named from the title row; once dated, nothing about dates blocks", U.event && U.event.name === E.eventName
+     && (U.questions || []).filter(x => ["date", "event", "eventGifts", "pledgeDue"].includes(x.id)).every(x => x.optional), JSON.stringify([U.event, (U.questions || []).map(x => [x.id, x.optional])]));
   ok("§1 the sample person shows the most layers", U.sample && U.sample.roles.includes("donor") && U.sample.attendance && U.sample.attendance.attended, String(JSON.stringify(U.sample)).slice(0, 300));
   ok("§1 understand wrote nothing", (await one("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [ORG])).n === 0);
 
@@ -192,7 +200,7 @@ async function combined() {
   ok("§3 This year does not", !f.thisYear || !f.thisYear.cents, JSON.stringify(f.thisYear));
   ok("§3 and the profile says why", JSON.stringify(prof.body).includes("no date not counted"), JSON.stringify(f.thisYear));
   const ev = await q("SELECT * FROM events WHERE org_id=$1", [ORG]);
-  ok("§4 the event is created once, by its name, its date not known", ev.length === 1 && ev[0].name === E.eventName && ev[0].date_unknown === true, JSON.stringify(ev));
+  ok("§4 the event is created once, by its name, on the day she gave (IMPORT-5)", ev.length === 1 && ev[0].name === E.eventName && ev[0].date_unknown === false && JSON.stringify(ev[0].date).startsWith("\"2026-10-2"), JSON.stringify(ev));
   const evId = ev[0] && ev[0].id;
   const evg = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND event_id=$2", [ORG, evId]);
   ok("§3 the event total counts every undated gift", evg.n === E.gifts && centsOf(evg.s) === E.giftCents, JSON.stringify(evg));
@@ -282,9 +290,9 @@ async function combined() {
 // ── import4-either-order ──────────────────────────────────────────────────
 async function eitherOrder() {
   const gifts = { fileName: "Finding Joy Dinner Gifts.xlsx", sheets: await sheetsOf(path.join(FX, "event-gifts-sheet-scrubbed.xlsx")),
-                  answers: { eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } } };
+                  answers: { ...IMPORT5_DATES, eventName: "Finding Joy Dinner", linkEvent: true, rows: { "Sheet1:26": "gift" } } };
   const guests = { fileName: "Finding Joy Dinner Guest List.xlsx", sheets: await sheetsOf(path.join(FX, "event-guest-list-scrubbed.xlsx")),
-                   answers: { eventName: "Finding Joy Dinner" } };
+                   answers: { ...IMPORT5_DATES, eventName: "Finding Joy Dinner" } };
   const E = EXPECTED["event-guest-list-scrubbed.xlsx"];
   const out = {};
   for (const [tag, order] of [["a", [gifts, guests]], ["b", [guests, gifts]]]) {
@@ -317,7 +325,7 @@ async function everyFixture(rows) {
     const ORG = `org_import4f_${String(i).padStart(2, "0")}`;
     const tok = await freshOrg(ORG, "Fixture " + file);
     const full = file.startsWith("event-") ? path.join(FX, file) : path.join(FX4, file);
-    const body = { fileName: file, sheets: await sheetsOf(full), answers: e.answers || {} };
+    const body = { fileName: file, sheets: await sheetsOf(full), answers: { ...IMPORT5_DATES, ...(e.answers || {}) } };
     const before = await snapshot(ORG);
     const t0 = performance.now();
     const u = await api("POST", "/sheet-import/understand", tok, body);

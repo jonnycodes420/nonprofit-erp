@@ -620,7 +620,7 @@ async function writePlan({ req, body, importId, who, report }) {
   let eventId = null;
   const evName = String(a.eventName || (u.event && u.event.name) || "").trim().slice(0, 200);
   const evDate = /^\d{4}-\d{2}-\d{2}$/.test(String(a.eventDate || "")) ? a.eventDate : (a.linkEvent && /^\d{4}-\d{2}-\d{2}$/.test(String(a.date || "")) ? a.date : null);
-  if (evName && ((a.linkEvent && a.eventName) || (u.event && u.event.fromEngagement))) {
+  if (evName && ((a.linkEvent && a.eventName) || (u.event && (u.event.fromEngagement || u.event.named)))) {
     const [ev] = a.eventId
       ? await query("SELECT id FROM events WHERE id=? AND org_id=?", [a.eventId, orgId])
       : evDate ? await query("SELECT id FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) AND date=?::date LIMIT 1", [orgId, evName, evDate])

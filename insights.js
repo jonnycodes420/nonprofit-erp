@@ -796,7 +796,7 @@ const LIBRARY = [
         const later = inst.filter(i => !i.paid_gift_id && i.due_date && +i.due_date.slice(0, 4) > y);
         const nowCents = multi ? dueNow.reduce((n, i) => n + i.cents, 0) : p.balance;
         const facts = [["pledged", money(p.cents)], ["paid", money(p.paid)], ["still to come", money(p.balance)]];
-        if (multi) for (const i of inst) facts.push([`${i.due_date.slice(0, 4)} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
+        if (multi) for (const i of inst) facts.push([`${i.due_date ? i.due_date.slice(0, 4) : "Undated"} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
         const due = (dueNow[0] && dueNow[0].due_date) || p.due_date && ymd(p.due_date);
         items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
           what: `Pledged ${money(p.cents)}: ${money(p.paid)} received, ${money(p.balance)} still to come.${multi && nowCents ? ` ${money(nowCents)} is due this year.` : ""}`,
