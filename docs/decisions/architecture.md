@@ -3,6 +3,17 @@
 Read this when you touch the stack, env vars, project layout, `server.js`/`db.js`/`routes/`/`shared/`, the schema, org scoping, the actor stamp, API keys, assets, export or scale.
 
 ## Rules
+
+- **SECURE-1 (2026-10-28): the security floor.** Every API answer carries nosniff, Referrer-Policy,
+  HSTS and `frame-ancestors` limited to Steward's own origins (server.js, beside `cors()`, which now
+  has `maxAge: 7200`). A page an org embeds replaces it with `frame-ancestors *`; a stored file is
+  served with `assetStore.ASSET_CSP` (sandbox). The staff app refuses to draw inside another site's
+  frame (client/src/main.jsx `STAFF_PATHS`). A large JSON parser (`bigJson`) runs only for a request
+  with a validly signed session token; everyone else gets the 5mb global parser. A server whose
+  database is not on loopback will not start without `JWT_SECRET`, or with a development value from
+  the repo, and warns under 32 characters (auth.js `jwtSecretProblem`). A stored website is
+  `webAddress()` (http(s) or nothing). Invite links, Atlas and import previews have their own
+  limiters. The guard is `tests/security.test.js`.
 - **Code that both client and server run lives in `shared/` as ESM, never in `client/src/lib/`.**
   `.railwayignore` strips `client/` from the backend artifact, and `shared/package.json` declares
   `"type":"module"`. (BUILD-79)

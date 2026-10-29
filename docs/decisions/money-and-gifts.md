@@ -3,6 +3,10 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+
+- **SECURE-1 (2026-10-28): who may delete money.** A gift, pledge or grant is deleted by the
+  person who entered it (`created_by`) or by an admin (`mayEditLogged`), never by another staff
+  member. An imported gift (a `system:` actor) is an admin's to delete.
 - **Partly a gift moves only the value received (HOME-3).** Review's third choice keeps the gift row at
   the rest (edited as PUT /gifts/:id edits an amount: soft credits and ledger stamp follow, then the recalc
   and `afterChange`), states the value received in `quid_pro_quo_value`/`_desc` with `deductible_amount` =

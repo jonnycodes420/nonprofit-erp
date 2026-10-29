@@ -18,7 +18,7 @@ const express = require("express");
 const ItemRefs = require("../itemRefs");   // THREAD-2: names in staff email are links
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
-const { getAssetMeta } = require("../assetStore");
+const { getAssetMeta, ASSET_CSP } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
@@ -6572,7 +6572,10 @@ app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   }
   res.set("Content-Type", contentType);
   res.set("Cache-Control", asset.isPublic ? "public, max-age=31536000, immutable" : "private, no-store");
-  if (!asset.isPublic) res.set("X-Content-Type-Options", "nosniff");
+  // SECURE-1 · served as an image and nothing else, even an SVG stored before
+  // SVG was refused: opened on its own, it cannot run script on this domain.
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Content-Security-Policy", ASSET_CSP);
   res.set("ETag", `"${asset.id}${variantTag}"`);
   res.set("Vary", "Accept");
   res.send(buffer);
@@ -7999,6 +8002,10 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
   if (!name || !EMAIL_RX.test(em) || String(password || "").length < 8) return res.status(400).json({ error: "Name, email, and a password of 8+ characters are required" });
   if (ein.length !== 9) return res.status(400).json({ error: "EIN must be 9 digits" });
   if (req.body?.consent !== true) return res.status(400).json({ error: "consent_required", message: "Please agree to the Terms and Privacy Policy." });
+  // SECURE-1: the website is shown to the super admin as a link, so it is a
+  // web address or nothing (webAddress.js); "javascript:…" is refused here.
+  const site = require("../webAddress").webAddress(website);
+  if (site === null) return res.status(400).json({ error: "bad_website", message: "The website should be a web address, like yourorg.org." });
   const existingUser = await query(`SELECT id FROM users WHERE email = ?`, [em]);
   if (existingUser.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward login." });
 
@@ -8044,7 +8051,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
     `INSERT INTO network_applications (id, org_id, ein, status, ein_result, domain_check, website, disputed_org_id, decisions)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     [appId, orgId, ein, status, JSON.stringify({ ...einResult, nameScore: einResult.found ? einNameScore(name, einResult.name) : null }),
-     JSON.stringify(domainCheck), String(website || "").slice(0, 300) || null,
+     JSON.stringify(domainCheck), site || null,
      einHolder[0]?.org_id || null, JSON.stringify(decision)]);
 
   // Same staff JWT the normal login mints — the org admin proceeds to Stripe

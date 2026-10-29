@@ -120,6 +120,7 @@ export DATABASE_URL="${DATABASE_URL:-postgresql://steward@localhost:5544/steward
 CORE=(
   tenant-isolation
   tenant-matrix
+  security
   fix11-audit-trail
   fix11-job-audit
   org-blindness

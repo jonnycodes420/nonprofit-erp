@@ -43,19 +43,29 @@ export function normalizeMergeFields(html) {
   return out;
 }
 
+// SECURE-1 · a merge value is a donor's own text (a name typed on a public
+// giving form), so it goes into HTML as text: "<img onerror=…>" as a first
+// name is shown as those characters, never run. Subjects are text, not HTML,
+// and pass { text: true } so React (or the mail client) shows them unchanged.
+export function escapeMergeValue(v) {
+  return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // One renderer for the preview and for the send, so what she reads on the right
 // of the screen is the email that leaves.
-export function renderMergeFields(html, values = {}) {
+export function renderMergeFields(html, values = {}, { text = false } = {}) {
+  const e = text ? (x => x) : escapeMergeValue;
   const v = {
-    first_name: values.first_name || "Margaret",
-    donor_name: values.donor_name || "Margaret Chen",
-    org_name: values.org_name || "your organization",
-    gift_amount: values.gift_amount || "your last gift",
-    total_giving: values.total_giving || "$0",
-    year: values.year || String(new Date().getUTCFullYear()),
+    first_name: e(values.first_name || "Margaret"),
+    donor_name: e(values.donor_name || "Margaret Chen"),
+    org_name: e(values.org_name || "your organization"),
+    gift_amount: e(values.gift_amount || "your last gift"),
+    total_giving: e(values.total_giving || "$0"),
+    year: e(values.year || String(new Date().getUTCFullYear())),
   };
   // FIX-46: "Dear {{donor_name}}" greets (values.greeting, shared/greeting.js).
-  return greetMerge(normalizeMergeFields(html), values.greeting || values.first_name)
+  const greeting = values.greeting || values.first_name;
+  return greetMerge(normalizeMergeFields(html), greeting ? e(greeting) : greeting)
     .replace(/{{first_name}}/g, v.first_name)
     .replace(/{{donor_name}}/g, v.donor_name)
     .replace(/{{org_name}}/g, v.org_name)

@@ -121,10 +121,14 @@ async function cleanup(orgId) {
       (await api("GET", "/donors", t1)).status === 200 && (await api("GET", "/donors", t2)).status === 200);
     await new Promise((r) => setTimeout(r, 2500)); // ensure token iat < reset time − skew
     // Real reset flow: forgot-password mints a token, reset-password consumes it.
+    // SECURE-1: the row holds only the token's hash, so the suite mints its
+    // own token the way forgot-password does and stores it the same way.
     await api("POST", "/auth/forgot-password", null, { email: a.email });
     const prt = await q("SELECT token FROM password_reset_tokens WHERE user_id=$1 AND used=false ORDER BY expires_at DESC LIMIT 1", [a.userId]);
-    ok("reset token issued", prt.length === 1);
-    const rr = await api("POST", "/auth/reset-password", null, { token: prt[0].token, password: "newprobe1234" });
+    ok("reset token issued, stored as a hash", prt.length === 1 && /^h1:[0-9a-f]{64}$/.test(prt[0].token));
+    const known = require("crypto").randomBytes(32).toString("hex");
+    await q("UPDATE password_reset_tokens SET token=$1 WHERE user_id=$2 AND used=false", [require("../auth").resetTokenHash(known), a.userId]);
+    const rr = await api("POST", "/auth/reset-password", null, { token: known, password: "newprobe1234" });
     ok("password reset succeeds", rr.status === 200, rr.body);
     ok("(fails pre-fix) session #1 dies after the reset", (await api("GET", "/donors", t1)).status === 401);
     ok("(fails pre-fix) session #2 dies after the reset", (await api("GET", "/donors", t2)).status === 401);

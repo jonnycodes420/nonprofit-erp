@@ -2517,7 +2517,7 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
   const token = crypto.randomBytes(32).toString("hex");
   await run(
     `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '7 days')`,
-    ["prt_" + uuid().slice(0, 8), userId, token]
+    ["prt_" + uuid().slice(0, 8), userId, require("../auth").resetTokenHash(token)]
   );
   const link = `${publicAppUrl()}/reset-password?token=${token}`;
   // GTM-1a — a yearly plan charges the YEARLY figure, and this is the
