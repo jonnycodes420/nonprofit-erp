@@ -126,6 +126,11 @@ function resolveActor(req, desc) {
   if (req.auditActor && req.auditActor.name) {
     return { kind: req.auditActor.kind || "system", id: req.auditActor.id || null, name: req.auditActor.name };
   }
+  // FIX-57 · A CHANGE MADE IN A SUPPORT SESSION is Steward support's, named,
+  // and never a member of the org's team.
+  if (req.user && req.user.support && req.user.userId) {
+    return { kind: "support", id: "support:" + req.user.userId, name: req.user.support.name };
+  }
   // FIX-11 Part 6 tail — AN ACTION THE AGENT DRAFTED AND A PERSON APPROVED.
   // Both halves belong in the row: the model did the work and a named human
   // took responsibility for it. `req.auditApproverName` is the person's NAME,

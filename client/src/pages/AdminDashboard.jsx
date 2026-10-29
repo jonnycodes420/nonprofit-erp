@@ -6,6 +6,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
+import { enterSupport } from "../lib/supportSession";   // FIX-57
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -476,6 +477,34 @@ function OrgSetup({ orgId, PSH, PBTN }) {
   );
 }
 
+// FIX-57 · OPEN AS SUPPORT. A read-only session in this one org, logged in
+// its Activity. Changes need a second confirm inside it, and the server
+// refuses every change until then. The org can turn this off in Settings;
+// then this says so and there is no button.
+function SupportOpen({ org, PBTN }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  if (org.support_access_off === true) {
+    return <div data-testid="admin-support-off" style={{ fontSize: 12.5, color: A.secondary, lineHeight: 1.5 }}>
+      <strong style={{ color: A.ink }}>Support access is off.</strong> {org.name} turned it off in Settings, so it can't be opened as support.
+    </div>;
+  }
+  async function open() {
+    setBusy(true); setNote("");
+    try { enterSupport(await adminFetch("/admin/orgs/" + org.id + "/support/open", { method: "POST", body: "{}" })); }
+    catch (e) { setNote(e.message); setBusy(false); }
+  }
+  return <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <button type="button" data-testid="admin-open-support" onClick={open} disabled={busy} style={{ ...PBTN, alignSelf: "flex-start" }}>
+      {busy ? "Opening…" : "Open as support"}
+    </button>
+    <div style={{ fontSize: 11.5, color: A.secondary, lineHeight: 1.5 }}>
+      Read-only, for two hours at most. The visit is logged in their Activity; a change needs a second confirm and is logged as Steward support.
+    </div>
+    {note && <div style={{ fontSize: 12.5, color: A.ink }}>{note}</div>}
+  </div>;
+}
+
 // PRICING-1 · EXISTING DEALS HOLD. "Custom price, ends on": an org with one
 // (CKRH at $149, a beta org free until its date) is never measured against a
 // band and never moved to a band price automatically.
@@ -874,6 +903,12 @@ function OrgPanel({ org, onClose, onRefresh }) {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* FIX-57: open as support */}
+          <div style={{ marginTop: 8, border: `1px solid ${A.border}`, borderRadius: 10, padding: "16px 20px", background: A.card }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: A.secondary, marginBottom: 10 }}>Support access</div>
+            <SupportOpen org={{ ...org, ...(detail || {}) }} PBTN={PBTN} />
           </div>
 
           {/* Danger zone */}

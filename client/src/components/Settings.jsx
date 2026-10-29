@@ -21,6 +21,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
 import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
+import SupportAccessCard from "./SupportAccessCard";   // FIX-57
 import { PrivacyPanel } from "./PrivacyPanel";
 import { MailTypesSettings, GoingOut, MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
@@ -4045,6 +4046,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {/* ── Account ───────────────────────────────────────────────────────── */}
       {/* ── SEC-1 · Security ─────────────────────────────────────────────── */}
       {section==="security"&&<SecurityPanel isAdmin={isAdmin}/>}
+      {/* FIX-57: whether Steward support may open this account. */}
+      {section==="security"&&isAdmin&&<SupportAccessCard/>}
 
       {section==="account"&&<>
       {/* TRUST-2 — the DPA, once an attorney has read it and it is published. */}

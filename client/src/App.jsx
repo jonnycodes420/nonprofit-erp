@@ -21,6 +21,7 @@ import { bootRead } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
+import SupportBanner from "./components/SupportBanner";   // FIX-57
 import { errorMessage } from "./lib/domainError";
 import { useAtlasName } from "./lib/atlas";   // AGENT-5
 import { AtlasBell, AtlasNote } from "./components/AtlasNote";
@@ -809,6 +810,9 @@ function AppShell() {
     {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
         (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
     <div className="app-main" style={{marginLeft:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,transition:"margin-left 0.16s ease",marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+
+    {/* FIX-57: a Steward support session says so on every page. */}
+    {auth?.user?.support&&<SupportBanner support={auth.user.support} orgName={auth?.org?.name}/>}
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
     <div className="app-header" style={{borderBottom:"1px solid "+T.bgElevated,padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:T.ink,position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>

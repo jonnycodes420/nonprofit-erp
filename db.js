@@ -8641,6 +8641,26 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS client_privacy_changed_by TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_client BOOLEAN DEFAULT false`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_is_client ON donors (org_id) WHERE is_client`);
+
+  // FIX-57 · SUPPORT ACCESS. A super-admin opens one org as Steward support:
+  // read-only until a second confirm, every open and every change in the
+  // org's Activity. An org turns it off in Settings (on by default, because
+  // this is what replaces anyone reading prod data to debug a screen).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_off BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_changed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_changed_by TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      support_name TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      write_enabled_at TIMESTAMPTZ,
+      ended_at TIMESTAMPTZ)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_sessions_org ON support_sessions (org_id, started_at DESC)`);
   // One row per detail held back. It says THAT something was held and where,
   // never what: there is no column that could carry the words.
   await pool.query(`
