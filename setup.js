@@ -236,7 +236,14 @@ function planSentences({ siteRead, oldReports = [], tools, staff }) {
 async function planFiles(orgId, runId, call) {
   const sorted = await sortFiles(orgId, runId);
   const files = [];
-  for (const f of sorted.sheets) files.push({ id: f.id, name: f.name, role: "sheet", hasBytes: f.hasBytes, reader: await readerSaw(call, f) });
+  // IMPORT-5: a pair from one system (Salesforce Contacts + Donations) is one
+  // line and one import, read together, people linked by their ID
+  const R = await import("./shared/sheetRead.js");
+  for (const g of R.pairExportFiles(sorted.sheets)) {
+    const f = g.files.length === 1 ? g.files[0] : { id: g.ids.join("+"), name: g.name, sheets: g.sheets, suggestedDate: g.files.map(x => x.suggestedDate).filter(Boolean).sort().pop() || null,
+      hasBytes: g.files.every(x => x.hasBytes) };
+    files.push({ id: f.id, name: f.name, role: "sheet", hasBytes: f.hasBytes, reader: await readerSaw(call, f), ...(g.files.length > 1 ? { fileIds: g.ids, fileNames: g.files.map(x => x.name) } : {}) });
+  }
   for (const rep of sorted.oldReports) files.push({ id: rep.fileId, name: rep.name, role: "old_report", evidence: rep.why, rows: rep.rows.length });
   return { files, oldReports: sorted.oldReports };
 }

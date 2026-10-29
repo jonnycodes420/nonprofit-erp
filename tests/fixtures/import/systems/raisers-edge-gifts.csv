@@ -1,0 +1,4 @@
+Constituent ID,Key Indicator,Name,First Name,Last Name,Email,Gift ID,Gift Date,Gift Amount,Gift Type,Fund Description,Campaign Description,Appeal Description,Gift Payment Type
+RE-10021,I,Quentin Arlow,Quentin,Arlow,quentin.arlow@example.net,G-30001,02/11/2025,"$1,000.00",Cash,Annual Fund,2025 Annual Campaign,Winter Letter,Check
+RE-10022,I,Beatrix Holm,Beatrix,Holm,beatrix.holm@example.net,G-30002,05/06/2025,$250.00,Cash,Scholarship Fund,2025 Annual Campaign,Spring Email,Credit Card
+RE-10023,O,Harrow Mill Trust,,,grants@harrowmill.example.net,G-30003,08/19/2025,"$5,000.00",Cash,Building Fund,Capital Campaign,Foundation Request,Check

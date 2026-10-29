@@ -39,8 +39,16 @@ const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
 // FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
 // this same reader with that file. Anything else dropped is not ours.
 export function droppedSpreadsheet(e) {
-  const f = e && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  return f && SHEET_FILE_RE.test(f.name || "") ? f : null;
+  const fs = Array.from((e && e.dataTransfer && e.dataTransfer.files) || []).filter(f => SHEET_FILE_RE.test(f.name || ""));
+  return filesAsOne(fs);
+}
+// IMPORT-5: two files from one system (a Salesforce Contacts export and its
+// Donations export) are one import: read together, people linked by their ID.
+// More than one file is one file-like thing whose sheets are every file's.
+export function filesAsOne(list) {
+  const fs = Array.from(list || []).filter(Boolean);
+  if (fs.length <= 1) return fs[0] || null;
+  return { name: fs.map(f => f.name).join(" + "), lastModified: Math.max(...fs.map(f => f.lastModified || 0)) || undefined, files: fs };
 }
 export function isFileDrag(e) {
   return !!(e && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
@@ -86,6 +94,16 @@ function sayAfterClose(text) {
 // Any file → sheets of cells. xlsx, xls, csv, tsv and a Google Sheets download
 // all come through here.
 export async function readSheetFile(file) {
+  if (file && file.files) {
+    // each file's sheets keep their file's name, so two CSVs are two sheets
+    const out = [];
+    for (const f of file.files) {
+      const base = String(f.name || "file").replace(/\.[a-z]+$/i, "");
+      const sh = await readSheetFile(f);
+      for (const x of sh) out.push({ ...x, name: sh.length === 1 ? base : `${base} · ${x.name}` });
+    }
+    return out;
+  }
   const name = String(file.name || "").toLowerCase();
   const buf = new Uint8Array(await file.arrayBuffer());
   if (/\.(xlsx|xlsm|xls|ods)$/.test(name)) {
@@ -323,9 +341,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = droppedSpreadsheet(e); if (f) setFile(f); else setMsg("That is not a spreadsheet. Steward reads Excel (.xlsx, .xls), CSV and TSV files."); }}>
             <div style={{ ...h3, fontSize: 15 }}>Choose a file or drop it here</div>
-            <div style={small}>Any spreadsheet: an event night's sheet, a list from another system, a bank or PayPal download. Excel (.xlsx, .xls), CSV, TSV, or a Google Sheets download.</div>
-            <input data-testid="sheet-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 10, maxWidth: "100%" }}
-              onChange={e => e.target.files && e.target.files[0] && setFile(e.target.files[0])} />
+            <div style={small}>Any spreadsheet: an event night's sheet, a list from another system, a bank or PayPal download. A pair from another system (Salesforce Contacts and Donations) goes in together: choose both. Excel (.xlsx, .xls), CSV, TSV, or a Google Sheets download.</div>
+            <input data-testid="sheet-file" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 10, maxWidth: "100%" }}
+              onChange={e => e.target.files && e.target.files[0] && setFile(filesAsOne(e.target.files))} />
           </label>
         )}
         {file && <div style={{ ...small }}><strong style={{ color: T.ink }}>{file.name}</strong></div>}
@@ -363,6 +381,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             )}
             <div style={{ ...box, opacity: rereading ? 0.55 : 1, transition: "opacity .15s" }} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
+              {u.knownShape && <div data-testid="sheet-known-shape" style={{ fontSize: 13.5, fontWeight: 700, color: T.greenDk, marginBottom: 4 }}>{u.knownShape.sentence}</div>}
               <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>{fileSentence(u, tablesRead, eventName)}</div>
               {u.totalsSentence && u.totalsSentence.length > 0 && <div data-testid="sheet-totals" style={{ fontSize: 13.5, marginTop: 6 }}>{u.totalsSentence.join(" ")}</div>}
               {u.totals.filter(t => !t.matches).map(t => (

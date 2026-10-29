@@ -23,6 +23,7 @@
 // recordGift.
 import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importShape.js";
 import { pledgeMoneyWords } from "./pledgeWords.js";
+import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -249,7 +250,8 @@ function dateOf(v, ctx = {}) {
   if (v == null || v === "") return null;
   if (v instanceof Date) return isNaN(v) ? null : v.toISOString().slice(0, 10);
   if (typeof v === "number") return ctx.serials ? serialToIso(v) : null;
-  const t = s(v);
+  // IMPORT-5: an export's timestamp may name its zone ("2025-04-02 10:11:12 UTC")
+  const t = s(v).replace(/\s+(utc|gmt)$/i, "");
   if (/^\d{5}(\.\d+)?$/.test(t)) return ctx.serials ? serialToIso(Number(t)) : null;
   const md = t.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?$/) || null;
   const dm = !md && t.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?$/);
@@ -594,6 +596,30 @@ export function mapColumns(table, opts = {}) {
   return cols;
 }
 
+// IMPORT-5: a known export's shape places the columns it knows. Each role is
+// still checked against the cells; a role the cells refuse is left to the
+// reader. A role the shape gives one column is let go by any other.
+const MULTI_ROLES = new Set(["ignore", "note", "giftNote", "keep", "logistics", "totalOf"]);
+function applyShape(table, cols, shape) {
+  const placed = [];
+  for (const col of cols) {
+    const spec = shapeColumn(shape, col.header, dataRows(table).map(b => (b.raw ? b.raw[col.index] : b.cells[col.index])));
+    if (!spec || !ROLE_LABELS[spec.role]) continue;
+    // a column of the system's own codes fits when its cells are those codes
+    const fits = spec.values
+      ? (() => { const v = dataRows(table).map(b => s(b.raw ? b.raw[col.index] : b.cells[col.index]).toLowerCase()).filter(Boolean); return v.length > 0 && v.filter(x => spec.values[x]).length >= v.length * 0.6; })()
+      : MULTI_ROLES.has(spec.role) || contentFits(spec.role, col.profile);
+    if (!fits) continue;
+    placed.push([col, spec]);
+  }
+  for (const [col, spec] of placed) {
+    if (!MULTI_ROLES.has(spec.role)) for (const o of cols) if (o !== col && o.role === spec.role && !placed.some(([p]) => p === o)) { o.role = null; o.by = null; o.reason = ""; }
+    col.role = spec.role; col.by = "shape"; col.mismatch = null; col.duplicateOf = null;
+    col.reason = spec.reason || `${shape.system}'s "${col.header}" column`;
+    if (spec.values) col.values = spec.values;
+  }
+}
+
 // Apply a person's (or a model's) overrides: {headerOrIndex: role}. Each is
 // checked against the contents; a role that does not fit is refused by name.
 export function applyOverrides(cols, overrides = {}) {
@@ -723,6 +749,26 @@ function eventNameFromTitles(tables) {
   return null;
 }
 
+// IMPORT-5: two files from one system that go together (a Salesforce Contacts
+// export and its Donations export) are one import. files: [{ id, name, sheets }]
+// → groups, each { ids, name, sheets }; a pair's sheets carry their file's name
+// (as the import screen names them, readSheetFile), every other file stands alone.
+export function pairExportFiles(files = []) {
+  const keysOf = f => new Set((f.sheets || []).flatMap(sh => findTables(sh.name, reshapeKnownGrid(sh.grid || [])).tables
+    .map(t => shapeOfTable(t.header, dataRows(t).map(b => b.raw || b.cells))).filter(Boolean).map(x => x.key)));
+  const shapes = files.map(f => ({ f, keys: keysOf(f) }));
+  const used = new Set(), out = [];
+  const named = f => (f.sheets || []).map(sh => ({ ...sh, name: f.sheets.length === 1 ? String(f.name || "file").replace(/\.[a-z]+$/i, "") : `${String(f.name || "file").replace(/\.[a-z]+$/i, "")} · ${sh.name}` }));
+  for (const a of shapes) {
+    if (used.has(a.f)) continue;
+    const want = EXPORT_SHAPES.filter(x => a.keys.has(x.key) && x.pairWith).map(x => x.pairWith);
+    const b = want.length ? shapes.find(o => o !== a && !used.has(o.f) && want.some(k => o.keys.has(k))) : null;
+    if (b) { used.add(a.f); used.add(b.f); out.push({ ids: [a.f.id, b.f.id], name: `${a.f.name} + ${b.f.name}`, sheets: [...named(a.f), ...named(b.f)], files: [a.f, b.f] }); }
+    else { used.add(a.f); out.push({ ids: [a.f.id], name: a.f.name, sheets: a.f.sheets, files: [a.f] }); }
+  }
+  return out;
+}
+
 // ── 4. the plan ───────────────────────────────────────────────────────────
 // understand({sheets:[{name, grid}], fileName, today, overrides, answers})
 // → everything the review screen shows and everything the write does.
@@ -749,16 +795,20 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const T = today || new Date().toISOString().slice(0, 10);
   const all = [], notes = [];
   for (const sh of sheets) {
-    const f = findTables(sh.name, sh.grid || []);
+    // IMPORT-5: a report that writes its customer above their lines (QuickBooks) gives each line its customer
+    const f = findTables(sh.name, reshapeKnownGrid(sh.grid || []));
     f.tables.forEach((t, i) => { t.key = `${sh.name}#${i + 1}`; all.push(t); });
     notes.push(...f.notes);
   }
   const tables = all.map(t => {
     const auto = mapColumns(t, { today: T });
+    // IMPORT-5: another system's known export places its own columns; her answers still win
+    const shape = shapeOfTable(t.header, dataRows(t).map(b => b.raw || b.cells));
+    if (shape) applyShape(t, auto, shape);
     const ov = {};
     for (const [k, v] of Object.entries(overrides || {})) { const [tk, idx] = String(k).split("|"); if (tk === t.key) ov[idx] = v; }
     const { cols, refused } = applyOverrides(auto, ov);
-    return { ...t, cols, refused };
+    return { ...t, cols, refused, shape };
   });
   // what each table is
   for (const t of tables) {
@@ -1120,7 +1170,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      reason: out ? `money paid out (${fmt$(cents(amt))}, "${said.slice(0, 60)}"), an expense, not a gift` : `a refund or reversal (${fmt$(cents(amt))}), not a gift` });
         continue;
       }
-      const status = s(get(b, "status")).toLowerCase();
+      const statusCol = role("status");
+      const statusWord = s(get(b, "status")).toLowerCase();
+      // a known export's own codes (DonorPerfect's G and P) read as the words they stand for
+      const status = statusCol && statusCol.values && statusCol.values[statusWord] ? statusCol.values[statusWord] : statusWord;
       const type = s(get(b, "type"));
       if (type && TYPE_ASIDE.test(type) && !TYPE_GIFT.test(type)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `a ${type.toLowerCase()}, not a gift`, cents: cents(amt) }); continue; }
       if (status && STATUS_ASIDE.has(status)) { aside.push({ sheet: t.sheet, line: b.line, who: who.name, reason: `marked "${s(get(b, "status"))}" in your file`, cents: cents(amt) }); continue; }
@@ -1379,7 +1432,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         : `${t.sheet} says ${m[1].trim()} ${stated}, but Steward reads ${rows.toLocaleString("en-US")} ${WORD[kind] === "people" ? "rows" : WORD[kind]}${rows !== ppl ? ` (${ppl.toLocaleString("en-US")} people)` : ""}. Check before importing.` });
   }
   return {
-    fileKind, ready,
+    fileKind, ready, knownShape: knownShapeSentence(tables.filter(t => t.kind === "gifts" || t.kind === "people").map(t => t.shape)),
     tables: tables.map(t => ({ key: t.key, sheet: t.sheet, headerLine: t.headerLine, kind: t.kind, titles: t.titles, isVolunteer: !!t.isVolunteer,
       rows: t.readCount != null ? t.readCount : dataRows(t).length,
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,

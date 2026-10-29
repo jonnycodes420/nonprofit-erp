@@ -21,6 +21,13 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   Presets live in `shared/*Preset(s).js`, `grantImport.js` and `membershipImport.js`. (BUILD-89S, BUILD-98)
 - **Let a preset claim a file only when two of its own signal columns are present.** A tie is a question
   for the person, not a guess. Every preset stays "documented-not-walked" until a real export is checked. (BUILD-98)
+- **Another system's export is a known shape on the one reader, never a second reader (IMPORT-5).**
+  `shared/exportShapes.js` names each system's own headers and places its columns (Salesforce NPSP Contacts and
+  Donations, Bloomerang, DonorPerfect, Little Green Light, Neon, eTapestry, Raiser's Edge, Givebutter, Donorbox,
+  PayPal Giving Fund, QuickBooks Sales by Customer). Two signals claim a table, every role is still checked against
+  the cells, her answer still wins, and the preview says "Read as a … export." A system's own codes (DonorPerfect's
+  record type G/P) read as status words. A pair (Contacts + Donations) is one import: the screen takes both files,
+  and setup's plan shows them as one line (`pairExportFiles`). Fakes in `tests/fixtures/import/systems/`.
 - **Split a header into tokens before matching it** (`normalizeHeader`/`headerTokens`). Never run `\b` over
   a raw header, because `_` is a word character and `\bzip\b` misses `zipcode`. (BUILD-84)
 - **Match a header as a whole header, never by substring**: exact, a trailing word-run, or a leading run
@@ -267,6 +274,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - `shared/customFieldShape.js` + `customFields.js` `validateCustomFields` — the one custom-field seam
 - `shared/migrationPresets.js`, `sourcePresets.js`, `mailchimpPreset.js`, `npspPreset.js`, `grantImport.js`,
   `membershipImport.js` — the presets
+- `shared/exportShapes.js` — other systems' known export shapes (IMPORT-5), used by `sheetRead.js`
 - `shared/importSentence.js` — the receipt's one sentence
 - `client/src/components/Donors.jsx` `DonorImport`, `WorkbookImport.jsx`, `ColumnTargetSelect.jsx` — the old mapper's UI,
   no longer opened by any door (HARDEN-1); `SpreadsheetImport.jsx` is the one import screen
