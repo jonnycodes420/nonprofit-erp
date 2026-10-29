@@ -15,7 +15,7 @@ const CAPS = [
   [/^(name|firstname|lastname|middlename|fullname|preferredname|nickname|orgname|organization|organisation|employer|title|jobtitle|label|fundname|campaignname|contactname|username|displayname)$/, 200, "name"],
   [/^(email|email2|contactemail|replyto)$/, 254, "email address"],
   [/^(phone|phone2|mobile|cell)$/, 50, "phone number"],
-  [/^(city|state|zip|zipcode|postalcode|country)$/, 100, null],
+  [/^(city|zip|zipcode|postalcode|country)$/, 100, null],   // not "state": an OAuth state is long
   [/^(address|address1|address2|street|line1|line2)$/, 300, "address"],
   [/^(subject|previewtext|preheader)$/, 300, "subject"],
   [/^(note|notes|description|message|bio|mission|summary|reason|comment|memo|instructions|answer)$/, 20000, null],

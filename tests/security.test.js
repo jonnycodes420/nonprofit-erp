@@ -311,10 +311,10 @@ async function fixtures() {
     }); });
     await new Promise(r => mock.listen(BILLING_MOCK_PORT, r));
     const agr = (await api("GET", "/public/agreement")).body;
-    const NEW = `new-${Date.now()}@secure2.example.org`;
+    const NEW = `new-${crypto.randomBytes(6).toString("hex")}@secure2.example.org`;
     await q(`DELETE FROM close_links WHERE contact_email LIKE '%@secure2.example.org' OR contact_email=$1`, [STAFF_EMAIL]).catch(() => {});
-    const signup = async email => { const t0 = Date.now(); const r = await api("POST", "/public/signup", null, { orgName: "Secure Two Pantry", contactName: "Avery Lund",
-      contactEmail: email, estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version }); return { ...r, ms: Date.now() - t0 }; };
+    const signup = async email => { const t0 = performance.now(); const r = await api("POST", "/public/signup", null, { orgName: "Secure Two Pantry", contactName: "Avery Lund",
+      contactEmail: email, estimatedRecords: 300, interval: "monthly", acceptTerms: true, termsVersion: agr.version }); return { ...r, ms: performance.now() - t0 }; };
     const taken = await signup(STAFF_EMAIL), fresh = await signup(NEW);
     mock.close();
     const shape = r => JSON.stringify({ status: r.status, keys: Object.keys(r.body || {}).sort(), message: r.body && r.body.message, sent: r.body && r.body.sent });
@@ -326,8 +326,8 @@ async function fixtures() {
     const links = await q(`SELECT contact_email FROM close_links WHERE contact_email IN ($1,$2)`, [STAFF_EMAIL, NEW]);
     ok("…a checkout was started only for the new address", links.length === 1 && links[0].contact_email === NEW, links);
 
-    const forgot = async email => { const t0 = Date.now(); const r = await api("POST", "/auth/forgot-password", null, { email }); return { ...r, ms: Date.now() - t0 }; };
-    const fa = await forgot(STAFF_EMAIL), fb = await forgot("nobody-" + Date.now() + "@secure2.example.org");
+    const forgot = async email => { const t0 = performance.now(); const r = await api("POST", "/auth/forgot-password", null, { email }); return { ...r, ms: performance.now() - t0 }; };
+    const fa = await forgot(STAFF_EMAIL), fb = await forgot("nobody-" + crypto.randomBytes(6).toString("hex") + "@secure2.example.org");
     ok("reset: the same answer either way", JSON.stringify([fa.status, fa.body]) === JSON.stringify([fb.status, fb.body]), { fa: fa.body, fb: fb.body });
     ok("…in a similar time (within 250 ms)", Math.abs(fa.ms - fb.ms) < 250, { known: fa.ms, unknown: fb.ms });
 

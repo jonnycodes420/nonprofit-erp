@@ -42,7 +42,30 @@
          build stops on it ("URI malformed"). -->
     <!-- SECURE-2 item 5: a file, not an inline script (the app's CSP runs
          none). The API base rides in a data attribute; the file reads it. -->
-    <script src="/give-prefetch.js" data-api="%VITE_API_URL%"></script>
+    <!-- HARDEN-2 item 1: the payload is asked for while the page's own script downloads.
+         SECURE-2: inline, allowed by its sha256 in vercel.json's script-src (a file cost a
+         round trip, about 350 ms on a phone). Change a byte and the hash must change with it. -->
+    <script data-api="%VITE_API_URL%">(function () {
+  try {
+    var me = document.currentScript;
+    var api = (me && me.getAttribute("data-api")) || "";
+    if (!/^https?:\/\//.test(api)) api = "https://nonprofit-erp-production.up.railway.app";
+    var seg = location.pathname.replace(/\/+$/, "").split("/").slice(2);
+    if (!seg[0] || seg.length > 3) return;
+    var url = api + "/org/" + seg[0] + (seg[2] ? "/giving-page/" + seg[1] + "/fundraiser/" + seg[2] + "/public"
+      : seg[1] ? "/giving-page/" + seg[1] + "/public" : "/public");
+    var m = /(?:^|; )steward_give_ab=([ab])(?:;|$)/.exec(document.cookie);
+    if (m) url += "?v=" + m[1];
+    var box = window.__givePrefetch = {};
+    var ask = function (u) {
+      box[u] = fetch(u).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }, function () { return { ok: false, data: null }; }); });
+      box[u].catch(function () {});
+    };
+    ask(url);
+    if (!seg[1] && /[?&]memberships(=|&|$)/.test(location.search)) ask(api + "/org/" + seg[0] + "/memberships/public");
+  } catch (e) { /* Donate.jsx asks for the payload itself */ }
+})();
+    </script>
     <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
   </head>
   <body style="background:#0f1a12">
