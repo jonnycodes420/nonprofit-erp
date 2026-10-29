@@ -24,6 +24,7 @@ import { composeNextMove } from "../../../shared/nextMove.js";
 // the import above).
 import { DonorMap } from "./DonorMap";
 import { DataHealth } from "./DataHealth";
+import { DriftList } from "./DriftList";   // HOME-4: Drift opens here from Home's chip
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
 import { EMPTY_WHERE, whereParam } from "./DonorFilters";
@@ -873,6 +874,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
       {view==="reengage"&&orgPeople&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
       {view==="map"&&mapOn&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
+      {view==="drift"&&<DriftList onSelectDonor={selectDonor} onBack={()=>setView("directory")}/>}
       {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}
       </>)}
     </SheetDropTarget>

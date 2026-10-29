@@ -443,6 +443,18 @@ async function main() {
     if (!chk.ok) deckBad.push(`${m.kind}/${m.name}: ${chk.bad.join(",")} in "${w}"`);
   }
   ok("§9 every move's words hold only numbers its facts hold", deckBad.length === 0, deckBad.slice(0, 5));
+  // HOME-4: Home has no Drift section, so every person Drift flags (past their
+  // own pattern and the early signs, GET /drift's own list) is in the deck, and
+  // Home's deck view carries the deck without the cards.
+  const dr = (await api("GET", "/drift?all=1&includeMedium=1", tok)).body;
+  const deckIds = new Set(moves.flatMap(m => m.ids));
+  const saysDrift = id => moves.some(m => m.ids.includes(id) && (m.kind === "drift" || (m.also || []).some(x => x.kind === "drift")));
+  const lost = (dr.list || []).filter(x => !deckIds.has(x.donorId) || !saysDrift(x.donorId)).map(x => x.donorName);
+  ok(`§9 HOME-4 every one of Drift's ${(dr.list || []).length} people is in the deck with Drift's reason on their move, nobody lost with Drift off Home`, Array.isArray(dr.list) && lost.length === 0, lost.slice(0, 5));
+  const dv = (await api("GET", `/insights?asOf=${AS_OF}&view=deck`, tok)).body;
+  ok("§9 HOME-4 Home's deck view: the same deck, no cards, and Drift's counts for its chip",
+     dv.cards.length === 0 && JSON.stringify(dv.deck.tabs.map(t => [t.key, t.count])) === JSON.stringify(deck.tabs.map(t => [t.key, t.count]))
+     && dv.deck.drift && typeof dv.deck.drift.medium === "number", dv.deck && dv.deck.drift);
   const plannedTab = deck.tabs.find(t => t.key === "planned");
   const orgKinds = new Map((await q(`SELECT id, kind, name FROM donors WHERE org_id=$1`, [ORG])).map(r => [r.id, r]));
   const orgy = plannedTab.moves.filter(m => m.ids.some(id => /organi[sz]ation/.test((orgKinds.get(id) || {}).kind || "") || /\b(foundation|fund|inc|llc|company)\b/i.test((orgKinds.get(id) || {}).name || "")));
