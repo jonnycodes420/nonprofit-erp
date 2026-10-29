@@ -1,0 +1,147 @@
+{
+  "file": "Marigold's Harvest Supper.xlsx",
+  "eventName": "Marigold's Harvest Supper",
+  "sheets": {
+    "guestListRows": 37,
+    "seatingRows": 24,
+    "giftRows": 11
+  },
+  "persons": 39,
+  "figures": {
+    "registered": 34,
+    "came": 25,
+    "gave": 11,
+    "cameGave": 9,
+    "cameDidntGive": 16,
+    "declined": 4,
+    "invitedDidntCome": 9,
+    "checkedIn": 25
+  },
+  "money": {
+    "gifts": 10,
+    "giftCents": 282500,
+    "pledges": 1,
+    "pledgeCents": 150000,
+    "notYetDepositedAfterYes": 0
+  },
+  "tables": {
+    "Table 1": 9,
+    "Table 2": 13,
+    "Table 3": 3
+  },
+  "overfullAtDefault": [
+    {
+      "table": "Table 2",
+      "seated": 13,
+      "over": 3
+    }
+  ],
+  "nearDuplicates": [
+    {
+      "guestList": "Tobias Kettering",
+      "seatingChart": "Tobias Ketering",
+      "why": "one letter",
+      "default": "same"
+    },
+    {
+      "guestList": "Rosalind Ferreira",
+      "seatingChart": "Rosalind Fereira",
+      "why": "one letter",
+      "default": "same"
+    },
+    {
+      "guestList": "Hal Dunmore",
+      "seatingChart": "Hal Dunmoore",
+      "why": "one letter",
+      "default": "same"
+    },
+    {
+      "guestList": "Beverly Okonjo",
+      "seatingChart": "Bev Okonjo",
+      "why": "nickname",
+      "default": "same"
+    },
+    {
+      "guestList": "Robert Ashdown",
+      "seatingChart": "Rob Ashdown",
+      "why": "nickname",
+      "default": "same"
+    },
+    {
+      "guestList": "Susan Brannigan",
+      "seatingChart": "Sue Brannigan",
+      "why": "nickname",
+      "default": "same"
+    },
+    {
+      "guestList": "Marisol Quint",
+      "seatingChart": "Marisol Quint & Abernathy",
+      "why": "couple form",
+      "default": "same"
+    }
+  ],
+  "notesAsRows": [
+    {
+      "text": "2 Vegan",
+      "sheet": "Guest List",
+      "attachesTo": "Hugo Ramsey"
+    },
+    {
+      "text": "1 Medical Gluten",
+      "sheet": "Guest List",
+      "attachesTo": "Kerry Lusk"
+    },
+    {
+      "text": "1 Allergy shellfish",
+      "sheet": "Seating Chart",
+      "attachesTo": "Ada Whitlock"
+    }
+  ],
+  "namesCleaned": [
+    {
+      "from": "**Gideon Pratt",
+      "name": "Gideon Pratt",
+      "note": null
+    },
+    {
+      "from": "Neil (husband) Martha (daughter) Lyle",
+      "name": "Neil & Martha Lyle",
+      "note": "husband; daughter"
+    },
+    {
+      "from": "Ivy (send with Harlan's) Brooks",
+      "name": "Ivy Brooks",
+      "note": "send with Harlan's"
+    }
+  ],
+  "couples": [
+    {
+      "from": "Randolph or Celeste Abara",
+      "people": [
+        "Randolph Abara",
+        "Celeste Abara"
+      ]
+    },
+    {
+      "from": "Theo and Lena Marchetti",
+      "people": [
+        "Theo Marchetti",
+        "Lena Marchetti"
+      ]
+    },
+    {
+      "from": "Neil (husband) Martha (daughter) Lyle",
+      "people": [
+        "Neil Lyle",
+        "Martha Lyle"
+      ]
+    }
+  ],
+  "questions": [
+    "event (its date: the file has none)",
+    "useEventDate",
+    "pledgeDue",
+    "nearDuplicates (7 pairs, one pass)",
+    "giftsDeposited (Yes by default)"
+  ]
+}

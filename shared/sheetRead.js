@@ -675,7 +675,7 @@ export function applyOverrides(cols, overrides = {}) {
 // "Suzanna & Walt" + "Arnold" → two people, one household. "Arnold, Suzanna
 // & Walt", "Mr. and Mrs. Walt Arnold", "Walt and Suzanna Arnold" too. An
 // organisation's name stays whole.
-const JOINT_RE = /\s*(?:&|\band\b|\+)\s*/i;
+const JOINT_RE = /\s*(?:&|\band\b|\bor\b|\+)\s*/i;   // FIX-59: "Randolph or Joenell Barnett" is a couple too
 function titleCase(w) { return w && (w === w.toUpperCase() || w === w.toLowerCase()) ? w.replace(/[A-Za-zÀ-ÿ][^\s-]*/g, x => x[0].toUpperCase() + x.slice(1).toLowerCase()) : w; }
 function cleanPart(x) { return titleCase(s(x).replace(/^[,.\s]+|[,.\s]+$/g, "")); }
 
