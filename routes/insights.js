@@ -63,7 +63,10 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   let cards = r.cards.filter(c => !(first && c.homeOnly));
   if (!first) cards = [...cards.filter(c => c.kind !== "review" && c.kind !== "family"), ...cards.filter(c => c.kind === "review"), ...cards.filter(c => c.kind === "family")];
   cards = cards.slice(0, first ? 7 : 20);
-  res.json({
+  // HOME-3: the first look says what each recent event raised, the way she
+  // says it (received + pledged), from the one function Reports and the event page read.
+  const events = first ? await require("../numbers").eventsRaised(req.user.orgId, { withMoney: true, limit: 3 }) : undefined;
+  res.json({ events,
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: r.ladder, centsSentence: r.centsSentence,
     stats: r.stats, cards: cards.map(cardOut), deck: first ? undefined : r.deck,
     sentences: {

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
+import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -569,6 +570,10 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
       {!data && !err && <p style={{ fontSize: 14, color: T.ink3 }}>Reading the file…</p>}
       {data && <>
         <p data-testid="first-look-coverage" style={{ fontSize: 14, color: T.ink, margin: "6px 0 12px" }}>{data.coverage.sentence}</p>
+        {/* HOME-3: what each recent event raised, the way she says it. */}
+        {(data.events || []).length > 0 && <div data-testid="first-look-events" style={{ margin: "0 0 12px" }}>
+          {data.events.map(e => <EventRaised key={e.id} e={e} />)}
+        </div>}
         <LadderStrip data={data} onNavigate={onNavigate} />
         {data.cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={load} isReadOnly={isReadOnly} />)}
         <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences.never}</p>

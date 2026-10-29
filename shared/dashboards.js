@@ -89,7 +89,9 @@ export const DASHBOARDS = [
         definition: "Of the people who gave in one period, the share who gave again in the next. Calendar year compares last calendar year with this one, fiscal year does the same for your fiscal years, and rolling 12 months compares the 12 months before the last 12 with the last 12." },
       { key: "pledgedOutstanding", label: "Pledged, not yet paid", kind: "money",
         definition: "The unpaid balance of open pledges. A pledge part-paid counts only the remainder." },
-      { key: "pledgedPaid", label: "Pledged and paid", kind: "money",
+      // HOME-3: absent at $0, so it never sits beside open pledges as if
+      // nothing on them was paid.
+      { key: "pledgedPaid", label: "Pledged and paid", kind: "money", optional: true,
         definition: "Payments received against pledges, whether or not the pledge is fully settled." },
       { key: "grantDeadlines", rowsAre: "money", label: "Grant deadlines, next 90 days", kind: "breakdown",
         definition: "Grants still being pursued whose deadline falls in the next ninety days. A grant already awarded or closed is not listed." },
@@ -168,7 +170,16 @@ export const ANSWER_FIGURES = {
       definition: "Giving this year so far, less giving in the same stretch of last year. The two tiles below it, subtracted." },
   ],
   fundraising: [
-    { key: "pledgedOutstanding", metric: "pledgedOutstanding" },
+    // HOME-3: the answer to "Are we on pace?" leads with received money
+    // against the same days last year (numbers.vsLastYear).
+    { key: "receivedThisYear", label: "Received this fiscal year", kind: "money",
+      definition: "Every gift received between the first day of your fiscal year and today. Pledges count when they are paid." },
+    { key: "receivedSamePointLastYear", label: "Received by the same day last year", kind: "money",
+      definition: "Gifts received in the same days of your previous fiscal year, so the comparison is like for like." },
+    { key: "pledgedDueThisYear", label: "Pledged, due this year", kind: "money",
+      definition: "Unpaid pledge installments due by the last day of this fiscal year, overdue ones included." },
+    { key: "pledgedOutstanding", label: "Pledged, over all years", kind: "money",
+      definition: "The unpaid balance of open pledges, whenever it falls due. A pledge part-paid counts only the remainder." },
     { key: "grantDeadlineCount", label: "Grant deadlines in the next ninety days", kind: "count",
       definition: "Grants still being pursued whose deadline falls in the next ninety days. A grant already awarded or closed is not counted." },
   ],
