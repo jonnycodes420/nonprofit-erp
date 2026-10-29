@@ -229,9 +229,10 @@ export function AutoEmailCard({ donorId, email, isReadOnly }) {
   const load = () => apiFetch(`/donors/${donorId}/blocked-mail`).then(setSt).catch(() => setSt(null));
   useEffect(() => { if (donorId) load(); }, [donorId]);   // eslint-disable-line react-hooks/exhaustive-deps
   if (!st) return null;
-  const flip = async on => {
+  // SEND-GATE-2: three choices. Always include asks first; the others save at once.
+  const setMode = async mode => {
     setBusy(true); setMsg("");
-    try { await apiFetch(`/donors/${donorId}/auto-email`, { method: "POST", body: JSON.stringify({ on, confirm: true }) }); setAsking(false); await load(); }
+    try { await apiFetch(`/donors/${donorId}/auto-email`, { method: "POST", body: JSON.stringify({ mode, confirm: true }) }); setAsking(false); await load(); }
     catch (e) { setMsg((e && e.sentence) || "That didn't save."); }
     setBusy(false);
   };
@@ -244,26 +245,25 @@ export function AutoEmailCard({ donorId, email, isReadOnly }) {
   };
   const held = (st.blocked || []).filter(b => !b.sentAt);
   const sent = (st.blocked || []).filter(b => b.sentAt);
+  const CHOICES = [["follows", "Follows your settings"], ["always", "Always include"], ["never", "Never"]];
   return (
     <RailSection title="Automatic emails" testid="dp-rail-auto-email">
-      <div style={{ ...ROW, alignItems: "center" }}>
-        <span data-testid="dp-auto-email-state" style={{ fontWeight: 700, color: st.autoEmail ? T.white : T.gold500 }}>Automatic emails: {st.autoEmail ? "On" : "Off"}</span>
-        {!isReadOnly && !asking && <button type="button" data-testid="dp-auto-email-toggle" disabled={busy} style={SMALL_BTN}
-          onClick={() => st.autoEmail ? flip(false) : setAsking(true)}>{st.autoEmail ? "Turn off" : "Turn on"}</button>}
-      </div>
-      <p style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.5, color: RAIL.dim }}>
-        {st.autoEmail
-          ? `Steward sends receipts, thank-yous and other automatic emails${email ? " to " + email : ""}.${st.by ? " Turned on by " + st.by + "." : ""}`
-          : "Steward sends nothing automatic to this person. Anything you write and send yourself still goes."}
-      </p>
+      <div data-testid="dp-auto-email-state" style={{ fontSize: 12.5, lineHeight: 1.5, color: RAIL.text }}>{st.line}</div>
+      {!isReadOnly && <div role="radiogroup" aria-label="Automatic emails for this person" style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {CHOICES.map(([m, label]) => (
+          <button key={m} type="button" role="radio" aria-checked={st.mode === m} data-testid={`dp-auto-email-${m}`} disabled={busy}
+            onClick={() => st.mode === m ? null : m === "always" ? setAsking(true) : setMode(m)}
+            style={{ ...SMALL_BTN, ...(st.mode === m ? { background: RAIL.line, color: T.white } : {}) }}>{label}</button>
+        ))}
+      </div>}
       {asking && <div data-testid="dp-auto-email-confirm" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: RAIL.text }}>Turn on automatic emails for this person?</span>
-        <button type="button" data-testid="dp-auto-email-yes" disabled={busy} style={GO_BTN} onClick={() => flip(true)}>Turn on</button>
+        <span style={{ fontSize: 12, color: RAIL.text }}>Include this person in emails you send only to donors you choose?</span>
+        <button type="button" data-testid="dp-auto-email-yes" disabled={busy} style={GO_BTN} onClick={() => setMode("always")}>Always include</button>
         <button type="button" disabled={busy} style={{ ...SMALL_BTN, border: "none", textDecoration: "underline" }} onClick={() => setAsking(false)}>Cancel</button>
       </div>}
       {held.map(b => (
         <div key={b.id} data-testid="dp-held-mail" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45, color: RAIL.text }}>
-          <div>{b.what} not sent: automatic emails are off <span style={DIM}>({displayDateShort(String(b.at).slice(0, 10))})</span></div>
+          <div>{b.what} not sent: {b.why || "automatic emails are off"} <span style={DIM}>({new Date(b.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})</span></div>
           {!isReadOnly && (sendAsk === b.id
             ? <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={DIM}>Send this one message{email ? " to " + email : ""}?</span>

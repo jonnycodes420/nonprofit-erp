@@ -11,6 +11,7 @@
 // Every count carries its sentence on hover, from the server.
 
 import RemoveMenu from "./RemoveMenu";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
@@ -206,6 +207,9 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
   const by = list.byStatus || {};
   return (
     <div data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* SEND-GATE-2: renewals send nothing on their own; a renewal note is a journey step. */}
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Steward doesn't email renewals on its own. A renewal note goes as a journey step, or as a draft you send.
+        <MailTypeSwitches keys={["journey_steps"]} from="memberships" /></div>
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }} title={list.sentence} aria-label={list.sentence} tabIndex={0} data-testid="members-counts">
         {/* REPORTS-4: the count opens the memberships it counts; the label
             under it still filters the list. Two controls, never one nested

@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## SEND-GATE-2 · One page that says exactly what Steward sends for you (2026-10-28)
+
+- **The rule, in Jonathan's words.** Nothing ever sends to a donor automatically without a clear flip of a switch from Jonathan (Donor mail, super-admin) and from the org's director (the email type, in Steward). Both always see exactly what is going out. Now at the top of `docs/decisions/mail-and-notifications.md`.
+- **Why.** After SEND-GATE-1 and FIX-53 nothing went on its own, but a director could not see in one place what Steward would send, and could not turn on receipts for every online gift without flipping hundreds of per-donor switches.
+- **What.** `mailTypes.js` is the one list of 13 automatic emails in five groups; `sendGate.decide` asks the type's switch (`org_mail_types`) and who gets it; the donor's setting is three choices (Follows / Always include / Never) from the existing `auto_email` column plus `auto_email_never`, so the SEND-GATE-1 mapping is the column itself. Settings gains "Automatic email" and "Going out" (`goingOut.js`: next 7 days from the sweeps' own due dates, Sent from `auto_mail_sent`, Held from `mail_blocked.held_reason`). The same switch sits in ten editors. A top-bar chip and a Home line on every page. Super-admin sees the org's emails and what Donor mail would start, in the confirm.
+- **Found while building.** Card-expiring, card-worked thank-you and recurring-change mail went out tagged `campaign`, so the Campaigns switch would have governed them; unfinished-gift notes too. Each now names its own kind. The reconnect note could never send (a by-hand kind with no staff confirm on its path); it now carries the press as a confirm. No path sends a membership renewal on its own, so it is not on the page.
+- **Deploy.** Schema only; every type off for every org, Donor mail switches unchanged; per-org counts are logged once as `[send-gate-2]` and kept in `steward_once`.
+
 ## FIX-55 · The import screen reads right, and every build ends with a walk (2026-10-27)
 
 - **Why (27 Oct).** After HARDEN-1 the import's numbers were right; what Jonathan read was wrong. Ticking "Use the event date" left "(63 undated)" on screen, "Bring them back" said 506 people were back while their questions stayed, and answered questions left Import disabled. All of it was one cause: with prod's database about 17 ms away, the preview asked the matcher three or four questions per person, so a 656-row file took 38.6 seconds per read and every answer read it again. The screen kept showing the last answer's plan the whole time.

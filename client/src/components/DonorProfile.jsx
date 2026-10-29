@@ -3,6 +3,7 @@
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
 import { useState, useEffect, useRef, useContext, useMemo, useCallback } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { ScoreCard, useScores, SuggestedAskLine } from "./ScoreWhy";
 import { RoomToGiveBlock, PublicFilingBlock, usePublicFiling, PublicFilingLookupModal, ProspectBriefModal } from "./RoomToGive";
 import { useCanMajorGifts } from "../lib/majorGifts";
@@ -2905,6 +2906,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div style={{fontSize:12,fontWeight:700,color:T.ink}}>Pledges</div>
                 <button onClick={()=>setAddPledgeOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>+ Add Pledge</button>
               </div>
+              <div style={{marginTop:-6,marginBottom:8}}><MailTypeSwitches keys={["pledge_reminder"]} from="pledges"/></div>
               {addPledgeOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px",marginBottom:10}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                   <input value={pledgeForm.amount} onChange={e=>setPledgeForm(p=>({...p,amount:e.target.value}))} placeholder="Pledged amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>

@@ -28,7 +28,7 @@ const { ok, summary, api: helperApi, q, closeDb, BASE, SINK_PORT, login, waitFor
 // automatic email on for (every person starts off). It tests the other rules.
 const api = async (...a) => {
   const r = await helperApi(...a);
-  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]);
+  if (a[0] === "POST" && a[1] === "/donors" && r.body && r.body.id) await q("UPDATE donors SET auto_email = true WHERE id = $1", [r.body.id]); await require("./helpers").mailTypesOnForDonor(r.body.id);
   return r;
 };
 

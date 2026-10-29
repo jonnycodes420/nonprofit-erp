@@ -12865,6 +12865,11 @@ async function autoSkipReason(orgId, donor, priv, today) {
   return null;
 }
 
+// SEND-GATE-2: Going out asks the same question about a step that is due
+// in the next 7 days, so what it lists is what this runner would send.
+require("../goingOut").setJourneySkip(async (orgId, donor, day) =>
+  autoSkipReason(orgId, donor, await require("../clientSafe").privacyFor(orgId), day));
+
 async function skipAutoSend(orgId, send, reason, byName = null) {
   const took = await run(`UPDATE journey_sends SET status='skipped', reason=?, decided_by_name=?, updated_at=NOW() WHERE id=? AND org_id=? AND status IN ('scheduled','failed')`,
     [reason, byName, send.id, orgId]);

@@ -201,7 +201,7 @@ function handlerRange(src) {
   const unasked = await api("POST", `/admin/orgs/${org}/mail-switches`, sup, { donor: true });
   ok("§3 the toggle without confirm asks first, saying what it will allow, and changes nothing",
     unasked.status === 409 && unasked.body.error === "confirm_required"
-      && /automatic emails to donors whose own switch is on/.test(unasked.body.message || "") && bothOff(await switches(org)),
+      && /automatic emails this organization turned on/.test(unasked.body.message || "") && bothOff(await switches(org)),
     { s: unasked.status, b: unasked.body });
   const notSuper = await api("POST", `/admin/orgs/${org}/mail-switches`, tok, { donor: true, confirm: true });
   ok("§3 an org's own admin cannot turn it on", notSuper.status === 403 && bothOff(await switches(org)), notSuper.status);

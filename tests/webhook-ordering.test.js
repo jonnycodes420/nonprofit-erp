@@ -100,6 +100,7 @@ const donorCount = e => q("SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AN
   // pre-existing donors for the failed-charge + recovery scenarios
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,auto_email) VALUES ('d_fail',$1,'Fay Fail','fail@order.test','mid','steward',0,0,true)`, [ORG]);
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,auto_email) VALUES ('d_rec',$1,'Rex Recover','rec@order.test','mid','steward',0,0,true)`, [ORG]);
+  await require("./helpers").mailTypesOn(ORG);   // SEND-GATE-2: the emails themselves are on, for chosen donors
 
   // ── Q2: recurring FIRST charge, both orders + re-delivery → one sub, one gift ─
   // Order A: PI arrives FIRST (the BUILD-62 race), then checkout.

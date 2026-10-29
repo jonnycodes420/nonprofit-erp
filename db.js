@@ -8538,6 +8538,10 @@ async function runSchemaInit(pool) {
       for (const r of ch.perOrg) console.log(`[send-gate-1] org ${r.org_id}: ${r.people} people start with automatic emails off`);
       console.log(`[send-gate-1] org_creo: ${ch.creoOn} people turned ON (received an automatic message in the last 12 months)`);
     }
+    // SEND-GATE-2 (28 Oct): every email type starts off, for every org.
+    await SG.sendGate2Schema(pool);
+    const ch2 = await SG.sendGate2DeployChange(pool);
+    if (ch2.ran) for (const r of ch2.perOrg) console.log(`[send-gate-2] org ${r.org_id}: ${r.types_on} email types on, ${r.always_include} Always include, ${r.follows} Follows your settings`);
   }
   // MAIL-1 · backfill onboarded by the same definition, never by guess
   // (onboarded.js). Here, not beside the onboarded_* columns, because its demo

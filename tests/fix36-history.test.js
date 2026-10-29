@@ -95,6 +95,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   // SEND-GATE-1: only the FIRST read is an import. A later read brings new
   // gifts as they arrive, and a new first gift there starts its journey.
   await q(`INSERT INTO donors (id,org_id,name,email,person_types,auto_email) VALUES ('d_qi_nell',$1,'Nell Newgift','nell@example.org','["donor"]'::jsonb,true)`, [ORG]);
+  await require("./helpers").mailTypesOn(ORG);   // SEND-GATE-2: the emails themselves are on, for chosen donors
   company.Customer.push({ Id: "7", DisplayName: "Nell Newgift", GivenName: "Nell", FamilyName: "Newgift", PrimaryEmailAddr: { Address: "nell@example.org" } });
   company.SalesReceipt.push({ Id: "199", TxnDate: day(-3), TotalAmt: 60, CustomerRef: { value: "7", name: "Nell Newgift" },
     PaymentMethodRef: { value: "2", name: "Check" }, PaymentRefNum: "1201",

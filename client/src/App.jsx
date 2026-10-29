@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { MailStatusChip } from "./components/MailTypes";   // SEND-GATE-2
 import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
@@ -802,6 +803,8 @@ function AppShell() {
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         {/* FIX-26: the same search as the desktop bar, behind an icon. */}
         <MobileSearch onNavigate={navigateTo}/>
+        {/* SEND-GATE-2: automatic email, at phone width the dot and a short word. */}
+        <MailStatusChip onNavigate={navigateTo} narrow/>
         <span style={{color:T.inkInverse,display:"inline-flex"}}><AtlasBell onNavigate={navigateTo}/></span>
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
             Code intact, re-enable by uncommenting.

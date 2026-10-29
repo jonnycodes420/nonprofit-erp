@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
@@ -732,6 +733,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       {/* BUILD-77 Part 7 — the morning exceptions view moved here from the
           Home tab bar: who needs a person, at the top of the page you go to. */}
       <DashboardRecurring onNavigate={onNavigate} />
+      <MailTypeSwitches keys={["card_failed", "card_expiring", "recurring_change", "recovered_thankyou"]} from="monthly_giving" />
       <UnlinkedSustainers isReadOnly={isReadOnly} onNavigate={onNavigate} />
       {toast && (
         <div role="status" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 400, background: T.ink, color: T.inkInverse, borderRadius: 10, padding: "12px 18px", fontSize: 13, boxShadow: T.shadowLg }}>{toast}</div>

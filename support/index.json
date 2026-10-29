@@ -1429,7 +1429,7 @@
    "link": "/help/how-steward-suggests",
    "route": null,
    "screen": null,
-   "text": "Steward reads your gifts and suggests who to reach, why, when, and what to say. Steward never sends anything for you. Every draft waits for your click."
+   "text": "Steward reads your gifts and suggests who to reach, why, when, and what to say. Steward never sends these notes for you. Every draft waits for your click."
   },
   {
    "id": "help:how-steward-suggests:1",
@@ -1487,9 +1487,9 @@
    "title": "How Steward sends",
    "heading": "",
    "link": "/help/how-steward-sends",
-   "route": null,
-   "screen": null,
-   "text": "Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself."
+   "route": "/app/settings?section=automatic",
+   "screen": "settings:automatic",
+   "text": "Steward sends nothing on its own until you turn it on in Settings, What Steward sends automatically. Each email type starts off."
   },
   {
    "id": "help:how-steward-sends:1",
@@ -1497,9 +1497,9 @@
    "title": "How Steward sends",
    "heading": "Automatic emails",
    "link": "/help/how-steward-sends",
-   "route": null,
-   "screen": null,
-   "text": "Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.\nAn automatic email is anything Steward sends on its own: a receipt, a thank-you, a journey or sequence step, a pledge reminder, a renewal or failed-payment notice, an event confirmation, an auction receipt, a fundraiser update or a campaign.\nEvery person has an Automatic emails switch on their profile, and it starts off. Turn it on there, one person at a time, or pick people on the Donors list and choose \"Turn on automatic emails\". An import, a form, a journey or Atlas never turns it on.\nWhen Steward holds an automatic email because the switch is off, the person's profile says so, for example \"Receipt for $500 on Oct 22 not sent: automatic emails are off\", with a Send button that sends that one message after you confirm.\nAn email you write and send yourself still goes when you press Send, whatever the switch says, as long as donor mail is on for your organization. A sign-in link a donor asks for from your donor portal goes straight away. An import never emails anyone.\nEmail for a new organization starts switched off. Steward turns it on with you once your data is in."
+   "route": "/app/settings?section=automatic",
+   "screen": "settings:automatic",
+   "text": "Steward sends nothing on its own until you turn it on in Settings, What Steward sends automatically. Each email type starts off.\nThe page lists every email Steward can send by itself: gift receipts, year-end statements, monthly-giving notes, pledge reminders, event confirmations, waitlist offers, auction and fundraiser links, journey steps and campaign emails. Each has one sentence saying what it does, a preview, and a switch. The same switch also sits in the place that uses it, such as an event page or a giving page.\nWhen you turn one on, Steward asks who gets it: everyone, from now on, or only donors you choose. Turning one off is one click.\nEach person has their own setting on their profile and in bulk from the Donors list: Follows your settings (the default), Always include (they get the emails you send only to donors you choose), or Never (they get no automatic email at all).\nEmail for a new organization starts off. Steward turns it on with you once your data is in. Until then the page says so, and anything you switch on waits.\nGoing out shows what Steward will send in the next 7 days, everything it sent with exactly what it said, and anything it held back and why, with Send for a single one. The small status at the top of every page says whether anything is on.\nAn email you write and send yourself still goes when you press Send. A sign-in link a donor asks for goes straight away, because the donor asked for it. An import never emails anyone."
   },
   {
    "id": "help:how-steward-counts:0",
