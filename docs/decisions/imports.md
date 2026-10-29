@@ -157,11 +157,14 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   ("When was the Dinner? · 106 rows, no dates"); "This file isn't from an event" (`answers.notEvent`) is the way out for
   a list with no attendance. Then two more answers, each once for the file: "Use the {event} date for these 63
   gifts?" (`answers.useEventDate`, true or false: No leaves them No date) and the pledges' due dates
-  (`answers.pledgeDue`: `event` counts as before, a one-year pledge by that year's end and a multi-year one yearly from
-  the day; `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
+  (`answers.pledgeDue`: `event` is Dec 31 of the event's year, then each Dec 31, for one-year and multi-year pledges
+  alike, so nothing is overdue the week after the event (FIX-58, Jonathan's rule of 29 Oct); `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
   import day is never a due date. An installment with no set date counts in the event's raised by its place: the first
   is pledged, the later ones later years (`EVENT_PLEDGE_OPEN`). Existing pledges were not changed;
   `scripts/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
+  Pledges an older import dated from the event's own day are a Data health Review item ("N pledges have a first
+  installment dated the event day · Move to Dec 31", `/data-health/pledge-dates`): before and after per pledge, applied
+  on her click, each date it changed kept in `pledge_date_fixes` for Undo. Nothing moves at deploy.
 - **An event the file shows is created even without a date** when she says so (`events.date_unknown`, on the import's
   day, "Date not known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
   only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).

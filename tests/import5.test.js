@@ -13,6 +13,10 @@
 //      the event page, as Home's Grow moves (one person, one move) and in Ask.
 //   §3 the truth check: a person's open pledge is the same on the profile, in
 //      Fundraising's open-pledge rows and on Home (assertSurfacesAgree).
+//   §4 FIX-58: "Same as the event date" is Dec 31 of the event's year, then
+//      each Dec 31, so nothing is overdue the week after the dinner; and Data
+//      health moves pledges an older import dated the event's own day, with
+//      before and after, on her click, with Undo.
 //
 // HOW IT GOES RED ON MAIN: the dinner preview is ready with no date (§1), the
 // pledges are due from the import day (§1), the event report has no guest
@@ -113,9 +117,49 @@ async function dinner() {
   const byP = new Map();
   for (const r of inst) (byP.get(r.id) || byP.set(r.id, []).get(r.id)).push(r.due_date);
   const threes = [...byP.values()].filter(d => d.length === 3);
-  ok("§1 every \"x 3 years\" pledge has all three yearly installments, from the event's date",
-     threes.length === multi.length && threes.every(d => JSON.stringify(d) === JSON.stringify(["2026-10-22", "2027-10-22", "2028-10-22"])), JSON.stringify(threes.slice(0, 2)));
+  // FIX-58 (Jonathan, 29 Oct): "Same as the event date" is Dec 31 of the event's year, then each Dec 31
+  ok("§1 every \"x 3 years\" pledge has three yearly installments, each on Dec 31 from the event's year",
+     threes.length === multi.length && threes.every(d => JSON.stringify(d) === JSON.stringify(["2026-12-31", "2027-12-31", "2028-12-31"])), JSON.stringify(threes.slice(0, 2)));
   ok("§1 a one-year pledge is due by the end of the event's year", [...byP.values()].filter(d => d.length === 1).every(d => d[0] === "2026-12-31"), "");
+  const weekAfter = "2026-10-29";   // the event's day + 7
+  const early = await q(`SELECT i.due_date FROM pledges p JOIN pledge_installments i ON i.pledge_id=p.id
+                          WHERE p.org_id=$1 AND p.import_id=$2 AND i.paid_gift_id IS NULL AND i.due_date <= $3`, [ORG, j1.importId, weekAfter]);
+  ok("§1 FIX-58: nothing is overdue the week after the event (no unpaid installment due on or before Oct 29)", early.length === 0, JSON.stringify(early.slice(0, 3)));
+
+  // §4 FIX-58 · Data health: pledges an older import dated from the event's own day
+  // (planted the way the import wrote them before 29 Oct: each "x 3 years" one on Oct 22, yearly)
+  await q(`UPDATE pledge_installments i SET due_date = (2026 + i.seq - 1)::text || '-10-22' FROM pledges p
+            WHERE i.pledge_id=p.id AND p.org_id=$1 AND p.import_id=$2 AND p.installment_count=3`, [ORG, j1.importId]);
+  await q(`UPDATE pledges SET due_date='2028-10-22' WHERE org_id=$1 AND import_id=$2 AND installment_count=3`, [ORG, j1.importId]);
+  const snap = async () => (await q(`SELECT p.id, p.due_date, array_agg(i.due_date ORDER BY i.seq) AS d FROM pledges p JOIN pledge_installments i ON i.pledge_id=p.id
+                                      WHERE p.org_id=$1 GROUP BY p.id ORDER BY p.id`, [ORG])).map(r => `${r.id}:${r.due_date}:${r.d.join(",")}`).join("|");
+  const planted = await snap();
+  const hc = ((await api("GET", "/data-health", tok)).body || {}).counts || {};
+  const dh = (await api("GET", "/data-health/pledge-dates", tok)).body || {};
+  const r0 = (dh.rows || [])[0] || {};
+  ok(`§4 Data health reads "${multi.length} pledges have a first installment dated the event day", the count and its rows the same`,
+     hc.pledgesOnEventDay === multi.length && (dh.rows || []).length === multi.length && dh.sentence === `${multi.length} pledges have a first installment dated the event day`, JSON.stringify([hc.pledgesOnEventDay, (dh.rows || []).length, dh.sentence]));
+  ok("§4 each row shows before and after: Oct 22 yearly becomes Dec 31 yearly",
+     JSON.stringify((r0.installments || []).map(i => [i.before, i.after])) === JSON.stringify([["2026-10-22", "2026-12-31"], ["2027-10-22", "2027-12-31"], ["2028-10-22", "2028-12-31"]]) && r0.pledgeDueAfter === "2028-12-31",
+     JSON.stringify(r0).slice(0, 300));
+  const viaGet = await snap();
+  ok("§4 reading the review changes nothing", viaGet === planted, "");
+  const ap = await api("POST", "/data-health/pledge-dates/apply", tok, {});
+  const moved = await q(`SELECT array_agg(i.due_date ORDER BY i.seq) AS d, MIN(p.due_date) AS pd FROM pledges p JOIN pledge_installments i ON i.pledge_id=p.id
+                          WHERE p.org_id=$1 AND p.installment_count=3 GROUP BY p.id`, [ORG]);
+  const stamped = await one(`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE created_by='u_${ORG}' AND created_by_name='Allie Test')::int AS mine FROM pledge_date_fixes WHERE org_id=$1 AND batch_id=$2`, [ORG, ap.body && ap.body.batchId]);
+  ok("§4 Move to Dec 31 applies on her click: every three-year pledge due Dec 31 yearly, each change stamped with her",
+     ap.status === 201 && ap.body.applied === multi.length && moved.length === multi.length && moved.every(r => JSON.stringify(r.d) === JSON.stringify(["2026-12-31", "2027-12-31", "2028-12-31"]) && r.pd === "2028-12-31")
+     && stamped.n === multi.length * 4 && stamped.mine === stamped.n, JSON.stringify([ap.status, ap.body, stamped, moved.slice(0, 1)]));
+  const after = (await api("GET", "/data-health/pledge-dates", tok)).body || {};
+  const again = await api("POST", "/data-health/pledge-dates/apply", tok, {});
+  ok("§4 then the item is clear, and a second click moves nothing", (after.rows || []).length === 0 && again.body && again.body.applied === 0, JSON.stringify([(after.rows || []).length, again.body]));
+  let agree4 = null;
+  try { agree4 = await assertSurfacesAgree(ORG, { token: tok, label: "after Move to Dec 31", soft: true }); } catch (e) { agree4 = { ok: false, diffs: [String(e.message)] }; }
+  ok("§4 the truth check after the move", agree4.ok, (agree4.diffs || []).join("\n"));
+  const ud = await api("POST", "/data-health/pledge-dates/undo", tok, { batchId: ap.body && ap.body.batchId });
+  ok("§4 Undo puts every date back exactly as it was", ud.status === 200 && (await snap()) === planted, JSON.stringify([ud.status, ud.body]));
+  await api("POST", "/data-health/pledge-dates/apply", tok, {});
 
   // §3 the truth check, with these pledges on file
   let agree = null;
