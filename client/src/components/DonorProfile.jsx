@@ -49,6 +49,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
+import OpenPledgeBanner from "./OpenPledgeBanner";   // IMPORT-5: the open pledge up front
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
 import { useDonorStatus, statusTagItems, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
@@ -2300,6 +2301,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
             bottom edge; the other four head the Gifts & pledges tab. */}
         {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
+        {/* IMPORT-5 — an open pledge sits up top, under the header */}
+        {pledges.some(p=>p.status==="open"&&Number(p.balance)>0)&&<div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}>
+          <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
+            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
+        </div>}
         <div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>

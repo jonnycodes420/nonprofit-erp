@@ -571,7 +571,8 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
             </div>
             {m.group && m.group.count > 1 && (
               <div style={{ fontSize: 13, color: T.ink3 }}>
-                One of {m.group.count} in {m.group.title.toLowerCase()} · <button type="button" style={LNK} onClick={() => setPanel(m.kind)}>See all {m.group.count}</button>
+                One of {m.group.count} in {m.group.title.toLowerCase()} · <button type="button" style={LNK} data-testid="move-see-all"
+                  onClick={() => (m.group.eventId && onNavigate ? onNavigate("events", { eventId: m.group.eventId }) : setPanel(m.kind))}>See all {m.group.count}</button>
               </div>
             )}
           </article>

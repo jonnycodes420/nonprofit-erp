@@ -7623,6 +7623,13 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
             COALESCE(SUM(amount) FILTER (WHERE paid_gift_id IS NULL AND due_date <= ?),0) AS due_this_year
        FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [yearEnd, req.user.orgId, rows.map(r => r.id)]) : [];
   const instBy = new Map(inst.map(x => [x.pledge_id, x]));
+  // IMPORT-5: each installment with its state, for the open pledge up top
+  const instRows = rows.length ? await query(
+    `SELECT pledge_id, seq, due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) ORDER BY pledge_id, seq`,
+    [req.user.orgId, rows.map(r => r.id)]) : [];
+  const listBy = new Map();
+  for (const i of instRows) (listBy.get(i.pledge_id) || listBy.set(i.pledge_id, []).get(i.pledge_id))
+    .push({ seq: i.seq, dueDate: i.due_date ? String(i.due_date).slice(0, 10) : null, amount: round2(parseFloat(i.amount) || 0), paid: !!i.paid_gift_id });
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
@@ -7638,6 +7645,9 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
       installmentCount: ix ? ix.n : 1, years, dueThisYear,
+      installments: listBy.get(r.id) || [],
+      // the open-pledge figure opens Fundraising's own rows for this person
+      openSource: { key: "pledges-open", params: { donor: r.donor_id } },
     };
   }));
 }));
@@ -28033,11 +28043,17 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   const progress = EV.eventProgress({ raisedCents,
     goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
   const attendance = EV.attendanceRate({ registered, attended: counts.attended.length });
+  // IMPORT-5: who came and gave, who came and didn't, who was invited and didn't
+  // come: numbers.eventGuests, the answer Home's Grow moves and Ask read too
+  const [guests] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+  const G = guests || { cameNoGift: [], cameGave: [], invitedNoShow: [], past: true, definitions: {} };
 
   res.json({
     event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
              goalAmount: event.goal_amount == null ? null : Number(event.goal_amount) },
     progress, attendance, money,
+    guests: { past: G.past, cameNoGift: G.cameNoGift, cameGave: G.cameGave, invitedNoShow: G.invitedNoShow,
+              sentence: G.cameNoGift.length ? `${G.cameNoGift.length} ${G.cameNoGift.length === 1 ? "person" : "people"} came and didn't give. Thank them for coming; the ask can wait.` : null },
     figures: [
       { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
         count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
@@ -28045,6 +28061,9 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
         count: counts.registered.length, sentence: EV.EVENT_FIGURES.registered },
       { key: "attended", label: "Came", value: counts.attended.length,
         count: counts.attended.length, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence },
+      { key: "cameNoGift", label: "Came, didn't give", value: G.cameNoGift.length, count: G.cameNoGift.length, sentence: G.definitions.cameNoGift },
+      { key: "cameGave", label: "Came, gave", value: G.cameGave.length, count: G.cameGave.length, sentence: G.definitions.cameGave },
+      ...(G.past ? [{ key: "invitedNoShow", label: "Invited, didn't come", value: G.invitedNoShow.length, count: G.invitedNoShow.length, sentence: G.definitions.invitedNoShow }] : []),
       { key: "firstTime", label: "First-time givers", value: counts.firstTime.length,
         count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime },
       { key: "sponsors", label: "Sponsors", value: counts.sponsors.length,
@@ -28062,6 +28081,11 @@ app.get("/events/:id/rows", requireAuth, wrap(async (req, res) => {
   const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const key = String(req.query.rows || "");
+  if (["cameNoGift", "cameGave", "invitedNoShow"].includes(key)) {
+    const [g] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+    const list = g ? g[key] : [];
+    return res.json({ eventId: event.id, rows: key, count: list.length, donors: list.map(p => ({ donor_id: p.id, name: p.name })) });
+  }
   const sql = EVENT_ROW_SQL[key];
   if (!sql) return res.status(400).json({ error: "unknown_rows",
     message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(EVENT_ROW_SQL).join(", ")}.` });

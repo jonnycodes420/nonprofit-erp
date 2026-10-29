@@ -126,9 +126,11 @@ const FIELDS = [
   F("engagement", "Engagement", "Giving", { format: "number", sort: "engagement_score", cell: "engagement" }),
   F("generosity", "Giving strength", "Giving", { format: "number", sort: "generosity_score", cell: "generosity" }),
   // Pledges
+  // IMPORT-5: "Open pledge" is a column (what is still to come, the profile's
+  // and Fundraising's number) and a filter (has one, or by how much)
   F("open_pledge", "Has an open pledge", "Pledges", { col: false, filter: BOOL_OPS }),
-  F("pledge_balance", "Pledge balance", "Pledges", { format: "money", filter: MONEY_OPS, cell: "pledge_balance",
-    sentence: "What is still to come on open pledges: each pledge's amount less what has been paid against it." }),
+  F("pledge_balance", "Open pledge", "Pledges", { format: "money", filter: MONEY_OPS, cell: "pledge_balance",
+    sentence: "What is still to come on open pledges: each pledge's amount less what has been paid against it. The profile's open pledge and Fundraising's say the same." }),
   // Events
   F("event_invited", "Invited to an event", "Events", { col: false, filter: SEL_OPS }),
   F("event_registered", "Registered for an event", "Events", { col: false, filter: SEL_OPS }),
