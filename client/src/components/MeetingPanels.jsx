@@ -30,6 +30,7 @@ import { civilDaysAgo, civilDayOf, orgTodayPlus, orgTodayCivil } from "../lib/or
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
   TimelineListView, AttachmentChips, AttachButton, stageMoveOf } from "./ProfileTimelineParts";
+import { countLabel, plural } from "../../../shared/countWords.js";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -327,7 +328,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       const t = it.t;
       title = t.subject;
       body = t.lastQuote ? `${t.lastDirection === "inbound" ? first : "You"}: "${t.lastQuote}"` : null;
-      meta = `${t.count} message${t.count === 1 ? "" : "s"}${t.attachments ? ` · ${t.attachments} attachment${t.attachments === 1 ? "" : "s"}` : ""}`;
+      meta = `${countLabel(t.count, "message")}${t.attachments ? ` · ${countLabel(t.attachments, "attachment")}` : ""}`;
       by = t.lastDirection === "inbound" ? first : "";
     } else if (it.kind === "meeting" && it.m) {
       const m = it.m;
@@ -635,14 +636,14 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
           style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 5 }}>
           {(rel.rhythm || []).map(m => (
             <div key={m.month} data-month={m.month} data-count={m.count}
-              title={`${new Date(m.from + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}: ${m.count} meeting${m.count === 1 ? "" : "s"}${m.upcoming ? ", one still to come" : ""}`}
+              title={`${new Date(m.from + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}: ${countLabel(m.count, "meeting")}${m.upcoming ? ", one still to come" : ""}`}
               style={{ height: 30, borderRadius: 4, boxSizing: "border-box",
                 background: m.count > 0 ? T.gold : m.upcoming ? "transparent" : "rgba(240,237,230,0.12)",
                 border: m.count === 0 && m.upcoming ? "1.5px dashed " + T.gold : "none" }}/>
           ))}
         </div>
         <div style={{ fontSize: 14, color: T.sage400, lineHeight: 1.5 }}>
-          {n ? `${n} meeting${n === 1 ? "" : "s"} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} month${Math.round(monthsElapsed / n) === 1 ? "" : "s"}` : ""}.` : "No meetings yet this year."}
+          {n ? `${countLabel(n, "meeting")} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} ${plural(Math.round(monthsElapsed / n), "month")}` : ""}.` : "No meetings yet this year."}
           {next ? ` The next one is ${relDay(next.date || next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.date || next.startsAt)}.` : ""}
         </div>
       </div>)}

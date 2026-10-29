@@ -26,6 +26,7 @@ import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 import { isGivenName } from "./givenNames.js";
 import { splitAddress, contactNoteFlags } from "./addressSplit.js";
+import { countLabel } from "./countWords.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -243,7 +244,7 @@ const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ")
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
 const fmt$ = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
-const plural = (n, a, b) => `${n.toLocaleString("en-US")} ${n === 1 ? a : (b || a + "s")}`;
+const plural = countLabel;
 
 function moneyOf(v) {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;

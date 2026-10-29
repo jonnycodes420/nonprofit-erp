@@ -33,6 +33,7 @@ import { offerUndo } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 import { BillingBand } from "./BillingBand";
 import MyProfile from "./MyProfile";
+import { countLabel, plural } from "../../../shared/countWords.js";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -1445,7 +1446,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
           {runErr&&<div style={{fontSize:12,color:T.terra700,background:T.terra100,borderRadius:8,padding:"8px 12px",marginBottom:10}}>{runErr}</div>}
           {dryRunResult&&(
             <div style={{background:T.bg,borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:T.ink}}>
-              <strong>{dryRunResult.donorCount}</strong> donor{dryRunResult.donorCount===1?"":"s"} · <strong>{dryRunResult.giftCount}</strong> gift{dryRunResult.giftCount===1?"":"s"} in {yearEndYear}
+              <strong>{dryRunResult.donorCount}</strong> {plural(dryRunResult.donorCount, "donor")} · <strong>{dryRunResult.giftCount}</strong> {plural(dryRunResult.giftCount, "gift")} in {yearEndYear}
               {dryRunResult.missingEmailCount>0&&<span style={{color:T.gold700}}> · {dryRunResult.missingEmailCount} donor{dryRunResult.missingEmailCount===1?" has":"s have"} no email on file (statement generated but not sent)</span>}
               <div style={{marginTop:10}}>
                 <button onClick={generateAndSend} disabled={runLoading} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:12,fontWeight:700,cursor:runLoading?"not-allowed":"pointer"}}>
@@ -1456,7 +1457,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
           )}
           {runResult&&(
             <div style={{background:T.green100,border:"1px solid "+T.greenDk,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.greenDk}}>
-              ✓ Generated <strong>{runResult.generated}</strong> statement{runResult.generated===1?"":"s"}, emailed <strong>{runResult.emailed}</strong>{runResult.skipped>0?`, skipped ${runResult.skipped}`:""}.
+              ✓ Generated <strong>{runResult.generated}</strong> {plural(runResult.generated, "statement")}, emailed <strong>{runResult.emailed}</strong>{runResult.skipped>0?`, skipped ${runResult.skipped}`:""}.
             </div>
           )}
         </div>
@@ -1659,7 +1660,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           <div>
             <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{u.title}</div>
             <div style={{fontSize:12,color:T.ink3}}>
-              {u.org_wide?"Org-wide":`${(Array.isArray(u.targets)?u.targets.length:0)} target${(Array.isArray(u.targets)?u.targets.length:0)===1?"":"s"}`} · {displayDate(u.created_at)}
+              {u.org_wide?"Org-wide":countLabel(Array.isArray(u.targets)?u.targets.length:0,"target")} · {displayDate(u.created_at)}
             </div>
           </div>
           {isAdmin&&<div style={{display:"flex",gap:8}}>
@@ -2221,7 +2222,7 @@ function InboundEmailCard({isReadOnly}){
       </>}
       {state.droppedCount>0&&(
         <div style={{fontSize:11.5,color:T.ink3,marginTop:10}}>
-          {state.droppedCount} message{state.droppedCount===1?"":"s"} refused: sent from an address that is not on your team.
+          {countLabel(state.droppedCount, "message")} refused: sent from an address that is not on your team.
         </div>
       )}
     </div>
@@ -2263,7 +2264,7 @@ function checkedPhrase(lastSyncedAt){
   if(mins<2) return "checked just now";
   if(mins<60) return `checked ${mins} minutes ago, at ${clock}`;
   const hrs=Math.round(mins/60);
-  if(hrs<24) return `checked ${hrs} hour${hrs===1?"":"s"} ago, at ${clock}`;
+  if(hrs<24) return `checked ${countLabel(hrs, "hour")} ago, at ${clock}`;
   return `checked ${then.toLocaleDateString(undefined,{month:"short",day:"numeric"})} at ${clock}`;
 }
 
@@ -2462,7 +2463,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
   const disconnect=async(s)=>{
     // Disconnect KEEPS every gift, and the confirm says so rather than asking
     // a frightening question about deletion that is not what happens.
-    if(!(await askConfirm({title:`Stop checking ${s.displayName}?`,body:`The ${s.giftsTotal} gift${s.giftsTotal===1?"":"s"} already read from it stay on your records.`,yes:"Stop checking"}))) return;
+    if(!(await askConfirm({title:`Stop checking ${s.displayName}?`,body:`The ${countLabel(s.giftsTotal, "gift")} already read from it stay on your records.`,yes:"Stop checking"}))) return;
     setBusy(s.id); setErr("");
     try{ await apiFetch(`/giving-sources/${s.id}`,{method:"DELETE"}); await load(); }
     catch(e){ setErr(errorMessage(e,"Could not disconnect that source.")); }
@@ -2569,7 +2570,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
       <div style={grid}>
         {DIRECT_ORDER.filter(k=>providerByKey[k]).map(k=>{
           const p=providerByKey[k], s=byProvider[k], state=sourceState(s);
-          const gifts=s&&s.everChecked?`, ${s.giftsThisWeek} new gift${s.giftsThisWeek===1?"":"s"} this week`:"";
+          const gifts=s&&s.everChecked?`, ${countLabel(s.giftsThisWeek, "new gift")} this week`:"";
           // An unverified provider says so INSTEAD of the generic line, and
           // only while nothing is connected: once this org has connected one,
           // what its own connection is doing is the more useful truth.
@@ -2606,7 +2607,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
                       </div>)}
                     {s.lastRun&&s.lastRun.skipped&&s.lastRun.skipped.length>0&&(
                       <details data-testid="gs-skipped" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
-                        <summary style={{cursor:"pointer"}}>{s.lastRun.skipped.length} row{s.lastRun.skipped.length===1?"":"s"} skipped</summary>
+                        <summary style={{cursor:"pointer"}}>{countLabel(s.lastRun.skipped.length, "row")} skipped</summary>
                         <ul style={{margin:"6px 0 0",paddingLeft:16,lineHeight:1.5}}>
                           {s.lastRun.skipped.map((r,i)=><li key={i}>{r.externalId||"A row with no id"}: {r.reason}</li>)}
                         </ul>
@@ -2713,7 +2714,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
             // to know a key works, and nothing is written on this path.
             <div data-testid="gs-test-result" style={{fontSize:13,color:T.ink,margin:"8px 0",lineHeight:1.55}}>
               {connect.tested.count>0
-                ? `Steward read ${connect.tested.count} gift${connect.tested.count===1?"":"s"} in the last seven days, ${fmtFull(connect.tested.totalCents/100)} in total.`
+                ? `Steward read ${countLabel(connect.tested.count, "gift")} in the last seven days, ${fmtFull(connect.tested.totalCents/100)} in total.`
                 : (connect.tested.message||"Steward reached the account and there were no gifts in the last seven days.")}
             </div>
           )}
@@ -2876,7 +2877,7 @@ function BccAddressCard() {
       )}
       {d.enabled && d.droppedCount > 0 && (
         <div style={{ fontSize:12, color:T.ink3, marginTop:10 }}>
-          {d.droppedCount} message{d.droppedCount === 1 ? "" : "s"} arrived that Steward stored nothing from, because {d.droppedCount === 1 ? "it named" : "they named"} nobody on file.
+          {countLabel(d.droppedCount, "message")} arrived that Steward stored nothing from, because {d.droppedCount === 1 ? "it named" : "they named"} nobody on file.
         </div>
       )}
     </div>
@@ -3619,12 +3620,12 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         const quiet=impact.quietDonorCount||0;
         const watching=impact.watchingRecurringCount||0;
         const clauses=[];
-        if(atRisk>0&&quiet>0)clauses.push(<><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}</>);
+        if(atRisk>0&&quiet>0)clauses.push(<><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet {plural(quiet, "donor")}</>);
         let msg;
         if(clauses.length){
           msg=<>{clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)}, with no gift in over {quietPhrase(impact.quietSinceDays)}. <strong style={{color:T.ink}}>No platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else if(watching>0){
-          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards. <strong style={{color:T.ink}}>No platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
+          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring {plural(watching, "gift")} for failed cards. <strong style={{color:T.ink}}>No platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else{
           msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip.</strong> Your gifts settle in your own Stripe. Your at-risk giving appears here as donors go quiet.</>;
         }
@@ -3689,7 +3690,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         </div>
         {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
           <div style={{background:T.ground,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.ink3,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-            <span>You're using all {billing.limits.seats} seat{billing.limits.seats!==1?"s":""}.</span>
+            <span>You're using all {countLabel(billing.limits.seats, "seat")}.</span>
             <a href="/pricing" style={{color:T.greenDk,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
           </div>
         )}
@@ -4180,9 +4181,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               const returned=impact.reengagedAmount||0, returnedDonors=impact.reengagedDonorCount||0;
               const atRisk=impact.atRiskAmount||0, quiet=impact.quietDonorCount||0;
               const head=(atRisk>0&&quiet>0)
-                ? <><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
+                ? <><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet {plural(quiet, "donor")}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
                 : watching>0
-                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards, money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
+                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring {plural(watching, "donor")} for failed cards, money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
                   : <>No platform fee, no donor tip, <strong style={{color:T.green600}}>$0</strong> to Steward on every gift{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
               const brow=(label,value,note)=>(
                 <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,padding:"7px 0",borderTop:"1px solid "+T.bg3}}>
@@ -4204,11 +4205,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   {impactOpen&&(
                     <div style={{padding:"2px 16px 12px",background:T.green100}}>
                       {atRisk>0&&brow("At risk right now",fmt(atRisk),
-                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)}: lapsing or lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
+                        `Lifetime giving of ${countLabel(quiet, "donor")} with no gift in over ${quietPhrase(impact.quietSinceDays)}: lapsing or lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
                       {retried>0&&brow("Failed cards, retried automatically",fmt(retried),
-                        `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} whose card failed and which the dunning workflow retried. Tracked per gift, attributable to a retry Steward actually ran.`)}
+                        `${countLabel(impact.recoveredCount, "gift")} whose card failed and which the dunning workflow retried. Tracked per gift, attributable to a retry Steward actually ran.`)}
                       {returned>0&&brow("Gifts after a year-long gap",fmt(returned),
-                        `${fmt(returned)} from ${returnedDonors} donor${returnedDonors===1?"":"s"} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries.`)}
+                        `${fmt(returned)} from ${countLabel(returnedDonors, "donor")} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries.`)}
                       {brow("Platform fees you paid Steward","$0",
                         "Donations run on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
                       {online>0&&brow(

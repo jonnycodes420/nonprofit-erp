@@ -30,6 +30,7 @@
 // not here contributes nothing rather than guessing at a phrasing — a receipt
 // that invents a sentence about a decision it does not understand is worse
 // than one that stays quiet about it.
+import { plural } from "./countWords.js";
 export const DECISION_KINDS = ["exclusion", "gift_type", "date_convention", "duplicates"];
 
 const DEFAULT_WORD = {
@@ -78,12 +79,12 @@ function clauseFor(d, word) {
     case "exclusion": {
       const n = Number(d.rows) || 0;
       if (n <= 0 || !label) return null;
-      return `${fmtN(n)} row${n === 1 ? "" : "s"} as ${label}`;
+      return `${fmtN(n)} ${plural(n, "row")} as ${label}`;
     }
     case "gift_type": {
       const n = Number(d.gifts) || 0;
       if (n <= 0 || !label) return null;
-      return `${fmtN(n)} gift${n === 1 ? "" : "s"} as ${label}`;
+      return `${fmtN(n)} ${plural(n, "gift")} as ${label}`;
     }
     default:
       return null;
@@ -101,13 +102,13 @@ function readingSentences(decisions, word) {
     const first = String(dc.convention).toLowerCase().startsWith("dd") ? "day first" : "month first";
     const n = Number(dc.rows) || 0;
     out.push(n > 0
-      ? `Dates are read ${first}, as you chose, across ${fmtN(n)} row${n === 1 ? "" : "s"}.`
+      ? `Dates are read ${first}, as you chose, across ${fmtN(n)} ${plural(n, "row")}.`
       : `Dates are read ${first}, as you chose.`);
   }
   const dup = decisions.find(d => d && d.kind === "duplicates" && (Number(d.merged) || 0) > 0);
   if (dup) {
     const n = Number(dup.merged);
-    out.push(`${fmtN(n)} duplicate row${n === 1 ? "" : "s"} folded into the ${word("giver", 2)} you kept.`);
+    out.push(`${fmtN(n)} duplicate ${plural(n, "row")} folded into the ${word("giver", 2)} you kept.`);
   }
   return out;
 }
@@ -120,7 +121,7 @@ export function plainTotalsSentence(totals = {}, t) {
   const donors = Number(totals.donors) || 0;
   const gifts = Number(totals.gifts) || 0;
   const cents = Math.trunc(Number(totals.cents) || 0);
-  const head = `${fmtN(donors)} ${word("giver", donors)} and ${fmtN(gifts)} gift${gifts === 1 ? "" : "s"}, ${formatCents(cents)}`;
+  const head = `${fmtN(donors)} ${word("giver", donors)} and ${fmtN(gifts)} ${plural(gifts, "gift")}, ${formatCents(cents)}`;
   // Rule 3 — the balance claim is only made when it is true. `unaccountedCents`
   // is the authority; `balanced` is accepted as a shorthand for zero.
   const gap = Math.trunc(Number(totals.unaccountedCents) || 0);

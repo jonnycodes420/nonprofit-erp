@@ -37,6 +37,7 @@
 import { MIGRATION_PRESETS } from "./migrationPresets.js";
 import { NPSP_CONTACT_COLUMNS, NPSP_OPPORTUNITY_COLUMNS } from "./npspPreset.js";
 import { formatCents } from "./importSentence.js";
+import { countLabel, plural } from "./countWords.js";
 
 // ── PART 1 · THE TILES ─────────────────────────────────────────────────────
 //
@@ -408,7 +409,7 @@ export function buildMoveReport({ file = {}, held = {}, typed = null, vendor = "
   // move (TRANS-1), so a second run's report counts the first run's gifts too;
   // "3,315 gifts" with no scope read as this one file. It says which, and it
   // counts only people who are still here (moveHeldFacts).
-  const count = `${n(held.gifts).toLocaleString("en-US")} gift${n(held.gifts) === 1 ? "" : "s"}, ${formatCents(n(held.cents))}`;
+  const count = `${n(held.gifts).toLocaleString("en-US")} ${plural(n(held.gifts), "gift")}, ${formatCents(n(held.cents))}`;
   const nRuns = Math.max(1, n(runs));
   const scope = nRuns > 1
     ? `Across the whole move${vendor ? ` from ${vendor}` : ""}, ${nRuns.toLocaleString("en-US")} imports so far, Steward holds ${count} from people still on file.`
@@ -448,7 +449,7 @@ function differenceSentence(file, held) {
   const dg = n(held.gifts) - n(file.gifts);
   const dc = n(held.cents) - n(file.cents);
   const bits = [];
-  if (dg) bits.push(`${Math.abs(dg).toLocaleString("en-US")} ${dg < 0 ? "fewer" : "more"} gift${Math.abs(dg) === 1 ? "" : "s"} than your file`);
+  if (dg) bits.push(`${Math.abs(dg).toLocaleString("en-US")} ${dg < 0 ? "fewer" : "more"} ${plural(Math.abs(dg), "gift")} than your file`);
   if (dc) bits.push(`${formatCents(Math.abs(dc))} ${dc < 0 ? "less" : "more"} than your file`);
   if (!bits.length) return "The rows that differ are listed below.";
   return `That is ${bits.join(" and ")}. Every row that differs is listed below.`;
@@ -477,16 +478,16 @@ export function buildSinceLastTime({ giftsCreated = 0, centsCreated = 0, peopleC
   if (!g && !p) {
     return {
       sentence: dupes
-        ? `Since last time: nothing new. All ${dupes.toLocaleString("en-US")} gift${dupes === 1 ? "" : "s"} in this file were already on file.`
+        ? `Since last time: nothing new. All ${countLabel(dupes, "gift")} in this file were already on file.`
         : "Since last time: nothing new in this file.",
       giftsCreated: 0, centsCreated: 0, peopleCreated: 0, giftsAlreadyHeld: dupes, peopleMatched: matched,
     };
   }
   const bits = [];
-  if (g) bits.push(`${g.toLocaleString("en-US")} new gift${g === 1 ? "" : "s"}, ${formatCents(c)}`);
+  if (g) bits.push(`${countLabel(g, "new gift")}, ${formatCents(c)}`);
   if (p) bits.push(`${p.toLocaleString("en-US")} new ${p === 1 ? "person" : "people"}`);
   const tail = dupes
-    ? ` ${dupes.toLocaleString("en-US")} gift${dupes === 1 ? "" : "s"} ${dupes === 1 ? "was" : "were"} already on file and ${dupes === 1 ? "was" : "were"} not imported again.`
+    ? ` ${countLabel(dupes, "gift")} ${dupes === 1 ? "was" : "were"} already on file and ${dupes === 1 ? "was" : "were"} not imported again.`
     : "";
   return {
     sentence: `Since last time: ${bits.join(", ")}.${tail}`,
@@ -529,7 +530,7 @@ export function moveCardSentence({ source = "", startedAt = null, imports = 0, c
   const bits = [];
   bits.push(completedAt ? `Moved from ${label}` : `Moving from ${label}`);
   if (when) bits.push(`started ${when}`);
-  if (runs) bits.push(`${runs} import${runs === 1 ? "" : "s"}`);
+  if (runs) bits.push(`${countLabel(runs, "import")}`);
   return bits.join(" · ");
 }
 

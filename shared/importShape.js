@@ -8,6 +8,7 @@ import { membershipColumns } from "./membershipImport.js";
 import { parseExclusionValue } from "./customFieldShape.js";
 import { tokenizeText, containsTokenRun, eitherContainsTokenRun } from "./textMatch.js";
 import { parseBirthday } from "./birthday.js";
+import { countLabel, plural } from "./countWords.js";
 // Pure, JSX/React-free import-shape detection + transaction grouping — kept in a
 // lib (like client/src/lib/money.js) so the Node suite can unit-test it directly
 // (tests/import-shape.test.js dynamic-imports it). Donors.jsx imports these so
@@ -1228,7 +1229,7 @@ export function detectImportShape(headers = [], rows = []) {
   else if (hasAmountCol && hasDateCol && donorRepeats) { shape = "transaction"; reason = "amount + gift-date columns and the same donor repeats across rows"; }
   else if (yearCols.length >= 2) { shape = "wide"; reason = `${yearCols.length} year columns`; }
   else if (memberCols.size >= 2 && !hasAmountCol && (nameCol || emailCol)) { shape = "aggregate"; reason = "one row per member: a membership level and its dates, no gift amount"; }
-  else if (recognized.length < 3) { shape = "unknown"; reason = `only ${recognized.length} column${recognized.length === 1 ? "" : "s"} recognised — not enough evidence to pick a shape`; }
+  else if (recognized.length < 3) { shape = "unknown"; reason = `only ${countLabel(recognized.length, "column")} recognised — not enough evidence to pick a shape`; }
   else { shape = "aggregate"; reason = "donor-identity and total-style columns, no per-gift date column"; }
 
   return { shape, reason, recognized, yearCols, hasDateCol, hasAmountCol, hasTotalCol, donorRepeats, distinctDonors, keyedRows, nameCol: nameCol || "", emailCol: emailCol || "" };
@@ -2841,8 +2842,8 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
         donorKey: sh.key, donorName: sh.donor.name, donorEmail: sh.donor.email || "",
         amount, date: dates[0] || null,
         notes: sh.installments > 0
-          ? `Pledge of ${sh.installments} installments, recorded from ${sh.payments.length} payment${sh.payments.length === 1 ? "" : "s"} in the imported file.`
-          : `Pledge recorded from ${sh.payments.length} payment${sh.payments.length === 1 ? "" : "s"} in the imported file.`,
+          ? `Pledge of ${sh.installments} installments, recorded from ${countLabel(sh.payments.length, "payment")} in the imported file.`
+          : `Pledge recorded from ${countLabel(sh.payments.length, "payment")} in the imported file.`,
         externalId: undefined, shell: true,
         status: amount > 0 && paid >= amount ? "fulfilled" : "open",
         paidObserved: paid, scheduledObserved: 0,
@@ -3328,7 +3329,7 @@ export function classifyWorkbookSheets(sheets = []) {
     // chrome: too small to be data, or no amount and no name/id, or mostly formulas
     const fr = s.formulaCellRatio || 0;
     if (rc < 15 && !(amount && date) && !(nameid && contact)) {
-      return { ...s, role: "chrome", evidence: `${fmtN(rc)} row${rc === 1 ? "" : "s"}, no donor or gift shape — a cover page, summary or legend` };
+      return { ...s, role: "chrome", evidence: `${fmtN(rc)} ${plural(rc, "row")}, no donor or gift shape — a cover page, summary or legend` };
     }
     if (fr > 0.5) return { ...s, role: "chrome", evidence: `${Math.round(fr * 100)}% of its cells are formulas — a computed summary, not records` };
     if (!amount && !nameid) return { ...s, role: "chrome", evidence: "no amount column and no name column — nothing importable" };

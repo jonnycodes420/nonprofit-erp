@@ -22,6 +22,7 @@ import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
 import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
 import { UNDONE } from "../lib/recentUndo";
+import { countLabel } from "../../../shared/countWords.js";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -224,7 +225,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
               </div>
               <div style={{ fontSize: 12.5, color: T.ink, marginTop: 2 }}>
                 {it.highBid == null ? (it.closed ? "Closed with no bids." : "No bids yet.")
-                  : `${it.closed ? "Won at" : "High bid"} ${money(it.highBid)} by #${it.highBidder.bidderNumber} ${it.highBidder.name} · ${it.bidCount} bid${it.bidCount === 1 ? "" : "s"}${it.boughtNow ? " · bought now" : ""}`}
+                  : `${it.closed ? "Won at" : "High bid"} ${money(it.highBid)} by #${it.highBidder.bidderNumber} ${it.highBidder.name} · ${countLabel(it.bidCount, "bid")}${it.boughtNow ? " · bought now" : ""}`}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -295,10 +296,10 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
         <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 10px" }}>Steward writes these as drafts. Nothing goes out until you press Send, and each one goes through your usual mail rules.</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           {!a.closed && <button style={btn(false)} disabled={isReadOnly || d.bidders.length === 0}
-            onClick={() => act(() => apiFetch(`/auctions/${id}/closing-note`, { method: "POST" }), r => `${r.made} draft${r.made === 1 ? "" : "s"} written for ${r.bidders} bidder${r.bidders === 1 ? "" : "s"}.`)}>
+            onClick={() => act(() => apiFetch(`/auctions/${id}/closing-note`, { method: "POST" }), r => `${countLabel(r.made, "draft")} written for ${countLabel(r.bidders, "bidder")}.`)}>
             Prepare "bidding closes soon"</button>}
           {winners.some(w => !w.paidGiftId) && <button style={btn(false)} disabled={isReadOnly}
-            onClick={() => act(() => apiFetch(`/auctions/${id}/winner-emails`, { method: "POST" }), r => `${r.made} draft${r.made === 1 ? "" : "s"} written for ${r.winners} winner${r.winners === 1 ? "" : "s"}.${r.unreachable ? ` ${r.unreachable} winner${r.unreachable === 1 ? "" : "s"} cannot be emailed: copy their pay link from Winners.` : ""}`)}>
+            onClick={() => act(() => apiFetch(`/auctions/${id}/winner-emails`, { method: "POST" }), r => `${countLabel(r.made, "draft")} written for ${countLabel(r.winners, "winner")}.${r.unreachable ? ` ${countLabel(r.unreachable, "winner")} cannot be emailed: copy their pay link from Winners.` : ""}`)}>
             Prepare the winners' emails</button>}
           {pendingDrafts.length > 1 && <button style={btn(true)} disabled={isReadOnly} onClick={sendAll}>Send all {pendingDrafts.length}</button>}
         </div>
@@ -322,7 +323,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
             <strong style={{ minWidth: 48 }}>#{b.bidder_number}</strong>
             <span style={{ flex: "1 1 160px" }}><DonorLink id={b.donor_id} onOpen={() => openPerson(b.donor_id)}>{b.name}</DonorLink></span>
             <span style={{ color: T.ink3, flex: "1 1 160px", wordBreak: "break-all" }}>{b.email}{b.phone ? <> · <Phone value={b.phone} /></> : ""}</span>
-            <span style={{ color: T.ink3 }}>{b.bids} bid{b.bids === 1 ? "" : "s"}</span>
+            <span style={{ color: T.ink3 }}>{countLabel(b.bids, "bid")}</span>
           </div>))}
       </Card>
     </div>
@@ -378,7 +379,7 @@ export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
             <strong style={{ fontSize: 14, color: T.ink, flex: "1 1 200px" }}>{a.title}</strong>
             <span style={{ fontSize: 12.5, color: T.ink3 }}>{a.event_name ? `${a.event_name} · ` : ""}{a.status === "archived" ? "Archived" : a.not_open ? "Not open yet" : a.closed ? "Closed" : "Open now"}</span>
-            <span style={{ fontSize: 12.5, color: T.ink3 }}>{a.items} item{a.items === 1 ? "" : "s"} · {a.bids} bid{a.bids === 1 ? "" : "s"}</span>
+            <span style={{ fontSize: 12.5, color: T.ink3 }}>{countLabel(a.items, "item")} · {countLabel(a.bids, "bid")}</span>
           </div>
         </Card>))}
     </div>

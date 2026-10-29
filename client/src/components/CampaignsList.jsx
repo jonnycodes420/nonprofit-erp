@@ -19,6 +19,7 @@ import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { SaveAsGroup } from "./Groups";
 import { displayDate } from "../../../shared/displayDate";
+import { countLabel } from "../../../shared/countWords.js";
 
 export const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", campaignId: id });
 const listHref = () => tabHref("fundraising", { frSection: "campaigns" });
@@ -49,7 +50,7 @@ export const CATEGORY_META = {
 // words, not hers. Only a goal that rolls others up says so, in a sentence.
 export function CategoryBadge({ g, style }) {
   if (!g.isOverarching) return null;
-  return <span style={{ fontSize: 11, fontWeight: 600, color: T.ink3, whiteSpace: "nowrap", flexShrink: 0, ...style }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</span>;
+  return <span style={{ fontSize: 11, fontWeight: 600, color: T.ink3, whiteSpace: "nowrap", flexShrink: 0, ...style }}>Rolls up {countLabel(g.childCount, "goal")}</span>;
 }
 
 const SENT = {

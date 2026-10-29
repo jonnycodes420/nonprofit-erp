@@ -8,9 +8,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card, Modal } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
+import { countLabel } from "../../../shared/countWords.js";
 
 const fmtMoney = c => "$" + (Number(c || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+const plural = countLabel;
 const CONF_WORD = { high: "High", medium: "Medium", low: "Low" };
 const btn = (primary, disabled) => ({
   background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink2,

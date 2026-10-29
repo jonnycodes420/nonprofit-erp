@@ -2941,9 +2941,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // FIX-45: the greeting reads the record's salutation or both names on it.
   const person = { salutation: d.salutation, spouseName: d.spouse_name, kind: d.kind };
   const draft = reason === "pledge_completed"
-    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person });
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift?.date || null });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, ...facts });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift?.date || null, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she

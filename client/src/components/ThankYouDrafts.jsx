@@ -7,13 +7,13 @@
 // `highlightId` opens that draft on arrival ("Read and send it" on a
 // confirmed check lands here with it open).
 import { useEffect, useRef, useState } from "react";
-import { T, fmtFull, PersonMark } from "./shared";
+import { T, PersonMark } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink, RecordLink } from "./RecordLink";
 import { giftHref } from "../lib/appUrls";
-import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
+import { giftOnDate } from "../../../shared/draftNote";
 
 export const THANK_YOUS_CHANGED = "steward:thank-yous-changed";
 const CAPTURE_CHANGED = "steward:capture-changed";
@@ -91,9 +91,8 @@ export function ThankYouDrafts({ donorId = null, highlightId = null, title = "Th
                   <span style={{ fontSize: 13, color: T.ink2, fontVariantNumeric: "tabular-nums" }}>
                     <RecordLink to={giftHref(d.donorId, d.giftId)} data-record-link="gift" title="Open the gift"
                       onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: d.donorId, anchor: "gift-" + d.giftId }) : undefined}
-                      style={{ color: "inherit" }}>{fmtFull(d.amount)}</RecordLink>{d.fundName ? ` · ${d.fundName}` : ""}
+                      style={{ color: "inherit" }}>{giftOnDate(Math.round(Number(d.amount) * 100), d.giftDate)}</RecordLink>{d.fundName ? ` · ${d.fundName}` : ""}
                   </span>
-                  {d.giftDate && <span style={{ fontSize: 12.5, color: T.ink3 }}>{displayDateShort(String(d.giftDate).slice(0, 10), new Date())}</span>}
                   {d.opened && <span style={{ fontSize: 11.5, color: T.ink3 }}>opened</span>}
                 </div>
                 <button type="button" data-testid="ty-draft-open" aria-expanded={open === d.id} onClick={() => toggle(d)}

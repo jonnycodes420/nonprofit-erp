@@ -33,6 +33,7 @@
 // Pure: no DB, no network, no clock, no JSX.
 
 import { normalizeHeader, normalizeMoney } from "./importShape.js";
+import { countLabel } from "./countWords.js";
 
 // A statement row is money coming IN, money going OUT, or neither. Only the
 // first is a gift, and the reason a row was set aside is always kept so the
@@ -368,7 +369,7 @@ export function presetSentence(applied) {
   const left = applied.unmatchedColumns.length;
   const method = applied.constants.paymentMethod;
   return left
-    ? `${n} columns mapped from your ${applied.label}, and every gift will read "${method}". ${left} column${left === 1 ? "" : "s"} had no home and ${left === 1 ? "was" : "were"} left alone.`
+    ? `${n} columns mapped from your ${applied.label}, and every gift will read "${method}". ${countLabel(left, "column")} had no home and ${left === 1 ? "was" : "were"} left alone.`
     : `${n} columns mapped from your ${applied.label}, and every gift will read "${method}".`;
 }
 

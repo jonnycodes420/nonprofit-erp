@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { countLabel, plural } from "../../../shared/countWords.js";
 
 const STATE_META = {
   placed:           { label: "Placed",     colour: T.ink,      note: "" },
@@ -208,12 +209,12 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
       <Modal onClose={onClose} width={620} ariaLabel="Deposit recorded" padding={26}>
         <div>
           <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink, marginBottom: 6 }}>
-            {cents(done.giftCents)} recorded, in {done.gifts} gift{done.gifts === 1 ? "" : "s"}.
+            {cents(done.giftCents)} recorded, in {countLabel(done.gifts, "gift")}.
           </div>
           <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginBottom: 16 }}>
             {done.donorsCreated > 0 && <>{done.donorsCreated} new {done.donorsCreated === 1 ? "person" : "people"} added. </>}
-            {done.payments > 0 && <>{done.payments} line{done.payments === 1 ? "" : "s"} recorded as {done.payments === 1 ? "a payment" : "payments"}, out of every giving total. </>}
-            {done.installmentsApplied > 0 && <>{done.installmentsApplied} pledge installment{done.installmentsApplied === 1 ? "" : "s"} applied. </>}
+            {done.payments > 0 && <>{countLabel(done.payments, "line")} recorded as {done.payments === 1 ? "a payment" : "payments"}, out of every giving total. </>}
+            {done.installmentsApplied > 0 && <>{countLabel(done.installmentsApplied, "pledge installment")} applied. </>}
             The slip said {cents(done.slipCents)} and the lines come to {cents(done.giftCents + done.notGiftCents)}.
             {done.footed ? " It checks out." : " The database and the plan disagree, open the deposit on the Imports page."}
             {/* BUILD-95 — the photographs, said out loud. A cheque whose image
@@ -221,14 +222,14 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                 holding the cheque RIGHT NOW, which is the only moment taking it
                 again costs nothing. Reported, never swallowed. */}
             {done.chequePhotos > 0 && (
-              <> {done.chequePhotos} check{done.chequePhotos === 1 ? "" : "s"} photographed.</>
+              <> {countLabel(done.chequePhotos, "check")} photographed.</>
             )}
             {Array.isArray(done.chequeFailures) && done.chequeFailures.length > 0 && (
               <div data-testid="deposit-cheque-failures" style={{ marginTop: 8, color: T.gold700, fontWeight: 600 }}>
-                {done.chequeFailures.length} photo{done.chequeFailures.length === 1 ? "" : "s"} could not be saved
-                (line{done.chequeFailures.length === 1 ? "" : "s"} {done.chequeFailures.map(f => f.line).join(", ")}).
+                {countLabel(done.chequeFailures.length, "photo")} could not be saved
+                ({plural(done.chequeFailures.length, "line")} {done.chequeFailures.map(f => f.line).join(", ")}).
                 The money is recorded. Photograph {done.chequeFailures.length === 1 ? "it" : "them"} again from the gift
-                while you still have the check{done.chequeFailures.length === 1 ? "" : "s"}.
+                while you still have the {plural(done.chequeFailures.length, "check")}.
               </div>
             )}
           </div>
@@ -283,8 +284,8 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             </div>
             {readNote && (
               <div data-testid="deposit-read-note" style={{ marginBottom: 10, fontSize: 12.5, lineHeight: 1.55, color: T.ink2 }}>
-                Read {readNote.total} check{readNote.total === 1 ? "" : "s"};{" "}
-                {readNote.settled} amount{readNote.settled === 1 ? "" : "s"} agreed on both the figures and the words.
+                Read {countLabel(readNote.total, "check")};{" "}
+                {countLabel(readNote.settled, "amount")} agreed on both the figures and the words.
                 {/* A cheque carries its amount twice and Steward checks the two
                     against each other. Where they did not settle it says what
                     it saw and leaves the line — it never picks one. */}
@@ -412,7 +413,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
           {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 10 }}>{err}</div>}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={commit} disabled={busy || !plan.canCommit} data-testid="deposit-commit"
-              title={needsYou.length ? `${needsYou.length} line${needsYou.length === 1 ? "" : "s"} still need you` : undefined}
+              title={needsYou.length ? `${countLabel(needsYou.length, "line")} still need you` : undefined}
               style={{ background: busy || !plan.canCommit ? T.bg2 : T.greenDk, border: "none", borderRadius: 9, padding: "11px 20px", color: T.white, fontSize: 13.5, fontWeight: 700, cursor: busy || !plan.canCommit ? "not-allowed" : "pointer", opacity: busy || !plan.canCommit ? 0.6 : 1 }}>
               {busy ? "Recording…" : plan.commitLabel}
             </button>

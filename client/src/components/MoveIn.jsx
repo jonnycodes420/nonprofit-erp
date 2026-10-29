@@ -27,6 +27,7 @@ import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { countLabel } from "../../../shared/countWords.js";
 
 // The PDF is fetched, not linked: it rides the same Authorization header as
 // every other read, so a board's copy of the proof is never a URL somebody
@@ -494,7 +495,7 @@ export function MoveCard({ isReadOnly = false }) {
   const sentence = [
     move.completedAt ? `Moved from ${midSentence(move.label)}` : `Moving from ${midSentence(move.label)}`,
     move.startedAt ? `started ${when(move.startedAt)}` : null,
-    move.imports ? `${move.imports} import${move.imports === 1 ? "" : "s"}` : null,
+    move.imports ? `${countLabel(move.imports, "import")}` : null,
   ].filter(Boolean).join(" · ");
 
   return (

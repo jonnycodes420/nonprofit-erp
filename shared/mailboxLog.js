@@ -38,6 +38,7 @@
 // at read time and stores no row and no token.
 // FIX-50: the one rule, orgKind.isDemoOrg (an org is a demo only if its Kind is Demo).
 import { createRequire } from "module";
+import { countLabel } from "./countWords.js";
 export const isDemoMailboxOrg = createRequire(import.meta.url)("../orgKind.js").isDemoOrg;
 export const DEMO_CONNECT_SENTENCE =
   "In the demo, connecting is turned off so no real mailbox sits behind a public login. In your own account this connects Gmail or Outlook in about a minute.";
@@ -135,7 +136,7 @@ export function trimQuoted(text) {
 export function attachmentLine(n) {
   const c = Number(n) || 0;
   if (!c) return null;
-  return `${c} attachment${c === 1 ? "" : "s"}`;
+  return `${countLabel(c, "attachment")}`;
 }
 
 /**

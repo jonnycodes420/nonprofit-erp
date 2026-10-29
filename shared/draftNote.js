@@ -20,7 +20,7 @@
 // Pure: no clock, no database, no fetch. Everything arrives as arguments so the
 // suites can drive it directly and nothing here can accidentally send.
 
-import { displayDate as dateWords } from "./displayDate.js";
+import { displayDate as dateWords, displayDateLong } from "./displayDate.js";
 import { greetingName } from "./greeting.js";
 export const VOICE_SAMPLE_MIN = 3;
 
@@ -28,6 +28,13 @@ const money = cents => {
   const n = (Number(cents) || 0) / 100;
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 };
+// FIX-58 · "$1,000 on April 30, 2026". The draft's header and its letter both
+// read this, so the two can never show the same gift two ways.
+export const letterMoney = money;
+export function giftOnDate(cents, date) {
+  const day = date ? displayDateLong(date instanceof Date ? date : String(date).slice(0, 10)) : "";
+  return day ? `${money(cents)} on ${day}` : money(cents);
+}
 const firstName = full => String(full || "").trim().split(/\s+/)[0] || "";
 
 // ── Her greeting and her sign-off, out of her own samples ─────────────────
@@ -127,6 +134,7 @@ export function thankYouDraft({
 } = {}) {
   const first = firstName(donorName) || "friend";
   const amt = money(giftCents);
+  const amtOn = giftOnDate(giftCents, date);
   const to = generalFund && !campaignName ? ", which will go where it's needed most"
     : fundName ? ` to ${fundName}` : campaignName ? ` to ${campaignName}` : "";
   const tier = TIER(giftCents);
@@ -140,23 +148,23 @@ export function thankYouDraft({
   } else if (isFirstGift === true) {
     middle = tier === "major" || tier === "large"
       ? `Thank you for your first gift${generalFund ? "" : to}, and for making it ${amt}${generalFund ? to : ""}. Starting here means a great deal, and we would like you to see what it does.`
-      : `Thank you for your first gift of ${amt}${to}. It is the beginning of something, and we are glad you chose us to begin it with.`;
+      : `Thank you for your first gift of ${amtOn}${to}. It is the beginning of something, and we are glad you chose us to begin it with.`;
   } else if (months !== null && months >= 12) {
     // We know the gap because we were told it. Saying "welcome back" to
     // somebody who never left is the failure this guards against.
-    middle = `Thank you for your gift of ${amt}${to}. It has been a while since we last heard from you, and it is good to have you back.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. It has been a while since we last heard from you, and it is good to have you back.`;
   } else if (before !== null && before >= 5) {
-    middle = `Thank you for your gift of ${amt}${to}. That is ${before + 1} now, and giving again and again is its own kind of message.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. That is ${before + 1} now, and giving again and again is its own kind of message.`;
   } else if (tier === "major") {
-    middle = `Thank you for your gift of ${amt}${to}. A gift this size changes what we can plan for, not only what we can pay for, and we do not take it lightly.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. A gift this size changes what we can plan for, not only what we can pay for, and we do not take it lightly.`;
   } else if (tier === "large") {
-    middle = `Thank you for your gift of ${amt}${to}. It is a significant amount and it will be treated that way.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. It is a significant amount and it will be treated that way.`;
   } else if (before !== null && before >= 1) {
-    middle = `Thank you for your gift of ${amt}${to}. You have given before, and choosing to do it again is the part we are most grateful for.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. You have given before, and choosing to do it again is the part we are most grateful for.`;
   } else {
     // What you get when we were told nothing beyond the amount. Unchanged
     // from the original, deliberately: it is the honest floor.
-    middle = `Thank you for your gift of ${amt}${to}. It is a real help, and we are grateful you thought of us.`;
+    middle = `Thank you for your gift of ${amtOn}${to}. It is a real help, and we are grateful you thought of us.`;
   }
 
   // A tribute is mentioned once, gently, and only by the name she wrote.
