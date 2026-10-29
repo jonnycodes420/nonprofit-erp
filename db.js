@@ -8108,6 +8108,27 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_name_fixes_batch ON name_fixes (org_id, batch_id)`);
+  // FIX-59: a name with markup or a note in it ("Scarlette (send with
+  // Tiffany's) Nesbeth") is cleaned on her click and the note moved to Notes;
+  // the Notes as they were, for its Undo.
+  await pool.query(`ALTER TABLE name_fixes ADD COLUMN IF NOT EXISTS before_notes TEXT`);
+  // FIX-59: imported gifts she says were already deposited, marked on her
+  // click from Finance. One row per gift, a batch per click, so Undo puts
+  // each gift's deposit columns back exactly as they were.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS deposit_marks (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      gift_id TEXT NOT NULL,
+      import_id TEXT,
+      before_deposited_on TEXT,
+      before_deposit_ref TEXT,
+      undone_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_deposit_marks_batch ON deposit_marks (org_id, batch_id)`);
   // AGENT-2: A MERGE SOMEBODY PROPOSED. The Agent never merges two people;
   // told "merge the two Ellen Parks" it puts the pair at the top of CLEAN-1's
   // duplicate queue with the instruction as the reason, and a person commits
@@ -8139,6 +8160,16 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_data_health_runs_org ON data_health_runs (org_id, created_at DESC)`);
+  // FIX-59: Data health also re-checks after an import's undo, a merge, a
+  // merge's undo and a bulk delete, and the page says which.
+  await pool.query(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'data_health_runs_trigger_check'
+                     AND pg_get_constraintdef(oid) LIKE '%merge_undo%') THEN
+      ALTER TABLE data_health_runs DROP CONSTRAINT IF EXISTS data_health_runs_trigger_check;
+      ALTER TABLE data_health_runs ADD CONSTRAINT data_health_runs_trigger_check
+        CHECK (trigger IN ('import','nightly','manual','undo','merge','merge_undo','delete'));
+    END IF;
+  END $$`);
   // The old address, kept. A tidy or a change of address never overwrites
   // without leaving the previous one here.
   await pool.query(`

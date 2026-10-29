@@ -39,6 +39,16 @@ const TABLE_WORDS = {
   sequence_enrollments: ["journey", "journeys"], auction_bidders: ["auction bidder record", "auction bidder records"],
 };
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+// FIX-59: when Data health last ran, and what made it run.
+const RUN_WORDS = { import: "after your import", undo: "after an import was undone", merge: "after a merge", merge_undo: "after a merge was undone",
+  delete: "after people were deleted", nightly: "overnight", manual: "when you asked" };
+function checkedWords(run) {
+  const at = new Date(run.created_at);
+  if (isNaN(at)) return null;
+  const time = at.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const sameDay = at.toDateString() === new Date().toDateString();
+  return `Checked ${sameDay ? time : `${displayDate(at.toISOString().slice(0, 10)) || at.toLocaleDateString()} at ${time}`}, ${RUN_WORDS[run.trigger] || "by hand"}.`;
+}
 
 function Line({ id, label, count, sentence, action, onOpen, onAction, open, testid }) {
   return (
@@ -85,9 +95,18 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       sentence: `${plural(c.emails, "email")} that bounce, aren't valid, look like a typo, or are a shared office address on a person.`,
       action: c.emails ? "Review emails" : null },
     // IMPORT-5: only shown when there is something to fix
-    ...(c.couples ? [{ id: "couples", label: "Couples written with a comma", count: c.couples,
-      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written with a comma ("Alex, Brad Hubbard").`,
+    ...(c.couples ? [{ id: "couples", label: "Couples written as one name", count: c.couples,
+      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written as one person ("Alex, Brad Hubbard", "Randall or Joenell Barnett").`,
       action: "Fix them" }] : []),
+    // FIX-59: each only when there is something in it
+    ...(c.eventDuplicatesByEvent || []).map(e => ({ id: `event:${e.eventId}`, label: `${plural(e.count, "possible duplicate")} within ${e.eventName}`, count: e.count,
+      sentence: `Two spellings of one name on this event's list ("Fran" and "Frances"). Answer Same person or Different for each.`, action: "Review" })),
+    ...(c.namesWithNotes ? [{ id: "names", label: "Names with markup or a note in them", count: c.namesWithNotes,
+      sentence: `${c.namesWithNotes === 1 ? "1 name has" : `${c.namesWithNotes.toLocaleString("en-US")} names have`} stars, underscores or a note in brackets typed into ${c.namesWithNotes === 1 ? "it" : "them"} ("**Bryan May", "Scarlette (send with Tiffany's) Nesbeth").`,
+      action: "Clean them" }] : []),
+    ...(c.families ? [{ id: "families", label: "Possible families", count: c.families,
+      sentence: `${plural(c.families, "pair")} with one surname and two different first names share an address, phone or email: likely spouses or a parent and child, not duplicates.`,
+      action: "Review" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
@@ -97,7 +116,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       <Card>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 6 }}>
           What looks messy in your file, with a reason for each. Nothing changes until you approve it.
-          {health.lastRun && <> Last checked {new Date(health.lastRun.created_at).toLocaleString()} ({health.lastRun.trigger === "import" ? "after an import" : health.lastRun.trigger === "nightly" ? "overnight" : "by hand"}).</>}
+          {health.lastRun && checkedWords(health.lastRun) && <span data-testid="dh-checked"> {checkedWords(health.lastRun)}</span>}
         </div>
         {flash && <div role="status" data-testid="dh-flash" style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: T.ink, margin: "6px 0" }}>{flash}</div>}
         {lines.map(l => (
@@ -110,6 +129,9 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "unreachable" && <UnreachablePanel onOpenDonor={onOpenDonor} />}
       {open === "couples" && <CouplesPanel onDone={done} isReadOnly={isReadOnly} />}
+      {open === "names" && <NamesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
+      {open === "families" && <FamiliesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
+      {open && open.startsWith("event:") && <EventPairsPanel key={open} eventId={open.slice(6)} onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       <MergesPanel key={tick} onDone={done} isReadOnly={isReadOnly} />
     </div>
   );
@@ -394,6 +416,144 @@ function CouplesPanel({ onDone, isReadOnly }) {
             <div style={{ color: T.ink, fontWeight: 700 }}>Fixed: {r.after} ({r.people.join(" and ")})</div>
           </div>
           <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => apply([r.donorId])}>Fix</button>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// ── FIX-59 · names with markup or a note in them ───────────────────────────
+function NamesPanel({ onDone, onOpenDonor, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [batch, setBatch] = useState(null);
+  const load = () => apiFetch("/data-health/names").then(setData).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const call = async (path, body, after) => {
+    setBusy(true); setErr(null);
+    try { const r = await apiFetch(path, { method: "POST", body: JSON.stringify(body) }); after(r); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  if (!data) return <Card>{err ? `Couldn't load the names. ${err}` : "Reading names…"}</Card>;
+  const all = data.rows.map(r => r.donorId);
+  return (
+    <Card data-testid="dh-names">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{data.sentence}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {batch && <button data-testid="dh-names-undo" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => call("/data-health/names/undo", { batchId: batch }, () => setBatch(null))}>Undo</button>}
+          <button data-testid="dh-names-apply" style={btn(true, busy || isReadOnly || !all.length)} disabled={busy || isReadOnly || !all.length} onClick={() => call("/data-health/names/apply", { donorIds: all }, r => setBatch(r.batchId))}>Clean all {all.length}</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>The name keeps only the name. A note in brackets moves to the person's Notes, word for word.</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {data.rows.map(r => (
+        <div key={r.donorId} style={{ ...rowStyle, alignItems: "flex-start" }} data-testid="dh-name">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13 }}>
+            <div style={{ color: T.ink3 }}>Now: <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(r.donorId)}>{r.before}</button></div>
+            <div style={{ color: T.ink, fontWeight: 700 }}>Cleaned: {r.after}{r.notes.length ? ` · to Notes: ${r.notes.join("; ")}` : ""}</div>
+          </div>
+          <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => call("/data-health/names/apply", { donorIds: [r.donorId] }, x => setBatch(x.batchId))}>Clean</button>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// ── FIX-59 · possible families (never duplicates) ──────────────────────────
+function FamiliesPanel({ onDone, onOpenDonor, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [made, setMade] = useState(null);
+  const load = () => apiFetch("/data-health/families").then(setData).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const link = async f => {
+    try {
+      const h = await apiFetch("/households", { method: "POST", body: JSON.stringify({ memberIds: [f.a, f.b], primaryDonorId: f.a }) });
+      setMade(h && (h.id || (h.household && h.household.id)) || null); load();
+      onDone(`${f.left.name} and ${f.right.name} are one household now.`);
+    } catch (e) { setErr(e.sentence || e.error || e.message); }
+  };
+  const undoLink = async () => {
+    try { await apiFetch(`/households/${encodeURIComponent(made)}`, { method: "DELETE" }); setMade(null); load(); onDone("Undone. The household is gone and both people are as they were."); }
+    catch (e) { setErr(e.sentence || e.error || e.message); }
+  };
+  const notFamily = async f => {
+    try { await apiFetch("/data-health/families/dismiss", { method: "POST", body: JSON.stringify({ a: f.a, b: f.b }) }); load(); onDone(`${f.left.name} and ${f.right.name} won't be suggested as a family again.`); }
+    catch (e) { setErr(e.sentence || e.message); }
+  };
+  if (!data) return <Card>{err ? `Couldn't load the families. ${err}` : "Reading families…"}</Card>;
+  return (
+    <Card data-testid="dh-families">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{data.sentence}</div>
+        {made && <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={undoLink}>Undo</button>}
+      </div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {data.rows.map(f => (
+        <div key={f.key} style={rowStyle} data-testid="dh-family">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 14, color: T.ink }}>
+            <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(f.a)}>{f.left.name}</button>
+            <span style={{ color: T.ink3 }}> and </span>
+            <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(f.b)}>{f.right.name}</button>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>{cap(f.reasons.join("; "))}.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={btn(true, isReadOnly)} disabled={isReadOnly} onClick={() => link(f)}>Make one household</button>
+            <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={() => notFamily(f)}>Not a family</button>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// ── FIX-59 · two spellings of one person on one event's list ───────────────
+function EventPairsPanel({ eventId, onDone, onOpenDonor, isReadOnly }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState(null);
+  const load = () => apiFetch(`/data-health/event-pairs?eventId=${encodeURIComponent(eventId)}`).then(r => setRows(r.rows)).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const answer = async (p, a) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await apiFetch("/data-health/event-pairs/answer", { method: "POST", body: JSON.stringify({ a: p.a, b: p.b, answer: a }) });
+      setLast({ ...p, answer: a, mergeId: r.mergeId || null }); load(); onDone(r.sentence);
+    } catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  const undo = async () => {
+    setBusy(true); setErr(null);
+    try {
+      if (last.mergeId) await apiFetch(`/data-health/merges/${last.mergeId}/undo`, { method: "POST", body: "{}" });
+      else await apiFetch("/data-health/pairs/undismiss", { method: "POST", body: JSON.stringify({ a: last.a, b: last.b }) });
+      setLast(null); load(); onDone(`Undone. ${last.question} is asked again.`);
+    } catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  if (!rows) return <Card>{err ? `Couldn't load the pairs. ${err}` : "Reading the list…"}</Card>;
+  return (
+    <Card data-testid="dh-event-pairs">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{rows.length ? `${plural(rows.length, "possible duplicate")} within ${rows[0].eventName}` : "Nothing left to answer on this list."}</div>
+        {last && <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={undo}>Undo</button>}
+      </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>Same person merges the two records (it can be undone for 30 days). Different is remembered, so it isn't asked again.</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {rows.map(p => (
+        <div key={p.key} style={rowStyle} data-testid="dh-event-pair">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 14, color: T.ink }}>
+            Is <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(p.a)}>{p.left.name}</button> the same as <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(p.b)}>{p.right.name}</button>?
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>{cap(p.sentence)}.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button style={btn(true, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => answer(p, "same")}>Same person</button>
+            <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => answer(p, "different")}>Different</button>
+          </div>
         </div>
       ))}
     </Card>

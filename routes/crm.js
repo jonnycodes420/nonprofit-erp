@@ -6757,6 +6757,7 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     }
     return { changes: gone.length, undoIds };
   });
+  require("./dataHealth").recheckSoon(req.user.orgId, "delete");   // FIX-59: Data health is current
   res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
@@ -9883,6 +9884,7 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
 // undo waits for that work (cancelRecentWork), which would wait forever.
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await withAdvisoryLock(`import-undo:${req.user.orgId}:${req.params.id}`, () => reverseImport(req, res));
+  if (res.statusCode < 300) require("./dataHealth").recheckSoon(req.user.orgId, "undo");   // FIX-59: Data health is current
 }));
 async function reverseImport(req, res) {
   const orgId = req.user.orgId;

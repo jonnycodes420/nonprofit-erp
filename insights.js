@@ -936,6 +936,18 @@ const MOVE_ACTION = {
   coffee: { label: "Invite to coffee", taskKind: "meeting" }, collect: { label: "Collect", taskKind: "call" },
 };
 const DECK_CAP = 150;
+// FIX-59 · GROW LEADS WITH SECOND GIFTS. A contacts import put 112 people who
+// never gave beside the 85 first-time donors who need a second gift, and the
+// first-time donors were lost among them. Inside Grow: second gifts first,
+// then the guests who came and didn't give, then the rest; by dollars inside
+// each. The tab says the split ("85 second gifts · 112 more").
+const GROW_RANK = { second_gift: 0, came_no_gift: 1 };
+const growRank = m => (m.kind in GROW_RANK ? GROW_RANK[m.kind] : 2);
+const byGrow = (a, b) => growRank(a) - growRank(b) || b.cents - a.cents || (a.n || 0) - (b.n || 0);
+function growSplit(second, count) {
+  const more = Math.max(0, count - second);
+  return { secondGifts: second, more, words: `${plural(second, "second gift")} · ${more.toLocaleString("en-US")} more` };
+}
 function actionFor(kind, how) {
   if (kind === "pledges") return "collect";
   if (kind === "upgraded") return "visit";
@@ -977,11 +989,12 @@ function buildDeck(cards) {
   }
   const out = [];
   for (const t of tabs.values()) {
-    t.moves.sort((a, b) => b.cents - a.cents || a.n - b.n);
+    t.moves.sort(t.key === "grow" ? byGrow : (a, b) => b.cents - a.cents || a.n - b.n);
     const count = t.moves.length;
     const cents = t.moves.reduce((n, m) => n + (m.cents || 0), 0);
     out.push({ key: t.key, label: t.label, count, cents: t.key === "planned" ? null : cents, people: t.key === "planned" ? count : null,
       atStake: t.key === "planned" ? plural(count, "person", "people") : money(cents),
+      ...(t.key === "grow" ? { split: growSplit(t.moves.filter(m => m.kind === "second_gift").length, count) } : {}),
       moves: t.moves.slice(0, DECK_CAP).map(({ value, n, ...m }) => m) });
   }
   const keep = out.find(t => t.key === "keep");
@@ -1087,8 +1100,9 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
     }
   }
   if (!added.length) return { ...deck, tabs };
-  grow.moves = [...grow.moves, ...added].sort((a, b) => b.cents - a.cents).slice(0, DECK_CAP);
+  grow.moves = [...grow.moves, ...added].sort(byGrow).slice(0, DECK_CAP);
   grow.count += added.length;
+  grow.split = growSplit(grow.split ? grow.split.secondGifts : grow.moves.filter(m => m.kind === "second_gift").length, grow.count);
   return { ...deck, tabs, open: deck.open };
 }
 

@@ -952,6 +952,7 @@ async function runJob(req, body, importId, who) {
     // after the commit, outside it: the one after-change step for everyone touched
     await require("../afterChange").afterChange(orgId, out.touched, { door: "sheet_import", history: true })
       .catch(e => console.error("[sheet-import] after change:", e.message));
+    require("./dataHealth").recheckSoon(orgId, "import", { importId });   // FIX-59: Data health is current
   } catch (e) {
     if (e && e.refused) { await finishJob(importId, "failed", e.refused, e.refused.body.message); return; }
     console.error("[sheet-import] job failed, rolled back:", importId, e && (e.stack || e.message));

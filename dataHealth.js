@@ -110,9 +110,30 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 //   medium  same email, different names (a couple sharing one inbox) ·
 //           same address + similar name · similar name in the same household
 //   low     similar name + same employer · same phone, different names
+//   (FIX-59, when the caller hands in `near`, shared/nearNames.js's one
+//   near-duplicate reader:)
+//   low     a near-duplicate by name alone (a letter apart, a nickname) with
+//           nothing else in common, said as such
+//   never   two different full first names on one surname ("Jay Acosta" and
+//           "Jami Acosta" at one address): a possible family, returned as
+//           { family: true } for the Possible families line · a shared phone
+//           and nothing else
 const RANK = { high: 3, medium: 2, low: 1 };
-function judgePair(a, b) {
-  const rel = nameRelation(a.name, b.name);
+function judgePair(a, b, { near = null } = {}) {
+  let rel = nameRelation(a.name, b.name);
+  const nd = near ? near(a.name, b.name) : null;
+  let family = false;
+  if (near) {
+    const ta = nameTokens(a.name), tb = nameTokens(b.name);
+    const sameLast = ta.length >= 2 && tb.length >= 2 && ta[ta.length - 1] === tb[tb.length - 1];
+    // a first name cut short ("Mar"/"Maria") or a short one a letter off
+    // ("Kim"/"Kym") is still one person's; two names further apart are two people
+    const fa = ta[0], fb = tb[0];
+    const cut = fa.length < fb.length ? fb.startsWith(fa) : fa.startsWith(fb);
+    if (sameLast && fa !== fb && fa.length >= 2 && fb.length >= 2 && !cut && editDistance(fa, fb, 2) >= 2 && !nd
+        && (rel === "spelling" || rel === null)) { family = true; rel = null; }
+    else if (!rel && nd && (nd.why === "nickname" || nd.why === "spelling")) rel = nd.why;
+  }
   const emailsA = [lowerEmail(a.email), lowerEmail(a.email2)].filter(Boolean);
   const emailsB = new Set([lowerEmail(b.email), lowerEmail(b.email2)].filter(Boolean));
   const sameEmail = emailsA.some(e => emailsB.has(e));
@@ -136,7 +157,14 @@ function judgePair(a, b) {
   if (sameAddress && rel && rel !== "same") meet("medium", `same address, ${nameWords}`);
   if (sameHousehold && rel) meet("medium", `same household, ${nameWords}`);
   if (sameEmployer && rel) meet("low", `same employer, ${nameWords}`);
-  if (samePhone && !rel) meet("low", "same phone, different names");
+  if (family) {
+    // a family is offered as one, never as a duplicate; one already in a
+    // household together has nothing to offer
+    if (sameHousehold || !(sameAddress || sameEmail || samePhone)) return null;
+    return { family: true, reasons: [sameAddress && "same address", sameEmail && "same email", samePhone && "same phone"].filter(Boolean).map(w => `${w}, two different first names`) };
+  }
+  if (samePhone && !rel && !near) meet("low", "same phone, different names");
+  if (!confidence && nd && rel) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);
   if (!confidence) return null;
   return { confidence, reasons: [...new Set(reasons)] };
 }
@@ -144,7 +172,8 @@ function judgePair(a, b) {
 // Likely pairs among ONE org's rows. The caller passes only that org's rows;
 // a row from another org is refused here as well, so a mistake upstream can
 // never pair two organisations' people.
-function findDuplicatePairs(rows, { orgId, dismissed = new Set() } = {}) {
+function findDuplicatePairs(rows, opts = {}) { return findPairs(rows, opts).pairs; }
+function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDismissed = new Set() } = {}) {
   const live = rows.filter(d => !d.deleted_at && !d.erased_at && (!orgId || d.org_id === orgId));
   if (orgId && live.length !== rows.filter(d => !d.deleted_at && !d.erased_at).length) {
     throw new Error("findDuplicatePairs: rows from another org");
@@ -170,20 +199,25 @@ function findDuplicatePairs(rows, { orgId, dismissed = new Set() } = {}) {
   // Names: same last name and the same first letter puts two people in one
   // bucket, so a spelling slip is found without comparing everyone to everyone.
   block(d => { const t = nameTokens(d.name); return t.length ? "n:" + t[t.length - 1].slice(0, 4) + "|" + t[0][0] : null; });
+  // FIX-59: the same first name and a last name a letter apart early on
+  // ("Allanson"/"Alanson" fall in two buckets above)
+  if (near) block(d => { const t = nameTokens(d.name); return t.length >= 2 ? "f:" + t[0] + "|" + t[t.length - 1].slice(0, 2) : null; });
 
   const byId = new Map(live.map(d => [d.id, d]));
-  const pairs = [];
+  const pairs = [], families = [];
   for (const key of candidates) {
     if (dismissed.has(key)) continue;
     const [x, y] = key.split("|");
     const a = byId.get(x), b = byId.get(y);
-    const j = judgePair(a, b);
+    const j = judgePair(a, b, { near });
     if (!j) continue;
+    if (j.family) { if (!familiesDismissed.has(key)) families.push({ key, a: a.id, b: b.id, reasons: j.reasons }); continue; }
     const crossHousehold = !!a.household_id && !!b.household_id && a.household_id !== b.household_id;
     pairs.push({ key, a: a.id, b: b.id, confidence: j.confidence, reasons: j.reasons, crossHousehold });
   }
   pairs.sort((p, q) => RANK[q.confidence] - RANK[p.confidence] || p.key.localeCompare(q.key));
-  return pairs;
+  families.sort((p, q) => p.key.localeCompare(q.key));
+  return { pairs, families };
 }
 
 // ── Merge: which value wins, field by field ─────────────────────────────────
@@ -464,7 +498,7 @@ function readNcoaReturn(text) {
 }
 
 module.exports = {
-  NICKNAMES, normName, nameRelation, judgePair, findDuplicatePairs, pairKey, phoneKey, addressKey,
+  NICKNAMES, normName, nameRelation, judgePair, findDuplicatePairs, findPairs, pairKey, phoneKey, addressKey,
   MERGE_FIELDS, ADDRESS_GROUP, defaultChoices, resolveMergedValues,
   tidyAddress, oneLine, titleCase,
   TYPO_DOMAINS, ROLE_LOCALS, isValidEmail, emailIssues,

@@ -475,3 +475,6 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   {date} and didn't give. Thank them for coming."), no ask on the first touch, the action a thank-you-for-coming task
   with the note drafted. One person, one move (otherwise an "also" line). "See all N" opens the event page. Grow draws
   150 cards by dollars, so $0 thank-yous can sit past the cap, still counted on the tab.
+- Grow leads with second gifts (FIX-59): second gifts, then came-didn't-give, then the rest, by dollars inside
+  each (`insights.js byGrow`); the tab reads "85 second gifts · 112 more". The 150-card cap now cuts from the
+  rest, never a second gift first.

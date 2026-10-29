@@ -258,6 +258,11 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   "Couples written with a comma" line proposes them (the typed form, or "Brad Hubbard Alex" on an imported record),
   fixes them only on her click (`/data-health/couples/apply`: the record becomes the first person, the second is made
   beside them, one new household, gifts stay put) and undoes the click whole (`name_fixes`).
+- **Couples written as one name, all of them (FIX-59).** The comma reader also takes a second first name off the
+  list when nothing else reads ("Josh, Kasi Sato": two capitalised words after a known first name that is not a
+  common surname). Data health's couples line takes "Randall or Joenell Barnett" and "X and Y Last" too ("&" is
+  Steward's own joint name and is left), and a record already in a household: its fix joins that household and
+  makes no second person the household already holds.
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make

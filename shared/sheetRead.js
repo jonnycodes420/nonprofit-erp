@@ -216,11 +216,22 @@ function commaIsLastFirst(before, after) {
 // name before the comma, a first name and a surname after it, is two people of
 // one household ("Alex & Brad Hubbard"), never "Last, First". The last word must
 // not itself be a first name ("Thomas, Paul James" stays Paul James Thomas).
+// FIX-59: the second first name need not be on the list ("Josh, Kasi Sato"):
+// a known first name before the comma, then exactly two capitalised words, the
+// last not a first name either. "Last, First Middle" would need a surname that
+// is also a first name, so the first names that are common surnames ("Grant,
+// Kasi Mae") keep reading "Last, First".
+const SURNAME_LIKE = new Set(("thomas lewis grant dean wade mitchell marshall howard james allen lee scott morgan taylor carter russell "
+  + "warren wayne gordon curtis craig kelly ross ray jordan bruce henry george arthur martin owen wesley clay chase lance kent kirk "
+  + "glenn dale mason logan tyler douglas stanley herbert vernon norman milton marion lynn neil neal bernard clifford calvin drew "
+  + "frank franklin austin lloyd miles barry graham elliott gilbert harvey cooper nelson spencer fay grace rose joy").split(" "));
 function commaCouple(before, after) {
   const b = s(before).split(/\s+/).filter(Boolean), a = s(after).split(/\s+/).filter(Boolean);
   if (b.length !== 1 || a.length < 2 || a.length > 3) return null;
   if (a.length === 3 && !/^[A-Za-z]\.?$/.test(a[1])) return null;
-  if (!isGivenName(b[0]) || !isGivenName(a[0]) || isGivenName(a[a.length - 1])) return null;
+  if (!isGivenName(b[0]) || isGivenName(a[a.length - 1])) return null;
+  if (!isGivenName(a[0]) && (a.length !== 2 || SURNAME_LIKE.has(b[0].toLowerCase()) || TITLE_RE.test(a[0])
+      || !/^[A-Z][a-z'’-]{2,}$/.test(a[0]) || !/^[A-Z]/.test(a[1]))) return null;
   return { first: `${b[0]} & ${a.slice(0, -1).join(" ")}`, last: a[a.length - 1] };
 }
 // The same couple on a record already here, for Data health's review: written
@@ -233,8 +244,14 @@ export function commaCoupleFix(name, { imported = false } = {}) {
   if (m) c = commaCouple(m[1], m[2]);
   else if (imported) {
     const w = n.split(/\s+/);
-    if (w.length === 3 && isGivenName(w[0]) && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
+    if (w.length === 3 && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
   }
+  // FIX-59: "Randall or Joenell Barnett", "Christopher and Cynthia Horne" (or
+  // "Or", as the older reading left it): the joining word makes two people,
+  // the way the import's reader reads it. "&" is how Steward itself writes a
+  // joint name, so a record named with "&" is left as she has it.
+  const j = !c && n.match(/^([A-Za-z'’-]+)\s+(and|or)\s+([A-Za-z'’-]+)\s+([A-Za-z'’-]+)$/i);
+  if (j && (isGivenName(j[1]) || isGivenName(j[3])) && !isOrgName(n)) c = { first: `${j[1]} & ${j[3]}`, last: j[4] };
   if (!c) return null;
   const r = readName({ first: c.first, last: c.last });
   return r.kind === "household" && r.people.length === 2 ? { before: n, household: r.household, people: r.people.map(p => p.name) } : null;
