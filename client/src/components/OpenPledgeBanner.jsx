@@ -10,6 +10,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
+import { countLabel } from "../../../shared/countWords.js";
 
 const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
@@ -26,7 +27,7 @@ export function openPledgeWords(pl) {
   const parts = [`${money(pl.paid)} received`];
   if (next) parts.push(`next due ${longDate(next.dueDate)}`);
   else if (unpaid.length || pl.balance > 0) parts.push("no set due date");
-  if (more) parts.push(`${more} more installment${more === 1 ? "" : "s"}`);
+  if (more) parts.push(`${countLabel(more, "more installment")}`);
   return { next, more, unpaid, inst, rest: parts.join(" · ") };
 }
 

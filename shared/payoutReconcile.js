@@ -19,6 +19,7 @@
 // Stripe's balance-transaction `type`s, grouped the way a bookkeeper reads
 // them. Anything unrecognised is kept and labelled "other" — never dropped,
 // because a dropped row is a payout that silently stops adding up.
+import { countLabel } from "./countWords.js";
 const KIND_OF = {
   charge: "charge", payment: "charge",
   refund: "refund", payment_refund: "refund", payment_failure_refund: "refund",
@@ -108,7 +109,7 @@ export function payoutSentence({ payoutCents, differenceCents, rows, unmatched =
   if (!rows.length) return "Stripe returned nothing behind this payout, so Steward cannot say which gifts it held.";
   const parts = [];
   if (differenceCents === 0) {
-    parts.push(`These ${rows.length} line${rows.length === 1 ? "" : "s"} add up to the ${dollars(payoutCents)} that reached your bank, to the cent.`);
+    parts.push(`These ${countLabel(rows.length, "line")} add up to the ${dollars(payoutCents)} that reached your bank, to the cent.`);
   } else {
     const which = differenceCents > 0 ? "more than" : "less than";
     parts.push(`This payout does not reconcile. ${dollars(payoutCents)} reached your bank, which is ` +

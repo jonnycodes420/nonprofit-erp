@@ -16,6 +16,7 @@ import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, SectionLabel } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { countLabel } from "../../../shared/countWords.js";
 
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "24px 28px", marginTop: 16 };
 const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
@@ -27,7 +28,7 @@ const ago = ts => {
   if (m < 2) return "active now";
   if (m < 60) return `active ${m} min ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `active ${h} hour${h === 1 ? "" : "s"} ago`;
+  if (h < 24) return `active ${countLabel(h, "hour")} ago`;
   return "active " + new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 const saveToken = t => { if (t) localStorage.setItem("npe_token", t); };
@@ -125,7 +126,7 @@ export function SecurityPanel({ isAdmin }) {
         {st?.demo && <div data-testid="security-demo" style={{ ...small, color: T.ink, background: T.bg, borderLeft: "3px solid " + T.gold, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>{st.demoSentence}</div>}
         <div style={{ fontSize: 14, color: T.ink, marginBottom: 8 }}>
           Two-factor is <strong>{st ? (st.enabled ? "on" : "off") : "…"}</strong> for you
-          {st?.enabled ? `, with ${st.method === "email" ? "a code by email" : "an authenticator app"}. ${st.recoveryCodesLeft} recovery code${st.recoveryCodesLeft === 1 ? "" : "s"} left.` : "."}
+          {st?.enabled ? `, with ${st.method === "email" ? "a code by email" : "an authenticator app"}. ${countLabel(st.recoveryCodesLeft, "recovery code")} left.` : "."}
           {st?.orgRequires ? " Your organization requires it for everyone." : st?.orgRequiresForAdmins ? " Your organization requires it for administrators." : ""}
         </div>
         {st && !st.enabled && !setup && (

@@ -63,10 +63,12 @@ const HelpPanel = named(() => import("./components/HelpPanel"), "HelpPanel");
 // main column's margin and the collapse button cannot disagree by a pixel.
 const SIDEBAR_W = 240, SIDEBAR_W_COLLAPSED = 64;
 
-const DUE_BADGE={background:T.terracotta,color:T.white,fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
+// FIX-58: tasks due are attention, not danger, so brass (red is only for a
+// destructive confirm).
+const DUE_BADGE={background:T.gold,color:T.ink,fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
 // CAPTURE-1: cards waiting in To confirm, on the Fundraising rail item. Brass,
 // the attention colour: something is waiting for her, nothing is wrong.
-const CONFIRM_BADGE={...DUE_BADGE,background:T.gold,color:T.ink};
+const CONFIRM_BADGE=DUE_BADGE;
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {

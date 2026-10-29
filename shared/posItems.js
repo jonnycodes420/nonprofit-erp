@@ -28,6 +28,7 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
+import { countLabel } from "./countWords.js";
 export const CLASS_DONATION = "donation";
 export const CLASS_EVENT = "event";
 export const CLASS_OTHER = "other";
@@ -189,7 +190,7 @@ export function attendanceDrift(visitDates, today) {
   const dates = [...new Set((visitDates || []).map(d => String(d || "").slice(0, 10))
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
   if (dates.length < ATTENDANCE_MIN_VISITS)
-    return { state: "not_eligible", sentence: `${dates.length} visit${dates.length === 1 ? "" : "s"} on file, which is not yet a pattern.` };
+    return { state: "not_eligible", sentence: `${countLabel(dates.length, "visit")} on file, which is not yet a pattern.` };
   const span = days(dates[0], dates[dates.length - 1]);
   const gap = span / (dates.length - 1);
   const silent = days(dates[dates.length - 1], String(today).slice(0, 10));
@@ -200,7 +201,7 @@ export function attendanceDrift(visitDates, today) {
              sentence: `Came about every ${Math.round(gap)} days, ${dates.length} times, and has not been in for ${silent}.` };
   return { state: "ok", kind: "attendance", visits: dates.length, silentDays: silent,
            meanGapDays: Math.round(gap), lastVisit: dates[dates.length - 1],
-           sentence: `Came ${dates.length} times, most recently ${silent} day${silent === 1 ? "" : "s"} ago.` };
+           sentence: `Came ${dates.length} times, most recently ${countLabel(silent, "day")} ago.` };
 }
 
 const days = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);

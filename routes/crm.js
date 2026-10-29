@@ -28289,7 +28289,7 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
   for (const sp of sponsors) {
     if (!sp.donor_id) continue;
     const [g] = await query(
-      `SELECT id, amount FROM gifts WHERE org_id=? AND event_id=? AND donor_id=?
+      `SELECT id, amount, date FROM gifts WHERE org_id=? AND event_id=? AND donor_id=?
         ORDER BY amount DESC LIMIT 1`, [orgId, event.id, sp.donor_id]);
     // A sponsor who has only PLEDGED has no gift to thank them for yet, and
     // thanking somebody for money that has not arrived is the one mistake a
@@ -28299,7 +28299,7 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
     if (dupe) { out.alreadyThere++; continue; }
     const t = draftMod.thankYouDraft({
       donorName: sp.name, giftCents: Math.round(Number(g.amount) * 100),
-      fundName: null, campaignName: event.name, orgName: org?.name, voice,
+      fundName: null, campaignName: event.name, orgName: org?.name, voice, date: g.date || null,
     });
     await run(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES (?,?,?,?,?,?)`,
       ["ty_" + uuid().slice(0, 10), orgId, sp.donor_id, g.id, t.body, t.voice]);

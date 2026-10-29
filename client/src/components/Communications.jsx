@@ -28,6 +28,7 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
+import { countLabel } from "../../../shared/countWords.js";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -112,7 +113,7 @@ function CampaignBriefing({ campaign }) {
               <div style={{ height: 8, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? T.greenDk : T.greenMid, borderRadius: 99, transition: "width 0.4s" }} />
               </div>
-              {progress?.donorCount > 0 && <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>{progress.donorCount} donor{progress.donorCount !== 1 ? "s" : ""} contributed</div>}
+              {progress?.donorCount > 0 && <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>{countLabel(progress.donorCount, "donor")} contributed</div>}
               {progress?.daysRemaining !== null && progress?.daysRemaining !== undefined && (
                 <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? T.terracotta : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
                   {progress.daysRemaining < 0 ? `Ended ${Math.abs(progress.daysRemaining)} days ago` : progress.daysRemaining === 0 ? "Ends today" : `${progress.daysRemaining} days remaining`}
@@ -1123,7 +1124,7 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
   };
   const reviewedCount = drafts.filter(d => d.reviewed_at).length;
   const sendAllReviewed = async () => {
-    if (!(await askConfirm({ title: `Send ${reviewedCount} reviewed draft${reviewedCount === 1 ? "" : "s"} now?`, body: "Each one goes to its donor as soon as you say so.", yes: "Send" }))) return;
+    if (!(await askConfirm({ title: `Send ${countLabel(reviewedCount, "reviewed draft")} now?`, body: "Each one goes to its donor as soon as you say so.", yes: "Send" }))) return;
     setBusyId("all");
     try {
       const r = await apiFetch("/milestone-drafts/send-reviewed", { method: "POST" });
@@ -2507,7 +2508,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: T.ink, fontWeight: 700, fontSize: 14 }}>
                   {sendResult.queued
-                    ? `✓ Queued, sending to ${sendResult.recipientCount} recipient${sendResult.recipientCount === 1 ? "" : "s"}`
+                    ? `✓ Queued, sending to ${countLabel(sendResult.recipientCount, "recipient")}`
                     : `✓ Sent to ${sendResult.sent} donors`}
                 </span>
                 <button onClick={() => setSendResult(null)} style={{ background: "transparent", border: "none", color: T.greenDk, cursor: "pointer", fontSize: 20 }}>×</button>

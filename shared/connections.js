@@ -24,6 +24,7 @@
 // ── THE FOUR STATES ────────────────────────────────────────────────────────
 // Each one carries the sentence that DEFINES it, because "quiet" on a screen
 // with no definition is a word somebody has to guess at.
+import { countLabel } from "./countWords.js";
 export const STATUSES = {
   healthy: {
     key: "healthy", label: "Healthy",
@@ -84,14 +85,14 @@ export function rhythmOf(giftDates, today) {
     .sort();
   if (dates.length < RHYTHM_MIN_GIFTS)
     return { gifts: dates.length, meanGapDays: null, perWeek: null,
-             sentence: dates.length ? `${dates.length} gift${dates.length === 1 ? "" : "s"} so far, which is not yet a rhythm.` : "Nothing has come through it yet." };
+             sentence: dates.length ? `${countLabel(dates.length, "gift")} so far, which is not yet a rhythm.` : "Nothing has come through it yet." };
   const span = daysBetween(dates[0], dates[dates.length - 1]);
   const meanGapDays = span / (dates.length - 1);
   const perWeek = meanGapDays > 0 ? 7 / meanGapDays : null;
   const per = perWeek == null ? null : Math.round(perWeek * 10) / 10;
   return { gifts: dates.length, meanGapDays, perWeek,
            sentence: per != null && per >= 1
-             ? `It usually sends about ${per} gift${per === 1 ? "" : "s"} a week.`
+             ? `It usually sends about ${countLabel(per, "gift")} a week.`
              : `It usually sends a gift every ${Math.round(meanGapDays)} days.` };
 }
 
@@ -171,15 +172,15 @@ export function syncLogLine({ at, ok, rowsRead = 0, giftsCreated = 0, centsCreat
     ? `The check failed. ${String(error)}`
     : "The check failed, and Steward could not say why. The next check will try again." };
   const parts = [];
-  if (giftsCreated) parts.push(`${giftsCreated} new gift${giftsCreated === 1 ? "" : "s"} worth ${money(centsCreated)}`);
+  if (giftsCreated) parts.push(`${countLabel(giftsCreated, "new gift")} worth ${money(centsCreated)}`);
   if (duplicates) parts.push(`${duplicates} already on file`);
   const droppedTotal = Object.values(dropped || {}).reduce((a, b) => a + Number(b || 0), 0);
-  if (droppedTotal) parts.push(`${droppedTotal} row${droppedTotal === 1 ? "" : "s"} that were not gifts`);
+  if (droppedTotal) parts.push(`${countLabel(droppedTotal, "row")} that were not gifts`);
   if (duplicateQuestions) parts.push(`${duplicateQuestions} to ask you about`);
   const head = reason === "manual" ? "You checked" : "Steward checked";
   if (!rowsRead) return { at: when, ok: true, sentence: `${head}, and the provider had nothing new.` };
   return { at: when, ok: true,
-    sentence: `${head} and read ${rowsRead} row${rowsRead === 1 ? "" : "s"}: ${parts.length ? parts.join(", ") : "nothing that was a gift"}.` };
+    sentence: `${head} and read ${countLabel(rowsRead, "row")}: ${parts.length ? parts.join(", ") : "nothing that was a gift"}.` };
 }
 
 // Why a row was not written, in words rather than in the reason codes the

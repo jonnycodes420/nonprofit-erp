@@ -20,6 +20,7 @@ import { WhyLink } from "./WhyAnswer";
 import { AskBox } from "./AskPanel";
 import { WhatWorked } from "./Insights";   // INSIGHTS-1
 import EventRaised from "./EventRaised";   // HOME-3
+import { countLabel, plural } from "../../../shared/countWords.js";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -462,14 +463,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // HOME-3: every figure here counts gifts RECEIVED, and says so; what an
       // event raised (received + pledged) is its own line, below.
       narrative = <span data-testid="gs-narrative">You've received <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
-          label="Received this period" definition={RECEIVED_WORDS} source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
+          label="Received this period" definition={RECEIVED_WORDS} source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> {plural(d.giftCount, "gift")}</strong> this period
         {c && c.value > 0 && <>, {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year{c.imported ? " (from your old system)" : ""}</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
         {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
         {d.importedThisPeriod && <> Your old system's report said <Figure variant="inline" kind="money" value={d.importedThisPeriod.value} label="This period, from your old system" definition={d.importedThisPeriod.note} source={d.importedThisPeriod.source} /> for this period{d.importedThisPeriod.system ? ` (${d.importedThisPeriod.system})` : ""}, kept beside Steward's number.</>}
-        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave: <RF f={d.figures?.newDonors} label="New donors" /> new and <RF f={d.figures?.returningDonors} label="Returning donors" /> returning; the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
+        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> {plural(d.uniqueDonors, "donor")} gave: <RF f={d.figures?.newDonors} label="New donors" /> new and <RF f={d.figures?.returningDonors} label="Returning donors" /> returning; the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {/* WIRE-1: the two cards that are the period's gifts open them. */}
@@ -524,7 +525,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const yl = yearMode === "fiscal" ? `FY${d.year}` : d.year;
       const priorLabel = yearMode === "fiscal" ? `FY${d.year - 1}` : String(d.year - 1);
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} /> donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} /> {plural(d.rows.length, "donor")}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
@@ -574,7 +575,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px", minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} donor{y.donors === 1 ? "" : "s"}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} {plural(y.donors, "donor")}</div>
             {/* REPORTS-5: what an old system's report said for this year,
                 labelled, beside Steward's number and never added into it. */}
             {y.imported && <div data-testid="three-year-imported" style={{ fontSize: 11.5, color: T.ink, marginTop: 6, lineHeight: 1.4 }}>
@@ -595,7 +596,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "annual") {
       empty = d.giftCount === 0;
-      narrative = <>In <strong>{d.label}</strong> you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"}
+      narrative = <>In <strong>{d.label}</strong> you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> {plural(d.uniqueDonors, "donor")}
         {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up" : "down"} <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> from {d.priorLabel}</>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
         {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
@@ -619,7 +620,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
-      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} {plural(d.giftCount, "gift")} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
       const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";
       table = <>
         {/* ONE line, above the button, saying what is deliberately not here. */}
@@ -702,7 +703,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       } else {
         const s = d.sections, tt = s.totals;
         empty = false;
-        narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""}, <strong>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
+        narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""}, <strong>{fmtFull(tt.giftTotal)}</strong> in {countLabel(tt.giftCount, "gift")}, {countLabel(tt.askCount, "ask")}, {countLabel(tt.moveCount, "move")}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{countLabel(tt.pastDueCount, "past-due task")}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
         const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>{title}</div>
           {items.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>{e}</div>

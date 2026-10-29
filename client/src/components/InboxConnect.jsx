@@ -20,6 +20,7 @@ import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
+import { countLabel } from "../../../shared/countWords.js";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: "1px solid " + (primary ? T.greenDk : T.ink),
@@ -35,7 +36,7 @@ export function syncedPhrase(ts) {
   if (mins < 1) return "read just now";
   if (mins < 60) return `read ${mins} min ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `read ${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  if (hrs < 24) return `read ${countLabel(hrs, "hour")} ago`;
   return "read " + new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -60,7 +61,7 @@ function ago(ts) {
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins} min ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  if (hrs < 24) return `${countLabel(hrs, "hour")} ago`;
   return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 export function SyncHealth({ h, calendar, onRetry, busy }) {

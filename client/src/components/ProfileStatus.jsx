@@ -16,6 +16,7 @@ import { Figure, FigureContext } from "./Figure";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate } from "../../../shared/displayDate";
 import { birthdayLabel } from "../../../shared/birthday.js";
+import { countLabel } from "../../../shared/countWords.js";
 
 // FIX-27 Part 5: `stepKey` moves whenever a next step is saved, so the
 // summary's Next line is read again with the rail and The Ask, no reload.
@@ -173,7 +174,7 @@ function Tile({ label, figure, kind = "money", sub }) {
 // came off it or is not in it, so Lifetime, the count and the average foot.
 function averageSub(a) {
   if (!a || !a.count) return null;
-  const bits = [`of ${a.count} gift${a.count === 1 ? "" : "s"}`];
+  const bits = [`of ${countLabel(a.count, "gift")}`];
   if (a.refunds > 0) bits.push(`after ${fmtFull(a.refundCents / 100)} refunded`);
   if (a.importedCents > 0) bits.push(`not counting ${fmtFull(a.importedCents / 100)} given before Steward`);
   return bits.join(", ");

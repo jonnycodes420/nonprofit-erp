@@ -79,5 +79,31 @@ check("ink on gold500 button (body)", INK, RAMP.gold500, BODY);
 const FOREST = "#0d5c3a";
 check("forest (greenDk) link on cream (body)", FOREST, CREAM, BODY);
 
-console.log(`\npalette.test.js — ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ── 5. FIX-58 · attention is brass, and every count has one plural ─────────
+// Planted: DUE_BADGE back on T.terracotta, or one `n === 1 ? "" : "s"` added
+// to any client or shared file, turns this red.
+const appSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "App.jsx"), "utf8");
+const due = (appSrc.match(/const DUE_BADGE=\{([^}]*)\}/) || [])[1] || "";
+ok(due && !/terracotta|terra\d/.test(due), "the Tasks due badge is not red (brass is attention)");
+const dirSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "DonorDirectory.jsx"), "utf8");
+const urgency = dirSrc.slice(dirSrc.indexOf("lapsed.map((d,idx)=>"), dirSrc.indexOf("const urgencyLabel="));
+ok(urgency.length > 0 && !/terracotta|terra\d/.test(urgency), "Re-engage's Critical row is not red");
+
+const INLINE_PLURAL = /===\s*1\s*\?\s*""\s*:\s*"s"|!==\s*1\s*\?\s*"s"\s*:\s*""/;
+const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
+  e.isDirectory() ? (e.name === "node_modules" || e.name === "dist" ? [] : walk(path.join(dir, e.name)))
+    : /\.(jsx?|mjs)$/.test(e.name) ? [path.join(dir, e.name)] : []);
+const root = path.join(__dirname, "..");
+const offenders = [...walk(path.join(root, "client", "src")), ...walk(path.join(root, "shared"))]
+  .filter(f => !f.endsWith("countWords.js"))
+  .filter(f => INLINE_PLURAL.test(fs.readFileSync(f, "utf8")))
+  .map(f => path.relative(root, f));
+ok(offenders.length === 0, `every count's plural comes from shared/countWords.js (inline in: ${offenders.join(", ")})`);
+
+import(path.join(root, "shared", "countWords.js")).then(cw => {
+  ok(cw.countLabel(1, "sustainer") === "1 sustainer", `countLabel(1) is "1 sustainer" (got ${cw.countLabel(1, "sustainer")})`);
+  ok(cw.countLabel(1200, "sustainer") === "1,200 sustainers", "countLabel(1200) is \"1,200 sustainers\"");
+  ok(cw.countWords(3, "donor") === "three donors" && cw.countWords(12, "donor") === "12 donors", "countWords spells under ten only");
+  console.log(`\npalette.test.js — ${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+});

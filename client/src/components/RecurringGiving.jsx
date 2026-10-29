@@ -8,6 +8,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { Figure, FigureContext } from "./Figure";
+import { countLabel, plural } from "../../../shared/countWords";
 
 // FIX-15 Part 3 — "notified" only when the email provider took the message.
 const notified = (r, name) => (r && r.donorNotified === false
@@ -85,14 +86,14 @@ function MovementSummary({ movement }) {
         </div>
         <div style={{ fontSize: 34, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.15, margin: "6px 0 2px" }}>{fmtFull(movement.mrr)}</div>
         <div style={{ fontSize: 12, color: T.ink3 }}>
-          {movement.healthyCount} active sustainer{movement.healthyCount === 1 ? "" : "s"}
+          {countLabel(movement.healthyCount, "active sustainer")}
           {movement.atRiskCount ? <span style={{ color: T.terra700, fontWeight: 700 }}> · {movement.atRiskCount} at risk</span> : null}
           {/* (2026-09-11) The card that has not failed yet. Its own colour and
               its own clause, because it is the half still worth acting on —
               folding it into "at risk" would bury the preventable money in the
               lost money. */}
           {movement.expiringCount
-            ? <span style={{ color: T.gold600, fontWeight: 700 }}> · {movement.expiringCount} card{movement.expiringCount === 1 ? "" : "s"} expiring</span>
+            ? <span style={{ color: T.gold600, fontWeight: 700 }}> · {countLabel(movement.expiringCount, "card")} expiring</span>
             : null}
         </div>
       </div>
@@ -382,7 +383,7 @@ function AtRiskQueue({ subs, isReadOnly, onAction }) {
     <div style={{ background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 12, padding: "16px 18px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
         <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.terra700 }}>Needs recovery</span>
-        <span style={{ fontSize: 12, color: T.terra700 }}>{subs.length} failing card{subs.length === 1 ? "" : "s"} · {fmtFull(subs.reduce((s, x) => s + (x.interval === "year" ? (x.amount || 0) / 12 : (x.amount || 0)), 0))}/mo at risk</span>
+        <span style={{ fontSize: 12, color: T.terra700 }}>{countLabel(subs.length, "failing card")} · {fmtFull(subs.reduce((s, x) => s + (x.interval === "year" ? (x.amount || 0) / 12 : (x.amount || 0)), 0))}/mo at risk</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {subs.map(s => (
@@ -442,7 +443,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
     setBusy(true);
     try {
       const r = await apiFetch("/recurring/unlinked/send-reconnect", { method: "POST", body: JSON.stringify({ donorIds: sendTargets }) });
-      setToast(`${r.sent} reconnect link${r.sent === 1 ? "" : "s"} sent.`);
+      setToast(`${countLabel(r.sent, "reconnect link")} sent.`);
       setSel(new Set()); await load();
     } catch (e) { setToast(errorMessage(e, "Send failed.")); }
     setBusy(false);
@@ -472,7 +473,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
               own sheet says 440 are giving and which Steward had detected. */}
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Sustainers from your file</div>
           <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>
-            <strong style={{ color: T.ink }}>{(counts.fromFile != null ? counts.fromFile : counts.unlinked)}</strong> sustainers from your file · <strong style={{ color: T.ink }}>{counts.givingFromFile != null ? counts.givingFromFile : counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> stopped · <strong style={{ color: T.ink }}>{counts.connectedFromFile || "none"}</strong>{counts.connectedFromFile ? " connected to a payment method here" : " connected to a payment method here yet"}
+            <strong style={{ color: T.ink }}>{(counts.fromFile != null ? counts.fromFile : counts.unlinked)}</strong> {plural(counts.fromFile != null ? counts.fromFile : counts.unlinked, "sustainer")} from your file · <strong style={{ color: T.ink }}>{counts.givingFromFile != null ? counts.givingFromFile : counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> stopped · <strong style={{ color: T.ink }}>{counts.connectedFromFile || "none"}</strong>{counts.connectedFromFile ? " connected to a payment method here" : " connected to a payment method here yet"}
           </div>
           {stats.sent > 0 && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 3 }}>
@@ -498,12 +499,12 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
           <button onClick={send} disabled={busy || sendTargets.length === 0}
             title={sendTargets.length === 0 ? "Select sustainers below (those with an email on file)" : undefined}
             style={{ background: sendTargets.length ? T.gold500 : T.bg2, border: "none", borderRadius: 9, padding: "9px 16px", color: sendTargets.length ? T.ink : T.ink3, fontSize: 12.5, fontWeight: 700, cursor: sendTargets.length && !busy ? "pointer" : "not-allowed" }}>
-            {busy ? "Sending…" : `Send reconnect link${sendTargets.length === 1 ? "" : "s"}${sendTargets.length ? ` (${sendTargets.length})` : ""}`}
+            {busy ? "Sending…" : `Send reconnect ${plural(sendTargets.length, "link")}${sendTargets.length ? ` (${sendTargets.length})` : ""}`}
           </button>
         )}
       </div>
       {stopped.map(row)}
-      {giving.length > 0 && <div style={{ fontSize: 11, color: T.ink3, padding: "8px 10px 6px", borderTop: `1px solid ${T.bg2}` }}>{giving.length} more imported sustainer{giving.length === 1 ? "" : "s"} still gave recently, reconnect them before their card would have renewed.</div>}
+      {giving.length > 0 && <div style={{ fontSize: 11, color: T.ink3, padding: "8px 10px 6px", borderTop: `1px solid ${T.bg2}` }}>{countLabel(giving.length, "more imported sustainer")} still gave recently, reconnect them before their card would have renewed.</div>}
       {giving.map(row)}
     </div>
   );
@@ -916,7 +917,7 @@ export function DashboardRecurring({ onNavigate }) {
         {section("Waiting on a donor", counts.pendingProposals, T.gold300,
           data.pendingProposals.map(p => donorRow(p, `${p.kind === "create" ? "new gift invitation" : p.kind === "card_update" ? "card update" : "proposed change"} · expires ${fmtDate(p.expiresAt)}`)))}
         {section("Sustainer anniversaries", counts.anniversaries, T.gold300,
-          data.anniversaries.map(a => donorRow(a, `${a.years} year${a.years === 1 ? "" : "s"} on ${fmtDate(a.date)} · ${money(a.amount)}${per(a.interval)} worth a note`)))}
+          data.anniversaries.map(a => donorRow(a, `${countLabel(a.years, "year")} on ${fmtDate(a.date)} · ${money(a.amount)}${per(a.interval)} worth a note`)))}
       </div>
       <div>
         <button onClick={() => onNavigate("fundraising", { frSection: "recurring" })}

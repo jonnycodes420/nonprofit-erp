@@ -18,6 +18,7 @@
 // Pure: no DB, no network, no clock, no JSX.
 
 import { sentences, sensitiveCategory } from "./voiceMemo.js";
+import { countLabel } from "./countWords.js";
 
 export const SETTING_LABEL = "We serve clients whose details are private";
 export const SETTING_DESCRIPTION =
@@ -97,7 +98,7 @@ export const HEALTH_SYSTEM = [
 ].join("\n");
 
 // ── WHAT THE CONNECTIONS CARD SAYS ─────────────────────────────────────────
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const plural = countLabel;
 // The same sentence in pieces, so a screen can make each number open its list.
 export function privacyLineParts({ clients = 0, heldThisMonth = 0 } = {}) {
   return [
