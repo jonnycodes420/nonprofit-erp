@@ -823,6 +823,7 @@ app.get("/data-health/ncoa/file", requireAuth, wrap(async (req, res) => {
   const people = await query(`SELECT id, name, kind, address, address2, city, state, zip, country, deceased, address_unmailable, deleted_at
                                 FROM donors WHERE org_id=? AND deleted_at IS NULL AND erased_at IS NULL ORDER BY name`, [req.user.orgId]);
   const rows = people.filter(DH.mailable);
+  if (await require("../exportGuard").largeExportRefused(req, res, rows.length)) return;   // SECURE-2 item 8
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="address-update-file-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.setHeader("X-Row-Count", String(rows.length));

@@ -6188,6 +6188,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_last_counter BIGINT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
+  // SECURE-2 item 8: staff may take a file of more than 1,000 people only when
+  // an admin allows it here (exportGuard.js). Off for every org, new and old.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS allow_staff_large_exports BOOLEAN NOT NULL DEFAULT false`);
   // SEC-1 — two-factor for everyone, and the sessions it guards.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_mfa BOOLEAN NOT NULL DEFAULT false`);
   // TRUST-2 — the day a person was erased at their request (personData.js).

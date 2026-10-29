@@ -161,6 +161,12 @@ export function SecurityPanel({ isAdmin }) {
             Require two-factor for admins
           </label>
           <div style={small}>Anyone without it is sent to set it up at their next sign-in, and sees nothing else until they have. Turn it on for yourself first.</div>
+          {/* SECURE-2 item 8: a file of more than 1,000 people, taken by staff. */}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink, marginTop: 8 }}>
+            <input type="checkbox" data-testid="allow-staff-large-exports" checked={!!st.allowStaffLargeExports} disabled={busy} onChange={e => setRule("allowStaffLargeExports", e.target.checked)} />
+            Let staff export more than 1,000 people at once
+          </label>
+          <div style={small}>Off, a staff member's export of more than 1,000 people needs an admin. Every export is in the Audit log under Exports either way.</div>
         </div>}
       </div>
 
