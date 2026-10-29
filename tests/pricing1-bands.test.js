@@ -158,7 +158,7 @@ const orgRow = async id => (await q(`SELECT plan, subscription_status, trial_end
       estimatedRecords: n, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
     const s = sessions[before];
     ok(`${n.toLocaleString("en-US")} records: ${band}, $${monthly}/month, $${setup} setup`,
-      su.status === 201 && su.body.tier === band && su.body.amountUsd === monthly && su.body.setupUsd === setup
+      su.status === 202 && su.body.tier === band && su.body.amountUsd === monthly && su.body.setupUsd === setup
       && s && s.form.get("line_items[0][price]") === `price_test_${band}m` && s.form.get("line_items[1][price]") === `price_test_${band}s`,
       { status: su.status, body: su.body, items: s && [s.form.get("line_items[0][price]"), s.form.get("line_items[1][price]")] });
   }
@@ -167,7 +167,7 @@ const orgRow = async id => (await q(`SELECT plan, subscription_status, trial_end
   ok("25,001 records: talk to us, no checkout and no price", over.status === 409 && over.body.error === "talk_to_us", over.body);
   const yr = await api("POST", "/public/signup", null, { orgName: "Edge yearly", contactName: "Ed Edge", contactEmail: SIGNUP("y"),
     estimatedRecords: 2500, interval: "yearly", acceptTerms: true, termsVersion: agr.version });
-  ok("yearly is ten times monthly ($2,990) with the same setup fee", yr.status === 201 && yr.body.amountUsd === 2990 && yr.body.setupUsd === 500, yr.body);
+  ok("yearly is ten times monthly ($2,990) with the same setup fee", yr.status === 202 && yr.body.amountUsd === 2990 && yr.body.setupUsd === 500, yr.body);
 
   console.log("\n— §3 · signup charges the setup fee once and the monthly starts on the first charge date —");
   const signedAt = testNow();
@@ -177,7 +177,7 @@ const orgRow = async id => (await q(`SELECT plan, subscription_status, trial_end
   const sess = sessions[before];
   const items = [...sess.form.keys()].filter(k => /^line_items\[\d+\]\[price\]$/.test(k)).map(k => sess.form.get(k));
   ok("Checkout carries the monthly price and the setup fee, the setup fee exactly once",
-    su.status === 201 && items.length === 2 && items.filter(p => p === "price_test_r500s").length === 1 && items.includes("price_test_r500m"), items);
+    su.status === 202 && items.length === 2 && items.filter(p => p === "price_test_r500s").length === 1 && items.includes("price_test_r500m"), items);
   ok("the monthly waits thirty days: the subscription starts in a 30-day trial", sess.form.get("subscription_data[trial_period_days]") === "30",
     sess.form.get("subscription_data[trial_period_days]"));
   const firstCharge = computeTrialEnd(signedAt);

@@ -261,6 +261,9 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   const frontendUrl = publicAppUrl();
   const resetLink = `${frontendUrl}/reset-password?token=${token}`;
 
+  // SECURE-2 item 2: answer first, then send, so an address with an account
+  // takes no longer to answer than one without.
+  res.json({ success: true });
   if (process.env.RESEND_API_KEY) {
     const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
     try {
@@ -312,8 +315,6 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   } else {
     console.warn("[forgot-password] RESEND_API_KEY not set — reset email not sent");
   }
-
-  res.json({ success: true });
 }));
 
 // POST /auth/reset-password — validate token and update password
@@ -1500,6 +1501,11 @@ async function sendSigninLinkEmail(user) {
 }
 
 const SIGNUP_ACTOR_ID = "system:public-signup";
+// SECURE-2 item 2: the sign-up sentence, the same whether or not the address
+// has an account, and the floor both answers wait for.
+const SIGNUP_SENT = "If that email can sign up, we've sent a link to finish. Check your inbox; the link works for 24 hours.";
+const SIGNUP_FLOOR_MS = Number(process.env.SIGNUP_FLOOR_MS || 900);
+const escapeHtml = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
@@ -1553,14 +1559,6 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
 
   // The same refusal the close link gives, for the same reason: users.email is
   // globally unique and this path mints the first admin.
-  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
-  if (clash.length) {
-    return res.status(409).json({
-      error: "email_in_use",
-      message: "That email already has a Steward account. Sign in instead, or use a different address.",
-    });
-  }
-
   const plan = closePlan(`${tier.id}_${interval}`);
   if (!plan) return res.status(500).json({ error: "plan_missing", message: "That band is not configured. Nothing has been created." });
 
@@ -1604,6 +1602,32 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   } catch (err) {
     if (handleBillingConfigError(err, res, { plan: plan.id, surface: "public signup price check" })) return;
     throw err;
+  }
+
+  // SECURE-2 item 2: the answer never says whether the address has an
+  // account. Both branches end in the same sentence, the same status and the
+  // same shape, no sooner than SIGNUP_FLOOR_MS, and the link (or, for an
+  // address that already has an account, a note saying so) goes by email.
+  const started = Date.now();
+  const sameAnswer = async () => {
+    const wait = SIGNUP_FLOOR_MS - (Date.now() - started);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    res.status(202).json({
+      sent: true, message: SIGNUP_SENT,
+      tier: tier.id, band: tier.band, interval,
+      amountUsd: planAmountUsd(plan),
+      setupUsd: setupPriceId ? plan.setupUsd : null,
+      firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
+      agreementVersion: agr.version,
+    });
+  };
+  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
+  if (clash.length) {
+    await sendSignupMail(contactEmail, "You already have a Steward account",
+      `<p>Someone, probably you, started a new Steward sign-up with this address. It already has a Steward account, so nothing new was created.</p>`
+      + `<p><a href="${publicAppUrl()}/login" style="color:#0D5C3A">Sign in</a>, or use "Forgot password" on that page.</p>`
+      + `<p>If you meant to set up a second organization, reply to this email and we will do it with you.</p>`);
+    return sameAnswer();
   }
 
   const closeLinkId = "cl_" + uuid().slice(0, 8);
@@ -1654,16 +1678,31 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
                           agreementVersion: agr.version })
     .catch(e => console.error("[signup] founder notification failed:", e.message));
 
-  res.status(201).json({
-    url: session.url,
-    tier: tier.id, band: tier.band, interval,
-    amountUsd: planAmountUsd(plan),
-    setupUsd: setupPriceId ? plan.setupUsd : null,
-    firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
-    notice: params.custom_text.submit.message,
-    agreementVersion: agr.version,
-  });
+  await sendSignupMail(contactEmail, `Finish setting up Steward for ${orgName}`,
+    `<p>Here is the link to finish setting up Steward for ${escapeHtml(orgName)}. It opens a secure Stripe checkout and works for 24 hours.</p>`
+    + `<p><a href="${session.url}" style="color:#0D5C3A">Finish setting up Steward</a></p>`
+    + `<p>${escapeHtml(params.custom_text.submit.message || "")}</p>`
+    + `<p>If you did not ask for this, ignore this email; nothing is charged unless the checkout is completed.</p>`);
+  return sameAnswer();
 }));
+
+// The one mail a sign-up sends: to the address typed into the form, which
+// asked for it. Never to a blocked address.
+async function sendSignupMail(to, subject, bodyHtml) {
+  if (require("../mailBlock").isBlockedAddress(to)) return { sent: false };
+  if (!process.env.RESEND_API_KEY) { console.error("[signup] MAIL IS NOT CONFIGURED: the sign-up link was NOT sent."); return { sent: false }; }
+  try {
+    const { error } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, subject,
+      html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">${bodyHtml}</div>`,
+    });
+    if (error) throw new Error(error.message);
+    return { sent: true };
+  } catch (e) {
+    console.error("[signup] sign-up email failed:", e.message);
+    return { sent: false };
+  }
+}
 
 // One message, to the founder, per signup. Not `opsAlert`: that dedupes by
 // kind and hour, which is right for an incident and wrong here — a second

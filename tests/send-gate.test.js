@@ -72,7 +72,7 @@ async function reset() {
 const UNTAGGED_OK = new Set([
   "opsAlert", "/auth/forgot-password", "/auth/invite", "sendSigninLinkEmail", "notifyFounderOfSignup",
   "/lost-and-found/lead", "/demo-request", "/invitation-request", "/contact", "mailJonathan", "mailSupport",
-  "sendCloseWelcomeEmail", "sendExistingOrgCloseEmail", "mailUser",
+  "sendCloseWelcomeEmail", "sendExistingOrgCloseEmail", "mailUser", "sendSignupMail",
 ]);
 function staticGuard() {
   const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
