@@ -821,6 +821,8 @@ app.use("/inbound-email", express.raw({ type: "*/*", limit: "5mb" }), (req, res,
 });
 
 app.use(express.json({ limit: "5mb" }));
+// SECURE-2 item 3: no text field longer than its cap, on any write (middleware/fieldCaps.js).
+app.use(require("./middleware/fieldCaps").fieldCaps());
 
 // PUSH-1 · Google and Microsoft tell Steward when a mailbox or calendar
 // changed (routes/push.js). The deps are read per notice: the sync functions

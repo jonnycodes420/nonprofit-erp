@@ -28,6 +28,7 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
+import { allPages } from "../lib/pages";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -1547,7 +1548,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     if (allDonors.length) return;
     // Summaries carry every field the segment predicates read (email,
     // total_giving, status, stage, capacity_tier) at a fraction of the payload
-    try { setAllDonors(await apiFetch("/donors/summaries")); } catch (e) { console.error(e); }
+    try { setAllDonors(await allPages("/donors/summaries")); } catch (e) { console.error(e); }   // SECURE-2: a page at a time
   };
 
   // BUILD-94 Part 4 — the sent list's counts, server-computed so the screen

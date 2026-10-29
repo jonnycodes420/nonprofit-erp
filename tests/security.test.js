@@ -32,6 +32,10 @@
 //   §13 A partly sent campaign says "Sent to N of M · K not sent" with its
 //       reasons, a campaign where nothing went says "Not sent", and every
 //       surface says the same (the truth check, mailCampaigns).
+//   §14 Inputs: a form refuses an email that is not one (with a "did you
+//       mean"), stores a phone in one format, an import keeps a bad email and
+//       flags it; every text field has a cap; and no list route in the route
+//       inventory answers more than 500 rows on a 25,000-person org.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -247,6 +251,8 @@ async function fixtures() {
     let up = false;
     for (let i = 0; i < 120 && !up; i++) { try { up = (await fetch(CHILD + "/health")).ok; } catch { /* booting */ } if (!up) await new Promise(r => setTimeout(r, 500)); }
     ok("the captured server booted", up, out.slice(-400));
+    if (!up) { child.kill("SIGTERM"); sink.close(); }
+    else {
     const call = (method, p, tok, body) => fetch(CHILD + p, { method, headers: { "Content-Type": "application/json", ...(tok ? { Authorization: "Bearer " + tok } : {}) }, body: body ? JSON.stringify(body) : undefined });
     // A failed sign-in (a planted address and password).
     await call("POST", "/auth/login", null, { email: PLANT.staffEmail, password: PLANT.password });
@@ -274,6 +280,7 @@ async function fixtures() {
       ok(`no ${what} in the Sentry payload`, !sentry.includes(v), (sentry.match(new RegExp(".{0,80}" + v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".{0,40}")) || [])[0]);
     }
     ok("no request body, cookie or authorization header in the Sentry payload", !/"data":\{"note"|"cookies"|"authorization"/i.test(sentry));
+    }
   }
 
   console.log("\n§12 · sign-up and reset never say whether an address has an account");
@@ -347,6 +354,67 @@ async function fixtures() {
     const others = ["people", "gifts", "thisYear", "vsLastYear", "homeLine", "drift", "groups", "events", "campaigns", "moveReport", "search", "ask", "atlas", "exports", "deleted", "finance"];
     const agree = await assertSurfacesAgree(ORG, { token: admin, soft: true, skip: others, label: "SECURE-2 §13" });
     ok("the truth check: the campaign list, the sent list, Communications and the as-sent page agree with the database", agree.ok, agree.diffs);
+  }
+
+  console.log("\n§14 · real emails and phones, field caps, and every list pages");
+  {
+    const bad = await api("POST", "/donors", staff, { name: "Ottoline Brack", email: "a@b" });
+    ok("a donor form refuses \"a@b\" with a sentence", bad.status === 400 && /missing its ending/.test(bad.body.error || ""), bad.body);
+    const typo = await api("POST", "/donors", staff, { name: "Ottoline Brack", email: "ottoline gmial.com" });
+    ok("…and an address with a space", typo.status === 400, typo.body);
+    const hint = await api("PUT", `/donors/${DONOR}`, staff, { name: "Imelda Vance", email: "imelda.vance@gmial.con" });
+    const hintFlags = (await api("GET", `/donors/${DONOR}`, staff)).body.contact_flags || [];
+    ok("…a real address on a misspelt domain is kept, with the hint (\"did you mean gmail.com?\")",
+      hint.status < 300 && hintFlags.some(f => /gmial\.con: did you mean gmail\.com\?/.test(f.sentence || "")), { status: hint.status, hintFlags });
+    await api("PUT", `/donors/${DONOR}`, staff, { name: "Imelda Vance", email: "imelda.vance@example.org" });
+    const ph = await api("POST", "/donors", staff, { name: "Ottoline Brack", email: "ottoline@brack.example.org", phone: "859.555.0177" });
+    const [row] = ph.body && ph.body.id ? await q(`SELECT phone FROM donors WHERE id=$1`, [ph.body.id]) : [{}];
+    ok("a phone is stored in one format", ph.status < 300 && row.phone === "(859) 555-0177", { status: ph.status, phone: row.phone });
+    const badPhone = await api("PATCH", `/donors/${DONOR}/contact`, staff, { phone: "12345" });
+    ok("…a contact edit (the door Tell Steward uses) refuses a number that is not one", badPhone.status === 400 && /not a phone number/.test(badPhone.body.error || ""), badPhone.body);
+    const inv = await api("POST", "/auth/invite", admin, { email: "new.person@gmial", role: "staff" });
+    ok("an invite refuses an address that is not one", inv.status === 400, inv.body);
+    const imp = await api("POST", "/donors/import", admin, { donors: [{ name: "Peregrine Tolliver", email: "peregrine@gmial.com" }] });
+    const [pt] = await q(`SELECT id, email FROM donors WHERE org_id=$1 AND name='Peregrine Tolliver'`, [ORG]);
+    ok("an import keeps the address as the file has it", imp.status < 300 && pt && pt.email === "peregrine@gmial.com", { status: imp.status, pt });
+    const prof = pt ? (await api("GET", `/donors/${pt.id}`, staff)).body : {};
+    ok("…and the profile says Check this email, with the hint", (prof.contact_flags || []).some(f => f.label === "Check this email" && /did you mean gmail\.com/.test(f.sentence || "")), prof.contact_flags);
+
+    const long = await api("POST", "/donors", staff, { name: "x".repeat(201) });
+    ok("a 201-character name is refused with a plain sentence", long.status === 400 && /The name is too long: 201 characters\. The most is 200\./.test(long.body.error || ""), long.body);
+    const notes = await api("PUT", `/donors/${DONOR}`, staff, { name: "Imelda Vance", notes: "n".repeat(20001) });
+    ok("…and 20,001 characters of notes", notes.status === 400 && /too long/.test(notes.body.error || ""), notes.body);
+    const okNotes = await api("PUT", `/donors/${DONOR}`, staff, { name: "Imelda Vance", notes: "n".repeat(2000) });
+    ok("…while 2,000 characters are taken", okNotes.status < 300, okNotes.status);
+
+    // Every list route in the route inventory, on an org of 25,000 people.
+    const BIG = "org_secure2_big";
+    if (!(await q(`SELECT 1 FROM donors WHERE org_id=$1 LIMIT 1`, [BIG])).length) {
+      await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Secure Two Big Pantry','secure-two-big',1,'trialing','team') ON CONFLICT (id) DO NOTHING`, [BIG]);
+      await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name)
+               SELECT 'd_s2big_'||g, $1, 'Person '||g, 'p'||g||'@s2big.example.org', 'active', 50, 'system:test', 'test' FROM generate_series(1,25000) g`, [BIG]);
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name)
+               SELECT 'g_s2big_'||g, $1, 'd_s2big_'||g, 50, DATE '2026-01-01' + (g % 280), 'system:test', 'test' FROM generate_series(1,25000) g`, [BIG]);
+    }
+    await q(`DELETE FROM users WHERE id='u_secure2_big'`).catch(() => {});
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_secure2_big',$1,'admin@secure2-big.example.org',$2,'Big Admin','admin')`, [BIG, bcrypt.hashSync("loadtest1234", 10)]);
+    const big = await login("admin@secure2-big.example.org");
+    // /donors/ids is the select-all for bulk actions: ids only, capped at
+    // 25,000 by design (routes/donorList.js IDS_CAP). Named here, not hidden.
+    const BY_DESIGN = new Set(["/donors/ids"]);
+    const inventory = require("../audit/route-inventory.json").routes;
+    const gets = inventory.filter(r => r.method === "GET" && !r.path.includes(":") && !BY_DESIGN.has(r.path)
+      && !/export|\.csv|download|pdf|zip|stream|oauth|callback|webhook|unsubscribe|^\/health|^\/admin\//i.test(r.path));
+    const over = [];
+    for (const r of gets) {
+      let body;
+      try { const res = await fetch(BASE + r.path, { headers: { Authorization: "Bearer " + big } }); if (!/json/.test(res.headers.get("content-type") || "")) continue; body = await res.json(); } catch { continue; }
+      const walk = (v, p, d) => { if (d > 2 || !v) return; if (Array.isArray(v)) { if (v.length > 500) over.push(`${r.path} ${p || "[]"}=${v.length}`); return; } if (typeof v === "object") for (const k of Object.keys(v)) walk(v[k], p + "." + k, d + 1); };
+      walk(body, "", 0);
+    }
+    ok(`no list route answers more than 500 rows on a 25,000-person org (${gets.length} routes asked)`, over.length === 0, over);
+    const page = (await api("GET", "/donors", big)).body;
+    ok("/donors with no limit answers its first page of 100 and the total", page && Array.isArray(page.donors) && page.donors.length === 100 && page.total === 25000, page && { n: (page.donors || []).length, total: page.total });
   }
 
   summary();

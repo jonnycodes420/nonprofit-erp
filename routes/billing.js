@@ -195,6 +195,10 @@ app.post("/auth/logout", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, password, name, orgName, orgMission, ein } = req.body;
   if (!email || !password || !orgName) {
     return res.status(400).json({ error: "Email, password, and org name required" });
@@ -345,6 +349,10 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
 app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   // INCIDENT 2026-09-22 — `provisioned: true` is how an org gets created FOR
   // somebody rather than BY them. It is the difference between a signup and a
   // handover, and until tonight the route could not tell them apart: Allie's
@@ -472,6 +480,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 
 // ── Invite ─────────────────────────────────────────────────────────────────
 app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, role } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
   // VOL-1 — three roles now. A volunteer coordinator sees volunteers and
@@ -1509,6 +1521,10 @@ const escapeHtml = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["contactEmail"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const b = req.body || {};
   const orgName = String(b.orgName || "").trim();
   const contactName = String(b.contactName || "").trim();

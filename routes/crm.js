@@ -4097,18 +4097,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     owner_label: d.assigned_to_name || d.pending_assignee_name || "No owner",
   });
 
-  if (req.query.limit === undefined) {
-    const [donors, touchpoints, { map: driftMap }] = await Promise.all([
-      query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]),
-      query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
-      computeDriftForDonors(req.user.orgId),
-    ]);
-    const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-    if (mayRoom) roomMap = await PRm.roomToGive(req.user.orgId);
-    return res.json(donors.map(mapDonor(tpMap, driftMap)));
-  }
-
-  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  // SECURE-2 item 3: this list always pages (default 100, at most 500). The
+  // old no-limit form read every person in the org in one answer.
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
     query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, limit, offset]),
@@ -4139,6 +4130,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 // audience counts, AI context builders. Column names match GET /donors so
 // adaptDonor works unchanged on the subset.
 app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
+  // SECURE-2 item 3: a page at a time (default 100, at most 500); a screen
+  // that wants everyone pages through (client/src/lib/pages.js).
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -4150,10 +4145,11 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
                   birth_month, birth_day, birth_year
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
+  res.setHeader("X-Total-Count", String((await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL", [req.user.orgId]))[0].n));
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
@@ -4523,6 +4519,8 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // PROFILE-1 — the four figures, each carrying the source its drawer opens.
   d.figures = await donorProfileFigures(
     req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
+  // SECURE-2 item 3: an imported address that is not one is kept, and flagged.
+  d.contact_flags = await require("../contactInputs").contactFlags(d);
   res.json(d);
 }));
 
@@ -4697,6 +4695,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
   // THREAD-2 · A NAME IS A NAME. "   " and the word "null" (a form that joined
   // two empty fields) were saved as names, and printed on the Thread and in
@@ -6333,6 +6335,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 // change, an email must look like one, and an address change is kept in
 // donor_address_history beside the tidy-up's own.
 app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const orgId = req.user.orgId, b = req.body || {};
   const [d] = await query("SELECT id, name, email, phone, address, address2, city, state, zip FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
@@ -6360,6 +6366,10 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!(await ItemRefs.links()).realName(req.body.name)) return res.status(400).json({ error: "Name required" });   // THREAD-2
   const name = String(req.body.name).replace(/\s+/g, " ").trim();

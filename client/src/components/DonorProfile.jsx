@@ -92,6 +92,14 @@ function UndatedGiftDate({ giftId, readOnly, onSaved }) {
     </span>
   );
 }
+// SECURE-2 item 3: an imported email or phone that is not a real one is kept,
+// and the rail says "Check this email" in brass, with the reason on hover.
+function ContactFlag({ flags, field }) {
+  const f = (flags || []).find(x => x.field === field);
+  if (!f) return null;
+  return <span data-testid={"contact-flag-" + field} title={f.sentence}
+    style={{ display: "inline-block", marginLeft: 6, background: T.gold50, color: T.gold700, border: "1px solid " + T.gold300, borderRadius: 99, padding: "0 7px", fontSize: 10.5, fontWeight: 700 }}>{f.label}</span>;
+}
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -3763,8 +3771,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           <RailSection title="Contact" testid="dp-rail-contact">
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
-              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/></dd></>}
+              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}<ContactFlag flags={donor.contact_flags} field="email"/></dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/><ContactFlag flags={donor.contact_flags} field="phone"/></dd></>}
               {/* PROFILE-1 (header): the birthday is under the name and in Coming
                   up; a monthly plan is the Recurring card. */}
               <ContactExtras contact={railData&&railData.contact} donorId={donor&&donor.id} isReadOnly={isReadOnly}/>
