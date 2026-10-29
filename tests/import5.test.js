@@ -13,6 +13,14 @@
 //      the event page, as Home's Grow moves (one person, one move) and in Ask.
 //   §3 the truth check: a person's open pledge is the same on the profile, in
 //      Fundraising's open-pledge rows and on Home (assertSurfacesAgree).
+//   §4 FIX-58, one accounting: the Finding Joy receipt says "106 rows · 100
+//      gifts $111,790 · 6 first payments on pledges $12,500 · $124,290 in
+//      all", each part opening its rows; Dollars in is "given · pledged"; the
+//      gift history's Imports line is its gifts ($571,129.93), not the file's
+//      net ($566,183.93); an undone import says Undone only.
+//   §5 FIX-58, people once: the dinner's gift sheet and its guest list read
+//      "Registered 263" (party places plus declines); Registered is people,
+//      and came / gave add up. Red on main: 9 of 41.
 //
 // HOW IT GOES RED ON MAIN: the dinner preview is ready with no date (§1), the
 // pledges are due from the import day (§1), the event report has no guest
@@ -209,13 +217,85 @@ async function guests() {
   const ask = (await api("POST", "/ask", tok, { text: "Who came to the dinner and didn't give?" })).body || {};
   ok(`§2 Ask: "who came and didn't give" is the same ${KEY}, and opens the same rows`, ask.answered === true && ask.figures && ask.figures.value.value === KEY
      && ask.figures.value.source.key === "event-guests" && (ask.people || []).length === KEY, ask.sentence);
+
+  // §4 FIX-58 one accounting: the preview's 106 gifts are the receipt's 106 rows
+  const res = (j.end && j.end.result) || {};
+  const line = res.giftLine || {};
+  ok("§4 the receipt says every part: 106 rows · 100 gifts $111,790 · 6 first payments on pledges $12,500 · $124,290 in all",
+     line.sentence === "106 rows · 100 gifts $111,790 · 6 first payments on pledges $12,500 · $124,290 in all" && /6 first payments on pledges \(\$12,500\)/.test(res.sentence || ""),
+     JSON.stringify([line.sentence, res.sentence]));
+  const figI = async part => (await api("GET", `/figures/import-gifts/rows?import=${j.importId}${part ? "&part=" + part : ""}&page=1&pageSize=200`, tok)).body || {};
+  const [fg, ff, fa] = [await figI("gifts"), await figI("first"), await figI(null)];
+  ok("§4 each part opens its rows, footing to the cent: 100 gifts $111,790, 6 first payments $12,500, 106 in all $124,290",
+     fg.totalRows === 100 && Number(fg.value) === 111790 && ff.totalRows === 6 && Number(ff.value) === 12500 && fa.totalRows === 106 && Number(fa.value) === 124290,
+     JSON.stringify([[fg.totalRows, fg.value], [ff.totalRows, ff.value], [fa.totalRows, fa.value]]));
+  const listed = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === j.importId) || {};
+  ok("§4 Dollars in reads what was given and what is pledged, never one sum: $124,290 given · $78,950 pledged",
+     listed.dollarsInWords === "$124,290 given · $78,950 pledged" && listed.dollarsGiven === 124290 && listed.dollarsPledged === 78950, JSON.stringify([listed.dollarsInWords, listed.dollarsGiven, listed.dollarsPledged]));
+  ok("§4 Who is the person's name", listed.by === "Allie Test", listed.by);
+  const rec = ((await api("GET", `/imports/${j.importId}`, tok)).body || {}).import || {};
+  ok("§4 the stored receipt carries the same line, with each part's source", rec.giftLine && rec.giftLine.sentence === line.sentence && rec.giftLine.sources.first.key === "import-gifts", JSON.stringify(rec.giftLine));
   await undo(tok, j.importId);
+  const after = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === j.importId) || {};
+  ok("§4 an undone import says Undone, and only that", after.state === "undone" && after.reconciled === true && (after.findings || []).length === 0, JSON.stringify([after.state, after.reconciled, after.findings]));
+}
+
+// §4 FIX-58: the gift history's Imports line is its 278 gifts, $571,129.93,
+// not the file's net with its refunds ($566,183.93)
+async function giftHistory() {
+  const ORG = "org_import5_history";
+  const tok = await freshOrg(ORG, "IMPORT-5 gift history (test)");
+  const sheets = await sheetsOf(path.join(RS, "jp-gift-history-287.xlsx"));
+  const j = await importJob(tok, { fileName: "jp-gift-history-287.xlsx", sheets });
+  const db = await one("SELECT COUNT(*)::int AS n, ROUND(SUM(amount)*100)::bigint AS c FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, j.importId]);
+  const listed = ((await api("GET", "/imports", tok)).body.imports || []).find(x => x.id === j.importId) || {};
+  ok("§4 the gift history: the Imports list says $571,129.93 given, its 278 gifts to the cent",
+     db.n === 278 && Number(db.c) === 57112993 && Math.round(listed.dollarsGiven * 100) === 57112993 && listed.dollarsInWords === "$571,129.93", JSON.stringify([db, listed.dollarsGiven, listed.dollarsInWords]));
+  let agree = null;
+  try { agree = await assertSurfacesAgree(ORG, { token: tok, label: "after the gift history", soft: true }); } catch (e) { agree = { ok: false, diffs: [String(e.message)] }; }
+  ok("§4 the truth check agrees with the receipt", agree.ok, (agree.diffs || []).join("\n"));
+  await undo(tok, j.importId);
+}
+
+// §5 FIX-58: an event counts people once. The dinner's gift sheet and its
+// guest list, one event: "Registered 263" was 233 party places for 165 guests
+// plus 30 who declined.
+async function eventPeople() {
+  const ORG = "org_import5_people";
+  const tok = await freshOrg(ORG, "IMPORT-5 event people (test)");
+  const A = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event", eventName: "Finding Joy Dinner" };
+  const jd = await importJob(tok, { fileName: "jp-dinner-gifts-106.xlsx", sheets: await sheetsOf(path.join(RS, "jp-dinner-gifts-106.xlsx")), answers: A });
+  const jg = await importJob(tok, { fileName: "event-guest-list-scrubbed.xlsx", sheets: await sheetsOf(path.join(__dirname, "fixtures", "import", "event-guest-list-scrubbed.xlsx")), answers: A });
+  ok("§5 both files import into one event", jd.end && jd.end.status === "done" && jg.end && jg.end.status === "done", JSON.stringify([jd.end && jd.end.status, jg.end && jg.end.status]));
+  const evs = await q("SELECT id FROM events WHERE org_id=$1", [ORG]);
+  const ev = evs[0] || {};
+  const key = await one(`SELECT COUNT(DISTINCT donor_id) FILTER (WHERE status IN ('registered','confirmed','attended','no_show'))::int AS reg,
+                                COUNT(*) FILTER (WHERE status='attended')::int AS came FROM event_attendees WHERE org_id=$1 AND event_id=$2`, [ORG, ev.id]);
+  const rep = (await api("GET", `/events/${ev.id}/report`, tok)).body || {};
+  const fig = k => ((rep.figures || []).find(f => f.key === k) || {}).value;
+  const card = (((await api("GET", "/events", tok)).body) || []).find(e => e.id === ev.id) || {};
+  ok(`§5 Registered is each person who said they were coming or came, once: ${key.reg}, on the page and the card`,
+     evs.length === 1 && fig("registered") === key.reg && card.registered_count === key.reg && rep.story && rep.story.registered === key.reg,
+     JSON.stringify([evs.length, key, fig("registered"), card.registered_count, rep.story && rep.story.registered]));
+  const st = rep.story || {};
+  ok("§5 Came = came and gave + came and didn't; Gave = came and gave + gave and didn't come",
+     st.attended === key.came && st.cameGave + st.cameDidntGive === st.attended && st.gave === st.cameGave + st.gaveNotCame && typeof st.addsUp === "string",
+     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave, st.gaveNotCame, st.addsUp]));
+  const reg = (await api("GET", `/figures/event-registered/rows?event=${ev.id}&page=1&pageSize=200`, tok)).body || {};
+  const regRows = (await api("GET", `/events/${ev.id}/rows?rows=registered`, tok)).body || {};
+  ok("§5 Registered opens its people, the same number", Number(reg.value) === key.reg && reg.totalRows === key.reg && regRows.count === key.reg, JSON.stringify([reg.value, reg.totalRows, regRows.count]));
+  let agree = null;
+  try { agree = await assertSurfacesAgree(ORG, { token: tok, label: "after the dinner and its guest list", soft: true }); } catch (e) { agree = { ok: false, diffs: [String(e.message)] }; }
+  ok("§5 the truth check: registered on the database, the page, the story and the card, and the counts add up", agree.ok, (agree.diffs || []).join("\n"));
+  await undo(tok, jg.importId); await undo(tok, jd.importId);
 }
 
 (async () => {
   try {
     await dinner();
     await guests();
+    await giftHistory();
+    await eventPeople();
   } catch (e) { ok("the suite ran to the end", false, e.stack); }
   await closeDb();
   summary();

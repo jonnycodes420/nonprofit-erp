@@ -379,3 +379,13 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   queue.
 - Undo now also removes the timeline lines an import's journeys wrote ("Journey started", each step), so a
   person the file created is removed rather than kept alive by them.
+
+## FIX-58 · one accounting on every import receipt (2026-10-29)
+
+- A spreadsheet receipt says every part of its gift rows and the whole: "106 rows · 100 gifts $111,790 · 6 first
+  payments on pledges $12,500 · $124,290 in all" (`summary.giftLine`), each part a figure opening its rows
+  (`import-gifts`, `part=gifts|first`). A pledge's paid first year is a gift row, so the preview's count is the receipt's.
+- "Dollars in" on the Imports list is what came in as gifts and what is still pledged, never one sum ("$45,340 given ·
+  $104,050 pledged"); it is never the file's net. The gift history read $566,183.93 (its 287 rows with the refunds
+  set aside) while its 278 gifts are $571,129.93. The truth check holds a spreadsheet import's "given" to its gifts.
+- An undone import says Undone, never a finding; Who is the person's current name; the date reads "Oct 28, 2026".

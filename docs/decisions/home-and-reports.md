@@ -475,3 +475,13 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   {date} and didn't give. Thank them for coming."), no ask on the first touch, the action a thank-you-for-coming task
   with the note drafted. One person, one move (otherwise an "also" line). "See all N" opens the event page. Grow draws
   150 cards by dollars, so $0 thank-yous can sit past the cap, still counted on the tab.
+
+## FIX-58 · an event counts people once (2026-10-29)
+
+- Registered is each person who said they were coming or came (status registered, confirmed, attended, no_show),
+  once: never a party size and never a declined or merely invited row (`figureSources.EVENT_REGISTERED`, source
+  `event-registered`). "Registered 263" on the dinner was 233 party places for 165 guests plus 30 who declined. The
+  event page, its story, the Events card and the attendance sentence read it.
+- Gave is each person with their own gift or pledge for the event, and each guest who came whose household gave
+  (`event-gave`; `came=yes|no` splits it). So Came = came and gave + came and didn't, and Gave = came and gave + gave
+  and didn't come; the story says so in one sentence (`numbers.eventStory` `addsUp`), and the truth check holds both.

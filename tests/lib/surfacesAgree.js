@@ -131,7 +131,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     q(`SELECT id, name, email FROM donors WHERE org_id = $1 AND deleted_at IS NOT NULL`, [orgId]),
     q(`SELECT COUNT(*) FILTER (WHERE imported_total IS NOT NULL OR imported_gift_count IS NOT NULL)::int AS summarised
          FROM donors d WHERE ${LIVE}`, [orgId]),
-    q(`SELECT id, migration_source FROM imports WHERE org_id = $1 AND reversed_at IS NULL ORDER BY committed_at ASC, id ASC`, [orgId]),
+    q(`SELECT i.id, i.migration_source, i.gifts_created, i.shape,
+              (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_rows,
+              (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_cents,
+              (i.summary_json->'giftLine'->>'rows')::int AS line_rows
+         FROM imports i WHERE i.org_id = $1 AND i.reversed_at IS NULL ORDER BY i.committed_at ASC, i.id ASC`, [orgId]),
     q(`SELECT gr.id, gr.name, (SELECT COUNT(*)::int FROM group_members m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
                                  WHERE m.group_id = gr.id AND m.org_id = gr.org_id AND d.deleted_at IS NULL) AS live
          FROM groups gr WHERE gr.org_id = $1 AND COALESCE(gr.kind,'static') = 'static'`, [orgId]).catch(() => []),
@@ -139,7 +143,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
               (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
                 WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS live,
               (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND a.status = 'attended' AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS attended
+                WHERE a.event_id = e.id AND a.org_id = e.org_id AND a.status = 'attended' AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS attended,
+              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
+                WHERE a.event_id = e.id AND a.org_id = e.org_id AND a.status IN ('registered','confirmed','attended','no_show')
+                  AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS registered
          FROM events e WHERE e.org_id = $1`, [orgId]),
     q(`SELECT c.id, c.name, c.goal_amount,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
@@ -418,7 +425,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       // each event: its page's pledges over all years = the Pledges rows made there;
       // its page's "came" = the people marked as having come
       const evIds = [...new Set([...pl.pledges.filter(r => r.madeAt && r.madeAt.kind === "event").map(r => r.madeAt.id),
-                                 ...eventRows.filter(e => e.attended > 0).map(e => e.id)])].slice(0, 20);
+                                 ...eventRows.filter(e => e.attended > 0 || e.registered > 0).map(e => e.id)])].slice(0, 20);
       const evReports = await Promise.all(evIds.map(id => get(`/events/${encodeURIComponent(id)}/report`).catch(() => null)));
       evIds.forEach((id, i) => {
         const st = evReports[i] && evReports[i].story;
@@ -427,11 +434,36 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const e = eventRows.find(x => x.id === id) || {};
         agree(`event "${st.name}" pledged, all years`, [["its event page", st.pledgedAllCents], ["Pledges' rows made there", rows.reduce((n, r) => n + cents(r.balance), 0)]], money);
         agree(`event "${st.name}" came`, [["the database", e.attended], ["its event page", st.attended]]);
+        // FIX-58: people, once each, and the counts add up
+        const regFig = ((evReports[i].figures || []).find(f => f.key === "registered") || {}).value;
+        const card = Array.isArray(events) ? (events.find(x => x.id === id) || {}).registered_count : undefined;
+        agree(`event "${st.name}" registered`, [["the database", e.registered], ["its event page", regFig], ["its story", st.registered], ["the Events card", card]]);
+        if (st.cameGave !== undefined) {
+          agree(`event "${st.name}" came = came and gave + came and didn't`, [["came", st.attended], ["the two parts", st.cameGave + st.cameDidntGive]]);
+          agree(`event "${st.name}" gave = came and gave + gave and didn't come`, [["gave", st.gave], ["the two parts", st.cameGave + st.gaveNotCame]]);
+        }
         if (fund && fund.leadEvent && fund.leadEvent.id === id) {
           agree(`event "${st.name}" on Fundraising's lead card`, [["its event page", st.raisedCents], ["Fundraising's Overview", fund.leadEvent.raisedCents]], money);
           agree(`event "${st.name}" came and didn't give, on the lead card`, [["its event page", st.cameDidntGive], ["Fundraising's Overview", fund.leadEvent.cameDidntGive]]);
         }
       });
+    }
+  }
+
+  // ── FIX-58 · AN IMPORT'S RECEIPT IS ITS GIFTS ────────────────────────────
+  // While every gift a spreadsheet import wrote is still there, the Imports list's
+  // "given" is exactly those gifts, to the cent, and a receipt's gift line
+  // counts exactly those rows.
+  if (!skip.has("imports")) {
+    const list = await get("/imports").catch(() => null);
+    for (const imp of imports) {
+      const shown = list && Array.isArray(list.imports) ? list.imports.find(x => x.id === imp.id) : null;
+      // a spreadsheet import's receipt is written by the server from the gifts it
+      // wrote; the older doors post a receipt the page counted (POST /imports)
+      if (imp.shape !== "sheet" || !shown || shown.dollarsGiven === undefined) continue;
+      const made = Number(imp.line_rows != null ? imp.line_rows : imp.gifts_created);
+      if (imp.gift_rows !== made) continue;   // a gift was removed since: the stored receipt is history
+      agree(`import ${imp.id} given`, [["its gifts in the database", Number(imp.gift_cents)], ["the Imports list", cents(shown.dollarsGiven)]], money);
     }
   }
 
