@@ -81,6 +81,22 @@ function loadRewrites() {
   return out;
 }
 const PROXY = loadRewrites();
+
+// SECURE-2 item 5 · THE HEADERS ARE vercel.json's TOO, the Content-Security-
+// Policy above all, so a browser leg runs under the policy production enforces
+// (tests/smoke-walk.test.js fails on any violation). Same rule as the
+// rewrites: read, never copied. Each `source` is used as a regex on the path,
+// which is what Vercel's sources here are. The one change: production's API
+// origin becomes the local API, because locally that is where the app talks.
+const PROD_API = "https://nonprofit-erp-production.up.railway.app";
+function loadHeaders() {
+  let rules = [];
+  try { rules = (JSON.parse(fs.readFileSync(path.join(__dirname, "..", "vercel.json"), "utf8")).headers) || []; }
+  catch (e) { console.error("[local-preview] could not read vercel.json headers:", e.message); return []; }
+  return rules.map(r => [new RegExp("^" + r.source + "$"),
+    (r.headers || []).map(h => [h.key, String(h.value).split(PROD_API).join(API)])]);
+}
+const HEADERS = loadHeaders();
 if (!PROXY.length) console.error("[local-preview] WARNING: no backend rewrites loaded — same-origin API paths will 404.");
 
 const MIME = {
@@ -144,6 +160,7 @@ const srv = http.createServer(async (req, res) => {
   if (fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(page)) file = page;
   else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
 
+  for (const [re, hs] of HEADERS) if (re.test(url)) for (const [k, v] of hs) res.setHeader(k, v);
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
   if (url.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   // HARDEN-2: Vercel compresses text, so the preview does too, or a page's
@@ -177,4 +194,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { loadRewrites, PROXY, API, PORT };
+module.exports = { loadRewrites, loadHeaders, PROXY, API, PORT };
