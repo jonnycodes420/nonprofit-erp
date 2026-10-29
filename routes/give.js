@@ -5466,7 +5466,7 @@ function setPortalCookie(res, token, maxAgeSec) {
     [`${PORTAL_HINT_COOKIE}=1`, "Secure", "SameSite=Lax", "Path=/", `Max-Age=${maxAgeSec}`].join("; "));
 }
 function clearPortalCookie(res) {
-  clearPortalCookie(res);
+  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
   res.append("Set-Cookie", `${PORTAL_HINT_COOKIE}=; SameSite=Lax; Path=/; Max-Age=0`);
 }
 

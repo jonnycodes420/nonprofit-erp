@@ -125,8 +125,8 @@ async function reset() {
   const year = today.slice(0, 4);
   const pw = bcrypt.hashSync("loadtest1234", 4);
   // NUMBERS-2: "This year" is the org's own year; this org's is the calendar year.
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,legal_name,ein,onboarded_at,vocabulary_json,emails_enabled,staff_mail_enabled)
-           VALUES ($1,'Voice Four Harbor',$2,1,'active','team','America/New_York',NOW(),true,'Voice Four Harbor Inc','12-3456789',NOW(),'{"fiscal_year_start_month":1}',true,NULL)`, [ORG, SLUG]);
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled,legal_name,ein,onboarded_at,vocabulary_json,emails_enabled,staff_mail_enabled,receipt_address)
+           VALUES ($1,'Voice Four Harbor',$2,1,'active','team','America/New_York',NOW(),true,'Voice Four Harbor Inc','12-3456789',NOW(),'{"fiscal_year_start_month":1}',true,NULL,'4 Harbor St, Rockland, ME 04841')`, [ORG, SLUG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`, [USER, ORG, ADMIN, pw]);
   const tok = await login(ADMIN);
   ok("fixture admin signed in", !!tok, tok);

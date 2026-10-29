@@ -245,14 +245,13 @@ async function mailTypesOnForDonor(donorId) {
 // FIX-57: an in-process suite waits for the server's own readiness check
 // (GET /ready: schema built, database answering), never a fixed sleep. A
 // 3.5 s "boot DDL settles" went red under load ("Database initializing").
-async function untilReady({ timeout = 120000 } = {}) {
-  const base = process.env.BASE || BASE, end = Date.now() + timeout;
-  for (;;) {
+async function untilReady({ base = process.env.BASE || BASE, tries = 1200 } = {}) {
+  for (let i = 0; i < tries; i++) {   // 100 ms apart: two minutes, counted, not read off the clock
     const r = await fetch(base + "/ready").then(x => x.json()).catch(() => null);
     if (r && r.ready) return true;
-    if (Date.now() > end) throw new Error("the server never became ready at " + base);
     await new Promise(res => setTimeout(res, 100));
   }
+  throw new Error("the server never became ready at " + base);
 }
 
 module.exports = { untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
