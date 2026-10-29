@@ -373,10 +373,18 @@ async function runDataHealth(orgId, { trigger, importId = null, actorId = "syste
   // WIRE-1: new duplicates from an import are a job for an admin, not a count
   // nobody opens. One task per run (the open-task check stops a repeat).
   let taskId = null;
+  // FIX-59: this run can be the background re-check after an import, racing
+  // an Undo pressed straight away. Undo holds this lock while it reverses the
+  // run (and removes this task); under it, a reversed run gets no task, so a
+  // task can never outlive its import.
   if (importId && fresh > 0 && openAdminTask) {
-    taskId = await openAdminTask(orgId, {
-      title: `Review ${fresh} possible duplicate${fresh === 1 ? "" : "s"} from the import in Data health`,
-      actorId: `system:data-health/import/${importId}`, actorName,
+    taskId = await withAdvisoryLock(`import-undo:${orgId}:${importId}`, async () => {
+      const [imp] = await query("SELECT reversed_at FROM imports WHERE id=? AND org_id=?", [importId, orgId]);
+      if (imp && imp.reversed_at) return null;
+      return openAdminTask(orgId, {
+        title: `Review ${fresh} possible duplicate${fresh === 1 ? "" : "s"} from the import in Data health`,
+        actorId: `system:data-health/import/${importId}`, actorName,
+      });
     }).catch(e => { console.error("[data-health] duplicates task:", e.message); return null; });
   }
   return { id, counts: publicCounts(c), newDuplicates: fresh, taskId };
@@ -399,7 +407,9 @@ function recheckSoon(orgId, trigger, { importId = null } = {}) {
   if (!orgId) return;
   const prev = rechecks.get(orgId);
   if (prev) clearTimeout(prev.timer);
-  const ask = { trigger, importId: importId || (prev && prev.importId) || null };
+  // only an import's own re-check speaks for an import: an undo, a merge or a
+  // delete that supersedes it never inherits the run (it may be the run undone)
+  const ask = { trigger, importId: trigger === "import" ? (importId || (prev && prev.importId) || null) : null };
   const timer = setTimeout(() => {
     rechecks.delete(orgId);
     runDataHealth(orgId, ask).catch(e => console.error("[data-health] recheck:", e.message));

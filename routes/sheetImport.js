@@ -999,12 +999,17 @@ async function runJob(req, body, importId, who) {
       if (r.status !== 201) { const e = new Error("refused"); e.refused = r; throw e; }
       return r;
     }));
+    // FIX-59 · DATA HEALTH IS CURRENT. The import's own check runs inside the
+    // job, before it says done, so its "Review N possible duplicates" task is
+    // part of the run the moment she sees the receipt (and Undo takes it). A
+    // check that fails never fails the import: it is a read.
+    await require("./dataHealth").runDataHealth(orgId, { trigger: "import", importId })
+      .catch(e => console.error("[sheet-import] data health:", e.message));
     await finishJob(importId, "done", { status: out.status, body: out.body });
     await saveMappingAfter(orgId, body, who).catch(e => console.error("[sheet-import] saved mapping:", e.message));
     // after the commit, outside it: the one after-change step for everyone touched
     await require("../afterChange").afterChange(orgId, out.touched, { door: "sheet_import", history: true })
       .catch(e => console.error("[sheet-import] after change:", e.message));
-    require("./dataHealth").recheckSoon(orgId, "import", { importId });   // FIX-59: Data health is current
   } catch (e) {
     if (e && e.refused) { await finishJob(importId, "failed", e.refused, e.refused.body.message); return; }
     console.error("[sheet-import] job failed, rolled back:", importId, e && (e.stack || e.message));

@@ -35,6 +35,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilPlusDays, browserLegOrSkip, BASE } = require("./helpers");
+const { testNow } = require("./clock");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import");
@@ -189,7 +190,7 @@ async function eventList(tok) {
   };
   const guest = (id, status, o = {}) => q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,quantity,checked_in_at,table_label,table_id)
                                            VALUES ($1,$2,$3,$4,(SELECT name FROM donors WHERE id=$4),$5,$6,$7,$8,$9)`,
-    ["ea_" + id, EV, ORG, id, status, o.qty || 1, o.at ? new Date().toISOString() : null, o.table ? "Table 2" : null, o.table ? "et_fr2_m2" : null]);
+    ["ea_" + id, EV, ORG, id, status, o.qty || 1, o.at ? new Date(testNow()).toISOString() : null, o.table ? "Table 2" : null, o.table ? "et_fr2_m2" : null]);
   // through the one gift path (and the pledge route), then tied to the event as the registration page ties its gift
   const gift = async (id, amt) => {
     const r = await api("POST", `/donors/${id}/gifts`, tok, { amount: amt, date: civilPlusDays(-20), paymentMethod: "Check" });
