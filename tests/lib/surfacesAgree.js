@@ -134,6 +134,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     q(`SELECT i.id, i.migration_source, i.gifts_created, i.shape,
               (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_rows,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_cents,
+              (SELECT COALESCE(SUM(ROUND(r.received*100)),0)::bigint FROM insight_reviews r JOIN gifts g ON g.id = r.gift_id AND g.org_id = r.org_id
+                WHERE r.org_id = i.org_id AND g.import_id = i.id AND r.decision = 'partly') AS partly_cents,
               (i.summary_json->'giftLine'->>'rows')::int AS line_rows
          FROM imports i WHERE i.org_id = $1 AND i.reversed_at IS NULL ORDER BY i.committed_at ASC, i.id ASC`, [orgId]),
     q(`SELECT gr.id, gr.name, (SELECT COUNT(*)::int FROM group_members m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
@@ -463,7 +465,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (imp.shape !== "sheet" || !shown || shown.dollarsGiven === undefined) continue;
       const made = Number(imp.line_rows != null ? imp.line_rows : imp.gifts_created);
       if (imp.gift_rows !== made) continue;   // a gift was removed since: the stored receipt is history
-      agree(`import ${imp.id} given`, [["its gifts in the database", Number(imp.gift_cents)], ["the Imports list", cents(shown.dollarsGiven)]], money);
+      // A row marked Partly a gift later (HOME-3) is a smaller gift now; the
+      // receipt still says what the file brought, which is that gift plus the
+      // value received that went to Finance.
+      agree(`import ${imp.id} given`, [["its gifts in the database (plus any value received on rows marked Partly a gift)", Number(imp.gift_cents) + Number(imp.partly_cents || 0)], ["the Imports list", cents(shown.dollarsGiven)]], money);
     }
   }
 
