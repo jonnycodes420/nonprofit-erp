@@ -26,6 +26,7 @@ import { PrivacyPanel } from "./PrivacyPanel";
 import { MailTypesSettings, GoingOut, MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
+import ImportGiftLine from "./ImportGiftLine";   // FIX-58: one accounting
 import { RecordLink } from "./RecordLink";
 import { fmtInZone } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
@@ -2027,7 +2028,7 @@ function ImportsHistory(){
                       style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.green,cursor:"pointer",textAlign:"left"}}>
                       {r.name}
                     </button>
-                    {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile, open for the finding.</div>}
+                    {r.reconciled===false&&r.state!=="undone"&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile, open for the finding.</div>}
                     {/* FIX-52: a spreadsheet import still being written, or one rolled back */}
                     {(r.state==="in_progress"||r.state==="failed")&&<div data-testid="imports-state" style={{fontSize:11.5,color:r.state==="failed"?T.terra700:T.greenDk,marginTop:2}}>{r.sentence}</div>}
                     {r.state==="undone"&&<div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>Undone</div>}
@@ -2055,11 +2056,12 @@ function ImportsHistory(){
                       </button>
                     )}
                   </td>
-                  <td style={td}>{r.committedOn||""}</td>
+                  <td style={td}>{r.committedOn?displayDate(r.committedOn):""}</td>
                   <td style={td}>{r.by||"Not set"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.peopleSentence?(r.peopleRowsIn??(r.donorsCreated+(r.peopleMatched||0))):r.rowsIn)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
-                  <td style={{...td,textAlign:"right"}}>{fmtMoney(r.dollarsIn)}</td>
+                  {/* FIX-58: what came in as gifts, and what is pledged: never one sum */}
+                  <td data-testid="imports-dollars" style={{...td,textAlign:"right"}}>{r.dollarsInWords||fmtMoney(r.dollarsIn)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2074,9 +2076,12 @@ function ImportsHistory(){
             <div data-testid="import-receipt">
               <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>{/* FIX-55: a contacts file adds people, not donors */}People added</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftsCreated)}</div></div>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftLine?open.giftLine.rows:open.giftsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Given</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsGiven??open.dollarsCreated)}</div></div>
+                {open.dollarsPledged>0&&<div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Pledged</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsPledged)}</div></div>}
               </div>
+              {/* FIX-58: one accounting, each part opening its rows */}
+              {open.giftLine&&<ImportGiftLine line={open.giftLine} importId={open.id} style={{marginBottom:12}}/>}
               {/* HARDEN-1: a file of people is counted in people, never "0 rows in the file" */}
               {open.peopleSentence ? <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>{open.peopleSentence}</div> :
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>

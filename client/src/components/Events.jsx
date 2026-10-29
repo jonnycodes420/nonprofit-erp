@@ -192,7 +192,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
           {[
             ["Goal", goal ? fmtFull(goal) : "None set", null, "The amount this event is aiming at."],
             ["Raised", fmtFull(raised), "raised", money ? money.definitions.raised : "Every gift attributed to this event, at its full amount."],
-            ["Registered", String(registered), "registered", "People on the list who have not cancelled. A ticket for two counts as two."],
+            ["Registered", String(registered), "registered", "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted."],
           ].map(([label, value, rowsKey, sentence]) => label === "Raised" && money ? (
             <div key={label} data-testid="ev-card-raised" title={sentence} onClick={e => e.stopPropagation()}
               style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px", textAlign: "left" }}>

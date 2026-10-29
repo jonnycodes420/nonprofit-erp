@@ -118,7 +118,7 @@ export const QPQ_DISCLOSURE =
 export const EVENT_FIGURES = {
   raised: "Every gift attributed to this event: tickets, sponsorships and anything given on the night. The full amount paid, not the deductible part.",
   goal: "What the event was aiming at. Set when the event was created, and changed by a person.",
-  registered: "People on the guest list who have not cancelled. A ticket for two counts as two.",
+  registered: "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted.",
   attended: "People marked as having come. Nobody is counted as attending until somebody says they did.",
   firstTime: "People whose FIRST gift to you was this event. An event that brings new donors has done something a number on its own cannot show.",
   sponsors: "Sponsorships sold, at any level. A sponsorship that has not been paid yet is a pledge and is counted here as sold.",
