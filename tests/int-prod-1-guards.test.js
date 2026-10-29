@@ -9,13 +9,13 @@
 // one paging field false, and nothing said which guard.
 //
 //   §1  a row written to Postgres BY DESIGN (the seed's shape) does not count
-//   §2  a put whose S3 upload fails DOES count (the alarm still fires)
+//   §2  a put whose S3 upload fails is refused with a 503 and stores nothing (FIX-58)
 //   §3  guardFailures names the failing guard and nothing else
 //   §4  /health carries guardsFailed, and it agrees with guardsOk
 //
 // What turns it red: counting storage='db' without s3_fallback (main before
-// this build) turns §1 red; dropping the s3_fallback flag from the catch in
-// assetStore.putThemeAsset turns §2 red.
+// this build) turns §1 red; writing a failed put to Postgres again (main before
+// FIX-58) turns §2 red.
 //
 // Standard scratch stack (tests/README.md).
 
@@ -50,16 +50,28 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   const afterSeed = await assetStore.refreshAssetFallbackCount();
   ok("§1 a seeded Postgres asset is not counted as a failed S3 put", afterSeed === before, { before, afterSeed });
 
-  // ── §2 · A FAILED S3 PUT STILL COUNTS ──────────────────────────────────
-  const sinceBoot0 = assetStore.assetHealth().dbFallbackSinceBoot;
-  const put = await assetStore.putThemeAsset({ orgId: ORG, kind: "media", contentType: "image/png",
-    buffer: crypto.randomBytes(64) });
-  const [row] = await q(`SELECT storage, s3_fallback FROM portal_assets WHERE id=$1`, [put.id]);
-  ok("§2 a put whose S3 upload fails lands in Postgres marked as a fallback",
-     row && row.storage === "db" && row.s3_fallback === true, row);
+  // ── §2 · FIX-58: A FAILED S3 PUT IS REFUSED, NEVER KEPT IN POSTGRES ───
+  // Prod read themeAssets.dbFallbackRows FALSE: with S3 configured, a put that
+  // failed every try was written to Postgres (s3_fallback). Now the upload
+  // fails loudly and nothing is stored. Red on main: the put resolved and a
+  // Postgres row appeared.
+  const failed0 = assetStore.assetHealth().s3PutFailedSinceBoot || 0;
+  const rows0 = (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1`, [ORG]))[0].n;
+  let thrown = null;
+  try {
+    await assetStore.putThemeAsset({ orgId: ORG, kind: "media", contentType: "image/png", buffer: crypto.randomBytes(64) });
+  } catch (e) { thrown = e; }
+  ok("§2 a put whose S3 upload fails every try is refused, loudly", !!thrown && thrown.code === "asset_store_unavailable" && thrown.status === 503, thrown && thrown.message);
+  const rows1 = (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1`, [ORG]))[0].n;
+  ok("§2 …and nothing is written to Postgres", rows1 === rows0, { rows0, rows1 });
   const afterFail = await assetStore.refreshAssetFallbackCount();
-  ok("§2 …and the fallback count goes up by exactly one", afterFail === before + 1, { before, afterFail });
-  ok("§2 …and the since-boot counter saw it", assetStore.assetHealth().dbFallbackSinceBoot === sinceBoot0 + 1);
+  ok("§2 …so the fallback count does not move", afterFail === before, { before, afterFail });
+  ok("§2 …and /health's since-boot counter of refused puts saw it", assetStore.assetHealth().s3PutFailedSinceBoot === failed0 + 1, assetStore.assetHealth());
+  // The same refusal through a real upload route answers 503 with its sentence.
+  // (The server under test has no bucket; this module's env does, so the route
+  // half is the error handler's mapping, checked on its source.)
+  const srvSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  ok("§2 the error handler answers an asset-store refusal with a 503", /asset_store_unavailable[\s\S]{0,200}status\(503\)/.test(srvSrc));
 
   // ── §3 · THE FAILING GUARD BY NAME ─────────────────────────────────────
   const now = Date.now();

@@ -48,9 +48,10 @@
           var seg = location.pathname.replace(/\/+$/, "").split("/").slice(2);
           if (!seg[0] || seg.length > 3) return;
           var url = api + "/org/" + seg[0] + (seg[2] ? "/giving-page/" + seg[1] + "/fundraiser/" + seg[2] + "/public"
-            : seg[1] ? "/giving-page/" + seg[1] + "/public" : "/public");
+            : seg[1] ? "/giving-page/" + seg[1] + "/public"
+            : "/public" + (/[?&](memberships(=|&|$)|membership=)/.test(location.search) ? "?memberships=1" : ""));
           var m = /(?:^|; )steward_give_ab=([ab])(?:;|$)/.exec(document.cookie);
-          if (m) url += "?v=" + m[1];
+          if (m) url += (url.indexOf("?") < 0 ? "?" : "&") + "v=" + m[1];
           var box = window.__givePrefetch = {};
           var ask = function (u) {
             box[u] = fetch(u).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }, function () { return { ok: false, data: null }; }); });

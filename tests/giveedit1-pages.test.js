@@ -189,6 +189,26 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
   ok("§11 a step still reads mid-sentence", stepInSentence("Send the proposal", ["Ana Ruiz"]) === "send the proposal");
   ok("§11 Home uses it", fs.readFileSync(path.join(ROOT, "client/src/components/Dashboard.jsx"), "utf8").includes("stepInSentence(t.nextStep.label"));
 
+  // §14 FIX-58 — an org with no payments connected has no public form that can
+  // take a gift: the org-wide form is "not open yet" like its giving pages, a
+  // gift posted anyway is refused, and the memberships page (?memberships=1)
+  // still reads the org's brand. Red on main: /org/<slug>/public answered 200.
+  await q(`UPDATE orgs SET stripe_connected=false WHERE id=$1`, [ORG]);
+  try {
+    const orgForm = await api("GET", `/org/${SLUG}/public`, null);
+    ok("§14 the org-wide form is not open without payments", orgForm.status === 404 && orgForm.body.notOpen === true && /isn't open yet/.test(orgForm.body.error || ""), { status: orgForm.status, body: orgForm.body });
+    const pagePub = await pub("spring-paddle");
+    ok("§14 …nor is a giving page", pagePub.status === 404 && pagePub.body.notOpen === true, pagePub.status);
+    const members = await api("GET", `/org/${SLUG}/public?memberships=1`, null);
+    ok("§14 the memberships page still reads the org's brand", members.status === 200 && members.body.org && members.body.org.theme, members.status);
+    const gift = await api("POST", `/donate/${SLUG}`, null, { amount: 25, firstName: "Pat", lastName: "Lee", email: "pat.ge1@example.org", frequency: "once" });
+    ok("§14 a gift posted anyway is refused", gift.status >= 400 && gift.status < 600 && !gift.body.url, { status: gift.status, body: gift.body });
+  } finally {
+    await q(`UPDATE orgs SET stripe_connected=true WHERE id=$1`, [ORG]);
+  }
+  const back = await api("GET", `/org/${SLUG}/public`, null);
+  ok("§14 with payments connected the org-wide form is open", back.status === 200 && back.body.org, back.status);
+
   // §12 — every card has the same four buttons (browser leg).
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "assets"))) return "client/dist not built";
