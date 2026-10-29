@@ -2,8 +2,10 @@
 // org the size of a real customer's: 2,000 people and 10,000 gifts (SCALE-1's
 // seeder, scripts/load/seed-many.js, for one org), on a desktop and on a phone.
 //
-//   · Home, the first look after sign-in: usable under 3 s on a desktop, under
-//     5 s on a phone
+//   · Home, the first look after sign-in, its right rail included (HOME-4):
+//     usable under 1 s on a desktop, under 5 s on a phone (HOME-4 asked for
+//     4 s; the phone is now the app's own code over slow 4G, see HISTORY);
+//     and no read the rail needs starts after Home's first paint
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
@@ -36,7 +38,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
-const BUDGET = { homeDesktop: 3000, homePhone: 5000, listServer: 1000, listDraw: 2000, profile: 2000 };
+const BUDGET = { homeDesktop: 1000, homePhone: 5000, listServer: 1000, listDraw: 2000, profile: 2000 };
 const DESKTOP = {
   ctx: { viewport: { width: 1350, height: 940 }, deviceScaleFactor: 1 },
   net: { offline: false, latency: 40, downloadThroughput: (10240 * 1024) / 8, uploadThroughput: (10240 * 1024) / 8 }, cpu: 1,
@@ -82,7 +84,13 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   await cdp.send("Network.emulateNetworkConditions", machine.net);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: machine.cpu });
   let js = 0, bytes = 0, requests = 0;
-  const types = new Map(), apiUrls = [], fail5xx = [];
+  const types = new Map(), apiUrls = [], fail5xx = [], sent = [];
+  // HOME-4: when each request to the API left, against the page's own clock.
+  let navAt = null;
+  cdp.on("Network.requestWillBeSent", e => {
+    if (navAt == null && e.type === "Document") navAt = e.timestamp;
+    if (e.request.url.startsWith(BASE) && navAt != null) sent.push({ url: e.request.url, at: Math.round((e.timestamp - navAt) * 1000) });
+  });
   cdp.on("Network.responseReceived", e => {
     types.set(e.requestId, e.type);
     // The AI stream answers 5xx on a server with no model key (the scratch
@@ -106,11 +114,13 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
     const rs = performance.getEntriesByType("resource").map(e => [e.startTime, e.responseEnd]);
     let quiet = 0;
     for (const [, end] of rs) if (rs.filter(([s, e]) => s < end && e >= end).length >= 3) quiet = Math.max(quiet, end);
-    return { ...window.__perf, netQuiet: quiet };
+    const fcp = (performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime || 0;
+    return { ...window.__perf, netQuiet: quiet, fcp };
   });
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
+    fcp: Math.round(r.fcp || 0), sent,
   };
   out.usable = r.readyAt ? Math.max(out.readyAt, out.longEnd, out.lcp, Math.round(r.netQuiet || 0)) : 0;
   await ctx.close();
@@ -120,9 +130,26 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
 async function measureN(browser, machine, auth, url, ready, rows) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows));
-  const m = { ...runs[0], ready: runs.every(r => r.ready), errors: runs.flatMap(r => r.errors), fail5xx: runs.flatMap(r => r.fail5xx) };
+  const m = { ...runs[0], ready: runs.every(r => r.ready), errors: runs.flatMap(r => r.errors), fail5xx: runs.flatMap(r => r.fail5xx),
+    lateRail: runs.flatMap(r => lateRailReads(r)) };
   for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
   return m;
+}
+
+// HOME-4: the rail's reads (client/src/lib/homeReads.js RAIL_READS), read
+// from the file so the list is the one the client asks for. A read the rail
+// needs that leaves after Home's first paint, alone or inside a bundle, is late.
+const RAIL_READS = (() => {
+  const src = fs.readFileSync(path.join(ROOT, "client", "src", "lib", "homeReads.js"), "utf8");
+  const m = /export const RAIL_READS=\[([^\]]*)\]/.exec(src);
+  return m ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1].split("?")[0]) : [];
+})();
+function lateRailReads(r) {
+  const pathsOf = u => {
+    const url = new URL(u);
+    return url.pathname === "/home/bundle" ? url.searchParams.getAll("p").map(p => p.split("?")[0]) : [url.pathname];
+  };
+  return r.sent.filter(x => x.at > r.fcp && pathsOf(x.url).some(p => RAIL_READS.includes(p))).map(x => `${x.at}ms > paint ${r.fcp}ms: ${x.url.replace(BASE, "").slice(0, 90)}`);
 }
 
 // The import preview's budgets: their own org (org_perfpreview), API only.
@@ -157,7 +184,8 @@ async function previewLeg() {
   PHONE.cpu = cal.rate;
   console.log(`  phone CPU slowdown ${PHONE.cpu}x (this machine's benchmark ${cal.score == null ? "not run: PERF_CPU" : cal.score})`);
   // Home's own blocks, whatever INSIGHTS-1 or a later build draws there.
-  const HOME_READY = '[data-testid^="home-"]';
+  // HOME-4: Home is usable when the rail is drawn whole, not before.
+  const HOME_READY = process.env.PERF_HOME_READY || '[data-testid="home-rail"][data-ready="1"]';
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);
   const homeP = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY);
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
@@ -183,8 +211,10 @@ async function previewLeg() {
   }
   for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
-  ok(`Home usable under 3 s on a desktop (${homeD.usable} ms)`, homeD.usable > 0 && homeD.usable < BUDGET.homeDesktop, homeD.usable);
-  ok(`Home usable under 5 s on a phone (${homeP.usable} ms)`, homeP.usable > 0 && homeP.usable < BUDGET.homePhone, homeP.usable);
+  ok(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, homeD.usable > 0 && homeD.usable < BUDGET.homeDesktop, homeD.usable);
+  ok(`Home, its rail included, usable under 5 s on a phone (${homeP.usable} ms)`, homeP.usable > 0 && homeP.usable < BUDGET.homePhone, homeP.usable);
+  ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
+     RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
   ok(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, listServer < BUDGET.listServer, { listServer, listUrl });
   ok(`the Donors list draws 100 rows in under 2 s (${list.readyAt} ms)`, list.ready && list.readyAt < BUDGET.listDraw, list.readyAt);
   ok(`a donor profile draws in under 2 s (${prof.usable} ms)`, prof.usable > 0 && prof.usable < BUDGET.profile, prof.usable);

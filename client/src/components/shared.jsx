@@ -381,7 +381,7 @@ export function contactGap(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
-    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:${T.bg};-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
+    html,body{margin:0;padding:0;overflow-x:hidden;overflow-x:clip;max-width:100vw;background:${T.bg};-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
@@ -568,6 +568,12 @@ export function GlobalStyles() {
       .home-shell-top{flex-direction:row;align-items:stretch;}
       .home-shell-main{flex:1;}
       .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
+      /* HOME-4, the rail stays in view while the deck and the page scroll, so
+         its column is never a blank one. The column keeps its hairline full
+         height; what is in it sticks under the 52px top bar. The panel clips
+         rather than hides its overflow, which would stop the stick. */
+      .home-shell{overflow:clip;}
+      .home-rail-inner{position:sticky;top:68px;max-height:calc(100vh - 84px);overflow-y:auto;}
 
     }
     /* A row in the rail is pressable and says so quietly. */

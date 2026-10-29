@@ -42,7 +42,8 @@ export const HOME_SECTIONS = [
   // ── hers, at 7:40 ────────────────────────────────────────────────────────
   { id: "setup",   label: "Set up Steward", hideable: true,  surface: "home" },
   { id: "thread",  label: "The Thread",     hideable: false, surface: "home" },
-  { id: "drift",   label: "Drift",          hideable: true,  surface: "home" },
+  // HOME-4: Drift left Home. Its people are moves in the deck and one chip
+  // under it opens Drift on the Donors page (a saved "drift" id drops on merge).
   // BUILD-86 — the failing monthly gifts, WITH the donors' names on them.
   // Split out of `retentionPipeline`, where they were a count inside a card of
   // board metrics; a failing gift is the most actionable thing on this screen

@@ -54,10 +54,31 @@ const cardOut = c => ({
     installments: it.installments, state: it.state, down: it.down, levels: it.levels, what: it.what })),
 });
 
+// HOME-4: Home has no Drift section, so the deck carries Drift's people
+// (insights.js withDrift) and Drift's counts for the chip under it. Drift's
+// list is GET /drift's own answer, read in this process as the person asking.
+async function deckWithDrift(req, deck, asOf) {
+  let drift = null;
+  try {
+    const r = await require("../inProcess").get("/drift?all=1&includeMedium=1", { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress });
+    if (r.status === 200) drift = JSON.parse(r.body);
+  } catch { /* the deck stands without Drift */ }
+  if (!drift) return deck;
+  const outs = await query(`SELECT DISTINCT ON (item_key) item_key, state, until::text AS until FROM insight_outcomes
+                             WHERE org_id=? AND kind='drift' ORDER BY item_key, created_at DESC`, [req.user.orgId]);
+  const gone = new Set(outs.filter(o => o.state !== "snoozed" || (o.until && o.until > asOf)).map(o => o.item_key));
+  const c = drift.counts || {};
+  return { ...I.withDrift(deck, drift.list || [], { asOf, gone }),
+    drift: { high: Number(c.driftingHigh) || 0, medium: Number(c.driftingMedium) || 0 } };
+}
+
 app.get("/insights", requireAuth, wrap(async (req, res) => {
   const asOf = await asOfFor(req);
   const r = await D.insightsFor(req.user.orgId, asOf);
   const first = req.query.view === "first";
+  // HOME-4: ?view=deck is Home's: the deck without the cards (the cards are
+  // most of the bytes, and Home reads them only when a panel opens).
+  const deckOnly = req.query.view === "deck";
   // Review leads the first look (the totals in it wait on her); on Home it
   // follows the cards about people (Jonathan, 27 Oct).
   let cards = r.cards.filter(c => !(first && c.homeOnly));
@@ -68,7 +89,7 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   const events = first ? await require("../numbers").eventsRaised(req.user.orgId, { withMoney: true, limit: 3 }) : undefined;
   res.json({ events,
     asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: r.ladder, centsSentence: r.centsSentence,
-    stats: r.stats, cards: cards.map(cardOut), deck: first ? undefined : r.deck,
+    stats: r.stats, cards: deckOnly ? [] : cards.map(cardOut), deck: first ? undefined : await deckWithDrift(req, r.deck, asOf),
     sentences: {
       ladder: "Each giving unit (a household, or a person on their own) sits on one rung, from their own giving. Planned sits beside a rung.",
       never: "Steward never sends these notes for you. Every draft waits for your click.",

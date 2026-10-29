@@ -213,6 +213,57 @@ async function greetingFirst(browser, demoAuth) {
     });
     ok(`§home-3 Home ${what} at ${vp.width}: the greeting is first, the date is its heading, everything else follows`,
        r.root && r.firstInHead && r.greet && r.day === "H1" && r.afterIt, r);
+    // HOME-4: the rail draws whole (Today with no zeros, at most three calls,
+    // To confirm in one line), the deck's extras are chips hidden at zero, no
+    // Drift section and no empty Thread, setup where the org is, and an org
+    // with no donors gets one friendly card and no pace sentence.
+    await page.waitForSelector('[data-testid="home-rail"][data-ready="1"]', { timeout: 20000 }).catch(() => {});
+    const h = await page.evaluate(() => {
+      const t = s => { const e = document.querySelector(s); return e ? e.innerText.replace(/\s+/g, " ").trim() : null; };
+      const n = s => document.querySelectorAll(s).length;
+      return { rail: n('[data-testid="home-rail"][data-ready="1"]'), today: t('[data-testid="home-today"]'), calls: n('[data-testid="home-call-row"]'),
+        callsAll: t('[data-testid="calls-see-all"]'), confirm: t('[data-testid="home-to-confirm"]'), oldTiles: n('[data-testid^="rail-tile-"]'),
+        chips: [...document.querySelectorAll('[data-testid^="moves-chip-"]')].map(e => e.innerText.trim()), oldLinks: n('[data-testid="moves-quiet"]'),
+        drift: n("#dash-drifting"), thread: n("#dash-thread"), threadEmpty: n('[data-testid="thread-empty-state"]'),
+        first: n('[data-testid="home-setup-first"]'), railSetup: n('[data-testid="home-setup-rail"]'), setupLine: n('[data-testid="home-setup-line"]'),
+        noDonors: t('[data-testid="moves-no-donors"]'), tabs: n('[data-testid^="moves-tab-"]'), pace: n('[data-testid="home-pace"]'),
+        zeroTabs: [...document.querySelectorAll('[data-testid^="moves-tab-"]')].filter(e => e.dataset.count === "0" && e.getAttribute("aria-selected") !== "true").length,
+        never: n('[data-testid="moves-never"]'), say: n('[data-testid="move-card"] blockquote') };
+    });
+    ok(`§home-4 Home ${what} at ${vp.width}: the rail draws whole, Today says no zero, at most three calls, To confirm is one line`,
+       h.rail === 1 && h.oldTiles === 0 && !!h.today && !/(^|\s)0\s/.test(h.today) && h.calls <= 3 && (!h.callsAll || /^See all [\d,]+$/.test(h.callsAll))
+       && !!h.confirm && !/\n/.test(h.confirm) && h.confirm.length < 80, h);
+    ok(`§home-4 Home ${what} at ${vp.width}: chips hide at zero, no Drift section, no empty Thread, no loose links, no zero tabs`,
+       h.chips.every(c => !/(^|\s)0\s/.test(c)) && h.oldLinks === 0 && h.drift === 0 && h.threadEmpty === 0 && h.zeroTabs === 0 && h.setupLine === 0 && (h.never === 0 || h.say > 0), h);
+    if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card with Import and sample data, no tabs, no pace`,
+       h.first === 1 && h.railSetup === 0 && /Bring in your donors/.test(h.noDonors || "") && /Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
+       && h.tabs === 0 && h.pace === 0 && h.thread === 0, h);
+    if (what === "mid-setup") ok(`§home-4 mid-setup at ${vp.width} (one step done): still the full setup card above Your moves`, h.first === 1 && h.railSetup === 0, h);
+    await ctx.close();
+  }
+  // HOME-4: three steps done moves setup to the top of the rail, and "I'll
+  // finish later" on a new org's card does the same, for good.
+  const { q: q2 } = require("./helpers");
+  await q2(`UPDATE orgs SET receipt_address='1 Test Way, Testville, TS 00000', stripe_account_id='acct_test_home4' WHERE id='org_home3_setup'`);
+  for (const [org, later] of [[cases[2][1], false], [cases[1][1], true]]) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [org.token, JSON.stringify(org.user), JSON.stringify(org.org)]);
+    const page = await ctx.newPage();
+    await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector('[data-testid="home-rail"][data-ready="1"]', { timeout: 30000 }).catch(() => {});
+    if (later) {
+      await page.click('[data-testid="setup-later"]', { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector('[data-testid="home-rail"][data-ready="1"]', { timeout: 30000 }).catch(() => {});
+    }
+    const s2 = await page.evaluate(() => ({ first: document.querySelectorAll('[data-testid="home-setup-first"]').length,
+      rail: (document.querySelector('[data-testid="home-setup-rail"]') || {}).innerText || null,
+      top: !!document.querySelector('[data-testid="home-rail"] > [data-testid="home-setup-rail"]:first-child') }));
+    ok(later ? "§home-4 \"I'll finish later\" moves the new org's setup card to the top of the rail, and it stays there"
+             : "§home-4 three steps done: setup is the rail's first card, with the count, the next step and Show all steps",
+       s2.first === 0 && s2.top && /Set up Steward · \d+ of \d+/.test(s2.rail || "") && /Show all steps/.test(s2.rail || "") && (later || /Next:/.test(s2.rail || "")), s2);
     await ctx.close();
   }
 }

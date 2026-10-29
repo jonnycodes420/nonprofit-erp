@@ -9,7 +9,7 @@ import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
 import { PinnedAnswers } from "./AskPanel";
 import { SkeletonBar } from "./Skeleton";
-import { HOME_FIRST_READS, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2
+import { HOME_FIRST_READS, RAIL_READS, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
@@ -39,12 +39,13 @@ import { DonorLink } from "./RecordLink";
 import { Linked, RefLink } from "./Linked";
 import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
-import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
 import { openTellSteward } from "./TellSteward";   // AGENT-5: one input, Atlas over the page
 import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
 import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
+import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
+import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads } from "./HomeRail";   // HOME-4
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -195,122 +196,13 @@ function ImpactLine({ impact }) {
   );
 }
 
-// ── BUILD-35: "Set up Steward" activation checklist ──────────────────────────
-// Each row's done-state comes computed live from GET /org/setup-status — never
-// stored per-step — so an item checks itself off however the underlying thing
-// became true (wizard, Settings, a teammate). The server owns the computation;
-// this map owns the words and the EXACT deep link per item (a specific screen,
-// never a tab root). The `team` key only arrives on Team tier (plan-graceful:
-// hidden on Core, not shown-and-locked).
-const SETUP_ITEM_META = {
-  donors:     { label: "Import your donors",             why: "bring in the people who already believe in you, and Steward starts noticing who has gone quiet",                                cta: "Import",  nav: ["donors", { openImport: true }] },
-  // BUILD-95 §4 — the label names the JOB, not our vendor. The why-line names
-  // BOTH halves, because genericising the label while Stripe is the only
-  // thing that works would be worse than the vendor's name: somebody picks
-  // Square, presses it, and hits a wall.
-  onlineGiving: { label: "Set up online giving",         why: "connect a card processor for your Steward giving pages, and connect the places you already take gifts so Steward sees them", cta: "Set up",  nav: ["settings", { section: "connections", focus: "giving" }] },
-  address:    { label: "Add your mailing address",       why: "goes in every email footer (CAN-SPAM) and clears the reminder banner",         cta: "Add",     nav: ["settings", { section: "receipts" }] },
-  givingPage: { label: "Publish a giving page",          why: "a shareable page your donors can give through today",                          cta: "Publish", nav: ["settings", { section: "giving" }] },
-  // BUILD-81 — the automation item is gone (it ticked on a fresh org that had
-  // done nothing). Logging a conversation is the real first act: it opens a
-  // thread, and the next step comes back to you.
-  conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
-  // INT-BUILD-1 Part 0 — the viewer's OWN inbox, so it ticks per person.
-  inbox:      { label: "Connect your inbox",             why: "Gmail or Outlook; your conversations with people on file log themselves",     cta: "Connect", nav: ["settings", { section: "connections", focus: "inbox" }] },
-  team:       { label: "Invite your team",               why: "add your fundraisers so everyone sees their own donors",                       cta: "Invite",  nav: ["settings", { section: "team" }] },
-  // BUILD-83 Part 5.3 — the closer.
-  sustainers: { label: "Move your monthly givers",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
-};
-
-function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
-  const { items, doneCount, totalCount, cardState } = status;
-
-  if (cardState === "collapsed") {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <button onClick={() => onSetCardState(null)}
-          aria-label={`Finish setting up Steward: ${doneCount} of ${totalCount} done`}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: T.white, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, color: T.ink2, cursor: "pointer" }}>
-          <span aria-hidden style={{ color: T.gold500 }}>◈</span>
-          Finish setup · {doneCount}/{totalCount}
-        </button>
-        {isAdmin && (
-          <button onClick={() => onSetCardState("hidden")} aria-label="Don't show the setup checklist again"
-            title="Don't show this again"
-            style={{ background: "none", border: "none", color: T.ink3, fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Set up Steward</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.ink2 }}>{doneCount} of {totalCount}</div>
-        <div style={{ flex: 1 }} />
-        {isAdmin && (
-          <button onClick={() => onSetCardState("collapsed")}
-            style={{ background: "none", border: "none", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline", padding: 2 }}>
-            I'll finish later
-          </button>
-        )}
-      </div>
-      {/* solid gold fill — bar LENGTH carries the meaning (no gradients) */}
-      <div aria-hidden style={{ height: 4, borderRadius: 2, background: T.bg3, overflow: "hidden", marginBottom: 10 }}>
-        <div style={{ height: "100%", width: `${totalCount ? Math.round((doneCount / totalCount) * 100) : 0}%`, background: T.gold500, borderRadius: 2 }} />
-      </div>
-      {items.map(item => {
-        const meta = SETUP_ITEM_META[item.key];
-        const detailLine = item.key === "sustainers" && item.detail
-          ? `${item.detail.total} in your file · ${item.detail.stopped} stopped`
-          : null;
-        if (!meta) return null;
-        if (item.done) {
-          return (
-            <div key={item.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2 }}>
-              <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", background: T.green600, color: T.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0 }}>✓</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: T.ink3 }}>{meta.label}</span>
-            </div>
-          );
-        }
-        // BUILD-79 Part 6 — donors on file with $0 of giving is NOT a done
-        // import: say so, offer the re-import path, and let an admin confirm
-        // the file genuinely had no gifts.
-        const giftGap = item.key === "donors" && item.needsGiftConfirm;
-        return (
-          <div key={item.key}>
-            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label}: ${meta.why}` })}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
-              <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
-                <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>
-                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving: an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine}. ${meta.why}` : meta.why)}
-                </span>
-              </span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{giftGap ? "Re-import" : meta.cta} →</span>
-            </div>
-            {giftGap && isAdmin && (
-              <button onClick={() => { apiFetch("/org/setup-confirm-no-gifts", { method: "POST", body: "{}" }).then(() => window.location.reload()).catch(() => {}); }}
-                style={{ background: "transparent", border: "none", padding: "0 0 6px 30px", color: T.ink3, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
-                My file genuinely had no gifts, mark this done
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
   // SCALE-2: Home's first reads in one request. Asked during the first
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
   // answer. The list is exactly what Home and its panels read when it opens.
-  useState(()=>{ if(surface==="home") prefetch(HOME_FIRST_READS); return null; });
+  useState(()=>{ if(surface==="home"){ prefetch(["/insights?view=deck"]); prefetch(RAIL_READS); prefetch(HOME_FIRST_READS); } return null; });   // HOME-4: the deck and the rail first, side by side
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   // BUILD-89 — which of the rail's two states is showing. `today` is the
@@ -576,7 +468,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // rule (GET /tasks/counts), and reloads whenever the Thread does.
   const [taskCounts,setTaskCounts]=useState(null);
   const loadTaskCounts=()=>apiFetch("/tasks/counts?scope=mine").then(setTaskCounts).catch(()=>setTaskCounts(c=>c||{failed:true}));
-  useEffect(()=>{loadTaskCounts();},[]);
+  // HOME-4: no mount effect of its own; loadThreads (on mount) asks for the counts once.
   const loadThreads=(sc=threadScope)=>{loadTaskCounts();return apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));};
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
   useStewardTold(()=>{loadThreads();});   // VOICE-4: the Thread re-reads when Tell Steward acts
@@ -590,7 +482,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // re-render (it did, in the live drive).
   const [setupCelebrate,setSetupCelebrate]=useState(false);
   // HOME-3: on Home the checklist is one line under the deck until she opens it.
-  const [setupOpen,setSetupOpen]=useState(false);
+  const [setupLoaded,setSetupLoaded]=useState(false);   // HOME-4: the rail waits for it
   useEffect(()=>{
     apiFetch("/org/setup-status").then(s=>{
       let seen=false,fired=false;
@@ -601,7 +493,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       if(s&&!s.complete){try{localStorage.setItem(`steward_setup_seen_${setupOrgId}`,"1");}catch{/* private mode */}}
       if(s&&s.complete&&seen&&!fired)setSetupCelebrate(true);
       setSetupStatus(s);
-    }).catch(()=>{}); // offline/error → no card, Home unaffected
+    }).catch(()=>{}).finally(()=>setSetupLoaded(true)); // offline/error → no card, Home unaffected
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
   const setSetupCardState=async(state)=>{
@@ -792,14 +684,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // "who" should never require a click just to discover. The full
     // MetricBreakdownPanel (opened via openDebtBreakdown/openRetentionBreakdown)
     // still reuses this same cached data for "see everything."
+    // HOME-4: the two breakdowns feed the board's hero cards; on Home they
+    // are read when a panel opens (openDebtBreakdown / openRetentionBreakdown),
+    // never on arrival over a phone's network.
     setDebtBreakdown(null);
+    setRetentionBreakdown(null);
+    if(surface==="home")return;
     setDebtBreakdownLoading(true);
     apiFetch(`/dashboard/stewardship-debt/breakdown?scope=${scope}`)
       .then(r=>setDebtBreakdown(r))
       .catch(()=>setDebtBreakdown({total:0,count:0,rows:[]}))
       .finally(()=>setDebtBreakdownLoading(false));
 
-    setRetentionBreakdown(null);
     setRetentionBreakdownLoading(true);
     apiFetch(`/dashboard/retention/breakdown?scope=${scope}`)
       .then(r=>setRetentionBreakdown(r))
@@ -2314,6 +2210,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {moveLine}
             </div>
           )}
+          {/* HOME-4 — on Home, the Thread draws only when it has conversations
+              to show; nothing logged (or nothing waiting) is no section at all. */}
+          {!(surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice)&&(
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
@@ -2477,6 +2376,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               Communications with their own count, and the un-receipted-gift
               prompt in Settings → Tax Receipts. */}
           </div>
+          )}
 
           {/* BUILD-83 Part 3.1 — "Today's Suggested Outreach" is GONE. The
               Thread and Drift are the outreach; a button that generates a third
@@ -2830,18 +2730,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <span aria-hidden>{"\u2190"}</span>{label}
     </button>
   );
-  // BUILD-92 B3 — NO NUMBER WITHOUT A DEFINITION, and the rail was the last
-  // place on Home carrying three bare ones. A label is what a number is called;
-  // a definition is what it counted. Each is one line of warm grey under the
-  // label, saying exactly which rows the tile would show if you pressed it.
-  const railTiles=[
-    {key:"open",n:!threadsData?null:threadsData.failed?"Not set":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
-     definition:"Every donor with a next step planned and not yet done."},
-    {key:"today",n:railDueToday,label:"Due today",
-     definition:"Your tasks and next steps due today, in your organization's timezone. The same count as Tasks, Today."},
-    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"Not set":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
-     definition:"A recurring card that declined in the last seven days and has not gone through since."},
-  ];
+  // HOME-4 — the rail's reads (the calls, the goal, To confirm, the email
+  // line) and the ones Home already makes for it (follow-ups, tasks due, cards
+  // failed, setup). The rail draws once all of them have settled. Each Today
+  // line keeps BUILD-92 B3's definition, on its title.
+  const railReads=useRailReads();
+  const railReady=railReads.ready&&setupLoaded&&threadsData!=null&&taskCounts!=null&&recurringHealth!=null;
+  const setupWhere=surface==="home"?setupStage(setupStatus):null;
   const railListFor=(key)=>{
     if(key==="birthdays") return {
       title:"Birthdays this week",
@@ -2935,56 +2830,39 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       );
     }
+    // HOME-4 — THE RAIL, CALM. Setup (mid-way), Today as one card with no
+    // zeros, the calls (three, then See all), To confirm in one line, the
+    // automatic email line, then the day's meetings. Nothing draws until every
+    // read the rail needs is back (they all left with Home's first reads, see
+    // lib/homeReads.js RAIL_READS); placeholders in this shape hold its place.
+    if(!railReady) return <HomeRailSkeleton/>;
+    const todayItems=[
+      {key:"followups",n:threadsData&&!threadsData.failed?(threadStat?.open||0):null,one:"follow-up",many:"follow-ups",
+       definition:"Every donor with a next step planned and not yet done.",onOpen:()=>setRailView({kind:"list",key:"open"})},
+      {key:"due",n:typeof railDueToday==="number"?railDueToday:null,one:"due today",many:"due today",
+       definition:"Your tasks and next steps due today, in your organization's timezone. The same count as Tasks, Today.",onOpen:()=>onNavigate&&onNavigate("tasks",{scope:"mine",view:"today"})},
+      {key:"failed",n:recurringHealth&&!recurringHealth.failed?railFailedThisWeek:null,one:"card failed",many:"cards failed",
+       definition:"A recurring card that declined in the last seven days and has not gone through since.",onOpen:()=>setRailView({kind:"list",key:"failed"})},
+      {key:"birthdays",n:birthdaysThisWeek.length,one:"birthday this week",many:"birthdays this week",
+       definition:"People on file whose birthday is today or in the six days after it.",onOpen:()=>setRailView({kind:"list",key:"birthdays"})},
+    ];
     return (
-      <div>
-        <span style={{...sSerif,display:"inline-block",marginBottom:12}}>Today</span>
-        {/* HOME-TIDY — the day is the header's line, so the rail does not say it
-            again. Three numbers side by side; each definition travels with its
-            label on the profile tiles' "?" (keyboard-reachable, BUILD-100). */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,margin:"0 -8px"}}>
-          {railTiles.map(tile=>(
-            <div key={tile.key} {...interactive(()=>tile.key==="today"?onNavigate&&onNavigate("tasks",{scope:"mine",view:"today"}):setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
-              className="home-rail-row" data-testid={"rail-tile-"+tile.key}
-              style={{padding:"10px 8px",borderRadius:10,borderTop:"none",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
-              {tile.n==null
-                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:34,padding:"2px 0"}}><SkeletonBar width={40} height={28}/></span>
-                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
-              <span style={{fontSize:12,lineHeight:1.35,color:T.ink3}}>
-                {(tile.short||tile.label).includes(" ")?(tile.short||tile.label).split(" ").slice(0,-1).join(" ")+" ":""}
-                <span style={{whiteSpace:"nowrap"}}>{(tile.short||tile.label).split(" ").slice(-1)[0]}
-                <span tabIndex={0} title={tile.definition} aria-label={tile.definition} data-testid={"rail-def-"+tile.key}
-                  onClick={e=>e.stopPropagation()}
-                  style={{marginLeft:4,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,width:13,height:13,
-                          display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span></span>
-              </span>
-            </div>
-          ))}
-        </div>
-        {/* FIX-22: one quiet line, only when somebody has a birthday this week. */}
-        {birthdaysThisWeek.length>0&&(
-          <div {...interactive(()=>setRailView({kind:"list",key:"birthdays"}),{label:`${birthdaysThisWeek.length} birthday${birthdaysThisWeek.length===1?"":"s"} this week`})}
-            className="home-rail-row" data-testid="rail-birthdays"
-            style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 12px",borderRadius:8,margin:"6px -12px 0"}}>
-            <span style={{flex:1,minWidth:0,fontSize:13,color:T.ink}}>Birthdays this week</span>
-            <span style={{flexShrink:0,fontSize:12,color:T.ink3}}>{birthdaysThisWeek.length}</span>
-          </div>
-        )}
-        {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
-        <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
-        {/* HOME-3 — the rail is Today, Calls to make, To confirm (the
-            thank-you clock) and the mailbox notice, then the day's meetings;
-            the moves are the deck's. */}
-        {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
-          <HomeThankClock onNavigate={onNavigate}/>
+      <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}>
+        {setupWhere==="rail"&&<SetupRailCard status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>}
+        <TodayCard items={todayItems}/>
+        <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} preload={railReads} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
+        {!editMode&&<>
+          <ToConfirmLine clock={railReads.clock} onNavigate={onNavigate}/>
           <MailboxBanner onNavigate={onNavigate}/>
           {/* SEND-GATE-2's line, where the approved HOME-3 mockup draws it: the foot of the rail. */}
           <HomeMailLine onNavigate={onNavigate}/>
           <div data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
-        </div>}
+        </>}
       </div>
     );
   })();
-  const todayRail=<div className="home-rail">{railBody}</div>;
+  // HOME-4: the rail column stretches beside the work; what is in it stays in view (sticky) on a wide screen.
+  const todayRail=<div className="home-rail"><div className="home-rail-inner">{railBody}</div></div>;
 
   const impactVisible=!!impact&&((impact.atRiskAmount||0)>0||(impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
@@ -3052,7 +2930,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
@@ -3148,23 +3026,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // dash-root the containing block for every position:fixed descendant —
   // dropping the set-goal modal (and any drill-down not portalled to body) at
   // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
-  // HOME-3 — SET UP STEWARD, OUT OF THE WAY. One quiet line under the deck
-  // ("Set up Steward · 5 of 8 done"), which opens the checklist in place.
-  const setupLine=(()=>{
-    if(surface!=="home"||!setupStatus||setupStatus.cardState==="hidden")return null;
+  // HOME-4 — SET UP STEWARD, WHERE A NEW ORG CAN SEE IT (HomeSetup.jsx). A
+  // new org gets the whole card here, under Ask and above Your moves; mid-way
+  // it is the rail's first card; done or dismissed, it is gone (Settings keeps
+  // it). The completion moment shows once, here.
+  const setupFirst=(()=>{
+    if(surface!=="home"||!setupStatus)return null;
     if(setupStatus.complete)return setupCelebrate?<GoldMoment moment="setup_complete" title="Steward is set up."
-      line="Donors in, giving connected, automations watching. This line retires itself, everything it linked to lives in Settings."/>:null;
-    return(
-      <div data-testid="home-setup-line">
-        <button type="button" onClick={()=>setSetupOpen(o=>!o)} aria-expanded={setupOpen}
-          style={{background:"none",border:"none",padding:0,fontFamily:"inherit",fontSize:13.5,color:T.ink3,cursor:"pointer",textAlign:"left"}}>
-          Set up Steward · {setupStatus.doneCount} of {setupStatus.totalCount} done · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",textUnderlineOffset:3}}>{setupOpen?"Finish later":"Show the steps"}</span>
-        </button>
-        {setupOpen&&<div style={{marginTop:10}}><SetupChecklist status={{...setupStatus,cardState:null}} onNavigate={onNavigate} isAdmin={isAdmin}
-          onSetCardState={st=>{if(st==="collapsed")setSetupOpen(false);else setSetupCardState(st);}}/></div>}
-      </div>
-    );
+      line="Donors in, giving connected, automations watching. Everything it linked to lives in Settings."/>:null;
+    return setupWhere==="first"?<SetupFirstCard status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>:null;
   })();
+  const setupDonors=(setupStatus?.items||[]).find(i=>i.key==="donors");
+  const noDonorsYet=!!setupDonors&&!(setupDonors.count>0);
   const homeHead=(<>
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
@@ -3254,7 +3127,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       )}
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px",marginTop:6}}>
-          <HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} footer={setupLine}/>
+          {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
+          <HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet}
+            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/>
         </div>
       )}
       </>);
