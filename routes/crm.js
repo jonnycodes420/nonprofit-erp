@@ -21254,7 +21254,8 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
     );
     return { ...c, recipients };
   }));
-  res.json(result);
+  // SECURE-2: each one says what it actually did (campaignDelivery.js).
+  res.json(await require("../campaignDelivery").withDelivery(req.user.orgId, result));
 }));
 
 // ── BUILD-94 Part 4 — THE SENT-CAMPAIGNS LIST ──────────────────────────────
@@ -21295,7 +21296,7 @@ app.get("/campaigns/sent", requireAuth, wrap(async (req, res) => {
     out.push({ ...c, unsubscribed,
       openRate: c.delivered ? Math.round((c.opened / c.delivered) * 100) : null });
   }
-  res.json({ campaigns: out });
+  res.json({ campaigns: await require("../campaignDelivery").withDelivery(orgId, out) });
 }));
 
 app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
@@ -21311,7 +21312,8 @@ app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
      WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
     [rows[0].id]
   );
-  res.json({ ...rows[0], recipients });
+  const [delivered] = await require("../campaignDelivery").withDelivery(req.user.orgId, [rows[0]]);
+  res.json({ ...delivered, recipients });
 }));
 
 app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -22204,7 +22206,7 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   res.json({
     ...roster,
     mail: await hubMailState(orgId),
-    campaigns,
+    campaigns: await require("../campaignDelivery").withDelivery(orgId, campaigns),
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {
       totalSent,

@@ -29,6 +29,9 @@
 //   §12 Sign-up and password reset answer the same way whether or not the
 //       address has an account; the Mailchimp webhook secret is compared in
 //       constant time.
+//   §13 A partly sent campaign says "Sent to N of M · K not sent" with its
+//       reasons, a campaign where nothing went says "Not sent", and every
+//       surface says the same (the truth check, mailCampaigns).
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -315,6 +318,35 @@ async function fixtures() {
     const mc = wh.slice(wh.indexOf('app.post("/mailchimp/webhook/:secret"'), wh.indexOf('app.post("/mailchimp/webhook/:secret"') + 2500);
     ok("the Mailchimp webhook secret is compared with timingSafeEqual, not matched as a plain string",
       /timingSafeEqual/.test(mc) && !/WHERE webhook_secret=\?/.test(mc), mc.slice(0, 120));
+  }
+
+  console.log("\n§13 · a partly sent campaign says so, the same on every surface");
+  {
+    await q(`DELETE FROM campaign_recipients WHERE org_id=$1`, [ORG]);
+    await q(`DELETE FROM campaigns WHERE org_id=$1`, [ORG]);
+    // Stubbed sends: five went to the list, three went, one had unsubscribed, one bounced.
+    await q(`INSERT INTO campaigns (id,org_id,name,subject,body,status,sent_at,recipient_count) VALUES
+      ('cmp_sec2_part',$1,'Spring appeal','Spring','Hello','sent',NOW() - INTERVAL '1 hour',3),
+      ('cmp_sec2_none',$1,'Gala invite','Gala','Hello','failed',NOW() - INTERVAL '2 hours',0),
+      ('cmp_sec2_all',$1,'Thank-you note','Thanks','Hello','sent',NOW() - INTERVAL '3 hours',2)`, [ORG]);
+    const rec = (id, c, n, sent, why) => q(`INSERT INTO campaign_recipients (id,org_id,campaign_id,email,sent_at,failure_reason) VALUES ($1,$2,$3,$4,${sent ? "NOW()" : "NULL"},$5)`,
+      [id, ORG, c, `r${n}@secure2.example.org`, why || null]);
+    for (let i = 1; i <= 3; i++) await rec(`cr_s2p${i}`, "cmp_sec2_part", i, true);
+    await rec("cr_s2p4", "cmp_sec2_part", 4, false, "suppressed: unsubscribed");
+    await rec("cr_s2p5", "cmp_sec2_part", 5, false, "bounce: mailbox does not exist");
+    await rec("cr_s2n1", "cmp_sec2_none", 6, false, "Resend refused: rate limit");
+    await rec("cr_s2n2", "cmp_sec2_none", 7, false, "Resend refused: rate limit");
+    await rec("cr_s2a1", "cmp_sec2_all", 8, true); await rec("cr_s2a2", "cmp_sec2_all", 9, true);
+    const list = (await api("GET", "/campaigns", admin)).body;
+    const d = id => ((Array.isArray(list) ? list : []).find(c => c.id === id) || {}).delivery || {};
+    ok("partly sent: \"Sent to 3 of 5 · 2 not sent\"", d("cmp_sec2_part").sentence === "Sent to 3 of 5 · 2 not sent", d("cmp_sec2_part"));
+    ok("…with its reasons, counted", JSON.stringify((d("cmp_sec2_part").reasons || []).map(r => r.reason).sort()) === JSON.stringify(["Bounced", "Unsubscribed"]), d("cmp_sec2_part").reasons);
+    ok("nothing went: \"Not sent\"", d("cmp_sec2_none").sentence === "Not sent" && d("cmp_sec2_none").state === "not_sent", d("cmp_sec2_none"));
+    ok("everything went: \"Sent to 2\"", d("cmp_sec2_all").sentence === "Sent to 2", d("cmp_sec2_all"));
+    const { assertSurfacesAgree } = require("./lib/surfacesAgree");
+    const others = ["people", "gifts", "thisYear", "vsLastYear", "homeLine", "drift", "groups", "events", "campaigns", "moveReport", "search", "ask", "atlas", "exports", "deleted", "finance"];
+    const agree = await assertSurfacesAgree(ORG, { token: admin, soft: true, skip: others, label: "SECURE-2 §13" });
+    ok("the truth check: the campaign list, the sent list, Communications and the as-sent page agree with the database", agree.ok, agree.diffs);
   }
 
   summary();
