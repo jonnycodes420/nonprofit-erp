@@ -166,6 +166,13 @@ const held = id => q(`SELECT kind, what, sent_at FROM mail_blocked WHERE org_id=
   const sw = await api("POST", `/donors/${PEOPLE.on[0]}/auto-email`, tok, { on: true, confirm: true });
   ok("§3 a person on staff turns it on", sw.status === 200 && sw.body.autoEmail === true, sw.body);
 
+  // SEND-GATE-2: the three emails used here are on, for chosen donors only,
+  // so Owen (Always include) gets them and Olive (Follows) is held.
+  for (const key of ["journey_steps", "pledge_reminder", "gift_receipt"]) {
+    const t = await api("POST", `/mail-types/${key}`, tok, { on: true, audience: "chosen", confirm: true });
+    ok(`fixture: ${key} on for chosen donors`, t.status === 200, t.body);
+  }
+
   // ── the journey step ─────────────────────────────────────────────────────
   const mk = await api("POST", "/email-templates", tok, { starterKey: "first_gift_welcome" });
   const TID = mk.body && mk.body.template && mk.body.template.id;
@@ -232,12 +239,12 @@ const held = id => q(`SELECT kind, what, sent_at FROM mail_blocked WHERE org_id=
     && (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE id = ANY($1) AND auto_email`, [BULK]))[0].n === 0, pv.body);
   const wrong = await api("POST", "/donors/auto-email/bulk", tok, { ids, on: true, confirm: true, count: 9 });
   ok("§5 a count that is not the selection's is refused", wrong.status === 409, wrong.body);
-  const auditBefore = (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND action LIKE 'turned automatic emails on%'`, [ORG]))[0].n;
+  const auditBefore = (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND action LIKE 'set automatic emails to always include%'`, [ORG]))[0].n;
   const go = await api("POST", "/donors/auto-email/bulk", tok, { ids, on: true, confirm: true, count: 7 });
   const nowOn = (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND auto_email`, [ORG]))[0].n;
   ok("§5 the second click turns on exactly 7", go.status === 200 && go.body.changed === 7 && nowOn === 8, { b: go.body, nowOn });
   const aud = await waitFor(async () => {
-    const r = await q(`SELECT entity_id FROM fin_audit_log WHERE org_id=$1 AND action LIKE 'turned automatic emails on%'`, [ORG]);
+    const r = await q(`SELECT entity_id FROM fin_audit_log WHERE org_id=$1 AND action LIKE 'set automatic emails to always include%'`, [ORG]);
     return r.length - auditBefore >= 7 ? r : null;
   }, { timeout: 5000 }) || [];
   const audIds = new Set(aud.map(a => a.entity_id));

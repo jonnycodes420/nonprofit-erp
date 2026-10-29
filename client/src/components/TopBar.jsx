@@ -8,6 +8,7 @@ import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
 import { AtlasBell } from "./AtlasNote";   // AGENT-5
+import { MailStatusChip } from "./MailTypes";   // SEND-GATE-2
 import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
@@ -408,6 +409,9 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     {orgLabel && <div data-testid="topbar-org" title={"You are in " + orgLabel}
       style={{maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.inkInverse,fontSize:13.5,fontWeight:700,
               padding:"4px 10px",border:"1px solid "+T.green650,borderRadius:8}}>{orgLabel}</div>}
+
+    {/* SEND-GATE-2 — automatic email, on every page: off, on (a count), or waiting. */}
+    <MailStatusChip onNavigate={onNavigate}/>
 
     {/* HELP-1 — the "?" opens the article for this screen, beside the page. */}
     {/* AGENT-5: the bell. Everything Atlas did and readied; its count is what waits. */}

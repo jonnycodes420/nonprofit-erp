@@ -70,7 +70,8 @@ const rand = () => Math.random().toString(36).slice(2, 9);
 
 async function reset() {
   const CHILD = ["gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "receipts",
-    "fin_audit_log", "fin_transactions", "gifts", "interactions", "notification_sends", "tasks", "threads"];
+    "fin_audit_log", "fin_transactions", "gifts", "interactions", "notification_sends", "tasks", "threads",
+    "mail_blocked", "auto_mail_sent", "mail_skips", "org_mail_types", "send_confirms"];   // SEND-GATE-2: a held link references the org
   for (const t of CHILD) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   for (const t of ["donors", "campaigns", "fin_funds", "accounts", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});

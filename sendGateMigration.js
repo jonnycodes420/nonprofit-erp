@@ -86,4 +86,80 @@ async function sendGateDeployChange(pool) {
   return { ran: true, ...detail };
 }
 
-module.exports = { sendGateSchema, sendGateDeployChange, SYSTEM_ID };
+// SEND-GATE-2 (28 Oct 2026): WHICH EMAILS STEWARD SENDS ON ITS OWN.
+//   org_mail_types   one row per org and email type the director has ever
+//                    switched (mailTypes.js names the types). No row is "Off
+//                    since created". Only routes/mailTypes.js writes it, with
+//                    a confirm to turn one on (tests/send-gate-2.test.js).
+//   donors.auto_email_never   the donor's own Never. With auto_email (Always
+//                    include) it makes three choices; neither is "Follows
+//                    your settings". The mapping is the column itself: switch
+//                    on was auto_email = true and stays Always include.
+//   mail_skips       Skip this person, for one email type, for 7 days.
+//   auto_mail_sent   every automatic email that went, with what it said.
+//   mail_blocked     gains why it was held, and which email it was.
+async function sendGate2Schema(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS org_mail_types (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      type_key TEXT NOT NULL,
+      is_on BOOLEAN NOT NULL DEFAULT false,
+      audience TEXT NOT NULL DEFAULT 'everyone' CHECK (audience IN ('everyone','chosen')),
+      set_at TIMESTAMPTZ,
+      set_by TEXT,
+      set_by_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      PRIMARY KEY (org_id, type_key)
+    )`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS auto_email_never BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_auto_email_never ON donors (org_id) WHERE auto_email_never = true`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mail_skips (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      type_key TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      until TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mail_skips ON mail_skips (org_id, type_key, donor_id, until)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auto_mail_sent (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      type_key TEXT NOT NULL,
+      kind TEXT,
+      donor_id TEXT,
+      subject TEXT,
+      html TEXT,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL DEFAULT 'system:send-gate',
+      created_by_name TEXT DEFAULT 'Steward'
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auto_mail_sent ON auto_mail_sent (org_id, sent_at DESC)`);
+  await pool.query(`ALTER TABLE mail_blocked ADD COLUMN IF NOT EXISTS held_reason TEXT`);
+  await pool.query(`ALTER TABLE mail_blocked ADD COLUMN IF NOT EXISTS type_key TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mail_blocked_open ON mail_blocked (org_id, created_at DESC) WHERE sent_at IS NULL`);
+}
+
+// The deploy change, once: nothing is turned on. It only counts, per org, the
+// email types on (none) and the people already set to Always include, so the
+// REPORT and the boot log list every org it touched.
+async function sendGate2DeployChange(pool) {
+  const claim = await pool.query(`INSERT INTO steward_once (key) VALUES ('send-gate-2') ON CONFLICT (key) DO NOTHING RETURNING key`);
+  if (!claim.rowCount) return { ran: false };
+  const perOrg = (await pool.query(
+    `SELECT o.id AS org_id,
+            (SELECT COUNT(*)::int FROM org_mail_types t WHERE t.org_id = o.id AND t.is_on) AS types_on,
+            (SELECT COUNT(*)::int FROM donors d WHERE d.org_id = o.id AND d.deleted_at IS NULL AND d.auto_email) AS always_include,
+            (SELECT COUNT(*)::int FROM donors d WHERE d.org_id = o.id AND d.deleted_at IS NULL AND NOT d.auto_email) AS follows
+       FROM orgs o ORDER BY o.id`)).rows;
+  await pool.query(`UPDATE steward_once SET detail = $1 WHERE key = 'send-gate-2'`, [JSON.stringify({ perOrg })]);
+  return { ran: true, perOrg };
+}
+
+module.exports = { sendGateSchema, sendGateDeployChange, sendGate2Schema, sendGate2DeployChange, SYSTEM_ID };

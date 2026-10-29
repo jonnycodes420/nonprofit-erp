@@ -329,6 +329,7 @@ async function caseClicks() {
   await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [o.orgId]);
   const sinkAddr = "brk-send-once@test.local";
   await q("UPDATE donors SET email=$2, auto_email=true WHERE id=$1", ["d_brk_c6", sinkAddr]);
+  await require("./helpers").mailTypesOn(o.orgId);   // SEND-GATE-2
   const camp = await api("POST", "/campaigns", o.token, { name: "Breaker once", subject: "Hello", body: "Hi {{first_name}}", segment: { mode: "manual", donorIds: ["d_brk_c6"] }, status: "draft" });
   const campId = camp.body && (camp.body.id || (camp.body.campaign && camp.body.campaign.id));
   await page.goto(`${APP}/app/communications?subtab=campaigns&campaign=${campId}`, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -854,6 +855,7 @@ async function caseEnter() {
   // send (a campaign in the editor, Send ready)
   await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [o.orgId]);
   await q("UPDATE donors SET auto_email=true WHERE id='d_brk_e3'");
+  await require("./helpers").mailTypesOn(o.orgId);   // SEND-GATE-2
   const camp = await api("POST", "/campaigns", o.token, { name: "Breaker enter", subject: "Hello", body: "Hi", segment: { mode: "manual", donorIds: ["d_brk_e3"] }, status: "draft" });
   const campId = camp.body && (camp.body.id || (camp.body.campaign && camp.body.campaign.id));
   await page.goto(`${APP}/app/communications?subtab=campaigns&campaign=${campId}`, { waitUntil: "domcontentloaded", timeout: 60000 });

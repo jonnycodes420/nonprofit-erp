@@ -1548,6 +1548,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
     const { error: sendErr } = await resend.emails.send({
       ...(await donorSendOpts(org.id, donor.email, "campaign")), // BUILD-88c C.1
       to: donor.email, subject: `${subject} · ${orgName}`, html,
+      _stewardKind: "recurring_change", _stewardWhat: "Recurring gift notice",   // SEND-GATE-2: its own switch
     });
     if (sendErr) { console.error("[recurring] donor notification error:", sendErr.message); return false; }
     return true;
@@ -3878,7 +3879,8 @@ app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
     try {
       // SEND-GATE-1: she wrote it and pressed Send; that press is the confirm for this one note.
       const confirm = await require("../sendGate").recordStaffConfirm({ orgId, to: r.email, what: subject, by: me });
-      const { error } = await resend.emails.send({ ...(await donorSendOpts(orgId, r.email, "campaign")), to: r.email, subject, html, _stewardConfirm: confirm });
+      const { error } = await resend.emails.send({ ...(await donorSendOpts(orgId, r.email, "campaign")), to: r.email, subject, html, _stewardConfirm: confirm,
+        _stewardKind: "gift_unfinished" });   // SEND-GATE-2: named for what it is
       if (error) throw new Error(error.message);
     } catch (e) {
       await run("UPDATE gift_starts SET note_sent_at=NULL, note_sent_by=NULL, note_sent_by_name=NULL WHERE id=? AND org_id=?", [r.id, orgId]);
@@ -4576,7 +4578,9 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
          <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
          <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed, and thank you for everything you've already given.</p>`;
     const from = await donorFromAddress(orgId).catch(() => undefined);
-    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId);
+    // SEND-GATE-2: she picked these people and pressed Send; that press is the confirm for each one.
+    const confirm = await require("../sendGate").recordStaffConfirm({ orgId, to: d.email, what: "Reconnect-your-gift note", by: actor(req) });
+    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId, confirm);
     if (ok) {
       await run(
         `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_amount, historical_interval, sent_by)

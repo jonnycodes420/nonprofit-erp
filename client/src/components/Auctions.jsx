@@ -10,6 +10,7 @@
 // Every number is a <Figure> with a source (figureSources.js auction-*), so each
 // opens the rows that make it.
 import { useState, useEffect } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { personNamed } from "../lib/people";
 import { PeopleDatalist } from "./PeopleDatalist";
 import { apiFetch } from "../api";
@@ -347,7 +348,8 @@ export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="auctions-view">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 13, color: T.ink3, maxWidth: 560 }}>An online auction with its own page: items people donated, bidding that opens and closes on time, and winners who pay through your own Stripe account.</div>
+        <div style={{ fontSize: 13, color: T.ink3, maxWidth: 560 }}>An online auction with its own page: items people donated, bidding that opens and closes on time, and winners who pay through your own Stripe account.
+          <MailTypeSwitches keys={["auction_signin"]} from="auctions" /></div>
         {!nf && <button style={btn(true)} disabled={isReadOnly} onClick={() => setNf({ title: "", eventId: "", opensLocal: "", closesLocal: "", description: "" })} data-testid="auction-new">New auction</button>}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}

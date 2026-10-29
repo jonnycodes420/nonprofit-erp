@@ -22,6 +22,7 @@ import { ApiKeysPanel } from "./ApiKeysPanel";
 import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import { PrivacyPanel } from "./PrivacyPanel";
+import { MailTypesSettings, GoingOut, MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
@@ -417,6 +418,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
           + New Giving Page
         </button>}
       </div>
+      <div style={{marginTop:-10,marginBottom:12}}><MailTypeSwitches keys={["gift_receipt"]} from="giving_pages"/></div>
       {isAdmin&&(volNew?(
         <div data-testid="new-volunteer-page" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
           <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:8}}>A new volunteer page</div>
@@ -1376,6 +1378,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6}}>
           US donors need a written acknowledgment for any single gift of $250+ to claim the deduction (IRC §170(f)(8)). Fill in your organization's legal details below, then online gifts get an automatic, branded receipt, offline gifts are one click from a donor's Gifts &amp; Pledges tab.
         </div>
+        <div style={{marginTop:-8,marginBottom:14}}><MailTypeSwitches keys={["gift_receipt","year_end"]} from="tax_receipts"/></div>
 
         <div style={lbl}>Legal name</div>
         <input value={form.legalName} onChange={e=>setForm(f=>({...f,legalName:e.target.value}))} placeholder="e.g. CREO Arts, Inc." style={inp} disabled={!isAdmin||isReadOnly}/>
@@ -2750,6 +2753,9 @@ const SETTINGS_TABS=[
   // `portal` plan org, whose product that tab is. Giving Pages is a separate
   // section and is untouched.
   {id:"portal",label:"Donor Portal",portalTierOnly:true},
+  // SEND-GATE-2 — which emails Steward sends on its own, and what is going out.
+  {id:"automatic",label:"Automatic email"},
+  {id:"going-out",label:"Going out"},
   {id:"receipts",label:"Tax Receipts"},
   // COMMS-2 — colours, signature, address and tax language for every template.
   {id:"brandkit",label:"Brand kit"},
@@ -3913,6 +3919,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>)}
 
       {section==="privacy"&&<PrivacyPanel isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {section==="automatic"&&<MailTypesSettings onNavigate={onNavigate}/>}
+      {section==="going-out"&&<GoingOut onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
       {section==="atlas"&&<AtlasSettings isAdmin={isAdmin} isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
 
       {section==="data"&&<>

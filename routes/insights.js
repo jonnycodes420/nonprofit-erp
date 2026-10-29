@@ -71,7 +71,7 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
     stats: r.stats, cards: cards.map(cardOut), deck: first ? undefined : r.deck,
     sentences: {
       ladder: "Each giving unit (a household, or a person on their own) sits on one rung, from their own giving. Planned sits beside a rung.",
-      never: "Steward never sends anything for you. Every draft waits for your click.",
+      never: "Steward never sends these notes for you. Every draft waits for your click.",
     },
   });
 }));

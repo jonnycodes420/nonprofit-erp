@@ -2,7 +2,26 @@
 
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
+## The rule (Jonathan, SEND-GATE-2, 28 Oct 2026)
+
+**Nothing ever sends to a donor automatically without a clear flip of a switch from Jonathan (the org's Donor
+mail, in super-admin) and from the org's director (the email type, in Steward). Both of them always see and
+know exactly what is going out.** Every screen, word and test about donor mail serves that sentence.
+
 ## Rules
+- **Every automatic donor email is a type in `mailTypes.js`, and every type starts off (SEND-GATE-2).** The gate
+  (`sendGate.js` `decide`) sends an automatic message only if Donor mail is on (`orgs.emails_enabled`, asked by the
+  proxy first) AND its type is on in `org_mail_types` AND (who gets it is Everyone and the person is not Never, OR it
+  is Only donors I choose and the person is Always include). The person's setting is `donors.auto_email` (Always
+  include) and `donors.auto_email_never` (Never); neither is Follows your settings. A kind in no type is the exempt
+  sign-in link (`express_link`) or mail a person sends by hand (`BY_HAND`), held without that press. Tag a new
+  donor send with a kind its type lists, or `tests/send-gate-2.test.js` fails (it also fails on a type no path
+  sends). The ONE write of a type is `POST /mail-types/:key` (routes/mailTypes.js), with `confirm: true` and who
+  gets it to turn one on; every switch in an editor is that same call. Every automatic email that goes is kept in
+  `auto_mail_sent` with what it said (Going out's Sent); every held one is `mail_blocked` with `held_reason`.
+  Going out's "next 7 days" (goingOut.js) reads the sweeps' own due dates and the same rule; a new automatic send
+  that runs on a schedule adds its due rows there. Membership renewals send nothing on their own (a renewal note
+  is a journey step).
 - **Staff mail and Donor mail start OFF, and only the super-admin toggle turns either on (FIX-53).** `orgs.emails_enabled`
   (Donor mail) and `orgs.staff_mail_enabled` (Staff mail) default false, and every org insert writes both as a `false`
   literal. The one write of ON is `POST /admin/orgs/:id/mail-switches` with `confirm: true`; it stamps
@@ -10,8 +29,8 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   turns mail off. Signup, provisioning, Close a deal, Mark onboarded, a plan change, a payment, a webhook, an import, a
   boot step, a seed or AI never turn a switch on: `tests/fix53-mail-off.test.js` scans every non-test `.js` file for it.
   Existing NULL Staff mail still follows Donor mail; no deploy rewrites an existing org's switch.
-- **A donor gets automatic email only if the org turned it on for them (SEND-GATE-1).** `donors.auto_email`
-  starts false and only a person on staff turns it on (`routes/autoEmail.js`). `sendGate.js` `sendToDonor`, inside the
+- **A donor gets automatic email only if the org turned it on for them (SEND-GATE-1, extended by SEND-GATE-2 above).** `donors.auto_email`
+  starts false and only a person on staff turns it on (`routes/mailTypes.js`, which took over `routes/autoEmail.js`). `sendGate.js` `sendToDonor`, inside the
   wrapped client, sends an org's donor mail only to switched-on people or on a staff click recorded in
   `send_confirms` for that one message (pass `_stewardConfirm` from `recordStaffConfirm`). A held message is a
   `mail_blocked` row with Send, never a queue. Tag every new donor send with `_stewardOrgId` and a kind; an untagged

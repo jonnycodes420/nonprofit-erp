@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
+import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
 import { apiFetch, adaptDonor, prefetch } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
 import { offerUndo } from "./EditHistory";
@@ -2976,6 +2977,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
           <HomeThankClock onNavigate={onNavigate}/>
           <MailboxBanner onNavigate={onNavigate}/>
+          {/* SEND-GATE-2's line, where the approved HOME-3 mockup draws it: the foot of the rail. */}
+          <HomeMailLine onNavigate={onNavigate}/>
           <div data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
         </div>}
       </div>

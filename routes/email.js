@@ -567,6 +567,7 @@ async function sendCardExpiringEmail(org, donor, rs) {
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(org.id, donor.email, "campaign")),
         to: donor.email, subject, html: bodyHtml,
+        _stewardKind: "card_expiring", _stewardWhat: "Card-expiring notice",   // SEND-GATE-2: its own switch, not Campaigns'
       });
       if (sendErr) { console.error("[card-expiry] send error:", sendErr.message); return { sent: false, refused: null }; }
     } catch (e) { console.error("[card-expiry] resend error:", e.message); return { sent: false, refused: null }; }
@@ -675,7 +676,8 @@ async function sendRawEmail(toEmail, subject, html, fromOverride, tag = null) {
   const from = fromOverride || DONOR_MAIL_ADDR(); // BUILD-64: org-named From when caller supplies one
   try {
     const { error } = await resend.emails.send({ from, to: toEmail, subject, html,
-      ...(tag && tag.orgId ? { _stewardOrgId: tag.orgId, _stewardKind: tag.kind || "supporter" } : {}) });
+      ...(tag && tag.orgId ? { _stewardOrgId: tag.orgId, _stewardKind: tag.kind || "supporter" } : {}),
+      ...(tag && tag.confirm ? { _stewardConfirm: tag.confirm } : {}) });   // SEND-GATE-2: a staff press, for one message
     if (error) {
       console.error("[donor-email] send error:", error.message);
       if (tag && mailRefusal.classifyProviderError(error) !== "transient") tag.refused = error.name;   // SEND-GATE-1

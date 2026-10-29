@@ -7,6 +7,7 @@
 // fields, saved through PUT /events/:id (page fields only, never the rest of
 // the event) or the two photo routes.
 import { useState, useEffect } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
@@ -77,6 +78,7 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
           ? <>Live at <a href={ev.public_page_url} target="_blank" rel="noreferrer" data-testid="event-page-link" style={{ color: T.greenDk, fontWeight: 700, wordBreak: "break-all" }}>{ev.public_page_url}</a>. People buy tickets, sponsor, give and add it to their calendar there.</>
           : "Not published yet. Give it an address and people can buy tickets, sponsor and give from it."}
       </div>
+      <div style={{ marginTop: -6, marginBottom: 10 }}><MailTypeSwitches keys={["event_ticket", "waitlist_offer"]} from="event_editor" /></div>
 
       {/* FIX-41: the cover photo leads the editor, as on every page. */}
       <div style={{ marginBottom: 14, maxWidth: 520 }} data-testid="editor-cover">

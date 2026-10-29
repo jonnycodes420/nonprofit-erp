@@ -2706,6 +2706,9 @@ async function adminMailPayload(orgId) {
     },
     families,
     waitsForOnboarding: mailPolicy.waitsForOnboarding(),
+    // SEND-GATE-2: the emails the org turned on, who gets each and the next 7
+    // days, read-only, so turning Donor mail on says exactly what starts.
+    emailTypes: await require("./mailTypes").adminTypes(org.id).catch(() => null),
   };
 }
 app.get("/admin/orgs/:id/mail", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -2740,8 +2743,9 @@ app.post("/admin/orgs/:id/mail-switches", requireAuth, requireSuperAdmin, wrap(a
   }
   const turningOn = ["staff", "donor"].filter(k => after[k] && !before[k]);
   if (turningOn.length && body.confirm !== true) {
-    return res.status(409).json({ error: "confirm_required", turningOn,
-      message: turningOn.map(k => mailPolicy.TURN_ON_SENTENCE[k]).join(" ") + " Send confirm: true to go ahead." });
+    const starts = turningOn.includes("donor") ? (await require("./mailTypes").adminTypes(org.id).catch(() => null)) : null;
+    return res.status(409).json({ error: "confirm_required", turningOn, willStart: starts ? starts.willStart : null,
+      message: turningOn.map(k => mailPolicy.TURN_ON_SENTENCE[k]).join(" ") + (starts ? " " + starts.willStart : "") + " Send confirm: true to go ahead." });
   }
   const [me] = await query("SELECT name, email FROM users WHERE id=?", [req.user.userId]);
   const byName = (me && (me.name || me.email)) || "Super-admin";
@@ -2971,6 +2975,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
     await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
   // SCALE-2: the stored answers (Home's figures, each person's Drift answer)
   // and the change rows that kept them honest go with the org.
+  // SEND-GATE-1/2: held and sent automatic mail, staff confirms, skips and the
+  // org's email switches all reference the org and go with it.
+  for (const t of ["mail_blocked", "auto_mail_sent", "mail_skips", "org_mail_types", "send_confirms"])
+    await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
   await run("DELETE FROM donor_drift WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM org_summary WHERE org_key=?", [orgId]).catch(() => {});
   await run("DELETE FROM org_changes WHERE org_key=?", [orgId]).catch(() => {});

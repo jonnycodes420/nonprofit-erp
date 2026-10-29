@@ -2320,6 +2320,7 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(org.id, donor.email, "campaign")),
         to: donor.email, subject, html: bodyHtml,
+        _stewardKind: "recovered_thankyou", _stewardWhat: "Card-worked thank-you",   // SEND-GATE-2: its own switch
       });
       if (sendErr) console.error("[dunning] recovered-email send error:", sendErr.message);
     } catch (e) { console.error("[dunning] recovered-email resend error:", e.message); }

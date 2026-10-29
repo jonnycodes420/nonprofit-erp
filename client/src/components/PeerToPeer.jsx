@@ -9,6 +9,7 @@
 // SUM over the same gift rows — never a stored counter. The identity is
 // printed on the screen rather than assumed: teams + solo + direct = the page.
 import RemoveMenu from "./RemoveMenu";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import PhotoField from "./PhotoField";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
@@ -369,6 +370,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   const t = d?.totals;
   return (
     <div data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <MailTypeSwitches keys={["p2p_link"]} from="peer_to_peer" />
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <select value={pageId} onChange={e => setPageId(e.target.value)} style={inp} aria-label="Campaign" data-testid="p2p-campaign">
           {pages.map(p => <option key={p.id} value={p.id}>{p.title}{p.p2p_enabled ? "" : " (not peer-to-peer yet)"}</option>)}

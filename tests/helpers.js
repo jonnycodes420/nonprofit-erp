@@ -228,7 +228,21 @@ async function importWorkSettled(orgId = null, { timeout = 60000 } = {}) {
 const NEGATIVE_MAIL_WAIT_MS = Number(process.env.NEGATIVE_MAIL_WAIT_MS || 4000);
 const settleNegative = () => new Promise(r => setTimeout(r, NEGATIVE_MAIL_WAIT_MS));
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+// SEND-GATE-2: every email type starts off for every org. A suite that needs
+// automatic mail to go turns the types on for its fixture org, for chosen
+// donors (its people are set to Always include, the old switch on).
+const ALL_MAIL_TYPES = require("../mailTypes").TYPES.map(t => t.key);
+async function mailTypesOn(orgId, audience = "chosen", keys = ALL_MAIL_TYPES) {
+  await q(`INSERT INTO org_mail_types (org_id, type_key, is_on, audience, set_at, set_by_name, created_by, created_by_name)
+           SELECT $1, k, true, $2, NOW(), 'test fixture', 'system:test', 'test' FROM unnest($3::text[]) k
+           ON CONFLICT (org_id, type_key) DO UPDATE SET is_on = true, audience = EXCLUDED.audience`, [orgId, audience, keys]);
+}
+async function mailTypesOnForDonor(donorId) {
+  const [d] = await q(`SELECT org_id FROM donors WHERE id = $1`, [donorId]);
+  if (d) await mailTypesOn(d.org_id);
+}
+
+module.exports = { mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is
