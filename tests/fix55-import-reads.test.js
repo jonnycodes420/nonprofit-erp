@@ -278,6 +278,9 @@ async function browserLegs() {
   };
   const goText = () => page.textContent('[data-testid="sheet-import-go"]');
   const settle = () => page.waitForSelector('[data-testid="sheet-import-go"]:not([disabled])', { timeout: 60000 });
+  // IMPORT-5: the event workbook asks its date before Import is enabled, so
+  // the window legs wait for the preview to be read, not for Import
+  const previewed = () => page.waitForFunction(() => { const b = document.querySelector('[data-testid="sheet-import-go"]'); return b && /^(Import|Answer)/.test(b.textContent.trim()); }, null, { timeout: 60000 });
   try {
     // §3 the window always closes, and closing writes nothing
     const w0 = await writes(C.id);
@@ -286,17 +289,17 @@ async function browserLegs() {
     ok("§3 the X closes the empty import window", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.click('button[aria-label="Close"]');
     ok("§3 the X closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.keyboard.press("Escape");
     ok("§3 Escape closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     await page.mouse.click(8, 500);
     ok("§3 a click outside closes the preview", await page.locator('[data-testid="sheet-import"]').count() === 0);
     const w1 = await writes(C.id);
@@ -305,7 +308,7 @@ async function browserLegs() {
     // §4 a dropped file is the same file
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     const chosen = await goText();
     await page.keyboard.press("Escape");
     const bytes = fs.readFileSync(WORKBOOK).toString("base64");
@@ -321,23 +324,27 @@ async function browserLegs() {
     };
     await open();
     await drop('[data-testid="sheet-drop"]');
-    await settle();
+    await previewed();
     ok("§4 a file dropped on the start screen gives the same preview as choosing it", (await goText()) === chosen, [await goText(), chosen]);
     await page.keyboard.press("Escape");
     await drop('[data-testid="sheet-drop-page"]');
-    await settle();
+    await previewed();
     ok("§4 a file dropped on the Donors page opens the same reader with that file", (await goText()) === chosen, [await goText(), chosen]);
     await page.keyboard.press("Escape");
 
     // §2 the date box: the summary and the button change before Import, and Import dates the gifts
     await open();
     await page.setInputFiles('[data-testid="sheet-file"]', WORKBOOK);
-    await settle();
+    await previewed();
     const money0 = await page.textContent('[data-testid="layer-money"]');
     ok("§2 before the answer: 63 gifts with no date, on the Money line and the button", /63 with no date/.test(money0) && /63 undated/.test(await goText()), [money0, await goText()]);
     await page.fill('[data-testid="sheet-event-date"]', "2026-10-22");
-    await settle();
-    await page.check('[data-testid="sheet-use-event-date"]');
+    // IMPORT-5: the pledges' due dates, then Yes to "Use the event date for these 63 gifts?"
+    await page.click('[data-testid="sheet-pledge-due-event"]');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="sheet-question-pledge-due"]')
+      || document.querySelector('[data-testid="sheet-pledge-due-event"][aria-pressed="true"]'), null, { timeout: 15000 });
+    await previewed();
+    await page.click('[data-testid="sheet-event-gifts-yes"]');
     // the stale preview may never be imported: the button waits for the re-read
     const during = await page.$eval('[data-testid="sheet-import-go"]', b => ({ disabled: b.disabled, text: b.textContent })).catch(() => null);
     const t0 = performance.now();
