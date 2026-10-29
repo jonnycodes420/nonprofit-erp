@@ -432,7 +432,10 @@ async function main() {
   ok("§9 one person, one move: nobody leads two cards", moves.length > 0 && dupes.length === 0, dupes.slice(0, 5));
   const multi = moves.filter(m => (m.also || []).length);
   ok("§9 …their other moves ride on that card as 'also' lines", multi.length > 0 && multi.every(m => m.also.every(a => a.kind !== m.kind || a.line)), multi.length);
-  ok("§9 each tab counts its moves, ranked by dollars; Keep opens first", deck.tabs.every(t => t.moves.length === Math.min(t.count, 150) && t.moves.every((m, i) => i === 0 || t.moves[i - 1].cents >= m.cents)) && deck.open === "keep",
+  // FIX-59: Grow ranks second gifts first, then came-didn't-give, then the rest; dollars inside each
+  const growRank = m => ({ second_gift: 0, came_no_gift: 1 })[m.kind] ?? 2;
+  const inOrder = (t, p, m) => t.key === "grow" ? (growRank(p) < growRank(m) || (growRank(p) === growRank(m) && p.cents >= m.cents)) : p.cents >= m.cents;
+  ok("§9 each tab counts its moves, ranked by dollars (Grow: second gifts first); Keep opens first", deck.tabs.every(t => t.moves.length === Math.min(t.count, 150) && t.moves.every((m, i) => i === 0 || inOrder(t, t.moves[i - 1], m))) && deck.open === "keep",
      deck.tabs.map(t => `${t.key} ${t.count}/${t.moves.length}`));
   const yeCard = card(r3, "year_end");
   const yePlaced = yeCard.items.filter(it => moves.some(m => (m.kind === "year_end" && m.itemKey === it.key) || (moveUnit(m) === it.key && (m.also || []).some(a => a.kind === "year_end"))));
