@@ -413,6 +413,9 @@ function auditTrail(opts = {}) {
       // writes them, so no route writes an audit row. Each is
       // { entityType, entityId, label, before, after }.
       perRecord(rows) { perRecordRows = Array.isArray(rows) ? rows : null; },
+      // SECURE-2 item 8: how many rows a download carried, when the route
+      // knows better than the file (a JSON export, a zip of CSVs, a PDF of letters).
+      rows(n) { if (Number.isFinite(Number(n))) extra.recordCount = Number(n); },
       summary(text, meta = {}) {
         summaryRow = { text: String(text || ""), meta: meta || {} };
         if (meta.count != null) extra.recordCount = meta.count;
@@ -424,6 +427,22 @@ function auditTrail(opts = {}) {
 
     const origJson = res.json.bind(res);
     res.json = body => { responseBody = body; return origJson(body); };
+    // SECURE-2 item 8: a CSV download counts its own rows (lines less the
+    // header), so every CSV export says how many rows left without a route
+    // having to remember to. Only for a download; nothing else is touched.
+    let csvRows = null;
+    if (maybeDownload) {
+      const origSend = res.send.bind(res);
+      res.send = body => {
+        try {
+          if (/text\/csv/i.test(String(res.getHeader("Content-Type") || "")) && (typeof body === "string" || Buffer.isBuffer(body))) {
+            const lines = String(body).split(/\r?\n/).filter(l => l.length > 0).length;
+            csvRows = Math.max(0, lines - 1);
+          }
+        } catch { /* counting never fails a download */ }
+        return origSend(body);
+      };
+    }
 
     // THE BEFORE-SNAPSHOT, and the one subtle thing in this file.
     //
@@ -478,7 +497,10 @@ function auditTrail(opts = {}) {
         const status = res.statusCode;
         const pattern = (req.route && req.route.path) || req.path;
 
-        if (!mutating) {
+        // SECURE-2 item 8: a POST that answers with a file (printed letters,
+        // labels) is a download too, and is recorded as one.
+        const isFile = /attachment/i.test(String(res.getHeader("Content-Disposition") || ""));
+        if (!mutating || isFile) {
           // A download, and only a download.
           const cd = res.getHeader("Content-Disposition") || "";
           if (!/attachment/i.test(String(cd))) return;
@@ -487,10 +509,14 @@ function auditTrail(opts = {}) {
           if (!orgId) return;
           const who = resolveActor(req, null);
           const file = (String(cd).match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i) || [])[1] || "a file";
+          // SECURE-2 item 8: who (the actor), when (the row), what (the file
+          // and its query) and how many rows (the route's count, else the CSV's).
+          const count = extra.recordCount != null ? extra.recordCount : csvRows;
           await insertAuditRow({
             orgId, actorId: who.id, actorName: who.name, actorKind: who.kind,
             action: "downloaded", entityType: "export", entityId: null, entityLabel: file,
-            summary: `${file}${req.originalUrl && req.originalUrl.includes("?") ? " (" + req.originalUrl.split("?")[1].slice(0, 200) + ")" : ""}`,
+            summary: `${file}${count != null ? ` · ${Number(count).toLocaleString("en-US")} ${count === 1 ? "row" : "rows"}` : ""}${req.originalUrl && req.originalUrl.includes("?") ? " (" + req.originalUrl.split("?")[1].slice(0, 200) + ")" : ""}`,
+            recordCount: count,
             method, path: req.originalUrl || req.path, status, ip: req.ip,
           });
           return;

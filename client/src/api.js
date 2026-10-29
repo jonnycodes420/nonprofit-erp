@@ -1,5 +1,6 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
+import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
@@ -56,6 +57,7 @@ const AUTH_MESSAGES = {
   no_token:            "Please log in again.",
   account_deactivated: "This account has been removed from the organization. Ask an admin to add you back.",
   user_not_found:      "That account no longer exists. Please log in again.",
+  session_idle:        "You were signed out after a while with no activity. Sign in again; anything you were typing is kept.",
 };
 const AUTH_FALLBACK_MESSAGE = "Your session is no longer valid, please log in again.";
 
@@ -94,6 +96,8 @@ let _leavingForLogin = false;
 export const leavingForLogin = () => _leavingForLogin;
 
 export function handleAuthFailure(code) {
+  // SECURE-2 item 7: an idle sign-out keeps what was being typed.
+  if (code === "session_idle") saveDrafts();
   // FIX-57: a support session that ended (closed, two hours, or the org
   // turned support access off) goes back to the super-admin's own console.
   if (inSupport() && leaveSupport()) return;
@@ -393,6 +397,8 @@ export function adaptDonor(d) {
     // and every legacy row is a donor — the same rule the server's predicate
     // and the segment count both hold, so the three cannot disagree.
     personTypes:   (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"],
+    // SECURE-2: "Check this email" / "Check this phone", from GET /donors/:id.
+    contact_flags: Array.isArray(d.contact_flags) ? d.contact_flags : [],
   };
 }
 

@@ -10,6 +10,7 @@ import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, adaptDonor } from "../api";
 import { allPeople, forgetAllPeople, peopleById, peopleCounts, usePeoplePicker } from "../lib/people";
 import { errorMessage } from "../lib/domainError";
+import { emailHint } from "../../../shared/contactCheck.js";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
@@ -650,6 +651,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   };
 
   const[newDonorAssignee,setNewDonorAssignee]=useState("");
+  const[addErr,setAddErr]=useState("");   // SECURE-2: the server's sentence when it refuses a new person
 
   const addDonor=async()=>{
     if(!newDonor.name)return;
@@ -663,14 +665,20 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
       status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null,
       assignedTo:assignTo,assignedToName:assignToName};
-    patchPeople(list=>[...list,temp]);
-    setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
-    try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});await reloadDonors();}
+    // SECURE-2: the form stays open until the server takes it, so a refusal
+    // (an email that is not one, a name too long) is read, not lost.
+    setAddErr("");
+    try{
+      await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});
+      patchPeople(list=>[...list,temp]);
+      setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
+      await reloadDonors();
+    }
     catch(e){
       if(e.error==="record_limit"){
-        patchPeople(list=>list.filter(d=>d.id!==temp.id));
+        setShowAdd(false);
         setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
-      } else { console.error(e); }
+      } else setAddErr(errorMessage(e, "Steward could not save this person."));
     }
   };
 
@@ -881,6 +889,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"]].map(([k,pl])=>(
           <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
         ))}
+        {emailHint(newDonor.email)&&<div data-testid="add-email-hint" style={{fontSize:12,color:T.gold700}}>{emailHint(newDonor.email)}</div>}
+        {addErr&&<div data-testid="add-donor-error" role="alert" style={{fontSize:12.5,color:T.ink,background:T.gold50,border:"1px solid "+T.gold300,borderRadius:8,padding:"7px 10px"}}>{addErr}</div>}
         {isAdmin&&orgTeam.length>1&&<select value={newDonorAssignee} onChange={e=>setNewDonorAssignee(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer"}}>
           <option value="">Assign to me ({userName})</option>
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}

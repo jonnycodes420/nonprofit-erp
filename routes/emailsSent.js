@@ -111,6 +111,7 @@ app.get("/campaigns/:id/as-sent", requireAuth, wrap(async (req, res) => {
   res.json({
     kind: "campaign", id: c.id, name: c.name, subject: c.subject || "", body: c.body || "",
     from: await sender(orgId), sentAt: c.sent_at || null, example, recipients, counts: countsOf(recipients),
+    delivery: (await require("../campaignDelivery").deliveryFor(orgId, [c])).get(c.id) || null,
   });
 }));
 

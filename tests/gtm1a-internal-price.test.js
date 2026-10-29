@@ -87,7 +87,7 @@ async function seed() {
     plan: ID, tier: ID,              // both spellings, in case a future body reads either
   });
   ok("a signup body naming the $1 price does not get it",
-     signup.status !== 201 || !String(JSON.stringify(signup.body)).includes(ID),
+     !String(JSON.stringify(signup.body)).includes(ID),
      signup.status + " " + JSON.stringify(signup.body).slice(0, 200));
 
   const co = await api("POST", "/billing/create-checkout", admin, { plan: ID });

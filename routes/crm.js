@@ -1308,7 +1308,7 @@ app = routers.r1;
 const TF = require("../twoFactor");
 const bcrypt = require("bcryptjs");
 const meRow = async userId => (await query(`SELECT * FROM users WHERE id=?`, [userId]))[0] || null;
-const orgOf = async orgId => (await query(`SELECT id, org_kind, require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [orgId]))[0] || null;
+const orgOf = async orgId => (await query(`SELECT id, org_kind, require_mfa, require_admin_mfa, idle_minutes, allow_staff_large_exports FROM orgs WHERE id=?`, [orgId]))[0] || null;
 const mustKeepMfa = (u, o) => !!(u.is_super_admin || (o && o.require_mfa) || (u.role === "admin" && o && o.require_admin_mfa));
 // One check for "is this a current code of yours", whatever the method.
 async function currentCodeOk(u, code) {
@@ -1325,6 +1325,8 @@ app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
   res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, method: u?.mfa_method || (u?.mfa_enabled_at ? "totp" : null),
     recoveryCodesLeft: u?.mfa_enabled_at ? await TF.recoveryLeft(u.id) : 0,
     orgRequires: !!(o && o.require_mfa), orgRequiresForAdmins: !!(o && o.require_admin_mfa),
+    idleMinutes: (o && o.idle_minutes) || TF.IDLE_DEFAULT,
+    allowStaffLargeExports: !!(o && o.allow_staff_large_exports),   // SECURE-2 item 8
     mustKeep: !!(u && mustKeepMfa(u, o)), demo: TF.isDemoOrg(o), demoSentence: TF.isDemoOrg(o) ? TF.DEMO_SENTENCE : null });
 }));
 
@@ -1403,12 +1405,18 @@ app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
   if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
   const o = await orgOf(u.org_id);
   if (mustKeepMfa(u, o)) return res.status(409).json({ error: u.is_super_admin ? "Super-admin accounts always use two-factor." : "Your organization requires two-factor sign-in." });
+  // SECURE-2 item 6: turning two-factor off takes an admin. Staff ask one,
+  // who resets it from Settings, Team (that path emails them too).
+  if (u.role !== "admin") return res.status(403).json({ error: "admin_required", message: "Turning two-factor off takes an admin. Ask one to reset it for you in Settings, Team." });
   if (!(await currentCodeOk(u, req.body && req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
   await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL, mfa_method=NULL WHERE id=?`, [u.id]);
   await run(`DELETE FROM mfa_recovery_codes WHERE user_id=?`, [u.id]);
   await run(`DELETE FROM mfa_trusted_browsers WHERE user_id=?`, [u.id]);
   req.audit.action("two-factor turned off"); req.audit.entity("user", u.id, u.email);
-  res.json({ enabled: false });
+  // Sign-in mail, always on: the person hears that their account lost a lock.
+  const emailed = await TF.mailUser(u, resend, "Two-factor was turned off on your Steward account",
+    `Two-factor sign-in was turned off on your Steward account on ${new Date().toUTCString()}. If this was not you, change your password and turn it back on in Settings, Security.`);
+  res.json({ enabled: false, emailed });
 }));
 
 // New recovery codes: the old set stops working the moment these exist.
@@ -1426,12 +1434,19 @@ app.post("/me/mfa/recovery-codes", requireAuth, wrap(async (req, res) => {
 app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
   const want = req.body || {};
   const sets = [], args = [];
-  for (const [k, col] of [["requireMfa", "require_mfa"], ["requireAdminMfa", "require_admin_mfa"]]) {
+  for (const [k, col] of [["requireMfa", "require_mfa"], ["requireAdminMfa", "require_admin_mfa"], ["allowStaffLargeExports", "allow_staff_large_exports"]]) {
     if (want[k] === undefined) continue;
     if (typeof want[k] !== "boolean") return res.status(400).json({ error: `${k} must be true or false` });
     sets.push(`${col}=?`); args.push(want[k]);
   }
-  if (!sets.length) return res.status(400).json({ error: "requireMfa or requireAdminMfa is required" });
+  // SECURE-2 item 7: idle sign-out, in whole minutes, 15 to 480.
+  if (want.idleMinutes !== undefined) {
+    const m = Number(want.idleMinutes);
+    if (!Number.isInteger(m) || m < TF.IDLE_MIN || m > TF.IDLE_MAX)
+      return res.status(400).json({ error: "idle_minutes_range", message: `Idle sign-out is between ${TF.IDLE_MIN} minutes and ${TF.IDLE_MAX / 60} hours, in whole minutes.` });
+    sets.push("idle_minutes=?"); args.push(m);
+  }
+  if (!sets.length) return res.status(400).json({ error: "requireMfa, requireAdminMfa, idleMinutes or allowStaffLargeExports is required" });
   if (want.requireMfa === true || want.requireAdminMfa === true) {
     const u = await meRow(req.user.userId);
     if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-factor for yourself first." });
@@ -1439,8 +1454,9 @@ app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
   const o = await orgOf(req.user.orgId);
   if (TF.isDemoOrg(o)) return res.status(409).json({ error: "demo_org", message: TF.DEMO_SENTENCE });
   await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...args, req.user.orgId]);
-  const [after] = await query(`SELECT require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
-  res.json({ requireMfa: !!after.require_mfa, requireAdminMfa: !!after.require_admin_mfa });
+  const [after] = await query(`SELECT require_mfa, require_admin_mfa, idle_minutes, allow_staff_large_exports FROM orgs WHERE id=?`, [req.user.orgId]);
+  if (want.allowStaffLargeExports !== undefined) req.audit.action(want.allowStaffLargeExports ? "allowed staff to export more than 1,000 people" : "large exports by staff need an admin again");
+  res.json({ requireMfa: !!after.require_mfa, requireAdminMfa: !!after.require_admin_mfa, idleMinutes: after.idle_minutes, allowStaffLargeExports: !!after.allow_staff_large_exports });
 }));
 
 // RESET A TEAMMATE'S TWO-FACTOR, OWNER. They set it up again at their next
@@ -3070,6 +3086,7 @@ const csvCell = v => { const t = v === null || v === undefined ? "" : String(v);
 app.get("/figures/:source/export.csv", requireAuth, wrap(async (req, res) => {
   const rows = await figureRowsFor(req, res);
   if (!rows) return;
+  if (await require("../exportGuard").largeExportRefused(req, res, rows.length)) return;   // SECURE-2 item 8
   const lines = [["Name", "Date", "Amount", "Detail", "Kind"].join(",")];
   for (const r of rows) lines.push([r.name, r.date || "", r.amount === null || r.amount === undefined ? "" : Number(r.amount).toFixed(2), r.detail || "", r.type || ""].map(csvCell).join(","));
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -4145,18 +4162,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     owner_label: d.assigned_to_name || d.pending_assignee_name || "No owner",
   });
 
-  if (req.query.limit === undefined) {
-    const [donors, touchpoints, { map: driftMap }] = await Promise.all([
-      query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]),
-      query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
-      computeDriftForDonors(req.user.orgId),
-    ]);
-    const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-    if (mayRoom) roomMap = await PRm.roomToGive(req.user.orgId);
-    return res.json(donors.map(mapDonor(tpMap, driftMap)));
-  }
-
-  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  // SECURE-2 item 3: this list always pages (default 100, at most 500). The
+  // old no-limit form read every person in the org in one answer.
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
     query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, limit, offset]),
@@ -4187,6 +4195,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 // audience counts, AI context builders. Column names match GET /donors so
 // adaptDonor works unchanged on the subset.
 app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
+  // SECURE-2 item 3: a page at a time (default 100, at most 500); a screen
+  // that wants everyone pages through (client/src/lib/pages.js).
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -4198,10 +4210,11 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
                   birth_month, birth_day, birth_year
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
+  res.setHeader("X-Total-Count", String((await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL", [req.user.orgId]))[0].n));
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
@@ -4312,6 +4325,8 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   const donors = await query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]);
+  if (await require("../exportGuard").largeExportRefused(req, res, donors.length)) return;   // SECURE-2 item 8
+  
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
   // headed with the CURRENT label, rendered per the type table.
   const cfDonorDefs = await loadCfDefs("donor", req.user.orgId);
@@ -4572,6 +4587,8 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // PROFILE-1 — the four figures, each carrying the source its drawer opens.
   d.figures = await donorProfileFigures(
     req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
+  // SECURE-2 item 3: an imported address that is not one is kept, and flagged.
+  d.contact_flags = await require("../contactInputs").contactFlags(d);
   res.json(d);
 }));
 
@@ -4747,6 +4764,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
   // THREAD-2 · A NAME IS A NAME. "   " and the word "null" (a form that joined
   // two empty fields) were saved as names, and printed on the Thread and in
@@ -6383,6 +6404,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 // change, an email must look like one, and an address change is kept in
 // donor_address_history beside the tidy-up's own.
 app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const orgId = req.user.orgId, b = req.body || {};
   const [d] = await query("SELECT id, name, email, phone, address, address2, city, state, zip FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
@@ -6410,6 +6435,10 @@ app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email", "email2"], phone: ["phone"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!(await ItemRefs.links()).realName(req.body.name)) return res.status(400).json({ error: "Name required" });   // THREAD-2
   const name = String(req.body.name).replace(/\s+/g, " ").trim();
@@ -11311,8 +11340,10 @@ app.post("/acknowledgments/letters/pdf", requireAuth, wrap(async (req, res) => {
   if (!set.letters.length) return res.status(409).json({ error: "no_letters", skipped: set.skipped,
     message: "None of these gifts can be printed yet. The reason is beside each name." });
   const today = orgToday(await orgTz(req.user.orgId));           // ORG_TZ_SEAM_OK
+  if (await require("../exportGuard").largeExportRefused(req, res, set.letters.length)) return;   // SECURE-2 item 8
   const pdf = await renderLettersPdf(set.org, set.letters, { dateLine: ACK.formatLetterDate(today) });
   res.setHeader("Content-Type", "application/pdf");
+  if (req.audit) req.audit.rows(set.letters.length);   // SECURE-2 item 8: one letter per person
   res.setHeader("Content-Disposition", `attachment; filename="thank-you-letters-${today}.pdf"`);
   res.setHeader("X-Letters-Printed", String(set.letters.length));
   res.setHeader("X-Letters-Skipped", String(set.skipped.length));
@@ -11327,8 +11358,10 @@ app.post("/acknowledgments/labels/pdf", requireAuth, wrap(async (req, res) => {
   if (set.error) return res.status(400).json({ error: set.error });
   const addresses = set.letters.map(l => l.address);
   if (!addresses.length) return res.status(409).json({ error: "no_addresses", skipped: set.skipped });
+  if (await require("../exportGuard").largeExportRefused(req, res, addresses.length)) return;   // SECURE-2 item 8
   const pdf = await renderLabelsPdf(addresses);
   res.setHeader("Content-Type", "application/pdf");
+  if (req.audit) req.audit.rows(addresses.length);   // SECURE-2 item 8
   res.setHeader("Content-Disposition", `attachment; filename="mailing-labels.pdf"`);
   res.setHeader("X-Labels", String(addresses.length));
   res.setHeader("Access-Control-Expose-Headers", "X-Labels");
@@ -21355,7 +21388,8 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
     );
     return { ...c, recipients };
   }));
-  res.json(result);
+  // SECURE-2: each one says what it actually did (campaignDelivery.js).
+  res.json(await require("../campaignDelivery").withDelivery(req.user.orgId, result));
 }));
 
 // ── BUILD-94 Part 4 — THE SENT-CAMPAIGNS LIST ──────────────────────────────
@@ -21396,7 +21430,7 @@ app.get("/campaigns/sent", requireAuth, wrap(async (req, res) => {
     out.push({ ...c, unsubscribed,
       openRate: c.delivered ? Math.round((c.opened / c.delivered) * 100) : null });
   }
-  res.json({ campaigns: out });
+  res.json({ campaigns: await require("../campaignDelivery").withDelivery(orgId, out) });
 }));
 
 app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
@@ -21412,7 +21446,8 @@ app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
      WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
     [rows[0].id]
   );
-  res.json({ ...rows[0], recipients });
+  const [delivered] = await require("../campaignDelivery").withDelivery(req.user.orgId, [rows[0]]);
+  res.json({ ...delivered, recipients });
 }));
 
 app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -22423,7 +22458,7 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   res.json({
     ...roster,
     mail: await hubMailState(orgId),
-    campaigns,
+    campaigns: await require("../campaignDelivery").withDelivery(orgId, campaigns),
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {
       totalSent,
@@ -25516,6 +25551,7 @@ app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when
     }
     const asked = key === "deposits" || key === "non-cash" || key === "bookkeeper" ? { flavour } : {};
     const { headers, rows } = reportToCsv(key, data, asked);
+    if (await require("../exportGuard").largeExportRefused(req, res, rows.length)) return;   // SECURE-2 item 8
     const suffix = key === "retention" ? p.yearMode
       : key === "top-donors" && p.scope === "lifetime" ? "lifetime"
       : ["lybunt", "sybunt", "annual", "three-year"].includes(key) ? `${p.yearMode === "fiscal" ? "fy" : "cy"}${p.year}`
@@ -29061,6 +29097,8 @@ app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
   const donorsEnriched = donors.map(d => ({ ...d, custom_fields: liveCf(d, cfDonorDefs) }));
   const giftsEnriched = gifts.map(g => (g.custom_fields ? { ...g, custom_fields: liveCf(g, cfGiftDefs) } : g));
 
+  // SECURE-2 item 8: the audit row says how many rows left, every table counted.
+  if (req.audit) req.audit.rows([donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks].reduce((n, a) => n + a.length, 0));
   res.setHeader("Content-Disposition", `attachment; filename="steward-export-${orgSlug}-${date}.json"`);
   res.json({
     exported_at: new Date().toISOString(),
@@ -29129,12 +29167,13 @@ app.get("/org/export/full", requireAuth, requireAdmin, wrap(async (req, res) => 
   res.setHeader("Content-Disposition", `attachment; filename="steward-everything-${(org && org.org_slug) || orgId}-${stamp}.json"`);
   res.write(`{"exportedAt":${JSON.stringify(new Date().toISOString())},"organization":${JSON.stringify(strip(org || {}))},` +
             `"withheld":${JSON.stringify("Passwords, sign-in secrets, tokens, key fingerprints and stored receipt PDFs are left out; the receipts themselves are in the tables.")},"tables":{`);
-  let first = true;
+  let first = true, total = 0;
   for (const t of tables) {
     const rows = await query(`SELECT * FROM "${t.replace(/"/g, "")}" WHERE org_id=?`, [orgId]);
     res.write(`${first ? "" : ","}${JSON.stringify(t)}:${JSON.stringify(rows.map(strip))}`);
-    first = false;
+    first = false; total += rows.length;
   }
+  if (req.audit) req.audit.rows(total);   // SECURE-2 item 8
   res.end("}}");
 }));
 
@@ -29279,6 +29318,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   // Headers go on only after every query has succeeded, so a DB error still
   // returns a clean JSON 500 instead of a half-written zip.
+  if (req.audit) req.audit.rows(Object.values(counts).reduce((n, rows) => n + rows.length, 0));   // SECURE-2 item 8
   res.setHeader("Content-Type", "application/zip");
   const filename = `steward-export-${orgSlug}-${date}.zip`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);

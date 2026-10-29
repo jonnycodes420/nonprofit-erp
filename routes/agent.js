@@ -681,7 +681,10 @@ const AGENT_EXECUTORS = {
     if (r.status >= 300) return { failed: refusal(r) };
     if (r.body.unchanged) return { skipped: "already_there" };
     const [now] = await query(`SELECT ${r.body.changed.join(", ")} FROM donors WHERE id=? AND org_id=?`, [donor.id, ctx.orgId]);
-    const ok = now && r.body.changed.every(k => String(now[k] || "").toLowerCase() === String(k === "email" ? body.email.toLowerCase() : body[k] || "").toLowerCase());
+    // SECURE-2: a phone is stored in one format, so it is compared by its digits.
+    const same = (k, a, b) => k === "phone" ? String(a || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "") === String(b || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "")
+      : String(a || "").toLowerCase() === String(b || "").toLowerCase();
+    const ok = now && r.body.changed.every(k => same(k, now[k], body[k]));
     if (!ok) return { failed: "the record does not show the new details" };
     await agentWrite(ctx, { tool: "update_contact", table: "donors", entityId: donor.id, before: r.body.before, after: now, cites: step.citesRows });
     return { donorId: donor.id, id: donor.id };

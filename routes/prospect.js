@@ -79,6 +79,8 @@ app.post("/screening/file", requireAuth, mg, wrap(async (req, res) => {
   if (!ids) return res.status(404).json({ error: "That group was not found." });
   const rows = await P.fileRows(req.user.orgId, ids);
   if (!rows.length) return res.status(400).json({ error: "Nobody to put in the file. Organizations and erased people are never sent." });
+  if (await require("../exportGuard").largeExportRefused(req, res, rows.length)) return;   // SECURE-2 item 8
+  
   if (req.audit) req.audit.summary(`Prepared a screening file of ${rows.length} ${rows.length === 1 ? "person" : "people"}`, { count: rows.length, entityType: "donor" });
   const day = await P.today(req.user.orgId);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");

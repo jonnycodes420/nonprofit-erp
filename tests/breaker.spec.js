@@ -722,7 +722,7 @@ async function caseOrders() {
 // CASE 6 · THE LAPTOP SLEEPS IN THE MIDDLE OF AN IMPORT
 // ═════════════════════════════════════════════════════════════════════════
 // The import is pressed and the job starts; then the page's clock stops
-// (CDP virtual time paused: no timer, no poll) and the network goes, for
+// (no poll reaches the server) and the network goes, for
 // BREAKER_SLEEP_SECS. Then it wakes. It runs beside the other cases.
 async function caseSleep() {
   const L = "sleep";
@@ -732,16 +732,21 @@ async function caseSleep() {
   const file = giftsFile("sleep-400.csv", 400, i => `Sol Sleeper${i % 250}`);
   await openSheetImport(page);
   await chooseFile(page, file);
-  const cdp = await ctx.newCDPSession(page);
   const started = page.waitForResponse(r => /\/sheet-import\/commit$/.test(r.url()), { timeout: 60000 }).catch(() => null);
   await page.locator('[data-testid="sheet-import-go"]').click();
   await started;
-  await cdp.send("Emulation.setVirtualTimePolicy", { policy: "pause" }).catch(e => console.log("  note: virtual time pause unavailable: " + e.message));
+  // SECURE-2: the sleep is the network gone for the length of the sleep. It
+  // used to pause CDP virtual time and wake it with "advance", which never
+  // returns to real time: the page clock then raced ahead (28 days in 2
+  // seconds, measured), which no laptop does on waking, and the app's idle
+  // sign-out (SECURE-2 item 7) read it and signed the session out. CDP has no
+  // way to stop the page's timers and then go back to real time (freezing the
+  // page did not stop them; detaching left it paused), so the timers run and
+  // every poll they make in the sleep fails, as a sleeping laptop's would.
   await ctx.setOffline(true);
   console.log(`  ...  ${L}: the laptop sleeps for ${SLEEP_SECS}s`);
   await wait(SLEEP_SECS * 1000);
   await ctx.setOffline(false);
-  await cdp.send("Emulation.setVirtualTimePolicy", { policy: "advance" }).catch(() => {});
   await page.waitForSelector('[data-testid="sheet-result"], [data-testid="sheet-failed"]', { timeout: 60000 }).catch(() => {});
   const c = await counts(o.orgId);
   const job = await one("SELECT status FROM sheet_import_jobs WHERE org_id=$1", [o.orgId]);

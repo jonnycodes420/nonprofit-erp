@@ -89,6 +89,7 @@ export default function SignupPage() {
   const [agreement, setAgreement] = useState(null);   // { version, markdown }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [sent, setSent] = useState("");   // SECURE-2: the "check your inbox" sentence
 
   // The agreement is fetched, not bundled: the words somebody accepts must be
   // the words the server is about to record the sha256 of.
@@ -125,8 +126,11 @@ export default function SignupPage() {
           acceptTerms: true, termsVersion: agreement.version,
         }),
       });
-      if (!r?.url) throw new Error("Checkout could not be started. Nothing has been created.");
-      window.location.href = r.url;
+      // SECURE-2: the link goes by email, and the sentence is the same whether
+      // or not the address already has an account.
+      if (!r?.sent) throw new Error("Checkout could not be started. Nothing has been created.");
+      setSent(r.message);
+      setBusy(false);
     } catch (e2) {
       // Every refusal from the route carries copy written for the person
       // reading it, so prefer it verbatim over anything invented here.
@@ -289,13 +293,17 @@ export default function SignupPage() {
               <div data-testid="signup-error" role="alert" style={{ fontSize: 13, color: TERRA, lineHeight: 1.5 }}>{err}</div>
             )}
 
+            {sent && (
+              <div data-testid="signup-sent" role="status" style={{ background: CREAM, borderRadius: 16, padding: "16px 18px", fontSize: 15, color: INK, lineHeight: 1.55 }}>{sent}</div>
+            )}
+
             {/* The ONE action on this card, and the only emerald on it. */}
-            <button type="submit" data-testid="signup-submit" disabled={!ready}
+            {!sent && <button type="submit" data-testid="signup-submit" disabled={!ready}
               style={{ background: ready ? EMERALD : LINE, border: "none", borderRadius: 999, padding: "16px 28px",
                        color: ready ? WHITE : SAGE_GREY, fontSize: 16, fontWeight: 600, fontFamily: "inherit",
                        cursor: ready ? "pointer" : "not-allowed", justifySelf: "stretch" }}>
-              {busy ? "Opening checkout\u2026" : "Continue to card details"}
-            </button>
+              {busy ? "Sending your link\u2026" : "Email me the link to card details"}
+            </button>}
             <p style={{ textAlign: "center", fontSize: 14, color: SAGE_GREY, margin: 0 }}>{band ? `Today: the ${usd(band.setupUsd)} setup fee. Your plan's first charge is in 30 days.` : "Today: the one-time setup fee. Your plan's first charge is in 30 days."}</p>
           </div>
         </form>

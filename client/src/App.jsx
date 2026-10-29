@@ -6,6 +6,7 @@ import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
 import { CheckSnapHost, openCheckSnap } from "./components/CheckSnap";   // CHECK-2
+import IdleGuard from "./components/IdleGuard";   // SECURE-2 item 7
 import { Camera } from "lucide-react";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
@@ -1141,6 +1142,7 @@ function AppShell() {
     {!isReadOnly&&!tell&&<button type="button" className="tell-fab" data-testid="tell-fab" aria-label={atlas} title={atlas}
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
+    <IdleGuard/>
     {tell&&<TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>

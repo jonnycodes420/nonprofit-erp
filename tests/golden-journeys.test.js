@@ -524,7 +524,10 @@ async function agentLeg(H) {
     const agr = (await api("GET", "/public/agreement", null)).body;
     const su = await api("POST", "/public/signup", null, { orgName: "Golden Signup Trust", contactName: "Rae Golden",
       contactEmail: SIGNUP_EMAIL, estimatedDonors: 400, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
-    ok("J11 signup hands back a Checkout", su.status === 201 && /checkout\.stripe\.test/.test(su.body.url || ""), su.body);
+    // SECURE-2: the Checkout link goes by email (the answer never says whether
+    // the address has an account); the session it opens is the mock's.
+    const [cl] = await q(`SELECT checkout_url FROM close_links WHERE lower(contact_email)=lower($1) ORDER BY created_at DESC LIMIT 1`, [SIGNUP_EMAIL]);
+    ok("J11 signup starts a Checkout, and its link goes by email", su.status === 202 && su.body.sent === true && /checkout\.stripe\.test/.test((cl && cl.checkout_url) || ""), { body: su.body, cl });
     const sess = Object.values(mock.sessions).pop() || {};
     const succ = String(sess.success_url || "");
     ok("J11 Checkout returns her to the signed-up page, never the login form",

@@ -23,6 +23,7 @@ const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8
 const primary = { ...btn, background: T.greenDk, borderColor: T.greenDk, color: T.white };
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 14, color: T.ink, width: 140, fontFamily: "inherit" };
 const small = { fontSize: 13, color: T.ink3, lineHeight: 1.55 };
+const IDLE_CHOICES = [15, 30, 60, 120, 240, 480];
 const ago = ts => {
   const m = Math.floor((Date.now() - new Date(ts)) / 60000);
   if (m < 2) return "active now";
@@ -162,6 +163,22 @@ export function SecurityPanel({ isAdmin }) {
             Require two-factor for admins
           </label>
           <div style={small}>Anyone without it is sent to set it up at their next sign-in, and sees nothing else until they have. Turn it on for yourself first.</div>
+          {/* SECURE-2 item 7: idle sign-out for the whole team. */}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink, marginTop: 8 }}>
+            Sign people out after
+            <select data-testid="idle-minutes" value={st.idleMinutes || 60} disabled={busy} onChange={e => setRule("idleMinutes", Number(e.target.value))}
+              style={{ ...inp, width: "auto" }}>
+              {IDLE_CHOICES.map(m => <option key={m} value={m}>{m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`}</option>)}
+            </select>
+            with no activity
+          </label>
+          <div style={small}>A minute before, Steward asks "Still there?". Anything typed into an open form is kept and put back after signing in again.</div>
+          {/* SECURE-2 item 8: a file of more than 1,000 people, taken by staff. */}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink, marginTop: 8 }}>
+            <input type="checkbox" data-testid="allow-staff-large-exports" checked={!!st.allowStaffLargeExports} disabled={busy} onChange={e => setRule("allowStaffLargeExports", e.target.checked)} />
+            Let staff export more than 1,000 people at once
+          </label>
+          <div style={small}>Off, a staff member's export of more than 1,000 people needs an admin. Every export is in the Audit log under Exports either way.</div>
         </div>}
       </div>
 

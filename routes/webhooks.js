@@ -1740,10 +1740,14 @@ app.post("/mailchimp/webhook/:secret", mailchimpWebhookLimiter,
   try {
     const secret = String(req.params.secret || "");
     if (secret.length < 16) return done();
+    // SECURE-2: found by the secret's fingerprint, then compared in constant
+    // time (lengths first), never by a plain string match on the secret.
+    const fp = crypto.createHash("sha256").update(secret).digest("hex");
     const rows = await query(
-      `SELECT id, org_id, provider FROM email_marketing_connections
-        WHERE webhook_secret=? AND provider='mailchimp' AND status <> 'disconnected' LIMIT 1`, [secret]);
-    if (!rows.length) return done();
+      `SELECT id, org_id, provider, webhook_secret FROM email_marketing_connections
+        WHERE encode(sha256(convert_to(webhook_secret,'UTF8')),'hex')=? AND provider='mailchimp' AND status <> 'disconnected' LIMIT 1`, [fp]);
+    const a = Buffer.from(secret), b = Buffer.from(String((rows[0] && rows[0].webhook_secret) || ""));
+    if (!rows.length || a.length !== b.length || !crypto.timingSafeEqual(a, b)) return done();
     const conn = rows[0];
     const type = String(req.body?.type || "");
     const email = String(req.body?.["data[email]"] || req.body?.data?.email || "").trim().toLowerCase();

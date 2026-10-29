@@ -10,6 +10,9 @@ know exactly what is going out.** Every screen, word and test about donor mail s
 
 ## Rules
 
+- **SECURE-2 (2026-10-29): a campaign says what it did.** "Sent to 412 of 500 · 88 not sent" with its
+  reasons, "Sent to 500", or "Not sent", from `campaignDelivery.js`, read by every surface that names
+  a sent campaign; the truth check (`mailCampaigns`) holds them together.
 - **SECURE-1 (2026-10-28): a merge value is text.** A donor's name filled into email HTML is
   escaped (`renderMergeFields`, `legacyCampaignBody`, sequence steps); a subject passes
   `{ text: true }`. HTML put into the editor or preview goes through `client/src/lib/safeHtml.js`.
