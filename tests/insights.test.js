@@ -91,7 +91,10 @@ async function freshOrg(id, name) {
   return login(email, PASSWORD);
 }
 async function importFile(tok, file) {
-  const body = { fileName: file, sheets: await sheetsOf(file) };
+  // IMPORT-5: the dinner names an event and holds no dates, so its answers are
+  // given: Oct 22, its gifts left "No date", its pledges due from the event's date
+  const body = { fileName: file, sheets: await sheetsOf(file),
+                 ...(/dinner/.test(file) ? { answers: { eventDate: "2026-10-22", useEventDate: false, pledgeDue: "event" } } : {}) };
   const u = await api("POST", "/sheet-import/understand", tok, body);
   if (u.status !== 200 || !u.body.ready) return { ok: false, why: JSON.stringify(u.body).slice(0, 300) };
   const r = await api("POST", "/sheet-import/commit", tok, { ...body, background: true });

@@ -53,11 +53,11 @@ const one = async (sql, args) => (await q(sql, args))[0];
 async function importJob(tok, body) {
   const r = await api("POST", "/sheet-import/commit", tok, { ...body, background: true });
   if (r.status !== 202) return { start: r, end: null, importId: null };
-  const t0 = Date.now();
+  const t0 = performance.now();
   for (;;) {
     const j = await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok);
     if (j.status === 200 && j.body.status !== "running") return { start: r, end: j.body, importId: r.body.importId };
-    if (Date.now() - t0 > 120000) return { start: r, end: { status: "timeout" }, importId: r.body.importId };
+    if (performance.now() - t0 > 120000) return { start: r, end: { status: "timeout" }, importId: r.body.importId };
     await new Promise(res => setTimeout(res, 150));
   }
 }

@@ -102,7 +102,7 @@ export const EXPORT_SHAPES = [
     columns: {
       "constituent id": "externalId", "gift id": "giftId", "gift date": "date", "gift amount": "amount", "gift payment type": "method",
       "fund description": "fund", "campaign description": "campaign", "appeal description": "giftNote",
-      "key indicator": { role: "ignore", reason: "Raiser's Edge's I (a person) or O (an organisation); Steward reads that from the name" },
+      "key indicator": { role: "ignore", reason: "Raiser's Edge's I (a person) or O (an organization); Steward reads that from the name" },
       // Raiser's Edge's gift type is what the gift is, not how it was paid
       "gift type": { role: "status", values: { cash: "received", "pay-cash": "received", "recurring gift pay-cash": "received", "stock/property": "received",
         "stock/property (sold)": "received", "gift-in-kind": "received", "other": "received", pledge: "pledged", "mg pledge": "pledged",
