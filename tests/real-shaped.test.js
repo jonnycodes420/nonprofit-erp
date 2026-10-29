@@ -318,6 +318,50 @@ async function main() {
   ok("§5 the preview says how many of them are already here (matched to the gift file's people)", CU.matchedPeople > 0 && new RegExp(`${CU.matchedPeople} already in Steward`).test((CU.button || {}).text || ""),
      JSON.stringify([CU.matchedPeople, CU.newPeople, CU.button]));
   console.log(`  [real-shaped] contacts preview: ${CU.matchedPeople} matched, ${CU.newPeople} new, ${cc.records} records from ${CK.rows} rows`);
+  // §5 IMPORT-5 item 7, from the file's own cells (never the reader): the
+  // one-column addresses, the rows merged into a near-duplicate, the notes that
+  // say a phone is wrong or the mail came back, and one count of people.
+  const cRows = cSheets[0].grid.slice(1).filter(r => r.some(v => String(v ?? "").trim()));
+  const cell = (r, i) => String(r[i] ?? "").trim();
+  // a street, maybe a suite, then a city and a state spelled right (the file's typos, "Kentucly", stay whole)
+  const CLEAN_ADDR = /^\d+ [A-Za-z ]+(, Suite \d+)?, [A-Za-z ]+ (Kentucky|Illinois|South Carolina|New Mexico|Michigan|Ohio)( +\d{5})?$/;
+  const addrCells = cRows.filter(r => cell(r, 4));
+  const wantSplit = addrCells.filter(r => CLEAN_ADDR.test(cell(r, 4))).length, wantCheck = addrCells.length - wantSplit;
+  const wantPhoneBad = cRows.filter(r => cell(r, 2) && /incorrect number|wrong number/i.test(cell(r, 5))).length;
+  const wantAddrBad = cRows.filter(r => cell(r, 4) && /got returned|returned mail/i.test(cell(r, 5))).length;
+  // rows that name one person: the same email, or the same name (no email that disagrees)
+  const comp = cRows.map((_, i) => i), root = i => (comp[i] === i ? i : (comp[i] = root(comp[i])));
+  const firstBy = new Map();
+  cRows.forEach((r, i) => {
+    const em = cell(r, 3).toLowerCase(), nm = `${cell(r, 1).replace(/^(dr|mr|mrs|ms|rev)\.?\s+/i, "")} ${cell(r, 0)}`.trim().toLowerCase();   // "Dr. Sellie" is Sellie
+    for (const k of [em && "e:" + em, "n:" + nm].filter(Boolean)) {
+      if (!firstBy.has(k)) { firstBy.set(k, i); continue; }
+      const j = firstBy.get(k), ej = cell(cRows[j], 3).toLowerCase();
+      if (k.startsWith("n:") && em && ej && em !== ej) continue;
+      comp[root(i)] = root(j);
+    }
+  });
+  const wantMerged = cRows.length - new Set(cRows.map((_, i) => root(i))).size;
+  ok(`§5 7a: ${wantSplit} one-column addresses split, ${wantCheck} kept whole and marked "Check this address"`,
+     cc.addressesSplit === wantSplit && cc.addressesToCheck === wantCheck && wantSplit + wantCheck === addrCells.length, JSON.stringify([cc.addressesSplit, cc.addressesToCheck, wantSplit, wantCheck]));
+  const wilin = (CU.people || []).find(p => p.name === "Wilin Stangate") || {};
+  const ex = CU.addressExample || {};
+  ok("§5 7a: \"1815 Juniper Way, Lexington Kentucky 40502\" is 1815 Juniper Way · Lexington · KY · 40502, and the preview shows it",
+     wilin.address === "1815 Juniper Way" && wilin.city === "Lexington" && wilin.state === "KY" && wilin.zip === "40502" && !wilin.address2
+     && ex.from === "1815 Juniper Way, Lexington Kentucky 40502" && ex.city === "Lexington" && ex.state === "KY", JSON.stringify([wilin, ex]));
+  const ra = CU.rowAccount || {};
+  ok(`§5 7c: "${CK.rows} rows · ${CK.people} people · ${CK.merged_rows} merged with a near-duplicate", and the rows open`,
+     ra.rows === CK.rows && ra.people === CK.people && ra.merged === CK.merged_rows && wantMerged === CK.merged_rows && ra.balanced === true
+     && ra.sentence === `${CK.rows} rows · ${CK.people} people · ${CK.merged_rows} merged with a near-duplicate` && (CU.merged || []).length === CK.merged_rows
+     && (CU.merged || []).every(m => m.line && m.into), JSON.stringify([ra, (CU.merged || []).map(m => [m.line, m.into])]));
+  ok(`§5 7d: ${wantPhoneBad} phones marked wrong and ${wantAddrBad} addresses marked returned, from the notes`,
+     cc.phonesMarkedWrong === wantPhoneBad && wantPhoneBad === CK.phones_marked_wrong && cc.addressesMarkedReturned === wantAddrBad && wantAddrBad === CK.addresses_marked_returned,
+     JSON.stringify([cc.phonesMarkedWrong, wantPhoneBad, cc.addressesMarkedReturned, wantAddrBad]));
+  const btnN = +(String(((CU.button || {}).importText) || "").match(/Import ([\d,]+) people/) || [])[1]?.replace(/,/g, "");
+  const pl = CU.peopleLine || {};
+  ok("§5 7b: the button and the People line say the same number of people, and new + already here + waiting = that number",
+     btnN === pl.persons && pl.persons === cc.persons && pl.balanced === true && pl.matched === CU.matchedPeople && pl.new === CU.newPeople
+     && new RegExp(`${pl.matched} already in Steward`).test(CU.button.importText), JSON.stringify([CU.button, pl]));
   const farms = (CU.people || []).filter(p => /Farm$/.test(p.name));
   ok("§4 the farms in the Last Name column (no First Name) are organisations", farms.length === 3 && farms.every(p => p.kind === "organization"), JSON.stringify(farms.map(p => [p.name, p.kind])));
   const cImp = await importJob(tok, cBody);
@@ -334,11 +378,37 @@ async function main() {
   ok("§5 the Imports list row claims no thank-yous for a file with no gifts", !crow.thanks && crow.peopleSentence === crc.peopleSentence, JSON.stringify(crow).slice(0, 300));
   const dupes = await q(`SELECT LOWER(name) AS n, COUNT(*)::int AS k FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND kind IS DISTINCT FROM 'organisation' GROUP BY 1 HAVING COUNT(*) > 1`, [ORG]);
   ok("§5 no person is here twice after both files", dupes.length === 0, JSON.stringify(dupes.slice(0, 10)));
+  const badRows = await one(`SELECT COUNT(*) FILTER (WHERE phone_unreachable)::int AS ph, COUNT(*) FILTER (WHERE address_unmailable)::int AS ad,
+       COUNT(*) FILTER (WHERE name='Wilin Stangate' AND address='1815 Juniper Way' AND city='Lexington' AND state='KY' AND zip='40502')::int AS wilin
+     FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
+  ok(`§5 7d: after the import, ${wantPhoneBad} phones are marked wrong and ${wantAddrBad} addresses as returned mail, and Wilin Stangate's address is split`,
+     badRows.ph === wantPhoneBad && badRows.ad === wantAddrBad && badRows.wilin === 1, JSON.stringify(badRows));
   for (const nm of ["Torina Fairbury", "Isia Whitshaw", "Isora Duncombe", "Nelyn Thornby"]) {
     const r = await q("SELECT address FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND name=$2", [ORG, nm]);
     ok(`§5 the near-duplicate rows of ${nm} (one row blank) are one person, with the address`, r.length === 1 && !!r[0].address, JSON.stringify(r));
   }
   await surfaces(ORG, { step: "after contacts", importId: C_RUN });
+
+  // §5 7b: a question unanswered is waiting, never a match; answering it moves
+  // the button and the People line together (its own org: two Ulis Cranvilles)
+  {
+    const ORG7 = "org_hs1real7b";
+    const tok7 = await freshOrg(ORG7, "Real-shaped 7b (test)");
+    for (const id of ["d_7b_ulis1", "d_7b_ulis2"]) await q(`INSERT INTO donors (id, org_id, name, status, created_by, created_by_name) VALUES ($1,$2,'Ulis Cranville','active','system:test','Test')`, [id, ORG7]);
+    const read7 = async answers => (await api("POST", "/sheet-import/understand", tok7, { ...cBody, answers })).body || {};
+    const num = b => +(String((b.button || {}).importText || "").match(/Import ([\d,]+) people/) || [])[1]?.replace(/,/g, "");
+    const a7 = await read7({});
+    const q7 = (a7.questions || []).find(x => x.kind === "person");
+    const p7 = a7.peopleLine || {};
+    ok("§5 7b: with the who-question open, Ulis Cranville is waiting, not a match, on the button and the People line",
+       !!q7 && p7.waiting === 1 && p7.matched === 0 && a7.matchedPeople === 0 && p7.balanced === true && num(a7) === p7.persons
+       && /1 waiting on your answer/.test(a7.button.importText) && !/already in Steward/.test(a7.button.importText), JSON.stringify([q7 && q7.key, p7, a7.button]));
+    const b7 = q7 ? await read7({ people: { [q7.key]: "d_7b_ulis1" } }) : {};
+    const p7b = b7.peopleLine || {};
+    ok("§5 7b: once answered, both say 1 already in Steward and nobody waiting",
+       p7b.waiting === 0 && p7b.matched === 1 && b7.matchedPeople === 1 && p7b.persons === p7.persons && num(b7) === p7b.persons && p7b.balanced === true
+       && /1 already in Steward/.test(b7.button.importText) && !/waiting/.test(b7.button.importText), JSON.stringify([p7b, b7.button]));
+  }
 
   // §6 undo the contacts, then the gifts; then the gift file alone
   const u1 = await api("POST", `/imports/${C_RUN}/reverse`, tok, {});

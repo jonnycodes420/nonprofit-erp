@@ -206,7 +206,7 @@ export function ContactExtras({ contact, donorId, isReadOnly }) {
   return (
     <>
       {donorId && (contact.privacyOn || contact.isClient) && <><dt style={DIM}>Privacy</dt><dd style={{ margin: 0 }}><ClientFlag donorId={donorId} isClient={contact.isClient} isReadOnly={isReadOnly} /></dd></>}
-      {contact.address && <><dt style={DIM}>Address</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }} data-testid="dp-rail-address">{contact.address}</dd></>}
+      {contact.address && <><dt style={DIM}>Address</dt><dd style={{ margin: 0, overflowWrap: "anywhere" }} data-testid="dp-rail-address"><span style={contact.addressBad ? { textDecoration: "line-through" } : undefined}>{contact.address}</span></dd></>}
       {contact.preferred && <><dt style={DIM}>Prefers</dt><dd style={{ margin: 0 }}>{contact.preferred}</dd></>}
       {(contact.flags || []).length > 0 && <><dt style={DIM}>Careful</dt><dd style={{ margin: 0, display: "flex", flexDirection: "column", gap: 3 }} data-testid="dp-rail-flags">
         {contact.flags.map(f => <span key={f.key} style={{ color: T.gold500, fontWeight: 700 }}>{f.label}</span>)}

@@ -239,6 +239,8 @@ async function matchPeople(orgId, u, answers, privacy) {
 // the run (event_attendees.import_id, interactions.import_id, the summary), so
 // Undo takes it all back.
 const ATT_CHUNK = 500;
+// IMPORT-5 (7d): why a phone or address is marked bad, in the note's own words
+const badWhy = (src, fileName) => `From your import of ${fileName || "a spreadsheet"}: "${String(src.value || "").slice(0, 120)}" (${src.header || "Notes"}, row ${src.line})`;
 const COMM_WORDS = { optOut: "Opted out of email", doNotContact: "Do not contact", doNotMail: "Do not mail", doNotCall: "Do not call",
                      doNotEmail: "Do not email", deceased: "Marked deceased" };
 async function writeEngagement({ orgId, u, importId, eventId, personIds, who, summary, fileName, eventName }) {
@@ -280,6 +282,9 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
       for (const id of ids) ix.push(["int_" + uuid().slice(0, 10), orgId, id, "note", `${words}. From your import: ${where}.`, today, who.id, who.name, importId,
         JSON.stringify({ source: "sheet-import", kind: "preference", preference: k, header: src.header, value: src.value, file: src.file })]);
     }
+    // IMPORT-5 (7a): an address Steward could not split for sure is kept whole, and the timeline says to check it
+    if (p.addressCheck && ids[0]) ix.push(["int_" + uuid().slice(0, 10), orgId, ids[0], "note", `Check this address. From your import of ${fileName}: "${String(p.addressCheck).slice(0, 200)}" could not be split into street, city, state and ZIP for sure, so it is kept whole.`, today, who.id, who.name, importId,
+      JSON.stringify({ source: "sheet-import", kind: "check-address", value: p.addressCheck })]);
     if (p.comms && p.comms.optOut && p.email) {
       const em = p.email.toLowerCase();
       const [x] = await query("SELECT id FROM email_suppressions WHERE org_id=? AND LOWER(email)=?", [orgId, em]);
@@ -436,14 +441,22 @@ async function buildUnderstanding(req, body) {
   u.deletedMatches = deletedMatches;
   u.deletedSentence = nDel ? `${nDel.toLocaleString("en-US")} ${nDel === 1 ? "person matches someone" : "people match someone"} you deleted. Not imported.` : null;
   const [{ n: orgDonors }] = await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL", [orgId]);
-  let newPeople = 0, matchedPeople = 0;
-  for (const p of u.people) for (const x of matches.get(p.key).members) { if (x.status === "matched") matchedPeople++; else if (x.status === "new") newPeople++; }
+  // IMPORT-5 (7b): one count of people, read by the button and the People line
+  // alike. A person whose question is unanswered is waiting, never a match.
+  let newPeople = 0, matchedPeople = 0, waitingPeople = 0;
+  for (const p of u.people) for (const x of matches.get(p.key).members) {
+    if (x.status === "matched") matchedPeople++; else if (x.status === "new") newPeople++; else if (x.status === "ambiguous") waitingPeople++;
+  }
+  const personsNow = (u.counts && u.counts.persons) || 0;
+  u.peopleLine = { persons: personsNow, new: newPeople, matched: matchedPeople, waiting: waitingPeople, balanced: newPeople + matchedPeople + waitingPeople === personsNow,
+    sentence: `${personsNow.toLocaleString("en-US")} ${personsNow === 1 ? "person" : "people"}: ${newPeople.toLocaleString("en-US")} new, ${matchedPeople.toLocaleString("en-US")} already in Steward`
+      + (waitingPeople ? `, ${waitingPeople.toLocaleString("en-US")} waiting on your answer` : "") };
   // an event already on the calendar with the suggested name
   let events = [];
   const nm = (body.answers && body.answers.eventName) || (u.questions.find(q => q.id === "date") || {}).suggestedEventName;
   if (nm) events = await query("SELECT id, name, date::text AS date FROM events WHERE org_id=? AND LOWER(name)=LOWER(?) ORDER BY date DESC NULLS LAST LIMIT 5", [orgId, nm]);
   u.ready = u.questions.filter(q => !q.optional).length === 0;
-  const button = Rm.importButtonSentence(u, { matched: matchedPeople });
+  const button = Rm.importButtonSentence(u, { matched: matchedPeople, waiting: waitingPeople });
   if (!u.ready) button.text = `Answer ${u.questions.filter(q => !q.optional).length === 1 ? "1 question" : u.questions.filter(q => !q.optional).length + " questions"} first`;
   return { u, matches, model, orgDonors, newPeople, matchedPeople, events, today, button };
 }
@@ -470,6 +483,8 @@ function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, ev
     ...u,
     button, sample: samplePerson(u),
     people: u.people.map(p => ({ key: p.key, name: p.name, kind: p.kind, household: p.household, email: p.email, lines: p.lines, roles: p.roles, flags: p.flags,
+      address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip, addressFrom: p.addressFrom || null, addressCheck: p.addressCheck || null,
+      phoneBad: !!p.phoneBad, addressBad: !!p.addressBad,
       members: matches.get(p.key).members.map(x => ({ name: x.name, status: x.status, id: x.id, by: x.by || null })) })),
     newPeople, matchedPeople, orgDonors, events, modelUsed: !!model.used, modelOff: !!model.off,
     // FIX-52: what the assistant proposed, so Import writes exactly this plan without asking it again
@@ -651,7 +666,10 @@ async function writePlan({ req, body, importId, who, report }) {
       newRows.push([id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip,
         i === 0 ? p.externalId : null, p.kind === "organization" ? "organisation" : (p.kind === "anonymous" ? "anonymous" : "person"), spouse,
         stageForRoles(p.roles), "active", "[]", JSON.stringify(p.personTypes || ["other"]), !!(c.optOut || c.doNotEmail), !!c.doNotContact, !!c.doNotMail,
-        !!c.doNotCall, !!c.deceased, who.id, who.name, importId]);
+        !!c.doNotCall, !!c.deceased, who.id, who.name, importId,
+        // IMPORT-5 (7d): a note on the row said the phone is wrong, or the mail came back
+        !!(p.phoneBad && (i === 0 ? p.phone : null)), p.phoneBad && i === 0 && p.phone ? badWhy(p.phoneBad, body.fileName) : null,
+        !!(p.addressBad && p.address), p.addressBad && p.address ? badWhy(p.addressBad, body.fileName) : null, p.addressBad && p.address ? new Date().toISOString() : null]);
       ids.push(id);
     }
     personId.set(p.key, ids[0]);
@@ -659,7 +677,8 @@ async function writePlan({ req, body, importId, who, report }) {
     ids.forEach(id => touched.add(id));
   }
   const DCOLS = ["id", "org_id", "name", "email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "kind", "spouse_name",
-    "stage", "status", "tags", "person_types", "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased", "created_by", "created_by_name", "created_import_id"];
+    "stage", "status", "tags", "person_types", "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased", "created_by", "created_by_name", "created_import_id",
+    "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"];
   for (let k = 0; k < newRows.length; k += JOB_BATCH) {
     await insertRows(`INSERT INTO donors (${DCOLS.join(",")})`, DCOLS, newRows.slice(k, k + JOB_BATCH), { person_types: "::jsonb" });
     done = Math.min(k + JOB_BATCH, newRows.length);
@@ -693,27 +712,44 @@ async function writePlan({ req, body, importId, who, report }) {
     const c = p.comms || {};
     for (const id of ids.filter(d => matchedIds.has(d))) {
       const [before] = await query(`SELECT email, phone, address, address2, city, state, zip, external_donor_id, person_types,
-                                           do_not_email, do_not_contact, do_not_mail, do_not_call, deceased
+                                           do_not_email, do_not_contact, do_not_mail, do_not_call, deceased,
+                                           phone_unreachable, phone_unreachable_reason, address_unmailable, address_unmailable_reason, address_unmailable_at
                                       FROM donors WHERE id=? AND org_id=?`, [id, orgId]);
       if (!before) continue;
       const first = id === ids[0];
       const types = Array.isArray(before.person_types) ? before.person_types : [];
       const addTypes = (p.personTypes || []).filter(t => t !== "other" && !types.includes(t));
       const nextTypes = addTypes.length ? [...types.filter(t => t !== "other"), ...addTypes] : types;
+      // IMPORT-5: the address is one block. A person with no address takes the
+      // file's whole; a person with one keeps theirs (no city from another address).
+      const takeAddr = !String(before.address || "").trim();
       const after = {
         email: before.email || (first ? p.email : null) || null, phone: before.phone || (first ? p.phone : null) || null,
-        address: before.address || p.address || null, address2: before.address2 || p.address2 || null, city: before.city || p.city || null,
-        state: before.state || p.state || null, zip: before.zip || p.zip || null, external_donor_id: before.external_donor_id || (first ? p.externalId : null) || null,
+        address: takeAddr ? p.address || null : before.address, address2: takeAddr ? p.address2 || null : before.address2 || null,
+        city: takeAddr ? p.city || null : before.city || null, state: takeAddr ? p.state || null : before.state || null, zip: takeAddr ? p.zip || null : before.zip || null,
+        external_donor_id: before.external_donor_id || (first ? p.externalId : null) || null,
         person_types: nextTypes, do_not_email: before.do_not_email || !!(c.optOut || c.doNotEmail), do_not_contact: before.do_not_contact || !!c.doNotContact,
         do_not_mail: before.do_not_mail || !!c.doNotMail, do_not_call: before.do_not_call || !!c.doNotCall, deceased: before.deceased || !!c.deceased,
+        phone_unreachable: before.phone_unreachable ?? null, phone_unreachable_reason: before.phone_unreachable_reason ?? null,
+        address_unmailable: before.address_unmailable ?? null, address_unmailable_reason: before.address_unmailable_reason ?? null, address_unmailable_at: before.address_unmailable_at ?? null,
       };
+      // IMPORT-5 (7d): the note flags the number or address on record only when it is the one the note was written beside
+      const digits = v => String(v || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+      if (p.phoneBad && first && after.phone && digits(after.phone) === digits(p.phone) && !after.phone_unreachable) {
+        after.phone_unreachable = true; after.phone_unreachable_reason = badWhy(p.phoneBad, body.fileName);
+      }
+      if (p.addressBad && after.address && String(after.address).trim().toLowerCase() === String(p.address || "").trim().toLowerCase() && !after.address_unmailable) {
+        after.address_unmailable = true; after.address_unmailable_reason = badWhy(p.addressBad, body.fileName); after.address_unmailable_at = new Date().toISOString();
+      }
       const changed = Object.keys(after).filter(k => JSON.stringify(after[k] ?? null) !== JSON.stringify(before[k] ?? null));
       if (!changed.length) continue;
       await run(`UPDATE donors SET email=?, phone=?, address=?, address2=?, city=?, state=?, zip=?, external_donor_id=?, person_types=?::jsonb,
-                                   do_not_email=?, do_not_contact=?, do_not_mail=?, do_not_call=?, deceased=?, updated_at=NOW()
+                                   do_not_email=?, do_not_contact=?, do_not_mail=?, do_not_call=?, deceased=?,
+                                   phone_unreachable=?, phone_unreachable_reason=?, address_unmailable=?, address_unmailable_reason=?, address_unmailable_at=?, updated_at=NOW()
                   WHERE id=? AND org_id=?`,
         [after.email, after.phone, after.address, after.address2, after.city, after.state, after.zip, after.external_donor_id, JSON.stringify(after.person_types),
-         after.do_not_email, after.do_not_contact, after.do_not_mail, after.do_not_call, after.deceased, id, orgId]);
+         after.do_not_email, after.do_not_contact, after.do_not_mail, after.do_not_call, after.deceased,
+         after.phone_unreachable, after.phone_unreachable_reason, after.address_unmailable, after.address_unmailable_reason, after.address_unmailable_at, id, orgId]);
       summary.personChanges.push({ id, before: Object.fromEntries(changed.map(k => [k, before[k] ?? null])) });
     }
   }
