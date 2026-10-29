@@ -251,8 +251,10 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
     const rows = [];
     for (const p of u.people) {
       const at = p.attendance;
-      if (!at || !(at.invited || at.rsvp != null || at.attended)) continue;
-      const status = at.attended ? "attended" : at.rsvp === true ? "registered" : at.rsvp === false ? "declined" : "invited";
+      // FIX-59: a guest-list row with no reply is on the list (invited); a name
+      // only on the seating chart was seated, so expected (registered)
+      if (!at || !(at.invited || at.rsvp != null || at.attended || at.table)) continue;
+      const status = at.attended ? "attended" : at.rsvp === true ? "registered" : at.rsvp === false ? "declined" : at.invited ? "invited" : "registered";
       const ids = personIds.get(p.key) || [];
       ids.forEach((id, i) => {
         if (have.has(id)) return;
@@ -268,12 +270,48 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
                  VALUES ${batch.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?)").join(",")}`, batch.flat());
     }
     summary.attendees = rows.length;
+    // FIX-59 · AN IMPORTED ATTENDANCE MARK IS A CHECK-IN, at noon on the
+    // event's day in the org's zone, or at the moment of the import when the
+    // file gave no date (the event is "Date not known").
+    const tzName = ((await ctx.orgTz(orgId).catch(() => null)) || {}).timezone || "UTC";
+    await run(`UPDATE event_attendees a SET checked_in_at = CASE WHEN e.date_unknown OR e.date IS NULL THEN NOW()
+                                                              ELSE (e.date::date + time '12:00') AT TIME ZONE ? END
+                 FROM events e WHERE e.id = a.event_id AND e.org_id = a.org_id
+                  AND a.org_id=? AND a.event_id=? AND a.import_id=? AND a.status='attended' AND a.checked_in_at IS NULL`, [tzName, orgId, eventId, importId]);
+    // FIX-59 · THE CHART'S TABLES ARE TABLES. Each label the file seats people
+    // at becomes one of the event's tables, sized to the people the file seats
+    // there (Table 2 with 13 is a 13-seat table, never "13 of 10"), and each
+    // guest is linked to it. A table the event already has keeps its size.
+    const seated = new Map();
+    for (const r of rows) if (r[7]) seated.set(r[7], (seated.get(r[7]) || 0) + 1);
+    if (seated.size) {
+      const existing = await query("SELECT id, label, sort FROM event_tables WHERE org_id=? AND event_id=?", [orgId, eventId]);
+      const idOf = new Map(existing.map(t => [String(t.label).toLowerCase(), t.id]));
+      let sort = existing.reduce((m, t) => Math.max(m, Number(t.sort) || 0), 0);
+      const labels = [...seated.keys()].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+      for (const label of labels) {
+        if (idOf.has(label.toLowerCase())) continue;
+        const id = "etb_" + uuid().slice(0, 10);
+        await run(`INSERT INTO event_tables (id, org_id, event_id, label, seats, sort, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
+          [id, orgId, eventId, label.slice(0, 80), Math.max(1, Math.min(60, seated.get(label))), ++sort, who.id, who.name]);
+        idOf.set(label.toLowerCase(), id);
+        summary.tablesCreated.push(id);
+      }
+      await run(`UPDATE event_attendees a SET table_id = t.id FROM event_tables t
+                  WHERE t.event_id = a.event_id AND t.org_id = a.org_id AND LOWER(t.label) = LOWER(a.table_label)
+                    AND a.org_id=? AND a.event_id=? AND a.import_id=? AND a.table_id IS NULL`, [orgId, eventId, importId]);
+    }
   }
   // communication choices: on the person, in the suppression list, and a line
   // on the timeline saying where each came from
   const ix = [];
   for (const p of u.people) {
     const ids = personIds.get(p.key) || [];
+    // FIX-59: a note typed as a row under them, or written into their name, is a note on them
+    for (const n of (p.personNotes || [])) if (ids[0]) {
+      ix.push(["int_" + uuid().slice(0, 10), orgId, ids[0], "note", `From your import of ${fileName} (${n.sheet}, row ${n.line}): ${String(n.text).slice(0, 500)}`, today, who.id, who.name, importId,
+        JSON.stringify({ source: "sheet-import", kind: n.asRow ? "note-row" : "name-note", text: n.text, sheet: n.sheet, line: n.line })]);
+    }
     for (const [k, words] of Object.entries(COMM_WORDS)) {
       const src = p.comms && p.comms[k];
       if (!src) continue;
@@ -665,7 +703,7 @@ async function writePlan({ req, body, importId, who, report }) {
   if (already) return { status: 409, body: { error: "run_exists", message: "That import has already been recorded." } };
   const a = body.answers || {};
   const summary = { eventCreated: null, householdsCreated: [], householdAssigned: [], sustainerFlagged: [], pledges: [], fundsCreated: [],
-                    personChanges: [], suppressions: [], attendees: 0, customFieldsCreated: [], customValuesSet: [], keptAsNotes: 0 };
+                    personChanges: [], suppressions: [], attendees: 0, customFieldsCreated: [], customValuesSet: [], keptAsNotes: 0, tablesCreated: [] };
   const memberCount = u.people.reduce((n, p) => n + Math.max(1, matches.get(p.key).members.length), 0);
   const total = memberCount + u.pledges.length + u.gifts.length;
   let done = 0;
@@ -883,6 +921,19 @@ async function writePlan({ req, body, importId, who, report }) {
     } else { giftsCreated++; giftCents += g.cents; }
     await report(`Writing gifts ${gi} of ${u.gifts.length}`, memberCount + u.pledges.length + gi, total);
   }
+  // FIX-59 · ALREADY DEPOSITED. Yes (the default) marks the run's received
+  // gifts deposited on their own dates, one deposit per day of the run
+  // (deposit_ref "import:<run>:<day>"), so Finance never lists them as Not yet
+  // on a deposit. Stock and in-kind never reached a bank and are not marked.
+  // Undo removes the gifts, and the marks go with them.
+  if ((a.giftsDeposited || "yes") !== "no") {
+    const dep = await query(`UPDATE gifts SET deposited_on = date::text, deposit_ref = ? || COALESCE(date::text, 'no date')
+                              WHERE org_id=? AND import_id=? AND deposit_ref IS NULL AND COALESCE(is_sample,false) = false
+                                AND LOWER(TRIM(COALESCE(type,''))) NOT IN ('stock','in kind','in-kind','in_kind','securities')
+                                AND LOWER(TRIM(COALESCE(payment_method,''))) NOT IN ('stock','in-kind','in kind')
+                              RETURNING id`, [`import:${importId}:`, orgId, importId]);
+    summary.giftsDeposited = dep.length;
+  } else summary.giftsDeposited = 0;
   // "Reccuring": a monthly giver for her to confirm, never a subscription
   for (const f of u.flags) {
     const id = personId.get(f.personKey);

@@ -9976,6 +9976,9 @@ async function reverseImport(req, res) {
     // was already here is put back exactly as they were.
     await run("DELETE FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    // FIX-59: the tables the seating chart made, once nobody sits at them
+    if ((sj.tablesCreated || []).length) await run(`DELETE FROM event_tables t WHERE t.org_id=? AND t.id = ANY(?)
+                                                      AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.table_id = t.id)`, [orgId, sj.tablesCreated]);
     if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
     const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
       "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",

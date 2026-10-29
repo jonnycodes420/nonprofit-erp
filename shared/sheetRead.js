@@ -26,6 +26,7 @@ import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 import { isGivenName } from "./givenNames.js";
 import { splitAddress, contactNoteFlags } from "./addressSplit.js";
+import { nearDuplicate, nameAndNotes } from "./nearNames.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -1037,6 +1038,23 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const byId = new Map(), byEmail = new Map(), byName = new Map();
   const gifts = [], pledges = [], aside = [], totals = [], flags = [];
   const nearMisses = [];
+  // FIX-59 · ONE PERSON, TWO SPELLINGS, ON TWO LISTS OF ONE EVENT. When an
+  // event's file brings in more than one list (a guest list and a seating
+  // chart), a name on a later list that nearNames.js reads as a spelling, a
+  // nickname or a couple's form of someone on an earlier list is a question,
+  // answered in one pass: Same person (the default, shown) reads the row into
+  // the earlier list's person and keeps that spelling; Different makes a new
+  // person. Never a silent new person, never a silent merge.
+  const nearDupes = [];
+  const nearAns = (answers && answers.nearDuplicates) || {};
+  const multiList = usable.length >= 2 && hasEngagement;
+  const nearWord = w => s(w).toLowerCase().replace(/[^a-z]/g, "");
+  const nearIndex = { first: new Map(), last: new Map() };
+  const nearAdd = (map, k, p) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(p); };
+  // FIX-59 · NOTES ARE NOT PEOPLE. A row whose name cell is a note ("1 Medical
+  // Gluten") is a note on the person on the row above it; a note in a name
+  // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
+  const noteRows = [], namesCleaned = [];
   const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
   const occ = new Map();
   const sourceFile = s(fileName) || "your file";
@@ -1053,6 +1071,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const oneColumnAddress = !!role("address") && !role("city") && !role("state") && !role("zip");
     const noteCols = t.cols.filter(c => c.role === "note" || c.role === "keep");
     t.readCount = 0;   // rows that are people or gifts: not titles, labels or totals
+    let lastPerson = null;   // FIX-59: the person on the row above, for a note typed as a row
+    const nameRoleCols = ["name", "lastFirst", "first", "last"].map(role).filter(Boolean);
     const tableSums = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
     const sinceSubtotal = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
     for (const b of t.body) {
@@ -1061,6 +1081,21 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const filled = cells.filter(c => !isBlank(c));
       const nameText = nameCols.map(c => s(cells[c.index])).filter(Boolean).join(" ");
       const anyTotalWord = cells.some((c, i) => NUMERIC_TOTAL_RE.test(s(c)) && !moneyCols.some(m => m.index === i));
+      // FIX-59: a note typed as a row under its person ("2 Vegan") is that person's note, never a person
+      {
+        const noteText = nameRoleCols.map(c => s(cells[c.index])).filter(Boolean).join(" ");
+        const emailCell = role("email") ? s(cellOf(t, b, role("email"))) : "";
+        if (noteText && !emailCell && !moneyCols.some(m => moneyOf(cellOf(t, b, m)) != null) && !isOrgName(noteText) && nameAndNotes(noteText).isNote) {
+          if (lastPerson) {
+            lastPerson.personNotes.push({ text: noteText, sheet: t.sheet, line: b.line, asRow: true });
+            noteRows.push({ sheet: t.sheet, line: b.line, text: noteText, attachedTo: lastPerson.name, personKey: lastPerson.key });
+          } else {
+            t.readCount++;
+            aside.push({ sheet: t.sheet, line: b.line, reason: `a note ("${noteText}"), not a person, with no one on the row above it on this sheet to attach it to`, cells: filled.slice(0, 6), cents: null });
+          }
+          continue;
+        }
+      }
       // a section label ("October 2026") or a stray line inside the table
       if (filled.length === 1 && !moneyCols.some(m => !isBlank(cells[m.index]))) {
         const lbl = filled[0];
@@ -1097,7 +1132,20 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         continue;
       }
       // ── layer 1: who
-      let who = readName({ first: get(b, "first"), last: get(b, "last"), full: get(b, "name"), lastFirst: get(b, "lastFirst"), org: get(b, "org") });
+      // FIX-59: markup and parenthetical notes come off a person's name and onto their note
+      const rowNotes = [];
+      const nameGet = r => {
+        const v = get(b, r);
+        if (isBlank(v) || isOrgName(v)) return v;
+        const nn = nameAndNotes(v);
+        if (!nn.changed || nn.isNote || !nn.name) return v;
+        rowNotes.push(...nn.notes);
+        namesCleaned.push({ sheet: t.sheet, line: b.line, from: s(v), name: nn.name, note: nn.notes.length ? nn.notes.join("; ") : null });
+        return nn.name;
+      };
+      const nameIn = { first: nameGet("first"), last: nameGet("last"), full: nameGet("name"), lastFirst: nameGet("lastFirst") };
+      let who = readName({ first: nameIn.first, last: nameIn.last, full: nameIn.full, lastFirst: nameIn.lastFirst, org: get(b, "org") });
+      const rowName = s(nameIn.full) || s(nameIn.lastFirst) || [s(nameIn.first), s(nameIn.last)].filter(Boolean).join(" ") || who.name;
       let email = s(get(b, "email")).toLowerCase();
       if (email && placeholder.email.has(email)) email = "";
       const extId = s(get(b, "externalId"));
@@ -1112,8 +1160,32 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         const clash = (email && other.email && other.email !== email) || (extId && other.externalId && other.externalId.toLowerCase() !== extId.toLowerCase());
         if (!clash) { pkey = k; linkedBy = "name"; }
       }
+      let nearAsked = false;
+      if (!pkey && multiList && who.kind !== "organization" && who.kind !== "anonymous") {
+        const w = rowName.split(/\s+/);
+        const seen = new Set();
+        for (const o of [...(nearIndex.first.get(nearWord(w[0])) || []), ...(nearIndex.last.get(nearWord(w[w.length - 1])) || [])]) {
+          if (seen.has(o) || o.firstTable === t.key || o.kind === "organization") continue;
+          seen.add(o);
+          if (email && o.email && o.email !== email) continue;
+          if (extId && o.externalId && o.externalId.toLowerCase() !== extId.toLowerCase()) continue;
+          const nd = nearDuplicate(o.rawName, rowName);
+          if (!nd) continue;
+          const key = `${o.rawName.toLowerCase()}|${rowName.toLowerCase()}`;
+          const said = nearAns[key];
+          nearAsked = true;
+          if (!nearDupes.some(x => x.key === key)) {
+            nearDupes.push({ key, a: o.rawName, aSheet: o.firstSheet, aLine: o.firstLine, b: rowName, bSheet: t.sheet, bLine: b.line, why: nd.why, sentence: nd.sentence,
+                             answer: said === "different" ? "different" : "same", chosen: said === "same" || said === "different",
+                             text: `Is ${rowName} on the ${t.sheet} the same as ${o.rawName} on the ${o.firstSheet}?` });
+          }
+          if (said !== "different") { pkey = o.key; linkedBy = "near"; }
+          break;
+        }
+      }
       if (!pkey) pkey = extId ? "id:" + extId.toLowerCase() : email || nameKey;
       // a linked row keeps the person's own name, whatever the clipboard said
+      if (linkedBy === "near") { const p0 = people.get(pkey); who = { kind: p0.kind, name: p0.name, household: p0.household, people: p0.people }; }
       if (linkedBy === "id") { const p0 = people.get(pkey); who = { kind: p0.kind, name: p0.name, household: p0.household, people: p0.people }; }
       const phoneRaw = s(get(b, "phone"));
       const phonePlaceholder = phoneRaw && placeholder.phone.has(phoneKey(phoneRaw));
@@ -1122,7 +1194,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                       email: email || null, phone: phonePlaceholder ? null : (phoneRaw || null), address: s(get(b, "address")) || null,
                       address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: stateV || null,
                       zip: fixZip(s(get(b, "zip")), stateV) || null, externalId: extId || null, lines: [],
-                      roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [] };
+                      roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [],
+                      personNotes: [], rawName: rowName, firstTable: t.key, firstSheet: t.sheet, firstLine: b.line };
       if (oneColumnAddress && fresh.address) {
         const sp = splitAddress(fresh.address);
         if (sp.split) {
@@ -1158,8 +1231,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           const tb = s(get(bb, "table")); if (tb && !at.table) at.table = /^\d+$/.test(tb) ? `Table ${tb}` : tb;
           const ps = s(get(bb, "partySize")); if (ps && /^\d{1,2}$/.test(ps) && !at.party) at.party = +ps;
           for (const c of tt.cols.filter(c => c.role === "logistics")) { const v = s(cellOf(tt, bb, c)); if (v) { const line = `${c.header}: ${v}`; if (!at.logistics.includes(line)) at.logistics.push(line); } }
-          // anyone on a guest list was invited, even when no column says so
-          if (!roleOf(tt, "invited") && (at.rsvp != null || at.attended)) at.invited = true;
+          // anyone on a guest list was invited, even when no column says so;
+          // FIX-59: a guest-list row with no reply and no mark is on the list too
+          if (!roleOf(tt, "invited") && (at.rsvp != null || at.attended || (tt.kind === "people" && (roleOf(tt, "rsvp") || roleOf(tt, "attended"))))) at.invited = true;
           if (at.attended || at.rsvp) person.roles.add("guest");
         }
         const src = (c, v) => ({ header: c.header, value: v, sheet: tt.sheet, file: sourceFile });
@@ -1192,7 +1266,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const ensure = () => {
         if (!people.has(pkey)) {
           people.set(pkey, fresh);
-          if (!linkedBy) {
+          if (multiList) { const w = rowName.split(/\s+/); nearAdd(nearIndex.first, nearWord(w[0]), fresh); nearAdd(nearIndex.last, nearWord(w[w.length - 1]), fresh); }
+          if (!linkedBy && !nearAsked) {
             // a near miss: the same last name, a first name one or two letters off, nothing to confirm it
             const last = (who.name || "").split(/\s+/).pop().toLowerCase(), first = (who.name || "").split(/\s+/)[0].toLowerCase();
             for (const o of people.values()) {
@@ -1220,6 +1295,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         if (person.email) byEmail.set(person.email, pkey);
         if (!byName.has(nameKey)) byName.set(nameKey, pkey);
         absorbRow(person, t, b);
+        if (rowNotes.length) person.personNotes.push({ text: rowNotes.join("; "), sheet: t.sheet, line: b.line });
+        lastPerson = person;
         return person;
       };
       if (t.kind === "people") { ensure(); continue; }
@@ -1450,6 +1527,28 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                      options: [...(eventNamed ? [{ key: "event", label: "Same as the event date", needs: eventDateAnswer ? null : "the event's date" }] : []),
                                { key: "choose", label: "A date I choose" }, { key: "none", label: "No set due date" }] });
   }
+  // FIX-59: the near-duplicates across the event's lists, one grouped question.
+  // Defaulted (Same person), so it never holds Import; the default is shown.
+  if (nearDupes.length) {
+    const one = nearDupes[0];
+    const sheetsB = [...new Set(nearDupes.map(x => x.bSheet))].join(" and "), sheetsA = [...new Set(nearDupes.map(x => x.aSheet))].join(" and ");
+    questions.push({ id: "nearDuplicates", kind: "nearDuplicates", optional: true, defaulted: true, default: "same", count: nearDupes.length,
+                     text: nearDupes.length === 1 ? one.text : `${nearDupes.length} names on the ${sheetsB} look like people on the ${sheetsA}. Same people?`,
+                     hint: `Steward reads each as the same person unless you say Different. Same keeps the spelling on the ${sheetsA}; Different adds a new person.`,
+                     pairs: nearDupes, options: [{ key: "same", label: "Same person" }, { key: "different", label: "Different" }] });
+  }
+  // FIX-59: gifts from a file were almost always banked already. Asked once,
+  // Yes by default (shown, never holding Import): Yes marks them deposited on
+  // their own dates, so Finance never lists them as Not yet on a deposit.
+  const receivedGifts = gifts.length;
+  if (receivedGifts) {
+    const said = answers.giftsDeposited === "no" ? "no" : answers.giftsDeposited === "yes" ? "yes" : null;
+    questions.push({ id: "giftsDeposited", kind: "giftsDeposited", optional: true, defaulted: true, default: "yes", answer: said || "yes", chosen: !!said,
+                     count: receivedGifts, cents: gifts.reduce((a, g) => a + g.cents, 0),
+                     text: `Were ${receivedGifts === 1 ? "this gift" : `these ${receivedGifts.toLocaleString("en-US")} gifts`} already deposited?`,
+                     hint: "Yes marks them deposited on their own dates, so Finance does not list them as Not yet on a deposit. Pledges are not gifts yet and are not marked.",
+                     options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, I still need to deposit them" }] });
+  }
   // undated gifts with no event are one optional question, never a block
   if (!eventNamed && undatedCount && !dateAnswer) {
     questions.unshift({ id: "date", kind: "date", optional: true, count: undatedCount,
@@ -1559,6 +1658,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
     people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, merged, rowAccount,
+    nearDuplicates: nearDupes, noteRows, namesCleaned, giftsDeposited: answers.giftsDeposited === "no" ? "no" : "yes",
     addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
@@ -1585,6 +1685,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
       doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
       kept: keptHeaders.size, nearMisses: nearMisses.length, merged: merged.length,
+      nearDuplicates: nearDupes.length, nearDuplicatesSame: nearDupes.filter(x => x.answer === "same").length, noteRows: noteRows.length, namesCleaned: namesCleaned.length,
       addressesSplit: peopleList.filter(p => p.addressFrom).length, addressesToCheck: peopleList.filter(p => p.addressCheck).length,
       phonesMarkedWrong: peopleList.filter(p => p.phoneBad).length, addressesMarkedReturned: peopleList.filter(p => p.addressBad).length,
       invitedRecords: recordCounts.invited, rsvpRecords: recordCounts.rsvp, attendedRecords: recordCounts.attended,
