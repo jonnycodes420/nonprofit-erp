@@ -14,8 +14,8 @@
 --   created         orgs.created_at
 --   last_sign_in    the newest staff sign-in: each sign-in writes one
 --                   user_sessions row (twoFactor.js createSession), so this is
---                   MAX(created_at) there. A super-admin opening the org may
---                   count too.
+--                   MAX(created_at) there, for the org's own staff only (a
+--                   super-admin, Jonathan, opening the org is not counted).
 --   last_active     the newest request on any staff session
 --   imports         rows in `imports` for the org; imports_undone of them were
 --                   reversed (reversed_at set)
@@ -36,9 +36,11 @@ SELECT o.id                                         AS org_id,
          WHERE deleted_at IS NULL
          GROUP BY org_id
         HAVING COUNT(*) > 10000) p ON p.org_id = o.id
-  LEFT JOIN (SELECT org_id, MAX(created_at) AS last_sign_in, MAX(last_active_at) AS last_active
-               FROM user_sessions
-              GROUP BY org_id) s ON s.org_id = o.id
+  LEFT JOIN (SELECT us.org_id, MAX(us.created_at) AS last_sign_in, MAX(us.last_active_at) AS last_active
+               FROM user_sessions us
+               JOIN users u ON u.id = us.user_id
+              WHERE COALESCE(u.is_super_admin, false) = false
+              GROUP BY us.org_id) s ON s.org_id = o.id
   LEFT JOIN (SELECT org_id, COUNT(*) AS imports, COUNT(reversed_at) AS imports_undone
                FROM imports
               GROUP BY org_id) i ON i.org_id = o.id
