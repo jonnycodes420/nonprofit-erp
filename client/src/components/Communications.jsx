@@ -15,7 +15,8 @@ import { errorMessage } from "../lib/domainError";
 // live preview and the send all read ONE copy of the words. The server route
 // adds the org's colours, logo and vocabulary on top; this import is what keeps
 // the box from ever being blank if that call fails.
-import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited } from "../../../shared/emailTemplates";
+import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited, escapeMergeValue } from "../../../shared/emailTemplates";
+import { safeHtml } from "../lib/safeHtml";
 import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
@@ -149,7 +150,7 @@ const menuItem = { background: "transparent", border: "none", textAlign: "left",
 // FIX-39 — a subject line as she reads it in a list: merge tags filled with
 // the same sample the preview uses ("Before the year ends, Margaret"), never braces.
 // It is rendered as text, never as HTML, so React escapes whatever it holds.
-const subjectPreview = subject => renderMergeFields(subject || "", {});
+const subjectPreview = subject => renderMergeFields(subject || "", {}, { text: true });
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_META = {
@@ -390,8 +391,9 @@ function SegmentPicker({ seg, onChange, allDonors }) {
 // ── RichEditor (module-level) ─────────────────────────────────────────────────
 function RichEditor({ editorRef, initialHtml, onInput, readOnly }) {
   useEffect(() => {
-    if (editorRef.current) editorRef.current.innerHTML = initialHtml || "";
-    if (onInput) onInput(initialHtml || "");
+    const clean = safeHtml(initialHtml || "");
+    if (editorRef.current) editorRef.current.innerHTML = clean;
+    if (onInput) onInput(clean);
   }, []);
 
   const exec = (cmd, val) => { editorRef.current?.focus(); document.execCommand(cmd, false, val ?? undefined); };
@@ -1819,8 +1821,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const bodyText = lines.filter(l => !l.startsWith("Subject:")).join("\n").trim();
     if (subjLine) setForm(f => ({ ...f, subject: subjLine.replace("Subject:", "").trim() }));
     if (editorRef.current) {
-      const html = bodyText.startsWith("<") ? bodyText
-        : bodyText.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+      const html = bodyText.startsWith("<") ? safeHtml(bodyText)
+        : bodyText.split(/\n\n+/).map(p => `<p>${escapeMergeValue(p).replace(/\n/g, "<br>")}</p>`).join("");
       editorRef.current.innerHTML = html;
       setLiveHtml(html);
     }
@@ -1833,12 +1835,12 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // segment is still empty.
   const previewFirst = segPreview?.first || null;
   const previewOrgName = gallery?.orgName || data?.org?.name || "your organization";
-  const renderPreview = (html) => renderMergeFields(html || "", {
+  const renderPreview = (html, opts) => renderMergeFields(html || "", {
     first_name: previewFirst?.firstName || "Margaret",
     donor_name: previewFirst?.name || "Margaret Chen",
     org_name: previewOrgName,
-  });
-  const getPreviewHtml = () => renderPreview(liveHtml || editorRef.current?.innerHTML || form.bodyHtml || "");
+  }, opts);
+  const getPreviewHtml = () => safeHtml(renderPreview(liveHtml || editorRef.current?.innerHTML || form.bodyHtml || ""));
 
   // ── THE SIX — full screen, in the org's own colours ─────────────────────────
   // This is what "New Campaign" is now. Six emails that could go out today,
@@ -2134,7 +2136,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   From {brand?.displayName || previewOrgName}{sendingIdentity?.verified && sendingIdentity.fromEmail ? ` · ${sendingIdentity.fromEmail}` : ""}
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, lineHeight: 1.35, marginBottom: 14 }}>
-                  {renderPreview(form.subject) || "No subject yet"}
+                  {renderPreview(form.subject, { text: true }) || "No subject yet"}
                 </div>
                 <hr style={{ border: "none", borderTop: "1px solid " + T.bg3, margin: "0 0 14px" }} />
                 <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.8 }}

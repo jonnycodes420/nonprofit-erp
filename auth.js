@@ -2,10 +2,45 @@ const jwt = require("jsonwebtoken");
 const { query } = require("./db");
 const { sessionCache } = require("./sessionCache");
 
-const SECRET = process.env.JWT_SECRET;
-if (!SECRET && process.env.NODE_ENV === "production") {
-  throw new Error("JWT_SECRET environment variable is required in production");
+// SECURE-1 · THE SIGNING SECRET IS CHECKED BEFORE THE SERVER STARTS.
+// It signs every session, unsubscribe, file and pass link. It used to be
+// required only when NODE_ENV said "production", and otherwise fell back to a
+// string that is in this repository, so a deploy without NODE_ENV would sign
+// sessions anyone could forge. Now any server whose database is not on this
+// machine refuses to start without a secret, or with one of the repo's own
+// development strings; a short one starts with a loud warning (rotating it
+// is on NEEDS-JONATHAN). Only a loopback database (a laptop, CI, the
+// battery) may use the development fallback.
+const PUBLIC_DEV_SECRETS = ["nonprofit_erp_secret_dev", "dev-secret", "local-test-secret", "survey-link-dev-secret"];
+const MIN_SECRET_LENGTH = 32;
+function jwtSecretProblem(env = process.env) {
+  const local = /@(localhost|127\.0\.0\.1)[:/]/.test(String(env.DATABASE_URL || "")) && env.NODE_ENV !== "production";
+  const s = env.JWT_SECRET || "";
+  if (local) return null;
+  if (!s) return { fatal: true, message: "JWT_SECRET is not set. Steward will not start without it." };
+  if (PUBLIC_DEV_SECRETS.includes(s)) return { fatal: true, message: "JWT_SECRET is a development value from the repository. Steward will not start with it." };
+  if (s.length < MIN_SECRET_LENGTH) return { fatal: false, message: `JWT_SECRET is shorter than ${MIN_SECRET_LENGTH} characters. Rotate it to a long random value.` };
+  return null;
 }
+{
+  const p = jwtSecretProblem();
+  if (p && p.fatal) throw new Error(p.message);
+  if (p) console.error("[security] " + p.message);
+}
+// SECURE-1 · a staff reset or set-password link's token is stored as its
+// SHA-256, like every donor-side token, so a copy of the database (a backup,
+// a leaked read) holds no live link. "h1:" marks a hashed row; a row written
+// before the change is plaintext and matched as it is until it expires (seven
+// days at most), and a value that itself starts "h1:" is never matched as
+// plaintext, so the stored hash cannot be replayed as a token.
+const RESET_HASH_PREFIX = "h1:";
+function resetTokenHash(token) {
+  return RESET_HASH_PREFIX + require("crypto").createHash("sha256").update(String(token)).digest("hex");
+}
+const RESET_TOKEN_MATCH = `(token = ? OR (token = ? AND token NOT LIKE 'h1:%'))`;
+function resetTokenArgs(token) { return [resetTokenHash(token), String(token)]; }
+
+const SECRET = process.env.JWT_SECRET;
 const SIGNING_SECRET = SECRET || "nonprofit_erp_secret_dev";
 
 function signToken(payload) {
@@ -185,4 +220,5 @@ function requireAuth404(req, res, next) {
   return requireAuth(req, res, (err) => { res.status = status; next(err); });
 }
 
-module.exports = { signToken, signInternalToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+module.exports = {
+  jwtSecretProblem, resetTokenHash, RESET_TOKEN_MATCH, resetTokenArgs, signToken, signInternalToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

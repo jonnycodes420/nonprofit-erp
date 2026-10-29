@@ -3,6 +3,12 @@
 Read this when you touch sign-in, signup, onboarding, invites, roles, super admin, Settings, or platform billing (plans, prices, the close link, the trial).
 
 ## Rules
+
+- **SECURE-1 (2026-10-28).** Every whole-org export (`/org/export`, `/org/export/csv`, `/org/export/full`)
+  is an admin's; staff see no export button. A staff reset or set-password token is stored as
+  `h1:` + its SHA-256 (auth.js `resetTokenHash`), and a pre-change plaintext row matches only until
+  it expires. The no-login cancel link carries a 30-day expiry; links sent before it work until
+  2026-11-29. `/admin/notifications/retry` runs over every org, so it is a super admin's.
 - **Keep platform billing and donation Stripe apart.** `billingStripe` (`STRIPE_BILLING_SECRET_KEY`, falls
   back) serves checkout/portal/`/billing/webhook`. `stripe` (`STRIPE_SECRET_KEY` only) serves Connect and
   donations. Never cross-wire them. (BUILD-24)

@@ -357,6 +357,8 @@ const app = express();
 // (and req.ip generally) see the real client IP without trusting the full,
 // client-spoofable X-Forwarded-For chain that `trust proxy: true` would allow.
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
+
 
 // MIGC — Mission Increase Gulf Coast client-website API (routes/migc.js).
 // Mounted BEFORE the SaaS CORS/limiter/body-parsing stack on purpose: the
@@ -407,7 +409,26 @@ const corsOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...extraCorsOrigins])]
 // fetch must opt in). In production the portal API is SAME-ORIGIN via the
 // vercel.json /portal-api proxy, so no cross-origin cookie ever flows. The
 // origin list stays the explicit allowlist — never "*" with credentials.
-app.use(cors({ origin: corsOrigins, credentials: true }));
+// SECURE-1: maxAge lets a browser keep a preflight's answer for two hours
+// (Chrome's ceiling), instead of asking again before every call: HARDEN-2
+// counted about sixty preflights behind one donor profile.
+app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200 }));
+
+// SECURE-1 · THE HEADERS EVERY API ANSWER CARRIES. nosniff: a body is read as
+// the type it says it is. Referrer-Policy: a link out of a Steward page never
+// carries its path (a token can live in one). HSTS: this host is https only.
+// frame-ancestors: a page this server renders may be framed by Steward's own
+// app (every allowed origin) and nobody else. A page an org embeds on its own site (the event,
+// survey and volunteer pages) replaces it with "frame-ancestors *", and a
+// stored file replaces it with its sandbox policy (assetStore.ASSET_CSP).
+const FRAME_ANCESTORS = "frame-ancestors 'self' " + corsOrigins.join(" ");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Content-Security-Policy", FRAME_ANCESTORS);
+  next();
+});
 
 // ── Rate limiting ────────────────────────────────────────────────────────
 // Shared 429 handler: explicit Retry-After header + a body shape that can't be
@@ -569,6 +590,38 @@ const invitationLimiter = rateLimit("invitationLimiter", {
   handler: rateLimitHandler,
   skip: rateLimitDisabled,
 });
+// SECURE-1 · THE THREE DOORS THAT HAD ONLY THE GENERAL LIMIT.
+// An invitation link is opened once by one person: per IP, 30 looks in 15
+// minutes is a person retrying and nothing else. Atlas writes with the model
+// on every question (the AI budget caps cost, this caps a loop): per user, 120
+// an hour. An import preview parses a whole file: per user, 60 an hour.
+// `x-test-enforce-limits` lets the security suite prove each one with the
+// test switch on, as whyAskLimiter does.
+const enforcedSkip = (req) => rateLimitDisabled() && !req.headers["x-test-enforce-limits"];
+const inviteLinkLimiter = rateLimit("inviteLinkLimiter", {
+  windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: enforcedSkip,
+});
+const atlasLimiter = rateLimit("atlasLimiter", {
+  windowMs: 60 * 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: enforcedSkip,
+  keyGenerator: (req) => "atlas:" + (tokenUserId(req) || ipKeyGenerator(req.ip)),
+});
+const importPreviewLimiter = rateLimit("importPreviewLimiter", {
+  windowMs: 60 * 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: enforcedSkip,
+  keyGenerator: (req) => "imp:" + (tokenUserId(req) || ipKeyGenerator(req.ip)),
+});
+// A middleware, not a route, so the route inventory keeps one entry per door.
+const IMPORT_PREVIEWS = new Set(["/history-import/preview", "/grants/import/preview", "/screening/import/preview", "/volunteer-hub/import/preview", "/imports/thank-you-preview"]);
+app.use((req, res, next) => {
+  const p = req.path;
+  if ((req.method === "GET" && /^\/auth\/invite\/[^/]+$/.test(p)) || (req.method === "POST" && p === "/auth/invite/accept")) return inviteLinkLimiter(req, res, next);
+  if (req.method === "POST" && (p === "/atlas" || /^\/atlas\/[^/]+\/answer$/.test(p))) return atlasLimiter(req, res, next);
+  if (req.method === "POST" && IMPORT_PREVIEWS.has(p)) return importPreviewLimiter(req, res, next);
+  next();
+});
+
 // ── FIX-11 Part 1 — THE AUDIT TRAIL, MOUNTED BEFORE EVERY ROUTER ──────────
 // This line is the whole mechanism. It sits above the FIRST router mount in
 // the file — above the raw-body webhook routers, which are mounted before
@@ -637,34 +690,43 @@ const { BILLING_PLAN_VALUES, planFromSubscription } = require("./billingPlans");
 // 5mb cap stays in force for every other route.
 // BUILD-82 — a whole workbook (25,300 donors + 92,682 gift rows) arrives as ONE
 // request so the existing one-transaction wrapper makes the import all-or-nothing.
-app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "64mb" }));
+// SECURE-1 · A LARGE BODY IS READ ONLY FOR SOMEONE SIGNED IN.
+// Every large parser below serves a staff upload or import, and each one used
+// to run before the route's own sign-in check, so a stranger could make the
+// server read and parse 64 MB per request. Now a request without a validly
+// signed session token falls through to the global 5mb parser (and an
+// oversized body is refused there, 413). requireAuth still decides whether the
+// session is alive; this only decides how much a request may make us read.
+const bigBody = parser => (req, res, next) => (tokenUserId(req) ? parser(req, res, next) : next());
+const bigJson = limit => bigBody(express.json({ limit }));
+app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], bigJson("64mb"));
 // IMPORT-2: a history file of up to 25 MB arrives as rows, which is larger as JSON.
-app.use(["/history-import/preview", "/history-import/commit"], express.json({ limit: "64mb" }));
+app.use(["/history-import/preview", "/history-import/commit"], bigJson("64mb"));
 // ONBOARD-1: setup carries every donor file at once, as text.
-app.use(["/setup/runs", "/admin/orgs/:id/setup"], express.json({ limit: "64mb" }));
+app.use(["/setup/runs", "/admin/orgs/:id/setup"], bigJson("64mb"));
 // BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
 // image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
-app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], bigJson("22mb"));
 // EMAIL-1: a photo added to the media library is a camera photo too
 // (routes/media.js PHOTO_MAX_BYTES, 15MB decoded). Move both or neither.
-app.use("/media/photos", express.json({ limit: "22mb" }));
+app.use("/media/photos", bigJson("22mb"));
 // FIX-41: the one picture upload door takes a camera photo too (pictures.js).
-app.use("/pictures/upload", express.json({ limit: "22mb" }));
+app.use("/pictures/upload", bigJson("22mb"));
 // CLEAN-1: a returned change-of-address file for a large file of people.
-app.use("/data-health/ncoa/results", express.json({ limit: "20mb" }));
+app.use("/data-health/ncoa/results", bigJson("20mb"));
 // PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.
 app.use((req, res, next) =>
   req.method === "POST" && /^\/events\/[^/]+\/(hero|photos)$/.test(req.path)
-    ? express.json({ limit: "22mb" })(req, res, next)
+    ? bigJson("22mb")(req, res, next)
     : next());
 // BUILD-94 Part 1 — a donor photo is capped at 10MB of DECODED image, which is
 // ~13.7MB of base64 plus the JSON around it. Matched by path rather than
 // mounted on "/donors" so the rest of the donor family keeps the 5mb cap.
 app.use((req, res, next) =>
   /^\/donors\/[^/]+\/photo$/.test(req.path)
-    ? express.json({ limit: "16mb" })(req, res, next)
+    ? bigJson("16mb")(req, res, next)
     : next());
 // BUILD-96 Part 5 — a HANDFUL of photos per request, not a folder. A folder of
 // two hundred headshots is hundreds of megabytes and fits in no request at
@@ -673,7 +735,7 @@ app.use((req, res, next) =>
 // either alone gets a PayloadTooLargeError, which surfaces as a bare 500 with
 // nothing useful in it — this route's first version did exactly that, and the
 // test that caught it is the oversize leg in build96-photos-folder.
-app.use("/photos/bulk", express.json({ limit: "24mb" }));
+app.use("/photos/bulk", bigJson("24mb"));
 // BUILD-100 (grants) Part 3 — a grant document is capped at 20MB of DECODED
 // file (grantDocs.DOC_MAX_BYTES), which is ~27.4MB of base64 plus the JSON
 // around it. Matched by path so the rest of the /grants family keeps the 5mb
@@ -682,7 +744,7 @@ app.use("/photos/bulk", express.json({ limit: "24mb" }));
 // surfaces as a bare 500.
 app.use((req, res, next) =>
   /^\/grants\/[^/]+\/documents$/.test(req.path)
-    ? express.json({ limit: "30mb" })(req, res, next)
+    ? bigJson("30mb")(req, res, next)
     : next());
 // SHEETS-1: a spreadsheet brought in arrives as its rows plus the original
 // file (10MB decoded, routes/sheets.js SHEET_MAX_BYTES), so the grant import
@@ -690,35 +752,35 @@ app.use((req, res, next) =>
 // DECISION: move both or neither.
 app.use((req, res, next) =>
   req.method === "POST" && /^\/(sheets\/read|sheets\/board-reports|grants\/import(\/preview)?)$/.test(req.path)
-    ? express.json({ limit: "16mb" })(req, res, next)
+    ? bigJson("16mb")(req, res, next)
     : next());
 // REPORTS-5: an old report is up to 25MB of DECODED file (oldReports.js
 // MAX_BYTES), ~33.4MB of base64, plus an Excel sheet's rows read in the
 // browser. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
 app.use((req, res, next) =>
   req.method === "POST" && /^\/old-reports\/(read|preview|batches\/[^/]+\/files)$/.test(req.path)
-    ? express.json({ limit: "40mb" })(req, res, next)
+    ? bigJson("40mb")(req, res, next)
     : next());
 // CAPTURE-1: a batch of check photos (each <=10MB decoded, capture.js
 // MAX_BYTES; the client scales photos down first) in one request. THIS LIMIT
 // AND THAT CAP ARE ONE DECISION: move both or neither.
 app.use((req, res, next) =>
   req.method === "POST" && req.path === "/capture/upload"
-    ? express.json({ limit: "40mb" })(req, res, next)
+    ? bigJson("40mb")(req, res, next)
     : next());
 // PARITY-1 Part B — a file on a conversation or a note is capped at 10MB of
 // DECODED file (interactionFiles.FILE_MAX_BYTES), ~13.7MB of base64 plus the
 // JSON around it. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
 app.use((req, res, next) =>
   /^\/interactions\/[^/]+\/attachments$/.test(req.path) && req.method === "POST"
-    ? express.json({ limit: "16mb" })(req, res, next)
+    ? bigJson("16mb")(req, res, next)
     : next());
 // PARITY-1 Part F: a video thank-you arrives as the raw file (WebM or MP4,
 // up to 60MB: routes/videoThanks.js VIDEO_MAX_BYTES). The two numbers are one
 // decision; raising either alone gives a PayloadTooLargeError.
 app.use((req, res, next) =>
   req.method === "POST" && /^\/donors\/[^/]+\/video-thanks$/.test(req.path)
-    ? express.raw({ type: ["video/webm", "video/mp4"], limit: "61mb" })(req, res, err =>
+    ? bigBody(express.raw({ type: ["video/webm", "video/mp4"], limit: "61mb" }))(req, res, err =>
         err && err.type === "entity.too.large"
           ? res.status(413).json({ error: "too_large", sentence: "That video is over 60 MB. Record a shorter one." })
           : next(err))
@@ -5333,17 +5395,20 @@ emailCompose.configure({ displayNameCase });
 // FIX-40 · A LEGACY (non-block) CAMPAIGN'S MERGE FIELDS, FILLED FOR ONE
 // PERSON. The send and the "as sent" page (routes/emailsSent.js) both call
 // this, so the page shows exactly the words the send would write today.
-async function legacyCampaignBody(body, donor, orgName, year) {
-  const firstName   = (await GREET_READY).firstNames(donor);
-  const lastName    = donor.name.split(" ").slice(1).join(" ");
+// SECURE-1: the donor's own words (a name typed on a public form) go into the
+// HTML body as text; a subject is text already and passes { text: true }.
+async function legacyCampaignBody(body, donor, orgName, year, { text = false } = {}) {
+  const e = text ? (x => x) : escapeHtml;
+  const firstName   = e((await GREET_READY).firstNames(donor));
+  const lastName    = e(donor.name.split(" ").slice(1).join(" "));
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
   const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-  return (await GREET_READY).greetMerge(body || "", GREET.greetingName(donor))
+  return (await GREET_READY).greetMerge(body || "", e(GREET.greetingName(donor)))
     .replace(/{{first_name}}/g,   firstName)
     .replace(/{{last_name}}/g,    lastName)
-    .replace(/{{donor_name}}/g,   donor.name)
-    .replace(/{{org_name}}/g,     displayNameCase(orgName))
+    .replace(/{{donor_name}}/g,   e(donor.name))
+    .replace(/{{org_name}}/g,     e(displayNameCase(orgName)))
     .replace(/{{gift_amount}}/g,  giftAmount)
     .replace(/{{total_giving}}/g, totalGiving)
     .replace(/{{year}}/g,         year);
@@ -5416,7 +5481,7 @@ async function runCampaignSend(campaign, org, donors) {
           htmlFull = brandHeader + bodyHtml + footer + pixel;
           // FIX-40 · the subject gets the same tags as the body. It went out raw,
           // so a donor read "Thank you, {{first_name}}" in her inbox.
-          personSubject = await legacyCampaignBody(campaign.subject || "", donor, org.name, year);
+          personSubject = await legacyCampaignBody(campaign.subject || "", donor, org.name, year, { text: true });
         }
 
         try {
@@ -6924,13 +6989,14 @@ async function processSequences() {
         const orgName = displayNameCase(orgRows[0]?.name) || "";
         const firstName = recipient.name ? (await GREET_READY).firstNames(recipient) : "";
         const greeting = recipient.name ? GREET.greetingName(recipient) : "";
-        const applyTokens = str => GREET.greetMerge(str || "", greeting)
-          .replace(/{{donor_name}}/g, recipient.name)
-          .replace(/{{user_name}}/g, recipient.name)
-          .replace(/{{first_name}}/g, firstName)
-          .replace(/{{org_name}}/g, orgName);
+        // SECURE-1: escaped into the body (HTML), as typed into the subject (text).
+        const applyTokens = (str, e = x => x) => GREET.greetMerge(str || "", e(greeting))
+          .replace(/{{donor_name}}/g, e(recipient.name))
+          .replace(/{{user_name}}/g, e(recipient.name))
+          .replace(/{{first_name}}/g, e(firstName))
+          .replace(/{{org_name}}/g, e(orgName));
         const subject = applyTokens(step.subject);
-        const bodyRaw = applyTokens(step.body);
+        const bodyRaw = applyTokens(step.body, escapeHtml);
         const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
           + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
@@ -9214,8 +9280,12 @@ PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 // and card-update families, with its own payload so it cannot be swapped for
 // one of those. Carries the org, not the subscription, because the
 // subscription id may change (a plan switch) while the org never does.
-function signCancelToken(orgId) {
-  const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId })).toString("base64url");
+// SECURE-1: it expires. A link that cancels a plan with no sign-in must not
+// work for ever from any old, forwarded email; thirty days covers the seven
+// before the charge and the weeks after it, then Settings → Billing is the way.
+const CANCEL_LINK_DAYS = 30;
+function signCancelToken(orgId, now = Date.now()) {
+  const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId, exp: now + CANCEL_LINK_DAYS * 86400000 })).toString("base64url");
   const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update("cancel:" + payload).digest("base64url");
   return `${payload}.${sig}`;
 }
@@ -11350,7 +11420,11 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
   ).catch(e => console.error("[portal] timeline:", e.message));
 }
 
-const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
+// SECURE-1 · no SVG. An SVG is a document that can carry script, and these
+// bytes are served from the app's own domain, so a logo could have read a
+// signed-in session. The browser draws an SVG as a PNG before it uploads
+// (client/src/lib/imageResize.js svgToPng); a raw SVG is refused here.
+const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 // BUILD-51 — server-side dimension validation for theme images. SVGs are
 // vectors (scale losslessly) and skip the raster rules; rasters must parse.
@@ -11440,9 +11514,9 @@ const UPLOAD_LONG_EDGE = { header: 2560, campaign: 2560, widget: 2560, impact: 2
 // Returns an actionable message if this data URI can't be accepted, else null.
 // (Call sites already handle ""/null as "clear" before reaching here.)
 function uploadImageError(dataUri) {
-  if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF or WebP image.";
   const m = dataUri.match(/^data:([^;]+);base64,/);
-  if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF or WebP image.";
   if (dataUri.length > MAX_UPLOAD_STR) return "That image is unusually large. Please use a photo under 15 MB, a normal photo from a phone or camera is well within that.";
   return null;
 }

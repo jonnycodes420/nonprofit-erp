@@ -35,11 +35,36 @@ async function decode(file) {
   } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
 }
 
+// SECURE-1 · an SVG can carry script, so Steward stores none: the browser
+// draws it once as a PNG (an <img> never runs an SVG's script) and the PNG is
+// what travels. The server refuses a raw SVG.
+export const SVG_LONG_EDGE = 1600;
+export async function svgToPng(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const w = img.naturalWidth || 800, h = img.naturalHeight || 800;
+    const scale = SVG_LONG_EDGE / Math.max(w, h);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } catch { return null; } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+}
+
 // Returns a data URI ready for POST /pictures/upload.
 export async function shrinkImage(file) {
   const type = String(file.type || "").toLowerCase();
-  // SVG and GIF pass through: one is drawn, not photographed, the other may move.
-  if (type === "image/svg+xml" || type === "image/gif" || isHeicFile(file)) {
+  if (type === "image/svg+xml") return svgToPng(file);
+  // GIF passes through: it may move.
+  if (type === "image/gif" || isHeicFile(file)) {
     const raw = await readAsDataUrl(file);
     if (raw && isHeicFile(file) && !/^data:image\/hei[cf]/.test(raw)) return raw.replace(/^data:[^;]*;/, "data:image/heic;");
     return raw;

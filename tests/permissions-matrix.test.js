@@ -125,7 +125,7 @@ async function mkOrg(id, plan, status) {
     { name: "read finance", m: "GET", p: () => "/finance/summary", b: () => undefined,
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } },
     { name: "export JSON", m: "GET", p: () => "/org/export", b: () => undefined,
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } },
+      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } }, // SECURE-1: the whole org leaves with an admin
     { name: "export CSV zip (admin)", m: "GET", p: () => "/org/export/csv", b: () => undefined,
       exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } },
     { name: "solicitations CSV (Team artifact)", m: "GET", p: () => "/reports/solicitations?format=csv", b: () => undefined,
