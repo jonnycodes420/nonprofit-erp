@@ -20,6 +20,7 @@ import { thankYouText } from "../../../shared/formConfig.js";
 // page's own fetch so the server can serve the right variant in one round trip.
 import { assignVariant, currentVariant } from "../lib/abVariant";
 import { takePrefetched } from "../lib/givePrefetch";
+import { maybeSignedIn } from "../lib/portalHint";
 import { displayDate } from "../../../shared/displayDate";
 // PARITY-2 Part 1: the share row and the membership page live in their own files
 // so the membership page can use the row too.
@@ -947,6 +948,7 @@ export default function Donate({ preview = null }) {
   // a built page has its own amounts. Not asked at all when the portal is off.
   useEffect(() => {
     if (preview || !org || !(org.portalSignIn || membershipsMode)) return;
+    if (!maybeSignedIn()) return;   // FIX-57: no donor session, nothing to ask (and no 401)
     let cancelled = false;
     fetch(`${PORTAL_BASE}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))

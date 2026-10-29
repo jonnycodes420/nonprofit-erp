@@ -720,7 +720,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
     return httpEmit.apply(this, arguments);
   };
   const app = require("../server.js");
-  await new Promise(r => setTimeout(r, 3500)); // boot DDL settles
+  await require("./helpers").untilReady({ base: M });   // FIX-57: the server says when boot is done
 
   await reset();
   await seedOrg(A, "a");

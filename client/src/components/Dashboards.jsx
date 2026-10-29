@@ -457,7 +457,8 @@ export function Dashboards({ data, onNavigate, dashKey }) {
                   : <span key={i}>{p.text}</span>)}
               </h1>
               <div style={{ fontSize: 12.5, color: T.ink3 }}>
-                As of {asOf}{board?.fiscalYear?.label ? ` · fiscal year ${board.fiscalYear.label}` : ""}. Numbers a board can read, and every one opens: click it to see the rows behind it.
+                {/* FIX-57: the date waits for the board ("As of ." while it loaded) */}
+                {asOf ? <>As of {asOf}{board?.fiscalYear?.label ? ` · fiscal year ${board.fiscalYear.label}` : ""}. </> : null}Numbers a board can read, and every one opens: click it to see the rows behind it.
               </div>
             </div>
             <button onClick={exportPdf} disabled={!board}

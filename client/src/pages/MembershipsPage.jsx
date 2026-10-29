@@ -21,6 +21,7 @@ import { API } from "../api";
 import { T } from "./publicTheme";
 import { errorMessage } from "../lib/domainError";
 import { takePrefetched } from "../lib/givePrefetch";
+import { maybeSignedIn } from "../lib/portalHint";
 import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
 import Picture from "../components/Picture";
@@ -149,6 +150,7 @@ export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, s
   // signs a member in either way; anonymous is a 401 and changes nothing.
   // Asked again after a sign-in link is spent (sessionTick).
   useEffect(() => {
+    if (!maybeSignedIn()) return undefined;   // FIX-57: no donor session, no 401
     let cancelled = false;
     fetch(`${portalBase}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))

@@ -28,7 +28,7 @@
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, q, closeDb, waitFor } = require("./helpers");
 const SEED = require("../scripts/seed/prospect1-prospects");
 
 const ORG = "org_pr1t1";
@@ -149,7 +149,10 @@ const call = async (tok, method, p, body) => {
   const del = await call(tok, "DELETE", `/donors/${PRE}ashdown/screening`);
   ok("§4 one person's screening is deleted", del.status === 200 && del.body.deleted === 1, del.body);
   ok("§4 and they are back to their own-file word", (await call(tok, "GET", `/donors/${PRE}ashdown/room-to-give`)).body.word === "some");
-  const [audit] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='DELETE' AND request_path LIKE '%/screening'`, [ORG]).catch(() => [{ n: -1 }]);
+  // FIX-57: the audit row is written when the answer finishes (middleware/auditTrail.js), so it is
+  // waited for, not read in the same breath as the answer (red once on CI, 29 Oct).
+  const auditRow = async () => { const [r] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='DELETE' AND request_path LIKE '%/screening'`, [ORG]).catch(() => [{ n: -1 }]); return r.n >= 1 ? r : null; };
+  const audit = (await waitFor(auditRow, { timeout: 10000 })) || { n: 0 };
   ok("§4 the delete left an audit row", audit.n >= 1, audit);
   const all = await call(tok, "DELETE", "/screening");
   const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM screening_results WHERE org_id=$1`, [ORG]);

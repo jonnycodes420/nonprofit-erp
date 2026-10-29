@@ -76,8 +76,14 @@ function lastDayOfMonth(y, m) { // m 1-based; the day before the 1st of the next
 }
 
 // Human phrasing for a day count — a fundraiser says "seven months", never "213 days".
+// FIX-57: under two weeks the span is said in days ("4 days", "1 day"), so two
+// gifts close together never read "0 weeks" or "1 weeks". A zero span has no
+// length to say; the callers word it ("on the same day", "today").
 function humanSpan(days) {
   if (days == null) return "";
+  const d = Math.max(0, Math.round(Number(days) || 0));
+  if (d < 1) return "less than a day";
+  if (d < 14) return d === 1 ? "1 day" : `${d} days`;
   if (days < 45) return `${Math.round(days / 7)} weeks`;
   if (days < 350) {
     const months = Math.round(days / 30.44);
@@ -287,7 +293,7 @@ function detectSeasonalCluster(events) {
 // "$2,000 every March since 2019. Nothing for 14 months." — a sentence a
 // fundraiser would say out loud. Never a ratio, never a day count.
 function composeReason(a, events, today) {
-  const gapPhrase = `Nothing for ${humanSpan(a.daysSinceLast)}.`;
+  const gapPhrase = a.daysSinceLast != null && a.daysSinceLast < 1 ? "The last gift was today." : `Nothing for ${humanSpan(a.daysSinceLast)}.`;
   const firstYear = orgTime.parseCivil(a.firstGiftDate).y;
 
   if (a.seasonal && a.seasonal.kind === "month") {
@@ -326,7 +332,9 @@ function composeReason(a, events, today) {
   }
 
   if (a.events === 2) {
-    return `Two gifts on record, ${humanSpan(orgTime.daysBetween(a.firstGiftDate, a.lastGiftDate))} apart. ${gapPhrase}`;
+    const between = orgTime.daysBetween(a.firstGiftDate, a.lastGiftDate);
+    return between < 1 ? `Two gifts on record, both on the same day. ${gapPhrase}`
+      : `Two gifts on record, ${humanSpan(between)} apart. ${gapPhrase}`;
   }
 
   const typical = median(events.map(e => e.amount));

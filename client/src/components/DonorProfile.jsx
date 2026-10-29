@@ -2423,7 +2423,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               const link={background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",alignSelf:"flex-start"};
               const anyPg=DESIGNATION_OPTS.some(([k])=>hasDesignation(k));
               return <section data-testid="dp-about" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
-                <div style={{padding:"12px 14px 0",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>About {firstNameOf(donor.name)||donor.name}</div>
+                <div style={{padding:"12px 14px 0",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>{String(donor.name||"").trim()?`About ${firstNameOf(donor.name)||donor.name}`:"About"}</div>
                 <div className="dp-about-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))"}}>
                   <div data-testid="dp-household" style={cell}>
                     <span style={head}>Household</span>
@@ -3436,7 +3436,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               ):(
                 <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
-                    Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan a follow-up and it appears here, with the day you promised it.
+                    {/* FIX-57: a sentence that needs a name waits for it ("Nothing is open for ." while the record loaded) */}
+                    {String(donor.name||"").trim()?<>Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan a follow-up and it appears here, with the day you promised it.</>
+                      :<span data-testid="dp-name-wait" aria-label="Loading" style={{display:"inline-block",width:"min(320px,80%)",height:12,borderRadius:6,background:T.bg2,verticalAlign:"middle"}}/>}
                   </div>
                 </div>
               )}

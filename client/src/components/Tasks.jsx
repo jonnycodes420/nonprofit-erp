@@ -620,7 +620,8 @@ function DraftSheet({ t, mode, onClose, onThanked, onEmailed }) {
   useEffect(() => {
     if (!kind) return;
     if (kind === "blank") { setSubject(t.title || ""); setBody(`Dear ${first},\n\n`); return; }
-    apiFetch(`/templates/${kind}/preview`, { method: "POST", body: JSON.stringify({ donorId: t.donor_id }) })
+    // FIX-57: the task's assignee signs it (else whoever opened it)
+    apiFetch(`/templates/${kind}/preview`, { method: "POST", body: JSON.stringify({ donorId: t.donor_id, taskId: t.id }) })
       .then(r => { setSubject(r.subject || ""); setBody(r.body || ""); })
       .catch(e => setErr(errorMessage(e, "The template could not be filled.")));
   }, [kind, t.donor_id, t.title, first]);

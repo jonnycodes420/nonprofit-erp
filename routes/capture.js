@@ -246,6 +246,7 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
     [req.params.id, orgId]);
   if (!c) return res.status(404).json({ error: "not_found", sentence: "This card was already confirmed or skipped." });
   const release = () => run("UPDATE capture_items SET status='waiting' WHERE id=? AND org_id=? AND status='confirming'", [c.id, orgId]);
+  let startLater = null;   // FIX-57: recordGift's deferred step, set going once the answer is out
   try {
     // VOICE-2: a check made out to somebody else waits for "Log it anyway".
     const payee = c.proposal && c.proposal.payee;
@@ -340,7 +341,7 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           // after-change step run straight after the answer (see below).
           deferTriggers: true,
         });
-        later = w.later || null;
+        later = w.later || null; startLater = w.start || null;
         if (w.duplicate) {
           const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]);
           giftId = g ? g.id : null;
@@ -399,9 +400,11 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
         draft ? "A thank-you is drafted for you to read and send." : null,
         receipt === "one_click" ? "Send the receipt from the gift when you're ready." : null,
         callOnThread ? "A call to thank them is on the Thread for today." : null].filter(Boolean).join(" ") });
+    if (startLater) startLater();   // FIX-57: what follows the gift starts once the answer is sent
     const settled = followUp().catch(e => console.error("[capture] after confirm:", e.message));
     if (process.env.TEST_MODE === "1") afterConfirm.set(c.id, settled.then(() => afterConfirm.delete(c.id)));
   } catch (e) {
+    if (startLater) startLater();   // the gift was written: what follows it still runs
     await release();
     throw e;
   }

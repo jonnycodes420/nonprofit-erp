@@ -258,6 +258,54 @@ const file = (tag, n, perDonor = 1) => ({
     ok("§8 the email editor's preview is never signed by the brand kit's sample person", !/Dana Reyes/.test(html) && html.includes(orgRow.name), html.slice(0, 200));
   }
 
+  // ── §9 · FIX-57: A SIGNATURE FOR EACH PERSON. My profile signs what is
+  // drafted for her, ahead of Brand's: the user who opens a draft, and the
+  // assignee of a thank-you task (not whoever opened it). Never the donor's
+  // name. Red on main (78e156e): /me/profile is a 404 and every preview is
+  // signed with Brand's signature.
+  await api("PUT", "/brand-kit", tok, { signatureName: "Brand Signer", signatureTitle: "Board Chair" });
+  const prof = await api("PUT", "/me/profile", tok, { signName: "Sam Ortiz-Bell", title: "Executive Director", phone: "555-0100" });
+  ok("§9 My profile saves the name as signed, title and phone", prof.status === 200 && prof.body?.from === "person"
+     && prof.body?.signature === "Sam Ortiz-Bell\nExecutive Director\n555-0100", prof.body);
+  const p9 = await api("POST", "/templates/thanks_first/preview", tok, { donorId: fdn.id, subject: "Thanks", body: thanks });
+  ok("§9 a draft she opens is signed with her own signature, ahead of Brand's",
+     (p9.body?.body || "").endsWith("With thanks,\nSam Ortiz-Bell\nExecutive Director\n555-0100") && !(p9.body?.body || "").includes("Brand Signer")
+     && p9.body?.signatureFrom === "person", p9.body?.body);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,sign_block) VALUES ('u_fix37_b',$1,$2,$3,'Robin Lee','staff',$4)`,
+    [ORG, "robin-fix37@" + DOMAIN, bcrypt.hashSync("loadtest1234", 4), "Robin Lee\nVolunteer Lead"]);
+  await q(`INSERT INTO tasks (id,org_id,title,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
+           VALUES ('t_fix37_ty',$1,'Thank Alder & Birch',$2,'u_fix37_b','Robin Lee','u_fix37','Sam Admin')`, [ORG, fdn.id]);
+  const p9t = await api("POST", "/templates/thanks_first/preview", tok, { donorId: fdn.id, taskId: "t_fix37_ty", subject: "Thanks", body: thanks });
+  ok("§9 a thank-you task's email is signed by its assignee, not by whoever opened it",
+     (p9t.body?.body || "").endsWith("With thanks,\nRobin Lee\nVolunteer Lead") && !(p9t.body?.body || "").includes("Sam Ortiz-Bell"), p9t.body?.body);
+  ok("§9 the signature is never the donor's name", !/With thanks,\n[^]*Alder & Birch/.test(p9t.body?.body || "") && !/With thanks,\n[^]*Alder & Birch/.test(p9.body?.body || ""),
+     [p9.body?.body, p9t.body?.body]);
+  if (et.body?.template?.id) {
+    const pe9 = await api("POST", `/email-templates/${et.body.template.id}/preview`, tok, {});
+    const h9 = JSON.stringify(pe9.body || {});
+    ok("§9 the email editor's preview is signed with her signature", h9.includes("Sam Ortiz-Bell") && !h9.includes("Brand Signer"), h9.slice(0, 200));
+  }
+  // ── §9b · FIX-57 item 3: NAMES, NOT EMAILS. "Reviewed by robin@fix56.test"
+  // was the actor stamp writing the email. Red on main: the stamp is the
+  // email, and an old row reads as one.
+  const put9 = await api("PUT", "/templates/thanks_first", tok, { subject: "Thank you", body: thanks });
+  const [rv] = await q(`SELECT reviewed_by_name FROM message_templates WHERE org_id=$1 AND kind='thanks_first'`, [ORG]);
+  ok("§9b a new save is stamped with the person's name", put9.status === 200 && rv && rv.reviewed_by_name === "Sam Admin" && put9.body?.reviewedBy === "Sam Admin", { rv, by: put9.body?.reviewedBy });
+  const ROBIN = "robin-fix37@" + DOMAIN;
+  await q(`UPDATE message_templates SET reviewed_by_name=$2 WHERE org_id=$1 AND kind='thanks_first'`, [ORG, ROBIN]);
+  const tl = await api("GET", "/templates", tok);
+  const tf = (tl.body?.templates || []).find(t => t.kind === "thanks_first") || {};
+  ok("§9b a card reviewed by a teammate shows her name, not her email", tf.reviewedBy === "Robin Lee", tf.reviewedBy);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix37_c',$1,$2,$3,NULL,'staff')`, [ORG, "noname-fix37@" + DOMAIN, bcrypt.hashSync("loadtest1234", 4)]);
+  await q(`UPDATE message_templates SET reviewed_by_name=$2 WHERE org_id=$1 AND kind='thanks_first'`, [ORG, "noname-fix37@" + DOMAIN]);
+  const tl2 = await api("GET", "/templates", tok);
+  ok("§9b someone who never set a name still reads as their email", ((tl2.body?.templates || []).find(t => t.kind === "thanks_first") || {}).reviewedBy === "noname-fix37@" + DOMAIN, null);
+
+  await api("PUT", "/me/profile", tok, { signName: "", title: "", phone: "", block: "" });
+  const p9b = await api("POST", "/templates/thanks_first/preview", tok, { donorId: fdn.id, subject: "Thanks", body: thanks });
+  ok("§9 with her profile empty, Brand's signature signs again (FIX-56's order is the fallback)",
+     (p9b.body?.body || "").endsWith("Brand Signer\nBoard Chair") && p9b.body?.signatureFrom === "brand", p9b.body?.body);
+
   await wipe();
   await closeDb();
   summary();

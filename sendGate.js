@@ -199,10 +199,41 @@ async function recordSent(opts, d) {
       WHERE org_id = ? AND dedupe_key = ? AND sent_at IS NULL`, [opts._stewardOrgId, dedupeKeyOf(opts)]);
 }
 
+// FIX-57 item 4 · WHAT THE EMAIL SAYS, BEFORE WHO GETS IT. A receipt or a
+// year-end statement with no org mailing address on file, and any donor email
+// still carrying a placeholder ("[org address]", "{{first_name}}", "Dear ,"),
+// is held with that reason, even with a staff click: a person who pressed Send
+// on it did not mean the blank. Held, so it sends once the address is added
+// and it is sent again from Going out.
+const NEEDS_ADDRESS = new Set(["receipt", "year_end"]);
+async function contentHold(opts) {
+  const kind = String(opts._stewardKind || "");
+  if (EXEMPT_KINDS.has(kind)) return null;
+  if (NEEDS_ADDRESS.has(kind) && opts._stewardOrgId) {
+    const [o] = await query("SELECT receipt_address FROM orgs WHERE id = ?", [opts._stewardOrgId]);
+    if (!o || !String(o.receipt_address || "").trim()) return "no_org_address";
+  }
+  const BK = await import("./shared/brandKit.js");
+  if (BK.placeholdersIn(opts.subject, opts.text, opts.html).length) return "placeholder";
+  return null;
+}
+
 // THE GATE. `deliver(opts)` is the provider call; it runs only on a yes.
 async function sendToDonor(opts, deliver) {
   let d;
-  try { d = await decide(opts); }
+  try {
+    const held = await contentHold(opts);
+    if (held) {
+      const named = opts._stewardDonorId ? String(opts._stewardDonorId) : null;
+      let donorId = named;
+      if (!donorId && recipientsOf(opts).length) {
+        const [r] = await query(`SELECT id FROM donors WHERE org_id = ? AND LOWER(email) = ? AND deleted_at IS NULL ORDER BY created_at LIMIT 1`,
+          [opts._stewardOrgId, recipientsOf(opts)[0]]);
+        donorId = r ? r.id : null;
+      }
+      d = { send: false, donorId, reason: held, typeKey: TYPES.typeOfKind(String(opts._stewardKind || "supporter")) };
+    } else d = await decide(opts);
+  }
   catch (e) {
     // Fails closed: a gate that cannot read the switch does not send.
     console.error("[send-gate] could not decide, nothing sent:", e.message);

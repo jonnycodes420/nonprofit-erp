@@ -114,7 +114,7 @@ async function reset() {
   await new Promise(r => mock.listen(MOCK, r));
   await new Promise(r => sink.listen(SINK, r));
   require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await reset();
   const today = civilToday();
   const plus = d => { const t = new Date(today + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + d); return t.toISOString().slice(0, 10); };
