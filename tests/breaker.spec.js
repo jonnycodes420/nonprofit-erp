@@ -746,7 +746,7 @@ async function caseSleep() {
 async function caseRefresh() {
   const L = "refresh";
   // its own org each run: an import writes to tables freshOrg does not clear
-  const o = await freshOrg("org_brk_refresh_" + Date.now().toString(36), "Breaker Refresh (test)");
+  const o = await freshOrg("org_brk_refresh_" + Math.random().toString(36).slice(2, 9), "Breaker Refresh (test)");
   const ctx = await signedIn(o);
   const page = await newPage(ctx);
   await page.goto(`${APP}/donors`, { waitUntil: "domcontentloaded", timeout: 60000 });
