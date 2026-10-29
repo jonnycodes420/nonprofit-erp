@@ -57,7 +57,7 @@ const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"
 const FX = path.join(__dirname, "fixtures", "import", "fix52");
 const E = JSON.parse(fs.readFileSync(path.join(FX, "expected.json"), "utf8"));
 const PASSWORD = "loadtest1234";
-const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", "pledges", "thank_you_drafts", "interactions", "gifts", "events",
+const TABLES = ["data_health_runs", "event_attendees", "email_suppressions", "pledge_installments", "pledges", "thank_you_drafts", "interactions", "gifts", "events",
   "fin_transactions", "imports", "sheet_import_jobs", "donor_scores", "readouts", "tasks", "cultivation_plans", "deleted_records", "donors", "households",
   "custom_field_defs", "fin_funds", "budgets", "accounts", "users"];
 const SNAP = ["donors", "households", "gifts", "pledges", "pledge_installments", "events", "event_attendees", "interactions", "email_suppressions",

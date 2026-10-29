@@ -487,3 +487,6 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   A walk-in row with no person record is a guest; a deleted person is nobody.
 - A guest's Gift on the event page is what they gave for the event or pledged at it (`event-gave` per person), never
   `gift_amount` typed on the row. A table seated over its size says "13 seated at 10 seats, 3 over".
+- Grow leads with second gifts (FIX-59): second gifts, then came-didn't-give, then the rest, by dollars inside
+  each (`insights.js byGrow`); the tab reads "85 second gifts · 112 more". The 150-card cap now cuts from the
+  rest, never a second gift first.

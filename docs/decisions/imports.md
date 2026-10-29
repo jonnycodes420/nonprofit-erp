@@ -274,10 +274,16 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   `event_tables`, sized to the people the file seats there, and its guests are linked (`table_id`); Undo removes the
   tables it made (`summary_json.tablesCreated`).
 - **Imported gifts are already deposited unless she says No (FIX-59).** `answers.giftsDeposited` (Yes by default,
-  shown): the run's received gifts get `deposited_on` = their date and `deposit_ref` = `import:<run>:<date>`, stock
-  and in-kind excepted. Finance's "Not yet on a deposit" leaves out any gift with a `deposit_ref`.
+  shown): the run's received gifts get `deposited_on` = their date, stock and in-kind excepted, and never a
+  `deposit_ref` (QuickBooks' deposit mode groups by it, and would post a made-up deposit). Finance's "Not yet on a
+  deposit" leaves out a gift with `deposited_on` (`ON_NO_DEPOSIT` in routes/finance.js).
 - **An event's name keeps the file's punctuation (FIX-59).** "Justin_s" from a download is "Justin's"; a copy's "(1)"
   is not part of the name.
+- **Couples written as one name, all of them (FIX-59).** The comma reader also takes a second first name off the
+  list when nothing else reads ("Josh, Kesi Tanabe": two capitalised words after a known first name that is not a
+  common surname). Data health's couples line takes "Randy or Jessamy Barlow" and "X and Y Last" too ("&" is
+  Steward's own joint name and is left), and a record already in a household: its fix joins that household and
+  makes no second person the household already holds.
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make

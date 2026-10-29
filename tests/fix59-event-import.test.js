@@ -152,9 +152,9 @@ const ANSWERED = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" 
     ok(`§2 every gift (${EXP.money.gifts}, ${EXP.money.giftCents} cents) and the pledge (${EXP.money.pledgeCents} cents) are tied to the event`,
        money.gifts === EXP.money.gifts && money.gift_cents === EXP.money.giftCents && money.pledges === EXP.money.pledges && money.pledge_cents === EXP.money.pledgeCents && money.all_gifts === money.gifts,
        JSON.stringify(money));
-    const undep = await one(`SELECT COUNT(*) FILTER (WHERE deposit_ref IS NULL)::int AS n, COUNT(*) FILTER (WHERE deposited_on = date)::int AS on_day FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, j.importId]);
+    const undep = await one(`SELECT COUNT(*) FILTER (WHERE deposited_on IS NULL)::int AS n, COUNT(*) FILTER (WHERE deposited_on = date)::int AS on_day, COUNT(*) FILTER (WHERE deposit_ref IS NOT NULL)::int AS refs FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, j.importId]);
     ok(`§2 deposited (the default): ${EXP.money.notYetDepositedAfterYes} received gifts left off a deposit, each deposited on its own date`,
-       undep.n === EXP.money.notYetDepositedAfterYes && undep.on_day === EXP.money.gifts, JSON.stringify(undep));
+       undep.n === EXP.money.notYetDepositedAfterYes && undep.on_day === EXP.money.gifts && undep.refs === 0, JSON.stringify(undep));
     // the Finance figure reads the same mark: a check from this run would not be "Not yet on a deposit"
     await q(`UPDATE gifts SET payment_method='Check', date=to_char(now(),'YYYY-MM-DD') WHERE org_id=$1 AND import_id=$2`, [ORG, j.importId]);
     const fin = (await api("GET", "/finance/overview", tok)).body || {};
@@ -177,7 +177,7 @@ const ANSWERED = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" 
     const j2 = await importJob(tok, { ...base, answers: diff });
     ok(`§3 the import makes ${EXP.persons + 1} people, Bev Okonjo among them, seated at Table 1`, j2.end && j2.end.status === "done" && await people(ORG) === EXP.persons + 1
        && !!(await one(`SELECT 1 AS x FROM event_attendees WHERE org_id=$1 AND name='Bev Okonjo' AND table_label='Table 1'`, [ORG])), await people(ORG));
-    const undep2 = await one(`SELECT COUNT(*) FILTER (WHERE deposit_ref IS NULL)::int AS n FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, j2.importId]);
+    const undep2 = await one(`SELECT COUNT(*) FILTER (WHERE deposited_on IS NULL)::int AS n FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, j2.importId]);
     ok(`§3 No to deposited: the ${EXP.money.gifts} gifts wait for a deposit`, undep2.n === EXP.money.gifts, JSON.stringify(undep2));
     await undo(tok, j2.importId);
     ok("§3 Undo leaves nobody", await people(ORG) === 0, await people(ORG));

@@ -922,16 +922,17 @@ async function writePlan({ req, body, importId, who, report }) {
     await report(`Writing gifts ${gi} of ${u.gifts.length}`, memberCount + u.pledges.length + gi, total);
   }
   // FIX-59 · ALREADY DEPOSITED. Yes (the default) marks the run's received
-  // gifts deposited on their own dates, one deposit per day of the run
-  // (deposit_ref "import:<run>:<day>"), so Finance never lists them as Not yet
-  // on a deposit. Stock and in-kind never reached a bank and are not marked.
-  // Undo removes the gifts, and the marks go with them.
+  // gifts deposited on their own dates (deposited_on only, as Finance's "They
+  // were already deposited" does: QuickBooks' deposit mode groups by
+  // deposit_ref, so a marker there would post a made-up deposit), and Finance
+  // never lists them as Not yet on a deposit. Stock and in-kind never reached a
+  // bank and are not marked. Undo removes the gifts, and the marks go with them.
   if ((a.giftsDeposited || "yes") !== "no") {
-    const dep = await query(`UPDATE gifts SET deposited_on = date::text, deposit_ref = ? || COALESCE(date::text, 'no date')
-                              WHERE org_id=? AND import_id=? AND deposit_ref IS NULL AND COALESCE(is_sample,false) = false
+    const dep = await query(`UPDATE gifts SET deposited_on = date::text
+                              WHERE org_id=? AND import_id=? AND deposited_on IS NULL AND date IS NOT NULL AND COALESCE(is_sample,false) = false
                                 AND LOWER(TRIM(COALESCE(type,''))) NOT IN ('stock','in kind','in-kind','in_kind','securities')
                                 AND LOWER(TRIM(COALESCE(payment_method,''))) NOT IN ('stock','in-kind','in kind')
-                              RETURNING id`, [`import:${importId}:`, orgId, importId]);
+                              RETURNING id`, [orgId, importId]);
     summary.giftsDeposited = dep.length;
   } else summary.giftsDeposited = 0;
   // "Reccuring": a monthly giver for her to confirm, never a subscription
@@ -1003,6 +1004,7 @@ async function runJob(req, body, importId, who) {
     // after the commit, outside it: the one after-change step for everyone touched
     await require("../afterChange").afterChange(orgId, out.touched, { door: "sheet_import", history: true })
       .catch(e => console.error("[sheet-import] after change:", e.message));
+    require("./dataHealth").recheckSoon(orgId, "import", { importId });   // FIX-59: Data health is current
   } catch (e) {
     if (e && e.refused) { await finishJob(importId, "failed", e.refused, e.refused.body.message); return; }
     console.error("[sheet-import] job failed, rolled back:", importId, e && (e.stack || e.message));

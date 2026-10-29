@@ -175,6 +175,7 @@ CORE=(
   trust2-erase
   clean1-merge
   clean1-duplicates
+  fix59-data-health
   prospect1-room-to-give
   prospect1-who-sees
   help1-ask

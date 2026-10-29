@@ -26,6 +26,14 @@
 //   GET  /data-health/ncoa/moves           the moves waiting for a person
 //   POST /data-health/ncoa/apply|dismiss   staff approve, in bulk or one by one
 //   GET  /data-health/notice               the one quiet Home item after a messy import
+//   GET  /data-health/families             FIX-59: two people of one surname who share an
+//                                          address, phone or email: a family, not a duplicate
+//   POST /data-health/families/dismiss     "Not a family", remembered
+//   GET  /data-health/event-pairs          FIX-59: two spellings of one person on one event's list
+//   POST /data-health/event-pairs/answer   Same person (merged) or Different (remembered)
+//   POST /data-health/pairs/undismiss      the Undo of "Different" / "Not a duplicate"
+//   GET  /data-health/names                FIX-59: markup or a note inside a name
+//   POST /data-health/names/apply|undo     cleaned on her click, the note moved to Notes
 //
 // The merge is the dangerous part, so it has one rule: every column in db.js
 // that points at a person is in MERGE_REFS below or in NOT_MOVED with the
@@ -163,14 +171,28 @@ const PERSON_COLS = `id, org_id, name, kind, email, email2, phone, mobile, addre
   employer, household_id, deceased, do_not_contact, do_not_mail, email_unreachable, email_unreachable_reason,
   address_unmailable, address_unmailable_reason, total_giving, gift_count, last_gift_date, created_at, updated_at,
   created_import_id, deleted_at, erased_at`;
+// One person in a pair, as a pair's row shows them (declared above every reader: the TDZ rule).
+const brief = d => d && ({ id: d.id, name: d.name, email: d.email, phone: d.phone || d.mobile || null,
+  place: [d.city, d.state].filter(Boolean).join(", ") || null, householdId: d.household_id || null,
+  lifetimeCents: cents(d.total_giving), giftCount: Number(d.gift_count || 0), lastGiftDate: d.last_gift_date || null });
 const livePeople = orgId => query(`SELECT ${PERSON_COLS} FROM donors WHERE org_id=? AND deleted_at IS NULL AND erased_at IS NULL`, [orgId]);
 async function dismissedKeys(orgId, kind) {
   const rows = await query("SELECT key FROM data_health_dismissals WHERE org_id=? AND kind=?", [orgId, kind]);
   return new Set(rows.map(r => r.key));
 }
-async function duplicatePairs(orgId, people) {
-  return DH.findDuplicatePairs(people || await livePeople(orgId), { orgId, dismissed: await dismissedKeys(orgId, "pair") });
+// FIX-59: one near-duplicate reader for the import's preview and for Data
+// health (shared/nearNames.js). It is an ES module, so it is loaded once here
+// and handed to the pure rules.
+const NN = () => import("../shared/nearNames.js");
+async function pairsAndFamilies(orgId, people) {
+  const { nearDuplicate } = await NN();
+  return DH.findPairs(people || await livePeople(orgId), { orgId, near: nearDuplicate,
+    dismissed: await dismissedKeys(orgId, "pair"), familiesDismissed: await dismissedKeys(orgId, "family") });
 }
+async function duplicatePairs(orgId, people) {
+  return (await pairsAndFamilies(orgId, people)).pairs;
+}
+const judge = async (a, b) => DH.judgePair(a, b, { near: (await NN()).nearDuplicate });
 async function bounceMap(orgId, people) {
   const emails = [...new Set(people.map(d => String(d.email || "").trim().toLowerCase()).filter(Boolean))];
   const sup = emails.length ? await query(
@@ -214,30 +236,103 @@ function unreachableRows(people) {
 }
 
 // IMPORT-5 · couples written with a comma ("Alex, Brad Hubbard", or the old
-// reading "Brad Hubbard Alex" on a record an import made). Proposed only; a
-// record already in a household or fixed before is left alone.
+// reading "Brad Hubbard Alex" on a record an import made), and FIX-59 with
+// "or" and "and" ("Randy or Jessamy Barlow"). Proposed only. FIX-59: a
+// record already in a household is proposed too (an import puts people at one
+// address in one); its fix joins that household instead of making one.
 const SR = () => import("../shared/sheetRead.js");
 async function coupleRows(orgId, people) {
   const R = await SR();
   const dismissed = await dismissedKeys(orgId, "couple");
   const out = [];
   for (const d of people) {
-    if (d.household_id || d.kind === "organization" || dismissed.has(`${d.id}:${d.name}`)) continue;
+    if (d.kind === "organization" || dismissed.has(`${d.id}:${d.name}`)) continue;
     const f = R.commaCoupleFix(d.name, { imported: !!d.created_import_id });
     if (f) out.push({ donorId: d.id, name: d.name, before: f.before, after: f.household, people: f.people });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// FIX-59 · NAMES WITH MARKUP OR A NOTE IN THEM. "**Bryn Maylor", "Sadie
+// (send with Tess's) Norwood": the name as a person reads it, the note moved
+// to the person's Notes, only on her click (shared/nearNames.js nameAndNotes,
+// the import's own reader). A row that is a note and not a person is left.
+async function nameNoteRows(orgId, people) {
+  const N = await NN();
+  const dismissed = await dismissedKeys(orgId, "name_notes");
+  const out = [];
+  for (const d of people) {
+    if (d.kind === "organization" || dismissed.has(`${d.id}:${d.name}`)) continue;
+    const r = N.nameAndNotes(d.name);
+    if (r.isNote || !r.name || !r.changed || !(r.hadMarkup || r.notes.length)) continue;
+    out.push({ donorId: d.id, before: d.name, after: r.name, notes: r.notes });
+  }
+  return out.sort((a, b) => a.after.localeCompare(b.after));
+}
+
+// FIX-59 · TWO SPELLINGS OF ONE PERSON ON ONE EVENT'S LIST. The import asks
+// "Is Fran Pell the same as Frances Pell?"; this is the same question
+// for the lists already here, by the same reader. A pair answered Different is
+// a "pair" dismissal, so the duplicates line never asks it either.
+async function eventPairRows(orgId, people) {
+  const { nearDuplicate } = await NN();
+  const byId = new Map(people.map(d => [d.id, d]));
+  const dismissed = await dismissedKeys(orgId, "pair");
+  const rows = await query(
+    `SELECT ea.event_id, e.name AS event_name, e.date::text AS event_date, ea.donor_id
+       FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
+      WHERE ea.org_id=? AND ea.donor_id IS NOT NULL ORDER BY e.date DESC, e.id`, [orgId]);
+  const events = new Map();
+  for (const r of rows) {
+    if (!byId.has(r.donor_id)) continue;
+    if (!events.has(r.event_id)) events.set(r.event_id, { id: r.event_id, name: r.event_name, date: r.event_date, ids: new Set() });
+    events.get(r.event_id).ids.add(r.donor_id);
+  }
+  const words = d => DH.normName(d.name).split(" ").filter(Boolean);
+  const out = [], seen = new Set();
+  for (const ev of events.values()) {
+    // only names that share a surname or a first name are compared
+    const buckets = new Map();
+    for (const id of ev.ids) {
+      const w = words(byId.get(id));
+      if (!w.length) continue;
+      for (const k of new Set(["l:" + w[w.length - 1], "f:" + w[0]])) (buckets.get(k) || buckets.set(k, []).get(k)).push(id);
+    }
+    for (const ids of buckets.values()) {
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        const key = DH.pairKey(ids[i], ids[j]);
+        if (seen.has(key) || dismissed.has(key)) continue;
+        const A = byId.get(ids[i]), B = byId.get(ids[j]);
+        const nd = nearDuplicate(A.name, B.name);
+        if (!nd) continue;
+        seen.add(key);
+        const [x, y] = [A, B].sort((p, q) => String(p.name).length - String(q.name).length || p.id.localeCompare(q.id));
+        out.push({ key, eventId: ev.id, eventName: ev.name, eventDate: ev.date, a: x.id, b: y.id, why: nd.why, sentence: nd.sentence,
+          question: `Is ${x.name} the same as ${y.name}?`, left: brief(x), right: brief(y) });
+      }
+    }
+  }
+  return out;
+}
+function eventPairCounts(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    if (!by.has(r.eventId)) by.set(r.eventId, { eventId: r.eventId, eventName: r.eventName, eventDate: r.eventDate, count: 0 });
+    by.get(r.eventId).count++;
+  }
+  return [...by.values()];
+}
+
 // The counts, computed once. The page, the nightly run and the import hook
 // all read this, so a count and the rows it opens cannot disagree.
 async function healthCounts(orgId) {
   const people = await livePeople(orgId);
-  const [pairs, addresses, emails, moves, couples] = await Promise.all([
-    duplicatePairs(orgId, people), addressRows(orgId, people), emailRows(orgId, people),
+  const [found, addresses, emails, moves, couples, names, eventPairs] = await Promise.all([
+    pairsAndFamilies(orgId, people), addressRows(orgId, people), emailRows(orgId, people),
     query("SELECT COUNT(*)::int AS n FROM ncoa_moves WHERE org_id=? AND status='pending'", [orgId]),
-    coupleRows(orgId, people),
+    coupleRows(orgId, people), nameNoteRows(orgId, people), eventPairRows(orgId, people),
   ]);
+  const pairs = found.pairs;
   const [{ n: ncoaFiles } = { n: 0 }] = await query("SELECT COUNT(*)::int AS n FROM ncoa_batches WHERE org_id=?", [orgId]);
   return {
     people: people.length,
@@ -250,6 +345,10 @@ async function healthCounts(orgId) {
     emails: emails.length,
     unreachable: unreachableRows(people).length,
     couples: couples.length,
+    families: found.families.length,
+    namesWithNotes: names.length,
+    eventDuplicates: eventPairs.length,
+    eventDuplicatesByEvent: eventPairCounts(eventPairs),
     _pairs: pairs, _people: people,
   };
 }
@@ -289,6 +388,24 @@ function afterImport(orgId, importId) {
   require("../onboarded").stampOnboardedFromImport(query, orgId, importId)
     .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
   setImmediate(() => runDataHealth(orgId, { trigger: "import", importId }).catch(e => console.error("[data-health] after import:", e.message)));
+}
+// FIX-59 · DATA HEALTH IS CURRENT. After an import, its undo, a merge, a
+// merge's undo and a bulk delete, the checks run again in the background and
+// the page says when ("Checked 5:24 PM, after your import"). Calls close
+// together are one run: a bulk merge of forty pairs checks once.
+const RECHECK_MS = 500;
+const rechecks = new Map();
+function recheckSoon(orgId, trigger, { importId = null } = {}) {
+  if (!orgId) return;
+  const prev = rechecks.get(orgId);
+  if (prev) clearTimeout(prev.timer);
+  const ask = { trigger, importId: importId || (prev && prev.importId) || null };
+  const timer = setTimeout(() => {
+    rechecks.delete(orgId);
+    runDataHealth(orgId, ask).catch(e => console.error("[data-health] recheck:", e.message));
+  }, RECHECK_MS);
+  if (timer.unref) timer.unref();
+  rechecks.set(orgId, { timer, importId: ask.importId });
 }
 async function runDataHealthNightly() {
   const orgs = await query(`SELECT DISTINCT org_id FROM donors WHERE deleted_at IS NULL`);
@@ -336,9 +453,6 @@ app.post("/data-health/notice/:id/dismiss", requireAuth, checkWriteAccess, wrap(
 }));
 
 // ── Duplicates ─────────────────────────────────────────────────────────────
-const brief = d => d && ({ id: d.id, name: d.name, email: d.email, phone: d.phone || d.mobile || null,
-  place: [d.city, d.state].filter(Boolean).join(", ") || null, householdId: d.household_id || null,
-  lifetimeCents: cents(d.total_giving), giftCount: Number(d.gift_count || 0), lastGiftDate: d.last_gift_date || null });
 app.get("/data-health/duplicates", requireAuth, wrap(async (req, res) => {
   const people = await livePeople(req.user.orgId);
   const pairs = await duplicatePairs(req.user.orgId, people);
@@ -403,7 +517,7 @@ app.get("/data-health/pair", requireAuth, wrap(async (req, res) => {
     : new Date(A.created_at) <= new Date(B.created_at);
   const kept = keepA ? A : B, other = keepA ? B : A;
   const households = await query("SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [A.household_id, B.household_id].filter(Boolean)]).catch(() => []);
-  const judged = DH.judgePair(A, B);
+  const judged = await judge(A, B);
   res.json({
     keptId: kept.id, otherId: other.id,
     records: { [A.id]: A, [B.id]: B },
@@ -442,6 +556,11 @@ const giftCentsTx = async (client, orgId, id) => {
 // and record all of it so undo can put it back.
 async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confidence = null, reasons = null, bulk = false }) {
   if (!keptId || !mergedId || keptId === mergedId) throw new MergeRefused("Choose two different people.");
+  const merged = await mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, bulk });
+  recheckSoon(orgId, "merge");   // FIX-59
+  return merged;
+}
+function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, bulk }) {
   return withAdvisoryLock(`merge:${orgId}`, () => withTransaction(async (client) => {
     const snap = await queryTx(client, `SELECT id, to_jsonb(d.*) AS j FROM donors d WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL FOR UPDATE`, [orgId, [keptId, mergedId]]);
     const keptJ = snap.find(r => r.id === keptId)?.j, mergedJ = snap.find(r => r.id === mergedId)?.j;
@@ -611,7 +730,7 @@ app.post("/data-health/merge", requireAuth, checkWriteAccess, wrap(async (req, r
   const me = await who(req);
   try {
     const [a, b] = await Promise.all([keptId, mergedId].map(id => query("SELECT * FROM donors WHERE id=? AND org_id=?", [id, req.user.orgId]).then(r => r[0])));
-    const judged = a && b ? DH.judgePair(a, b) : null;
+    const judged = a && b ? await judge(a, b) : null;
     const out = await mergePeople(req.user.orgId, keptId, mergedId, { choices, me, confidence: judged?.confidence || null, reasons: judged?.reasons || null });
     await afterMerge(req.user.orgId, keptId);
     req.audit = { ...(req.audit || {}), record: { donor_id: keptId, merged_id: mergedId, merge_id: out.mergeId } };
@@ -755,6 +874,7 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
     // No geocode re-mark: both records came back with the coordinates and
     // geocode state they had, which belong to the addresses they came back with.
     req.audit = { ...(req.audit || {}), record: { donor_id: out.keptId, merged_id: out.mergedId, merge_id: req.params.id } };
+    recheckSoon(orgId, "merge_undo");   // FIX-59
     res.json(out);
   } catch (e) { sendRefusal(res, e); }
 }));
@@ -814,46 +934,166 @@ app.post("/data-health/couples/apply", requireAuth, checkWriteAccess, wrap(async
   const props = new Map((await coupleRows(orgId, people)).map(r => [r.donorId, r]));
   const batchId = "nfb_" + uuid().replace(/-/g, "").slice(0, 12);
   const touched = [];
+  let n = 0;
   await withTransaction(async (client) => {
     for (const d of people) {
       const p = props.get(d.id);
       if (!p) continue;
-      const hh = "hh_" + uuid().slice(0, 10), other = "d_" + uuid().replace(/-/g, "").slice(0, 16);
-      await runTx(client, "INSERT INTO households (id, org_id, name, primary_donor_id) VALUES (?,?,?,?)", [hh, orgId, p.after.slice(0, 200), d.id]);
-      await runTx(client, `INSERT INTO donors (id, org_id, name, kind, address, address2, city, state, zip, stage, status, person_types, household_id, spouse_name, created_by, created_by_name)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?)`,
-        [other, orgId, p.people[1], d.kind || null, d.address || null, d.address2 || null, d.city || null, d.state || null, d.zip || null, d.stage || null, d.status || "active",
-         JSON.stringify(typeof d.person_types === "string" ? JSON.parse(d.person_types) : (d.person_types || [])), hh, p.people[0], me.id, me.name]);
+      // FIX-59: a record already in a household keeps it, and the second
+      // person is made only when that household doesn't already hold them
+      let hh = d.household_id || null, madeHh = null, other = null;
+      const twin = hh ? (await queryTx(client, "SELECT id FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL AND lower(name)=lower(?) LIMIT 1",
+        [orgId, hh, d.id, p.people[1]]))[0] : null;
+      if (!hh) {
+        hh = madeHh = "hh_" + uuid().slice(0, 10);
+        await runTx(client, "INSERT INTO households (id, org_id, name, primary_donor_id, created_by, created_by_name) VALUES (?,?,?,?,?,?)", [hh, orgId, p.after.slice(0, 200), d.id, me.id, me.name]);
+      }
+      if (!twin) {
+        other = "d_" + uuid().replace(/-/g, "").slice(0, 16);
+        await runTx(client, `INSERT INTO donors (id, org_id, name, kind, address, address2, city, state, zip, stage, status, person_types, household_id, spouse_name, created_by, created_by_name)
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,?)`,
+          [other, orgId, p.people[1], d.kind || null, d.address || null, d.address2 || null, d.city || null, d.state || null, d.zip || null, d.stage || null, d.status || "active",
+           JSON.stringify(typeof d.person_types === "string" ? JSON.parse(d.person_types) : (d.person_types || [])), hh, p.people[0], me.id, me.name]);
+      }
       await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.people[0], p.people[1], hh, d.id, orgId]);
       await runTx(client, `INSERT INTO name_fixes (id, org_id, batch_id, kind, donor_id, before_name, before_spouse_name, before_household_id, after_name, created_donor_id, created_household_id, created_by, created_by_name)
                            VALUES (?,?,?,'comma_couple',?,?,?,?,?,?,?,?,?)`,
-        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.spouse_name || null, d.household_id || null, p.people[0], other, hh, me.id, me.name]);
-      touched.push(d.id, other);
+        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.spouse_name || null, d.household_id || null, p.people[0], other, madeHh, me.id, me.name]);
+      touched.push(d.id, ...(other ? [other] : []));
+      n++;
     }
   });
   if (touched.length) await require("../afterChange").afterChange(orgId, touched, { door: "data_health_couples" }).catch(e => console.error("[data-health] couples after change:", e.message));
-  const n = touched.length / 2;
   res.status(201).json({ applied: n, batchId, sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "name is" : "names are"} now two people in one household.` });
 }));
-app.post("/data-health/couples/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const orgId = req.user.orgId, batchId = String(req.body?.batchId || "");
-  const rows = await query("SELECT * FROM name_fixes WHERE org_id=? AND batch_id=? AND undone_at IS NULL", [orgId, batchId]);
-  if (!rows.length) return res.status(404).json({ error: "Nothing to undo." });
+// One Undo for a batch of name fixes, whichever kind: a couple's second person
+// and household go, a name with a note gets its name and Notes back.
+async function undoNameFixes(orgId, batchId, kinds, door) {
+  const rows = await query("SELECT * FROM name_fixes WHERE org_id=? AND batch_id=? AND kind = ANY(?) AND undone_at IS NULL", [orgId, batchId, kinds]);
+  if (!rows.length) return null;
   const touched = [];
   await withTransaction(async (client) => {
     for (const r of rows) {
-      await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
-        [r.before_name, r.before_spouse_name, r.before_household_id, r.donor_id, orgId]);
-      // the person the fix made goes, with what the after-change step wrote about them
-      for (const t of ["donor_scores", "donor_drift", "donor_rhythm"]) await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id=?`, [orgId, r.created_donor_id]).catch(() => {});
-      await runTx(client, "DELETE FROM donors WHERE id=? AND org_id=?", [r.created_donor_id, orgId]);
-      await runTx(client, "DELETE FROM households WHERE id=? AND org_id=?", [r.created_household_id, orgId]);
+      if (r.kind === "name_notes") {
+        await runTx(client, "UPDATE donors SET name=?, notes=?, updated_at=NOW() WHERE id=? AND org_id=?", [r.before_name, r.before_notes, r.donor_id, orgId]);
+      } else {
+        await runTx(client, "UPDATE donors SET name=?, spouse_name=?, household_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
+          [r.before_name, r.before_spouse_name, r.before_household_id, r.donor_id, orgId]);
+        // the person the fix made goes, with what the after-change step wrote about them
+        if (r.created_donor_id) {
+          for (const t of ["donor_scores", "donor_drift", "donor_rhythm"]) await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id=?`, [orgId, r.created_donor_id]).catch(() => {});
+          await runTx(client, "DELETE FROM donors WHERE id=? AND org_id=?", [r.created_donor_id, orgId]);
+        }
+        if (r.created_household_id) await runTx(client, "DELETE FROM households WHERE id=? AND org_id=?", [r.created_household_id, orgId]);
+      }
       await runTx(client, "UPDATE name_fixes SET undone_at=NOW() WHERE id=? AND org_id=?", [r.id, orgId]);
       touched.push(r.donor_id);
     }
   });
-  await require("../afterChange").afterChange(orgId, touched, { door: "data_health_couples_undo" }).catch(() => {});
-  res.json({ undone: rows.length, sentence: `Undone. ${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name is" : "names are"} back as they were.` });
+  await require("../afterChange").afterChange(orgId, touched, { door }).catch(() => {});
+  return { undone: rows.length, sentence: `Undone. ${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name is" : "names are"} back as they were.` };
+}
+app.post("/data-health/couples/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const out = await undoNameFixes(req.user.orgId, String(req.body?.batchId || ""), ["comma_couple"], "data_health_couples_undo");
+  if (!out) return res.status(404).json({ error: "Nothing to undo." });
+  res.json(out);
+}));
+
+// ── Names with markup or a note in them (FIX-59) ───────────────────────────
+app.get("/data-health/names", requireAuth, wrap(async (req, res) => {
+  const rows = await nameNoteRows(req.user.orgId, await livePeople(req.user.orgId));
+  res.json({ rows, sentence: `${rows.length.toLocaleString("en-US")} ${rows.length === 1 ? "name has" : "names have"} markup or a note written into ${rows.length === 1 ? "it" : "them"}` });
+}));
+app.post("/data-health/names/apply", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body?.donorIds) ? [...new Set(req.body.donorIds.map(String))].slice(0, 2000) : [];
+  if (!ids.length) return res.status(400).json({ error: "Choose at least one name." });
+  const orgId = req.user.orgId, me = await who(req);
+  const people = await query(`SELECT ${PERSON_COLS}, notes FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
+  const props = new Map((await nameNoteRows(orgId, people)).map(r => [r.donorId, r]));
+  const batchId = "nfb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const touched = [];
+  await withTransaction(async (client) => {
+    for (const d of people) {
+      const p = props.get(d.id);
+      if (!p) continue;
+      const add = p.notes.length ? `From the name "${d.name}": ${p.notes.join("; ")}` : null;
+      const notes = add ? (String(d.notes || "").trim() ? `${String(d.notes).trim()}\n${add}` : add) : (d.notes ?? null);
+      await runTx(client, "UPDATE donors SET name=?, notes=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.after, notes, d.id, orgId]);
+      await runTx(client, `INSERT INTO name_fixes (id, org_id, batch_id, kind, donor_id, before_name, before_notes, after_name, created_by, created_by_name)
+                           VALUES (?,?,?,'name_notes',?,?,?,?,?,?)`,
+        ["nf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, d.id, d.name, d.notes ?? null, p.after, me.id, me.name]);
+      touched.push(d.id);
+    }
+  });
+  if (touched.length) await require("../afterChange").afterChange(orgId, touched, { door: "data_health_names" }).catch(e => console.error("[data-health] names after change:", e.message));
+  const n = touched.length;
+  res.status(201).json({ applied: n, batchId, sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "name is" : "names are"} cleaned; any note in ${n === 1 ? "it" : "them"} is in the person's Notes.` });
+}));
+app.post("/data-health/names/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const out = await undoNameFixes(req.user.orgId, String(req.body?.batchId || ""), ["name_notes"], "data_health_names_undo");
+  if (!out) return res.status(404).json({ error: "Nothing to undo." });
+  res.json(out);
+}));
+
+// ── Possible families (FIX-59) ─────────────────────────────────────────────
+// Two people of one surname, two different first names, sharing an address,
+// a phone or an email: spouses, a parent and child. Never a duplicate.
+app.get("/data-health/families", requireAuth, wrap(async (req, res) => {
+  const people = await livePeople(req.user.orgId);
+  const byId = new Map(people.map(d => [d.id, d]));
+  const { families } = await pairsAndFamilies(req.user.orgId, people);
+  res.json({ rows: families.map(f => ({ ...f, left: brief(byId.get(f.a)), right: brief(byId.get(f.b)) })),
+    sentence: `${families.length.toLocaleString("en-US")} ${families.length === 1 ? "pair looks like one family" : "pairs look like families"}: one surname, two first names, one address, phone or email. They are never offered as duplicates.` });
+}));
+app.post("/data-health/families/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { a, b } = req.body || {};
+  if (!a || !b || a === b) return res.status(400).json({ error: "Two different people are needed." });
+  const own = await query("SELECT id FROM donors WHERE org_id=? AND id = ANY(?)", [req.user.orgId, [String(a), String(b)]]);
+  if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
+  const me = await who(req);
+  await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
+    ["dhd_" + uuid().slice(0, 12), req.user.orgId, "family", DH.pairKey(String(a), String(b)), me.id, me.name]);
+  res.status(201).json({ ok: true });
+}));
+
+// ── Near-duplicates within an event (FIX-59) ───────────────────────────────
+app.get("/data-health/event-pairs", requireAuth, wrap(async (req, res) => {
+  const rows = await eventPairRows(req.user.orgId, await livePeople(req.user.orgId));
+  const want = req.query.eventId ? String(req.query.eventId) : null;
+  const list = want ? rows.filter(r => r.eventId === want) : rows;
+  res.json({ rows: list, events: eventPairCounts(rows) });
+}));
+// Same person: merged by the one merge (the record with more gifts, then the
+// older, is kept), undone from the merges list for 30 days. Different: a "pair"
+// dismissal, so neither this nor the duplicates line asks again; Undo removes it.
+app.post("/data-health/event-pairs/answer", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const a = String(req.body?.a || ""), b = String(req.body?.b || ""), answer = String(req.body?.answer || "");
+  if (!a || !b || a === b || !["same", "different"].includes(answer)) return res.status(400).json({ error: "Two people and an answer (same or different) are needed." });
+  const orgId = req.user.orgId, me = await who(req);
+  const rows = await query("SELECT * FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [orgId, [a, b]]);
+  const A = rows.find(d => d.id === a), B = rows.find(d => d.id === b);
+  if (!A || !B) return res.status(404).json({ error: "Donor not found" });
+  if (answer === "different") {
+    await run(`INSERT INTO data_health_dismissals (id, org_id, kind, key, created_by, created_by_name) VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, kind, key) DO NOTHING`,
+      ["dhd_" + uuid().slice(0, 12), orgId, "pair", DH.pairKey(a, b), me.id, me.name]);
+    return res.status(201).json({ answer, key: DH.pairKey(a, b), sentence: `${A.name} and ${B.name} are two people. Steward won't ask again.` });
+  }
+  const keepA = Number(A.gift_count || 0) !== Number(B.gift_count || 0) ? Number(A.gift_count || 0) > Number(B.gift_count || 0) : new Date(A.created_at) <= new Date(B.created_at);
+  const kept = keepA ? A : B, other = keepA ? B : A;
+  const nd = (await NN()).nearDuplicate(A.name, B.name);
+  try {
+    const out = await mergePeople(orgId, kept.id, other.id, { me, confidence: null, reasons: nd ? [`on one event's list: ${nd.sentence}`] : null });
+    await afterMerge(orgId, kept.id);
+    req.audit = { ...(req.audit || {}), record: { donor_id: kept.id, merged_id: other.id, merge_id: out.mergeId } };
+    res.status(201).json({ answer, ...out, sentence: `${other.name} is merged into ${kept.name}. Undo it from the merges list for ${UNDO_DAYS} days.` });
+  } catch (e) { sendRefusal(res, e); }
+}));
+app.post("/data-health/pairs/undismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { a, b } = req.body || {};
+  if (!a || !b || a === b) return res.status(400).json({ error: "Two different people are needed." });
+  const r = await run("DELETE FROM data_health_dismissals WHERE org_id=? AND kind='pair' AND key=?", [req.user.orgId, DH.pairKey(String(a), String(b))]);
+  if (!r.changes) return res.status(404).json({ error: "Nothing to undo." });
+  res.json({ ok: true });
 }));
 
 // ── Emails ─────────────────────────────────────────────────────────────────
@@ -991,6 +1231,7 @@ app.post("/data-health/ncoa/dismiss", requireAuth, checkWriteAccess, wrap(async 
 }));
 
 module.exports.afterImport = afterImport;
+module.exports.recheckSoon = recheckSoon;
 module.exports.runDataHealth = runDataHealth;
 module.exports.mergePeople = mergePeople;
 }

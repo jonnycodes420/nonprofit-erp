@@ -374,6 +374,14 @@ const shortDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { m
 // and Drift (its people are moves in the deck; the chip opens its list).
 const MOVE_CHIP = { display: "inline-flex", alignItems: "center", gap: 6, background: T.white, border: "1px solid " + T.bg3, borderRadius: 999, padding: "7px 14px",
   fontSize: 13, fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit", minHeight: 36 };
+// FIX-59: Grow's count says its split ("85 second gifts · 112 more"), less
+// any move she has finished here.
+function tabCountWords(t, gone) {
+  const n = t.left.length + Math.max(0, t.count - t.moves.length);
+  if (!t.split) return n.toLocaleString("en-US");
+  const second = Math.max(0, t.split.secondGifts - t.moves.filter(m => m.kind === "second_gift" && gone.has(m.id)).length);
+  return `${second.toLocaleString("en-US")} second ${second === 1 ? "gift" : "gifts"} · ${Math.max(0, n - second).toLocaleString("en-US")} more`;
+}
 function MoveChips({ deck, anyMoves, setPanel, onDrift }) {
   const n = x => x.toLocaleString("en-US");
   const d = deck.drift || {};
@@ -514,7 +522,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
           {tabs.filter(t => t.count > 0 || t.key === cur.key).map(t => (
             <button key={t.key} type="button" role="tab" className="moves-tab" data-testid={`moves-tab-${t.key}`} data-count={t.left.length + Math.max(0, t.count - t.moves.length)}
               aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={deck.sentence}>
-              <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {t.left.length + Math.max(0, t.count - t.moves.length)}</span>
+              <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {tabCountWords(t, gone)}</span>
               <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
                 {t.key === "planned" ? `${(t.left.length).toLocaleString("en-US")} ${t.left.length === 1 ? "person" : "people"}` : `${money(t.left.reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
             </button>
