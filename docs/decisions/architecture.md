@@ -39,6 +39,10 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Scope every read and write by `org_id`, and pass any foreign id from a body or param through
   `orgOwns(table, id, orgId)`.** A foreign id answers 404, never 403, with a body identical to a
   missing row's. (BUILD-13, BUILD-75)
+- **The actor's name is the person's name (FIX-57).** `actor(req)` stamps `users.name` (read with the
+  session in auth.js), the email only when she never set one, and "Steward support (name)" in a support
+  session. Rows written before FIX-57 hold an email; `middleware/staffNames.js` shows a "by" field whose value is
+  exactly a staff email of the caller's org by that person's name on the way out. No row is rewritten.
 - **Resolve ownership before a feature gate.** A cross-tenant probe must get 404 and not the 503 of
   `aiGate` or a similar gate. Order on a plan-gated write is `requirePlan`, then
   `checkWriteAccess`, so Core gets 403 and a lapsed org gets 402. (BUILD-45, BUILD-99)

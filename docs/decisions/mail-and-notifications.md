@@ -72,6 +72,15 @@ know exactly what is going out.** Every screen, word and test about donor mail s
   signature, else the org's name. It is never a missing fact about a donor, and a preview with no Brand
   signature says "Add your signature in Brand". An organisation's `{{first_name}}` is its named contact,
   else "friends at <name>" (shared/greeting.js).
+- **Each person signs for themself first (FIX-57).** `senderSignature(org, user)`: the user's own signature from
+  Settings, My profile (`users.sign_*`; the block, else name, title, phone), else Brand's, else the org's name.
+  The signer is the user who opens the draft, a campaign starter's creator, or a thank-you task's assignee
+  (`taskId` on `/templates/:kind/preview` and `/draft`). Never a donor's name or a sample person's.
+- **No placeholder reaches a donor (FIX-57).** The send gate holds, before anything else and even after a staff
+  click, a receipt or year-end statement when the org has no `receipt_address` (`no_org_address`), and any donor
+  email whose words still carry a merge placeholder (`brandKit.placeholdersIn`: "[org address]", a `{{field}}`,
+  "Dear ,"), reason `placeholder`. Both show on Going out's Held list. `renderTemplate` leaves an empty org
+  address out rather than print "[org address]", and reports it missing.
 - **Video in email is a picture.** The video block is its thumbnail with a play button, linking to the
   org's own video page `GET /watch/:orgSlug/:provider/:videoId`; no inbox plays video.
 - **A campaign can wait for approval.** `awaiting_approval` is never picked up by the scheduler; an admin's
