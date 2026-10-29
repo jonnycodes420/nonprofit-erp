@@ -4,6 +4,14 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ## Rules
 
+- **SECURE-2 (2026-10-29): what a log may hold.** Every log line and every Sentry event goes through
+  `redact.js` (console is wrapped at boot; Sentry's beforeSend, beforeSendTransaction and
+  beforeBreadcrumb). Kept: request id (X-Request-Id), route, status, timing, org id, user id. Gone:
+  emails, names, phones, street addresses, full IPs, tokens, cookies, bodies, secrets. A new log line
+  names a record by its id, never by a person's name. Every write passes `middleware/fieldCaps.js`
+  (caps by field name; imports exempt). No list route answers more than 500 rows; a screen that
+  wants everyone pages through (`client/src/lib/pages.js`). The app's script CSP is enforced from
+  vercel.json, and the smoke walk fails on any violation.
 - **SECURE-1 (2026-10-28): the security floor.** Every API answer carries nosniff, Referrer-Policy,
   HSTS and `frame-ancestors` limited to Steward's own origins (server.js, beside `cors()`, which now
   has `maxAge: 7200`). A page an org embeds replaces it with `frame-ancestors *`; a stored file is

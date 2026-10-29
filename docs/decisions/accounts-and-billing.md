@@ -4,6 +4,12 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 
 ## Rules
 
+- **SECURE-2 (2026-10-29).** Sign-up and reset never say whether an address has an account: the
+  same status, sentence and shape, the checkout link by email. Turning two-factor off takes an admin
+  and emails the person. Each org has idle sign-out (15 to 480 minutes, default 60). A sign-in from
+  a browser not seen before for that person emails them (sign-in mail, always on). Every file
+  download is in the audit log with its row count; a staff export of more than 1,000 people needs an
+  admin or `orgs.allow_staff_large_exports`.
 - **SECURE-1 (2026-10-28).** Every whole-org export (`/org/export`, `/org/export/csv`, `/org/export/full`)
   is an admin's; staff see no export button. A staff reset or set-password token is stored as
   `h1:` + its SHA-256 (auth.js `resetTokenHash`), and a pre-change plaintext row matches only until
