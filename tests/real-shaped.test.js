@@ -426,7 +426,35 @@ async function main() {
   ok("§9 the Donors page, Settings and onboarding each open SpreadsheetImport", doors.slice(0, 3).every(f => /<SpreadsheetImport\b/.test(src(f)))
      && /setShowSheetImport\(true\)/.test(src("components/Donors.jsx").match(/initialOpenImport&&[^\n]*/)[0]), "");
 
-  // §10 HOME-3 (Justin's Place, 27 Oct): the gift file, then the dinner file
+  // §10 FIX-55: the move plan ("Here is the plan") hands every spreadsheet to
+  // the one reader. For the event workbook and the three real-shaped files,
+  // POST /setup/runs (the plan's own route) carries exactly what POST
+  // /sheet-import/understand says (gifts, cents, pledges) and counts nothing
+  // itself: no plan.counts, no "Import N people and N gifts" line of its own,
+  // and the workbook is one file, its "Check these" sheet not a file of data.
+  // HOW IT GOES RED ON MAIN: setup read the workbook its own way, sheet by sheet,
+  // and said "Import 443 people and 0 gifts ($0.00)".
+  const planFiles = [[path.join(__dirname, "fixtures", "import", "fix52", "event-workbook-shape.xlsx")],
+    ...["jp-gift-history-287.xlsx", "jp-dinner-gifts-106.xlsx", "jp-contacts-656.xlsx"].map(f => [path.join(FX, f)])];
+  for (const [fp] of planFiles) {
+    const name = path.basename(fp);
+    R = R || await import("../shared/sheetRead.js");
+    const sheets = R.gridsFromWorkbook(XLSX.read(fs.readFileSync(fp), { type: "buffer", cellDates: true }), XLSX);
+    const want = ((await api("POST", "/sheet-import/understand", tok, { fileName: name, sheets })).body || {}).counts || {};
+    const made = await api("POST", "/setup/runs", tok, { files: [{ name, sheets, bytes: fs.readFileSync(fp).toString("base64") }], tools: [] });
+    const plan = (made.body && made.body.plan) || {};
+    const files = plan.files || [];
+    const got = (files[0] && files[0].reader && files[0].reader.counts) || {};
+    ok(`§10 the move plan reads ${name} as one file, with the one reader's counts (${want.gifts} gifts, ${want.giftCents} cents, ${want.pledges} pledges)`,
+      made.status === 201 && files.length === 1 && files[0].role === "sheet"
+      && ["gifts", "giftCents", "pledges"].every(k => typeof want[k] === "number" && got[k] === want[k]),
+      JSON.stringify({ status: made.status, files: files.map(f => [f.name, f.role]), got, want: { gifts: want.gifts, giftCents: want.giftCents, pledges: want.pledges } }));
+    ok(`§10 the move plan counts nothing in ${name} on its own`, made.status === 201 && !plan.counts && !(plan.auto || []).some(a => /^Import /.test(a.sentence || "")),
+      JSON.stringify({ counts: plan.counts, auto: (plan.auto || []).map(a => a.sentence) }).slice(0, 300));
+    if (made.body && made.body.id) await q("DELETE FROM setup_runs WHERE org_id=$1 AND id=$2", [ORG, made.body.id]);
+  }
+
+  // §10 (HOME-3) (Justin's Place, 27 Oct): the gift file, then the dinner file
   // answered as the Finding Joy Dinner on Oct 22, into a fresh org.
   await homeThree();
 

@@ -205,7 +205,11 @@ const SELF_REFUSING = [
   "build89-demo-seed",
   // BUILD-101 — the memberships demo. WRITES its own org (never org_creo) and
   // a signed test webhook; refuses any non-loopback API or database outright.
-  "build101-demo-seed"];
+  "build101-demo-seed",
+  // FIX-55 — the import walk and the preview timings. Each seeds its own org on
+  // the LOCAL stack and refuses a non-loopback API or database outright.
+  "import-walk",
+  "preview-perf"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [

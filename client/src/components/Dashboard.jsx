@@ -2539,7 +2539,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
         </div>
         {thankYous.voice&&!thankYous.voice.ready&&(
-          <button onClick={()=>onNavigate("settings")} style={{...sLink,whiteSpace:"nowrap"}}>Teach Steward your voice →</button>
+          <button data-testid="ty-voice-link" /* FIX-55: the voice screen itself */ onClick={()=>onNavigate("settings",{section:"account",focus:"voice"})} style={{...sLink,whiteSpace:"nowrap"}}>Teach Steward your voice →</button>
         )}
       </div>
       <div style={{display:"flex",flexDirection:"column"}}>

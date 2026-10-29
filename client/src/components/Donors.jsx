@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useRef, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import OldReportsImport from "./OldReportsImport";
 import HistoryImport from "./HistoryImport";
-import SpreadsheetImport from "./SpreadsheetImport";
+import SpreadsheetImport, { SheetDropTarget } from "./SpreadsheetImport";
 import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -81,6 +81,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   useEffect(()=>{loadPeopleCount();},[]);
   const lapsedCount=peopleCount?.reengage||0;
   const[view,setView]=useState(initialView||urlList.view||"directory");
+  // FIX-55 item 6: the Map tab shows only when an address lookup provider is
+  // set up on the server (GET /org capabilities.geocoding). Without one the map
+  // could only ever be empty, so it is hidden, and a link to it opens Directory.
+  const mapOn=!!data?.org?.capabilities?.geocoding;
+  useEffect(()=>{if(view==="map"&&data?.org&&!mapOn)setView("directory");},[view,mapOn,data?.org]);
   const[search,setSearch]=useState(urlList.search||"");
   const[selected,setSelected]=useState(()=>initialSelectDonorId?{id:initialSelectDonorId}:null);
   const[logTarget,setLogTarget]=useState(null);
@@ -111,7 +116,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // their own map, keyed the same way, and the panel offers a retry.
   const[aiErr,setAiErr]=useState({});
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);const[showHistory,setShowHistory]=useState(false);const[showSheetImport,setShowSheetImport]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);const[showHistory,setShowHistory]=useState(false);const[showSheetImport,setShowSheetImport]=useState(false);const[droppedFile,setDroppedFile]=useState(null);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -661,8 +666,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   };
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+    <SheetDropTarget disabled={isReadOnly} onFile={f=>setDroppedFile(f)} style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
+      {/* FIX-55: a spreadsheet dropped anywhere on Donors opens the one reader with it */}
+      {droppedFile&&<SpreadsheetImport key={droppedFile.name+droppedFile.lastModified} file={droppedFile} onClose={()=>setDroppedFile(null)} onImported={()=>{reloadDonors();setDroppedFile(null);}}/>}
       {/* INT-BUILD-1 Part 6 — moves management: who has not been met. */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" data-testid="filter-no-meeting" aria-pressed={noMeetingOpen} onClick={()=>setNoMeetingOpen(o=>!o)}
@@ -753,14 +760,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
-          {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"],["health","Data health"]].map(([v,l])=>(
+          {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],...(mapOn?[["map","Map"]]:[]),["health","Data health"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
-        <AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>
+        {data?.org?.capabilities?.ai&&<AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>}
         {/* BUILD-81 Part 5 — logging a conversation is the primary act (it IS
             creating the follow-up); above the fold at 1440 and 390. */}
         <button onClick={()=>setConvoPickerOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Log a call</button>
@@ -865,9 +872,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 
       {view==="reengage"&&orgPeople&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
-      {view==="map"&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
+      {view==="map"&&mapOn&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
       {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}
       </>)}
-    </div>
+    </SheetDropTarget>
   );
 }

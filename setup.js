@@ -18,11 +18,17 @@
 //     person presses Send, and only that press calls POST /auth/invite.
 //   * It never reaches a donor and never turns anything on: journeys are
 //     created with enabled:false, receipts stay off, no thank-you is sent.
-//   * It never records money a person has not seen: the only gifts it writes
-//     are the file's own history, through the one import route, after Start.
-//   * AI writes sentences, never facts. Counts, cents, matches and mapping are
-//     computed in code (shared/setupFiles.js, setupSite.js). With AI off every
-//     step runs with the template sentences below.
+//   * It never records money and never reads a spreadsheet its own way
+//     (FIX-55). Every donor file goes to the one reader: the plan shows what
+//     POST /sheet-import/understand found in it (the same preview, counts and
+//     questions the import screen shows), and she imports it from that screen
+//     (SpreadsheetImport), with its receipt and its Undo. Start writes no
+//     person and no gift.
+//   * Every step is hers to leave out: the plan lists each one with a tick,
+//     and Start does only the ticked ones.
+//   * AI writes sentences, never facts. Counts and cents are the reader's;
+//     the site's facts are setupSite.js's. With AI off every step runs with
+//     the template sentences below.
 //
 // THE RUN SURVIVES A CLOSED TAB. The files are stored (setup_files) and each
 // step's state is on the run row, so the work continues on the server, and a
@@ -35,7 +41,12 @@ const site = require("./setupSite");
 const SF = require("./safeFetch");
 
 const ACTOR = { id: "system:setup", name: "Steward (setup)" };
-const STEP_KEYS = ["read_site", "profile", "import", "funds", "groups", "templates", "journeys", "invites", "connections", "finish"];
+// FIX-55: no import step and no funds step. A spreadsheet is imported from the
+// import screen (the one reader), never by Start.
+const STEP_KEYS = ["read_site", "profile", "groups", "templates", "journeys", "invites", "connections", "finish"];
+// The steps the plan lists with a tick. read_site goes with profile; "old_reports"
+// is the finish step's check of an old report.
+const CHOOSABLE = ["profile", "groups", "templates", "journeys", "invites", "connections", "old_reports"];
 // Tables whose new rows a step created are ledgered by diffing ids before and
 // after the step, so a row a route made on the side (a starter template a
 // journey step needed) is caught too.
@@ -105,26 +116,61 @@ async function ensureSchema(pool) {
 }
 
 // ── READING (no writes to anything but the run row) ─────────────────────────
+// FIX-55: setup never reads a spreadsheet its own way. A file arrives as the
+// sheets of cells the import screen reads (SpreadsheetImport's readSheetFile,
+// or gridFromText for a CSV's text, the same function), with its own bytes so
+// the plan can hand that very file to the import screen after a closed tab.
 async function storedFiles(orgId, runId) {
-  return query(`SELECT name, body FROM setup_files WHERE org_id=? AND run_id=? ORDER BY created_at, id`, [orgId, runId]);
+  return query(`SELECT id, name, body FROM setup_files WHERE org_id=? AND run_id=? ORDER BY created_at, id`, [orgId, runId]);
 }
 
-async function readFilesFor(orgId, runId, today) {
-  const F = await filesMod();
-  const files = await storedFiles(orgId, runId);
-  const parsed = files.map(f => {
-    const b = j(f.body);
-    return b && b.records ? { name: f.name, records: b.records } : { name: f.name, text: b && b.text != null ? b.text : String(f.body) };
+// Every stored file as { id, name, sheets }. A CSV given as text becomes its
+// sheet the reader's way; a run stored before FIX-55 (records) becomes a grid
+// of its columns.
+async function filesFor(orgId, runId) {
+  const R = await import("./shared/sheetRead.js");
+  return (await storedFiles(orgId, runId)).map(f => {
+    const b = j(f.body) || {};
+    let sheets = Array.isArray(b.sheets) ? b.sheets : null;
+    if (!sheets && b.text != null) sheets = [{ name: "Sheet1", grid: R.gridFromText(String(b.text)) }];
+    if (!sheets && Array.isArray(b.records) && b.records.length) {
+      const hs = Object.keys(b.records[0]);
+      sheets = [{ name: "Sheet1", grid: [hs, ...b.records.map(r => hs.map(h => r[h] ?? null))] }];
+    }
+    return { id: f.id, name: f.name, sheets: sheets || [], suggestedDate: b.suggestedDate || null, hasBytes: !!b.bytes };
   });
-  // FIX-43 Part 3: an old report (a giving summary, a LYBUNT list, a by-fund
-  // table) is not gifts. It stays out of the import and is checked against
-  // what the import brought in, by RECONCILE-1's own check.
-  const reports = [], rest = [];
-  for (const p of parsed) { const rep = oldReportIn(F, p); if (rep) reports.push(rep); else rest.push(p); }
-  const read = F.readSetupFiles(rest, { anchorDate: today, currentYear: Number(String(today).slice(0, 4)) });
-  read.oldReports = reports;
-  for (const rep of reports) read.perFile.push({ name: rep.name, system: null, role: "old_report", evidence: rep.why, rows: rep.rows.length });
-  return read;
+}
+
+// Which files are old reports, and which go to the one reader. Deciding a
+// file's kind is not counting it: an old report (a giving summary, a LYBUNT
+// list, a by-fund table) is not gifts, and RECONCILE-1 checks it against what
+// the imports brought in (FIX-43 Part 3). Every other file is the reader's.
+async function sortFiles(orgId, runId) {
+  const F = await filesMod();
+  const sheets = [], oldReports = [];
+  for (const f of await filesFor(orgId, runId)) {
+    const filled = f.sheets.filter(s => Array.isArray(s.grid) && s.grid.some(r => Array.isArray(r) && r.some(c => c != null && String(c).trim() !== "")));
+    // Only a one-table file can be an old report; a workbook is the reader's.
+    const rep = filled.length === 1 ? oldReportIn(F, { name: f.name, text: csvFromGrid(filled[0].grid) }) : null;
+    if (rep) oldReports.push({ ...rep, fileId: f.id });
+    else sheets.push(f);
+  }
+  return { sheets, oldReports };
+}
+
+// What the one reader found in a file: POST /sheet-import/understand, called
+// as the person, with the body the import screen sends. Its counts, button and
+// questions are copied as they are; nothing here adds them up.
+async function readerSaw(call, f) {
+  if (!call) return null;
+  const r = await AC.call(call, "POST", "/sheet-import/understand",
+    { fileName: f.name, sheets: f.sheets, answers: f.suggestedDate ? { suggestedDate: f.suggestedDate } : {}, overrides: {} });
+  if (r.status >= 400 || !r.body) return { ok: false, sentence: (r.body && (r.body.message || r.body.error)) || `Steward could not read ${f.name}.` };
+  const c = r.body.counts || {};
+  const pick = ["records", "people", "persons", "donors", "pledgers", "volunteers", "gifts", "giftCents", "undatedGifts", "pledges", "pledgeCents", "pledgeOpenCents", "aside"];
+  return { ok: true, counts: Object.fromEntries(pick.filter(k => typeof c[k] === "number").map(k => [k, c[k]])),
+    button: (r.body.button && r.body.button.text) || null, ready: !!r.body.ready,
+    questions: (r.body.questions || []).filter(x => !x.optional).length, fileKind: r.body.fileKind || null };
 }
 
 // Is this file an old report, and if so its table and REPORTS-5's guess.
@@ -134,7 +180,7 @@ async function readFilesFor(orgId, runId, today) {
 const LIST_KINDS = ["lybunt", "retention", "top_donors", "board_report", "grant_report"];
 function oldReportIn(F, p) {
   const O = require("./oldReports");
-  const text = p.text != null ? String(p.text) : csvFromRecords(p.records || []);
+  const text = String(p.text || "");
   const t = O.parseCsv(text);
   if (!t.headers.length || !t.rows.length) return null;
   const g = O.guessReport({ fileName: p.name, headers: t.headers, rows: t.rows });
@@ -147,15 +193,14 @@ function oldReportIn(F, p) {
     mapping: wide ? { wide: true, amountRow: 0 } : O.guessMapping(t.headers) };
 }
 const csvCell = v => { const s = String(v ?? ""); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-function csvFromRecords(records) {
-  if (!records.length) return "";
-  const hs = Object.keys(records[0]);
-  return [hs, ...records.map(r => hs.map(h => r[h]))].map(r => r.map(csvCell).join(",")).join("\n");
+function csvFromGrid(grid) {
+  return (grid || []).filter(r => Array.isArray(r)).map(r => r.map(csvCell).join(",")).join("\n");
 }
 
 // The questions a computer can't answer, each with a default already picked.
-// Never more than about ten; the rest go under Later.
-function buildQuestions({ siteRead, filesRead, thanksDefault, tools, fileTools }) {
+// Never more than about ten; the rest go under Later. The questions about a
+// spreadsheet are the import screen's own, asked there.
+function buildQuestions({ siteRead }) {
   const qs = [];
   const add = (key, text, options, def, extra = {}) => qs.push({ key, text, options, default: def, ...extra });
   for (const sq of (siteRead && siteRead.questions) || []) {
@@ -163,77 +208,94 @@ function buildQuestions({ siteRead, filesRead, thanksDefault, tools, fileTools }
       add(sq.key, sq.text, sq.options || null, sq.options ? sq.options[0] : "", { kind: "text", receipt: true });
     else if (sq.key === "mission") add("mission", sq.text, null, "", { kind: "text" });
   }
-  if (filesRead && filesRead.donors.length) {
-    add("thanks", thanksDefault.sentence || "Have the gifts in these files been thanked already?",
-      [{ value: "none", label: "Yes, they were thanked where they came from" }, { value: "all", label: "No, draft thank-yous for the recent ones" }],
-      thanksDefault.mode, { kind: "choice" });
-  }
-  if (filesRead && filesRead.funds.length) {
-    add("funds", `${plural(filesRead.funds.length, "column value looks", "column values look")} like funds: ${filesRead.funds.map(f => f.name).join(", ")}. Keep them as funds?`,
-      [{ value: "keep", label: "Keep them as funds" }, { value: "general", label: "Put everything in General Operating" }], "keep", { kind: "choice" });
-  }
-  const unnamed = fileTools.filter(t => !tools.includes(t) && TOOL_CARDS[t] && TOOL_CARDS[t].focus);
-  if (unnamed.length) {
-    add("connect_from_file", `Your file says gifts came by ${unnamed.map(t => TOOL_CARDS[t].label).join(" and ")}. Get those connections ready?`,
-      [{ value: "yes", label: "Yes, get them ready" }, { value: "no", label: "Not now" }], "yes", { kind: "choice" });
-  }
   return { now: qs.slice(0, 10), later: qs.slice(10) };
 }
 
-function planSentences({ siteRead, filesRead, tools, fileTools, staff }) {
+// Each step its own line with its own tick (FIX-55): `step` is the key Start
+// receives when it is ticked.
+function planSentences({ siteRead, oldReports = [], tools, staff }) {
   const auto = [], prepared = [];
   if (siteRead && siteRead.ok) {
     const got = ["mission", "logoUrl", "brandPrimary", "address", "ein", "legalName"].filter(k => siteRead.facts[k]);
-    auto.push({ step: "read_site", sentence: `Fill in your profile and branding from ${plural(siteRead.pagesRead.length, "page", "pages")} of your site (${got.length} of 6 details found).` });
-  } else if (siteRead) auto.push({ step: "read_site", sentence: `Skip your website: ${siteRead.reason}.` });
-  if (filesRead) {
-    const sys = filesRead.systems.length ? filesRead.systems.join(" and ") : "your files";
-    auto.push({ step: "import", sentence: `Import ${plural(filesRead.donors.length, "person", "people")} and ${plural(filesRead.gifts.length, "gift", "gifts")} (${dollars(filesRead.giftCents)}) from ${sys}, checked to the cent.` });
-    if (filesRead.setAside.length) auto.push({ step: "import", sentence: `Leave out ${plural(filesRead.setAside.length, "row that was", "rows that were")} not money received, each listed with its reason.` });
-    if (filesRead.funds.length) auto.push({ step: "funds", sentence: `Create ${plural(filesRead.funds.length, "fund", "funds")}, ordered by dollars: ${filesRead.funds.map(f => f.name).join(", ")}.` });
-  }
-  for (const rep of (filesRead && filesRead.oldReports) || [])
-    auto.push({ step: "finish", sentence: `Check ${rep.name}, your old report, against what Steward has${rep.period ? ` for ${rep.period.label}` : ""}, and say where they agree.` });
+    auto.push({ step: "profile", sentence: `Fill in your profile and branding from ${plural(siteRead.pagesRead.length, "page", "pages")} of your site (${got.length} of 6 details found).` });
+  } else if (siteRead) auto.push({ step: "profile", sentence: `Skip your website: ${siteRead.reason}.`, fixed: true });
+  for (const rep of oldReports)
+    auto.push({ step: "old_reports", sentence: `Check ${rep.name}, your old report, against what Steward has${rep.period ? ` for ${rep.period.label}` : ""}, and say where they agree.` });
   auto.push({ step: "groups", sentence: "Add the starter groups: first gift this year, gave last year but not yet this year, monthly givers and the top tenth by lifetime giving." });
   auto.push({ step: "templates", sentence: "Write a thank-you email and two variations in your words, as drafts for you to read." });
   auto.push({ step: "journeys", sentence: "Build three journeys, all paused: a new-donor welcome, a gone-quiet note and a card-failed note for monthly donors." });
   if (staff.length) prepared.push({ step: "invites", sentence: `Invitations for ${staff.map(s => s.name).join(", ")}, ready for you to send.` });
-  const conn = [...new Set([...tools, ...fileTools])].filter(t => TOOL_CARDS[t] && TOOL_CARDS[t].focus);
+  const conn = [...new Set(tools)].filter(t => TOOL_CARDS[t] && TOOL_CARDS[t].focus);
   if (conn.length) prepared.push({ step: "connections", sentence: `Connections for ${conn.map(t => TOOL_CARDS[t].label).join(", ")}. Connecting is your click.` });
-  prepared.push({ step: "receipts", sentence: "Your receipt with your legal name, address and EIN. Turning receipts on stays your decision." });
+  prepared.push({ step: "receipts", sentence: "Your receipt with your legal name, address and EIN. Turning receipts on stays your decision.", fixed: true });
   return { auto, prepared };
 }
 
+// The plan's line for each file. A spreadsheet carries what the reader saw;
+// it is imported from the import screen, never by Start.
+async function planFiles(orgId, runId, call) {
+  const sorted = await sortFiles(orgId, runId);
+  const files = [];
+  for (const f of sorted.sheets) files.push({ id: f.id, name: f.name, role: "sheet", hasBytes: f.hasBytes, reader: await readerSaw(call, f) });
+  for (const rep of sorted.oldReports) files.push({ id: rep.fileId, name: rep.name, role: "old_report", evidence: rep.why, rows: rep.rows.length });
+  return { files, oldReports: sorted.oldReports };
+}
+
 // Build (or rebuild) a run's plan from what is stored. Writes only the run row.
-async function planRun(orgId, runId, { today }) {
+// `call` is the person's session, for the reader; without it (a plan a
+// super-admin prepared) the reader's numbers are filled in by readSheets when
+// the org's own person opens the plan.
+async function planRun(orgId, runId, { call = null } = {}) {
   const [r] = await query(`SELECT * FROM setup_runs WHERE id=? AND org_id=?`, [runId, orgId]);
   if (!r) return null;
-  const F = await filesMod();
   const siteRead = r.site_url ? await site.readSite(r.site_url) : null;
-  const filesRead = await readFilesFor(orgId, runId, today);
+  const { files, oldReports } = await planFiles(orgId, runId, call);
   const tools = (j(r.tools) || []).filter(t => TOOL_KEYS.includes(t));
-  const fileTools = F.toolsFromMethods(filesRead.methods);
-  const IT = require("./importThanks");
-  const priorImports = (await query(`SELECT COUNT(*)::int AS n FROM imports WHERE org_id=? AND reversed_at IS NULL`, [orgId]))[0].n;
-  const system = filesRead.systems.includes("Salesforce") ? "salesforce" : null;
-  const thanksDefault = IT.defaultAnswer({ firstImport: priorImports === 0, system, count: filesRead.gifts.length });
   const users = new Set((await query(`SELECT lower(name) AS n FROM users WHERE org_id=? AND name IS NOT NULL`, [orgId])).map(u => u.n));
   const staff = (siteRead && siteRead.facts.staff ? siteRead.facts.staff.value : []).filter(p => !users.has(p.name.toLowerCase()));
-  const questions = buildQuestions({ siteRead, filesRead, thanksDefault, tools, fileTools });
-  const sentences = planSentences({ siteRead, filesRead, tools, fileTools, staff });
-  const files = filesRead.perFile.map(p => ({ name: p.name, rows: p.rows, role: p.role,
-    system: p.system ? p.system.label : null, evidence: p.evidence,
-    because: p.system && p.system.signals.length ? `its columns ${p.system.signals.slice(0, 3).join(", ")}` : null }));
-  const plan = { ...sentences, questions: questions.now, later: questions.later, files,
-    counts: { donors: filesRead.donors.length, gifts: filesRead.gifts.length, giftCents: filesRead.giftCents,
-      setAside: filesRead.setAside.length, funds: filesRead.funds.length },
-    funds: filesRead.funds, setAside: filesRead.setAside, tools, fileTools, staff,
-    giftAlone: filesRead.giftAlone };
+  const questions = buildQuestions({ siteRead });
+  const sentences = planSentences({ siteRead, oldReports, tools, staff });
+  const plan = { ...sentences, questions: questions.now, later: questions.later, files, tools, staff,
+    choosable: CHOOSABLE.filter(k => [...sentences.auto, ...sentences.prepared].some(a => a.step === k && !a.fixed)) };
   const answers = Object.fromEntries(questions.now.map(q => [q.key, q.default]));
   const siteStore = siteRead ? { ok: siteRead.ok, reason: siteRead.reason || null, pagesRead: siteRead.pagesRead, facts: siteRead.facts, questions: siteRead.questions } : null;
   await run(`UPDATE setup_runs SET site=?, files_read=?, plan=?, answers=?, updated_at=NOW() WHERE id=? AND org_id=?`,
     [JSON.stringify(siteStore), JSON.stringify(files), JSON.stringify(plan), JSON.stringify({ ...answers, ...(j(r.answers) || {}) }), runId, orgId]);
   return plan;
+}
+
+// The reader's numbers for a plan's spreadsheets, read again as the person
+// (a plan a super-admin prepared has none yet). Writes only the run row.
+async function readSheets(orgId, runId, call) {
+  const r = await loadRun(orgId, runId);
+  if (!r || !r.plan) return null;
+  const { files } = await planFiles(orgId, runId, call);
+  const plan = { ...r.plan, files };
+  await run(`UPDATE setup_runs SET files_read=?, plan=?, updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(files), JSON.stringify(plan), runId, orgId]);
+  return plan;
+}
+
+// One stored file as she gave it, so the plan can hand it to the import screen.
+async function fileFor(orgId, runId, fileId) {
+  const [f] = await query(`SELECT id, name, body FROM setup_files WHERE org_id=? AND run_id=? AND id=?`, [orgId, runId, fileId]);
+  if (!f) return null;
+  const b = j(f.body) || {};
+  return { id: f.id, name: f.name, bytes: b.bytes || null, text: b.bytes ? null : (b.text != null ? String(b.text) : null),
+    lastModified: b.lastModified || null };
+}
+
+// Start's ticks: a step she unticked is skipped before it runs, read_site with
+// profile, and the old-report check rides the finish step.
+function chosenSteps(plan, ticked) {
+  const offered = new Set((plan && plan.choosable) || []);
+  const on = new Set(Array.isArray(ticked) ? ticked.map(String) : [...offered]);
+  const steps = {};
+  const off = k => offered.has(k) && !on.has(k);
+  const skip = { status: "skipped", result: { sentence: "Left out, as you chose.", skipped: true, unticked: true } };
+  for (const k of ["profile", "groups", "templates", "journeys", "invites", "connections"]) if (off(k)) steps[k] = skip;
+  if (off("profile")) steps.read_site = skip;
+  if (off("old_reports")) steps.finish = { status: "waiting", oldReports: false };
+  return steps;
 }
 
 // ── THE LEDGER ──────────────────────────────────────────────────────────────
@@ -330,93 +392,9 @@ const STEPS = {
       problems: changes.filter(x => /^Profile not saved/.test(x)) };
   },
 
-  async import(ctx) {
-    // The run id is saved BEFORE the write, so a restart part-way through
-    // never imports the same files twice: a retry that finds gifts carrying
-    // this id finishes the bookkeeping instead of writing again.
-    const existing = (ctx.run.steps.import || {}).importId;
-    if (existing) {
-      const [had] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND import_id=?`, [ctx.orgId, existing]);
-      if (had.n && ctx.run.steps.import.result) return ctx.run.steps.import.result;
-      if (had.n) throw new Error("the import was interrupted after its write; open Imports to check it before running setup again");
-    }
-    const F = ctx.filesRead;
-    if (!F.donors.length) {
-      if (F.giftAlone) return { sentence: `${plural(F.giftAloneCount, "gift", "gifts")} in a file with no people in it. Open Import to link them to your records.`, prepared: true };
-      return { sentence: "No donor file was given, so nothing was imported.", skipped: true };
-    }
-    const keepFunds = (ctx.run.answers || {}).funds !== "general";
-    const gifts = F.gifts.map(g => keepFunds ? g : { ...g, fund: "" });
-    const donors = F.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
-    const importId = "imp_" + uuid().replace(/-/g, "").slice(0, 16);
-    ctx.run.steps.import = { ...(ctx.run.steps.import || {}), importId };
-    await saveSteps(ctx.orgId, ctx.runId, ctx.run.steps);
-    const mode = (ctx.run.answers || {}).thanks === "all" ? "all" : "none";
-    const t0 = Date.now();
-    const before = await idsOf(ctx.orgId);
-    // A gifts-only file's people were grouped the Import screen's way, and go
-    // in the way that screen sends them (no identityResolved: the combined
-    // import's own email match against people already on file applies).
-    const res = await AC.call(ctx.call, "POST", "/donors/import-combined", { donors, gifts, identityResolved: !F.fromGiftFile, importId,
-      thanks: { mode }, headers: F.headers });
-    if (res.status >= 400) throw new Error("the import was refused: " + ((res.body && (res.body.message || res.body.error)) || res.status));
-    const sem = await AC.call(ctx.call, "POST", "/donors/import-semantics", {
-      pledges: (F.pledges.pledges || []).map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
-      merges: (F.merges || []).map(m => ({ surviving: m.surviving, survivingEmail: m.survivingEmail || "", folded: m.folded })),
-    });
-    const rec = (res.body && res.body.reconciliation) || {};
-    const rows = rec.rows || {}, dol = rec.dollars || {};
-    const names = ctx.filesRead.perFile.map(p => p.name).join(" + ");
-    const recd = await AC.call(ctx.call, "POST", "/imports", {
-      id: importId, name: "Setup: " + names, sourceFilename: names, shape: "gift_file_with_donors",
-      migrationSource: F.systems.includes("Salesforce") ? "salesforce" : undefined,
-      startedAt: new Date(t0).toISOString(), thanks: { mode },
-      summary: { giftsCreated: Number(rows.created) || 0, donorsCreated: Number(res.body.created) || 0,
-        rowsSetAside: (Number(rows.skipped) || 0) + F.setAside.length, rowsErrored: Number(rows.errored) || 0,
-        dollarsIn: Number(dol.inFile) || 0, dollarsCreated: Number(dol.created) || 0,
-        dollarsSetAside: Number(dol.skipped) || 0, dollarsErrored: Number(dol.errored) || 0,
-        duplicates: Number(res.body.duplicates) || 0, donorsMatched: Number(res.body.donorsMatched) || 0,
-        leadSentence: `Imported by setup from ${names}.`, setAsideBeforeImport: F.setAside },
-    });
-    await ledger(ctx, { tool: "setup_import", table: "imports", entityId: importId, before: null, after: { id: importId } });
-    // "Ready" means the import's own work is finished too: its recent-gift job
-    // and the readout it writes. Without this wait that readout lands AFTER
-    // "Steward is ready" and takes its place on Home (the walk caught it).
-    await importWorkDone(ctx.orgId, importId);
-    await ledgerNew(ctx, "setup_import", before);
-    // Read back from the database, never from what was sent.
-    const [back] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(amount*100)),0)::bigint AS cents FROM gifts WHERE org_id=? AND import_id=?`, [ctx.orgId, importId]);
-    const [people] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND created_import_id=?`, [ctx.orgId, importId]);
-    const backCents = Number(back.cents);
-    const footed = backCents === F.giftCents;
-    const result = {
-      importId, recorded: recd.status < 400,
-      donors: people.n, gifts: back.n, cents: backCents, fileCents: F.giftCents, footed,
-      setAside: F.setAside, semantics: sem.status < 400,
-      sentence: `Imported ${plural(people.n, "person", "people")} and ${plural(back.n, "gift", "gifts")} (${dollars(backCents)}), `
-        + (footed ? "to the cent of what your files hold." : `which is ${dollars(Math.abs(F.giftCents - backCents))} ${backCents < F.giftCents ? "less" : "more"} than your files hold; the import's own record lists every row.`)
-        + (F.setAside.length ? ` ${plural(F.setAside.length, "row was", "rows were")} left out because ${F.setAside.length === 1 ? "it was" : "they were"} not money received (${[...new Set(F.setAside.map(s => s.stage))].join(", ")}).` : ""),
-    };
-    ctx.run.steps.import = { ...(ctx.run.steps.import || {}), importId, result };
-    return result;
-  },
-
-  async funds(ctx) {
-    const F = ctx.filesRead;
-    if (!F.funds.length) return { sentence: "Your files name no funds, so gifts sit in General Operating.", skipped: true };
-    if ((ctx.run.answers || {}).funds === "general") return { sentence: "Every gift went to General Operating, as you asked." };
-    const have = await query(`SELECT f.id, f.name, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents
-        FROM fin_funds f LEFT JOIN gifts g ON g.org_id=f.org_id AND g.fund_id=f.id WHERE f.org_id=? GROUP BY f.id, f.name`, [ctx.orgId]);
-    const byName = new Map(have.map(h => [h.name.toLowerCase(), h]));
-    const before = await idsOf(ctx.orgId);
-    for (const f of F.funds) {
-      if (byName.has(f.name.toLowerCase())) continue;
-      await AC.call(ctx.call, "POST", "/finance/funds", { name: f.name, restricted: false });
-    }
-    await ledgerNew(ctx, "setup_funds", before);
-    const ordered = F.funds.map(f => `${f.name} ${dollars(f.cents)}`);
-    return { sentence: `Your funds, by dollars: ${ordered.join(", ")}.`, rows: F.funds };
-  },
+  // FIX-55: no import step and no funds step. Each spreadsheet is imported
+  // from the import screen (SpreadsheetImport, the one reader), with its own
+  // receipt and Undo; Start never writes a person or a gift.
 
   async groups(ctx) {
     const before = await idsOf(ctx.orgId);
@@ -535,7 +513,8 @@ const STEPS = {
     // through the old-reports route a person's own upload takes, so it is
     // stored, checked and undone exactly as that one is.
     const reports = [];
-    for (const rep of ctx.filesRead.oldReports || []) {
+    const wantReports = (ctx.run.steps.finish || {}).oldReports !== false;
+    for (const rep of wantReports ? ctx.files.oldReports || [] : []) {
       const b = await AC.call(ctx.call, "POST", "/old-reports/batches", {});
       if (b.status >= 400 || !b.body || !b.body.id) continue;
       await ledger(ctx, { tool: "setup_old_report", table: "old_report_batches", entityId: b.body.id, before: null, after: { id: b.body.id } });
@@ -553,21 +532,6 @@ const STEPS = {
   },
 };
 
-const IMPORT_WAIT_MS = 10 * 60 * 1000;
-async function importWorkDone(orgId, importId) {
-  const until = Date.now() + IMPORT_WAIT_MS;
-  while (Date.now() < until) {
-    const [job] = await query(`SELECT status, finished_at FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [importId, orgId]);
-    const settled = !job || (job.status !== "running" && !!job.finished_at);
-    if (settled) {
-      const [ro] = await query(`SELECT 1 AS x FROM readouts WHERE org_id=? AND source_kind='import' AND source_id=?`, [orgId, importId]);
-      const [g] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND import_id=?`, [orgId, importId]);
-      if (ro || !g.n || !job) return true;
-    }
-    await new Promise(r => setTimeout(r, 300));
-  }
-  return false;
-}
 
 // A logo the site serves, as the data URI the branding route stores.
 async function fetchLogo(url) {
@@ -643,7 +607,7 @@ async function execute(orgId, runId, call) {
     if (!r || r.status !== "running") return;
     const today = deps.orgToday && deps.orgTz ? deps.orgToday(await deps.orgTz(orgId)) : new Date().toISOString().slice(0, 10);   // ORG_TZ_SEAM_OK
     const ctx = { orgId, runId, run: r, call: { ...call, instructionId: r.instruction_id, instructionText: "Set up Steward for me" },
-      agentRunId: r.agent_run_id, instructionId: r.instruction_id, today, filesRead: await readFilesFor(orgId, runId, today) };
+      agentRunId: r.agent_run_id, instructionId: r.instruction_id, today, files: await sortFiles(orgId, runId) };
     for (const key of STEP_KEYS) {
       const st = r.steps[key] || {};
       if (st.status === "done" || st.status === "skipped") continue;
@@ -676,13 +640,18 @@ async function finishReadout(orgId, r, call, today) {
   const res = k => (r.steps[k] && r.steps[k].result) || {};
   const did = [];
   const push = (step, sentence, open) => { if (sentence) did.push({ step, sentence, open: open || null }); };
-  const imp = res("import");
-  push("import", imp.sentence, imp.importId ? { kind: "import", id: imp.importId } : null);
-  push("profile", res("profile").sentence, { kind: "settings", section: "org" });
-  push("funds", res("funds").sentence, { kind: "settings", section: "giving" });
-  push("groups", res("groups").sentence, { kind: "tab", tab: "groups" });
-  push("templates", res("templates").sentence, { kind: "tab", tab: "templates" });
-  push("journeys", res("journeys").sentence, { kind: "settings", section: "journeys" });
+  // A step she unticked did nothing, so it says nothing here.
+  const pushStep = (step, open) => { const x = res(step); if (!x.unticked) push(step, x.sentence, open); };
+  // FIX-55: the people and gifts are what her imports from the plan brought
+  // in (each with its own receipt and Undo), read from the database.
+  const [held] = await query(`SELECT (SELECT COUNT(*)::int FROM donors WHERE org_id=? AND deleted_at IS NULL) AS people,
+      (SELECT COUNT(*)::int FROM gifts WHERE org_id=?) AS gifts, (SELECT COALESCE(SUM(ROUND(amount*100)),0)::bigint FROM gifts WHERE org_id=?) AS cents`, [orgId, orgId, orgId]);
+  const imp = { donors: Number(held.people) || 0, gifts: Number(held.gifts) || 0, cents: Number(held.cents) || 0 };
+  if (imp.donors) push("import", `${plural(imp.donors, "person", "people")} and ${plural(imp.gifts, "gift", "gifts")} (${dollars(imp.cents)}) are in Steward, from the files you imported. Each import has its own receipt and Undo.`, { kind: "import" });
+  pushStep("profile", { kind: "settings", section: "org" });
+  pushStep("groups", { kind: "tab", tab: "groups" });
+  pushStep("templates", { kind: "tab", tab: "templates" });
+  pushStep("journeys", { kind: "settings", section: "journeys" });
   // FIX-43 Part 3: the old report's check, in one line, opening the full check.
   for (const rep of res("finish").reports || []) push("old_report", rep.sentence, rep.sheetId ? { kind: "old_report_check", id: rep.sheetId } : null);
   const waiting = [];
@@ -696,7 +665,7 @@ async function finishReadout(orgId, r, call, today) {
   const calls = res("finish").calls || [];
   const [clock] = await query(`SELECT setup_started_at FROM orgs WHERE id=?`, [orgId]);
   const minutes = clock && clock.setup_started_at ? Math.max(0, (Date.now() - new Date(clock.setup_started_at).getTime()) / 60000) : null;
-  const headline = imp.donors ? `Imported ${plural(imp.donors, "person", "people")} and ${plural(imp.gifts, "gift", "gifts")}${imp.footed ? ", checked to the cent" : ""}.` : "Steward is set up.";
+  const headline = imp.donors ? `${plural(imp.donors, "person", "people")} and ${plural(imp.gifts, "gift", "gifts")} are in Steward.` : "Steward is set up.";
   // The same readout, as the LIVE-1 row on Home's Thread. Home's layout does
   // not change: this is one more readout row, shaped the way they all are.
   const rid = "ro_" + uuid().slice(0, 10);
@@ -792,5 +761,5 @@ function isOrphaned(r) {
     && (!r.heartbeat_at || Date.now() - new Date(r.heartbeat_at).getTime() > STALE_MS);
 }
 
-module.exports = { configure, ensureSchema, planRun, execute, undoAll, loadRun, isOrphaned, STEP_KEYS, TOOL_CARDS, TOOL_KEYS, ACTOR,
+module.exports = { configure, ensureSchema, planRun, readSheets, fileFor, chosenSteps, CHOOSABLE, execute, undoAll, loadRun, isOrphaned, STEP_KEYS, TOOL_CARDS, TOOL_KEYS, ACTOR,
   buildQuestions, planSentences, TEMPLATE_THANKS, thankYouWords, fetchLogo };

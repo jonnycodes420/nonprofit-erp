@@ -154,6 +154,21 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   `summary_json.personChanges` and put back; attendance, suppressions, timeline lines, kept values and the fields
   and funds the run made go with it.
 
+- **The preview matches set-wise and is budgeted (FIX-55).** The matcher's reads come from the org read once
+  (`donorMatch.orgSnapshot` + `snapshotQuery`, for matchDonor, jointFor and findPersonId): the same matcher, never a
+  second one. First preview under 4 s and each re-read under 2 s, at prod's round trip (`TEST_DB_LATENCY_MS=17`),
+  in `tests/perf-app.spec.js`. The first preview returns `fileKey`; a re-read sends the key and the answers, and a
+  409 `file_needed` sends the cells again. The model is asked once per file and set of unplaced columns.
+- **The preview on screen is the answers' preview, or it says it is updating (FIX-55).** From the moment an answer
+  changes (same render) the numbers dim and Import reads "Updating the preview…". A suggested answer is outlined;
+  only a chosen one is filled.
+- **The move plan hands every spreadsheet to the one reader (FIX-55).** Its line is `/sheet-import/understand`'s,
+  the import happens on SpreadsheetImport, and Start imports nothing. Volunteer rosters still use their own reader.
+- **Pledge money says which number it is (FIX-55).** `shared/pledgeWords.js`: this year's unpaid installments,
+  then the open total over N years. Never one bare number for a multi-year pledge.
+- **Empty trash is the only way out of "deleted" (FIX-55).** `GET /donors/purge-trash/preview` counts first;
+  `POST /donors/purge-trash` needs `confirm: "empty"`, skips records merged into another, and its audit row says how
+  many, never who.
 - **A spreadsheet import is a job, written in one transaction (FIX-52).** `POST /sheet-import/commit` writes a
   `sheet_import_jobs` row and the write runs behind it inside `db.withAmbientTransaction` (every `query`/`run`,
   `recordGift` included, goes to one client), batched by table. A failure rolls back the whole file and the job says

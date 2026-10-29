@@ -8,7 +8,7 @@
 // read with its row number. It asks only what it truly cannot tell (when, a
 // blank "paid?" cell, a column it cannot name, which of two people). One
 // Import button; Undo removes the whole file.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
@@ -18,7 +18,7 @@ import { FirstLook } from "./Insights";   // INSIGHTS-1 the first look
 import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
-import { gridsFromWorkbook, gridFromText, SHEET_ROLES } from "../../../shared/sheetRead";
+import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords } from "../../../shared/sheetRead";
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
@@ -34,6 +34,54 @@ const money = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLoca
 const n = (k, one, many) => `${Number(k).toLocaleString("en-US")} ${k === 1 ? one : (many || one + "s")}`;
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
+
+// FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
+// this same reader with that file. Anything else dropped is not ours.
+export function droppedSpreadsheet(e) {
+  const f = e && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  return f && SHEET_FILE_RE.test(f.name || "") ? f : null;
+}
+export function isFileDrag(e) {
+  return !!(e && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
+}
+
+// FIX-55: a page that takes a dropped spreadsheet. While a file is dragged
+// over it, it says so; the dropped file opens the one reader (onFile).
+export function SheetDropTarget({ onFile, disabled, children, style, testId = "sheet-drop-page" }) {
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  if (disabled) return <div style={style}>{children}</div>;
+  return (
+    <div data-testid={testId} style={{ position: "relative", ...style }}
+      onDragEnter={e => { if (isFileDrag(e)) { depth.current++; setOver(true); } }}
+      onDragOver={e => { if (isFileDrag(e)) e.preventDefault(); }}
+      onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false); }}
+      onDrop={e => { if (!isFileDrag(e)) return; e.preventDefault(); depth.current = 0; setOver(false); const f = droppedSpreadsheet(e); if (f) onFile(f); }}>
+      {children}
+      {over && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 50, borderRadius: 16, border: "2px dashed " + T.greenDk, background: T.white + "e6",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: T.greenDk, pointerEvents: "none" }}>
+          Drop the spreadsheet to read it. Nothing is saved until you press Import.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Said after the window closes on a running import: the window is gone, the
+// import is not. A plain node on the page, gone after a few seconds.
+function sayAfterClose(text) {
+  if (typeof document === "undefined") return;
+  const el = document.createElement("div");
+  el.setAttribute("role", "status");
+  el.setAttribute("data-testid", "sheet-closed-note");
+  el.textContent = text;
+  Object.assign(el.style, { position: "fixed", left: "50%", bottom: "24px", transform: "translateX(-50%)", zIndex: "500", maxWidth: "calc(100vw - 32px)",
+    background: T.ink, color: T.white, borderRadius: "10px", padding: "10px 16px", fontSize: "13.5px", fontWeight: "600", boxShadow: "0 6px 24px rgba(0,0,0,.25)" });
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
 
 // Any file → sheets of cells. xlsx, xls, csv, tsv and a Google Sheets download
 // all come through here.
@@ -94,6 +142,14 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [asideOpen, setAsideOpen] = useState(false);
   const [undatedDate, setUndatedDate] = useState("");
   const [dated, setDated] = useState("");
+  // FIX-55: a re-read is in flight, so what is on screen is the last answer's;
+  // the numbers dim and Import waits until the preview matches the answers
+  const [inFlight, setInFlight] = useState(false);
+  const [readFor, setReadFor] = useState("");   // the answers the preview on screen was read with
+  const [phase, setPhase] = useState("");
+  const [notice, setNotice] = useState("");   // what Bring them back did, kept past the re-read
+  const [dragOver, setDragOver] = useState(false);
+  const fileKeyRef = useRef("");
   const suggestedDate = useMemo(() => {
     const t = file && file.lastModified ? new Date(file.lastModified) : null;
     return t && !isNaN(t) ? localIso(t) : null;
@@ -104,10 +160,15 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   // is a new run.
   const previewRun = useMemo(() => "imp_sheet_" + Math.random().toString(36).slice(2, 12), [u]);
 
+  // FIX-55: the X, Escape and a click outside always close. Before Import
+  // nothing has been written; while an import runs it keeps going on the server.
+  // HOME-3: the pages behind the window re-read, now or when the job ends.
+  const running = !!(job && job.status === "running") || busy === "commit";
   const finish = () => {
     if (result) told({ import: result.importId });
     else if (job && job.status === "running") tellWhenDone(job.id);
-    return result && onImported ? onImported() : onClose();
+    if (running && !result) sayAfterClose("It keeps going. Open Settings, Imports to see it.");
+    if (result && onImported) onImported(); else if (onClose) onClose();
   };
   // FIX-54: the last delete's Undo comes down while a file is imported
   useEffect(() => { dismissUndo(); }, []);
@@ -141,21 +202,43 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     if (!file) { setBusy(""); return undefined; }
     let live = true;
     setBusy("read");
+    setPhase(`Opening ${file.name}`);
+    fileKeyRef.current = "";
     (async () => {
-      try { const s = await readSheetFile(file); if (live) setSheets(s); }
+      try {
+        const s = await readSheetFile(file);
+        if (!live) return;
+        const rows = s.reduce((a, sh) => a + (sh.grid || []).length, 0);
+        setPhase(`Read ${n(rows, "row")}${s.length > 1 ? ` on ${n(s.length, "sheet")}` : ""}. Matching the people in it with everyone already in Steward`);
+        setSheets(s);
+      }
       catch (e) { if (live) { setMsg("Steward could not open that file: " + errorMessage(e)); setBusy(""); } }
     })();
     return () => { live = false; };
   }, [file]);
 
+  // Every answer re-reads the whole preview. FIX-55: the file's cells go up
+  // once; a re-read sends its key (the server keeps the cells it read) and the
+  // answers, and sends the cells again only if the server no longer has them.
   useEffect(() => {
     if (!sheets) return;
     let live = true;
     setBusy(b => b || "think");
-    apiFetch("/sheet-import/understand", { method: "POST", body: JSON.stringify({ fileName: file.name, sheets, answers: { ...answers, suggestedDate }, overrides }) })
-      .then(r => { if (live) { setU(r); setMsg(""); } })
-      .catch(e => { if (live) setMsg(e?.body?.message || errorMessage(e, "Steward could not read that file.")); })
-      .finally(() => { if (live) setBusy(""); });
+    setInFlight(true);
+    const asked = JSON.stringify([answers, overrides]);
+    const ask = withCells => apiFetch("/sheet-import/understand", { method: "POST", body: JSON.stringify({ fileName: file.name,
+      ...(withCells ? { sheets } : { fileKey: fileKeyRef.current }), answers: { ...answers, suggestedDate }, overrides }) });
+    (async () => {
+      try {
+        let r;
+        try { r = await ask(!fileKeyRef.current); }
+        catch (e) { if (e && e.status === 409 && e.body && e.body.error === "file_needed") r = await ask(true); else throw e; }
+        if (!live) return;
+        if (r.fileKey) fileKeyRef.current = r.fileKey;
+        setU(r); setReadFor(asked); setMsg(""); setPhase("");
+      } catch (e) { if (live) setMsg(e?.body?.message || errorMessage(e, "Steward could not read that file.")); }
+      finally { if (live) { setBusy(""); setInFlight(false); } }
+    })();
     return () => { live = false; };
   }, [sheets, answers, overrides, file, suggestedDate]);
 
@@ -199,6 +282,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   };
   useEffect(() => { if (result && !undatedDate && answers.eventDate) setUndatedDate(answers.eventDate); }, [result, undatedDate, answers.eventDate]);
 
+  // the preview on screen is stale from the moment an answer changes, in the
+  // same render, so Import can never be pressed on the last answer's plan
+  const rereading = !!u && (inFlight || readFor !== JSON.stringify([answers, overrides]));
   const c = u && u.counts;
   const acct = u && u.columnAccount;
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
@@ -207,6 +293,17 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column" && q.kind !== "deletedPerson") : [];
   const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
+  // everyone in the file who matches a person she deleted: blocked, or asked by name
+  const deletedIds = u ? [...new Set([...(u.deletedMatches || []).map(x => x.id), ...deletedQs.map(q => q.deletedId)].filter(Boolean))] : [];
+  const bringBack = async () => {
+    setBusy("bring"); setNotice("");
+    try {
+      const r = await apiFetch("/sheet-import/bring-back", { method: "POST", body: JSON.stringify({ ids: deletedIds }) });
+      setNotice(r.sentence || "");
+      // read the file again: they now match, so their questions and their set-aside rows go
+      setAnswers(a => { const { deletedPeople, ...rest } = a; return { ...rest }; });
+    } catch (e) { setMsg(e?.body?.sentence || errorMessage(e, "Nobody was brought back.")); setBusy(""); }
+  };
   const eventName = answers.eventName ?? (eventQ && eventQ.suggestedEventName) ?? (dateQ && dateQ.suggestedEventName) ?? "";
   const tablesRead = u ? u.tables.filter(t => t.kind === "gifts" || t.kind === "people") : [];
   // HARDEN-1: which org this file goes into, said at the top and on the button
@@ -219,16 +316,29 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         {intoOrg && <div data-testid="sheet-import-org" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, fontFamily: "'DM Serif Display',Georgia,serif" }}>
           <span style={{ ...small, display: "block", fontFamily: "inherit", fontWeight: 400 }}>Importing into</span>{intoOrg}</div>}
         {!file && (
-          <div style={box}>
-            <div style={h3}>Your file</div>
+          // FIX-55: choose a file or drop it here; the same reader either way
+          <label data-testid="sheet-drop" style={{ ...box, display: "block", cursor: "pointer", borderStyle: "dashed", borderWidth: 2,
+              borderColor: dragOver ? T.greenDk : T.bg3, background: dragOver ? T.bg : T.white, textAlign: "center", padding: "26px 16px" }}
+            onDragOver={e => { if (isFileDrag(e)) { e.preventDefault(); setDragOver(true); } }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); const f = droppedSpreadsheet(e); if (f) setFile(f); else setMsg("That is not a spreadsheet. Steward reads Excel (.xlsx, .xls), CSV and TSV files."); }}>
+            <div style={{ ...h3, fontSize: 15 }}>Choose a file or drop it here</div>
             <div style={small}>Any spreadsheet: an event night's sheet, a list from another system, a bank or PayPal download. Excel (.xlsx, .xls), CSV, TSV, or a Google Sheets download.</div>
-            <input data-testid="sheet-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 8, maxWidth: "100%" }}
+            <input data-testid="sheet-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 10, maxWidth: "100%" }}
               onChange={e => e.target.files && e.target.files[0] && setFile(e.target.files[0])} />
-          </div>
+          </label>
         )}
         {file && <div style={{ ...small }}><strong style={{ color: T.ink }}>{file.name}</strong></div>}
         {msg && <div role="alert" style={{ ...box, borderColor: T.gold500, fontSize: 13 }}>{msg}</div>}
-        {!u && busy && <div style={small}>Reading your file…</div>}
+        {notice && u && !result && <div role="status" data-testid="sheet-notice" style={{ ...box, fontSize: 13 }}>{notice}</div>}
+        {!u && busy && (
+          <div style={box} data-testid="sheet-reading" role="status">
+            <div style={{ fontSize: 13.5 }}>{phase || "Reading your file"}…</div>
+            <div aria-hidden style={{ height: 6, borderRadius: 3, overflow: "hidden", margin: "8px 0 0", background: T.bg2 }}>
+              <div style={{ width: sheets ? "70%" : "25%", height: "100%", background: T.greenDk, transition: "width .6s" }} />
+            </div>
+          </div>
+        )}
 
         {job && job.status === "running" && !result && (
           <div style={{ ...box, borderColor: T.greenDk }} data-testid="sheet-job">
@@ -248,7 +358,10 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         )}
         {u && !result && !(job && job.status === "running") && (
           <>
-            <div style={box} data-testid="sheet-understood">
+            {rereading && (
+              <div role="status" data-testid="sheet-rereading" style={{ ...small, color: T.ink, fontWeight: 700 }}>Updating the preview with your answer…</div>
+            )}
+            <div style={{ ...box, opacity: rereading ? 0.55 : 1, transition: "opacity .15s" }} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
               <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>{fileSentence(u, tablesRead, eventName)}</div>
               {u.totalsSentence && u.totalsSentence.length > 0 && <div data-testid="sheet-totals" style={{ fontSize: 13.5, marginTop: 6 }}>{u.totalsSentence.join(" ")}</div>}
@@ -271,16 +384,33 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 
             {/* FIX-54: people she deleted stay deleted unless she brings them back */}
             {/* HARDEN-1: a match by the name alone is hers to answer; Same person by default */}
+            {/* FIX-55: many people she deleted, answered all at once; the per-person buttons stay for exceptions */}
+            {(deletedQs.length + deletedIds.length > 1) && (
+              <div style={{ ...box, borderColor: T.gold500, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} data-testid="sheet-deleted-all">
+                <span style={{ fontSize: 13, flex: "1 1 220px" }}>{n(deletedIds.length, "person", "people")} in this file {deletedIds.length === 1 ? "matches someone" : "match people"} you deleted.</span>
+                {deletedQs.length > 0 && <button type="button" data-testid="sheet-deleted-all-same" disabled={rereading} style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
+                  onClick={() => setAnswers(a => ({ ...a, deletedPeople: Object.fromEntries(deletedQs.map(q => [q.key, "same"])) }))}>Same people for all (keep them out)</button>}
+                <button type="button" data-commit data-testid="sheet-bring-all-back" disabled={!!busy || rereading} style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
+                  onClick={bringBack}>Bring them all back</button>
+              </div>
+            )}
             {deletedQs.length > 0 && (
               <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-deleted-questions">
                 {deletedQs.map(q => {
-                  const cur = (answers.deletedPeople || {})[q.key] || q.default;
+                  const chosen = (answers.deletedPeople || {})[q.key];
                   return (
                     <div key={q.id} style={{ padding: "6px 0", fontSize: 13 }}>
                       <div>{q.text}</div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                        {(q.options || []).map(o => <button type="button" key={o.key} data-testid={`sheet-deleted-${o.key}`} style={{ ...btn(cur === o.key), padding: "6px 10px", fontSize: 12 }}
-                          onClick={() => setDeleted(q.key, o.key)}>{o.label}</button>)}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                        {(q.options || []).map(o => {
+                          // FIX-55: Steward's suggestion is outlined; only her answer is filled
+                          const suggested = !chosen && o.key === q.default;
+                          return <button type="button" key={o.key} data-testid={`sheet-deleted-${o.key}`} aria-pressed={chosen === o.key}
+                            data-suggested={suggested ? "1" : undefined}
+                            style={{ ...btn(chosen === o.key), padding: "6px 10px", fontSize: 12, ...(suggested ? { border: "1px dashed " + T.greenDk } : {}) }}
+                            onClick={() => setDeleted(q.key, o.key)}>{o.label}</button>;
+                        })}
+                        {!chosen && <span style={small}>Steward suggests {((q.options || []).find(o => o.key === q.default) || {}).label || "the first"}; it stands unless you choose.</span>}
                       </div>
                     </div>);
                 })}
@@ -294,16 +424,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   {new Set(u.deletedMatches.map(x => x.id)).size > 8 ? `, and ${new Set(u.deletedMatches.map(x => x.id)).size - 8} more` : ""}.
                   {" "}Their rows are set aside. Bring them back only if you meant to keep them; their gifts in this file are then imported with the rest.
                 </div>
-                <button type="button" data-commit data-testid="sheet-bring-back" disabled={!!busy} style={{ ...btn(false), marginTop: 8 }}
-                  onClick={async () => {
-                    setBusy("bring");
-                    try {
-                      const r = await apiFetch("/sheet-import/bring-back", { method: "POST", body: JSON.stringify({ ids: [...new Set(u.deletedMatches.map(x => x.id))] }) });
-                      setMsg(r.sentence || ""); setAnswers(a => ({ ...a }));   // read the file again: they now match
-                    } catch (e) { setMsg(e?.body?.sentence || errorMessage(e, "Nobody was brought back.")); setBusy(""); }
-                  }}>
-                  Bring them back
-                </button>
+                {deletedQs.length + deletedIds.length <= 1 && (
+                  <button type="button" data-commit data-testid="sheet-bring-back" disabled={!!busy || rereading} style={{ ...btn(false), marginTop: 8 }} onClick={bringBack}>
+                    Bring them back
+                  </button>
+                )}
               </div>
             )}
 
@@ -395,7 +520,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
-            <div style={{ ...box, counterReset: "layer" }} data-testid="sheet-review">
+            <div style={{ ...box, counterReset: "layer", opacity: rereading ? 0.55 : 1, transition: "opacity .15s" }} data-testid="sheet-review" aria-busy={rereading}>
               <style>{".sheet-layer-n::before{content:counter(layer)}"}</style>
               <div style={h3}>Before anything is written</div>
               <Layer title="People" testId="layer-people"
@@ -409,7 +534,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                 sub="From the data: a donor gave, a pledger promised, a prospect was invited and never gave. Someone with no gift comes in as a contact, never a donor." />
               {u.fileKind !== "people" && (
                 <Layer title="Money" testId="layer-money"
-                  main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")} ${money(c.pledgeOpenCents)} open` : ""}`}
+                  main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")}: ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears }, money)}` : ""}`}
                   sub={c.undatedGifts ? "A gift with no date still lands on its person, marked No date. It counts in Lifetime and the event's total, and not in This year, a goal or retention until it has a date." : "Every gift on its person, through the one gift path."}
                   notes={[c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
                           ...u.pledges.slice(0, 3).map(p => `Row ${p.line}: ${p.who}, ${money(p.pledgeCents)}${p.openCents !== p.pledgeCents ? `, ${money(p.openCents)} to go` : ""}. ${p.why}.`)].filter(Boolean)} />
@@ -462,12 +587,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             </details>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" data-commit data-testid="sheet-import-go" disabled={!u.ready || busy === "commit" || (job && job.status === "running")}
+              {/* FIX-55: the button is this preview's, and waits while the preview catches up with an answer */}
+              <button type="button" data-commit data-testid="sheet-import-go" disabled={!u.ready || rereading || busy === "commit" || (job && job.status === "running")}
                 onClick={() => (u.button && u.button.review && !asideOpen ? setAsideOpen(true) : commit())}
-                style={{ ...btn(true), opacity: u.ready ? 1 : 0.45, cursor: u.ready ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
-                {busy === "commit" ? "Importing…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
+                style={{ ...btn(true), opacity: u.ready && !rereading ? 1 : 0.45, cursor: u.ready && !rereading ? "pointer" : "not-allowed", textAlign: "left", lineHeight: 1.4, maxWidth: "100%" }}>
+                {busy === "commit" ? "Importing…" : rereading ? "Updating the preview…" : u.button ? (u.button.review && !asideOpen ? u.button.text : (u.button.importText ? u.button.importText + (intoOrg ? " into " + intoOrg : "") : u.button.text)) : "Import"}
               </button>
-              <span style={small}>{u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
+              <span style={small} data-testid="sheet-import-why">{rereading ? "One moment: Steward is reading the file again with your answer." : u.ready ? "Undo removes the whole import, for 30 days, from its receipt here or in Settings, Imports." : `Answer ${n(u.questions.filter(q => !q.optional).length, "question")} above first.`}</span>
             </div>
           </>
         )}

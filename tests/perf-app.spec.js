@@ -6,6 +6,10 @@
 //     5 s on a phone
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
+//   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
+//     2,000 people with 500 deleted: the first preview under 4 s and each
+//     re-read after an answer under 2 s, at prod's database round trip
+//     (tests/lib/previewPerfOrg.js). No browser, so it runs before the skip.
 //
 // THE MACHINES. A phone is tests/lib/phone.js's (Moto G Power: DevTools slow
 // 4G, a CPU slowdown calibrated to this machine). A desktop is Lighthouse's desktop: 1350×940, CPU
@@ -23,7 +27,8 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, q, closeDb, api, BASE, browserLegOrSkip } = require("./helpers");
+const { ok, summary, q, closeDb, api, login, BASE, browserLegOrSkip } = require("./helpers");
+const PREVIEW = require("./lib/previewPerfOrg");
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -120,7 +125,17 @@ async function measureN(browser, machine, auth, url, ready, rows) {
   return m;
 }
 
+// The import preview's budgets: their own org (org_perfpreview), API only.
+async function previewLeg() {
+  const XLSX = require(path.join(ROOT, "client", "node_modules", "xlsx"));
+  const { token } = await PREVIEW.freshPerfOrg(q, login, "org_perfpreview", "Perf Preview Trust");
+  const seeded = await PREVIEW.seedPreviewOrg(q, "org_perfpreview", XLSX);
+  ok(`the preview org has 2,000 people, 500 of them deleted`, seeded.people === 2000 && seeded.deleted === 500, seeded);
+  await PREVIEW.previewBudgets({ ok, base: BASE, token, XLSX });
+}
+
 (async () => {
+  await previewLeg();
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/build-local-dist.sh)";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
