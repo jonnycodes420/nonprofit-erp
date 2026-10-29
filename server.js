@@ -5333,17 +5333,20 @@ emailCompose.configure({ displayNameCase });
 // FIX-40 · A LEGACY (non-block) CAMPAIGN'S MERGE FIELDS, FILLED FOR ONE
 // PERSON. The send and the "as sent" page (routes/emailsSent.js) both call
 // this, so the page shows exactly the words the send would write today.
-async function legacyCampaignBody(body, donor, orgName, year) {
-  const firstName   = (await GREET_READY).firstNames(donor);
-  const lastName    = donor.name.split(" ").slice(1).join(" ");
+// SECURE-1: the donor's own words (a name typed on a public form) go into the
+// HTML body as text; a subject is text already and passes { text: true }.
+async function legacyCampaignBody(body, donor, orgName, year, { text = false } = {}) {
+  const e = text ? (x => x) : escapeHtml;
+  const firstName   = e((await GREET_READY).firstNames(donor));
+  const lastName    = e(donor.name.split(" ").slice(1).join(" "));
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donor.id]);
   const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-  return (await GREET_READY).greetMerge(body || "", GREET.greetingName(donor))
+  return (await GREET_READY).greetMerge(body || "", e(GREET.greetingName(donor)))
     .replace(/{{first_name}}/g,   firstName)
     .replace(/{{last_name}}/g,    lastName)
-    .replace(/{{donor_name}}/g,   donor.name)
-    .replace(/{{org_name}}/g,     displayNameCase(orgName))
+    .replace(/{{donor_name}}/g,   e(donor.name))
+    .replace(/{{org_name}}/g,     e(displayNameCase(orgName)))
     .replace(/{{gift_amount}}/g,  giftAmount)
     .replace(/{{total_giving}}/g, totalGiving)
     .replace(/{{year}}/g,         year);
@@ -5416,7 +5419,7 @@ async function runCampaignSend(campaign, org, donors) {
           htmlFull = brandHeader + bodyHtml + footer + pixel;
           // FIX-40 · the subject gets the same tags as the body. It went out raw,
           // so a donor read "Thank you, {{first_name}}" in her inbox.
-          personSubject = await legacyCampaignBody(campaign.subject || "", donor, org.name, year);
+          personSubject = await legacyCampaignBody(campaign.subject || "", donor, org.name, year, { text: true });
         }
 
         try {
@@ -6924,13 +6927,14 @@ async function processSequences() {
         const orgName = displayNameCase(orgRows[0]?.name) || "";
         const firstName = recipient.name ? (await GREET_READY).firstNames(recipient) : "";
         const greeting = recipient.name ? GREET.greetingName(recipient) : "";
-        const applyTokens = str => GREET.greetMerge(str || "", greeting)
-          .replace(/{{donor_name}}/g, recipient.name)
-          .replace(/{{user_name}}/g, recipient.name)
-          .replace(/{{first_name}}/g, firstName)
-          .replace(/{{org_name}}/g, orgName);
+        // SECURE-1: escaped into the body (HTML), as typed into the subject (text).
+        const applyTokens = (str, e = x => x) => GREET.greetMerge(str || "", e(greeting))
+          .replace(/{{donor_name}}/g, e(recipient.name))
+          .replace(/{{user_name}}/g, e(recipient.name))
+          .replace(/{{first_name}}/g, e(firstName))
+          .replace(/{{org_name}}/g, e(orgName));
         const subject = applyTokens(step.subject);
-        const bodyRaw = applyTokens(step.body);
+        const bodyRaw = applyTokens(step.body, escapeHtml);
         const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
           + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
@@ -9214,8 +9218,12 @@ PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 // and card-update families, with its own payload so it cannot be swapped for
 // one of those. Carries the org, not the subscription, because the
 // subscription id may change (a plan switch) while the org never does.
-function signCancelToken(orgId) {
-  const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId })).toString("base64url");
+// SECURE-1: it expires. A link that cancels a plan with no sign-in must not
+// work for ever from any old, forwarded email; thirty days covers the seven
+// before the charge and the weeks after it, then Settings → Billing is the way.
+const CANCEL_LINK_DAYS = 30;
+function signCancelToken(orgId, now = Date.now()) {
+  const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId, exp: now + CANCEL_LINK_DAYS * 86400000 })).toString("base64url");
   const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update("cancel:" + payload).digest("base64url");
   return `${payload}.${sig}`;
 }
@@ -11350,7 +11358,11 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
   ).catch(e => console.error("[portal] timeline:", e.message));
 }
 
-const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
+// SECURE-1 · no SVG. An SVG is a document that can carry script, and these
+// bytes are served from the app's own domain, so a logo could have read a
+// signed-in session. The browser draws an SVG as a PNG before it uploads
+// (client/src/lib/imageResize.js svgToPng); a raw SVG is refused here.
+const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 // BUILD-51 — server-side dimension validation for theme images. SVGs are
 // vectors (scale losslessly) and skip the raster rules; rasters must parse.
@@ -11440,9 +11452,9 @@ const UPLOAD_LONG_EDGE = { header: 2560, campaign: 2560, widget: 2560, impact: 2
 // Returns an actionable message if this data URI can't be accepted, else null.
 // (Call sites already handle ""/null as "clear" before reaching here.)
 function uploadImageError(dataUri) {
-  if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF or WebP image.";
   const m = dataUri.match(/^data:([^;]+);base64,/);
-  if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF or WebP image.";
   if (dataUri.length > MAX_UPLOAD_STR) return "That image is unusually large. Please use a photo under 15 MB, a normal photo from a phone or camera is well within that.";
   return null;
 }

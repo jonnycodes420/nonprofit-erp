@@ -18,7 +18,7 @@ const express = require("express");
 const ItemRefs = require("../itemRefs");   // THREAD-2: names in staff email are links
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
-const { getAssetMeta } = require("../assetStore");
+const { getAssetMeta, ASSET_CSP } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
@@ -6572,7 +6572,10 @@ app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   }
   res.set("Content-Type", contentType);
   res.set("Cache-Control", asset.isPublic ? "public, max-age=31536000, immutable" : "private, no-store");
-  if (!asset.isPublic) res.set("X-Content-Type-Options", "nosniff");
+  // SECURE-1 · served as an image and nothing else, even an SVG stored before
+  // SVG was refused: opened on its own, it cannot run script on this domain.
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Content-Security-Policy", ASSET_CSP);
   res.set("ETag", `"${asset.id}${variantTag}"`);
   res.set("Vary", "Accept");
   res.send(buffer);

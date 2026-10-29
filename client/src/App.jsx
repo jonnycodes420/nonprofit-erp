@@ -618,12 +618,13 @@ function AppShell() {
   // read_only org actually get their data out from the banner itself,
   // instead of just switching to Settings and leaving them to find it.
   // Admins get the full CSV zip (what a departing org actually wants to
-  // open); the CSV route is admin-gated, so staff fall back to JSON.
+  // open). SECURE-1: every whole-org export is an admin's, so only an admin
+  // sees the banner's export button.
   async function exportDataFromBanner(){
     const isAdmin=auth?.user?.role==="admin";
     setExportingBanner(true);
     try{
-      const path=isAdmin?"/org/export/csv":"/org/export";
+      const path="/org/export/csv";
       const r=await fetch(`${API}${path}`,{headers:{Authorization:`Bearer ${getToken()}`}});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
       const blob=await r.blob();
@@ -919,7 +920,7 @@ function AppShell() {
     )}
     {showReadOnlyBanner&&<div style={{background:T.terra700,borderBottom:"1px solid "+T.terracotta,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.terra200,flexWrap:"wrap"}}>
       <span style={{flex:1,minWidth:200}}><strong style={{color:T.terra100}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
-      <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.terra200,borderRadius:8,color:T.terra200,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data →"}</button>
+      {auth?.user?.role==="admin"&&<button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.terra200,borderRadius:8,color:T.terra200,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data →"}</button>}
       <button onClick={()=>setShowPlanPicker(true)} style={{background:T.terra100,border:"none",borderRadius:8,color:T.terra700,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
     {!showReadOnlyBanner&&showWarningBanner&&subStatus==="past_due"&&<div style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
@@ -928,7 +929,7 @@ function AppShell() {
     </div>}
     {!showReadOnlyBanner&&showWarningBanner&&(subStatus==="canceled"||subStatus==="cancelled")&&<div style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
       <span style={{flex:1,minWidth:200}}><strong style={{color:T.gold50}}>Your subscription is canceled.</strong> You have until {billing?.graceUntil?new Date(billing.graceUntil).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"soon"} to export your data or reactivate.</span>
-      <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.gold100,borderRadius:8,color:T.gold100,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data"}</button>
+      {auth?.user?.role==="admin"&&<button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.gold100,borderRadius:8,color:T.gold100,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data"}</button>}
       <button onClick={()=>setShowPlanPicker(true)} style={{background:T.gold500,border:"none",borderRadius:8,color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
     {/* FIX-32: cancelled inside the free thirty days. Nothing was charged and

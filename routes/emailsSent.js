@@ -60,7 +60,7 @@ async function campaignFor(orgId, c, donor) {
   }
   const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
   const year = orgToday(await orgTz(orgId)).slice(0, 4); // ORG_TZ_SEAM_OK the {{year}} token is the org's civil year, as the send reads it
-  return { subject: await legacyCampaignBody(c.subject || "", donor, org ? org.name : "", year),
+  return { subject: await legacyCampaignBody(c.subject || "", donor, org ? org.name : "", year, { text: true }),
            body: await legacyCampaignBody(c.body, donor, org ? org.name : "", year) };
 }
 

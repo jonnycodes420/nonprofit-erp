@@ -515,7 +515,12 @@ function assetHealth() {
   return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, softDeleted: softDeletedRows };
 }
 
+// SECURE-1 · the headers every stored file is served with: an image is only
+// ever an image. Opened on its own, nothing in it runs (sandbox) or loads.
+const ASSET_CSP = "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox";
+
 module.exports = {
+  ASSET_CSP,
   s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
   refreshAssetFallbackCount, refreshRetentionCounts, assetHealth, moveFallbackAssetsToS3, ASSET_MOVE_SKIP_ORGS,
   restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,

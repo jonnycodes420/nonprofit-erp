@@ -3532,8 +3532,8 @@ app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   if (removeLogo) {
     sets.push("logo_data=NULL");
   } else if (logoData !== undefined && logoData !== null) {
-    if (typeof logoData !== "string" || !/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);base64,/.test(logoData))
-      return res.status(400).json({ error: "Logo must be a PNG, JPEG, GIF, WebP, or SVG image." });
+    if (typeof logoData !== "string" || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,/.test(logoData))   // SECURE-1: no SVG
+      return res.status(400).json({ error: "Logo must be a PNG, JPEG, GIF or WebP image." });
     if (Buffer.byteLength(logoData, "utf8") > LOGO_MAX_BYTES)
       return res.status(400).json({ error: "Logo is too large, please use an image under 350KB." });
     sets.push("logo_data=?"); params.push(logoData);
@@ -7498,6 +7498,9 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
   const g = existing[0];
+  // SECURE-1: a gift is money. The person who entered it may take it back, and
+  // so may an admin; nobody else (the pledge delete below already worked so).
+  if (!(await mayEditLogged(req, g))) return res.status(403).json(NOT_YOURS);
 
   // A receipt is a legal artifact — a gift with an ACTIVE receipt can't be
   // silently deleted out from under it (was an unhandled FK violation).
@@ -17460,6 +17463,10 @@ app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
 }));
 
 app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {
+  // SECURE-1: whoever entered the grant, or an admin (as gifts and pledges).
+  const [gr] = await query("SELECT created_by FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!gr) return res.status(404).json({ error: "Not found" });
+  if (!(await mayEditLogged(req, gr))) return res.status(403).json(NOT_YOURS);
   const { changes } = await run("DELETE FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
@@ -28761,7 +28768,9 @@ app.post("/donors/:id/erase", requireAuth, requireAdmin, checkWriteAccess, wrap(
   res.json({ ok: true, sentence: "Erased. Their gifts stay as anonymous gifts, so every total still matches. Nothing else about them is left." });
 }));
 
-app.get("/org/export", requireAuth, wrap(async (req, res) => {
+// SECURE-1: the whole organization's data leaves with an admin, never with a
+// staff login (the CSV and full exports below were already admin's).
+app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
 
   const orgRows = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
@@ -29068,6 +29077,8 @@ app.get("/person-photos/:id", wrap(async (req, res) => {
   const asset = await getThemeAsset(id);
   if (!asset) return res.status(404).json({ error: "not_found" });
   res.set("Content-Type", asset.contentType);
+  res.set("X-Content-Type-Options", "nosniff");                                    // SECURE-1
+  res.set("Content-Security-Policy", require("../assetStore").ASSET_CSP);
   // PRIVATE, and never longer than the signature it rode in on. Content
   // addressing still makes the bytes immutable, so a shared cache is the only
   // thing being refused here — correctly, for a photograph of a person.

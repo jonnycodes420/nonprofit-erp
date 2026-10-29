@@ -25,6 +25,7 @@
 // thumbnail strips at gallery/impact sites).
 import { useRef, useState } from "react";
 import { T } from "./shared";
+import { svgToPng } from "../lib/imageResize";
 
 const EXT_RE = /\.([A-Za-z0-9]+)$/;
 
@@ -128,7 +129,7 @@ export default function Uploader({
       }
       let dataUrl = null;
       if (readAs === "dataUrl") {
-        dataUrl = await new Promise((resolve) => {
+        dataUrl = String(file.type || "").toLowerCase() === "image/svg+xml" ? await svgToPng(file) : await new Promise((resolve) => {
           const r = new FileReader();
           r.onload = () => resolve(r.result);
           r.onerror = () => resolve(null);

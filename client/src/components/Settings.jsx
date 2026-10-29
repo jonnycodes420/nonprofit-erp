@@ -3937,16 +3937,16 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{fontSize:13,color:T.ink3,marginBottom:6,lineHeight:1.6,maxWidth:520}}>
           Export everything as CSV anytime, including if you cancel. One zip of spreadsheet-ready files: donors (with your custom fields), gifts, interactions, grants, pledges, recurring gifts, giving pages, receipts, and more.
         </div>
-        <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{isAdmin?"CSV opens anywhere; JSON is the machine-readable copy of the same data.":"The full CSV export is available to your organization's admins. You can still download the JSON export below."}</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{isAdmin?"CSV opens anywhere; JSON is the machine-readable copy of the same data.":"Exporting all of your organization's data is something your admins do. Ask one of them for a copy."}</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           {isAdmin&&<button onClick={exportCsv} disabled={exportingCsv}
             style={{background:T.gold500,color:T.white,border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exportingCsv?"not-allowed":"pointer",opacity:exportingCsv?0.7:1}}>
             {exportingCsv?"Building export…":"Export all data (CSV)"}
           </button>}
-          <button onClick={exportData} disabled={exporting}
+          {isAdmin&&<button onClick={exportData} disabled={exporting}
             style={{background:"transparent",color:T.ink,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exporting?"not-allowed":"pointer",opacity:exporting?0.7:1}}>
             {exporting?"Building export…":"Export as JSON"}
-          </button>
+          </button>}
         </div>
 
         {csvErr&&<div role="alert" data-testid="csv-export-error"
