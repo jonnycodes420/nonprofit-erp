@@ -221,6 +221,10 @@ function useMarketingDocument() {
       l.rel = "stylesheet"; l.href = FONTS; l.setAttribute("data-mk-fonts", "");
       document.head.appendChild(l);
     }
+    // SECURE-2: the prerendered link waits as media="print" (no blocking); the
+    // inline onload that used to switch it is refused by the CSP, so it is here.
+    const pre = document.querySelector('link[data-mk-fonts][media="print"]');
+    if (pre) pre.media = "all";
     const prev = document.body.style.background;
     document.body.style.background = GROUND;
     return () => { document.body.style.background = prev; };
