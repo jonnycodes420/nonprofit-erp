@@ -25,6 +25,7 @@ const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 1
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
 const small = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
 const field = { flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit" };
+const linkBtn = { background: "none", border: "none", padding: 0, color: T.greenDk, textDecoration: "underline", cursor: "pointer", fontSize: 12, fontFamily: "inherit" };
 const chip = { display: "inline-block", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: T.bg, color: T.ink, marginLeft: 6 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink,
   border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9, padding: "9px 14px", fontWeight: 800, fontSize: 13,
@@ -39,8 +40,16 @@ const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
 // FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
 // this same reader with that file. Anything else dropped is not ours.
 export function droppedSpreadsheet(e) {
-  const f = e && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  return f && SHEET_FILE_RE.test(f.name || "") ? f : null;
+  const fs = Array.from((e && e.dataTransfer && e.dataTransfer.files) || []).filter(f => SHEET_FILE_RE.test(f.name || ""));
+  return filesAsOne(fs);
+}
+// IMPORT-5: two files from one system (a Salesforce Contacts export and its
+// Donations export) are one import: read together, people linked by their ID.
+// More than one file is one file-like thing whose sheets are every file's.
+export function filesAsOne(list) {
+  const fs = Array.from(list || []).filter(Boolean);
+  if (fs.length <= 1) return fs[0] || null;
+  return { name: fs.map(f => f.name).join(" + "), lastModified: Math.max(...fs.map(f => f.lastModified || 0)) || undefined, files: fs };
 }
 export function isFileDrag(e) {
   return !!(e && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files"));
@@ -86,6 +95,16 @@ function sayAfterClose(text) {
 // Any file → sheets of cells. xlsx, xls, csv, tsv and a Google Sheets download
 // all come through here.
 export async function readSheetFile(file) {
+  if (file && file.files) {
+    // each file's sheets keep their file's name, so two CSVs are two sheets
+    const out = [];
+    for (const f of file.files) {
+      const base = String(f.name || "file").replace(/\.[a-z]+$/i, "");
+      const sh = await readSheetFile(f);
+      for (const x of sh) out.push({ ...x, name: sh.length === 1 ? base : `${base} · ${x.name}` });
+    }
+    return out;
+  }
   const name = String(file.name || "").toLowerCase();
   const buf = new Uint8Array(await file.arrayBuffer());
   if (/\.(xlsx|xlsm|xls|ods)$/.test(name)) {
@@ -140,6 +159,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [failed, setFailed] = useState(null);
   const [dateAsked, setDateAsked] = useState(null);   // the date question stays on screen once answered
   const [asideOpen, setAsideOpen] = useState(false);
+  const [mergedOpen, setMergedOpen] = useState(false);   // IMPORT-5 (7c): the rows merged into someone
   const [undatedDate, setUndatedDate] = useState("");
   const [dated, setDated] = useState("");
   // FIX-55: a re-read is in flight, so what is on screen is the last answer's;
@@ -288,9 +308,19 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const c = u && u.counts;
   const acct = u && u.columnAccount;
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
-  const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate ? dateAsked : null);
+  const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate && !(u.event && u.event.named) ? dateAsked : null);
+  // IMPORT-5: the event's gifts and the file's pledges, each asked once; the
+  // box stays on screen once answered so she can change her answer
+  const eventGiftsQ = u ? u.questions.find(q => q.id === "eventGifts") : null;
+  const pledgeDueQ = u ? u.questions.find(q => q.id === "pledgeDue") : null;
+  const [giftsAsked, setGiftsAsked] = useState(null);
+  const [pledgeAsked, setPledgeAsked] = useState(null);
+  useEffect(() => { if (eventGiftsQ) setGiftsAsked(eventGiftsQ); }, [eventGiftsQ]);
+  useEffect(() => { if (pledgeDueQ) setPledgeAsked(pledgeDueQ); }, [pledgeDueQ]);
+  const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
+  const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => q.id !== "date" && q.id !== "event" && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
   const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
   // everyone in the file who matches a person she deleted: blocked, or asked by name
@@ -323,9 +353,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = droppedSpreadsheet(e); if (f) setFile(f); else setMsg("That is not a spreadsheet. Steward reads Excel (.xlsx, .xls), CSV and TSV files."); }}>
             <div style={{ ...h3, fontSize: 15 }}>Choose a file or drop it here</div>
-            <div style={small}>Any spreadsheet: an event night's sheet, a list from another system, a bank or PayPal download. Excel (.xlsx, .xls), CSV, TSV, or a Google Sheets download.</div>
-            <input data-testid="sheet-file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 10, maxWidth: "100%" }}
-              onChange={e => e.target.files && e.target.files[0] && setFile(e.target.files[0])} />
+            <div style={small}>Any spreadsheet: an event night's sheet, a list from another system, a bank or PayPal download. A pair from another system (Salesforce Contacts and Donations) goes in together: choose both. Excel (.xlsx, .xls), CSV, TSV, or a Google Sheets download.</div>
+            <input data-testid="sheet-file" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" style={{ marginTop: 10, maxWidth: "100%" }}
+              onChange={e => e.target.files && e.target.files[0] && setFile(filesAsOne(e.target.files))} />
           </label>
         )}
         {file && <div style={{ ...small }}><strong style={{ color: T.ink }}>{file.name}</strong></div>}
@@ -361,8 +391,16 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             {rereading && (
               <div role="status" data-testid="sheet-rereading" style={{ ...small, color: T.ink, fontWeight: 700 }}>Updating the preview with your answer…</div>
             )}
+            {u.savedMapping && (
+              <div data-testid="sheet-saved-mapping" style={{ ...small, color: T.ink }}>
+                Using your saved mapping from {longDate(String(u.savedMapping.savedAt || "").slice(0, 10))}
+                {" · "}<button type="button" data-testid="sheet-saved-mapping-change" onClick={() => setAnswer({ savedMapping: "off" })}
+                  style={{ background: "none", border: 0, padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", font: "inherit" }}>Change</button>
+              </div>
+            )}
             <div style={{ ...box, opacity: rereading ? 0.55 : 1, transition: "opacity .15s" }} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
+              {u.knownShape && <div data-testid="sheet-known-shape" style={{ fontSize: 13.5, fontWeight: 700, color: T.greenDk, marginBottom: 4 }}>{u.knownShape.sentence}</div>}
               <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.45 }}>{fileSentence(u, tablesRead, eventName)}</div>
               {u.totalsSentence && u.totalsSentence.length > 0 && <div data-testid="sheet-totals" style={{ fontSize: 13.5, marginTop: 6 }}>{u.totalsSentence.join(" ")}</div>}
               {u.totals.filter(t => !t.matches).map(t => (
@@ -432,18 +470,58 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               </div>
             )}
 
-            {(eventQ || (u.event && u.event.fromEngagement)) && (
+            {(eventQ || (u.event && (u.event.fromEngagement || u.event.named))) && (
               <div style={{ ...box, borderColor: eventQ && !eventQ.optional ? T.gold500 : T.bg3 }} data-testid="sheet-question-event">
                 <div style={h3}>{eventQ ? eventQ.text : "The event"}</div>
+                {eventQ && eventQ.holds && <div style={{ ...small, color: T.ink }} data-testid="sheet-event-holds">Your file: {eventQ.holds}{eventName ? ` · ${eventName}` : ""}</div>}
                 {eventQ && <div style={small}>{eventQ.hint}</div>}
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
                   <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", flex: "1 1 220px" }}>Called
                     <input type="text" data-testid="sheet-event-name" value={eventName} placeholder="The event's name" onChange={e => setAnswer({ eventName: e.target.value })} style={field} />
                   </label>
-                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>On (optional)
-                    <input type="date" data-testid="sheet-event-date" value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                  <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center" }}>{eventQ && eventQ.required ? "On" : "On (optional)"}
+                    <input type="date" data-testid="sheet-event-date" required={!!(eventQ && eventQ.required)} value={answers.eventDate || ""} onChange={e => setAnswer({ eventDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
                   </label>
                 </div>
+                {eventQ && eventQ.canSayNotEvent && (
+                  <button type="button" data-testid="sheet-not-event" style={{ ...linkBtn, marginTop: 8 }} onClick={() => setAnswer({ notEvent: true, eventDate: "", useEventDate: undefined, pledgeDue: answers.pledgeDue === "event" ? undefined : answers.pledgeDue })}>
+                    This file isn't from an event
+                  </button>
+                )}
+              </div>
+            )}
+            {answers.notEvent && !eventQ && (
+              <div style={{ ...small, marginTop: -4 }}>Read as gifts, not an event. <button type="button" style={linkBtn} onClick={() => setAnswer({ notEvent: false })}>It was an event</button></div>
+            )}
+
+            {giftsQ && (
+              <div style={{ ...box, borderColor: eventGiftsQ ? T.gold500 : T.bg3 }} data-testid="sheet-question-event-gifts">
+                <div style={h3}>{giftsQ.text}</div>
+                <div style={small}>{giftsQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  <button type="button" data-testid="sheet-event-gifts-yes" aria-pressed={answers.useEventDate === true} style={{ ...btn(answers.useEventDate === true), padding: "6px 12px", fontSize: 12.5 }}
+                    onClick={() => setAnswer({ useEventDate: true })}>Yes, date them {answers.eventDate ? longDate(answers.eventDate) : "on the event's day"}</button>
+                  <button type="button" data-testid="sheet-event-gifts-no" aria-pressed={answers.useEventDate === false} style={{ ...btn(answers.useEventDate === false), padding: "6px 12px", fontSize: 12.5 }}
+                    onClick={() => setAnswer({ useEventDate: false })}>No, leave them No date</button>
+                </div>
+              </div>
+            )}
+
+            {pledgeQ && (
+              <div style={{ ...box, borderColor: pledgeDueQ ? T.gold500 : T.bg3 }} data-testid="sheet-question-pledge-due">
+                <div style={h3}>{pledgeQ.text}</div>
+                <div style={small}>{pledgeQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  {(pledgeQ.options || []).map(o => (
+                    <button type="button" key={o.key} data-testid={`sheet-pledge-due-${o.key}`} aria-pressed={answers.pledgeDue === o.key}
+                      style={{ ...btn(answers.pledgeDue === o.key), padding: "6px 12px", fontSize: 12.5 }}
+                      onClick={() => setAnswer({ pledgeDue: o.key })}>{o.label}{o.key === "event" && answers.eventDate ? ` (${longDate(answers.eventDate)})` : ""}</button>
+                  ))}
+                  {answers.pledgeDue === "choose" && (
+                    <input type="date" data-testid="sheet-pledge-due-date" aria-label="First due date" value={answers.pledgeDueDate || ""} onChange={e => setAnswer({ pledgeDueDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
+                  )}
+                </div>
+                {answers.pledgeDue === "event" && !answers.eventDate && <div style={{ ...small, marginTop: 6 }}>Give the event's date above first.</div>}
               </div>
             )}
 
@@ -525,16 +603,30 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <div style={h3}>Before anything is written</div>
               <Layer title="People" testId="layer-people"
                 main={`${n(c.persons ?? c.people, "person", "people")}${c.households ? `, ${n(c.households, "household")}` : ""}${c.organizations ? `, ${n(c.organizations, "organization")}` : ""}`}
-                sub={`${u.newPeople} new, ${u.matchedPeople} already in Steward. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
-                notes={[...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
-                        ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)]} />
+                sub={`${u.peopleLine ? u.peopleLine.sentence.replace(/^[^:]*: /, "") : `${u.newPeople} new, ${u.matchedPeople} already in Steward`}. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
+                notes={[
+                        // IMPORT-5 (7c): every row is a person, merged into one, or set aside
+                        u.rowAccount && <span key="rows" data-testid="sheet-row-account">{u.rowAccount.sentence}
+                          {u.rowAccount.merged > 0 && <> <button type="button" data-testid="sheet-merged-see" style={{ ...linkBtn }} onClick={() => setMergedOpen(o => !o)}>{mergedOpen ? "(hide them)" : "(see them)"}</button></>}
+                          {mergedOpen && <span style={{ display: "block", marginTop: 4 }} data-testid="sheet-merged-list">
+                            {(u.merged || []).slice(0, 50).map(m => <span key={m.sheet + m.line} style={{ display: "block" }}>Row {m.line}: {m.name}, read into {m.into} (row {String(m.intoLine || "").split(":")[1] || m.intoLine}) by {m.by === "name" ? "the same name" : m.by}.</span>)}
+                          </span>}
+                        </span>,
+                        // IMPORT-5 (7a): one address split, shown as it will land
+                        u.addressExample && <span key="addr" data-testid="sheet-address-example">{n(c.addressesSplit || 0, "address", "addresses")} split into street, city, state and ZIP, for example "{u.addressExample.from}" → {[u.addressExample.address, u.addressExample.address2, u.addressExample.city, u.addressExample.state, u.addressExample.zip].filter(Boolean).join(" · ")}.</span>,
+                        c.addressesToCheck ? `${n(c.addressesToCheck, "address", "addresses")} kept whole and marked "Check this address": Steward could not split ${c.addressesToCheck === 1 ? "it" : "them"} for sure.` : null,
+                        // IMPORT-5 (7d): notes that say the contact info is bad
+                        c.phonesMarkedWrong ? <span key="ph" data-testid="sheet-phones-wrong">{n(c.phonesMarkedWrong, "phone")} marked wrong from your notes: kept, struck through, and never dialed or texted from Steward.</span> : null,
+                        c.addressesMarkedReturned ? `${n(c.addressesMarkedReturned, "address", "addresses")} marked as returned mail from your notes: kept, and left off mailings.` : null,
+                        ...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
+                        ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)].filter(Boolean)} />
               <Layer title="Roles" testId="layer-roles"
                 main={[c.donors && n(c.donors, "donor"), c.pledgers && n(c.pledgers, "pledger"), c.guests && n(c.guests, "event guest"), c.volunteers && n(c.volunteers, "volunteer"),
                        c.board && `${c.board} board`, c.staff && `${c.staff} staff`, c.prospects && n(c.prospects, "prospect"), c.contacts && n(c.contacts, "contact")].filter(Boolean).join(" · ") || "Contacts"}
                 sub="From the data: a donor gave, a pledger promised, a prospect was invited and never gave. Someone with no gift comes in as a contact, never a donor." />
               {u.fileKind !== "people" && (
                 <Layer title="Money" testId="layer-money"
-                  main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")}: ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears }, money)}` : ""}`}
+                  main={`${n(c.gifts, "gift")} ${money(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} with no date)` : ""}${c.pledges ? ` · ${n(c.pledges, "pledge")}: ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears, undatedCents: c.pledgeUndatedCents }, money)}` : ""}`}
                   sub={c.undatedGifts ? "A gift with no date still lands on its person, marked No date. It counts in Lifetime and the event's total, and not in This year, a goal or retention until it has a date." : "Every gift on its person, through the one gift path."}
                   notes={[c.monthly ? `${n(c.monthly, "monthly giver")} flagged for you to confirm, never charged.` : null,
                           ...u.pledges.slice(0, 3).map(p => `Row ${p.line}: ${p.who}, ${money(p.pledgeCents)}${p.openCents !== p.pledgeCents ? `, ${money(p.openCents)} to go` : ""}. ${p.why}.`)].filter(Boolean)} />

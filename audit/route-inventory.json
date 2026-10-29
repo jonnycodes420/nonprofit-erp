@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-29T02:31:37.998Z",
- "count": 1403,
+ "generatedAt": "2026-10-29T17:30:08.915Z",
+ "count": 1409,
  "routes": [
   {
    "method": "POST",
@@ -25880,6 +25880,60 @@
   },
   {
    "method": "GET",
+   "path": "/data-health/couples",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/couples",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/data-health/couples/apply",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/couples/apply",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/data-health/couples/undo",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/couples/undo",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
    "path": "/data-health/emails",
    "line": null,
    "auth": [],
@@ -30153,6 +30207,68 @@
    "identifiers": [],
    "frontend": {
     "probe": "/sheet-import/commit",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/import-mappings",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/import-mappings",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/import-mappings/:id",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/import-mappings",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/import-mappings/:id",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/import-mappings",
     "referenced": true
    }
   },

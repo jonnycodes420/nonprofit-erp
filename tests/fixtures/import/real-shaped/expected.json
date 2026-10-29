@@ -19,7 +19,12 @@
     "rows": 656,
     "gifts": 0,
     "rows_without_email": 365,
-    "notes": "No gifts: everyone here is a contact unless matched to a donor from the gift file. Contains near-duplicate rows (same first and last name, one row blank) and businesses or farms written in the Last Name column with First Name empty."
+    "notes": "No gifts: everyone here is a contact unless matched to a donor from the gift file. Contains near-duplicate rows (same first and last name, one row blank) and businesses or farms written in the Last Name column with First Name empty.",
+    "people": 650,
+    "merged_rows": 6,
+    "notes_marking_contact_info": "IMPORT-5: 31 'Notes/etc.' cells say the phone is wrong ('Incorrect number', 'Wrong number', \u2026) and 6 say mail came back ('Got returned', 'Returned mail'), written into the scrubbed file on 29 Oct 2026 to the shape of the real file's notes (the real file had 31 wrong-number notes). Rows with such a note and a phone: 31; with such a note and an address: 6.",
+    "phones_marked_wrong": 31,
+    "addresses_marked_returned": 6
   },
   "jp-dinner-gifts-106.xlsx": {
     "rows": 106,

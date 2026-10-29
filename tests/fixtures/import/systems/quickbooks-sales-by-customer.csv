@@ -1,0 +1,13 @@
+Sales by Customer Detail
+Brightwater Arts Collective
+"January - December, 2025"
+
+,Date,Transaction Type,Num,Product/Service,Memo/Description,Qty,Sales Price,Amount,Balance
+Aldous Penhale,,,,,,,,,
+,03/04/2025,Sales Receipt,1041,Donation,Spring appeal,1,150.00,150.00,150.00
+,09/18/2025,Sales Receipt,1077,Donation,Gala ticket gift,1,300.00,300.00,450.00
+Total for Aldous Penhale,,,,,,,,$450.00,
+Corinne Lade,,,,,,,,,
+,06/02/2025,Sales Receipt,1060,Donation,,1,75.00,75.00,75.00
+Total for Corinne Lade,,,,,,,,$75.00,
+TOTAL,,,,,,,,$525.00,

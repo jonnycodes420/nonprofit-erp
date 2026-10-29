@@ -123,13 +123,17 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   const R = made.body || {};
   ok("§1 the plan is made", made.status === 201 && R.status === "planned" && R.plan, { status: made.status, body: made.body });
   const pick = c => ({ people: c.people, gifts: c.gifts, giftCents: c.giftCents, pledges: c.pledges });
-  const readerSays = {};
-  for (const [name, text] of Object.entries(texts))
-    readerSays[name] = pick(((await api("POST", "/sheet-import/understand", tok, { fileName: name, sheets: [{ name: "Sheet1", grid: R0.gridFromText(text) }] })).body || {}).counts || {});
-  ok("§1 each file is a spreadsheet step carrying the one reader's own counts, the same as the import screen's",
-    !!R.plan && R.plan.files.length === 2 && R.plan.files.every(f => f.role === "sheet" && f.reader && f.reader.ok
-      && JSON.stringify(pick(f.reader.counts)) === JSON.stringify(readerSays[f.name])),
+  // IMPORT-5: the Salesforce pair is ONE import, read together (each sheet
+  // named for its file, as the import screen names them), people linked by Contact ID
+  const pairName = "salesforce-contacts.csv + salesforce-donations.csv";
+  const pairSheets = Object.entries(texts).map(([name, text]) => ({ name: name.replace(/\.csv$/, ""), grid: R0.gridFromText(text) }));
+  const readerSays = { [pairName]: pick(((await api("POST", "/sheet-import/understand", tok, { fileName: pairName, sheets: pairSheets })).body || {}).counts || {}) };
+  ok("§1 the Salesforce pair is one spreadsheet step carrying the one reader's own counts, the same as the import screen's",
+    !!R.plan && R.plan.files.length === 1 && R.plan.files.every(f => f.role === "sheet" && f.reader && f.reader.ok && f.name === pairName
+      && (f.fileIds || []).length === 2 && JSON.stringify(pick(f.reader.counts)) === JSON.stringify(readerSays[f.name])),
     R.plan && { files: R.plan.files.map(f => [f.name, f.role, f.reader && pick(f.reader.counts || {})]), readerSays });
+  ok("§1 IMPORT-5: the pair imports with no question (99 gifts, 40 people)", !!R.plan && R.plan.files[0] && R.plan.files[0].reader.questions === 0
+    && R.plan.files[0].reader.counts.gifts === 99 && R.plan.files[0].reader.counts.people === 40, R.plan && R.plan.files[0] && R.plan.files[0].reader);
   ok("§1 the plan counts nothing itself and has no import step", !!R.plan && !R.plan.counts && !R.plan.auto.some(a => a.step === "import" || /^Import /.test(a.sentence)),
     R.plan && { counts: R.plan.counts, auto: R.plan.auto.map(a => a.sentence) });
   ok("§1 every other step is listed on its own, each with a tick she can take off",
@@ -141,17 +145,17 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   ok("§1 nothing was written before Start: no donor, no gift, no fund",
     (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`)) === 0 && (await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`)) === 0
     && (await n(`SELECT COUNT(*)::int n FROM fin_funds WHERE org_id=$1`)) === 0);
-  const back = await api("GET", `/setup/runs/${R.id}/files/${R.plan && R.plan.files[0].id}`, tok);
+  const back = await api("GET", `/setup/runs/${R.id}/files/${R.plan && R.plan.files[0] && (R.plan.files[0].fileIds || [R.plan.files[0].id])[0]}`, tok);
   ok("§1 the plan hands the file back as she gave it, for the import screen", back.status === 200 && back.body.text === texts[back.body.name], { status: back.status, name: back.body && back.body.name });
 
   // ── §1b she imports from the plan's import screen ──────────────────────
   // The import screen's own write (POST /sheet-import/commit), its receipt
-  // and its Undo. The contacts file, then the Closed Won gifts as a list of
-  // her own (the reader asks which columns a bare Salesforce Opportunities
-  // file holds; that question is the import screen's, not setup's).
+  // and its Undo. IMPORT-5: the Contacts + Donations pair goes in as ONE
+  // import with no column questions; each gift attaches by Contact ID, and the
+  // Closed Lost donation is set aside by name.
   console.log("\n§1b the import screen imports, not Start");
-  const commit = async (fileName, text) => {
-    const r = await api("POST", "/sheet-import/commit", tok, { background: true, fileName, sheets: [{ name: "Sheet1", grid: R0.gridFromText(text) }], answers: {} });
+  const commit = async (fileName, sheets) => {
+    const r = await api("POST", "/sheet-import/commit", tok, { background: true, fileName, sheets, answers: {} });
     if (r.status !== 202) return { r, end: null };
     let j = null;
     await waitFor(async () => { j = (await api("GET", `/sheet-import/jobs/${encodeURIComponent(r.body.importId)}`, tok)).body; return j && j.status !== "running"; }, { timeout: 120000, interval: 200 });
@@ -159,15 +163,16 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   };
   const contacts = Object.fromEntries(R0.gridFromText(texts["salesforce-contacts.csv"]).slice(1).map(c => [c[0], c]));
   const won = R0.gridFromText(texts["salesforce-donations.csv"]).slice(1).filter(d => d[5] === "Closed Won");
-  const iso = d => { const [m, dd, y] = String(d).split("/"); return `${y}-${m.padStart(2, "0")}-${dd.padStart(2, "0")}`; };
-  const giftsCsv = ["First Name,Last Name,Email,Gift Date,Amount,Fund",
-    ...won.map(d => { const c = contacts[d[1]]; return [c[1], c[2], c[3], iso(d[4]), d[3], d[6]].join(","); })].join("\n");
   const imports = [];
-  for (const [nm, text] of [["salesforce-contacts.csv", texts["salesforce-contacts.csv"]], ["gift-list.csv", giftsCsv]]) {
-    const c = await commit(nm, text);
-    ok(`§1b ${nm} imports through the import screen's own write`, c.end && c.end.status === "done", c.end || c.r.body);
-    if (c.importId) imports.push(c.importId);
-  }
+  const c = await commit(pairName, pairSheets);
+  ok("§1b the Salesforce pair imports as one, through the import screen's own write", c.end && c.end.status === "done", c.end || c.r.body);
+  if (c.importId) imports.push(c.importId);
+  // each Closed Won donation is on the person its Contact ID names, to the cent
+  const onPerson = await q(`SELECT d.external_donor_id AS cid, ROUND(SUM(g.amount)*100)::bigint AS c FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 GROUP BY 1`, [ORG]);
+  const wantBy = {};
+  for (const d of won) wantBy[d[1]] = (wantBy[d[1]] || 0) + Math.round(Number(d[3]) * 100);
+  ok("§1b every gift is on the person its Contact ID names, to the cent", onPerson.length === Object.keys(wantBy).length
+    && onPerson.every(r => wantBy[r.cid] === Number(r.c) && contacts[r.cid]), onPerson.slice(0, 5));
   const g0 = (await q(`SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(amount*100)),0)::bigint c FROM gifts WHERE org_id=$1`, [ORG]))[0];
   ok("§1b 99 gifts, $29,536.00 to the cent, and 40 people", g0.n === 99 && Number(g0.c) === 2953600
     && (await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`)) === 40, g0);
@@ -287,7 +292,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
     (await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`)) === before.gifts);
   const rev = [];
   for (const id of [...imports].reverse()) rev.push((await api("POST", `/imports/${id}/reverse`, tok, {})).status);
-  ok("§8 each import undoes from its own receipt", rev.length === 2 && rev.every(x => x === 200), rev);
+  ok("§8 the import undoes from its own receipt", rev.length === 1 && rev.every(x => x === 200), rev);
   const left = {
     donors: await n(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1`),
     gifts: await n(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1`),

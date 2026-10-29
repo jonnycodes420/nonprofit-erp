@@ -21,6 +21,13 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   Presets live in `shared/*Preset(s).js`, `grantImport.js` and `membershipImport.js`. (BUILD-89S, BUILD-98)
 - **Let a preset claim a file only when two of its own signal columns are present.** A tie is a question
   for the person, not a guess. Every preset stays "documented-not-walked" until a real export is checked. (BUILD-98)
+- **Another system's export is a known shape on the one reader, never a second reader (IMPORT-5).**
+  `shared/exportShapes.js` names each system's own headers and places its columns (Salesforce NPSP Contacts and
+  Donations, Bloomerang, DonorPerfect, Little Green Light, Neon, eTapestry, Raiser's Edge, Givebutter, Donorbox,
+  PayPal Giving Fund, QuickBooks Sales by Customer). Two signals claim a table, every role is still checked against
+  the cells, her answer still wins, and the preview says "Read as a … export." A system's own codes (DonorPerfect's
+  record type G/P) read as status words. A pair (Contacts + Donations) is one import: the screen takes both files,
+  and setup's plan shows them as one line (`pairExportFiles`). Fakes in `tests/fixtures/import/systems/`.
 - **Split a header into tokens before matching it** (`normalizeHeader`/`headerTokens`). Never run `\b` over
   a raw header, because `_` is a word character and `\bzip\b` misses `zipcode`. (BUILD-84)
 - **Match a header as a whole header, never by substring**: exact, a trailing word-run, or a leading run
@@ -145,8 +152,18 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **An email or phone on three or more people with different last names is a placeholder**: never used to tell
   people apart and never copied onto anyone.
 - **A column that totals the gifts ("Gave at dinner") is skipped only when it foots person by person**; otherwise kept.
-- **An event the file shows is created even without a date** (`events.date_unknown`, on the import's day, "Date not
-  known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
+- **Dates are asked, never invented (IMPORT-5).** A file that names an event (a guest list, a title row, or, for a file
+  with no date column, an event word in its name) and holds no dates asks the event's date, and Import waits for it
+  ("When was the Dinner? · 106 rows, no dates"); "This file isn't from an event" (`answers.notEvent`) is the way out for
+  a list with no attendance. Then two more answers, each once for the file: "Use the {event} date for these 63
+  gifts?" (`answers.useEventDate`, true or false: No leaves them No date) and the pledges' due dates
+  (`answers.pledgeDue`: `event` counts as before, a one-year pledge by that year's end and a multi-year one yearly from
+  the day; `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
+  import day is never a due date. An installment with no set date counts in the event's raised by its place: the first
+  is pledged, the later ones later years (`EVENT_PLEDGE_OPEN`). Existing pledges were not changed;
+  `scripts/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
+- **An event the file shows is created even without a date** when she says so (`events.date_unknown`, on the import's
+  day, "Date not known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
   only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).
 - **The button says what will exist afterwards** (`importButtonSentence`); over 5% of people or dollars set aside,
   it says "Review N set aside first" until the list is opened.
@@ -229,6 +246,18 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **The real-shaped files grade the reader (HARDEN-1).** `tests/real-shaped.test.js` imports
   `tests/fixtures/import/real-shaped/` (scrubbed from a real customer's files; the only customer-shaped files allowed)
   into an empty org and checks them to the cent against `expected.json`, whose `years` are net of the negative rows.
+- **Column answers are saved per org and header set (IMPORT-5).** On commit, the one reader saves her column answers
+  (and the assistant's proposals she imported with) by header in `import_shape_mappings` (`kind='sheet'`, shape key
+  `sheet:` + every table's normalised headers, order and sheet names ignored). The next file with that header set
+  applies them before the model is asked, asks nothing they cover, and says "Using your saved mapping from …· Change"
+  (`answers.savedMapping: "off"` for one preview). Settings, Imports lists, edits and deletes them (`/import-mappings`).
+  The old mapper's rows are `kind='mapper'` and only `/import-shapes/match` reads them.
+- **"Alex, Brad Hubbard" is a couple, not "Last, First" (IMPORT-5).** One first name before the comma, a first name
+  and a surname after it (the last word not itself a first name, `shared/givenNames.js`) reads as two people in one
+  household; "Alex, Brad" in a First Name column too. Records already here never change at deploy: Data health's
+  "Couples written with a comma" line proposes them (the typed form, or "Brad Hubbard Alex" on an imported record),
+  fixes them only on her click (`/data-health/couples/apply`: the record becomes the first person, the second is made
+  beside them, one new household, gifts stay put) and undoes the click whole (`name_fixes`).
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
@@ -267,6 +296,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - `shared/customFieldShape.js` + `customFields.js` `validateCustomFields` — the one custom-field seam
 - `shared/migrationPresets.js`, `sourcePresets.js`, `mailchimpPreset.js`, `npspPreset.js`, `grantImport.js`,
   `membershipImport.js` — the presets
+- `shared/exportShapes.js` — other systems' known export shapes (IMPORT-5), used by `sheetRead.js`
 - `shared/importSentence.js` — the receipt's one sentence
 - `client/src/components/Donors.jsx` `DonorImport`, `WorkbookImport.jsx`, `ColumnTargetSelect.jsx` — the old mapper's UI,
   no longer opened by any door (HARDEN-1); `SpreadsheetImport.jsx` is the one import screen
