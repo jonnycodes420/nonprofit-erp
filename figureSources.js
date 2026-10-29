@@ -355,6 +355,14 @@ const EVENT_PLEDGE_OPEN = (i = "i", p = "p", e = "e", later = false) => {
    AND ${later ? `${e}.date_unknown IS NOT TRUE AND (${i}.due_date IS NULL AND ${i}.seq > 1 OR ${i}.due_date IS NOT NULL AND NOT (${due}))`
               : `(${e}.date_unknown IS TRUE OR (${i}.due_date IS NULL AND ${i}.seq = 1) OR ${due})`}`;
 };
+// FIX-59: the one sentence for each of an event's guest lists.
+const EVENT_GUEST_WORDS = {
+  registered: "Everyone on the event's list who has not declined or cancelled, once. Invited counts: they are on the list and have not said no.",
+  declined: "Everyone on the event's list who said they would not come. Not counted as registered.",
+  cameNoGift: "Marked as attending, with no gift or pledge tied to this event for them or anyone in their household.",
+  cameGave: "Marked as attending, with a gift or pledge tied to this event for them or someone in their household.",
+  invitedNoShow: "Registered and not marked as attending: Registered less Came. Shown once the event's day has passed.",
+};
 // IMPORT-5: a guest "gave" to an event when a gift (the event's own gift match)
 // or a pledge is tied to it for them or anyone in their household. One
 // predicate for numbers.eventGuests and the "event-guests" source.
@@ -365,6 +373,19 @@ const EVENT_GUEST_GAVE = (d = "d", e = "e") =>
     OR EXISTS (SELECT 1 FROM pledges p JOIN donors pd ON pd.id = p.donor_id AND pd.org_id = p.org_id
                 WHERE p.org_id = ${e}.org_id AND p.event_id = ${e}.id AND p.status <> 'cancelled' AND pd.deleted_at IS NULL
                   AND (pd.id = ${d}.id OR (${d}.household_id IS NOT NULL AND pd.household_id = ${d}.household_id))))`;
+// FIX-59 · WHO IS ON AN EVENT'S LIST. Registered is everyone on the list who
+// has not declined or cancelled ('invited' counts: they are on the list and
+// have not said no); declined is said apart. A row with no person record (a
+// walk-in typed at the door) is a guest too; a deleted person is nobody. One
+// definition for numbers.eventGuests, the "event-guests" and "event-attended"
+// sources, the Events list and the check-in door.
+const EVENT_GUEST_LIVE = (a = "a") =>
+  `NOT EXISTS (SELECT 1 FROM donors dx WHERE dx.id = ${a}.donor_id AND dx.org_id = ${a}.org_id AND dx.deleted_at IS NOT NULL)`;
+const EVENT_ON_LIST = (a = "a") => `COALESCE(${a}.status, 'invited') NOT IN ('cancelled','canceled','declined')`;
+const EVENT_DECLINED = (a = "a") => `${a}.status = 'declined'`;
+// Came: marked as attending, or checked in at the door (the door marks both;
+// an older row may carry only the time).
+const EVENT_CAME = (a = "a") => `(${a}.status = 'attended' OR (${a}.checked_in_at IS NOT NULL AND ${EVENT_ON_LIST(a)}))`;
 function giftsWhere(p, args) {
   let w = "";
   if (p.fund === "none") w += " AND f.id IS NULL";
@@ -2093,17 +2114,20 @@ const SOURCES = {
     label: "Guests",
     measure: () => "count",
     params: { event: "id:required", list: "word:required" },
-    sentence: p => ({ cameGave: "Marked as attending, with a gift or pledge tied to this event for them or someone in their household.",
-                      invitedNoShow: "On the event's list and not marked as attending." }[p.list]
-                    || "Marked as attending, with no gift or pledge tied to this event for them or anyone in their household."),
+    // FIX-59: registered (on the list, not declined) and declined are lists
+    // of this one answer too, so Registered = Came + Invited, didn't come.
+    sentence: p => (EVENT_GUEST_WORDS[p.list] || EVENT_GUEST_WORDS.cameNoGift),
     sql: (orgId, p) => ({
-      sql: `SELECT DISTINCT ON (d.id) d.id, 'person' AS type, d.id AS donor_id, d.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+      sql: `SELECT DISTINCT ON (COALESCE(d.id, a.id)) COALESCE(d.id, a.id) AS id, 'person' AS type, d.id AS donor_id, COALESCE(d.name, a.name) AS name,
+                   LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
               FROM event_attendees a
               JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
-              JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
-             WHERE a.org_id = ? AND e.id = ? AND a.status <> 'cancelled'
-               AND ${p.list === "invitedNoShow" ? `NOT EXISTS (SELECT 1 FROM event_attendees a2 WHERE a2.org_id = a.org_id AND a2.event_id = e.id AND a2.donor_id = d.id AND a2.status = 'attended')`
-                 : `a.status = 'attended' AND ${p.list === "cameGave" ? "" : "NOT "}${EVENT_GUEST_GAVE("d", "e")}`}`,
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE a.org_id = ? AND e.id = ? AND ${EVENT_GUEST_LIVE("a")}
+               AND ${p.list === "declined" ? EVENT_DECLINED("a")
+                 : p.list === "registered" ? EVENT_ON_LIST("a")
+                 : p.list === "invitedNoShow" ? `${EVENT_ON_LIST("a")} AND NOT ${EVENT_CAME("a")}`
+                 : `${EVENT_CAME("a")} AND ${p.list === "cameGave" ? "" : "NOT "}${EVENT_GUEST_GAVE("d", "e")}`}`,
       args: [orgId, p.event],
       order: "name, id",
     }),
@@ -2135,13 +2159,13 @@ const SOURCES = {
     label: "Came to the event",
     measure: () => "count",
     params: { event: "id:required" },
-    sentence: () => "Each person marked as having come to this event, once. Nobody is counted until somebody said they came.",
+    sentence: () => "Each person marked as having come to this event, or checked in at the door, once. Nobody is counted until somebody said they came.",
     sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, 'Came' AS detail
-              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND a.status = 'attended'
-              JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
-             WHERE e.org_id = ? AND e.id = ?
-             GROUP BY d.id, d.name, e.date`,
+      sql: `SELECT DISTINCT ON (COALESCE(d.id, a.id)) COALESCE(d.id, a.id) AS id, 'person' AS type, d.id AS donor_id, COALESCE(d.name, a.name) AS name,
+                   LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, 'Came' AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND ${EVENT_CAME("a")}
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE e.org_id = ? AND e.id = ? AND ${EVENT_GUEST_LIVE("a")}`,
       args: [orgId, p.event],
       order: "name ASC, id",
     }),
@@ -3114,4 +3138,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { EVENT_GIFT_MATCH, EVENT_PLEDGE_OPEN, EVENT_GUEST_GAVE, sameDatesLastYear, AVERAGE_WORDS, RETENTION_WORDS, RETENTION_SAME_POINT_WORDS, SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
+module.exports = { EVENT_GIFT_MATCH, EVENT_GIVERS_SQL, EVENT_PLEDGE_OPEN, EVENT_GUEST_GAVE, EVENT_GUEST_LIVE, EVENT_ON_LIST, EVENT_DECLINED, EVENT_CAME, EVENT_GUEST_WORDS, sameDatesLastYear, AVERAGE_WORDS, RETENTION_WORDS, RETENTION_SAME_POINT_WORDS, SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };

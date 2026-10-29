@@ -475,3 +475,15 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   {date} and didn't give. Thank them for coming."), no ask on the first touch, the action a thank-you-for-coming task
   with the note drafted. One person, one move (otherwise an "also" line). "See all N" opens the event page. Grow draws
   150 cards by dollars, so $0 thank-yous can sit past the cap, still counted on the tab.
+
+## FIX-59 · an event's list adds up (2026-10-29)
+
+- Registered is people, not places: everyone on the list who has not declined or cancelled, once ('invited' counts).
+  Declined is its own figure. Came = Came, gave + Came, didn't give; Registered = Came + Invited, didn't come. All of
+  them are `numbers.eventGuests` (sources `event-guests` lists registered / declined / cameGave / cameNoGift /
+  invitedNoShow, and `event-attended`); the event page, its rows, the Events list, the check-in door, the story,
+  Fundraising's lead card, Home's Grow moves and Ask read it. `assertSurfacesAgree` checks them all.
+- Came (and the door's "in") is marked attending OR checked in at the door; an undo at the door takes them out of Came.
+  A walk-in row with no person record is a guest; a deleted person is nobody.
+- A guest's Gift on the event page is what they gave for the event or pledged at it (`event-gave` per person), never
+  `gift_amount` typed on the row. A table seated over its size says "13 seated at 10 seats, 3 over".

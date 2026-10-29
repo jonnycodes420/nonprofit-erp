@@ -923,12 +923,12 @@ async function cameAnswer(orgId, typed) {
   const on = ev.date ? ` on ${AQ.dayWords ? AQ.dayWords(ev.date) : ev.date}` : "";
   const fig = { value: n, kind: "count", label: noGift ? "Came, didn't give" : "Came, gave", definition: ev.definitions[noGift ? "cameNoGift" : "cameGave"],
                 source: { key: "event-guests", params: { event: ev.id, list: noGift ? "cameNoGift" : "cameGave" } } };
-  const people = list.map(p => ({ donorId: p.id, name: p.name, cents: 0 }));
+  const people = list.map(p => ({ donorId: p.noRecord ? null : p.id, name: p.name, cents: 0 }));
   return { answered: true, kind: "answer",
     sentence: noGift ? `${n} ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and didn't give.` : `${n} ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and gave.`,
     sentenceParts: [{ fig: "value" }, noGift ? ` ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and didn't give.` : ` ${n === 1 ? "person" : "people"} came to the ${ev.name}${on} and gave.`],
     figures: { value: fig }, table: null, people, peopleCount: n, peopleSource: fig.source,
-    steps: noGift ? [{ kind: "plan", label: "Thank them for coming", items: people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Thank" })), dueIn: 2 },
+    steps: noGift ? [{ kind: "plan", label: "Thank them for coming", items: people.filter(p => p.donorId).slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Thank" })), dueIn: 2 },
                      { kind: "open", label: `Open the ${ev.name}`, href: `/app/events?event=${encodeURIComponent(ev.id)}` }] : [],
     counted: `${ev.definitions[noGift ? "cameNoGift" : "cameGave"]} Steward can't see who came unless someone marked them as attending. Steward wrote nothing.` };
 }
