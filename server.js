@@ -12590,8 +12590,11 @@ require("./routes/crm").mount({
 // timer; the worker lanes still run, because an import's recent gifts are
 // queued work, not a tick. STEWARD_PROCESS=web runs no lanes at all.
 // The probe job scale1-queue drives: it records which process ran it and when,
-// and can be told to take a while or to fail. TEST_MODE only.
-if (testMode()) {
+// and can be told to take a while or to fail. TEST_MODE only, and only in a
+// process that suite started (STEWARD_TEST_PROBE=1): the battery's shard server
+// shares the suite's database and runs lanes, and with this handler it raced
+// the suite's worker for the probes (FIX-58, red at 12:02 AM).
+if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
   require("./jobQueue").handle("testProbe", async (p, job) => {
     const t0 = new Date();
     if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));

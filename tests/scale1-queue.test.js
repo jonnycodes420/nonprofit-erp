@@ -33,7 +33,7 @@ async function boot(role, extra = {}) {
   const port = await freePort();
   const child = spawn(process.execPath, ["server.js"], {
     cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PORT: String(port), STEWARD_PROCESS: role, TEST_MODE: "1", DISABLE_BACKGROUND_TICKS: "1",
+    env: { ...process.env, PORT: String(port), STEWARD_PROCESS: role, TEST_MODE: "1", DISABLE_BACKGROUND_TICKS: "1", STEWARD_TEST_PROBE: "1",
       JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local", SENTRY_DSN: "",
       WORKER_CONCURRENCY: "4", JOB_ORG_CAP: "2", JOB_POLL_MS: "100", JOB_BACKOFF_MS: "50",
       XERO_CLIENT_ID: "scale1-xero-client", XERO_CLIENT_SECRET: "scale1-xero-secret",
@@ -105,7 +105,13 @@ const settled = (keys) => waitFor(async () => {
   const perKey = new Map(); r1.forEach(r => perKey.set(r.key, (perKey.get(r.key) || 0) + 1));
   ok("§1 each job ran exactly once", r1.length === 40 && [...perKey.values()].every(n => n === 1), `runs=${r1.length}`);
   ok("§1 no web process ran a job", r1.every(r => !webPids.has(r.pid)));
-  ok("§1 the worker ran jobs", r1.some(r => r.pid === worker.pid));
+  // FIX-58: EVERY job, not some. The shard's own server shares this database
+  // and runs job lanes; while it had the probe's handler it raced the worker
+  // for these jobs, and in the 12:02 AM battery it took all forty ("the worker
+  // ran jobs" red). Only this suite's processes handle the probe now
+  // (STEWARD_TEST_PROBE=1), so a run by anyone else is a defect.
+  ok("§1 the worker ran every job (no other process on this database ran one)", r1.length > 0 && r1.every(r => r.pid === worker.pid),
+    `pids=${JSON.stringify([...new Set(r1.map(r => r.pid))])} worker=${worker.pid}`);
 
   // §2 One key, a slow run, and more work arriving while it runs. (FIX-48:
   // the run is 2.5s, not 0.8s, so both copies land while it is running even
