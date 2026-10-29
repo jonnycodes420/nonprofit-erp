@@ -40,13 +40,14 @@ export function RungChips({ unit }) {
 }
 
 // THE LADDER STRIP: each rung's givers and dollars, and how many are slipping or moving up.
-export function LadderStrip({ data, onNavigate }) {
+// FIX-59: showCoverage is false where the page above already says the coverage line (the first look)
+export function LadderStrip({ data, onNavigate, showCoverage = true }) {
   if (!data || !data.ladder) return null;
   return (
     <section data-testid="ladder-strip" style={{ ...CARD, padding: "14px 16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
         <div style={EYEBROW}>Your donor ladder</div>
-        <div style={{ fontSize: 12, color: T.ink3 }}>{data.coverage && data.coverage.sentence}</div>
+        {showCoverage && <div style={{ fontSize: 12, color: T.ink3 }}>{data.coverage && data.coverage.sentence}</div>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginTop: 10 }}>
         {data.ladder.map(l => (
@@ -309,7 +310,7 @@ export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, o
         style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
         <FirstLook onNavigate={(...a) => { setLook(false); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} onClose={() => { setLook(false); reload(); }} />
       </div>}
-      {!only && <LadderStrip data={data} onNavigate={onNavigate} />}
+      {!only && <LadderStrip data={data} onNavigate={onNavigate} showCoverage={!(data.coverage && data.coverage.stale)} />}
       {!only && <div style={{ margin: "-4px 0 10px" }}><button type="button" style={LNK} onClick={() => setLook(true)}>What your data says</button></div>}
       {cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={reload} isReadOnly={isReadOnly} />)}
       <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences && data.sentences.never}</p>
@@ -615,7 +616,7 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
         {(data.events || []).length > 0 && <div data-testid="first-look-events" style={{ margin: "0 0 12px" }}>
           {data.events.map(e => <EventRaised key={e.id} e={e} />)}
         </div>}
-        <LadderStrip data={data} onNavigate={onNavigate} />
+        <LadderStrip data={data} onNavigate={onNavigate} showCoverage={false} />
         {data.cards.map(c => <InsightCard key={c.kind} card={c} onNavigate={onNavigate} onChanged={load} isReadOnly={isReadOnly} />)}
         <p style={{ fontSize: 12, color: T.ink3 }}>{data.sentences.never}</p>
       </>}

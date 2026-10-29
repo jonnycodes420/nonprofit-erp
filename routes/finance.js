@@ -171,6 +171,8 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
     // deposit lives. The window is the last ninety days: an eighteen month
     // old cheque is history, not an open item, and a figure that counts it
     // is a figure nobody can ever drive to zero.
+    // FIX-59: a gift with a deposit_ref is on a deposit (a payout, a deposit
+    // sheet, or an import she said was already deposited), so it is not here.
     const sel = rows
       ? `g.id, g.date, g.amount, g.payment_method, d.name AS who`
       : `COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents`;
@@ -181,6 +183,7 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
           AND NOT EXISTS (SELECT 1 FROM imports im
                             WHERE im.id = g.import_id AND im.org_id = g.org_id
                               AND im.shape = 'deposit' AND im.reversed_at IS NULL)
+          AND g.deposit_ref IS NULL
           AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
           AND g.date >= (CURRENT_DATE - 90)::text
         ${rows ? "ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000" : ""}`, [orgId]).catch(() => rows ? [] : [{ cents: 0 }]);
@@ -261,6 +264,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
         AND NOT EXISTS (SELECT 1 FROM imports im
                           WHERE im.id = g.import_id AND im.org_id = g.org_id
                             AND im.shape = 'deposit' AND im.reversed_at IS NULL)
+        AND g.deposit_ref IS NULL
         AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
         AND g.date >= (CURRENT_DATE - 90)::text`, [orgId]).catch(() => [{ n: 0 }]);
   if (unmatchedN.n) needsYou.push({ key: "unmatched", label: "Not yet on a deposit", count: unmatchedN.n,
