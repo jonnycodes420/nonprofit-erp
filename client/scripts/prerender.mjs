@@ -32,11 +32,16 @@ const { GLOSSARY } = await import(pathToFileURL(path.join(CLIENT, "src", "market
 
 // A rerun reads the shell it saved the first time (vite build empties dist/,
 // so a saved app.html is always from this build).
-// SECURE-2 item 5: the preloader is a FILE (dist/app-preload.js), never an
-// inline script, because the app's Content-Security-Policy runs no inline
-// script (vercel.json). `async`, so nothing waits on it.
-const PRELOAD_FILE = path.join(DIST, "app-preload.js");
-const PRELOAD_TAG = `<!-- app-preload --><script async src="/app-preload.js"></script><!-- /app-preload -->\n`;
+// SECURE-2 item 5: the preloader stays inline (a file cost a round trip, and
+// perf-app's "usable under 1 s" with it), and the app's script CSP allows it
+// by hash. Its text is fixed (PRELOAD_JS); what changes per build (the chunks,
+// the font) rides in data attributes, so the hash in vercel.json never moves.
+// Change a byte of PRELOAD_JS and change that hash with it.
+const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
+  `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
+  `JSON.parse(s.getAttribute("data-need")||"[]").forEach(function(h){add("modulepreload",h);});` +
+  `var f=s.getAttribute("data-font");if(f)add("stylesheet",f);}catch(e){}})();`;
+const attr = v => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const SHELL = path.join(DIST, "app.html");
 const PRELOAD = /<!-- app-preload -->[\s\S]*?<!-- \/app-preload -->\n?/;
 const shell = fs.readFileSync(fs.existsSync(SHELL) ? SHELL : path.join(DIST, "index.html"), "utf8").replace(PRELOAD, "");
@@ -48,7 +53,7 @@ fs.writeFileSync(SHELL, shell.replace("</head>", appPreload() + "</head>"));
 // then deleted: dist/ ships no map of its chunks.
 function appPreload() {
   const MAN = path.join(DIST, ".vite", "manifest.json");
-  if (!fs.existsSync(MAN)) return fs.existsSync(PRELOAD_FILE) ? PRELOAD_TAG : "";
+  if (!fs.existsSync(MAN)) return "";
   const man = JSON.parse(fs.readFileSync(MAN, "utf8"));
   fs.rmSync(path.join(DIST, ".vite"), { recursive: true, force: true });
   // Chunks are found by file, not by key: the manifest keys main.jsx's chunk
@@ -68,12 +73,7 @@ function appPreload() {
   // nothing waits on it.
   const app = fs.readFileSync(path.join(CLIENT, "src", "App.jsx"), "utf8");
   const font = (app.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"]+/) || [])[0];
-  fs.writeFileSync(PRELOAD_FILE, `(function(){try{if(!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
-    `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
-    `${JSON.stringify(need)}.forEach(function(h){add("modulepreload",h);});` +
-    (font ? `add("stylesheet",${JSON.stringify(font.replace(/&amp;/g, "&"))});` : "") +
-    `}catch(e){}})();\n`);
-  return PRELOAD_TAG;
+  return `<!-- app-preload --><script data-need="${attr(JSON.stringify(need))}"${font ? ` data-font="${attr(font.replace(/&amp;/g, "&"))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
 }
 
 const base = seo.pageShell(shell);

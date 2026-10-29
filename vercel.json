@@ -38,7 +38,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'sha256-giul2Tz10285XN/XwQF702DkrNpZYabkzSOGObdIDvg='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://nonprofit-erp-production.up.railway.app; media-src 'self' blob: https: https://nonprofit-erp-production.up.railway.app; connect-src 'self' https://nonprofit-erp-production.up.railway.app https://*.sentry.io; frame-src 'self' blob: data: https://nonprofit-erp-production.up.railway.app https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
+          "value": "default-src 'self'; script-src 'self' 'sha256-giul2Tz10285XN/XwQF702DkrNpZYabkzSOGObdIDvg=' 'sha256-6mfQDUBgxFbQM1GVn9xdVyoLoF5uyzEJq0fBU+2w3qY='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://nonprofit-erp-production.up.railway.app; media-src 'self' blob: https: https://nonprofit-erp-production.up.railway.app; connect-src 'self' https://nonprofit-erp-production.up.railway.app https://*.sentry.io; frame-src 'self' blob: data: https://nonprofit-erp-production.up.railway.app https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
         }
       ]
     }

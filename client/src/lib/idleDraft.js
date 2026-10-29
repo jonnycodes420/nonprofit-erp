@@ -16,7 +16,7 @@ const fieldKey = el => el.getAttribute("data-testid") ? "t:" + el.getAttribute("
 function findField(key) {
   const [kind, ...rest] = key.split(":");
   const v = rest.join(":");
-  const esc = s => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/"/g, '\\"'));
+  const esc = s => (window.CSS && CSS.escape ? CSS.escape(s) : s.replace(/[\\"]/g, "\\$&"));
   if (kind === "t") return document.querySelector(`[data-testid="${esc(v)}"]`);
   if (kind === "i") return document.getElementById(v);
   if (kind === "n") return document.querySelector(`[name="${esc(v)}"]`);

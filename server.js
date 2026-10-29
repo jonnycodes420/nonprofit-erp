@@ -11960,7 +11960,7 @@ app.use((err, req, res, next) => {
   }
   // SECURE-2: the line keeps the request id, route and org; the error itself
   // goes through the redactor (redact.js) like every other log line.
-  console.error(`[500] ${req.method} ${route} rid=${req.id || "-"} org=${(req.user && req.user.orgId) || "-"}`, err);
+  console.error("[500] %s %s rid=%s org=%s", req.method, route, req.id || "-", (req.user && req.user.orgId) || "-", err);
   res.status(500).json({ error: "Internal server error" });
 });
 
