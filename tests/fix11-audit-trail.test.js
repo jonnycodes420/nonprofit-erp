@@ -128,7 +128,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
 (async () => {
   console.log("fix11-audit-trail (FIX-11 Part 1)");
   const app = require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady({ base: M });   // FIX-57: the server says when boot is done
 
   // ── §1 · THE ROUTE INVENTORY ────────────────────────────────────────────
   const routes = walkRouter(app);

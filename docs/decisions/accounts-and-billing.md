@@ -248,6 +248,16 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
 
 ## Super admin pattern
+- **Open as support (FIX-57)** is the only way to see a customer's screen; nobody reads prod data to
+  debug one. `POST /admin/orgs/:id/support/open` makes a `support_sessions` row and a two-hour token
+  (`supportSid`). `requireAuth` reads that row live on every request: the session is in that one org,
+  as an admin, READ-ONLY (every non-GET is refused, `support_read_only`) until
+  `POST /support-session/allow-changes` with `confirm: true`. `requireSuperAdmin` refuses a support
+  session, so no other org is reachable from inside one. The open is in the org's Activity
+  ("Steward support viewed your account, 10:14 AM", org-local), and every change is actor
+  `support` / "Steward support (First name)". An org admin turns it off in Settings, Security
+  (`PUT /support-access`); off ends any open session at once and the console says "Support access is off".
+  Rules in `supportAccess.js`; pinned in `tests/security.test.js` §11.
 - `is_super_admin BOOLEAN DEFAULT false` column on `users` table
 - Set via: `UPDATE users SET is_super_admin = true WHERE email = 'your@email.com'` in Supabase
 - Login route includes `isSuperAdmin` in JWT payload and returned user object

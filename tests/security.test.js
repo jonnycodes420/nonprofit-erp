@@ -20,6 +20,9 @@
 //   §9  Every API answer carries nosniff, Referrer-Policy, HSTS and a
 //       frame-ancestors policy; a CORS preflight is cached.
 //   §10 A stored website is http(s) or nothing; never javascript:.
+//   §19 FIX-57 · Open as support: read-only on the server, in one org only,
+//       logged in the org's Activity; the org's off switch blocks it; a change
+//       after the second confirm works and is Steward support's.
 //
 // SECURE-2 (2026-10-29) adds, each run red against main first:
 //   §11 No donor or staff details, token or body in a log line or a Sentry
@@ -59,6 +62,7 @@ const { ok, summary, login, api, q, BASE, BILLING_MOCK_PORT } = require("./helpe
 const fs = require("fs");
 
 const ORG = "org_secure1";
+const HOME = "org_secure1_home", SUPER = "u_secure1_super", SUPER_EMAIL = "jonas@secure1-home.example.org";
 const ADMIN = "u_secure1_admin", STAFF = "u_secure1_staff";
 const ADMIN_EMAIL = "admin@secure1.example.org", STAFF_EMAIL = "staff@secure1.example.org";
 const DONOR = "d_secure1";
@@ -73,12 +77,14 @@ async function fixtures() {
   // Every table that carries an org_id, discovered, twice over (children first
   // the second time round); append-only audit rows simply stay.
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE column_name='org_id' AND table_schema='public'`)).map(r => r.table_name);
-  for (let pass = 0; pass < 2; pass++)
-    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
-  await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  if ((await q(`SELECT 1 FROM orgs WHERE id=$1`, [ORG])).length) {
-    // A row we could not remove (append-only audit): keep the org, reset its users.
-    await q(`DELETE FROM users WHERE org_id=$1`, [ORG]).catch(() => {});
+  for (const o of [ORG, HOME]) {
+    for (let pass = 0; pass < 2; pass++)
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [o]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {});
+    if ((await q(`SELECT 1 FROM orgs WHERE id=$1`, [o])).length) {
+      // A row we could not remove (append-only audit): keep the org, reset its users.
+      await q(`DELETE FROM users WHERE org_id=$1`, [o]).catch(() => {});
+    }
   }
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Secure One Food Pantry','secure-one-pantry',1,'trialing','team')
            ON CONFLICT (id) DO UPDATE SET website=NULL, subscription_status='trialing', plan='team'`, [ORG]);
@@ -86,6 +92,11 @@ async function fixtures() {
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Renata Okafor','admin')`, [ADMIN, ORG, ADMIN_EMAIL, hash]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dale Whitcombe','staff')`, [STAFF, ORG, STAFF_EMAIL, hash]);
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name) VALUES ($1,$2,'Imelda Vance','imelda.vance@example.org','active',0,'system:test','test')`, [DONOR, ORG]);
+  // §11: Steward's own org and its super-admin, with a donor of its own.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Secure One Home','secure-one-home',1,'trialing','team')
+           ON CONFLICT (id) DO NOTHING`, [HOME]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ($1,$2,$3,$4,'Jonas Pell','admin',true)`, [SUPER, HOME, SUPER_EMAIL, hash]);
+  await q(`INSERT INTO donors (id,org_id,name,stage,total_giving,created_by,created_by_name) VALUES ('d_secure1_home',$1,'Homer Quill','active',0,'system:test','test')`, [HOME]);
 }
 
 (async () => {
@@ -540,6 +551,68 @@ async function fixtures() {
     ok("staff cannot change that setting", staffOnly.status === 403, staffOnly.status);
     await api("PUT", "/org/security", admin, { allowStaffLargeExports: false });
     await q(`DELETE FROM donors WHERE org_id=$1 AND id LIKE 'd_s2x_%'`, [ORG]);
+  }
+
+  console.log("\n§19 · open as support: read-only, one org, logged, and theirs to turn off");
+  {
+    const sup = await login(SUPER_EMAIL);
+    const open = await api("POST", `/admin/orgs/${ORG}/support/open`, sup);
+    ok("a super-admin opens the org as support (200, a token)", open.status === 200 && !!(open.body && open.body.token), { status: open.status, body: open.body });
+    const st = open.body && open.body.token;
+    const mine = await api("GET", `/donors/${DONOR}`, st);
+    ok("…and reads that org's donor", mine.status === 200, mine.status);
+    const theirs = await api("GET", "/donors/d_secure1_home", st);
+    ok("…and never another org's, not even its own home org's", theirs.status === 404, theirs.status);
+    const adminRoute = await api("GET", "/admin/orgs", st);
+    ok("…and no super-admin route answers inside a support session", adminRoute.status === 403, adminRoute.status);
+    const write = await api("POST", "/tasks", st, { title: "Call Imelda", donorId: DONOR, assignedTo: ADMIN });
+    ok("a write from a read-only support session is refused (403) with a sentence",
+      write.status === 403 && write.body.error === "support_read_only" && /read-only support session/.test(write.body.message || ""), { status: write.status, body: write.body });
+    const [t0] = await q(`SELECT COUNT(*)::int AS n FROM tasks WHERE org_id=$1 AND title='Call Imelda'`, [ORG]);
+    ok("…and nothing was written", t0.n === 0, t0);
+    let act = null;
+    for (let i = 0; i < 20 && !act; i++) {
+      [act] = await q(`SELECT user_name, actor_kind, summary FROM fin_audit_log WHERE org_id=$1 AND summary LIKE 'Steward support viewed your account%' ORDER BY created_at DESC LIMIT 1`, [ORG]);
+      if (!act) await new Promise(r => setTimeout(r, 100));
+    }
+    ok("the open is in the org's Activity: \"Steward support viewed your account, 10:14 AM\"",
+      !!act && /^Steward support viewed your account, \d{1,2}:\d{2} (AM|PM)$/.test(act.summary) && act.actor_kind === "support" && act.user_name === "Steward support (Jonas)", act);
+    const [leak] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND summary LIKE 'Steward support viewed your account%'`, [HOME]);
+    ok("…and not in Steward's own", leak.n === 0, leak);
+    const noConfirm = await api("POST", "/support-session/allow-changes", st, {});
+    ok("allowing changes needs the second confirm (400 without it)", noConfirm.status === 400, noConfirm.status);
+    const yes = await api("POST", "/support-session/allow-changes", st, { confirm: true });
+    ok("…and with it, changes are allowed", yes.status === 200 && yes.body.support && yes.body.support.writable === true, yes.body);
+    const write2 = await api("POST", "/tasks", st, { title: "Call Imelda", donorId: DONOR, assignedTo: ADMIN });
+    ok("after the confirm a write lands", write2.status === 200 || write2.status === 201, { status: write2.status, body: write2.body });
+    const [task] = await q(`SELECT created_by, created_by_name FROM tasks WHERE org_id=$1 AND title='Call Imelda'`, [ORG]);
+    ok("…stamped as Steward support", !!task && task.created_by_name === "Steward support (Jonas)" && task.created_by === SUPER, task);
+    // The audit row is written as the response finishes, so it is read until it lands.
+    let aud = null;
+    for (let i = 0; i < 20 && !aud; i++) {
+      [aud] = await q(`SELECT user_name, actor_kind FROM fin_audit_log WHERE org_id=$1 AND request_path='/tasks' ORDER BY created_at DESC LIMIT 1`, [ORG]);
+      if (!aud) await new Promise(r => setTimeout(r, 100));
+    }
+    ok("…and its audit row says it was support", !!aud && aud.actor_kind === "support" && aud.user_name === "Steward support (Jonas)", aud);
+    const self = await api("PUT", "/support-access", st, { on: false });
+    ok("support cannot turn the org's support access off or on itself", self.status === 403, self.status);
+    const end = await api("POST", "/support-session/end", st, {});
+    const after = await api("GET", `/donors/${DONOR}`, st);
+    ok("ending the session ends the token (401)", end.status === 200 && after.status === 401, { end: end.status, after: after.status });
+
+    const open2 = await api("POST", `/admin/orgs/${ORG}/support/open`, sup);
+    const st2 = open2.body && open2.body.token;
+    const off = await api("PUT", "/support-access", admin, { on: false });
+    ok("the org's admin turns support access off in Settings", off.status === 200 && off.body.on === false, off.body);
+    const dead = await api("GET", `/donors/${DONOR}`, st2);
+    ok("…which ends a support session already open (401)", dead.status === 401, dead.status);
+    const blocked = await api("POST", `/admin/orgs/${ORG}/support/open`, sup);
+    ok("…and the super-admin cannot open it: \"Support access is off\"",
+      blocked.status === 403 && blocked.body.error === "support_access_off" && /^Support access is off/.test(blocked.body.message || ""), { status: blocked.status, body: blocked.body });
+    const byStaff = await api("PUT", "/support-access", staff, { on: true });
+    ok("…and only an admin turns it back on", byStaff.status === 403, byStaff.status);
+    const on = await api("PUT", "/support-access", admin, { on: true });
+    ok("…which they can", on.status === 200 && on.body.on === true, on.body);
   }
 
   summary();

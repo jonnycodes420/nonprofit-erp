@@ -533,6 +533,24 @@ async function publicPagesUnderTheCsp(browser) {
     localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
   }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
 
+  // FIX-57 item 5 · NO SENTENCE WITH A HOLE IN IT. "Nothing is open for ."
+  // showed while a profile loaded. Every 100 ms, from the first paint, the
+  // visible text is read for a missing interpolation: " for .", "Dear ,", two
+  // spaces in a sentence, "undefined", "null", "NaN". A loading moment counts:
+  // that is when the hole shows. Inputs and textareas are not visible text.
+  await page.addInitScript(() => {
+    const BAD = [/ (?:for|to|with|from|of|by|about) \./, /\b(?:Dear|Hi|Hello) ,/, /\S {2,}\S/, /\bundefined\b/, /\bnull\b/, /\bNaN\b/];
+    window.__holes = [];
+    const scan = () => {
+      const t = document.body ? document.body.innerText || "" : "";
+      for (const line of t.split("\n")) for (const re of BAD) {
+        const m = re.exec(line);
+        if (m && window.__holes.length < 20 && !window.__holes.some(h => h.line === line.slice(0, 160))) window.__holes.push({ line: line.slice(0, 160), path: location.pathname });
+      }
+    };
+    setInterval(scan, 100);
+  });
+
   // A screen is OPEN when its main area has drawn something. Not "has the
   // right thing in it" — has anything at all, which is the difference between
   // a screen and a white rectangle.
@@ -555,6 +573,8 @@ async function publicPagesUnderTheCsp(browser) {
     ok(`${what} — no error boundary`, !state.boundary, state.boundary);
     ok(`${what} — nothing on fire`, trouble.length === 0, trouble.slice(0, 3));
     trouble = [];
+    const holes = await page.evaluate(() => { const h = window.__holes || []; window.__holes = []; return h; }).catch(() => []);
+    ok(`${what} — no sentence with a missing name or number in it`, holes.length === 0, holes.slice(0, 3));
   };
 
   // FIX-13 Part 6 — REAL LINKS. Every donor name on Home, Donors and a report
@@ -828,6 +848,21 @@ async function publicPagesUnderTheCsp(browser) {
       }
       await look(`donor ${d.id} · ${tab}`);
     }
+  }
+  // FIX-57 item 5: a profile whose full record is slow (a phone on 3G) reads
+  // no sentence with an empty name while it waits. Red on 78e156e: "Nothing
+  // is open for ." until the record lands.
+  if (three[0]) {
+    trouble = [];
+    const slow = new RegExp(`/donors/${three[0].id}(\\?|$)`);
+    await page.route(slow, async r => { await new Promise(res => setTimeout(res, 3000)); await r.continue().catch(() => {}); });
+    await page.goto(`${APP}/donors/${three[0].id}`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(e => trouble.push("navigation: " + e.message.slice(0, 120)));
+    await page.waitForTimeout(4500);
+    const holes = await page.evaluate(() => { const h = window.__holes || []; window.__holes = []; return h; }).catch(() => []);
+    ok(`donor ${three[0].id} · its record slow to arrive — no sentence with a missing name in it while it waits`, holes.length === 0, holes.slice(0, 3));
+    await page.unroute(slow);
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    trouble = [];
   }
 
   // FIX-25 · DELETE A MEETING, THEN UNDO. A tester deleted a meeting and saw no

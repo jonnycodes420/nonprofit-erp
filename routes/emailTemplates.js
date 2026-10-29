@@ -152,10 +152,11 @@ async function personSample(orgId, person) {
                                   receipt_address, tax_language FROM orgs WHERE id=?`, [orgId]);
   const v = Object.fromEntries(BK.MERGE_FIELDS.map(f => [f.key, f.sample]));
   // FIX-56: the sender's signature, never the brand kit's sample person.
-  const sig = BK.senderSignature(o).text;
+  // FIX-57: her own from My profile first (person is the signed-in user).
+  const sig = BK.senderSignature(o, person).text;
   const GR = await import("../shared/greeting.js");
   return { ...v, first_name: GR.firstNames(person) || v.first_name, greeting: GR.greetingName(person) || v.first_name, full_name: person.name || v.full_name,
-    org_name: (o && o.name) || v.org_name, signature: sig || v.signature, org_address: (o && o.receipt_address) || "",
+    org_name: (o && o.name) || v.org_name, signature: sig, org_address: (o && o.receipt_address) || "",
     tax_language: (o && o.tax_language) || BK.DEFAULT_TAX_LANGUAGE((o && (o.legal_name || o.name)) || "") };
 }
 // A campaign starter, in this org's name and words, as the six are offered on
@@ -173,8 +174,15 @@ async function templateRow(orgId, id) {
   const [r] = await query(`SELECT * FROM email_templates WHERE id=? AND org_id=?`, [id, orgId]);
   return r || null;
 }
+// FIX-57: the starter's signature block is the sender's, as she signs in My
+// profile (name, title, photo), else her account name.
+const signLines = u => ({ name: String((u && (u.sign_name || u.name)) || "").trim(), title: String((u && u.sign_title) || "").trim(), photo: (u && u.sign_photo) || null });
+async function signerOf(orgId, who) {
+  const [u] = who && who.id ? await query(`SELECT ${BK.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [who.id, orgId]) : [];
+  return signLines(u || { name: who && who.name });
+}
 async function me(req) {
-  const [u] = await query(`SELECT id, name, email FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  const [u] = await query(`SELECT ${BK.SIGN_COLUMNS}, email FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
   return u || {};
 }
 // The signed-in person as the sample donor: their own name, and their own
@@ -243,7 +251,7 @@ starterTemplateImpl = async function (orgId, starterKey, who = {}) {
   await run(`INSERT INTO email_templates (id, org_id, starter_key, name, purpose, subject, preheader, blocks, created_by, created_by_name)
              VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
     [id, orgId, s.key, s.name, s.purpose, s.subject || "", s.preheader || "",
-     JSON.stringify(fillStarterLinks(LIB.signStarterBlocks(s.blocks, { name: who.name || "" }), ectx)), who.id || null, who.name || null]);
+     JSON.stringify(fillStarterLinks(LIB.signStarterBlocks(s.blocks, await signerOf(orgId, who)), ectx)), who.id || null, who.name || null]);
   return id;
 };
 
@@ -274,7 +282,7 @@ app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res
     const person = await me(req);
     const ectx = await buildEmailContext(orgId);
     base = { starter_key: s.key, name: s.name, purpose: s.purpose, subject: s.subject, preheader: s.preheader,
-             blocks: fillStarterLinks(LIB.signStarterBlocks(s.blocks, { name: person.name }), ectx) };
+             blocks: fillStarterLinks(LIB.signStarterBlocks(s.blocks, signLines(person)), ectx) };
   } else if (b.copyOf) {
     const src = await templateRow(orgId, b.copyOf);
     if (!src) return res.status(404).json({ error: "Template not found" });

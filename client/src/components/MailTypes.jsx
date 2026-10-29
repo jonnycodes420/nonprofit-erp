@@ -281,7 +281,9 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
           <div key={h.id} style={rowStyle} data-testid="going-out-held-row">
             <span style={{ flex: "1 1 150px", fontWeight: 600 }}>{h.name || "Someone"}</span>
             <span style={{ flex: "2 1 220px", color: T.ink2 }}>{h.what}</span>
-            <span style={{ color: T.ink3, flex: "1 1 200px" }}>Not sent: {h.why} · {day(h.at)}</span>
+            <span style={{ color: T.ink3, flex: "1 1 200px" }}>Not sent: {h.why} · {day(h.at)}
+              {/* FIX-57: the one fix for a receipt with no address is a link away */}
+              {h.reason === "no_org_address" && <> · <a data-testid="held-add-address" href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your mailing address in Settings</a></>}</span>
             <button type="button" style={linkBtn} onClick={() => show(h.typeName, `${orgPath}/going-out/held/${h.id}`)}>See it</button>
             {!readOnly && <button type="button" style={linkBtn} data-testid="going-out-held-send" onClick={() => sendHeld(h)}>Send</button>}
           </div>

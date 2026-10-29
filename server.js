@@ -301,7 +301,10 @@ async function orgTzName(orgId) {
 // tests/actor-stamp.test.js pins that every INSERT into the actor tables
 // carries these two values.
 function actor(req) {
-  return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && req.user.email) || null };
+  // FIX-57: a change made in a support session is Steward support's, by name.
+  if (req && req.user && req.user.support) return { id: req.user.userId, name: req.user.support.name };
+  // FIX-57: the person's name ("Reviewed by Robin Lee"); the email only if she never set one.
+  return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && (req.user.name || req.user.email)) || null };
 }
 // MOVED UP HERE FROM THE AGENT SECTION (BUILD-99 Part 4). The prospect brief is
 // declared ~5,000 lines before the agent block and reads this, and `scripts/
@@ -653,6 +656,8 @@ app.use(require("./middleware/auditTrail").auditTrail());
 // HARDEN-1: a write from a page painted for one org never lands in another
 // (middleware/orgBound.js). Beside the audit write, above every router.
 app.use(require("./middleware/orgBound").orgBound());
+// FIX-57: a "by" field that holds a staff email reads as her name (middleware/staffNames.js).
+app.use(require("./middleware/staffNames").staffNames({ query }));
 // JOURNEYS-4: after a staff write succeeds, the journey triggers that read
 // rows (an auction win, a no-show, a pledge, a finished call) are checked for
 // that org at once, rather than waiting for the hourly sweep. routes/crm.js
@@ -924,6 +929,9 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 // Admin routes are low-frequency, so the extra indexed lookup is not on the
 // read hot path.
 const requireAdmin = wrap(async (req, res, next) => {
+  // FIX-57: a support session acts as an admin of the org it was opened for
+  // (its own users row is in another org); requireAuth already decided it.
+  if (req.user && req.user.support) return next();
   const rows = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
   if (!rows.length) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
   if (rows[0].role !== "admin") return res.status(403).json({ error: "Admin access required" });
@@ -1495,7 +1503,7 @@ async function recordGift(o) {
   // after-change step below are consequences of the gift, not the gift. A
   // caller a person is waiting on (To confirm) passes `deferTriggers` and they
   // run straight after the response, in this order, exactly as they would
-  // have: `later` settles when they are done. Everyone else waits as before.
+  // have: `start()` sets them going, `later` settles when they are done. Everyone else waits as before.
   const triggers = async () => {
     // ── BUILD-94 Part 3 — THE TRIGGERS FIRE HERE, AND NOWHERE ELSE ───────────
     // FIRST GIFT EVER is a fact about the rollup that just happened: gift_count
@@ -1599,12 +1607,15 @@ async function recordGift(o) {
         fire: oldHistory || fromImport ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
     }
   };
-  let later = null;
+  // FIX-57: they start when the caller says the answer is sent (`start`), not
+  // on the next tick, where they raced the answer's own statements for the
+  // pool. A caller that passes deferTriggers must call start(), on every path.
+  let later = null, start = null;
   if (o.deferTriggers === true) {
-    later = new Promise(r => setImmediate(r)).then(triggers)
+    later = new Promise(r => { start = r; }).then(triggers)
       .catch(e => console.error("[gift] after the response:", e.message));
   } else await triggers();
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras, later };
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras, later, start };
 }
 
 // ── ENGAGE-1 — THE TWO SCORES ──────────────────────────────────────────────
@@ -4429,6 +4440,7 @@ app.use(require("./routes/voice").routers.r0);         // VOICE-1 Tell Steward
 app.use(require("./routes/atlas").routers.r0);         // AGENT-5 Atlas
 app.use(require("./routes/clientSafe").routers.r0);    // CLIENT-SAFE-1 privacy mode
 app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support agent
+app.use(require("./routes/supportAccess").routers.r0);   // FIX-57 open as support, and the org's off switch
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
@@ -12507,6 +12519,7 @@ require("./routes/agent").mount({
 // VOICE-1: Tell Steward plans and undoes through the Agent's engine, so it mounts after it.
 require("./clientSafe").configure({ query, run, uuid, aiGate, anthropicFor, recordAiFallback });
 require("./routes/clientSafe").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, actor, uuid, aiGate });
+require("./routes/supportAccess").mount({ query, run, wrap, requireAuth, requireAdmin, requireSuperAdmin, uuid });   // FIX-57
 require("./routes/support").mount({ query, run, wrap, requireAuth, requireSuperAdmin, aiGate, anthropicFor, recordAiFallback, resend, uuid, actor, AGENT_MODEL });
 require("./routes/voice").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, recordGift, AGENT_MODEL });
 require("./routes/atlas").mount({ query, run, wrap, requireAuth, checkWriteAccess, actor, uuid, orgTz, orgToday, agentGate, AGENT_MODEL });   // AGENT-5

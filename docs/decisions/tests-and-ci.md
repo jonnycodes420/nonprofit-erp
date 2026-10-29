@@ -264,3 +264,9 @@ Full before/after + break-glass: `audit/deploy-rewire.md`. The shape:
 - GitHub connected, but git auto-build is DISABLED for main (`git.deploymentEnabled:{main:false}` in root vercel.json) — the frontend deploys only via the `deploy-vercel` Actions job (see "Deploys" above); backend auto-deploy is disconnected too
 - Custom domain: stewardapp.dev → DNS via Vercel nameservers
 - Resend domain verified: stewardapp.dev, sends from noreply@stewardapp.dev
+- **No fixed sleep for a server to boot, and count only your own statements (FIX-57).** An in-process suite
+  waits on `helpers.untilReady()` (GET /ready), never `setTimeout(3500)`. A suite that counts or delays SQL
+  counts only the request it is measuring (capture1-zero-day §9: an AsyncLocalStorage entered on the server's
+  own `request` event for a marked request, ended by its `finish`); the job worker's polls are not yours.
+- **The smoke walk fails on a sentence with a hole in it (FIX-57):** " for .", "Dear ,", two spaces, "undefined",
+  "null", "NaN", sampled every 100 ms from first paint, so a loading moment counts.

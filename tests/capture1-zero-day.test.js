@@ -62,10 +62,29 @@ for (const k of ["log", "error", "warn"]) { const o = console[k]; console[k] = (
 // FIX-45 §9: prod's database is a round trip away and this one is not. While
 // PG_DELAY is on, every statement waits that long first, which is how a
 // confirm that is quick here took over 30 seconds on Harborlight.
+// FIX-57: counted and delayed are ONLY the statements the confirm request
+// makes before its answer is sent. Counting the whole process took in the job
+// worker's polls (BEGIN, SELECT, COMMIT each second) and work an earlier
+// section left running, and the count wandered from 36 to 67 run to run.
+// The request is marked by a header and runs in its own async context (the
+// server's own "request" event, below); its answer ends the count.
+const { AsyncLocalStorage } = require("async_hooks");
+const MARK = "x-capture1-count";
+const als = new AsyncLocalStorage();
+{ const proto = http.Server.prototype, emit = proto.emit;
+  proto.emit = function (ev, req, res) {
+    if (ev === "request" && req && req.headers && req.headers[MARK]) {
+      const store = { done: false };
+      res.on("finish", () => { store.done = true; });
+      return als.run(store, () => emit.apply(this, arguments));
+    }
+    return emit.apply(this, arguments);
+  }; }
 let PG_DELAY = 0, PG_COUNT = 0;
 { const pg = require("pg"); const real = pg.Client.prototype.query;
   pg.Client.prototype.query = function (...a) {
-    if (!PG_DELAY) return real.apply(this, a);
+    const mine = als.getStore();
+    if (!PG_DELAY || !mine || mine.done) return real.apply(this, a);
     PG_COUNT++;
     // The pool calls with a callback; a direct client call wants a promise.
     if (typeof a[a.length - 1] === "function") { setTimeout(() => real.apply(this, a), PG_DELAY); return undefined; }
@@ -147,7 +166,7 @@ async function reset() {
   console.log("capture1-zero-day (CAPTURE-1)");
   await new Promise(r => mock.listen(MOCK, r));
   require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await reset();
 
   const pw = bcrypt.hashSync("loadtest1234", 4);
@@ -338,12 +357,17 @@ async function reset() {
   const [members] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
   PG_DELAY = 20; PG_COUNT = 0;
   const t9 = performance.now();
-  const fast = await api("POST", `/capture/${oc.id}/confirm`, tok, { amountCents: 150000, date: "2026-10-13", donorId: "d_cap1_james", fundId: "f_cap1_gen", kind: "check" });
+  const fast = await fetch(`${process.env.BASE}/capture/${oc.id}/confirm`, { method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok, [MARK]: "1" },
+    body: JSON.stringify({ amountCents: 150000, date: "2026-10-13", donorId: "d_cap1_james", fundId: "f_cap1_gen", kind: "check" }) })
+    .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
   const ms9 = Math.round(performance.now() - t9), n9 = PG_COUNT;
   PG_DELAY = 0;
   ok(`§9 confirm answers in under 2 seconds with 20ms per statement (took ${ms9}ms)`, fast.status === 200 && ms9 < 2000
     && fast.body.card && fast.body.card.status === "confirmed" && !!fast.body.thankYouDraft, { ms9, status: fast.status });
-  ok(`§9 the answer waits on the gift, its draft and the card only: at most 70 statements (${n9})`, n9 <= 70, n9);
+  // FIX-57: counted exactly now, 34 on 78e156e every run; the planted defect
+  // (confirm without deferTriggers) is 64. The limit leaves room for growth.
+  ok(`§9 the answer waits on the gift, its draft and the card only: at most 45 statements (${n9})`, n9 <= 45, n9);
   await api("GET", `/capture/${oc.id}/settled`, tok);
   const [seen] = await q(`SELECT COUNT(*)::int AS n FROM group_sweep_seen WHERE group_id='aud_cap1_all' AND donor_id <> '__baseline__'`);
   const [thr] = await q(`SELECT next_step_label FROM threads WHERE org_id=$1 AND donor_id='d_cap1_james' AND closed_at IS NULL`, [ORG]);

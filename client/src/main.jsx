@@ -71,6 +71,7 @@ const TermsPage          = React.lazy(() => import("./pages/TermsPage"));
 const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
+import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -124,6 +125,13 @@ function AuthProvider({ children }) {
     setAuth(data);
   };
   const logout = () => {
+    // FIX-57: signing out of a support session ends it and goes back to the
+    // super-admin's own console.
+    if (inSupport()) {
+      apiFetch("/support-session/end", { method: "POST", body: "{}" }).catch(() => {})
+        .finally(() => { if (!leaveSupport()) { localStorage.removeItem("npe_token"); localStorage.removeItem("npe_user"); localStorage.removeItem("npe_org"); window.location.href = "/login"; } });
+      return;
+    }
     // SEC-1 — end this session on the server too, so the token is dead and the
     // session leaves the list. Best effort: signing out never waits on it.
     if (localStorage.getItem("npe_token")) apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => {});

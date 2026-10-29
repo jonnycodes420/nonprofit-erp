@@ -187,7 +187,9 @@ export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved
               <div style={{ whiteSpace: "pre-wrap", fontSize: 13, color: T.ink, lineHeight: 1.55 }}>{pv.body}</div>
               {/* FIX-56: the signature, address and tax lines are the org's, never looked up on the donor. */}
               {pv.missing.filter(m => !ORG_FIELDS.has(m)).length > 0 && <div style={{ fontSize: 12, color: T.gold700 }}>{pv.donor.name} has nothing on file for: {pv.missing.filter(m => !ORG_FIELDS.has(m)).map(m => m.replace(/_/g, " ")).join(", ")}.</div>}
-              {pv.signatureFromBrand === false && <div data-testid="add-signature" style={{ fontSize: 12, color: T.ink2 }}>It is signed with your organization's name. <a href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your signature in Brand</a></div>}
+              {/* FIX-57: a receipt never prints "[org address]"; the preview says where to add it */}
+              {pv.missing.includes("org_address") && <div data-testid="add-address" style={{ fontSize: 12, color: T.gold700 }}>Add your mailing address in Settings: <a href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Brand kit, Address</a>. Until then a receipt is held, not sent.</div>}
+              {pv.signatureFromBrand === false && <div data-testid="add-signature" style={{ fontSize: 12, color: T.ink2 }}>It is signed with your organization's name. <a href="/app/settings?section=profile" style={{ color: T.greenDk, fontWeight: 700 }}>Add your signature in My profile</a>, or the organization's in Brand.</div>}
               {pv.unknown.length > 0 && <div style={{ fontSize: 12, color: T.gold700 }}>Not merge fields: {pv.unknown.map(u => `{{${u}}}`).join(", ")}.</div>}
             </div>
           </div>

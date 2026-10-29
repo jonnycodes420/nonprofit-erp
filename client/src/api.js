@@ -1,6 +1,7 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
 import { saveDrafts } from "./lib/idleDraft";
+import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -97,6 +98,9 @@ export const leavingForLogin = () => _leavingForLogin;
 export function handleAuthFailure(code) {
   // SECURE-2 item 7: an idle sign-out keeps what was being typed.
   if (code === "session_idle") saveDrafts();
+  // FIX-57: a support session that ended (closed, two hours, or the org
+  // turned support access off) goes back to the super-admin's own console.
+  if (inSupport() && leaveSupport()) return;
   localStorage.removeItem("npe_token");
   localStorage.removeItem("npe_user");
   localStorage.removeItem("npe_org");

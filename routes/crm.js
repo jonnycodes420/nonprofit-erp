@@ -653,7 +653,8 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
         AND d.deleted_at IS NULL
       ORDER BY g.amount DESC, t.created_at ASC`, [orgId]);
   const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
-  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const BKq = await import("../shared/brandKit.js");
+  const [me] = await query(`SELECT ${BKq.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [req.user.userId, orgId]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
   const draftMod = await import("../shared/draftNote.js");
@@ -670,7 +671,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
       fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
       // POLISH-2: signed by whoever is reading the queue, since she sends it.
-      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice,
+      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: (me && (BKq.personSignature(me) || me.name)), orgName: org && org.name, voiceUsed: r.voice,
         person: { salutation: r.donor_salutation, spouseName: r.donor_spouse, kind: r.donor_kind } }) })),
   });
 }));
@@ -1545,8 +1546,10 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
   res.json({
-    user: { id: u.id, email: u.email, name: u.name, role: u.role, canMajorGifts: await require("../prospect").canSee(u.id) },   // PROSPECT-1
+    user: { id: u.id, email: u.email, name: u.name, role: req.user.support ? "admin" : u.role, canMajorGifts: await require("../prospect").canSee(u.id) },   // PROSPECT-1
     org: orgs[0],
+    // FIX-57: a support session says so, so the banner reads the server.
+    ...(req.user.support ? { support: { ...req.user.support, orgName: orgs[0].name } } : {}),
     notifications: mapNotifyPrefs(u),
   });
 }));
@@ -1565,6 +1568,51 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
   const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id=?", [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
+}));
+
+// ── FIX-57 · MY PROFILE: A SIGNATURE FOR EACH PERSON ──────────────────────
+// The name she signs with, title, phone, an optional photo from the org's
+// media library, and the block (blank: those lines). What is drafted for her
+// signs with it, ahead of Brand's (shared/brandKit.js senderSignature).
+async function myProfile(req) {
+  const BK = await import("../shared/brandKit.js");
+  const [u] = await query(`SELECT ${BK.SIGN_COLUMNS}, email FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  if (!u) return null;
+  const [o] = await query("SELECT name, receipt_signature_name, receipt_signature_title, brand_signature_extra FROM orgs WHERE id=?", [req.user.orgId]);
+  const sig = BK.senderSignature(o, u);
+  return { name: u.name || "", email: u.email, signName: u.sign_name || "", title: u.sign_title || "", phone: u.sign_phone || "",
+    photo: u.sign_photo || null, block: u.sign_block || "",
+    // what her drafts are signed with now, and where it came from
+    signature: sig.text, from: sig.from };
+}
+app.get("/me/profile", requireAuth, wrap(async (req, res) => {
+  const p = await myProfile(req);
+  if (!p) return res.status(404).json({ error: "Not found" });
+  res.json(p);
+}));
+app.put("/me/profile", requireAuth, wrap(async (req, res) => {
+  const b = req.body || {};
+  const clip = (v, n) => String(v == null ? "" : v).replace(/[\u0000-\u0008\u000b-\u001f]/g, "").trim().slice(0, n) || null;
+  let photo;
+  if (b.photoId === null || b.photoId === "") photo = null;
+  else if (b.photoId !== undefined) {
+    const [m] = await query("SELECT asset_id FROM media_items WHERE id=? AND org_id=? AND kind='photo' AND removed_at IS NULL", [String(b.photoId), req.user.orgId]);
+    if (!m) return res.status(400).json({ error: "bad_photo", sentence: "Choose a photo from your media library." });
+    photo = `/portal-assets/${m.asset_id}`;
+  }
+  const [prior] = await query("SELECT sign_name, sign_title, sign_phone, sign_photo, sign_block FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  if (!prior) return res.status(404).json({ error: "Not found" });
+  const next = {
+    sign_name: b.signName !== undefined ? clip(b.signName, 120) : prior.sign_name,
+    sign_title: b.title !== undefined ? clip(b.title, 120) : prior.sign_title,
+    sign_phone: b.phone !== undefined ? clip(b.phone, 40) : prior.sign_phone,
+    sign_photo: photo !== undefined ? photo : prior.sign_photo,
+    sign_block: b.block !== undefined ? (String(b.block || "").replace(/\r/g, "").trim().slice(0, 600) || null) : prior.sign_block,
+  };
+  if (req.audit) { req.audit.before(prior); req.audit.after(next); }
+  await run(`UPDATE users SET sign_name=?, sign_title=?, sign_phone=?, sign_photo=?, sign_block=? WHERE id=? AND org_id=?`,
+    [next.sign_name, next.sign_title, next.sign_phone, next.sign_photo, next.sign_block, req.user.userId, req.user.orgId]);
+  res.json(await myProfile(req));
 }));
 
 // ── Per-user Home layout (BUILD-34) ────────────────────────────────────────
@@ -27553,8 +27601,8 @@ async function openNoShowTask(orgId, eventId, who) {
       ORDER BY d.name`, [event.id, orgId]);
   if (!missed.length) return null;
   const BKit = await import("../shared/brandKit.js");
-  const [u] = who && who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]) : [];
-  const signature = (u && u.name) || (who && who.name) || "";
+  const [u] = who && who.id ? await query(`SELECT ${BKit.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [who.id, orgId]) : [];
+  const signature = BKit.personSignature(u) || (u && u.name) || (who && who.name) || "";   // FIX-57: her own block first
   for (const m of missed) {
     if (!m.email) continue;
     const key = `event_missed:${event.id}`;

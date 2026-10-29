@@ -310,6 +310,29 @@ async function reset() {
     // A giving page with no photo of its own carries the header image too.
     await live.goto(`${APP}/give/${SLUG}/story-page`, { waitUntil: "networkidle" });
     ok("§7 a giving page with no photo shows the org's header image", await live.evaluate(() => !!document.querySelector('[data-testid="giving-page"] [data-testid="page-header-image"] img')));
+
+    // ── §8 · FIX-57: an anonymous visit asks nothing that can only say 401 ──
+    // The giving page asked the donor portal's give-default on every visit,
+    // and a stranger with no donor session took a 401 into the console. With
+    // the portal on (the case where it was asked), a fresh browser with no
+    // session loads the org form, a giving page and the membership page with
+    // no 4xx response and no console error. Red on main: give-default, 401.
+    console.log("\n— §8 · an anonymous visit has no 4xx —");
+    await q(`UPDATE portal_settings SET enabled=true WHERE org_id=$1`, [ORG]);
+    const anon = await browser.newContext({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
+    const stranger = await anon.newPage();
+    const bad = [], errs = [];
+    // /_vercel/* (analytics) exists only on Vercel; the local preview 404s it.
+    const vercelOnly = u => /\/_vercel\//.test(String(u || ""));
+    stranger.on("response", r => { if (r.status() >= 400 && !vercelOnly(r.url())) bad.push(`${r.status()} ${r.url().replace(/^https?:\/\/[^/]+/, "")}`); });
+    stranger.on("console", m => { if (m.type() === "error" && !vercelOnly(m.location() && m.location().url)) errs.push(`${m.text().slice(0, 120)} ${(m.location() && m.location().url) || ""}`); });
+    for (const u of [`/give/${SLUG}`, `/give/${SLUG}/story-page`, `/give/${SLUG}?memberships`]) {
+      await stranger.goto(`${APP}${u}`, { waitUntil: "networkidle" });
+      await stranger.waitForTimeout(300);
+    }
+    ok("§8 an anonymous giving page load has no 4xx response", bad.length === 0, bad);
+    ok("§8 and no console error", errs.length === 0, errs);
+    await anon.close();
     await browser.close();
   }
 

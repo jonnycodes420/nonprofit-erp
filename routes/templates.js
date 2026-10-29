@@ -70,9 +70,24 @@ app.put("/brand-kit", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   res.json({ ...kitOf(await orgOf(o.id)), palette: B.PALETTE });
 }));
 
+// FIX-57 · WHO SIGNS IT. The assignee of the task it was opened from (a
+// thank-you task's email), else the person opening it. Same org only.
+async function signerFor(req) {
+  const taskId = String((req.body && req.body.taskId) || "");
+  if (taskId) {
+    const [t] = await query("SELECT assigned_to FROM tasks WHERE id=? AND org_id=?", [taskId, req.user.orgId]);
+    if (t && t.assigned_to) {
+      const [u] = await query(`SELECT ${B.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [t.assigned_to, req.user.orgId]);
+      if (u) return u;
+    }
+  }
+  const [me] = await query(`SELECT ${B.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  return me || null;
+}
+
 // ── FACTS FOR A PERSON ─────────────────────────────────────────────────────
 // Every merge field's value for one donor, from their own record.
-async function factsFor(org, donorId) {
+async function factsFor(org, donorId, signer = null) {
   const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, org.id]);
   if (!d) return null;
   const year = orgTime.orgToday(org).slice(0, 4);
@@ -99,7 +114,7 @@ async function factsFor(org, donorId) {
       year, year_total: c(tot.yr) > 0 ? fmt$(c(tot.yr)) : "", lifetime_total: c(tot.life) > 0 ? fmt$(c(tot.life)) : "",
       monthly_amount: sub ? fmt$(c(sub.amount)) : "", event_name: ev ? ev.name : "",
       volunteer_hours: vh && vh.hh ? String(vh.hh / 100) : "",
-      org_name: org.name, signature: B.senderSignature(org).text, org_address: k.address, tax_language: k.taxLanguage || k.taxLanguageDefault,
+      org_name: org.name, signature: B.senderSignature(org, signer).text, org_address: k.address, tax_language: k.taxLanguage || k.taxLanguageDefault,
     },
   };
 }
@@ -145,14 +160,15 @@ app.post("/templates/:kind/preview", requireAuth, wrap(async (req, res) => {
   const t = await templateOf(req.user.orgId, req.params.kind);
   if (!t) return res.status(404).json({ error: "Not found" });
   const org = await orgOf(req.user.orgId);
-  const f = await factsFor(org, String((req.body && req.body.donorId) || ""));
+  const signer = await signerFor(req);
+  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), signer);
   if (!f) return res.status(404).json({ error: "Choose one of your people to preview against." });
   const s = B.renderTemplate(req.body && req.body.subject != null ? req.body.subject : t.subject, f.values);
   const b = B.renderTemplate(req.body && req.body.body != null ? req.body.body : t.body, f.values);
   res.json({ donor: f.donor, subject: s.text, body: b.text, missing: [...new Set([...s.missing, ...b.missing])],
     unknown: [...new Set([...s.unknown, ...b.unknown])], brand: kitOf(org), reviewed: t.reviewed, channel: t.channel,
-    // FIX-56: the signature is the org's; with none in Brand the screen says where to add one.
-    signatureFromBrand: B.senderSignature(org).fromBrand });
+    // FIX-56/57: the signer's own signature, else Brand's; with neither the screen says where to add one.
+    signatureFromBrand: B.senderSignature(org, signer).fromBrand, signatureFrom: B.senderSignature(org, signer).from });
 }));
 
 async function usable(req, res) {
@@ -160,10 +176,12 @@ async function usable(req, res) {
   if (!t) { res.status(404).json({ error: "Not found" }); return null; }
   if (!t.reviewed) { res.status(409).json({ error: "not_reviewed", sentence: "This template is still in Steward's starting words. Read it, change what you like and save it, then use it." }); return null; }
   const org = await orgOf(req.user.orgId);
-  const f = await factsFor(org, String((req.body && req.body.donorId) || ""));
+  const f = await factsFor(org, String((req.body && req.body.donorId) || ""), await signerFor(req));
   if (!f) { res.status(404).json({ error: "Choose one of your people." }); return null; }
   const s = B.renderTemplate(t.subject, f.values), b = B.renderTemplate(t.body, f.values);
   const missing = [...new Set([...s.missing, ...b.missing])];
+  // FIX-57: the org's address is the org's to add, not a fact about the donor.
+  if (missing.includes("org_address")) { res.status(409).json({ error: "missing_fields", missing, sentence: "Add your mailing address in Settings (Brand kit, Address) first. A receipt never goes out without it." }); return null; }
   if (missing.length) { res.status(409).json({ error: "missing_fields", missing, sentence: `${f.donor.name} has nothing on file for: ${missing.map(m => m.replace(/_/g, " ")).join(", ")}. Choose another template or fill those in first.` }); return null; }
   return { t, org, f, subject: s.text, body: b.text };
 }

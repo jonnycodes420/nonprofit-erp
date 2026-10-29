@@ -8685,6 +8685,26 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS client_privacy_changed_by TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_client BOOLEAN DEFAULT false`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_is_client ON donors (org_id) WHERE is_client`);
+
+  // FIX-57 · SUPPORT ACCESS. A super-admin opens one org as Steward support:
+  // read-only until a second confirm, every open and every change in the
+  // org's Activity. An org turns it off in Settings (on by default, because
+  // this is what replaces anyone reading prod data to debug a screen).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_off BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_changed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS support_access_changed_by TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS support_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      support_name TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      write_enabled_at TIMESTAMPTZ,
+      ended_at TIMESTAMPTZ)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_support_sessions_org ON support_sessions (org_id, started_at DESC)`);
   // One row per detail held back. It says THAT something was held and where,
   // never what: there is no column that could carry the words.
   await pool.query(`
@@ -8735,6 +8755,16 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL, created_by_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
+
+  // FIX-57 · A SIGNATURE FOR EACH PERSON. Settings, My profile: the name she
+  // signs with, her title, phone, an optional photo, and the block itself
+  // (blank: those lines, in that order). It signs what is drafted for her,
+  // ahead of Brand's signature (shared/brandKit.js senderSignature).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_name TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_title TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_phone TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_photo TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_block TEXT`);
 
   // LIST-1 · THE DONOR LIST'S COLUMNS. One layout per person (user_id), and
   // one org default (user_id ''), set by an admin. A saved view is a name for
