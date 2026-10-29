@@ -6192,6 +6192,9 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_last_counter BIGINT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
+  // SECURE-2 item 8: staff may take a file of more than 1,000 people only when
+  // an admin allows it here (exportGuard.js). Off for every org, new and old.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS allow_staff_large_exports BOOLEAN NOT NULL DEFAULT false`);
   // SEC-1 — two-factor for everyone, and the sessions it guards.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_mfa BOOLEAN NOT NULL DEFAULT false`);
   // TRUST-2 — the day a person was erased at their request (personData.js).
@@ -6285,6 +6288,15 @@ async function runSchemaInit(pool) {
       user_agent TEXT, ip_prefix TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), last_active_at TIMESTAMPTZ DEFAULT NOW(),
       revoked_at TIMESTAMPTZ, revoked_by TEXT)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions (user_id, revoked_at)`);
+  // SECURE-2 item 7: a session with no activity for the org's idle minutes is
+  // signed out (default 60; an admin sets 15 to 480). And every browser a
+  // person has signed in from, by a one-way fingerprint, so a new one is told.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS idle_minutes INTEGER NOT NULL DEFAULT 60`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_devices (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_hash TEXT NOT NULL,
+      first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_hash ON user_devices (user_id, device_hash)`);
 
   // ── BUILD-101 — MEMBERSHIPS ────────────────────────────────────────────
   // A level: a price, the org's stated fair-market value of its benefits

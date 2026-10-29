@@ -147,11 +147,12 @@ export function pageShell(shell) {
 }
 
 // One finished page: its head, the fonts without blocking the first paint
-// (Site.jsx sees data-mk-fonts and does not add them twice), the white
+// (Site.jsx sees data-mk-fonts, does not add them twice, and switches them
+// from print to all: SECURE-2's CSP runs no inline onload handler), the white
 // marketing ground, and the rendered page inside #root.
 export function assemblePage(base, route, html, extra) {
   return base
-    .replace("</head>", `    ${headTags(route, html, extra)}\n    <link rel="stylesheet" href="${FONTS.replace(/&/g, "&amp;")}" data-mk-fonts media="print" onload="this.media='all'" />\n  </head>`)
+    .replace("</head>", `    ${headTags(route, html, extra)}\n    <link rel="stylesheet" href="${FONTS.replace(/&/g, "&amp;")}" data-mk-fonts media="print" />\n  </head>`)
     .replace(/<body style="background:#0f1a12">/, '<body style="background:#FFFFFF">')
     .replace('<div id="root"></div>', `<div id="root">${html}</div>`);
 }

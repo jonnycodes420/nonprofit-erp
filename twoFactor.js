@@ -27,7 +27,9 @@ const LOCK_MINUTES = 15;
 const TRUST_DAYS = 30;
 const EMAIL_CODE_MINUTES = 10;
 const RECOVERY_COUNT = 10;
-const TOUCH_EVERY_MS = 5 * 60 * 1000;
+// SECURE-2 item 7: a minute, so a 15-minute idle limit is measured to the minute.
+const TOUCH_EVERY_MS = 60 * 1000;
+const IDLE_MIN = 15, IDLE_MAX = 480, IDLE_DEFAULT = 60;
 const DEMO_SENTENCE = "Two-factor is turned off for the shared demo login. In your own account it takes about a minute.";
 
 const sha = s => crypto.createHash("sha256").update(String(s)).digest("hex");
@@ -74,17 +76,35 @@ async function issueSession(user, req, signToken) {
   return { token, sid };
 }
 async function sessionAlive(sid, userId) {
+  return (await sessionState(sid, userId)).ok;
+}
+// SECURE-2 item 7: alive, and why not. A session with no request for longer
+// than its org's idle minutes is signed out here (revoked_by system:idle), so
+// a token left in a closed tab or a copied one stops working on its own. The
+// browser does the same sooner, from real typing and clicking (IdleGuard.jsx),
+// because background reads keep last_active_at fresh.
+async function sessionState(sid, userId) {
   const now = Date.now();
   const hit = alive.get(sid);
-  if (hit && hit.expires > now) return hit.ok;
-  const [row] = await query(`SELECT user_id, revoked_at FROM user_sessions WHERE id=?`, [sid]);
-  const ok = !!row && !row.revoked_at && row.user_id === userId;
-  alive.set(sid, { ok, expires: now + cacheTtl() });
+  if (hit && hit.expires > now) return { ok: hit.ok, idle: !!hit.idle };
+  const [row] = await query(
+    `SELECT s.user_id, s.revoked_at, s.revoked_by, s.last_active_at, COALESCE(o.idle_minutes, ${IDLE_DEFAULT}) AS idle_minutes
+       FROM user_sessions s LEFT JOIN orgs o ON o.id = s.org_id WHERE s.id=?`, [sid]);
+  let ok = !!row && !row.revoked_at && row.user_id === userId;
+  let idle = !!row && row.revoked_by === "system:idle";
+  if (ok && row.last_active_at) {
+    const mins = Math.min(IDLE_MAX, Math.max(IDLE_MIN, Number(row.idle_minutes) || IDLE_DEFAULT));
+    if (now - new Date(row.last_active_at).getTime() > mins * 60 * 1000) {
+      await run(`UPDATE user_sessions SET revoked_at=NOW(), revoked_by='system:idle' WHERE id=? AND revoked_at IS NULL`, [sid]).catch(() => {});
+      ok = false; idle = true;
+    }
+  }
+  alive.set(sid, { ok, idle, expires: now + cacheTtl() });
   if (ok && (now - (touched.get(sid) || 0)) > TOUCH_EVERY_MS) {
     touched.set(sid, now);
     run(`UPDATE user_sessions SET last_active_at=NOW() WHERE id=?`, [sid]).catch(() => {});
   }
-  return ok;
+  return { ok, idle };
 }
 async function revokeSessions(where, args, by) {
   const rows = await query(
@@ -207,10 +227,41 @@ async function mailUser(user, resend, subject, sentenceHtml) {
   } catch (e) { console.error("[2fa] mail failed:", e.message); return false; }
 }
 
+// ── NEW DEVICES (SECURE-2 item 7) ─────────────────────────────────────────
+// A browser is the long random id it keeps for itself (sent on sign-in as
+// deviceId), or, without one, its user agent and the first three parts of its
+// address. Only a one-way fingerprint is kept. The first browser a person
+// ever signs in from is recorded quietly: there is nothing to compare it to,
+// and "new sign-in" on someone's very first sign-in would teach them to
+// ignore the email. Every browser after that is told once.
+function deviceHash(user, req, deviceId) {
+  const id = String(deviceId || "").trim();
+  const basis = /^[A-Za-z0-9_-]{16,128}$/.test(id) ? "id:" + id
+    : "ua:" + String((req && req.headers && req.headers["user-agent"]) || "") + "|" + (ipPrefix(req && req.ip) || "");
+  return sha(user.id + ":" + basis);
+}
+function deviceLabel(req) {
+  const { browser, os } = describeAgent(req && req.headers && req.headers["user-agent"]);
+  const osWord = os === "macOS" ? "Mac" : os === "Unknown system" ? null : os;
+  return osWord ? `${browser} on ${osWord}` : browser;
+}
+// Returns { isNew, first }: isNew when this user has signed in before and
+// never from this browser.
+async function rememberDevice(user, req, deviceId) {
+  const h = deviceHash(user, req, deviceId);
+  const [seen] = await query(`SELECT id FROM user_devices WHERE user_id=? AND device_hash=?`, [user.id, h]);
+  if (seen) { await run(`UPDATE user_devices SET last_seen=NOW() WHERE id=?`, [seen.id]); return { isNew: false, first: false }; }
+  const [any] = await query(`SELECT 1 FROM user_devices WHERE user_id=? LIMIT 1`, [user.id]);
+  await run(`INSERT INTO user_devices (id,user_id,device_hash) VALUES (?,?,?) ON CONFLICT (user_id, device_hash) DO UPDATE SET last_seen=NOW()`,
+    ["udv_" + crypto.randomBytes(8).toString("hex"), user.id, h]);
+  return { isNew: !!any, first: !any };
+}
+
 module.exports = {
   LOCK_AFTER, LOCK_MINUTES, TRUST_DAYS, EMAIL_CODE_MINUTES, RECOVERY_COUNT, DEMO_SENTENCE,
   isDemoOrg, ipPrefix, describeAgent,
-  createSession, issueSession, sessionAlive, revokeSessions,
+  createSession, issueSession, sessionAlive, sessionState, revokeSessions, IDLE_MIN, IDLE_MAX, IDLE_DEFAULT,
+  rememberDevice, deviceLabel,
   makeRecoveryCodes, useRecoveryCode, recoveryLeft, looksLikeRecovery,
   sendEmailCode, useEmailCode, trustBrowser, isTrusted,
   lockedUntil, recordFailure, clearFailures, mailUser,

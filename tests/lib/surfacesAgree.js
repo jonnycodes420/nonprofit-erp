@@ -24,7 +24,9 @@
 //   skip      [names] of checks to leave out, e.g. ["atlas"] for a suite
 //             whose org pauses Atlas. Names: people, gifts, thisYear,
 //             vsLastYear, homeLine, drift, groups, events, campaigns,
-//             moveReport, search, ask, atlas, exports, deleted, finance, pledges
+//             moveReport, search, ask, atlas, exports, deleted, finance, pledges,
+//             mailCampaigns (SECURE-2: a sent email campaign says what it did,
+//             the same on every surface, from campaign_recipients)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -543,6 +545,32 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     for (const [d, body] of Array.isArray(searches) ? searches : []) {
       const hit = ((body && body.results) || []).find(x => x.id === d.id || x.donorId === d.id);
       if (hit) diffs.push(`deleted person ${d.name}: search still finds them (${hit.kind} ${hit.id})`);
+    }
+  }
+
+  // ── SECURE-2 · A SENT EMAIL CAMPAIGN SAYS WHAT IT DID, EVERYWHERE ────────
+  // The database (campaign_recipients) is the truth: N of M went. The campaign
+  // list, the sent list, Communications' recent sends and the as-sent page each
+  // say the same sentence, and it is "Not sent" when none went.
+  if (!skip.has("mailCampaigns")) {
+    const truth = await q(
+      `SELECT c.id, c.name, c.status, COUNT(cr.id)::int AS m, COUNT(cr.sent_at)::int AS n
+         FROM campaigns c JOIN campaign_recipients cr ON cr.campaign_id = c.id
+        WHERE c.org_id = $1 AND c.status IN ('sent','failed') GROUP BY c.id ORDER BY MAX(c.sent_at) DESC NULLS LAST LIMIT 20`, [orgId]);
+    if (truth.length) {
+      const [all, sentList, hub] = await Promise.all([get("/campaigns"), get("/campaigns/sent"), get("/communications/hub")]);
+      const by = (rows, id) => (Array.isArray(rows) ? rows : []).find(x => x.id === id);
+      for (const t of truth) {
+        const want = t.n === 0 ? "Not sent" : t.n < t.m ? `Sent to ${t.n.toLocaleString("en-US")} of ${t.m.toLocaleString("en-US")} · ${(t.m - t.n).toLocaleString("en-US")} not sent` : `Sent to ${t.n.toLocaleString("en-US")}`;
+        const asSent = await get(`/campaigns/${t.id}/as-sent`);
+        const said = [["the campaign list", by(all, t.id)], ["the sent list", by(sentList && sentList.campaigns, t.id)],
+          ["Communications' recent sends", by(hub && hub.campaigns, t.id)], ["the as-sent page", asSent && { delivery: asSent.delivery }]];
+        for (const [name, row] of said) {
+          if (!row) continue;   // not on that surface (the recent list holds six)
+          const got = row.delivery && row.delivery.sentence;
+          if (got !== want) diffs.push(`campaign "${t.name}": the database says ${t.n} of ${t.m} went ("${want}"), ${name} says "${got}"`);
+        }
+      }
     }
   }
 

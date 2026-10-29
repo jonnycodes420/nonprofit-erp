@@ -11,6 +11,7 @@
 // on any write), never on sign-in.
 import { useEffect, useState } from "react";
 import { apiFetch, adaptDonor, onWrite } from "../api";
+import { allPages } from "./pages";
 
 const qs = o => new URLSearchParams(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
 
@@ -49,7 +50,7 @@ export const peopleCounts = () => apiFetch("/donors/counts");
 let ALL = null;
 export function allPeople({ force = false } = {}) {
   if (force || !ALL) {
-    ALL = apiFetch("/donors/summaries").then(rows => (Array.isArray(rows) ? rows : []).map(adaptDonor));
+    ALL = allPages("/donors/summaries").then(rows => (Array.isArray(rows) ? rows : []).map(adaptDonor));   // SECURE-2: a page at a time
     ALL.catch(() => { ALL = null; });
   }
   return ALL;

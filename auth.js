@@ -140,8 +140,10 @@ async function requireAuth(req, res, next) {
     // Signing a session out (Settings, an owner, a password change) ends it on
     // its very next request. A token minted before SEC-1 has no sid and is
     // ended by sessions_valid_after, as before.
-    if (payload.sid && !(await require("./twoFactor").sessionAlive(payload.sid, payload.userId))) {
-      return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
+    if (payload.sid) {
+      const st = await require("./twoFactor").sessionState(payload.sid, payload.userId);
+      if (!st.ok && st.idle) return res.status(401).json({ error: "session_idle", message: "You were signed out after a while with no activity. Sign in again to pick up where you left off." });
+      if (!st.ok) return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
     }
     // FIX-57 · A SUPPORT SESSION is in the org it was opened for, and only
     // that one, as an admin; read-only until its second confirm
@@ -165,6 +167,8 @@ async function requireAuth(req, res, next) {
     }
     // FIX-57: her name as set, so what she does is signed with it, not her email.
     req.user = { ...payload, role: info.role, orgId: info.org_id, name: String(info.name || "").trim() || null };
+    // SECURE-2: a Sentry event names the org and the user by id, never by name.
+    if (process.env.SENTRY_DSN) { try { const sc = require("@sentry/node").getIsolationScope(); sc.setTag("org_id", info.org_id); sc.setUser({ id: payload.userId }); } catch { /* never fails a request */ } }
     // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
     // requires two-step sign-in and who has not set it up) opens the setup
     // routes and nothing else.

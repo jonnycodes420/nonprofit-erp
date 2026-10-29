@@ -201,7 +201,17 @@ export function Audience({ slug }) {
   </>;
 }
 
-const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS."], ["Connections sealed", "Keys and tokens for your other tools are encrypted per organization and never shown back in the browser."], ["An audit log for everything", "Every change, export, download and sign-in, with the before and after. Append only."], ["Your data is yours", "Export everything in a standard format whenever you like. Leave and we delete it on request."], ["Scoped access", "Volunteer coordinators and staff see what their role needs."], ["Two-factor sign-in", "A code from an authenticator app or by email, with recovery codes. An owner can require it for the whole team."], ["Sessions you control", "See every browser signed in to your account and sign any of them out. Changing your password signs out the rest."], ["A public status page", "Every service checked every minute, with 90 days of history at stewardapp.dev/status."], ["Your donors' rights", "Export everything about one person, or erase them and keep their gifts as anonymous gifts. See stewardapp.dev/your-data."], ["Established infrastructure", "Steward runs on Postgres managed by Supabase, with the app on Railway and Vercel."]];
+const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS."], ["Connections sealed", "Keys and tokens for your other tools are encrypted per organization and never shown back in the browser."], ["An audit log for everything", "Every change, export, download and sign-in, with the before and after. Append only."], ["Your data is yours", "Export everything in a standard format whenever you like. Leave and we delete it on request."], ["Scoped access", "Volunteer coordinators and staff see what their role needs."], ["Two-factor sign-in", "A code from an authenticator app or by email, with recovery codes. An owner can require it for the whole team."], ["Sessions you control", "See every browser signed in to your account and sign any of them out. Changing your password signs out the rest."], ["A public status page", "Every service checked every minute, with 90 days of history at stewardapp.dev/status."], ["Your donors' rights", "Export everything about one person, or erase them and keep their gifts as anonymous gifts. See stewardapp.dev/your-data."], ["Established infrastructure", "Steward runs on Postgres managed by Supabase, with the app on Railway and Vercel."],
+  ["Each organization walled off", "Every record is looked up within the signed-in person's organization. A test tries to reach every other organization's records through every part of Steward before each release, and a release can't ship if it fails."],
+  ["Passwords done properly", "Stored only as salted bcrypt hashes. Repeated wrong passwords are slowed, then blocked."],
+  ["Links that expire", "Password-reset links last one hour and work once; donor sign-in links last fifteen minutes. Both are stored only as a one-way fingerprint."],
+  ["Hardened pages", "Uploaded images are checked byte by byte and stored only as plain images. Anything a donor types is treated as text, never code. Pages refuse to be embedded by other sites, except the forms you choose to embed."],
+  ["Signed webhooks", "Messages from payment and email providers are checked against their signatures before Steward acts on them."],
+  ["Cards never touch Steward", "Online gifts are processed by Stripe through your own connected account."]];
+// SECURE-2 (October 2026): each line is live, and tests/security.test.js keeps it so.
+const SECURE_2 = ["Idle sign-out after a set time, chosen by your admin", "An email when your account signs in from a new browser",
+  "Every export recorded, with who, when and how many rows", "Logs and error reports that carry no donor's name, email, phone or address",
+  "A strict policy on what code a Steward page may run", "Sign-up and password reset that never reveal whether an address has an account"];
 
 export function Security() {
   return <>
@@ -210,8 +220,9 @@ export function Security() {
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
       {SECURE.map(c => <div className="card" key={c[0]}><span className="ci"><Icon k="audit" size={26} /></span><h4>{c[0]}</h4><p>{c[1]}</p></div>)}
     </div></div></section>
-    <Incl eb="On the roadmap" h="Coming <b>next.</b>" list={["Data processing agreement", "Independent security review"]} />
-    <FaqS items={[["Where is our data stored?", "In a Postgres database managed by Supabase. Backups are handled by the provider."], ["Do you sell or share donor data?", "No. Never."], ["Can we get our data out?", "Yes, any time, in a standard format."]]} />
+    <Incl eb="New in October" h="Added <b>this month.</b>" list={SECURE_2} />
+    <Incl eb="On the roadmap" h="Coming <b>next.</b>" list={["Data processing agreement, once an attorney has read the draft", "Independent penetration test"]} />
+    <FaqS items={[["Where is our data stored?", "In a Postgres database managed by Supabase, with automatic backups handled by the provider. Uploaded files are kept in the app's storage on Railway."], ["Do you sell or share donor data?", "No. Your donor list is never used for anyone else or pooled with other organizations' lists, and our AI provider doesn't train on it."], ["Can we get our data out?", "Yes, any time, in a standard format. An admin can export everything, including after you cancel."], ["Who else touches our data?", "Every company that receives any of it is listed, with what it gets and why, at stewardapp.dev/subprocessors."], ["What happens if something goes wrong?", "If an incident affects your data, we tell you within 72 hours what happened, what it touched and what we did about it."], ["Has Steward been reviewed?", "An internal security review of the whole application in October 2026. An independent penetration test is planned as our customer base grows."]]} />
     <FinalCta />
   </>;
 }
