@@ -155,6 +155,8 @@ CORE=(
   import2-history
   import3
   import4-layers
+  import5
+  fix55-import-reads
   fix52-import-undo
   fix54-deleted-stay-deleted
   surfaces-agree
@@ -216,6 +218,8 @@ CORE=(
   reports5-import
   int5-api-keys
   script-guards
+  every-test-runs
+  battery-lock
   fix15-two-worktrees
   build96-ai-gate
   incident-mail-gate
@@ -224,6 +228,7 @@ CORE=(
   fix51-leftovers
   mail-block
   send-gate
+  send-gate-2
   mail-suppression
   email-footer
   consistency-e2e
@@ -392,9 +397,14 @@ TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
 # run against an already-booted $BASE (pre-push, tests/affected.sh) boots
 # nothing and takes no lock. CI is unaffected: each runner is its own machine.
 # BATTERY_LOCK=0 skips it (never needed in normal use).
+# FIX-58: the lock code lives in tests/lib/battery-lock.sh, and nothing here
+# removes a lock except through it: lock_release removes only a lock whose pid
+# is ours, and a stale lock is taken over only under a mutex that re-reads its
+# pid (FIX-57's battery deleted SECURE-2's lock; tests/battery-lock.test.js).
+. tests/lib/battery-lock.sh
 _cleanup_locks() {
-  [ -n "${PORT_LOCK:-}" ] && rm -rf "$PORT_LOCK"
-  if [ -n "${BATTERY_LOCK_HELD:-}" ] && [ "$(cat "$BATTERY_LOCK_HELD/pid" 2>/dev/null)" = "$$" ]; then rm -rf "$BATTERY_LOCK_HELD"; fi
+  lock_release "${PORT_LOCK:-}"
+  lock_release "${BATTERY_LOCK_HELD:-}"
 }
 trap _cleanup_locks EXIT
 trap 'exit 130' INT TERM
@@ -409,31 +419,11 @@ if [ -n "${STEWARD_BATTERY_LOCK_PID:-}" ] && [ "$(cat "$BLOCK_DIR/pid" 2>/dev/nu
   echo "[run-all] inside the battery that holds the lock (pid $STEWARD_BATTERY_LOCK_PID); not waiting on it"
 fi
 if { [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; } && [ "${BATTERY_LOCK:-1}" != "0" ] && [ "$nested_in_lock" = "0" ]; then
-  waited=0; said=""
-  while :; do
-    if mkdir "$BLOCK_DIR" 2>/dev/null; then
-      echo $$ >"$BLOCK_DIR/pid"
-      echo "worktree '$WT_TAG' · ${#RUN[@]} suite(s) · started $(date '+%H:%M:%S')" >"$BLOCK_DIR/who"
-      BATTERY_LOCK_HELD="$BLOCK_DIR"; export STEWARD_BATTERY_LOCK_PID=$$; break
-    fi
-    held=$(cat "$BLOCK_DIR/pid" 2>/dev/null || echo "")
-    if [ -n "$held" ] && kill -0 "$held" 2>/dev/null; then
-      who=$(cat "$BLOCK_DIR/who" 2>/dev/null || echo "?")
-      if [ "$said" != "$held" ]; then
-        echo "[run-all] waiting for the battery lock ($BLOCK_DIR): held by pid $held, $who"
-        said="$held"
-      fi
-      sleep 2; waited=$((waited + 2)); continue
-    fi
-    # No pid yet (a run between its mkdir and its echo) or a dead pid: give a
-    # live writer a moment, then take the stale lock over.
-    sleep 1
-    held2=$(cat "$BLOCK_DIR/pid" 2>/dev/null || echo "")
-    if [ "$held2" = "$held" ] && { [ -z "$held2" ] || ! kill -0 "$held2" 2>/dev/null; }; then
-      echo "[run-all] the battery lock was stale (pid ${held2:-none} is gone); taking it"
-      rm -rf "$BLOCK_DIR"
-    fi
-  done
+  lock_on_wait() { echo "[run-all] waiting for the battery lock ($BLOCK_DIR): held by pid $1, $2"; }
+  lock_on_stale() { echo "[run-all] the battery lock was stale (pid $1 is gone); taking it"; }
+  lock_acquire "$BLOCK_DIR" "worktree '$WT_TAG' · ${#RUN[@]} suite(s) · started $(date '+%H:%M:%S')"
+  waited=$LOCK_WAITED
+  BATTERY_LOCK_HELD="$BLOCK_DIR"; export STEWARD_BATTERY_LOCK_PID=$$
   [ "$waited" -gt 0 ] && echo "[run-all] got the battery lock after ${waited}s"
 fi
 rm -f "$LOGDIR"/*.log 2>/dev/null || true
@@ -455,17 +445,17 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
     for k in $(seq 0 $((slots - 1))); do
       base=$(( 6000 + 100 * ((start + k) % slots) ))
       lock="/tmp/steward-portblock-$base.lock"
-      if ! mkdir "$lock" 2>/dev/null; then
+      if ! lock_try "$lock"; then
         held=$(cat "$lock/pid" 2>/dev/null || echo "")
-        if [ -n "$held" ] && kill -0 "$held" 2>/dev/null; then continue; fi
-        rm -rf "$lock"; mkdir "$lock" 2>/dev/null || continue
+        [ -z "$held" ] && continue            # a run between its mkdir and its pid write
+        if kill -0 "$held" 2>/dev/null; then continue; fi
+        lock_take_stale "$lock" "$held" && lock_try "$lock" || continue
       fi
-      echo $$ >"$lock/pid"
       busy=0
       for p in $(seq "$base" $((base + span - 1))); do
         if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then busy=1; break; fi
       done
-      if [ "$busy" -eq 1 ]; then rm -rf "$lock"; continue; fi
+      if [ "$busy" -eq 1 ]; then lock_release "$lock"; continue; fi
       SHARD_PORT_BASE="$base"; PORT_LOCK="$lock"; break
     done
     [ -z "${SHARD_PORT_BASE:-}" ] && { echo "ERROR: no free port block for the shards" >&2; exit 2; }
