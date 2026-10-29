@@ -358,17 +358,56 @@ async function writeEngagement({ orgId, u, importId, eventId, personIds, who, su
   }
 }
 
+// IMPORT-5 · SAVED MAPPINGS. The org's saved answers for this header set
+// (order-insensitive), unless she pressed Change on this preview
+// (answers.savedMapping === "off").
+async function savedMappingFor(orgId, body, Rm) {
+  if (body.answers && body.answers.savedMapping === "off") return null;
+  const key = Rm.headerSetKey(body.sheets);
+  if (!key) return null;
+  const [row] = await query("SELECT id, mapping, created_at, last_used_at FROM import_shape_mappings WHERE org_id=? AND kind='sheet' AND shape_key=?", [orgId, key]);
+  if (!row) return null;
+  const mapping = typeof row.mapping === "string" ? JSON.parse(row.mapping) : (row.mapping || {});
+  const overrides = Rm.overridesFromMapping(body.sheets, mapping);
+  if (!Object.keys(overrides).length) return null;
+  return { id: row.id, savedAt: row.last_used_at || row.created_at, mapping, overrides };
+}
+// After an import commits: her column answers (and the assistant's proposals
+// she imported with) are saved against the file's headers, merged into what
+// was saved before.
+async function saveMappingAfter(orgId, body, who) {
+  const Rm = await R();
+  const key = Rm.headerSetKey(body.sheets);
+  if (!key) return;
+  const fresh = Rm.mappingFromOverrides(body.sheets, body.overrides);
+  const prior = body.answers && body.answers.savedMapping === "off" ? null : await savedMappingFor(orgId, body, Rm);
+  const mapping = { ...((prior && prior.mapping) || {}), ...fresh };
+  if (!Object.keys(fresh).length) {
+    if (prior) await run("UPDATE import_shape_mappings SET times_used = times_used + 1, last_used_at = NOW() WHERE id=? AND org_id=?", [prior.id, orgId]);
+    return;
+  }
+  await run(`INSERT INTO import_shape_mappings (id, org_id, shape_key, headers, mapping, kind, created_by, created_by_name)
+             VALUES (?,?,?,?::jsonb,?::jsonb,'sheet',?,?)
+             ON CONFLICT (org_id, shape_key) DO UPDATE SET mapping = EXCLUDED.mapping, times_used = import_shape_mappings.times_used + 1, last_used_at = NOW()`,
+    ["ism_" + uuid().replace(/-/g, "").slice(0, 12), orgId, key, JSON.stringify(Rm.fileHeaders(body.sheets)), JSON.stringify(mapping), who.id, who.name]);
+}
+
 async function buildUnderstanding(req, body) {
   const orgId = req.user.orgId;
   const Rm = await R();
   const tz = await ctx.orgTz(orgId).catch(() => null);
   const today = ctx.orgToday(tz);
-  let u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: body.overrides, answers: body.answers });
+  // IMPORT-5: her saved answers for a file with these headers come first; the
+  // model is asked only about what they leave unplaced; her answers here win
+  const saved = await savedMappingFor(orgId, body, Rm);
+  const savedOv = saved ? saved.overrides : {};
+  let u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...body.overrides }, answers: body.answers });
   let model = { used: false };
   if (body.useModel) {
     model = await modelOverrides(orgId, body.sheets, u, Rm);
-    if (model.used) u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...model.overrides, ...body.overrides }, answers: body.answers });
+    if (model.used) u = Rm.understand({ sheets: body.sheets, fileName: body.fileName, today, overrides: { ...savedOv, ...model.overrides, ...body.overrides }, answers: body.answers });
   }
+  u.savedMapping = saved ? { id: saved.id, savedAt: saved.savedAt, columns: Object.keys(savedOv).length } : null;
   const privacy = await require("../clientSafe").privacyFor(orgId).catch(() => ({ on: false, clientIds: new Set(), clientEmails: new Set() }));
   const matches = await matchPeople(orgId, u, body.answers, privacy);
   // who-questions: two people of one name in this org
@@ -872,6 +911,7 @@ async function runJob(req, body, importId, who) {
       return r;
     }));
     await finishJob(importId, "done", { status: out.status, body: out.body });
+    await saveMappingAfter(orgId, body, who).catch(e => console.error("[sheet-import] saved mapping:", e.message));
     // after the commit, outside it: the one after-change step for everyone touched
     await require("../afterChange").afterChange(orgId, out.touched, { door: "sheet_import", history: true })
       .catch(e => console.error("[sheet-import] after change:", e.message));
@@ -953,6 +993,42 @@ app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req,
   const v = jobView(job);
   if (v.status === "running") return res.status(202).json(v);
   res.status(v.httpStatus || (v.status === "done" ? 201 : 500)).json(v.result || { error: "import_failed", message: v.sentence });
+}));
+
+// IMPORT-5 · Settings, Imports: the saved mappings, each editable and deletable.
+const mappingView = (Rm, r) => {
+  const mapping = typeof r.mapping === "string" ? JSON.parse(r.mapping) : (r.mapping || {});
+  const headers = typeof r.headers === "string" ? JSON.parse(r.headers) : (r.headers || []);
+  const norm = h => String(h || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const columns = Object.entries(mapping).map(([h, role]) => ({ header: headers.find(x => norm(x) === h) || h, key: h, role, label: Rm.roleLabel(role) || role }));
+  return { id: r.id, headers, columns, savedAt: r.last_used_at || r.created_at, createdAt: r.created_at, timesUsed: r.times_used, by: r.created_by_name || null,
+    sentence: `A file with these ${headers.length} columns (${headers.slice(0, 4).join(", ")}${headers.length > 4 ? ", …" : ""}) reads with your ${columns.length === 1 ? "answer" : columns.length + " answers"}.` };
+};
+app.get("/import-mappings", requireAuth, wrap(async (req, res) => {
+  const Rm = await R();
+  const rows = await query("SELECT * FROM import_shape_mappings WHERE org_id=? AND kind='sheet' ORDER BY last_used_at DESC LIMIT 100", [req.user.orgId]);
+  res.json({ mappings: rows.map(r => mappingView(Rm, r)), roles: Rm.SHEET_ROLES });
+}));
+app.patch("/import-mappings/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const Rm = await R();
+  const [r] = await query("SELECT * FROM import_shape_mappings WHERE id=? AND org_id=? AND kind='sheet'", [req.params.id, req.user.orgId]);
+  if (!r) return res.status(404).json({ error: "not_found" });
+  const mapping = typeof r.mapping === "string" ? JSON.parse(r.mapping) : (r.mapping || {});
+  const patch = req.body && typeof req.body.columns === "object" && !Array.isArray(req.body.columns) ? req.body.columns : {};
+  for (const [k, role] of Object.entries(patch)) {
+    if (!(k in mapping)) continue;
+    if (role === null || role === "") delete mapping[k];
+    else if (Rm.roleLabel(role)) mapping[k] = role;
+    else return res.status(400).json({ error: "bad_role", message: `"${role}" is not a column Steward knows.` });
+  }
+  await run("UPDATE import_shape_mappings SET mapping=?::jsonb WHERE id=? AND org_id=?", [JSON.stringify(mapping), r.id, req.user.orgId]);
+  const [r2] = await query("SELECT * FROM import_shape_mappings WHERE id=? AND org_id=?", [r.id, req.user.orgId]);
+  res.json({ mapping: mappingView(Rm, r2) });
+}));
+app.delete("/import-mappings/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const out = await query("DELETE FROM import_shape_mappings WHERE id=? AND org_id=? AND kind='sheet' RETURNING id", [req.params.id, req.user.orgId]);
+  if (!out.length) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true });
 }));
 
 // What the modal and the Imports list read: the job's real state.

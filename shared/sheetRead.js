@@ -24,6 +24,7 @@
 import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importShape.js";
 import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
+import { isGivenName } from "./givenNames.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -209,6 +210,33 @@ function commaIsLastFirst(before, after) {
   if (after === after.toUpperCase() && /[A-Z]{2}/.test(after) && before !== before.toUpperCase()) return false;
   if (before.split(/\s+/).filter(w => !/^(van|von|de|del|der|da|di|la|le|st\.?|mac|mc|o')$/i.test(w)).length >= 3) return false;
   return true;
+}
+// IMPORT-5 · A COUPLE WRITTEN WITH A COMMA. "Alex, Brad Hubbard": one first
+// name before the comma, a first name and a surname after it, is two people of
+// one household ("Alex & Brad Hubbard"), never "Last, First". The last word must
+// not itself be a first name ("Thomas, Paul James" stays Paul James Thomas).
+function commaCouple(before, after) {
+  const b = s(before).split(/\s+/).filter(Boolean), a = s(after).split(/\s+/).filter(Boolean);
+  if (b.length !== 1 || a.length < 2 || a.length > 3) return null;
+  if (a.length === 3 && !/^[A-Za-z]\.?$/.test(a[1])) return null;
+  if (!isGivenName(b[0]) || !isGivenName(a[0]) || isGivenName(a[a.length - 1])) return null;
+  return { first: `${b[0]} & ${a.slice(0, -1).join(" ")}`, last: a[a.length - 1] };
+}
+// The same couple on a record already here, for Data health's review: written
+// as typed ("Alex, Brad Hubbard"), or as the old reading left it ("Brad Hubbard
+// Alex", only on a record an import made). Never applied without her click.
+export function commaCoupleFix(name, { imported = false } = {}) {
+  const n = s(name);
+  let c = null;
+  const m = n.match(/^([^,]+),\s*(.+)$/);
+  if (m) c = commaCouple(m[1], m[2]);
+  else if (imported) {
+    const w = n.split(/\s+/);
+    if (w.length === 3 && isGivenName(w[0]) && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
+  }
+  if (!c) return null;
+  const r = readName({ first: c.first, last: c.last });
+  return r.kind === "household" && r.people.length === 2 ? { before: n, household: r.household, people: r.people.map(p => p.name) } : null;
 }
 const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 const isBlank = v => s(v) === "";
@@ -661,6 +689,8 @@ export function readName({ first, last, full, lastFirst, org }) {
     // or anything else that is not a first name, keeps the name as written
     if (comma && nameTokens(comma[2]).length && nameTokens(comma[2]).every(w => ORG_SUFFIX.has(w))) return { kind: "organization", name: full, people: [] };
     if (comma && !commaIsLastFirst(comma[1].trim(), comma[2].trim())) return { kind: "person", name: full, people: [{ name: full }] };
+    const couple = comma && commaCouple(comma[1], comma[2]);
+    if (couple) return readName({ first: couple.first, last: couple.last });
     // "S & S Westford", "R & R Hardware": initials joined are a business's name, never two people of one initial
     if (!comma && /^([A-Za-z]\.?\s*(&|and|\+)\s*)+[A-Za-z]\.?\s+\S/.test(full)) return { kind: "organization", name: full, people: [] };
     if (comma) { last = comma[1]; first = comma[2]; }
@@ -685,6 +715,9 @@ export function readName({ first, last, full, lastFirst, org }) {
   }
   if (first && !last) return { kind: "person", name: cleanPart(first), people: [{ name: cleanPart(first) }] };
   const L = cleanPart(last);
+  // IMPORT-5: "Alex, Brad" in a First Name column is two first names, a couple
+  const firstComma = first.match(/^([^,\s]+),\s*([^,\s]+)$/);
+  if (firstComma && isGivenName(firstComma[1]) && isGivenName(firstComma[2])) first = `${firstComma[1]} & ${firstComma[2]}`;
   const parts = first.split(JOINT_RE).map(cleanPart).filter(Boolean);
   if (parts.length >= 2) {
     // titles only ("Mr. and Mrs. Walt") → one named person and a spouse by title
@@ -1618,6 +1651,43 @@ export function tablesForModel(sheets) {
   for (const sh of sheets || []) findTables(sh.name, sh.grid || []).tables.forEach((t, i) => out.push({ key: `${sh.name}#${i + 1}`, table: t }));
   return out;
 }
+
+// IMPORT-5 · SAVED MAPPINGS. Her answers about a file's columns are kept per
+// org against the file's header set (every table's headers, normalised, order
+// and sheet names ignored), by header, never by position, so the next export
+// from the same system reads with no column questions.
+const mapHeader = h => s(h).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export function headerSetKey(sheets) {
+  const hs = new Set();
+  for (const { table } of tablesForModel(sheets)) for (const h of table.header) { const k = mapHeader(h); if (k) hs.add(k); }
+  return hs.size ? "sheet:" + [...hs].sort().join("|") : null;
+}
+export function fileHeaders(sheets) {
+  const hs = [];
+  for (const { table } of tablesForModel(sheets)) for (const h of table.header) if (s(h) && !hs.includes(s(h))) hs.push(s(h));
+  return hs;
+}
+// overrides { "<table>|<index>": role } → { "<normalised header>": role }
+export function mappingFromOverrides(sheets, overrides = {}) {
+  const out = {};
+  for (const { key, table } of tablesForModel(sheets)) for (const [k, role] of Object.entries(overrides || {})) {
+    const [tk, idx] = String(k).split("|");
+    if (tk !== key || !(role in ROLE_LABELS)) continue;
+    const h = mapHeader(table.header[+idx]);
+    if (h) out[h] = role;
+  }
+  return out;
+}
+// the reverse, for this file's positions
+export function overridesFromMapping(sheets, mapping = {}) {
+  const out = {};
+  for (const { key, table } of tablesForModel(sheets)) table.header.forEach((h, i) => {
+    const role = mapping[mapHeader(h)];
+    if (role && role in ROLE_LABELS) out[`${key}|${i}`] = role;
+  });
+  return out;
+}
+export function roleLabel(role) { return ROLE_LABELS[role] || null; }
 
 // When the file should be read by this reader rather than the column mapper:
 // whenever the mapper would dead-end ("shape unclear", "0 donors + 0 gift

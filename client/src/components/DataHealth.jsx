@@ -84,6 +84,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
     { id: "emails", label: "Emails to look at", count: c.emails,
       sentence: `${plural(c.emails, "email")} that bounce, aren't valid, look like a typo, or are a shared office address on a person.`,
       action: c.emails ? "Review emails" : null },
+    // IMPORT-5: only shown when there is something to fix
+    ...(c.couples ? [{ id: "couples", label: "Couples written with a comma", count: c.couples,
+      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written with a comma ("Alex, Brad Hubbard").`,
+      action: "Fix them" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
@@ -105,6 +109,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       {open === "moved" && <MovedPanel onDone={done} isReadOnly={isReadOnly} note={health.ncoaNote} demo={!!health.demo} />}
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "unreachable" && <UnreachablePanel onOpenDonor={onOpenDonor} />}
+      {open === "couples" && <CouplesPanel onDone={done} isReadOnly={isReadOnly} />}
       <MergesPanel key={tick} onDone={done} isReadOnly={isReadOnly} />
     </div>
   );
@@ -344,6 +349,53 @@ function AddressesPanel({ onDone, onOpenDonor, isReadOnly }) {
           </div>
         ))}
       </>}
+    </Card>
+  );
+}
+
+// ── Couples written with a comma (IMPORT-5) ────────────────────────────────
+// Before and after for each, applied only when she clicks, with Undo.
+function CouplesPanel({ onDone, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [batch, setBatch] = useState(null);
+  const load = () => apiFetch("/data-health/couples").then(setData).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const apply = async ids => {
+    setBusy(true); setErr(null);
+    try { const r = await apiFetch("/data-health/couples/apply", { method: "POST", body: JSON.stringify({ donorIds: ids }) }); setBatch(r.batchId); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  const undo = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await apiFetch("/data-health/couples/undo", { method: "POST", body: JSON.stringify({ batchId: batch }) }); setBatch(null); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  if (!data) return <Card>{err ? `Couldn't load the names. ${err}` : "Reading names…"}</Card>;
+  const all = data.rows.map(r => r.donorId);
+  return (
+    <Card data-testid="dh-couples">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{data.sentence}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {batch && <button data-testid="dh-couples-undo" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={undo}>Undo</button>}
+          <button data-testid="dh-couples-apply" style={btn(true, busy || isReadOnly || !all.length)} disabled={busy || isReadOnly || !all.length} onClick={() => apply(all)}>Fix all {all.length}</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>Two first names and a surname with a comma between the first names read as "Last, First". Fixed, each becomes two people in one household; their gifts stay with the first.</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {data.rows.map(r => (
+        <div key={r.donorId} style={{ ...rowStyle, alignItems: "flex-start" }} data-testid="dh-couple">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13 }}>
+            <div style={{ color: T.ink3 }}>Now: {r.before}</div>
+            <div style={{ color: T.ink, fontWeight: 700 }}>Fixed: {r.after} ({r.people.join(" and ")})</div>
+          </div>
+          <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => apply([r.donorId])}>Fix</button>
+        </div>
+      ))}
     </Card>
   );
 }

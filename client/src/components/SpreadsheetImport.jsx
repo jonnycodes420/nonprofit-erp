@@ -390,6 +390,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             {rereading && (
               <div role="status" data-testid="sheet-rereading" style={{ ...small, color: T.ink, fontWeight: 700 }}>Updating the preview with your answer…</div>
             )}
+            {u.savedMapping && (
+              <div data-testid="sheet-saved-mapping" style={{ ...small, color: T.ink }}>
+                Using your saved mapping from {longDate(String(u.savedMapping.savedAt || "").slice(0, 10))}
+                {" · "}<button type="button" data-testid="sheet-saved-mapping-change" onClick={() => setAnswer({ savedMapping: "off" })}
+                  style={{ background: "none", border: 0, padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", font: "inherit" }}>Change</button>
+              </div>
+            )}
             <div style={{ ...box, opacity: rereading ? 0.55 : 1, transition: "opacity .15s" }} data-testid="sheet-understood">
               <div style={h3}>What Steward understood</div>
               {u.knownShape && <div data-testid="sheet-known-shape" style={{ fontSize: 13.5, fontWeight: 700, color: T.greenDk, marginBottom: 4 }}>{u.knownShape.sentence}</div>}

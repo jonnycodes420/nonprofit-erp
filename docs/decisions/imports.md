@@ -236,6 +236,18 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **The real-shaped files grade the reader (HARDEN-1).** `tests/real-shaped.test.js` imports
   `tests/fixtures/import/real-shaped/` (scrubbed from a real customer's files; the only customer-shaped files allowed)
   into an empty org and checks them to the cent against `expected.json`, whose `years` are net of the negative rows.
+- **Column answers are saved per org and header set (IMPORT-5).** On commit, the one reader saves her column answers
+  (and the assistant's proposals she imported with) by header in `import_shape_mappings` (`kind='sheet'`, shape key
+  `sheet:` + every table's normalised headers, order and sheet names ignored). The next file with that header set
+  applies them before the model is asked, asks nothing they cover, and says "Using your saved mapping from …· Change"
+  (`answers.savedMapping: "off"` for one preview). Settings, Imports lists, edits and deletes them (`/import-mappings`).
+  The old mapper's rows are `kind='mapper'` and only `/import-shapes/match` reads them.
+- **"Alex, Brad Hubbard" is a couple, not "Last, First" (IMPORT-5).** One first name before the comma, a first name
+  and a surname after it (the last word not itself a first name, `shared/givenNames.js`) reads as two people in one
+  household; "Alex, Brad" in a First Name column too. Records already here never change at deploy: Data health's
+  "Couples written with a comma" line proposes them (the typed form, or "Brad Hubbard Alex" on an imported record),
+  fixes them only on her click (`/data-health/couples/apply`: the record becomes the first person, the second is made
+  beside them, one new household, gifts stay put) and undoes the click whole (`name_fixes`).
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
