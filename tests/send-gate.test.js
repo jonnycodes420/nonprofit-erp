@@ -294,6 +294,34 @@ const held = id => q(`SELECT kind, what, sent_at FROM mail_blocked WHERE org_id=
   await settle(1500);
   ok("§7 undo answers and sends nothing", un.status === 200 && captured.length === sentBefore, { s: un.status, b: un.body });
 
+  // ── §8 FIX-57: nothing a donor reads carries a placeholder ─────────────
+  // A receipt with no org mailing address is held with that reason (Going out
+  // says where to add it); the receipt template never prints "[org address]";
+  // a draft with a blank in it ("Dear ,", "[org address]") is held even when a
+  // person presses Send. Red on main (78e156e): the receipt goes, the preview
+  // prints "[org address]", the blank draft goes.
+  console.log("\n§8 no placeholder reaches a donor");
+  await q(`UPDATE orgs SET receipt_address=NULL WHERE id=$1`, [ORG]);
+  const before8 = captured.length;
+  await fireGift("evt_sg_noaddr", "pi_sg_noaddr", 4000, ON, PEOPLE.on[1]);
+  await settle(2500);
+  ok("§8 with no mailing address on file, a gift sends no receipt", !captured.slice(before8).some(c => /receipt/i.test(c.subject)), captured.slice(before8).map(c => c.subject));
+  const go8 = await api("GET", "/going-out", tok);
+  const held8 = (go8.body.held || []).find(h => h.reason === "no_org_address");
+  ok("§8 …it is held on Going out, saying to add the mailing address", !!held8 && /Add your mailing address in Settings/.test(held8.why), (go8.body.held || []).map(h => [h.reason, h.why]));
+  const pv8 = await api("POST", "/templates/receipt/preview", tok, { donorId: PEOPLE.on[0] });
+  ok("§8 the receipt's preview never prints \"[org address]\", and reports it missing",
+     pv8.status === 200 && !/\[org address\]/.test(pv8.body.body || "") && (pv8.body.missing || []).includes("org_address"), pv8.body.body);
+  await q(`UPDATE orgs SET receipt_address='12 Harbor Rd, Wilmington, NC 28401' WHERE id=$1`, [ORG]);
+  await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,created_by,created_by_name)
+           VALUES ('md_sg_blank',$1,$2,'sg:blank','A note','Dear ,\n\nThank you.\n\n[org address]','pending_review',${sys})`, [ORG, PEOPLE.off[0]]);
+  const before8b = captured.length;
+  const blank = await api("POST", "/milestone-drafts/md_sg_blank/send", tok, {});
+  await settle(800);
+  const [heldBlank] = await q(`SELECT held_reason FROM mail_blocked WHERE org_id=$1 AND donor_id=$2 AND held_reason='placeholder'`, [ORG, PEOPLE.off[0]]);
+  ok("§8 a draft with a blank in it is held, even when a person pressed Send", captured.length === before8b && blank.status !== 200 && !!heldBlank,
+     { status: blank.status, body: blank.body, heldBlank });
+
   await reset();
   sink.close();
   await closeDb();

@@ -242,7 +242,20 @@ async function mailTypesOnForDonor(donorId) {
   if (d) await mailTypesOn(d.org_id);
 }
 
-module.exports = { mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+// FIX-57: an in-process suite waits for the server's own readiness check
+// (GET /ready: schema built, database answering), never a fixed sleep. A
+// 3.5 s "boot DDL settles" went red under load ("Database initializing").
+async function untilReady({ timeout = 120000 } = {}) {
+  const base = process.env.BASE || BASE, end = Date.now() + timeout;
+  for (;;) {
+    const r = await fetch(base + "/ready").then(x => x.json()).catch(() => null);
+    if (r && r.ready) return true;
+    if (Date.now() > end) throw new Error("the server never became ready at " + base);
+    await new Promise(res => setTimeout(res, 100));
+  }
+}
+
+module.exports = { untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is

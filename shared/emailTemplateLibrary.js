@@ -262,9 +262,9 @@ export function starterByKey(key) {
 }
 
 // Fill the signature the template starts with: the person who started it.
-export function signStarterBlocks(blocks, { name, title } = {}) {
+export function signStarterBlocks(blocks, { name, title, photo } = {}) {
   return (Array.isArray(blocks) ? blocks : []).map(b =>
-    b && b.type === "signature" && !b.name ? { ...b, name: String(name || "").trim(), title: b.title || String(title || "").trim() } : b);
+    b && b.type === "signature" && !b.name ? { ...b, name: String(name || "").trim(), title: b.title || String(title || "").trim(), photo: b.photo || photo || null } : b);
 }
 
 // ── FIX-30 · THE BRIDGE: EVERY EMAIL OPENS IN THIS EDITOR ───────────────────

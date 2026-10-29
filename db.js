@@ -8692,6 +8692,16 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW())`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_home_lead_dismissals_user ON home_lead_dismissals (org_id, user_id, created_at DESC)`);
 
+  // FIX-57 · A SIGNATURE FOR EACH PERSON. Settings, My profile: the name she
+  // signs with, her title, phone, an optional photo, and the block itself
+  // (blank: those lines, in that order). It signs what is drafted for her,
+  // ahead of Brand's signature (shared/brandKit.js senderSignature).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_name TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_title TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_phone TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_photo TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sign_block TEXT`);
+
   // LIST-1 · THE DONOR LIST'S COLUMNS. One layout per person (user_id), and
   // one org default (user_id ''), set by an admin. A saved view is a name for
   // a set of columns plus a filter, kept per person. Columns are field keys

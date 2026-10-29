@@ -143,7 +143,7 @@ function resolveActor(req, desc) {
     return { kind: "agent", id: "agent:approved_by:" + req.user.userId, name: `Agent, approved by ${by}` };
   }
   if (req.user && req.user.userId) {
-    return { kind: "user", id: req.user.userId, name: req.user.email || req.user.userId };
+    return { kind: "user", id: req.user.userId, name: req.user.name || req.user.email || req.user.userId };   // FIX-57: a name, not an email
   }
   if (req.apiKey) {
     return { kind: "api_key", id: "key:" + req.apiKey.id, name: `API key: ${req.apiKey.name || req.apiKey.id}` };

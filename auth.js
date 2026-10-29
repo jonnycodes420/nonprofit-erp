@@ -82,7 +82,7 @@ async function sessionOrgOf(req) {
 // Loader for the session cache: the live revocation state for one user, or null
 // if the row is gone (deleted/removed → no pass-through, ever).
 async function loadUserSession(userId) {
-  const rows = await query("SELECT sessions_valid_after, role, org_id, deactivated_at FROM users WHERE id = ?", [userId]);
+  const rows = await query("SELECT sessions_valid_after, role, org_id, deactivated_at, name FROM users WHERE id = ?", [userId]);
   return rows.length ? rows[0] : null;
 }
 
@@ -132,7 +132,8 @@ async function requireAuth(req, res, next) {
     if (payload.sid && !(await require("./twoFactor").sessionAlive(payload.sid, payload.userId))) {
       return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
     }
-    req.user = { ...payload, role: info.role, orgId: info.org_id };
+    // FIX-57: her name as set, so what she does is signed with it, not her email.
+    req.user = { ...payload, role: info.role, orgId: info.org_id, name: String(info.name || "").trim() || null };
     // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
     // requires two-step sign-in and who has not set it up) opens the setup
     // routes and nothing else.

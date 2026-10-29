@@ -138,7 +138,7 @@ const json = v => (typeof v === "string" ? JSON.parse(v) : v) || {};
   console.log("clientsafe1 (CLIENT-SAFE-1)");
   await new Promise(r => mock.listen(MOCK, r));
   require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await reset();
 
   const pw = bcrypt.hashSync("loadtest1234", 4);

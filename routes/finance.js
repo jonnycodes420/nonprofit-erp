@@ -1452,16 +1452,18 @@ async function beforeMeeting(orgId, donorId) {
   const { today } = await meetingTz(orgId);
   const tomorrow = orgTime.addDays(today, 1);
   const now = Date.now();
-  const rows = (await meetingsSrc.meetingsWith(orgId, donorId, { from: today, to: tomorrow, limit: 20 }))
+  // FIX-57: from yesterday, so a coffee that began at 11:50 PM and is still on
+  // at 12:05 AM is today's meeting, not gone (it is dropped once it ends).
+  const rows = (await meetingsSrc.meetingsWith(orgId, donorId, { from: orgTime.addDays(today, -1), to: tomorrow, limit: 20 }))
     .filter(m => m.kind === "calendar"
       ? new Date(m.ends_at || new Date(new Date(m.starts_at).getTime() + 3600e3)).getTime() > now
-      : !m.held)
+      : !m.held && m.date >= today)
     .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : new Date(a.starts_at || 0) - new Date(b.starts_at || 0)));
   const m = rows[0];
   if (!m) return null;
   return {
     meeting: { id: m.id, kind: m.kind, title: m.title || (m.location ? `Meeting at ${m.location}` : "Meeting"), date: m.date,
-      startsAt: m.starts_at || null, endsAt: m.ends_at || null, location: m.location || null, day: m.date === today ? "today" : "tomorrow" },
+      startsAt: m.starts_at || null, endsAt: m.ends_at || null, location: m.location || null, day: m.date === tomorrow ? "tomorrow" : "today" },
     brief: await meetingBrief(orgId, donorId, m.starts_at ? new Date(m.starts_at).toISOString() : new Date().toISOString()),
   };
 }

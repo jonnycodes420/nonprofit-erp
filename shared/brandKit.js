@@ -120,22 +120,56 @@ export function renderTemplate(text, values) {
     const key = k.toLowerCase();
     if (!MERGE_KEYS.includes(key)) { unknown.add(key); return m; }
     const v = values ? values[key] : null;
-    if (v === null || v === undefined || v === "") { missing.add(key); return `[${key.replace(/_/g, " ")}]`; }
+    // FIX-57: the org's own address is never printed as "[org address]"; it is
+    // left out and reported, and the screen says where to add it.
+    if (v === null || v === undefined || v === "") { missing.add(key); return key === "org_address" ? "" : `[${key.replace(/_/g, " ")}]`; }
     return String(v);
   });
-  return { text: out, missing: [...missing], unknown: [...unknown] };
+  return { text: missing.has("org_address") ? out.replace(/\n+$/, "") : out, missing: [...missing], unknown: [...unknown] };
 }
 
 // FIX-56 · THE SIGNATURE IS THE SENDER'S. {{signature}} is never a fact about
-// the donor, so it is never "missing" for one. It is the org's signature from
-// Brand (name, title, extra line); with none set, the org's name, and
-// `fromBrand:false` tells the screen to say "Add your signature in Brand".
-// (There is no per-person signature field yet; when there is, it goes first.)
-export function senderSignature(org) {
+// the donor, so it is never "missing" for one. FIX-57: the person it is drafted
+// for signs it first (the sender of a campaign, the assignee of a thank-you
+// task, the user who opens a draft), from Settings, My profile; else the org's
+// signature from Brand (name, title, extra line); else the org's name.
+// `from` says which: "person", "brand" or "org", and `fromBrand:false` tells
+// the screen to say where a signature is added. Never a donor's or a sample's.
+export function personSignature(user) {
+  const u = user || {};
+  const block = String(u.sign_block || "").trim();
+  if (block) return block;
+  const name = String(u.sign_name || "").trim();
+  if (!name) return "";
+  return [name, u.sign_title, u.sign_phone].map(s => String(s || "").trim()).filter(Boolean).join("\n");
+}
+export function senderSignature(org, user = null) {
   const o = org || {};
+  const mine = personSignature(user);
+  if (mine) return { text: mine, fromBrand: true, from: "person" };
   const brand = [o.receipt_signature_name, o.receipt_signature_title, o.brand_signature_extra]
     .map(s => String(s || "").trim()).filter(Boolean).join("\n");
-  return { text: brand || String(o.name || "").trim(), fromBrand: !!brand };
+  return { text: brand || String(o.name || "").trim(), fromBrand: !!brand, from: brand ? "brand" : "org" };
+}
+// The columns personSignature reads, for a SELECT.
+export const SIGN_COLUMNS = "id, name, sign_name, sign_title, sign_phone, sign_photo, sign_block";
+
+// FIX-57 item 4 · NO PLACEHOLDER REACHES A DONOR. What renderTemplate leaves
+// for a field with no value ("[org address]"), the email editor's unsigned
+// block ("[your name]"), a {{field}} nobody filled, and a greeting with no name
+// ("Dear ,"). The send gate holds a donor email that carries any of them
+// (sendGate.js), and the draft routes refuse to make one. Returns what it
+// found, as written. HTML comments (Outlook's "[if mso]") are not words.
+const PLACEHOLDER_WORDS = new Set([...MERGE_KEYS.map(k => k.replace(/_/g, " ")), "your name"]);
+export function placeholdersIn(...texts) {
+  const found = new Set();
+  for (const t of texts) {
+    const s = String(t || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ");
+    for (const m of s.matchAll(/\[([a-z][a-z ]{1,30})\]/gi)) if (PLACEHOLDER_WORDS.has(m[1].toLowerCase())) found.add(m[0]);
+    for (const m of s.matchAll(/\{\{\s*[a-z_]+\s*\}\}/gi)) found.add(m[0]);
+    for (const m of s.matchAll(/\b(?:Dear|Hi|Hello)(?:\s|&nbsp;)*,/g)) found.add(m[0].replace(/(?:\s|&nbsp;)+/g, " "));
+  }
+  return [...found];
 }
 
 // The unknown tokens in a template, for refusing a save that would print one.

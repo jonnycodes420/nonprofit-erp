@@ -325,7 +325,7 @@ async function shrink(seq, today) {
   console.log(`numbers1-foot (NUMBERS-1) · seed ${SEED} · ${SEQUENCES} sequences`);
   await new Promise(res => mock.listen(MOCK, res));
   require("../server.js");
-  await new Promise(res => setTimeout(res, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await wipe(`${PREFIX}%`);
   const today = civilToday();
 

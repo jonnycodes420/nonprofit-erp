@@ -167,6 +167,9 @@ function reasonSentence(reason, t) {
     case "not_chosen": return `${name} go only to donors you choose, and this person isn't one`;
     case "skipped": return "you skipped this person";
     case "by_hand": return "this kind of email goes only when someone presses Send";
+    // FIX-57 item 4
+    case "no_org_address": return "it needs your mailing address. Add your mailing address in Settings, then send it again";
+    case "placeholder": return "it still has a blank in it (like [org address]). Fill it in, then send it again";
     default: return "automatic emails are off";
   }
 }

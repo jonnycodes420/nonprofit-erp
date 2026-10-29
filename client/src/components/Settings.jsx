@@ -31,6 +31,7 @@ import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 import { BillingBand } from "./BillingBand";
+import MyProfile from "./MyProfile";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -2772,6 +2773,8 @@ const SETTINGS_TABS=[
   // CLIENT-SAFE-1 — "We serve clients whose details are private".
   {id:"privacy",label:"Privacy"},
   {id:"data",label:"Your Data"},
+  // FIX-57 — how each person signs what is drafted for them.
+  {id:"profile",label:"My profile"},
   {id:"account",label:"Account"},
   // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
   {id:"security",label:"Security"},
@@ -3906,6 +3909,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {/* ── Tax Receipts ──────────────────────────────────────────────────── */}
       {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
       {section==="brandkit"&&<BrandKitManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {section==="profile"&&<MyProfile isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 

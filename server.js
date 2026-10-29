@@ -297,7 +297,8 @@ async function orgTzName(orgId) {
 // tests/actor-stamp.test.js pins that every INSERT into the actor tables
 // carries these two values.
 function actor(req) {
-  return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && req.user.email) || null };
+  // FIX-57: the person's name ("Reviewed by Robin Lee"); the email only if she never set one.
+  return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && (req.user.name || req.user.email)) || null };
 }
 // MOVED UP HERE FROM THE AGENT SECTION (BUILD-99 Part 4). The prospect brief is
 // declared ~5,000 lines before the agent block and reads this, and `scripts/
@@ -639,6 +640,8 @@ app.use(require("./middleware/auditTrail").auditTrail());
 // HARDEN-1: a write from a page painted for one org never lands in another
 // (middleware/orgBound.js). Beside the audit write, above every router.
 app.use(require("./middleware/orgBound").orgBound());
+// FIX-57: a "by" field that holds a staff email reads as her name (middleware/staffNames.js).
+app.use(require("./middleware/staffNames").staffNames({ query }));
 // JOURNEYS-4: after a staff write succeeds, the journey triggers that read
 // rows (an auction win, a no-show, a pledge, a finished call) are checked for
 // that org at once, rather than waiting for the hourly sweep. routes/crm.js
@@ -1479,7 +1482,7 @@ async function recordGift(o) {
   // after-change step below are consequences of the gift, not the gift. A
   // caller a person is waiting on (To confirm) passes `deferTriggers` and they
   // run straight after the response, in this order, exactly as they would
-  // have: `later` settles when they are done. Everyone else waits as before.
+  // have: `start()` sets them going, `later` settles when they are done. Everyone else waits as before.
   const triggers = async () => {
     // ── BUILD-94 Part 3 — THE TRIGGERS FIRE HERE, AND NOWHERE ELSE ───────────
     // FIRST GIFT EVER is a fact about the rollup that just happened: gift_count
@@ -1583,12 +1586,15 @@ async function recordGift(o) {
         fire: oldHistory || fromImport ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
     }
   };
-  let later = null;
+  // FIX-57: they start when the caller says the answer is sent (`start`), not
+  // on the next tick, where they raced the answer's own statements for the
+  // pool. A caller that passes deferTriggers must call start(), on every path.
+  let later = null, start = null;
   if (o.deferTriggers === true) {
-    later = new Promise(r => setImmediate(r)).then(triggers)
+    later = new Promise(r => { start = r; }).then(triggers)
       .catch(e => console.error("[gift] after the response:", e.message));
   } else await triggers();
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras, later };
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras, later, start };
 }
 
 // ── ENGAGE-1 — THE TWO SCORES ──────────────────────────────────────────────

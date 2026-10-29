@@ -104,7 +104,7 @@ const count = async (sql, args = [ORG]) => (await q(sql, args))[0].n;
 
   await new Promise(r => mock.listen(MOCK, r));
   require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await reset();
   const pw = bcrypt.hashSync("loadtest1234", 4);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipts_enabled)

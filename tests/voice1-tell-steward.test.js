@@ -90,7 +90,7 @@ const count = async (sql, args = [ORG]) => (await q(sql, args))[0].n;
   console.log("voice1-tell-steward (VOICE-1)");
   await new Promise(r => mock.listen(MOCK, r));
   require("../server.js");
-  await new Promise(r => setTimeout(r, 3500));   // boot DDL settles
+  await require("./helpers").untilReady();   // FIX-57: the server says when boot is done
   await reset();
 
   const pw = bcrypt.hashSync("loadtest1234", 4);

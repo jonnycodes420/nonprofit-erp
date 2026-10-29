@@ -103,10 +103,14 @@ export async function readSheetFile(file) {
 // window now tells every page that listens (told(), lib/stewardTold.js: the
 // App's data, Donors, Home), at once when the import is done, and when it
 // finishes if it is still running. One follower per import, outliving the window.
+// FIX-57: closed after Import was pressed but before the server's answer set
+// the job, it follows the run's own id (the job's id is the run id), and a
+// 404 while the commit is still on its way is asked again for a while.
 const followed = new Set();
-function tellWhenDone(id) {
+function tellWhenDone(id, { inFlight = false } = {}) {
   if (!id || followed.has(id)) return;
   followed.add(id);
+  let early = inFlight ? 20 : 0;
   const tick = async () => {
     try {
       const j = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(id)}`);
@@ -114,6 +118,7 @@ function tellWhenDone(id) {
       followed.delete(id);
       if (j && j.status === "done") told({ import: id });
     } catch (e) {
+      if (e && e.status === 404 && early-- > 0) { setTimeout(tick, 1500); return; }
       if (e && e.status === 404) { followed.delete(id); return; }
       setTimeout(tick, 3000);   // a dropped read: ask again, never guess
     }
@@ -167,6 +172,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const finish = () => {
     if (result) told({ import: result.importId });
     else if (job && job.status === "running") tellWhenDone(job.id);
+    else if (busy === "commit") tellWhenDone(previewRun, { inFlight: true });
     if (running && !result) sayAfterClose("It keeps going. Open Settings, Imports to see it.");
     if (result && onImported) onImported(); else if (onClose) onClose();
   };
