@@ -21,11 +21,19 @@
 //       frame-ancestors policy; a CORS preflight is cached.
 //   §10 A stored website is http(s) or nothing; never javascript:.
 //
+// SECURE-2 (2026-10-29) adds, each run red against main first:
+//   §11 No donor or staff details, token or body in a log line or a Sentry
+//       event: a second server is booted with its output captured and Sentry
+//       pointed at a local sink, then driven through a failed sign-in, an
+//       import, a gift and a thrown error carrying planted values.
+//
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
 const crypto = require("crypto");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawnSync, spawn } = require("child_process");
+const http = require("http");
+const net = require("net");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, BASE } = require("./helpers");
 
@@ -204,6 +212,61 @@ async function fixtures() {
     const good = await api("PATCH", `/orgs/${ORG}`, admin, { website: "secureonepantry.org" });
     const [o2] = await q(`SELECT website FROM orgs WHERE id=$1`, [ORG]);
     ok("a bare domain is kept, as https", good.status === 200 && o2.website === "https://secureonepantry.org", { status: good.status, website: o2.website });
+  }
+
+  console.log("\n§11 · no donor details, tokens or bodies in a log line or a Sentry event");
+  {
+    const PLANT = { name: "Quillon Marchbanks", email: "quillon.marchbanks@planted.example", phone: "(859) 555-0142",
+      street: "4417 Tates Creek Road", password: "Pl4nted-Passw0rd-zq", staffEmail: "wrenna.ashgrove@planted.example" };
+    // The Sentry sink: every envelope the child sends lands here, raw.
+    const envelopes = [];
+    const sink = http.createServer((req, res) => { const b = []; req.on("data", c => b.push(c)); req.on("end", () => { envelopes.push(Buffer.concat(b).toString("utf8")); res.end("{}"); }); });
+    await new Promise(r => sink.listen(0, "127.0.0.1", r));
+    const freePort = () => new Promise(r => { const s = net.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
+    const port = await freePort();
+    const CHILD = `http://localhost:${port}`;
+    let out = "";
+    const child = spawn(process.execPath, ["server.js"], {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, PORT: String(port), SENTRY_DSN: `http://publickey@127.0.0.1:${sink.address().port}/1`,
+        DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest",
+        JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", TEST_MODE: "1", DISABLE_BACKGROUND_TICKS: "1", SESSION_CACHE_TTL_MS: "0",
+        NODE_ENV: "test", RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local",
+        // Mail from this server goes nowhere: a closed local port, never the sink or a real provider.
+        RESEND_BASE_URL: "http://127.0.0.1:9" },
+    });
+    child.stdout.on("data", d => { out += d; });
+    child.stderr.on("data", d => { out += d; });
+    let up = false;
+    for (let i = 0; i < 120 && !up; i++) { try { up = (await fetch(CHILD + "/health")).ok; } catch { /* booting */ } if (!up) await new Promise(r => setTimeout(r, 500)); }
+    ok("the captured server booted", up, out.slice(-400));
+    const call = (method, p, tok, body) => fetch(CHILD + p, { method, headers: { "Content-Type": "application/json", ...(tok ? { Authorization: "Bearer " + tok } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    // A failed sign-in (a planted address and password).
+    await call("POST", "/auth/login", null, { email: PLANT.staffEmail, password: PLANT.password });
+    await call("POST", "/auth/login", null, { email: ADMIN_EMAIL, password: PLANT.password });
+    const lr = await (await call("POST", "/auth/login", null, { email: ADMIN_EMAIL, password: "loadtest1234" })).json();
+    const tok = lr.token;
+    ok("…and an admin signed in to it", !!tok, lr);
+    // An import carrying a whole planted person.
+    await call("POST", "/donors/import", tok, { donors: [{ name: PLANT.name, email: PLANT.email, phone: PLANT.phone, address: PLANT.street, city: "Lexington", state: "KY" }] });
+    // A gift whose note names them.
+    await call("POST", `/donors/${DONOR}/gifts`, tok, { amount: 25, date: TODAY, notes: `In memory of ${PLANT.name}, ${PLANT.street}` });
+    // A thrown error whose message carries the shaped values and a token in the URL.
+    const thrown = await call("POST", `/admin/debug/sentry-test?mode=route&token=${tok}`, tok, { note: `${PLANT.email} ${PLANT.phone} ${PLANT.street} ${tok}` });
+    ok("the thrown error answered 500 with a request id", thrown.status === 500 && /^[A-Za-z0-9_-]{6,}$/.test(thrown.headers.get("x-request-id") || ""), thrown.status);
+    for (let i = 0; i < 40 && !envelopes.some(e => /sentry-test/.test(e)); i++) await new Promise(r => setTimeout(r, 250));
+    child.kill("SIGTERM");
+    await new Promise(r => setTimeout(r, 300));
+    sink.close();
+    const sentry = envelopes.join("\n");
+    ok("Sentry received the thrown error (so this section can see what it would carry)", /sentry-test/.test(sentry), envelopes.length);
+    ok("the log line keeps the route and the request id", new RegExp(`\\[500\\] POST /admin/debug/sentry-test rid=${thrown.headers.get("x-request-id")}`).test(out), out.split("\n").filter(l => /\[500\]/.test(l)).slice(0, 2));
+    const planted = { ...PLANT, phoneDigits: "555-0142", token: tok, tokenTail: tok.slice(-24) };
+    for (const [what, v] of Object.entries(planted)) {
+      ok(`no ${what} in the server's log`, !out.includes(v), out.split("\n").filter(l => l.includes(v)).slice(0, 2).map(l => l.slice(0, 200)));
+      ok(`no ${what} in the Sentry payload`, !sentry.includes(v), (sentry.match(new RegExp(".{0,80}" + v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".{0,40}")) || [])[0]);
+    }
+    ok("no request body, cookie or authorization header in the Sentry payload", !/"data":\{"note"|"cookies"|"authorization"/i.test(sentry));
   }
 
   summary();

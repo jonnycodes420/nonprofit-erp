@@ -82,7 +82,11 @@ app.post("/admin/debug/sentry-test", requireAuth, requireAdmin, wrap(async (req,
     setTimeout(() => { Promise.reject(new Error(`[sentry-test] deliberate unhandledRejection by ${req.user.userId} at ${new Date().toISOString()}`)); }, 10);
     return res.json({ ok: true, fired: "rejection" });
   }
-  throw new Error(`[sentry-test] deliberate route error by ${req.user.userId} at ${new Date().toISOString()}`);
+  // SECURE-2: an optional note rides in the message, so a test can plant a
+  // donor's details here and prove the redactor took them out of the log
+  // line and the Sentry event.
+  const note = typeof (req.body && req.body.note) === "string" ? " " + req.body.note.slice(0, 300) : "";
+  throw new Error(`[sentry-test] deliberate route error by ${req.user.userId} at ${new Date().toISOString()}${note}`);
 }));
 app = routers.r1;
 

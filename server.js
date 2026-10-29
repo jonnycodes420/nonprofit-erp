@@ -1,10 +1,14 @@
 require("dotenv").config();
+// SECURE-2 item 1: every log line and every Sentry event goes through one
+// redactor (redact.js) — no donor or staff details, tokens, cookies or bodies.
+require("./redact").install();
 const Sentry = require("@sentry/node");
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || "production",
     tracesSampleRate: 0.1,
+    ...require("./redact").sentryOptions(),
   });
 }
 
@@ -358,6 +362,16 @@ const app = express();
 // client-spoofable X-Forwarded-For chain that `trust proxy: true` would allow.
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+// SECURE-2 item 1: every request has an id (Railway's edge id when present),
+// answered as X-Request-Id and printed on the error line, so a log line finds
+// its request without carrying anything about the person who made it.
+app.use((req, res, next) => {
+  const edge = String(req.headers["x-railway-request-id"] || req.headers["x-request-id"] || "");
+  req.id = /^[A-Za-z0-9_-]{6,64}$/.test(edge) ? edge : require("crypto").randomBytes(8).toString("hex");
+  res.setHeader("X-Request-Id", req.id);
+  if (process.env.SENTRY_DSN) { try { Sentry.getIsolationScope().setTag("request_id", req.id); } catch { /* tagging never fails a request */ } }
+  next();
+});
 
 
 // MIGC — Mission Increase Gulf Coast client-website API (routes/migc.js).
@@ -5442,7 +5456,7 @@ async function runCampaignSend(campaign, org, donors) {
       for (const donor of donors) {
         const decision = await donorMailDecision("campaign", donor.email, org.id);
         if (!decision.send) {
-          console.log(`[campaign:${campaign.id}] skipping ${donor.email} (${decision.reason})`);
+          console.log(`[campaign:${campaign.id}] skipping ${donor.id} (${decision.reason})`);
           await run(
             "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
             ["cr_" + uuid().slice(0, 8), org.id, campaign.id, donor.id, donor.email, `suppressed: ${decision.reason}`]
@@ -5528,7 +5542,7 @@ async function runCampaignSend(campaign, org, donors) {
             err.response    ? `response="${err.response}"`     : "",
             err.command     ? `cmd=${err.command}`             : "",
           ].filter(Boolean).join(" | ").slice(0, 500);
-          console.error(`[campaign:${campaign.id}] SEND FAILED ${donor.email}: ${reason}`);
+          console.error(`[campaign:${campaign.id}] SEND FAILED ${donor.id}: ${reason}`);
           await run(
             "UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
             [reason, recipientId]
@@ -11930,7 +11944,9 @@ app.use((err, req, res, next) => {
     console.warn(`[4xx] ${req.method} ${route} ${err.status} ${err.type}`);
     return res.status(Number(err.status)).json({ error: err.status === 413 ? "That request body is too large." : "That request body could not be read." });
   }
-  console.error(`[500] ${req.method} ${route}`, err);
+  // SECURE-2: the line keeps the request id, route and org; the error itself
+  // goes through the redactor (redact.js) like every other log line.
+  console.error(`[500] ${req.method} ${route} rid=${req.id || "-"} org=${(req.user && req.user.orgId) || "-"}`, err);
   res.status(500).json({ error: "Internal server error" });
 });
 

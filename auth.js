@@ -133,6 +133,8 @@ async function requireAuth(req, res, next) {
       return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
     }
     req.user = { ...payload, role: info.role, orgId: info.org_id };
+    // SECURE-2: a Sentry event names the org and the user by id, never by name.
+    if (process.env.SENTRY_DSN) { try { const sc = require("@sentry/node").getIsolationScope(); sc.setTag("org_id", info.org_id); sc.setUser({ id: payload.userId }); } catch { /* never fails a request */ } }
     // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
     // requires two-step sign-in and who has not set it up) opens the setup
     // routes and nothing else.

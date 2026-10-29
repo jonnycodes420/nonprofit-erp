@@ -1,11 +1,16 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
 import * as Sentry from "@sentry/react";
+import { redactEvent, redactBreadcrumb } from "./lib/redactEvent";
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
     environment: import.meta.env.MODE,
     tracesSampleRate: 0.1,
     integrations: [Sentry.browserTracingIntegration()],
+    sendDefaultPii: false,
+    beforeSend: redactEvent,
+    beforeSendTransaction: redactEvent,
+    beforeBreadcrumb: redactBreadcrumb,
   });
 }
 import ReactDOM from "react-dom/client";
