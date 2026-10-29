@@ -126,6 +126,18 @@ export function renderTemplate(text, values) {
   return { text: out, missing: [...missing], unknown: [...unknown] };
 }
 
+// FIX-56 · THE SIGNATURE IS THE SENDER'S. {{signature}} is never a fact about
+// the donor, so it is never "missing" for one. It is the org's signature from
+// Brand (name, title, extra line); with none set, the org's name, and
+// `fromBrand:false` tells the screen to say "Add your signature in Brand".
+// (There is no per-person signature field yet; when there is, it goes first.)
+export function senderSignature(org) {
+  const o = org || {};
+  const brand = [o.receipt_signature_name, o.receipt_signature_title, o.brand_signature_extra]
+    .map(s => String(s || "").trim()).filter(Boolean).join("\n");
+  return { text: brand || String(o.name || "").trim(), fromBrand: !!brand };
+}
+
 // The unknown tokens in a template, for refusing a save that would print one.
 export function unknownFields(text) {
   return renderTemplate(text, Object.fromEntries(MERGE_KEYS.map(k => [k, "x"]))).unknown;

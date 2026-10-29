@@ -36,7 +36,6 @@ function kitOf(o) {
     legalName: o.legal_name || o.name, orgName: o.name,
   };
 }
-const signatureOf = k => [k.signatureName, k.signatureTitle, k.signatureExtra].filter(Boolean).join("\n");
 
 // ── BRAND KIT ──────────────────────────────────────────────────────────────
 app.get("/brand-kit", requireAuth, wrap(async (req, res) => {
@@ -100,7 +99,7 @@ async function factsFor(org, donorId) {
       year, year_total: c(tot.yr) > 0 ? fmt$(c(tot.yr)) : "", lifetime_total: c(tot.life) > 0 ? fmt$(c(tot.life)) : "",
       monthly_amount: sub ? fmt$(c(sub.amount)) : "", event_name: ev ? ev.name : "",
       volunteer_hours: vh && vh.hh ? String(vh.hh / 100) : "",
-      org_name: org.name, signature: signatureOf(k), org_address: k.address, tax_language: k.taxLanguage || k.taxLanguageDefault,
+      org_name: org.name, signature: B.senderSignature(org).text, org_address: k.address, tax_language: k.taxLanguage || k.taxLanguageDefault,
     },
   };
 }
@@ -151,7 +150,9 @@ app.post("/templates/:kind/preview", requireAuth, wrap(async (req, res) => {
   const s = B.renderTemplate(req.body && req.body.subject != null ? req.body.subject : t.subject, f.values);
   const b = B.renderTemplate(req.body && req.body.body != null ? req.body.body : t.body, f.values);
   res.json({ donor: f.donor, subject: s.text, body: b.text, missing: [...new Set([...s.missing, ...b.missing])],
-    unknown: [...new Set([...s.unknown, ...b.unknown])], brand: kitOf(org), reviewed: t.reviewed, channel: t.channel });
+    unknown: [...new Set([...s.unknown, ...b.unknown])], brand: kitOf(org), reviewed: t.reviewed, channel: t.channel,
+    // FIX-56: the signature is the org's; with none in Brand the screen says where to add one.
+    signatureFromBrand: B.senderSignature(org).fromBrand });
 }));
 
 async function usable(req, res) {

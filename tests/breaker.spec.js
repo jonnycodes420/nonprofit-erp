@@ -281,6 +281,14 @@ async function caseClicks() {
   await page.keyboard.press("Escape").catch(() => {});
 
   // 1f · Save on a person edit, pressed three times
+  // FIX-56: every read of people is held back 2.5 s (the list and the record), as
+  // on a slow runner or a slow line. Edit pressed before they landed used to open
+  // on the bare id the URL gave: every field blank, and it stayed blank. Save
+  // refused "Name is required" (CI, 29 Oct), and a name typed in would have
+  // saved blanks over the rest. RED BEFORE the fix: puts 0.
+  const slowFull = r => (r.request().method() === "GET" ? new Promise(res => setTimeout(res, 2500)).then(() => r.continue()) : r.continue());
+  const peopleReads = new RegExp("^" + BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/(donors|people)(/|\\?|$)");
+  await page.context().route(peopleReads, slowFull);   // the context, so a service worker's fetch is held too
   await page.goto(`${APP}/donors/d_brk_c5`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.locator('[data-testid="dp-more"]').first().click({ timeout: 30000 });
   await page.getByRole("menuitem", { name: /Edit record/ }).first().click({ timeout: 10000 }).catch(() => page.getByText("Edit record").first().click());
@@ -290,7 +298,8 @@ async function caseClicks() {
   await phone.waitFor({ state: "visible", timeout: 10000 });
   await wait(600);
   for (let i = 0; i < 5 && (await phone.inputValue().catch(() => "")) !== "555-0101"; i++) { await phone.fill("555-0101"); await wait(300); }
-  await page.getByRole("button", { name: /Save Changes/ }).click({ clickCount: 3 });
+  await page.getByRole("button", { name: /Save Changes/ }).click({ clickCount: 3, timeout: 15000 }).catch(() => {});
+  await page.context().unroute(peopleReads, slowFull);
   await waitForDb(async () => (await one("SELECT phone FROM donors WHERE id='d_brk_c5'")).phone === "555-0101", 10000);
   await wait(800);
   const puts = writesTo(page, /PUT \/donors\/d_brk_c5$/, "2xx");

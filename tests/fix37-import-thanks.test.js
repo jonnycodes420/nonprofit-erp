@@ -226,6 +226,38 @@ const file = (tag, n, perDonor = 1) => ({
   ok("§7 a one-person template's greeting reads both people, the rest keeps the full name",
      /^Dear Desmond and Ruth,/.test(pv.body?.body || "") && (pv.body?.body || "").includes("Thank you, Desmond & Ruth Okafor."), pv.body?.body);
 
+  // ── §8 · FIX-56: AN ORGANISATION IS GREETED AS ONE, AND THE SIGNATURE IS
+  // THE SENDER'S. A foundation's thank-you opened "Dear Lynn and Rovena," and
+  // its preview said the foundation had "nothing on file for: signature". Red
+  // on main (970d9cf): §8 greets "Dear Alder and Birch,", reports signature
+  // missing, and the email editor's preview is signed by the sample person.
+  const fdn = await mk("Alder & Birch Family Foundation");
+  await q(`UPDATE donors SET kind='organisation' WHERE id=$1 AND org_id=$2`, [fdn.id, ORG]);
+  const withContact = await mk("Harbor Tools Inc.");
+  await q(`UPDATE donors SET kind='organisation', contact_name='Pat Rivera' WHERE id=$1 AND org_id=$2`, [withContact.id, ORG]);
+  await q(`UPDATE orgs SET receipt_signature_name=NULL, receipt_signature_title=NULL, brand_signature_extra=NULL WHERE id=$1`, [ORG]);
+  const thanks = "Dear {{first_name}},\n\nThank you.\n\nWith thanks,\n{{signature}}";
+  const pfd = await api("POST", "/templates/thanks_first/preview", tok, { donorId: fdn.id, subject: "Thanks", body: thanks });
+  const [orgRow] = await q(`SELECT name FROM orgs WHERE id=$1`, [ORG]);
+  ok("§8 a foundation is greeted \"Dear friends at <name>,\", never by the first words of its name",
+     /^Dear friends at Alder & Birch Family Foundation,/.test(pfd.body?.body || ""), pfd.body?.body);
+  ok("§8 with no signature in Brand, it is signed with the org's name and nothing is missing for the donor",
+     (pfd.body?.body || "").trim().endsWith(orgRow.name) && !(pfd.body?.missing || []).includes("signature") && pfd.body?.signatureFromBrand === false,
+     { body: pfd.body?.body, missing: pfd.body?.missing, fromBrand: pfd.body?.signatureFromBrand });
+  const pfc = await api("POST", "/templates/thanks_first/preview", tok, { donorId: withContact.id, subject: "Thanks", body: thanks });
+  ok("§8 an organisation with a named contact is greeted by the contact", /^Dear Pat,/.test(pfc.body?.body || ""), pfc.body?.body);
+  await api("PUT", "/brand-kit", tok, { signatureName: "Sam Ortiz", signatureTitle: "Director" });
+  const pfs = await api("POST", "/templates/thanks_first/preview", tok, { donorId: fdn.id, subject: "Thanks", body: thanks });
+  ok("§8 with a signature in Brand, that is the signature", (pfs.body?.body || "").includes("Sam Ortiz\nDirector") && pfs.body?.signatureFromBrand === true, pfs.body?.body);
+  await q(`UPDATE orgs SET receipt_signature_name=NULL, receipt_signature_title=NULL WHERE id=$1`, [ORG]);
+  const et = await api("POST", "/email-templates", tok, { starterKey: "person_thanks_first" });
+  ok("§8 the first-gift thank-you opens in the email editor as a one-person email", (et.status === 201 || et.status === 200) && et.body?.template?.personKind === "thanks_first", et.body);
+  if (et.body?.template?.id) {
+    const pe = await api("POST", `/email-templates/${et.body.template.id}/preview`, tok, {});
+    const html = JSON.stringify(pe.body || {});
+    ok("§8 the email editor's preview is never signed by the brand kit's sample person", !/Dana Reyes/.test(html) && html.includes(orgRow.name), html.slice(0, 200));
+  }
+
   await wipe();
   await closeDb();
   summary();

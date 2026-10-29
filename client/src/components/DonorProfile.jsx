@@ -438,7 +438,10 @@ function EditDonorModal({donor,onSave,onClose}){
   const[err,setErr]=useState("");
   const set=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
 
+  // FIX-56: Save waits for the full record (Donors.jsx opens this again when it lands).
+  const ready=!!donor.fullRecord;
   const save=async()=>{
+    if(!ready)return;
     if(!form.name.trim()){setErr("Name is required");return;}
     setLoading(true);setErr("");
     try{
@@ -458,6 +461,7 @@ function EditDonorModal({donor,onSave,onClose}){
       <div>
         <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
+        {!ready?<div data-testid="edit-donor-loading" style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.ink3,padding:"8px 0 4px"}}><Spin/>Loading their record…</div>:
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"],["employer","Employer","text"]].map(([k,pl,t])=>(
             <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
@@ -500,12 +504,12 @@ function EditDonorModal({donor,onSave,onClose}){
           </div>
           {err&&<div style={{color:T.terracotta,fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
-            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
-              {loading?"Saving…":"Save Changes"}
+            <button onClick={save} disabled={loading||!ready} style={{flex:1,background:loading||!ready?T.bg2:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:loading||!ready?"not-allowed":"pointer"}}>
+              {loading?"Saving…":!ready?"Loading their record…":"Save Changes"}
             </button>
             <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
           </div>
-        </div>
+        </div>}
       </div>
     </Modal>
   );

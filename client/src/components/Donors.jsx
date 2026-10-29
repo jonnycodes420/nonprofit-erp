@@ -562,7 +562,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     try{
       const full=await apiFetch(`/donors/${d.id}`);
       setSelected(prev=>prev?.id===d.id?{
-        ...adaptDonor(full),
+        ...adaptDonor(full),fullRecord:true,
         lastTouchpoint:prev.lastTouchpoint??null,
         interactions:prev.interactions||[],
       }:prev);
@@ -593,7 +593,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // from local state after every edit, even though the database itself
     // was untouched (see api.js's adaptDonor comment).
     const adapted={
-      ...adaptDonor(raw),
+      ...adaptDonor(raw),fullRecord:true,
       interactions:selected?.id===raw.id?(selected.interactions||[]):[],
       lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
     };
@@ -727,7 +727,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
-      {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
+      {/* FIX-56: the form is the full record, never the summary or the bare id a
+          profile opens with. It opens again when the full record lands, and Save
+          waits for it, so an early Edit can't save blanks over what is on file. */}
+      {editTarget&&(d=>d&&<EditDonorModal key={d.id+(d.fullRecord?":full":":part")} donor={d} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>)(selected?.id===editTarget.id?selected:editTarget)}
       {planBlock&&<Modal onClose={()=>setPlanBlock(null)} width={420} ariaLabel="This person has a monthly plan">
         <div data-testid="delete-plan-block" style={{display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Not deleted</div>

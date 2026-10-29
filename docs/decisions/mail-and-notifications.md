@@ -64,6 +64,14 @@ know exactly what is going out.** Every screen, word and test about donor mail s
   statement carries its tax lines as a locked block a save cannot drop or change. `emailCompose.templateFor`
   never returns a `person_` template, so it cannot become a campaign or another draft's words. Printed
   letters keep their own editor.
+- **The thank-yous are emails too (FIX-56).** The four thank-you kinds print as letters and fill the
+  thank-you task's email, so they are in `PERSON_KINDS` and open in the EMAIL-1 editor; their card keeps
+  "Quick edit and print" for the letter form. A card says "Edit in editor" only when it opens that editor; a
+  letter-only kind (the lapsed note) says "Edit letter" and opens in place of the library, never above it.
+- **The signature is the sender's (FIX-56).** `{{signature}}` is `brandKit.senderSignature(org)`: the Brand
+  signature, else the org's name. It is never a missing fact about a donor, and a preview with no Brand
+  signature says "Add your signature in Brand". An organisation's `{{first_name}}` is its named contact,
+  else "friends at <name>" (shared/greeting.js).
 - **Video in email is a picture.** The video block is its thumbnail with a play button, linking to the
   org's own video page `GET /watch/:orgSlug/:provider/:videoId`; no inbox plays video.
 - **A campaign can wait for approval.** `awaiting_approval` is never picked up by the scheduler; an admin's

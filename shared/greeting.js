@@ -6,7 +6,7 @@
 //
 // In order, the first one that applies:
 //   1. the record's own salutation, typed by a person or imported ("Dear Dr. Chen")
-//   2. an organisation: "Friends at <name>"
+//   2. an organisation: its named contact, else "friends at <name>" (FIX-56)
 //   3. a household or joint name, both people: "Desmond & Ruth Okafor" reads
 //      "Desmond and Ruth"; "Mr. and Mrs. Okafor" is used whole and "The Okafor
 //      Family" reads "Okafor Family", because neither first word is a name
@@ -19,6 +19,11 @@ const TITLE = /^(mr|mrs|ms|miss|mx|dr|rev|fr|sr|br|prof|hon|pastor|rabbi)\.?$/i;
 const JOINT = /^(.+?)\s+(?:&|and|\+)\s+(.+)$/i;
 
 const firstWord = s => String(s || "").trim().split(/\s+/)[0] || "";
+// FIX-56: a record kept as a person whose name can only be an organisation's
+// ("... Family Foundation", "... Inc.") is greeted as one. Narrow on purpose:
+// "Ellen Church" is a person, so a church is read from the record's kind.
+const ORG_NAME = /\b(foundation|inc\.?|llc|ltd\.?|corp\.?|corporation|company|ministries|trust)$/i;
+const isOrg = p => p.kind === "organisation" || p.kind === "organization" || ORG_NAME.test(String(p.name || "").trim());
 
 export function greetingName(person = {}) {
   const p = typeof person === "string" ? { name: person } : (person || {});
@@ -26,7 +31,11 @@ export function greetingName(person = {}) {
   if (salutation) return salutation;
   const name = String(p.name || "").trim().replace(/\s+/g, " ");
   if (!name) return "";
-  if (p.kind === "organisation" || p.kind === "organization") return `Friends at ${name}`;
+  // FIX-56: an organisation is greeted by its named contact, else as "friends at" it.
+  if (isOrg(p)) {
+    const contact = String(p.contactName || p.contact_name || "").trim();
+    return contact ? greetingName({ name: contact }) : `friends at ${name}`;
+  }
   if (/^the\s/i.test(name)) return name.replace(/^the\s+/i, "");
   const joint = name.match(JOINT);
   if (joint) {
@@ -47,10 +56,14 @@ export function dearLine(person, fallback = "friend") {
 }
 
 // The {{first_name}} merge field: the first names on the record, so a joint
-// record reads "Desmond and Ruth" there too. No salutation and no "Friends
-// at": a template that says "Dear {{first_name}}" chose first names.
+// record reads "Desmond and Ruth" there too. No salutation: a template that
+// says "Dear {{first_name}}" chose first names. FIX-56: an organisation has no
+// first name, so "Lynn & Rovena Alexander Family Foundation" is never "Lynn
+// and Rovena": it is its named contact, else "friends at" it.
 export function firstNames(person = {}) {
   const p = typeof person === "string" ? { name: person } : (person || {});
+  if (isOrg(p))
+    return greetingName({ name: p.name, kind: "organisation", contactName: p.contactName || p.contact_name });
   return greetingName({ name: p.name, spouseName: p.spouseName || p.spouse_name });
 }
 
