@@ -1063,7 +1063,8 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
     const total = ev.cameNoGift.length;
     for (const p of ev.cameNoGift) {
       const key = `${ev.id}:${p.id}`;
-      if (gone.has(key) || seen.has(p.id)) continue;
+      // FIX-59: a walk-in with no person record has no profile to open
+      if (p.noRecord || gone.has(key) || seen.has(p.id)) continue;
       seen.add(p.id);
       const what = `Came to the ${ev.name}${ev.date ? ` on ${longDate(ev.date)}` : ""} and didn't give. Thank them for coming.`;
       const facts = [["event", ev.name], ...(ev.date ? [["event date", longDate(ev.date)]] : []), ["came, didn't give", String(total)]];

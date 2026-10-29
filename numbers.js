@@ -231,41 +231,45 @@ async function eventsRaised(orgId, { ids = null, from = null, to = null, withMon
   return limit ? out.slice(0, limit) : out;
 }
 
-const EVENT_GUEST_DEFINITIONS = {
-  cameNoGift: "Marked as attending, with no gift or pledge tied to this event for them or anyone in their household.",
-  cameGave: "Marked as attending, with a gift or pledge tied to this event for them or someone in their household.",
-  invitedNoShow: "On the event's list and not marked as attending. Shown once the event's day has passed.",
-};
+const EVENT_GUEST_DEFINITIONS = FS.EVENT_GUEST_WORDS;
 // IMPORT-5 · WHO CAME AND DIDN'T GIVE. One answer for the event page, Home's
 // Grow moves, Ask and Atlas. A guest "gave" when a gift (the event's own gift
 // match) or a pledge is tied to the event for them or anyone in their
-// household: a couple's gift sits on one of the two. "Invited, didn't come" is
-// everyone on the list who was not marked as attending, once the event is past.
+// household: a couple's gift sits on one of the two.
+// FIX-59 · THE LIST ADDS UP. Registered is everyone on the list who has not
+// declined or cancelled (an 'invited' row counts); Declined is said apart.
+// Came = came, gave + came, didn't give; Registered = Came + not yet come.
+// "Invited, didn't come" is the not-yet-come list once the event is past.
+// A walk-in with no person record is a guest (keyed by the attendee row).
 async function eventGuests(orgId, { ids = null, asOf = null } = {}) {
   const args = [orgId];
   let where = "";
   if (ids) { where = " AND e.id = ANY(?)"; args.push(ids); }
   const rows = await query(
-    `SELECT DISTINCT ON (e.id, d.id) e.id AS event_id, e.name AS event_name, LEFT(e.date::text, 10) AS date, e.date_unknown,
-            d.id AS donor_id, d.name, a.status,
+    `SELECT DISTINCT ON (e.id, COALESCE(d.id, a.id)) e.id AS event_id, e.name AS event_name, LEFT(e.date::text, 10) AS date, e.date_unknown,
+            COALESCE(d.id, a.id) AS person_id, d.id AS donor_id, COALESCE(d.name, a.name) AS name,
+            ${FS.EVENT_CAME("a")} AS came, ${FS.EVENT_DECLINED("a")} AS declined,
             ${FS.EVENT_GUEST_GAVE("d", "e")} AS gave
        FROM event_attendees a
        JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
-       JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
-      WHERE a.org_id = ? AND a.status <> 'cancelled'${where}
-      ORDER BY e.id, d.id, (a.status = 'attended') DESC`, args);
+       LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+      WHERE a.org_id = ? AND a.status NOT IN ('cancelled','canceled') AND ${FS.EVENT_GUEST_LIVE("a")}${where}
+      ORDER BY e.id, COALESCE(d.id, a.id), ${FS.EVENT_CAME("a")} DESC`, args);
   const byEvent = new Map();
   for (const r of rows) {
     const ev = byEvent.get(r.event_id) || byEvent.set(r.event_id, { id: r.event_id, name: r.event_name, date: r.date_unknown ? null : r.date,
-      past: r.date_unknown || !asOf || r.date <= asOf, cameGave: [], cameNoGift: [], invitedNoShow: [] }).get(r.event_id);
-    const person = { id: r.donor_id, name: r.name };
-    if (r.status === "attended") (r.gave ? ev.cameGave : ev.cameNoGift).push(person);
-    else if (ev.past) ev.invitedNoShow.push(person);
+      past: r.date_unknown || !asOf || r.date <= asOf, cameGave: [], cameNoGift: [], notYet: [], declined: [] }).get(r.event_id);
+    const person = { id: r.person_id, name: r.name, ...(r.donor_id ? {} : { noRecord: true }) };
+    if (r.came) (r.gave ? ev.cameGave : ev.cameNoGift).push(person);
+    else if (r.declined) ev.declined.push(person);
+    else ev.notYet.push(person);
   }
   const byName = (a, b) => String(a.name).localeCompare(String(b.name));
   return [...byEvent.values()].map(ev => {
-    for (const k of ["cameGave", "cameNoGift", "invitedNoShow"]) ev[k].sort(byName);
-    return { ...ev, definitions: EVENT_GUEST_DEFINITIONS };
+    for (const k of ["cameGave", "cameNoGift", "notYet", "declined"]) ev[k].sort(byName);
+    const came = ev.cameGave.length + ev.cameNoGift.length;
+    return { ...ev, invitedNoShow: ev.past ? ev.notYet : [],
+      came, registered: came + ev.notYet.length, definitions: EVENT_GUEST_DEFINITIONS };
   });
 }
 
@@ -273,26 +277,40 @@ async function eventGuests(orgId, { ids = null, asOf = null } = {}) {
 // who came, who gave or pledged there, and who came and did not give. The
 // event page and Fundraising's lead card read this one function; each count
 // opens its people.
+// The org's own today, for "has the event's day passed".
+async function todayFor(orgId) {
+  const [o] = await query("SELECT timezone FROM orgs WHERE id = ?", [orgId]);
+  return orgTime.orgToday({ timezone: o && o.timezone });
+}
 async function eventStory(orgId, eventId) {
   const [money] = await eventsRaised(orgId, { ids: [eventId] });
   if (!money) return null;
   const src = key => ({ key, params: { event: eventId } });
+  const guestSrc = list => ({ key: "event-guests", params: { event: eventId, list } });
   // "Came, didn't give" is IMPORT-5's one answer (event-guests, household-aware).
-  const noGift = { key: "event-guests", params: { event: eventId, list: "cameNoGift" } };
-  const [attended, gave, cameDidntGive] = await Promise.all(
-    [src("event-attended"), src("event-gave"), noGift].map(s => FS.figureValue(orgId, s)));
+  // FIX-59: the whole list is that one answer: registered, came, declined.
+  const [[G], gave] = await Promise.all([eventGuests(orgId, { ids: [eventId], asOf: await todayFor(orgId) }), FS.figureValue(orgId, src("event-gave"))]);
+  const g = G || { cameGave: [], cameNoGift: [], notYet: [], declined: [], invitedNoShow: [], past: true, came: 0, registered: 0 };
   const n = f => Number(f.value) || 0;
   return {
     ...money,
-    attended: n(attended), gave: n(gave), cameDidntGive: n(cameDidntGive),
+    registered: g.registered, attended: g.came, cameGave: g.cameGave.length, cameDidntGive: g.cameNoGift.length,
+    declined: g.declined.length, invitedDidntCome: g.past ? g.notYet.length : null, past: g.past,
+    gave: n(gave),
     pledgedAll: Math.round((money.pledgedCents + money.laterCents)) / 100, pledgedAllCents: money.pledgedCents + money.laterCents,
-    sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } }, attended: src("event-attended"), gave: src("event-gave"), cameDidntGive: noGift },
+    sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } },
+      registered: guestSrc("registered"), attended: src("event-attended"), gave: src("event-gave"),
+      cameGave: guestSrc("cameGave"), cameDidntGive: guestSrc("cameNoGift"), declined: guestSrc("declined"), invitedDidntCome: guestSrc("invitedNoShow") },
     definitions: {
       ...money.definitions,
       pledgedAll: "Every unpaid installment of an open pledge made at this event, in every year it falls due.",
-      attended: "Each person marked as having come to this event.",
+      registered: EVENT_GUEST_DEFINITIONS.registered,
+      attended: "Each person marked as having come to this event, or checked in at the door, once.",
       gave: "Each person with a gift for this event or a pledge made at it, once.",
+      cameGave: EVENT_GUEST_DEFINITIONS.cameGave,
       cameDidntGive: EVENT_GUEST_DEFINITIONS.cameNoGift,
+      declined: EVENT_GUEST_DEFINITIONS.declined,
+      invitedDidntCome: EVENT_GUEST_DEFINITIONS.invitedNoShow,
     },
   };
 }
