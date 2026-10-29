@@ -821,8 +821,11 @@ async function demoDoor(browser) {
     await page.route(slow, async r => { await new Promise(res => setTimeout(res, 3000)); await r.continue().catch(() => {}); });
     await page.goto(`${APP}/donors/${three[0].id}`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(e => trouble.push("navigation: " + e.message.slice(0, 120)));
     await page.waitForTimeout(4500);
-    await look(`donor ${three[0].id} · its record slow to arrive`);
+    const holes = await page.evaluate(() => { const h = window.__holes || []; window.__holes = []; return h; }).catch(() => []);
+    ok(`donor ${three[0].id} · its record slow to arrive — no sentence with a missing name in it while it waits`, holes.length === 0, holes.slice(0, 3));
     await page.unroute(slow);
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    trouble = [];
   }
 
   // FIX-25 · DELETE A MEETING, THEN UNDO. A tester deleted a meeting and saw no
