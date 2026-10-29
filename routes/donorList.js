@@ -53,7 +53,9 @@ app.get("/donors/list-setup", requireAuth, requireCrm, wrap(async (req, res) => 
     groups: DL.GROUPS, fields: shown.map(DL.publicField), defaultColumns: DL.DEFAULT_COLUMNS, pageSizes: DL.PAGE_SIZES,
     layout: { ...layout, columns: layout.columns.filter(k => known.has(k)) },
     views: views.map(v => viewOut(v, userId)),
-    canSetOrgDefault: isAdmin(req), hasGeocoding: !!(geo && geo.on),
+    canSetOrgDefault: isAdmin(req),
+    // FIX-55 item 6: the miles filter needs a provider AND stored coordinates.
+    hasGeocoding: require("../geocode").geocodingConfigured() && !!(geo && geo.on),
   });
 }));
 

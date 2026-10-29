@@ -300,7 +300,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             </div>
           </div>
 
-          <div>
+          {/* FIX-55 item 6: these four are AI only; with AI off they hung on "Thinking…". */}
+          {org?.capabilities?.ai&&<div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Grant Strategy</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
@@ -309,7 +310,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               {grant.reportDue&&grant.status==="active"&&<AIBtn onClick={()=>getAI("report")} loading={loadingKey===`${grant.id}_report`} label="✦ Report Outline" small/>}
             </div>
             {["analyze","strategy","loi","report"].map(t=>aiMap[`${grant.id}_${t}`]?<AIPanel key={t} text={aiMap[`${grant.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${grant.id}_${t}`]:""}))}/>:null)}
-          </div>
+          </div>}
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
@@ -377,7 +378,9 @@ const deadlineMeta = g => {
 export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSection,onIntentConsumed}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
-  const SUBTABS=[["pipeline","Pipeline"],["funders","Funders"],["deadlines","Deadlines"],["library","Library"],["reports","Reports"],["findgrants","Find grants"]];
+  // FIX-55 item 6: Find grants is AI only, so it shows only when AI is on.
+  const aiOn=!!data?.org?.capabilities?.ai;
+  const SUBTABS=[["pipeline","Pipeline"],["funders","Funders"],["deadlines","Deadlines"],["library","Library"],["reports","Reports"],...(aiOn?[["findgrants","Find grants"]]:[])];
   const [subTab,setSubTab]=useState(SUBTABS.some(([k])=>k===initialSection)?initialSection:"pipeline");
   const [openFunderId,setOpenFunderId]=useState("");
   const [boardKey,setBoardKey]=useState(0);
@@ -475,7 +478,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
         ))}
       </div>
     </div>
-    {subTab==="findgrants"&&<FindGrants data={data}/>}
+    {subTab==="findgrants"&&aiOn&&<FindGrants data={data}/>}
     {subTab==="funders"&&<GrantFunders isReadOnly={isReadOnly} onOpenGrant={openGrant} openFunderId={openFunderId}/>}
     {subTab==="library"&&<GrantLibrary isReadOnly={isReadOnly}/>}
     {subTab==="reports"&&<GrantOverview onOpenGrant={openGrant}/>}

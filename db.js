@@ -62,6 +62,22 @@ async function getDb() {
 const { AsyncLocalStorage } = require("async_hooks");
 const ambientTx = new AsyncLocalStorage();
 function target() { const st = ambientTx.getStore(); return st && st.open ? st.client : pool; }
+// FIX-55 · A ROUND TRIP AS PROD PAYS IT. On prod every statement crosses the
+// network to the database (about 17 ms on 27 Oct); on the scratch stack it is
+// free, so a preview that asks one question per person looked fast here. With
+// TEST_MODE and TEST_DB_LATENCY_MS set, each query/run waits that long first,
+// and the preview budgets in tests/perf-app.spec.js are measured that way.
+const TEST_LATENCY_MS = process.env.TEST_MODE === "1" ? Math.max(0, Number(process.env.TEST_DB_LATENCY_MS) || 0) : 0;
+const roundTrip = () => (TEST_LATENCY_MS ? new Promise(r => setTimeout(r, TEST_LATENCY_MS)) : null);
+// FIX-55: how many statements one piece of work sent (TEST_MODE only), so a
+// budget can charge each one prod's round trip on a stack where they are free.
+const tripCount = new AsyncLocalStorage();
+function countRoundTrips(fn) {
+  if (process.env.TEST_MODE !== "1") return fn().then(result => ({ result, trips: null }));
+  const st = { n: 0 };
+  return tripCount.run(st, fn).then(result => ({ result, trips: st.n }));
+}
+const noteTrip = () => { const st = tripCount.getStore(); if (st) st.n++; };
 async function withAmbientTransaction(fn) {
   const client = await pool.connect();
   const st = { client, open: true };
@@ -91,6 +107,8 @@ async function runOutside(sql, params = []) {
 
 // Convert SQLite ? placeholders to PostgreSQL $1, $2, ... positional params
 async function query(sql, params = []) {
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -133,6 +151,8 @@ async function querySetwise(sql, params = []) {
 }
 
 async function run(sql, params = []) {
+  if (TEST_LATENCY_MS) await roundTrip();
+  noteTrip();
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
   const result = await target().query(pgSql, params);
@@ -9504,5 +9524,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };

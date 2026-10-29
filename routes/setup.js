@@ -4,7 +4,9 @@
 //   GET  /setup/current               the org's latest run, its plan and progress
 //   POST /setup/runs                  files + website + tools in, a PLAN out (writes nothing else)
 //   PUT  /setup/runs/:id/answers      her answers to the question cards
-//   POST /setup/runs/:id/start        the one Start: the work runs on the server
+//   POST /setup/runs/:id/read         the one reader's numbers for the plan's spreadsheets (FIX-55)
+//   GET  /setup/runs/:id/files/:fid   one of her files as she gave it, for the import screen
+//   POST /setup/runs/:id/start        the one Start: the ticked steps run on the server
 //   POST /setup/runs/:id/resume       carry on after a closed tab or a restart
 //   POST /setup/runs/:id/undo         "Undo all of setup"
 //   PUT  /setup/invites/:id           the email for a prepared invitation
@@ -43,12 +45,29 @@ async function runOut(orgId, r) {
     invites, toolCards: S.TOOL_CARDS };
 }
 
-async function createRun(orgId, who, b) {
+// FIX-55: a file is kept as the import screen reads it: its sheets of cells
+// (readSheetFile), its own bytes (so the plan can hand that file to the
+// import screen after a closed tab) and the date the screen would suggest.
+// A CSV may come as its text alone; the reader makes its sheet.
+function storedBody(f) {
+  if (!f || !String(f.name || "").trim()) return null;
+  const out = {};
+  if (Array.isArray(f.sheets)) out.sheets = f.sheets.slice(0, 40).map(s => ({ name: String((s && s.name) || "Sheet").slice(0, 80), grid: Array.isArray(s && s.grid) ? s.grid : [] }));
+  else if (typeof f.text === "string") out.text = f.text;
+  else if (Array.isArray(f.records)) out.records = f.records;
+  else return null;
+  if (typeof f.bytes === "string" && /^[A-Za-z0-9+/=]*$/.test(f.bytes)) out.bytes = f.bytes;
+  if (Number.isFinite(Number(f.lastModified))) out.lastModified = Number(f.lastModified);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(f.suggestedDate || ""))) out.suggestedDate = String(f.suggestedDate);
+  return JSON.stringify(out);
+}
+
+async function createRun(orgId, who, b, call) {
   const files = Array.isArray(b.files) ? b.files.slice(0, MAX_FILES) : [];
   if (!files.length && !b.siteUrl) return { status: 400, body: { error: "nothing_given", sentence: "Add your donor files or your website address to start." } };
   for (const f of files) {
-    const body = f && (typeof f.text === "string" ? f.text : Array.isArray(f.records) ? JSON.stringify({ records: f.records }) : null);
-    if (!body || !String(f.name || "").trim()) return { status: 400, body: { error: "bad_file", sentence: "A file arrived without its name or its contents." } };
+    const body = storedBody(f);
+    if (!body) return { status: 400, body: { error: "bad_file", sentence: "A file arrived without its name or its contents." } };
     if (body.length > MAX_FILE_CHARS) return { status: 413, body: { error: "file_too_big", sentence: `${String(f.name).slice(0, 80)} is larger than setup reads at once. Use Import for it.` } };
   }
   const tools = (Array.isArray(b.tools) ? b.tools : []).map(String).filter(t => S.TOOL_KEYS.includes(t));
@@ -60,11 +79,11 @@ async function createRun(orgId, who, b) {
   await run(`INSERT INTO setup_runs (id, org_id, instruction_id, status, site_url, tools, created_by, created_by_name)
              VALUES (?,?,?,?,?,?,?,?)`, [id, orgId, instr, "planned", String(b.siteUrl || "").trim().slice(0, 400) || null, JSON.stringify(tools), who.id, who.name]);
   for (const f of files) {
-    const body = typeof f.text === "string" ? JSON.stringify({ text: f.text }) : JSON.stringify({ records: f.records });
+    const body = storedBody(f);
     await run(`INSERT INTO setup_files (id, org_id, run_id, name, body, bytes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
       ["sf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, id, String(f.name).slice(0, 200), body, body.length, who.id, who.name]);
   }
-  const plan = await S.planRun(orgId, id, { today: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+  const plan = await S.planRun(orgId, id, { today: orgToday(await orgTz(orgId)), call });   // ORG_TZ_SEAM_OK
   await run(`UPDATE agent_instructions SET plan=? WHERE id=? AND org_id=?`, [JSON.stringify(plan), instr, orgId]);
   return { status: 201, body: await runOut(orgId, await S.loadRun(orgId, id)) };
 }
@@ -82,8 +101,27 @@ app.get("/setup/current", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/setup/runs", requireAuth, requireAdmin, checkWriteAccess, express.json({ limit: "64mb" }), wrap(async (req, res) => {
-  const out = await createRun(req.user.orgId, await whoOf(req), req.body || {});
+  const out = await createRun(req.user.orgId, await whoOf(req), req.body || {}, await callOf(req));
   res.status(out.status).json(out.body);
+}));
+
+// FIX-55: the reader's numbers for the plan's spreadsheets, read as the person
+// (a plan a super-admin prepared carries none until she opens it).
+app.post("/setup/runs/:id/read", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const r = await S.loadRun(orgId, req.params.id);
+  if (!r) return res.status(404).json({ error: "not_found" });
+  if (r.status !== "planned") return res.status(409).json({ error: "already_started", sentence: "Setup has started, so its plan is set." });
+  await S.readSheets(orgId, r.id, await callOf(req));
+  res.json(await runOut(orgId, await S.loadRun(orgId, r.id)));
+}));
+
+// One of the plan's files as she gave it, so the plan opens the import screen
+// with that very file (FIX-55).
+app.get("/setup/runs/:id/files/:fileId", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const f = await S.fileFor(req.user.orgId, req.params.id, req.params.fileId);
+  if (!f) return res.status(404).json({ error: "not_found" });
+  res.json(f);
 }));
 
 app.put("/setup/runs/:id/answers", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -111,7 +149,9 @@ app.post("/setup/runs/:id/start", requireAuth, requireAdmin, checkWriteAccess, w
   await run(`INSERT INTO agent_runs (id, org_id, instruction_id, status, plan) VALUES (?,?,?,?,?)`, [agentRun, orgId, r.instruction_id, "running", JSON.stringify(r.plan)]);
   await run(`UPDATE agent_instructions SET status='active', turned_on_by=?, turned_on_by_name=?, turned_on_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
     [who.id, who.name, r.instruction_id, orgId]);
-  await run(`UPDATE setup_runs SET status='running', agent_run_id=?, started_at=NOW(), heartbeat_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`, [agentRun, r.id, orgId]);
+  // FIX-55: Start does only the steps she left ticked ({ steps: [...] }; no list means all of them).
+  const steps = S.chosenSteps(r.plan, req.body && req.body.steps);
+  await run(`UPDATE setup_runs SET status='running', agent_run_id=?, steps=?, started_at=NOW(), heartbeat_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`, [agentRun, JSON.stringify(steps), r.id, orgId]);
   await run(`UPDATE orgs SET setup_started_at=COALESCE(setup_started_at, NOW()), setup_completed_at=NULL WHERE id=?`, [orgId]);
   const call = await callOf(req);
   S.execute(orgId, r.id, call).catch(e => console.error("[setup] run failed:", r.id, e && e.message));
