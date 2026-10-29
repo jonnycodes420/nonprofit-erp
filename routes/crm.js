@@ -3263,9 +3263,12 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // them — a settings-toggle-only PATCH (e.g. coverFeesEnabled below) must
   // not null out the org's mission/website as a side effect.
   if ([mission, focusArea, annualBudget, foundedYear, website].some(v => v !== undefined)) {
+    // SECURE-1: a web address or nothing; any other scheme is refused.
+    if (website != null && require("../webAddress").webAddress(website) === null)
+      return res.status(400).json({ error: "bad_website", message: "The website should be a web address, like yourorg.org." });
     await run(
       `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
-      [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]
+      [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, require("../webAddress").webAddress(website) || null, req.params.id]
     );
   }
 

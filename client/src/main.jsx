@@ -351,8 +351,21 @@ function Root() {
 
 // HARDEN-2: a marketing page's chunk is in hand before React draws over its
 // prerendered HTML; anything else draws at once.
+// SECURE-1 · CLICKJACKING. A signed-in screen is never drawn inside another
+// site's frame, where a page could lay its own buttons over ours. The forms,
+// giving and volunteer pages an org embeds stay embeddable; only the staff
+// app and the sign-in screens refuse, and they say where to open Steward.
+const STAFF_PATHS = /^\/(app|dashboard|dashboards|donors|integrations|admin|login|signup|welcome|setup|today|invite|portal-editor|lost-and-found|forgot-password|reset-password|oauth)(\/|$)/;
+const framedByAnotherSite = () => {
+  if (window.top === window.self) return false;
+  try { return window.top.location.origin !== window.location.origin; } catch { return true; }
+};
 const draw = () => ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode><Root /></React.StrictMode>
+  STAFF_PATHS.test(window.location.pathname) && framedByAnotherSite()
+    ? <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 15, padding: 24, color: "#0F1A12" }}>
+        Steward can't be shown inside another website. <a href={window.location.href} target="_top" rel="noopener" style={{ color: "#0D5C3A" }}>Open it in its own tab</a>.
+      </p>
+    : <React.StrictMode><Root /></React.StrictMode>
 );
 const here = window.location.pathname.replace(/(.)\/+$/, "$1");
 if (MARKETING_PATHS.includes(here)) loadMarketing().then(draw, draw);

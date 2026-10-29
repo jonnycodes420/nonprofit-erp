@@ -8002,6 +8002,10 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
   if (!name || !EMAIL_RX.test(em) || String(password || "").length < 8) return res.status(400).json({ error: "Name, email, and a password of 8+ characters are required" });
   if (ein.length !== 9) return res.status(400).json({ error: "EIN must be 9 digits" });
   if (req.body?.consent !== true) return res.status(400).json({ error: "consent_required", message: "Please agree to the Terms and Privacy Policy." });
+  // SECURE-1: the website is shown to the super admin as a link, so it is a
+  // web address or nothing (webAddress.js); "javascript:…" is refused here.
+  const site = require("../webAddress").webAddress(website);
+  if (site === null) return res.status(400).json({ error: "bad_website", message: "The website should be a web address, like yourorg.org." });
   const existingUser = await query(`SELECT id FROM users WHERE email = ?`, [em]);
   if (existingUser.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward login." });
 
@@ -8047,7 +8051,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
     `INSERT INTO network_applications (id, org_id, ein, status, ein_result, domain_check, website, disputed_org_id, decisions)
      VALUES (?,?,?,?,?,?,?,?,?)`,
     [appId, orgId, ein, status, JSON.stringify({ ...einResult, nameScore: einResult.found ? einNameScore(name, einResult.name) : null }),
-     JSON.stringify(domainCheck), String(website || "").slice(0, 300) || null,
+     JSON.stringify(domainCheck), site || null,
      einHolder[0]?.org_id || null, JSON.stringify(decision)]);
 
   // Same staff JWT the normal login mints — the org admin proceeds to Stripe
