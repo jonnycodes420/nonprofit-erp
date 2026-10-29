@@ -25,6 +25,21 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## IMPORT-5 · Dates that are never made up, the guests who didn't give, pledges up front, other systems' exports (2026-10-29)
+
+Seen on Justin's Place: the dinner's date was optional, so 63 gifts landed "No date" and 43 pledges were due from the
+import day; 95 guests came and didn't give and nothing showed them; the Kings' $20,000 pledge sat three tabs down; a
+Salesforce pair asked which columns were names and amounts. Built: the event date, the gifts' date and the pledges'
+due dates are asked and block Import until answered (never the import day; "No set due date" is a NULL due date);
+`numbers.eventGuests` lists came-gave / came-didn't-give / invited-didn't-come on the event page, as Home Grow moves
+and in Ask; the open pledge sits under the profile header and agrees with Fundraising and Home (a new
+`assertSurfacesAgree` check); eleven systems' exports read with no column questions (`shared/exportShapes.js`, two
+files as one import); column answers are saved per header set (Settings, Imports); "Alex, Brad Hubbard" is a couple,
+with a Data health fix for existing rows; and, from Jonathan's addendum on the contacts file, one-column addresses
+split, near-duplicate merges counted, and "wrong number" / "returned mail" notes flag the phone or the address.
+On the Finding Joy workbook, 66 people came and didn't give (the file's own count). `tests/import5.test.js` is the
+build's one new suite (20 of 28 red on main).
+
 ## FIX-56 · The thank-yous open in the email editor, and the signature is the sender's (2026-10-28)
 
 Jonathan, on Justin's Place (prod 970d9cf, Safari 26): "Edit in editor" did nothing, every template opened the plain form, the tabs did not switch, and a preview said "Lynn & Rovena Alexander Family Foundation has nothing on file for: signature". Prod's own request log for his session (Railway HTTP log, 02:20 to 02:23 UTC 29 Oct) showed the Brand panel (/portal-settings) and the Media library (/media) loading, and one bridged email (POST /email-templates 201) opening the EMAIL-1 editor. What he hit was the four thank-yous: FIX-30 (3b5674f) bridged only the nine email-channel kinds, the thank-yous stayed channel "letter", FIX-39 (8004e1f) labelled their cards "Edit in editor" anyway, and WIRE-1-ADDENDUM (1b2c44d) opened the letter form above the four sections, out of sight of the card that was pressed. No HARDEN-2, HOME-3 or SEND-GATE-2 change broke Communications; the tabs did not fail locally in Chromium or WebKit, with a stale-chunk simulation included. Fixed: the four thank-yous are one-person emails in the EMAIL-1 editor (PERSON_KINDS; the save writes the same words back, so the letter prints them) with "Quick edit and print" kept; only the lapsed note is a letter ("Edit letter"), and it opens in place of the library. {{signature}} is the org's Brand signature, else the org's name (brandKit senderSignature), never "missing" for a donor, and the email editor's preview no longer signs as the brand kit's sample person; the plain form says "Add your signature in Brand". An organisation (kind, or a name ending Foundation, Inc., LLC, Trust...) is "friends at <name>" or its named contact in {{first_name}} and the greeting. A tab chunk that will not load is asked for once more, then says "Steward was updated" with Reload (lib/lazyRetry.js). The walk found the editor's block column clipped on its left edge after a block was added (the Add a block select sized to its longest option); fixed. Template counts (message_templates kinds): before 9 in the EMAIL-1 editor and 5 in the plain form under "Edit in editor"; after 13 and 1. There is no per-person signature field yet; the next brief can add one ahead of Brand. Found on CI while merging (breaker clicks §1, red twice, and once on HOME-4's own branch): Edit record pressed before a profile opened from its URL had its record opened on the bare id, every field blank, and it stayed blank; Save refused "Name is required", and a name typed in would have saved blanks over the rest. The form now waits for the full record ("Loading their record…") and opens again when it lands (Donors.jsx fullRecord). breaker §1 holds every people read back 2.5 s through the browser context, so a service worker's fetch is held too: red on the old client, green on the fix.

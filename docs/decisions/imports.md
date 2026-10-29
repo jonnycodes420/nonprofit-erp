@@ -152,8 +152,18 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **An email or phone on three or more people with different last names is a placeholder**: never used to tell
   people apart and never copied onto anyone.
 - **A column that totals the gifts ("Gave at dinner") is skipped only when it foots person by person**; otherwise kept.
-- **An event the file shows is created even without a date** (`events.date_unknown`, on the import's day, "Date not
-  known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
+- **Dates are asked, never invented (IMPORT-5).** A file that names an event (a guest list, a title row, or, for a file
+  with no date column, an event word in its name) and holds no dates asks the event's date, and Import waits for it
+  ("When was the Dinner? · 106 rows, no dates"); "This file isn't from an event" (`answers.notEvent`) is the way out for
+  a list with no attendance. Then two more answers, each once for the file: "Use the {event} date for these 63
+  gifts?" (`answers.useEventDate`, true or false: No leaves them No date) and the pledges' due dates
+  (`answers.pledgeDue`: `event` counts as before, a one-year pledge by that year's end and a multi-year one yearly from
+  the day; `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
+  import day is never a due date. An installment with no set date counts in the event's raised by its place: the first
+  is pledged, the later ones later years (`EVENT_PLEDGE_OPEN`). Existing pledges were not changed;
+  `scripts/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
+- **An event the file shows is created even without a date** when she says so (`events.date_unknown`, on the import's
+  day, "Date not known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
   only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).
 - **The button says what will exist afterwards** (`importButtonSentence`); over 5% of people or dollars set aside,
   it says "Review N set aside first" until the list is opened.
