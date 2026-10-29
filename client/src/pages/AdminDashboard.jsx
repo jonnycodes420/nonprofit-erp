@@ -1360,7 +1360,7 @@ function NetworkReview() {
                 <div style={{ color: A.muted, fontSize: 12 }}>{displayDate(a.created_at)}</div>
               </div>
               <div style={{ margin: "8px 0", fontSize: 13, color: A.muted }}>
-                EIN {a.ein} · {a.admin_email} · {a.website ? <a href={a.website} target="_blank" rel="noreferrer" style={{ color: A.green }}>{a.website}</a> : "no website"}
+                EIN {a.ein} · {a.admin_email} · {a.website ? /^https?:\/\//i.test(a.website) ? <a href={a.website} target="_blank" rel="noreferrer" style={{ color: A.green }}>{a.website}</a> : a.website : "no website"}
                 {a.disputed_org_id && <span> · DISPUTES {a.disputed_org_id}</span>}
               </div>
               <div style={{ marginBottom: 10 }}>

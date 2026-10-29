@@ -62,8 +62,10 @@ async function invalidateUserSessions(userId) {
 // Drives retryFailedNotifications NOW for the caller (drives the exact
 // scheduled path; same bar as /pipeline/run-auto-lapse, /workflows/run-sweeps).
 // `force` retries due-or-not (for a deterministic test); otherwise honors the
-// backoff window.
-app.post("/admin/notifications/retry", requireAuth, requireAdmin, wrap(async (req, res) => {
+// backoff window. SECURE-1: super admin only. The retry runs over EVERY org's
+// failed notifications, so an org admin of a self-signup org could force a
+// burst of mail across tenants past the backoff.
+app.post("/admin/notifications/retry", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const result = await retryFailedNotifications({ force: !!(req.body && req.body.force) });
   res.json(result);
 }));
@@ -249,7 +251,7 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   const id = "prt_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
-    [id, user.id, token]
+    [id, user.id, require("../auth").resetTokenHash(token)]
   );
 
   const frontendUrl = publicAppUrl();
@@ -317,8 +319,8 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
 
   const rows = await query(
-    `SELECT * FROM password_reset_tokens WHERE token = ? AND used = false AND expires_at > NOW()`,
-    [token]
+    `SELECT * FROM password_reset_tokens WHERE ${require("../auth").RESET_TOKEN_MATCH} AND used = false AND expires_at > NOW()`,
+    require("../auth").resetTokenArgs(token)
   );
   if (!rows.length) return res.status(400).json({ error: "Invalid or expired reset link" });
 
@@ -1471,7 +1473,7 @@ app.post("/public/checkout-signin/email", passwordResetLimiter, wrap(async (req,
 async function sendSigninLinkEmail(user) {
   const token = crypto.randomBytes(32).toString("hex");
   await run(`INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
-    ["prt_" + uuid().slice(0, 8), user.id, token]);
+    ["prt_" + uuid().slice(0, 8), user.id, require("../auth").resetTokenHash(token)]);
   const link = `${publicAppUrl()}/reset-password?token=${token}`;
   if (!process.env.RESEND_API_KEY) {
     console.error(`[checkout-signin] MAIL IS NOT CONFIGURED (RESEND_API_KEY unset): the sign-in link for ${user.email} was NOT sent.`);
@@ -2024,6 +2026,7 @@ app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, r
     })),
   });
 }));
+const LEGACY_CANCEL_LINKS_UNTIL = Date.parse("2026-11-29T00:00:00Z");
 function verifyCancelToken(token) {
   if (!token || typeof token !== "string" || !token.includes(".")) return null;
   const [payload, sig] = token.split(".");
@@ -2033,6 +2036,11 @@ function verifyCancelToken(token) {
   if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
   try {
     const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
+    // SECURE-1: a link carries its expiry. One sent before expiries existed
+    // keeps working until LEGACY_CANCEL_LINKS_UNTIL (30 days after the change
+    // shipped, as long as a new one lasts), then it is refused like any other.
+    const exp = Number(decoded.exp);
+    if (Number.isFinite(exp) ? Date.now() > exp : Date.now() > LEGACY_CANCEL_LINKS_UNTIL) return null;
     return decoded.cancelOrgId ? decoded.cancelOrgId : null;
   } catch { return null; }
 }

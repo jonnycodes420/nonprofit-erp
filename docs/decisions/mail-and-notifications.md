@@ -9,6 +9,10 @@ mail, in super-admin) and from the org's director (the email type, in Steward). 
 know exactly what is going out.** Every screen, word and test about donor mail serves that sentence.
 
 ## Rules
+
+- **SECURE-1 (2026-10-28): a merge value is text.** A donor's name filled into email HTML is
+  escaped (`renderMergeFields`, `legacyCampaignBody`, sequence steps); a subject passes
+  `{ text: true }`. HTML put into the editor or preview goes through `client/src/lib/safeHtml.js`.
 - **Every automatic donor email is a type in `mailTypes.js`, and every type starts off (SEND-GATE-2).** The gate
   (`sendGate.js` `decide`) sends an automatic message only if Donor mail is on (`orgs.emails_enabled`, asked by the
   proxy first) AND its type is on in `org_mail_types` AND (who gets it is Everyone and the person is not Never, OR it
