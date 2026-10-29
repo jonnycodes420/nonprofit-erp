@@ -181,7 +181,9 @@ function StatusBadge({ status, campaign, onFailed }) {
     <span data-testid="camp-status" data-status={partial ? "partial" : notSent ? "failed" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
       title={clickable ? ((d && d.reasons && d.reasons.length ? "Why: " + d.reasons.map(r => `${r.n.toLocaleString("en-US")} ${r.reason.toLowerCase()}`).join(", ") + ". " : "") + "Show the ones that did not go") : undefined}
       onClick={clickable ? e => { e.stopPropagation(); onFailed(); } : undefined}
-      style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default", whiteSpace: "nowrap" }}>
+      style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: label.length > 14 ? 10 : 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default",
+               // SECURE-2: "Sent to 412 of 500 · 88 not sent" wraps inside its column rather than running into the next one.
+               whiteSpace: label.length > 14 ? "normal" : "nowrap", display: "inline-block", lineHeight: 1.35, maxWidth: "100%" }}>
       {status === "sending" ? <span style={{ animation: "pulse 1.2s ease-in-out infinite" }}>{m.label}</span> : label}
     </span>
   );

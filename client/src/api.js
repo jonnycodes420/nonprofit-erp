@@ -393,6 +393,8 @@ export function adaptDonor(d) {
     // and every legacy row is a donor — the same rule the server's predicate
     // and the segment count both hold, so the three cannot disagree.
     personTypes:   (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"],
+    // SECURE-2: "Check this email" / "Check this phone", from GET /donors/:id.
+    contact_flags: Array.isArray(d.contact_flags) ? d.contact_flags : [],
   };
 }
 
