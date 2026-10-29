@@ -8108,6 +8108,23 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_name_fixes_batch ON name_fixes (org_id, batch_id)`);
+  // FIX-58: a pledge's installment dates moved from the event's day to Dec 31
+  // from Data health on her click. One row per date changed (installment_id
+  // NULL for the pledge's own due date), a batch per click, for its Undo.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pledge_date_fixes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      batch_id TEXT NOT NULL,
+      pledge_id TEXT NOT NULL,
+      installment_id TEXT,
+      before_due TEXT NOT NULL,
+      after_due TEXT NOT NULL,
+      undone_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledge_date_fixes_batch ON pledge_date_fixes (org_id, batch_id)`);
   // AGENT-2: A MERGE SOMEBODY PROPOSED. The Agent never merges two people;
   // told "merge the two Ellen Parks" it puts the pair at the top of CLEAN-1's
   // duplicate queue with the instruction as the reason, and a person commits

@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-29T20:15:23.540Z",
- "count": 1417,
+ "generatedAt": "2026-10-29T21:23:49.932Z",
+ "count": 1420,
  "routes": [
   {
    "method": "POST",
@@ -25989,6 +25989,60 @@
    "identifiers": [],
    "frontend": {
     "probe": "/data-health/couples/undo",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/data-health/pledge-dates",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/pledge-dates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/data-health/pledge-dates/apply",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/pledge-dates/apply",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/data-health/pledge-dates/undo",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/data-health/pledge-dates/undo",
     "referenced": true
    }
   },
