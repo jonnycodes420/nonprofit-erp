@@ -4,6 +4,10 @@
 // Loopback only (tests/helpers refuses anything else). Sends nothing.
 //   BASE=http://localhost:5821 DATABASE_URL=… node scripts/fundraising2-walk-org.js
 "use strict";
+for (const k of ["BASE", "DATABASE_URL"]) {
+  const v = process.env[k];
+  if (v && !/localhost|127\.0\.0\.1/.test(v)) { console.error(`Refusing: ${k} is not loopback (${v}).`); process.exit(2); }
+}
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");

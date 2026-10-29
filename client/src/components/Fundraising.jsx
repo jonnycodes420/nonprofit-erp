@@ -555,7 +555,7 @@ function PledgeTile({ p, onOpen }) {
 function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
   const l = top.lead || {};
   return (
-    <div data-testid="fr-lead-campaign" style={card}>
+    <div data-testid="fr-lead-campaign" {...interactive(onOpen, { label: `View campaign ${top.name}` })} style={card}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <span style={label}>Leading campaign</span>
         <button onClick={onOpen} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Open →</button>
