@@ -1402,12 +1402,18 @@ app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
   if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
   const o = await orgOf(u.org_id);
   if (mustKeepMfa(u, o)) return res.status(409).json({ error: u.is_super_admin ? "Super-admin accounts always use two-factor." : "Your organization requires two-factor sign-in." });
+  // SECURE-2 item 6: turning two-factor off takes an admin. Staff ask one,
+  // who resets it from Settings, Team (that path emails them too).
+  if (u.role !== "admin") return res.status(403).json({ error: "admin_required", message: "Turning two-factor off takes an admin. Ask one to reset it for you in Settings, Team." });
   if (!(await currentCodeOk(u, req.body && req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
   await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL, mfa_method=NULL WHERE id=?`, [u.id]);
   await run(`DELETE FROM mfa_recovery_codes WHERE user_id=?`, [u.id]);
   await run(`DELETE FROM mfa_trusted_browsers WHERE user_id=?`, [u.id]);
   req.audit.action("two-factor turned off"); req.audit.entity("user", u.id, u.email);
-  res.json({ enabled: false });
+  // Sign-in mail, always on: the person hears that their account lost a lock.
+  const emailed = await TF.mailUser(u, resend, "Two-factor was turned off on your Steward account",
+    `Two-factor sign-in was turned off on your Steward account on ${new Date().toUTCString()}. If this was not you, change your password and turn it back on in Settings, Security.`);
+  res.json({ enabled: false, emailed });
 }));
 
 // New recovery codes: the old set stops working the moment these exist.

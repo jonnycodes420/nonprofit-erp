@@ -36,6 +36,9 @@
 //       mean"), stores a phone in one format, an import keeps a bad email and
 //       flags it; every text field has a cap; and no list route in the route
 //       inventory answers more than 500 rows on a 25,000-person org.
+//   §TF Two-factor: turning it off takes an admin, is audit-logged and emails
+//       the person; a required org opens nothing until it is set up; a
+//       recovery code works once.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -415,6 +418,37 @@ async function fixtures() {
     ok(`no list route answers more than 500 rows on a 25,000-person org (${gets.length} routes asked)`, over.length === 0, over);
     const page = (await api("GET", "/donors", big)).body;
     ok("/donors with no limit answers its first page of 100 and the total", page && Array.isArray(page.donors) && page.donors.length === 100 && page.total === 25000, page && { n: (page.donors || []).length, total: page.total });
+  }
+
+  console.log("\n§TF · two-factor: off takes an admin; required means required; a code works once");
+  {
+    const sha = v => crypto.createHash("sha256").update(v).digest("hex");
+    const plantRecovery = async (uid, code) => q(`INSERT INTO mfa_recovery_codes (id,user_id,org_id,code_hash) VALUES ($1,$2,$3,$4)`,
+      ["mrc_s2_" + crypto.randomBytes(4).toString("hex"), uid, ORG, sha(uid + ":" + code.replace(/[^a-z0-9]/g, ""))]);
+    // Two-factor on (by email code) for both, with a planted recovery code each.
+    await q(`UPDATE users SET mfa_enabled_at=NOW(), mfa_method='email', mfa_failed_count=0, mfa_locked_until=NULL WHERE id IN ($1,$2)`, [ADMIN, STAFF]);
+    await plantRecovery(STAFF, "stfa-ffcd"); await plantRecovery(ADMIN, "admn-kfgh"); await plantRecovery(ADMIN, "admn-wxyz");
+    const off = await api("POST", "/me/mfa/disable", staff, { code: "stfa-ffcd" });
+    ok("staff cannot turn their own two-factor off: it takes an admin", off.status === 403 && /takes an admin/.test(off.body.message || ""), off.body);
+    // A recovery code signs in once; the same code again fails.
+    const signIn = code => fetch(BASE + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ADMIN_EMAIL, password: "loadtest1234", code }) }).then(async r => ({ status: r.status, body: await r.json() }));
+    const first = await signIn("admn-kfgh"), again = await signIn("admn-kfgh");
+    ok("a recovery code signs in once", first.status === 200 && !!first.body.token, first.status);
+    ok("…and the same code a second time fails", again.status === 401 && again.body.error === "mfa_invalid", again.body);
+    const adminOff = await api("POST", "/me/mfa/disable", first.body.token, { code: "admn-wxyz" });
+    ok("an admin turns it off with a current code", adminOff.status === 200 && adminOff.body.enabled === false, adminOff.body);
+    ok("…the person is emailed about it (or the answer says it could not be)", typeof adminOff.body.emailed === "boolean", adminOff.body);
+    const [logged] = await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND entity_id=$2 AND action ILIKE '%two-factor turned off%' LIMIT 1`, [ORG, ADMIN]);
+    ok("…and it is in the audit log", !!logged);
+    // A required org: a person without two-factor gets a setup-only session.
+    await q(`UPDATE users SET mfa_enabled_at=NULL, mfa_method=NULL WHERE id=$1`, [STAFF]);
+    await q(`UPDATE orgs SET require_mfa=true WHERE id=$1`, [ORG]);
+    const req2 = await fetch(BASE + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: STAFF_EMAIL, password: "loadtest1234" }) }).then(r => r.json());
+    const blocked = req2.token ? await api("GET", "/donors", req2.token) : { status: 0 };
+    ok("a required org: sign-in without two-factor leads only to setup", req2.mfaSetupRequired === true && blocked.status === 403 && blocked.body.error === "mfa_setup_required", { req2: Object.keys(req2), blocked: blocked.status });
+    await q(`UPDATE orgs SET require_mfa=false WHERE id=$1`, [ORG]);
+    await q(`UPDATE users SET mfa_enabled_at=NULL, mfa_method=NULL WHERE id IN ($1,$2)`, [ADMIN, STAFF]);
+    await q(`DELETE FROM mfa_recovery_codes WHERE user_id IN ($1,$2)`, [ADMIN, STAFF]);
   }
 
   summary();
