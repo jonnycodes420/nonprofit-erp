@@ -105,6 +105,7 @@ async function reset() {
     await q(`INSERT INTO donors (id,org_id,name,email,assigned_to,assigned_to_name,auto_email)
              VALUES ($1,$2,$3,$4,'u_recrec','RR Admin',true)`, [id, ORG, name, mail]);   // SEND-GATE-1: turned on
   }
+  await require("./helpers").mailTypesOn(ORG);   // SEND-GATE-2: and the emails themselves
 }
 
 const sub = (id, donorId, extra = {}) => q(

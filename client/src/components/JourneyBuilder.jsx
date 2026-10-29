@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
@@ -1104,6 +1105,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 )}
 
                 {/* ── AUTO-1 · STEPS THAT SEND THEMSELVES ───────────── */}
+                <MailTypeSwitches keys={["journey_steps"]} from="journeys" />
                 <AutoSendSteps journeyId={current.id} isAdmin={isAdmin && editable} onChanged={() => { setAutoTick(x => x + 1); load(); }} />
                 <SendingTomorrow journeyId={current.id} isReadOnly={!editable} refresh={autoTick} counts={current} />
 

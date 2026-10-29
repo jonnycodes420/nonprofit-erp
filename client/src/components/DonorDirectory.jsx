@@ -267,41 +267,44 @@ function BulkTag({ids,disabled,onDone}){
     </span>
   );
 }
-// SEND-GATE-1 · automatic emails on (or off) for everyone ticked or matching.
-// The first click asks the server for the exact count; the second confirms that
-// count, and the server refuses if the selection no longer matches it.
+// SEND-GATE-1/2 · automatic emails for everyone ticked or matching: Follows
+// your settings, Always include, or Never. The first click asks the server for
+// the exact count; the second confirms that count, and the server refuses if
+// the selection no longer matches it.
+const BULK_MODES=[["follows","Follows your settings"],["always","Always include"],["never","Never"]];
 function BulkAutoEmail({ids,disabled,onDone}){
-  const [ask,setAsk]=useState(null);   // { on, count, sentence }
+  const [ask,setAsk]=useState(null);   // { mode, count, sentence }
   const [busy,setBusy]=useState(false);
-  const start=async on=>{
-    if(!ids.length)return;
+  const start=async mode=>{
+    if(!ids.length||!mode)return;
     setBusy(true);
-    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,on})});
-      if(!r||!r.count){onDone&&onDone((r&&r.sentence)||"Nothing to change.");}else setAsk({on,count:r.count,sentence:r.sentence});}
+    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,mode})});
+      if(!r||!r.count){onDone&&onDone((r&&r.sentence)||"Nothing to change.");}else setAsk({mode,count:r.count,sentence:r.sentence});}
     catch(e){onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nothing was changed."));}
     setBusy(false);
   };
   const confirm=async()=>{
     setBusy(true);
-    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,on:ask.on,confirm:true,count:ask.count})});
-      const n=Number(r&&r.changed||0);setAsk(null);onDone&&onDone(`Automatic emails ${ask.on?"on":"off"} for ${n.toLocaleString("en-US")} ${n===1?"person":"people"}.`);}
+    try{const r=await apiFetch("/donors/auto-email/bulk",{method:"POST",body:JSON.stringify({ids,mode:ask.mode,confirm:true,count:ask.count})});
+      const n=Number(r&&r.changed||0);const label=(BULK_MODES.find(m=>m[0]===ask.mode)||[])[1]||"";
+      setAsk(null);onDone&&onDone(`Automatic emails set to ${label.toLowerCase()} for ${n.toLocaleString("en-US")} ${n===1?"person":"people"}.`);}
     catch(e){setAsk(null);onDone&&onDone((e&&e.sentence)||errorMessage(e,"Nothing was changed."));}
     setBusy(false);
   };
-  const ghost={background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"};
   if(ask)return(
     <span style={{display:"inline-flex",gap:6,alignItems:"center"}} data-testid="bulk-auto-email-confirm">
       <span style={{fontSize:12,color:T.inkInverse}}>{ask.sentence}</span>
       <button type="button" data-testid="bulk-auto-email-yes" onClick={confirm} disabled={busy}
-        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy?0.6:1}}>Turn {ask.on?"on":"off"} for {ask.count.toLocaleString("en-US")}</button>
+        style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:busy?0.6:1}}>Yes, {ask.count.toLocaleString("en-US")}</button>
       <button type="button" onClick={()=>setAsk(null)} style={{background:"none",border:"none",color:T.inkInverse,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Cancel</button>
     </span>
   );
   return(
-    <span style={{display:"inline-flex",gap:6,alignItems:"center"}}>
-      <button type="button" data-testid="bulk-auto-email-on" onClick={()=>start(true)} disabled={disabled||busy} style={ghost}>Turn on automatic emails</button>
-      <button type="button" data-testid="bulk-auto-email-off" onClick={()=>start(false)} disabled={disabled||busy} style={ghost}>Turn off</button>
-    </span>
+    <select data-testid="bulk-auto-email" aria-label="Automatic emails" value="" disabled={disabled||busy} onChange={e=>start(e.target.value)}
+      style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 10px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+      <option value="" disabled>Automatic emails…</option>
+      {BULK_MODES.map(([m,l])=><option key={m} value={m} style={{color:T.ink}}>{l}</option>)}
+    </select>
   );
 }
 function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize}){

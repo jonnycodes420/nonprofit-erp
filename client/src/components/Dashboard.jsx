@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
+import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
 import { apiFetch, adaptDonor, prefetch } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
 import { offerUndo } from "./EditHistory";
@@ -3282,6 +3283,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           because the panel already drew it. */}
       {/* INSIGHTS-1 — Home leads with the ladder, then the cards in rank order,
           then what Home shows today. */}
+      {/* SEND-GATE-2 — at the top of Home: what Steward sends on its own, in one line. */}
+      {surface==="home"&&!editMode&&<HomeMailLine onNavigate={onNavigate}/>}
       {surface==="home"&&!editMode&&<HomeInsights onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
       <div className={surface==="home"?"home-shell":""}>
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}

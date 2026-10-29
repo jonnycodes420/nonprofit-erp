@@ -740,7 +740,7 @@ export const HELP_ARTICLES = [
     slug: `how-steward-suggests`,
     title: `How Steward suggests`,
     screens: [],
-    summary: `Steward reads your gifts and suggests who to reach, why, when, and what to say. Steward never sends anything for you. Every draft waits for your click.`,
+    summary: `Steward reads your gifts and suggests who to reach, why, when, and what to say. Steward never sends these notes for you. Every draft waits for your click.`,
     sections: [
       { h: `The ladder`, p: [
         `Every giver sits on one rung, from their own giving. A household is one giver. New: no gift yet. Second gift: one gift so far. Retain: two or more gifts, your regular base. Upgrade: a regular donor whose last 12 months are at least 1.5 times the 12 before, or who moved their giving into a family foundation, or designated a program. Major: a last 12 months, or any single gift, at or above your major-gift line.`,
@@ -769,20 +769,21 @@ export const HELP_ARTICLES = [
   // ── Tasks people come for ────────────────────────────────────────────────
   // NUMBERS-2 · the definitions, word for word as the "?" beside each number
   // says them (figureSources.js AVERAGE_WORDS and RETENTION_WORDS).
-  // SEND-GATE-1: who gets automatic email, in the words of the brief.
+  // SEND-GATE-1, rewritten for SEND-GATE-2: which emails Steward sends on its own.
   {
     slug: `how-steward-sends`,
     title: `How Steward sends`,
-    screens: [],
-    summary: `Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.`,
+    screens: [`settings:automatic`, `settings:going-out`],
+    summary: `Steward sends nothing on its own until you turn it on in Settings, What Steward sends automatically. Each email type starts off.`,
     sections: [
       { h: `Automatic emails`, p: [
-        `Steward only sends automatic emails to donors you have turned them on for. Everyone else gets nothing unless you send it yourself.`,
-        `An automatic email is anything Steward sends on its own: a receipt, a thank-you, a journey or sequence step, a pledge reminder, a renewal or failed-payment notice, an event confirmation, an auction receipt, a fundraiser update or a campaign.`,
-        `Every person has an Automatic emails switch on their profile, and it starts off. Turn it on there, one person at a time, or pick people on the Donors list and choose "Turn on automatic emails". An import, a form, a journey or Atlas never turns it on.`,
-        `When Steward holds an automatic email because the switch is off, the person's profile says so, for example "Receipt for $500 on Oct 22 not sent: automatic emails are off", with a Send button that sends that one message after you confirm.`,
-        `An email you write and send yourself still goes when you press Send, whatever the switch says, as long as donor mail is on for your organization. A sign-in link a donor asks for from your donor portal goes straight away. An import never emails anyone.`,
-        `Email for a new organization starts switched off. Steward turns it on with you once your data is in.`,
+        `Steward sends nothing on its own until you turn it on in Settings, What Steward sends automatically. Each email type starts off.`,
+        `The page lists every email Steward can send by itself: gift receipts, year-end statements, monthly-giving notes, pledge reminders, event confirmations, waitlist offers, auction and fundraiser links, journey steps and campaign emails. Each has one sentence saying what it does, a preview, and a switch. The same switch also sits in the place that uses it, such as an event page or a giving page.`,
+        `When you turn one on, Steward asks who gets it: everyone, from now on, or only donors you choose. Turning one off is one click.`,
+        `Each person has their own setting on their profile and in bulk from the Donors list: Follows your settings (the default), Always include (they get the emails you send only to donors you choose), or Never (they get no automatic email at all).`,
+        `Email for a new organization starts off. Steward turns it on with you once your data is in. Until then the page says so, and anything you switch on waits.`,
+        `Going out shows what Steward will send in the next 7 days, everything it sent with exactly what it said, and anything it held back and why, with Send for a single one. The small status at the top of every page says whether anything is on.`,
+        `An email you write and send yourself still goes when you press Send. A sign-in link a donor asks for goes straight away, because the donor asked for it. An import never emails anyone.`,
       ]},
     ],
   },

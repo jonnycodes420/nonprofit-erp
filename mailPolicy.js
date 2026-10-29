@@ -137,7 +137,7 @@ function mailSwitches(org) {
 // FIX-53 · what turning a switch on allows, read in the confirm before it is.
 const TURN_ON_SENTENCE = {
   staff: "Steward can now send this org's team digests and alerts.",
-  donor: "Steward can now send automatic emails to donors whose own switch is on.",
+  donor: "Steward can now send the automatic emails this organization turned on, to the people it chose.",
 };
 // Who turned each switch on and when, or "Off since created". Read from the
 // stamps the console toggle writes (FIX-53); an org older than the stamps

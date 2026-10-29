@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
 import { DepositSheetModal } from "./DepositSheet";
@@ -1899,6 +1900,7 @@ function YearEndCard({ onNavigate }) {
         One statement per donor for the tax year, with every gift on it and the deductible amount
         worked out where a gift carried something in return. Steward drafts the run; a person sends it.
       </div>
+      <MailTypeSwitches keys={["year_end"]} from="finance"/>
       <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>
         The run is in Settings, under Receipts, because it sends mail and mail settings live together.
         It is named here because this is where somebody closing the year looks for it.

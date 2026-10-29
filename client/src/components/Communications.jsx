@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2: the same switch as Settings
 import { SurveysPanel } from "./Surveys";
 import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
@@ -2215,6 +2216,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       <SectionTabs className="comm-tabbar"
         tabs={NAV.map(n => ({ ...n, badge: n.id === "campaigns" && emailCampaigns.length > 0 ? emailCampaigns.length : undefined }))}
         active={nav} onSelect={setNav} />
+      {nav === "campaigns" && <MailTypeSwitches keys={["campaign"]} from="campaigns" />}
+      {nav === "sequences" && <MailTypeSwitches keys={["journey_steps"]} from="sequences" />}
 
       {/* Main content */}
       <div className="comm-main" style={{ flex: 1, minHeight: 0 }}>

@@ -153,6 +153,10 @@ const resend = new Proxy(_rawResend, {
               const why = "org_mail_off: " + gate.reason;
               console.warn(`[mail-gate] REFUSED at the client: org ${orgId} (${gate.reason}), kind=${opts._stewardKind || "?"}`);
               try { await _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
+              // SEND-GATE-2: an automatic donor email held because the org's
+              // email is off is a line in Going out's Held list, with why.
+              if (orgId && category === mailPolicy.CATEGORY.DONOR && !opts._stewardConfirm
+                  && (gate.reason === "org_emails_disabled" || gate.reason === "not_onboarded")) await SEND_GATE.recordOrgOff(opts);
               return { data: null, error: { name: "org_mail_off", message: why } };
             }
           }
@@ -2969,7 +2973,7 @@ app.use((req, res, next) => {
 app.use(require("./routes/grantMail").routers.r1);     // GRANTS-1 fixed /grants/* paths, ahead of crm's /grants/:id
 app.use(require("./routes/donorLookups").routers.r0); // SCALE-2: pickers, counts and lookups, ahead of crm's /donors/:id
 app.use(require("./routes/donorList").routers.r0);    // LIST-1: columns, views and the filter, ahead of crm's /donors/:id
-app.use(require("./routes/autoEmail").routers.r0);    // SEND-GATE-1: the automatic-email switch and held mail, ahead of /donors/:id
+app.use(require("./routes/mailTypes").routers.r0);    // SEND-GATE-1/2: which emails Steward sends, the donor's own setting and held mail, ahead of /donors/:id
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -3918,7 +3922,10 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
     // W-4: a receipt is TRANSACTIONAL — the marketing suppression list does
     // not apply (deceased still blocks, via the one policy).
     const decision = await donorMailDecision("receipt", donor.email, org.id);
-    if (decision.send) {
+    // SEND-GATE-2: with the org's email off, the receipt still goes to the
+    // client, which refuses it there (nothing reaches the provider) and keeps
+    // it as a held line, so Going out shows it was not sent and why.
+    if (decision.send || (!manual && decision.reason === "org_emails_disabled")) {
       const extra = manual ? { _stewardConfirm: await SEND_GATE.recordStaffConfirm({ orgId: org.id, to: donor.email, what: "Receipt", by }) } : {};
       emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `receipt-${receiptNumber}.pdf`, extra);
       if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
@@ -8280,12 +8287,12 @@ const DONOR_EMAIL_ORG = "donor-network";
 // a silently-lost reset email locks a donor out.
 // MAIL-1: an org-to-supporter kind passes `orgId`; a refusal by the org's mail
 // policy is a decision, not a failure, so it is never queued for retry.
-async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverride, orgId = null) {
+async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverride, orgId = null, confirm = null) {
   if (orgId) {
     const gate = await orgMaySendEmail(orgId, mailPolicy.CATEGORY.DONOR);
     if (!gate.send) { console.log(`[mail-policy] ${kind} not sent for org ${orgId} (${gate.reason})`); return false; }
   }
-  const tag = orgId ? { orgId, kind } : null;
+  const tag = orgId ? { orgId, kind, confirm } : null;
   const ok = await sendRawEmail(toEmail, subject, html, fromOverride, tag);
   if (ok) return true;
   // SEND-GATE-1: a person whose automatic emails are off is an answer, not an
@@ -12295,7 +12302,8 @@ require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/donorLookups").mount({ query, requireAuth, wrap });
 require("./routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
-require("./routes/autoEmail").mount({ query, run, uuid, requireAuth, checkWriteAccess, wrap, actor, resend, orgToday, orgTz });
+require("./routes/mailTypes").mount({ query, run, uuid, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, wrap, actor, resend, orgToday, orgTz,
+  brandEmailHeaderHtml, donorFacingOrgName });
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });

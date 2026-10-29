@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { GoingOut } from "../components/MailTypes";   // SEND-GATE-2: read-only, for any org
 import { useNavigate } from "react-router-dom";
 import { rowOpenProps } from "../lib/rowOpen";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
@@ -529,6 +530,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
   // MAIL-1: this org's mail, as the policy sees it.
   const [mail, setMail] = useState(null);
   const [mailNote, setMailNote] = useState("");
+  const [goingOut, setGoingOut] = useState(null);   // SEND-GATE-2
 
   useEffect(() => {
     adminFetch("/admin/orgs/" + org.id).then(setDetail).catch(console.error);
@@ -540,7 +542,9 @@ function OrgPanel({ org, onClose, onRefresh }) {
   async function mailSwitch(k, on) {
     const allows = mail && mail.turnOnSentence && mail.turnOnSentence[k];
     if (on && allows) {
-      if (!window.confirm(`Turn on ${k === "staff" ? "Staff" : "Donor"} mail for ${org.name}?\n\n${allows}`)) return;
+      // SEND-GATE-2: Donor mail's confirm names exactly what will start.
+      const starts = k === "donor" && mail.emailTypes ? `\n\n${mail.emailTypes.willStart}` : "";
+      if (!window.confirm(`Turn on ${k === "staff" ? "Staff" : "Donor"} mail for ${org.name}?\n\n${allows}${starts}`)) return;
       return mailAction("/mail-switches", { [k]: true, confirm: true });
     }
     return mailAction("/mail-switches", { [k]: on });
@@ -751,6 +755,20 @@ function OrgPanel({ org, onClose, onRefresh }) {
                     </span>
                   </div>
                 </div>
+                {/* SEND-GATE-2: what the org turned on, read-only, beside Donor mail. */}
+                {mail.emailTypes && (
+                  <div data-testid="admin-mail-types" style={{ fontSize: 12, color: A.muted }}>
+                    <div style={{ color: A.ink, fontWeight: 600, marginBottom: 2 }}>Emails this organization turned on</div>
+                    {mail.emailTypes.types.filter(t => t.on).map(t => (
+                      <div key={t.key}>{t.name}: {t.whoGetsIt}. {t.since}. {t.next7} in the next 7 days.</div>
+                    ))}
+                    {!mail.emailTypes.types.some(t => t.on) && <div>None. Every email is off.</div>}
+                    <div style={{ color: A.secondary, marginTop: 2 }}>{mail.emailTypes.willStart}</div>
+                    <button type="button" data-testid="admin-going-out" onClick={async () => setGoingOut(goingOut ? null : await adminFetch("/admin/orgs/" + org.id + "/going-out").catch(() => null))}
+                      style={{ ...PBTN, marginTop: 6 }}>{goingOut ? "Hide Going out" : "See Going out (read-only)"}</button>
+                    {goingOut && <div style={{ marginTop: 8 }}><GoingOut data={goingOut} orgPath={"/admin/orgs/" + org.id} isReadOnly /></div>}
+                  </div>
+                )}
                 <div data-testid="admin-mail-domain">
                   Sending domain: {mail.domain.domain ? `${mail.domain.domain} (${mail.domain.status})` : "none"}.
                   {mail.domain.from ? ` From: ${mail.domain.from}.` : ""} {mail.domain.sentence}
