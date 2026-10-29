@@ -522,6 +522,6 @@ async function homeThree() {
   const fin = (si.match(/const finish = \(\) => \{[\s\S]*?\n  \};/) || [""])[0];
   ok("§10d closing the window after (or during) an import tells the pages behind it (told), and Donors and the App listen",
      /told\(/.test(fin) && /tellWhenDone\(job\.id\)/.test(fin) && /useStewardTold\(\(\)=>\{reloadDonors\(\);\}\)/.test(src("components/Donors.jsx"))
-     && /useStewardTold\(d=>\{if\(d&&d\.import\)loadData\(\);\}\)/.test(src("App.jsx")), fin.slice(0, 200));
+     && /useStewardTold\(d=>\{if\(d&&d\.import\)loadData\(\{quiet:true\}\);\}\)/.test(src("App.jsx")), fin.slice(0, 200));
 }
 main().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });

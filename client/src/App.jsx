@@ -411,7 +411,10 @@ function AppShell() {
     return()=>window.removeEventListener('beforeinstallprompt',handler);
   },[]);
 
-  async function loadData() {
+  // HOME-3: `quiet` is a refresh behind a screen she is using (an import that
+  // finished). A read that fails then keeps what is on screen; it never turns
+  // the whole app into "Failed to connect" the way a failed first load does.
+  async function loadData({ quiet = false } = {}) {
     try {
       // BUILD-58 W-2 — allSettled, not all-or-nothing: a Portal-plan org's
       // CRM routes answer 403 portal_tier BY DESIGN, and that must never
@@ -469,7 +472,7 @@ function AppShell() {
         apiFetch("/network/application").then(setNetworkApp).catch(()=>{});
       }
       if(org?.id) localStorage.setItem("steward_onboarded_"+org.id,"1");
-    } catch(e) { setLoadErr(e.message); setLoadLimited(e?.status===429); }
+    } catch(e) { if(quiet){console.warn("[refresh]",e&&e.message);return;} setLoadErr(e.message); setLoadLimited(e?.status===429); }
     setLoading(false);
   }
 
@@ -480,7 +483,7 @@ function AppShell() {
   // HOME-3 item 4: an import that finished (SpreadsheetImport tells, on close
   // and when its job ends) re-reads the app's own data too, not only the page
   // that opened the window.
-  useStewardTold(d=>{if(d&&d.import)loadData();});
+  useStewardTold(d=>{if(d&&d.import)loadData({quiet:true});});
 
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 
