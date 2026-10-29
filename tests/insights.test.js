@@ -539,6 +539,24 @@ async function main() {
     if (await q(`DELETE FROM orgs WHERE id=$1`, [BIG]).then(() => true).catch(() => false)) break;
   }
 
+  // §10 FIX-57 · no reason sentence says a zero or a plural one. Two gifts
+  // four days apart read "4 days apart", not "1 weeks"; one day apart, "1 day";
+  // a gift today, "The last gift was today", not "Nothing for 0 weeks".
+  // Red on main: "1 weeks apart", "0 weeks apart", "Nothing for 0 weeks".
+  {
+    const D = require("../drift");
+    const said = (a, b, today) => D.assessDrift([{ date: a, amount: 100 }, { date: b, amount: 50 }], today).reason || "";
+    const BAD = /\b(0 (day|week|month|year)s?|1 (days|weeks|months|years))\b/;
+    const four = said("2025-01-01", "2025-01-05", "2026-10-01");
+    ok(`§10 two gifts 4 days apart read "4 days apart" (${four})`, /\b4 days apart\b/.test(four) && !BAD.test(four), four);
+    const one = said("2025-01-01", "2025-01-02", "2026-10-01");
+    ok(`§10 two gifts a day apart read "1 day apart" (${one})`, /\b1 day apart\b/.test(one) && !BAD.test(one), one);
+    const today = said("2025-01-01", "2025-01-03", "2025-01-03");
+    ok(`§10 a gift today never reads "Nothing for 0 weeks" (${today})`, /The last gift was today\./.test(today) && !BAD.test(today), today);
+    const spans = [0, 1, 2, 4, 6, 7, 10, 13, 14, 20, 30, 44, 45, 60, 200, 400, 800, 1200].map(D.humanSpan);
+    ok(`§10 no span says a zero or a plural one (${spans.join(", ")})`, spans.every(s => s && !BAD.test(s)), spans);
+  }
+
   if (WAITING.length) {
     ok(`§M ${WAITING.length} checks wait on the memo-kept gift file (NEEDS-JONATHAN): ${WAITING.join("; ")}`, false, "fixture");
   }

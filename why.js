@@ -178,8 +178,8 @@ async function appeal(orgId, { campaign } = {}) {
     reason("lapsed", "Last year's donors who haven't given yet", lapsed, {
       phrase: `${spell(n(lapsed))} of last year's donors ${n(lapsed) === 1 ? "hasn't" : "haven't"} given yet`,
       definition: "Each person who gave to last year's campaign and has not given to this one, with what they gave last time, subtracted." }),
-    reason("timing", lateDays > 0 ? `Gave later last year; this appeal went out ${lateDays} days later` : "Gave later in the campaign last year", timing, {
-      phrase: lateDays > 0 ? `the appeal went out ${lateDays} days later and ${spell(n(timing))} of last year's donors gave after this point last time`
+    reason("timing", lateDays > 0 ? `Gave later last year; this appeal went out ${lateDays} day${lateDays === 1 ? "" : "s"} later` : "Gave later in the campaign last year", timing, {
+      phrase: lateDays > 0 ? `the appeal went out ${lateDays} day${lateDays === 1 ? "" : "s"} later and ${spell(n(timing))} of last year's donors gave after this point last time`
         : `${spell(n(timing))} of last year's donors gave after this point last time`,
       definition: "Each person who gave to last year's campaign later in it than this campaign has run so far, and has not given to this one yet. Their gift may still come." }),
     reason("less", "Gave less than last year", less, {
