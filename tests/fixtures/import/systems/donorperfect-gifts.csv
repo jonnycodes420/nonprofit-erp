@@ -1,0 +1,4 @@
+Donor ID,First Name,Last Name,Email,Gift ID,Gift Date,Amount,GL Code,Solicit Code,Sub Solicit Code,Gift Type,Record Type
+20411,Maren,Coldwell,maren.coldwell@example.com,88101,3/2/2025,150.00,UNR,SPRING25,EMAIL,CK,G
+20412,Ansel,Pryor,ansel.pryor@example.com,88102,4/18/2025,1000.00,BLDG,CAPCAMP,MAIL,CC,G
+20411,Maren,Coldwell,maren.coldwell@example.com,88103,12/20/2025,200.00,UNR,YE25,MAIL,CASH,G

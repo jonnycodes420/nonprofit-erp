@@ -17,12 +17,21 @@
 //      in the receipt's own count (it said 75 where the receipt said 79)
 //   §5 "Bring them all back" on a file whose 82 givers were deleted gives the
 //      file's full gifts and pledges; Empty trash then stops them matching
+//   §7 IMPORT-5: another system's export reads with no column question. One
+//      fake file per system (tests/fixtures/import/systems/) says which system
+//      it is and lands its gifts to the cent (the key below is the files' own
+//      cells); the Salesforce Contacts + Donations pair is one import, each
+//      gift on the person its Contact ID names
 //
 // HOW IT GOES RED ON MAIN: §1 the re-read by key is refused (no fileKey on
 // main, so the screen sent the whole workbook every time); §2 the button
 // keeps "(63 undated)" while the re-read is out and Import can be pressed on
 // the stale preview; §4 there is no drop zone; §5 there is no
-// purge-trash preview and Bring them all back does not exist.
+// purge-trash preview and Bring them all back does not exist. §7 on main: no
+// file says which system wrote it; eTapestry's "Received" is a column
+// question, Neon reads its Donation ID as the amount ($183,006), Donorbox's
+// dates are blank, and the Salesforce Donations file and QuickBooks report
+// read as no names at all.
 //
 // Standard scratch stack (tests/README.md), APP_URL for the browser legs. Sends nothing.
 "use strict";
@@ -163,7 +172,48 @@ async function apiLegs() {
      matched > 0 && restored > 0 && (restored === matched ? !!said && Number(said[1].replace(/,/g, "")) === matched
        : new RegExp(`${restored.toLocaleString("en-US")} of the ${matched.toLocaleString("en-US")} people already here`).test(up.sentence))
      && JSON.stringify(rcpt).includes(String(matched)), JSON.stringify({ matched, restored, sentence: up.sentence }));
+  await systemsLeg();
   return { A, B };
+}
+
+// §7 IMPORT-5 · other systems' exports. The key is each file's own cells,
+// written by hand: system, gift rows, and their dollars.
+const SYSTEMS = path.join(__dirname, "fixtures", "import", "systems");
+const SYSTEM_KEY = [
+  ["bloomerang-transactions.csv", "Bloomerang", 3, 40000], ["donorperfect-gifts.csv", "DonorPerfect", 3, 135000],
+  ["littlegreenlight-gifts.csv", "Little Green Light", 3, 50000], ["neon-donations.csv", "Neon CRM", 3, 60000],
+  ["etapestry-journal.csv", "Blackbaud eTapestry", 3, 41500], ["raisers-edge-gifts.csv", "Raiser's Edge", 3, 625000],
+  ["givebutter-transactions.csv", "Givebutter", 3, 17500], ["donorbox-donations.csv", "Donorbox", 3, 17000],
+  ["paypal-giving-fund.csv", "PayPal Giving Fund", 3, 10500], ["quickbooks-sales-by-customer.csv", "QuickBooks", 3, 52500],
+  [["salesforce-npsp-contacts.csv", "salesforce-npsp-donations.csv"], "Salesforce", 4, 92500],
+];
+async function systemsLeg() {
+  const R0 = await import("../shared/sheetRead.js");
+  const S = await freshOrg("org_import5sys", "Other systems (test)");
+  const bodyOf = files => {
+    const fs1 = [].concat(files);
+    return { fileName: fs1.join(" + "), sheets: fs1.map(f => ({ name: fs1.length > 1 ? f.replace(/\.csv$/, "") : "Sheet1", grid: R0.gridFromText(fs.readFileSync(path.join(SYSTEMS, f), "utf8")) })) };
+  };
+  for (const [files, system, gifts, cents] of SYSTEM_KEY) {
+    const u = (await api("POST", "/sheet-import/understand", S.token, bodyOf(files))).body || {};
+    const colQs = (u.questions || []).filter(x => x.kind === "column");
+    ok(`§7 ${[].concat(files).join(" + ")} reads as ${system} with no column question: ${gifts} gifts, $${cents / 100}`,
+       u.ready === true && colQs.length === 0 && u.knownShape && u.knownShape.system === system && /^Read as an? /.test(u.knownShape.sentence)
+       && u.counts.gifts === gifts && u.counts.giftCents === cents && u.counts.undatedGifts === 0,
+       JSON.stringify({ ready: u.ready, colQs: colQs.map(x => x.header), shape: u.knownShape, counts: u.counts && [u.counts.gifts, u.counts.giftCents, u.counts.undatedGifts] }));
+  }
+  const pair = bodyOf(["salesforce-npsp-contacts.csv", "salesforce-npsp-donations.csv"]);
+  const pv = (await api("POST", "/sheet-import/understand", S.token, pair)).body || {};
+  ok("§7 the Salesforce pair says so: \"Read as a Salesforce Contacts + Donations export.\"", pv.knownShape && pv.knownShape.sentence === "Read as a Salesforce Contacts + Donations export.", pv.knownShape);
+  const done = await importJob(S.token, pair);
+  ok("§7 the Salesforce pair imports as one", done.end && done.end.status === "done"
+     && (await q("SELECT COUNT(*)::int AS n FROM imports WHERE org_id=$1", [S.id]))[0].n === 1, JSON.stringify(done.end || done.start.body).slice(0, 300));
+  const by = await q(`SELECT d.external_donor_id AS cid, d.name, ROUND(SUM(g.amount)*100)::int AS c, COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
+                       WHERE g.org_id=$1 GROUP BY 1,2 ORDER BY 1`, [S.id]);
+  const want = { "0035e00000AbCd1AAF": ["Orla Fenwick", 75000, 2], "0035e00000AbCd2AAF": ["Tobin Marsh", 10000, 1], "0035e00000AbCd3AAF": ["Wren Halloway", 7500, 1] };
+  ok("§7 each Salesforce donation is on the person its Contact ID names (3 people, $925.00)", by.length === 3
+     && by.every(r => want[r.cid] && want[r.cid][0] === r.name && want[r.cid][1] === r.c && want[r.cid][2] === r.n)
+     && (await q("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL", [S.id]))[0].n === 3, JSON.stringify(by));
 }
 
 function browserReady() {
