@@ -168,7 +168,7 @@ function reasonSentence(reason, t) {
     case "skipped": return "you skipped this person";
     case "by_hand": return "this kind of email goes only when someone presses Send";
     // FIX-57 item 4
-    case "no_org_address": return "it needs your mailing address. Add your mailing address in Settings, then send it again";
+    case "no_org_address": return "a receipt needs your mailing address, and none is on file";
     case "placeholder": return "it still has a blank in it (like [org address]). Fill it in, then send it again";
     default: return "automatic emails are off";
   }

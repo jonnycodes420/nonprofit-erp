@@ -308,7 +308,7 @@ const held = id => q(`SELECT kind, what, sent_at FROM mail_blocked WHERE org_id=
   ok("§8 with no mailing address on file, a gift sends no receipt", !captured.slice(before8).some(c => /receipt/i.test(c.subject)), captured.slice(before8).map(c => c.subject));
   const go8 = await api("GET", "/going-out", tok);
   const held8 = (go8.body.held || []).find(h => h.reason === "no_org_address");
-  ok("§8 …it is held on Going out, saying to add the mailing address", !!held8 && /Add your mailing address in Settings/.test(held8.why), (go8.body.held || []).map(h => [h.reason, h.why]));
+  ok("§8 …it is held on Going out, saying to add the mailing address", !!held8 && /needs your mailing address/.test(held8.why), (go8.body.held || []).map(h => [h.reason, h.why]));
   const pv8 = await api("POST", "/templates/receipt/preview", tok, { donorId: PEOPLE.on[0] });
   ok("§8 the receipt's preview never prints \"[org address]\", and reports it missing",
      pv8.status === 200 && !/\[org address\]/.test(pv8.body.body || "") && (pv8.body.missing || []).includes("org_address"), pv8.body.body);
