@@ -96,13 +96,13 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       action: c.emails ? "Review emails" : null },
     // IMPORT-5: only shown when there is something to fix
     ...(c.couples ? [{ id: "couples", label: "Couples written as one name", count: c.couples,
-      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written as one person ("Alex, Brad Hubbard", "Randall or Joenell Barnett").`,
+      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written as one person ("Alex, Brad Hubbard", "Randy or Jessamy Barlow").`,
       action: "Fix them" }] : []),
     // FIX-59: each only when there is something in it
-    ...(c.eventDuplicatesByEvent || []).map(e => ({ id: `event:${e.eventId}`, label: `${plural(e.count, "possible duplicate")} within ${e.eventName}`, count: e.count,
+    ...(c.eventDuplicatesByEvent || []).map(e => ({ id: `event:${e.eventId}`, label: `Possible duplicates within ${e.eventName}`, count: e.count,
       sentence: `Two spellings of one name on this event's list ("Fran" and "Frances"). Answer Same person or Different for each.`, action: "Review" })),
     ...(c.namesWithNotes ? [{ id: "names", label: "Names with markup or a note in them", count: c.namesWithNotes,
-      sentence: `${c.namesWithNotes === 1 ? "1 name has" : `${c.namesWithNotes.toLocaleString("en-US")} names have`} stars, underscores or a note in brackets typed into ${c.namesWithNotes === 1 ? "it" : "them"} ("**Bryan May", "Scarlette (send with Tiffany's) Nesbeth").`,
+      sentence: `${c.namesWithNotes === 1 ? "1 name has" : `${c.namesWithNotes.toLocaleString("en-US")} names have`} stars, underscores or a note in brackets typed into ${c.namesWithNotes === 1 ? "it" : "them"} ("**Bryn Maylor", "Sadie (send with Tess's) Norwood").`,
       action: "Clean them" }] : []),
     ...(c.families ? [{ id: "families", label: "Possible families", count: c.families,
       sentence: `${plural(c.families, "pair")} with one surname and two different first names share an address, phone or email: likely spouses or a parent and child, not duplicates.`,

@@ -216,11 +216,11 @@ function commaIsLastFirst(before, after) {
 // name before the comma, a first name and a surname after it, is two people of
 // one household ("Alex & Brad Hubbard"), never "Last, First". The last word must
 // not itself be a first name ("Thomas, Paul James" stays Paul James Thomas).
-// FIX-59: the second first name need not be on the list ("Josh, Kasi Sato"):
+// FIX-59: the second first name need not be on the list ("Josh, Kesi Tanabe"):
 // a known first name before the comma, then exactly two capitalised words, the
 // last not a first name either. "Last, First Middle" would need a surname that
 // is also a first name, so the first names that are common surnames ("Grant,
-// Kasi Mae") keep reading "Last, First".
+// Kesi Mae") keep reading "Last, First".
 const SURNAME_LIKE = new Set(("thomas lewis grant dean wade mitchell marshall howard james allen lee scott morgan taylor carter russell "
   + "warren wayne gordon curtis craig kelly ross ray jordan bruce henry george arthur martin owen wesley clay chase lance kent kirk "
   + "glenn dale mason logan tyler douglas stanley herbert vernon norman milton marion lynn neil neal bernard clifford calvin drew "
@@ -246,7 +246,7 @@ export function commaCoupleFix(name, { imported = false } = {}) {
     const w = n.split(/\s+/);
     if (w.length === 3 && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
   }
-  // FIX-59: "Randall or Joenell Barnett", "Christopher and Cynthia Horne" (or
+  // FIX-59: "Randy or Jessamy Barlow", "Conrad and Celia Hartwell" (or
   // "Or", as the older reading left it): the joining word makes two people,
   // the way the import's reader reads it. "&" is how Steward itself writes a
   // joint name, so a record named with "&" is left as she has it.

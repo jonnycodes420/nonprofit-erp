@@ -109,12 +109,12 @@ async function main() {
   await person("alec", "Alec, Brad Hubbardson");
   await person("leslie", "Leslie, Kelly Dormandy", { address: "4 Tern Way", household: P("hh_dorm") });
   await person("dormmate", "Kelly Dormandy", { address: "4 Tern Way", household: P("hh_dorm") });
-  await person("josh", "Josh, Kasi Satori");
-  await person("randall", "Randall or Joenell Barnetto");
+  await person("josh", "Josh, Kesi Satori");
+  await person("rowan", "Randy or Jessamy Barlowe");
   await person("chris", "Christopher and Cynthia Hornby");
   // names with markup or a note in them
   await person("bryant", "**Bryant Mayfield", { notes: "Board alum." });
-  await person("scarla", "Scarla (send with Tiffany's) Nesbitt");
+  await person("scarla", "Scarla (send with Tess's) Nesbitt");
   // one event's list with two spellings of one person
   await person("fran", "Fran Rohlwing");
   await person("frances", "Frances Rohlwing");
@@ -143,11 +143,11 @@ async function main() {
   // ── §3 couples written as one name ──────────────────────────────────────
   const cp = ((await api("GET", "/data-health/couples", tok)).body || {}).rows || [];
   const cpNames = cp.map(r => r.name).sort();
-  const wantCouples = ["Alec, Brad Hubbardson", "Christopher and Cynthia Hornby", "Josh, Kasi Satori", "Leslie, Kelly Dormandy", "Randall or Joenell Barnetto"];
+  const wantCouples = ["Alec, Brad Hubbardson", "Christopher and Cynthia Hornby", "Josh, Kesi Satori", "Leslie, Kelly Dormandy", "Randy or Jessamy Barlowe"];
   ok("§3 every couple written as one name is found: comma, a first name off the list, one in a household, \"or\" and \"and\"",
      JSON.stringify(cpNames) === JSON.stringify(wantCouples), cpNames);
   ok("§3 the count on the page is the same rows", h0.counts && h0.counts.couples === wantCouples.length, h0.counts && h0.counts.couples);
-  const coupleIds = ["alec", "leslie", "dormmate", "josh", "randall", "chris"].map(P);
+  const coupleIds = ["alec", "leslie", "dormmate", "josh", "rowan", "chris"].map(P);
   const beforeCouples = await snap(coupleIds);
   const [{ n: peopleBefore }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]);
   const [{ n: hhBefore }] = await q(`SELECT COUNT(*)::int AS n FROM households WHERE org_id=$1`, [ORG]);
@@ -155,7 +155,7 @@ async function main() {
   const after = Object.fromEntries((await q(`SELECT id, name, spouse_name, household_id FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, coupleIds])).map(r => [r.id, r]));
   const [{ n: peopleMid }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]);
   ok("§3 Fix all: each record is the first person; the one in a household keeps it and is not given a second Kelly",
-     ap.status === 201 && ap.body.applied === 5 && after[P("randall")].name === "Randall Barnetto" && after[P("randall")].spouse_name === "Joenell Barnetto"
+     ap.status === 201 && ap.body.applied === 5 && after[P("rowan")].name === "Randy Barlowe" && after[P("rowan")].spouse_name === "Jessamy Barlowe"
      && after[P("josh")].name === "Josh Satori" && after[P("chris")].name === "Christopher Hornby"
      && after[P("leslie")].name === "Leslie Dormandy" && after[P("leslie")].household_id === P("hh_dorm") && peopleMid === peopleBefore + 4,
      [ap.status, ap.body, after, peopleMid - peopleBefore]);
@@ -170,7 +170,7 @@ async function main() {
   const nmRows = (nm.body && nm.body.rows) || [];
   const br = nmRows.find(r => r.donorId === P("bryant")), sc = nmRows.find(r => r.donorId === P("scarla"));
   ok("§4 names with markup or a note in brackets are listed, cleaned as the import cleans them",
-     nm.status === 200 && nmRows.length === 2 && br && br.after === "Bryant Mayfield" && sc && sc.after === "Scarla Nesbitt" && sc.notes[0] === "send with Tiffany's",
+     nm.status === 200 && nmRows.length === 2 && br && br.after === "Bryant Mayfield" && sc && sc.after === "Scarla Nesbitt" && sc.notes[0] === "send with Tess's",
      [nm.status, nmRows]);
   const nameIds = [P("bryant"), P("scarla")];
   const beforeNames = await snap(nameIds);
@@ -178,7 +178,7 @@ async function main() {
   const nAfter = Object.fromEntries((await q(`SELECT id, name, notes FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, nameIds])).map(r => [r.id, r]));
   ok("§4 on her click the name is cleaned and the note moves to Notes, after what was there",
      na.status === 201 && nAfter[P("bryant")].name === "Bryant Mayfield" && nAfter[P("bryant")].notes === "Board alum."
-     && nAfter[P("scarla")].name === "Scarla Nesbitt" && /send with Tiffany's/.test(nAfter[P("scarla")].notes || ""), [na.status, nAfter]);
+     && nAfter[P("scarla")].name === "Scarla Nesbitt" && /send with Tess's/.test(nAfter[P("scarla")].notes || ""), [na.status, nAfter]);
   const nu = await api("POST", "/data-health/names/undo", tok, { batchId: na.body && na.body.batchId });
   ok("§4 Undo puts each name and its Notes back exactly", nu.status === 200 && (await snap(nameIds)) === beforeNames, nu.status);
 

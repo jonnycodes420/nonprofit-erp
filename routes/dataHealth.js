@@ -237,7 +237,7 @@ function unreachableRows(people) {
 
 // IMPORT-5 · couples written with a comma ("Alex, Brad Hubbard", or the old
 // reading "Brad Hubbard Alex" on a record an import made), and FIX-59 with
-// "or" and "and" ("Randall or Joenell Barnett"). Proposed only. FIX-59: a
+// "or" and "and" ("Randy or Jessamy Barlow"). Proposed only. FIX-59: a
 // record already in a household is proposed too (an import puts people at one
 // address in one); its fix joins that household instead of making one.
 const SR = () => import("../shared/sheetRead.js");
@@ -253,8 +253,8 @@ async function coupleRows(orgId, people) {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// FIX-59 · NAMES WITH MARKUP OR A NOTE IN THEM. "**Bryan May", "Scarlette
-// (send with Tiffany's) Nesbeth": the name as a person reads it, the note moved
+// FIX-59 · NAMES WITH MARKUP OR A NOTE IN THEM. "**Bryn Maylor", "Sadie
+// (send with Tess's) Norwood": the name as a person reads it, the note moved
 // to the person's Notes, only on her click (shared/nearNames.js nameAndNotes,
 // the import's own reader). A row that is a note and not a person is left.
 async function nameNoteRows(orgId, people) {
@@ -271,7 +271,7 @@ async function nameNoteRows(orgId, people) {
 }
 
 // FIX-59 · TWO SPELLINGS OF ONE PERSON ON ONE EVENT'S LIST. The import asks
-// "Is Fran Rohlfing the same as Frances Rohlfing?"; this is the same question
+// "Is Fran Pell the same as Frances Pell?"; this is the same question
 // for the lists already here, by the same reader. A pair answered Different is
 // a "pair" dismissal, so the duplicates line never asks it either.
 async function eventPairRows(orgId, people) {

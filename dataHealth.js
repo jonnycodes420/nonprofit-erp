@@ -114,8 +114,8 @@ const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 //   near-duplicate reader:)
 //   low     a near-duplicate by name alone (a letter apart, a nickname) with
 //           nothing else in common, said as such
-//   never   two different full first names on one surname ("Jay Acosta" and
-//           "Jami Acosta" at one address): a possible family, returned as
+//   never   two different full first names on one surname ("Jay Acorn" and
+//           "Jami Acorn" at one address): a possible family, returned as
 //           { family: true } for the Possible families line · a shared phone
 //           and nothing else
 const RANK = { high: 3, medium: 2, low: 1 };
@@ -200,7 +200,7 @@ function findPairs(rows, { orgId, dismissed = new Set(), near = null, familiesDi
   // bucket, so a spelling slip is found without comparing everyone to everyone.
   block(d => { const t = nameTokens(d.name); return t.length ? "n:" + t[t.length - 1].slice(0, 4) + "|" + t[0][0] : null; });
   // FIX-59: the same first name and a last name a letter apart early on
-  // ("Allanson"/"Alanson" fall in two buckets above)
+  // ("Hollanby"/"Holanby" fall in two buckets above)
   if (near) block(d => { const t = nameTokens(d.name); return t.length >= 2 ? "f:" + t[0] + "|" + t[t.length - 1].slice(0, 2) : null; });
 
   const byId = new Map(live.map(d => [d.id, d]));
