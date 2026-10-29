@@ -910,7 +910,7 @@ export default function Donate({ preview = null }) {
       ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/fundraiser/${fundraiserSlug}/public`
       : pageSlug
         ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/public`
-        : `${API}/org/${orgSlug}/public`;
+        : `${API}/org/${orgSlug}/public${membershipsMode || membershipLevelId ? "?memberships=1" : ""}`;
     // BUILD-102 Part 6 — a visitor who already has a side keeps it, and the server
     // serves that variant in ONE round trip. Somebody arriving for the first time
     // fetches without a side, and only if a test is actually running do we assign

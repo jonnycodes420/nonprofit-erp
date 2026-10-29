@@ -10,8 +10,8 @@
 //     dependency for three verbs on one bucket.
 //   • DB driver — no env set (scratch stack, CI, a fresh deploy before the
 //     bucket exists): bytes live in the portal_assets table. Same URLs, same
-//     behavior, zero infra. An S3 PUT failure also falls back here (loud log,
-//     never a lost upload).
+//     behavior, zero infra. With S3 configured, an S3 PUT that fails every
+//     try refuses the upload with a 503 (FIX-58); it never lands here.
 //
 // Ids are content-addressed per org (sha256 over org+type+bytes → pa_<24hex>),
 // so a re-upload of identical bytes is a no-op and any new bytes mint a NEW
@@ -122,6 +122,15 @@ function assetIdFor(orgId, kind, contentType, buffer) {
 }
 const assetPath = (id) => `/portal-assets/${id}`;
 
+// FIX-58: an upload S3 would not take. The error handler answers it with a 503
+// and this sentence; nothing was stored.
+class AssetStoreUnavailable extends Error {
+  constructor() {
+    super("The file could not be saved just now. Nothing was stored; please try again in a minute.");
+    this.name = "AssetStoreUnavailable"; this.code = "asset_store_unavailable"; this.status = 503;
+  }
+}
+
 // Store a validated theme image; returns { id, path }. Content-addressed:
 // identical bytes for the same org+type return the existing asset untouched.
 // FIX-20 Part 0: `isPublic` is passed ONLY where an admin places the asset on
@@ -142,29 +151,31 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
     return { id, path: assetPath(id) };
   }
   const cfg = s3Config();
-  let storage = "db", s3Key = null, data = null, s3Fallback = false;
+  let storage = "db", s3Key = null, data = null;
   if (cfg) {
+    // FIX-58 · WITH S3 CONFIGURED, EVERY UPLOAD GOES TO S3 OR FAILS. A put
+    // that failed every try used to be written to Postgres (s3_fallback), and
+    // those rows held /health guardsOk false (themeAssets.dbFallbackRows) until
+    // something moved them. Now the upload fails, loudly: a CRITICAL log, a
+    // Sentry event, the since-boot counter on /health, and a 503 the person
+    // uploading sees ("try again"). Nothing is written, so there is nothing to
+    // move later. Postgres storage is only for a stack with no bucket at all.
+    s3Key = `${orgId}/${kind}/${id}`;
     try {
-      s3Key = `${orgId}/${kind}/${id}`;
       await s3PutWithRetry(cfg, s3Key, buffer, contentType);
-      storage = "s3";
     } catch (e) {
-      // BUILD-51b — this fallback must never be silent: bytes quietly
-      // re-accumulating in Postgres is the failure nobody notices until it's
-      // large. Three alarms: CRITICAL log (Railway logs), a Sentry event
-      // (prod alerting — Sentry is live there), and the /health
-      // themeAssets.dbFallbackRows count (uptime-keyword checkable).
-      console.error("[assetStore] CRITICAL: S3 put failed — falling back to DB storage:", e.message);
-      dbFallbackSinceBoot++;
-      try { Sentry.captureException(e, { tags: { area: "assetStore" }, extra: { orgId, kind, note: "S3 put failed; asset stored in Postgres" } }); } catch { /* Sentry not init'd */ }
-      storage = "db"; s3Key = null; s3Fallback = true;
+      console.error("[assetStore] CRITICAL: S3 put failed every try; the upload is refused:", e.message);
+      s3PutFailedSinceBoot++;
+      try { Sentry.captureException(e, { tags: { area: "assetStore" }, extra: { orgId, kind, note: "S3 put failed; upload refused" } }); } catch { /* Sentry not init'd */ }
+      throw new AssetStoreUnavailable();
     }
+    storage = "s3";
   }
   if (storage === "db") data = buffer.toString("base64");
   await run(
     `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public, s3_fallback)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
-    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true, s3Fallback]);
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,FALSE) ON CONFLICT (id) DO NOTHING`,
+    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true]);
   return { id, path: assetPath(id) };
 }
 
@@ -417,7 +428,8 @@ async function purgeExpiredAssets({ orgId = null } = {}) {
 // guardsOk false with no failed put anywhere.
 // Cached so /health stays synchronous; refreshed on boot + the 5-min tick +
 // bumped live by the fallback path above.
-let dbFallbackSinceBoot = 0;
+let dbFallbackSinceBoot = 0;   // FIX-58: stays 0; nothing falls back any more
+let s3PutFailedSinceBoot = 0;  // FIX-58: uploads refused because S3 failed every try
 let dbFallbackRows = null;
 async function refreshAssetFallbackCount() {
   if (!s3Config()) { dbFallbackRows = null; return null; }
@@ -512,7 +524,7 @@ async function moveFallbackAssetsToS3({ limit = 50, skipOrgs = ASSET_MOVE_SKIP_O
 }
 
 function assetHealth() {
-  return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, softDeleted: softDeletedRows };
+  return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, s3PutFailedSinceBoot, softDeleted: softDeletedRows };
 }
 
 // SECURE-1 · the headers every stored file is served with: an image is only
@@ -524,6 +536,6 @@ module.exports = {
   s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
   refreshAssetFallbackCount, refreshRetentionCounts, assetHealth, moveFallbackAssetsToS3, ASSET_MOVE_SKIP_ORGS,
   restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
-  assetIdFor, assetPath, ASSET_ID_RE,
+  assetIdFor, assetPath, ASSET_ID_RE, AssetStoreUnavailable,
   _signedS3Request: signedS3Request, // exported for the suite's determinism checks
 };

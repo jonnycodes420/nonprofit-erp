@@ -22647,7 +22647,7 @@ const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
-          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id,
+          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.stripe_connected,
           ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
 async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {
@@ -22677,7 +22677,17 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(orgPageSql("o.org_slug = $1"), [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
-  res.json(await orgPagePublicPayload(orgs[0], req.params.orgSlug));
+  // FIX-58: the org's own donation form is gated like its giving pages: until
+  // payments are connected it is not open, and its address says so. The
+  // memberships page reads the same payload for the org's brand and asks with
+  // ?memberships=1; a membership's checkout is refused by donateHandler on its
+  // own until payments are connected, so that page never takes money either.
+  const org = orgs[0];
+  if (req.query.memberships !== "1" && !orgTakesGifts(org)) {
+    const name = String(org.display_name || "").trim() || org.name;
+    return res.status(404).json({ notOpen: true, orgName: name, error: `${name}'s giving page isn't open yet. Please check back soon.` });
+  }
+  res.json(await orgPagePublicPayload(org, req.params.orgSlug));
 }));
 // The editor's preview of the org's own Donation form: the same payload, with
 // the drafted amounts. A GET: nothing is written.
