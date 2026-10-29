@@ -456,7 +456,12 @@ async function fixtures() {
     const adminOff = await api("POST", "/me/mfa/disable", first.body.token, { code: "admn-wxyz" });
     ok("an admin turns it off with a current code", adminOff.status === 200 && adminOff.body.enabled === false, adminOff.body);
     ok("…the person is emailed about it (or the answer says it could not be)", typeof adminOff.body.emailed === "boolean", adminOff.body);
-    const [logged] = await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND entity_id=$2 AND action ILIKE '%two-factor turned off%' LIMIT 1`, [ORG, ADMIN]);
+    // The audit row is written as the answer finishes, so it may land a moment after.
+    let logged = null;
+    for (let i = 0; i < 30 && !logged; i++) {
+      [logged] = await q(`SELECT 1 FROM fin_audit_log WHERE org_id=$1 AND entity_id=$2 AND action ILIKE '%two-factor turned off%' LIMIT 1`, [ORG, ADMIN]);
+      if (!logged) await new Promise(r => setTimeout(r, 100));
+    }
     ok("…and it is in the audit log", !!logged);
     // A required org: a person without two-factor gets a setup-only session.
     await q(`UPDATE users SET mfa_enabled_at=NULL, mfa_method=NULL WHERE id=$1`, [STAFF]);
