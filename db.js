@@ -6281,6 +6281,15 @@ async function runSchemaInit(pool) {
       user_agent TEXT, ip_prefix TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), last_active_at TIMESTAMPTZ DEFAULT NOW(),
       revoked_at TIMESTAMPTZ, revoked_by TEXT)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions (user_id, revoked_at)`);
+  // SECURE-2 item 7: a session with no activity for the org's idle minutes is
+  // signed out (default 60; an admin sets 15 to 480). And every browser a
+  // person has signed in from, by a one-way fingerprint, so a new one is told.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS idle_minutes INTEGER NOT NULL DEFAULT 60`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_devices (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, device_hash TEXT NOT NULL,
+      first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_hash ON user_devices (user_id, device_hash)`);
 
   // ── BUILD-101 — MEMBERSHIPS ────────────────────────────────────────────
   // A level: a price, the org's stated fair-market value of its benefits

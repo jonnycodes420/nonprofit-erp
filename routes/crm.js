@@ -1307,7 +1307,7 @@ app = routers.r1;
 const TF = require("../twoFactor");
 const bcrypt = require("bcryptjs");
 const meRow = async userId => (await query(`SELECT * FROM users WHERE id=?`, [userId]))[0] || null;
-const orgOf = async orgId => (await query(`SELECT id, org_kind, require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [orgId]))[0] || null;
+const orgOf = async orgId => (await query(`SELECT id, org_kind, require_mfa, require_admin_mfa, idle_minutes FROM orgs WHERE id=?`, [orgId]))[0] || null;
 const mustKeepMfa = (u, o) => !!(u.is_super_admin || (o && o.require_mfa) || (u.role === "admin" && o && o.require_admin_mfa));
 // One check for "is this a current code of yours", whatever the method.
 async function currentCodeOk(u, code) {
@@ -1324,6 +1324,7 @@ app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
   res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, method: u?.mfa_method || (u?.mfa_enabled_at ? "totp" : null),
     recoveryCodesLeft: u?.mfa_enabled_at ? await TF.recoveryLeft(u.id) : 0,
     orgRequires: !!(o && o.require_mfa), orgRequiresForAdmins: !!(o && o.require_admin_mfa),
+    idleMinutes: (o && o.idle_minutes) || TF.IDLE_DEFAULT,
     mustKeep: !!(u && mustKeepMfa(u, o)), demo: TF.isDemoOrg(o), demoSentence: TF.isDemoOrg(o) ? TF.DEMO_SENTENCE : null });
 }));
 
@@ -1436,7 +1437,14 @@ app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
     if (typeof want[k] !== "boolean") return res.status(400).json({ error: `${k} must be true or false` });
     sets.push(`${col}=?`); args.push(want[k]);
   }
-  if (!sets.length) return res.status(400).json({ error: "requireMfa or requireAdminMfa is required" });
+  // SECURE-2 item 7: idle sign-out, in whole minutes, 15 to 480.
+  if (want.idleMinutes !== undefined) {
+    const m = Number(want.idleMinutes);
+    if (!Number.isInteger(m) || m < TF.IDLE_MIN || m > TF.IDLE_MAX)
+      return res.status(400).json({ error: "idle_minutes_range", message: `Idle sign-out is between ${TF.IDLE_MIN} minutes and ${TF.IDLE_MAX / 60} hours, in whole minutes.` });
+    sets.push("idle_minutes=?"); args.push(m);
+  }
+  if (!sets.length) return res.status(400).json({ error: "requireMfa, requireAdminMfa or idleMinutes is required" });
   if (want.requireMfa === true || want.requireAdminMfa === true) {
     const u = await meRow(req.user.userId);
     if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-factor for yourself first." });
@@ -1444,8 +1452,8 @@ app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
   const o = await orgOf(req.user.orgId);
   if (TF.isDemoOrg(o)) return res.status(409).json({ error: "demo_org", message: TF.DEMO_SENTENCE });
   await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...args, req.user.orgId]);
-  const [after] = await query(`SELECT require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
-  res.json({ requireMfa: !!after.require_mfa, requireAdminMfa: !!after.require_admin_mfa });
+  const [after] = await query(`SELECT require_mfa, require_admin_mfa, idle_minutes FROM orgs WHERE id=?`, [req.user.orgId]);
+  res.json({ requireMfa: !!after.require_mfa, requireAdminMfa: !!after.require_admin_mfa, idleMinutes: after.idle_minutes });
 }));
 
 // RESET A TEAMMATE'S TWO-FACTOR, OWNER. They set it up again at their next

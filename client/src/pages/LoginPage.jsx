@@ -2,6 +2,22 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { API } from "../api";
 import { safeNext } from "../lib/appUrls";
+
+// SECURE-2 item 7: a long random id this browser keeps for itself. Without
+// storage it is simply absent, and the server falls back to the browser's
+// description.
+const DEVICE_KEY = "steward_device_id";
+function deviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{16,128}$/.test(id)) {
+      const b = new Uint8Array(24); crypto.getRandomValues(b);
+      id = Array.from(b, x => x.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch { return undefined; }
+}
 // FIX-13 Part 6 — a deep link that needed a sign-in (or two-factor) returns
 // to that exact page afterwards: ?next= is set by the route guard and by the
 // expired-session handler, and only a same-origin path is honoured.
@@ -74,7 +90,10 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password,
           ...(needCode ? { code, trustBrowser: trust } : {}),
-          trustToken: (() => { try { return localStorage.getItem(trustKey()) || undefined; } catch { return undefined; } })() }),
+          trustToken: (() => { try { return localStorage.getItem(trustKey()) || undefined; } catch { return undefined; } })(),
+          // SECURE-2 item 7: this browser's own random id, so a sign-in from
+          // a browser never seen before can be told to the person.
+          deviceId: deviceId() }),
       });
       // Prefer the server's SENTENCE over its code. A deactivated account now
       // answers {error:"account_deactivated", message:"This account has been

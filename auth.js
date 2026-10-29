@@ -129,8 +129,10 @@ async function requireAuth(req, res, next) {
     // Signing a session out (Settings, an owner, a password change) ends it on
     // its very next request. A token minted before SEC-1 has no sid and is
     // ended by sessions_valid_after, as before.
-    if (payload.sid && !(await require("./twoFactor").sessionAlive(payload.sid, payload.userId))) {
-      return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
+    if (payload.sid) {
+      const st = await require("./twoFactor").sessionState(payload.sid, payload.userId);
+      if (!st.ok && st.idle) return res.status(401).json({ error: "session_idle", message: "You were signed out after a while with no activity. Sign in again to pick up where you left off." });
+      if (!st.ok) return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
     }
     req.user = { ...payload, role: info.role, orgId: info.org_id };
     // SECURE-2: a Sentry event names the org and the user by id, never by name.
