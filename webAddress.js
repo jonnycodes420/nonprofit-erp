@@ -15,7 +15,7 @@ function webAddress(v, max = 300) {
   let u;
   try { u = new URL(withScheme); } catch { return null; }
   if (u.protocol !== "https:" && u.protocol !== "http:") return null;
-  if (!u.hostname || !u.hostname.includes(".")) return null;
+  if (!u.hostname) return null;
   return u.toString().replace(/\/$/, t.endsWith("/") ? "/" : "");
 }
 module.exports = { webAddress };
