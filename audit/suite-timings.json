@@ -177,6 +177,7 @@
   "webhook-ordering": 4,
   "why1-appeal-variance": 1,
   "why1-sentence-check": 3,
-  "wire-journey": 10
+  "wire-journey": 10,
+  "claude-md": 0
  }
 }

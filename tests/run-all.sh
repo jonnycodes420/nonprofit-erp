@@ -262,6 +262,7 @@ CORE=(
   import-columns
   palette
   no-emoji
+  claude-md
   landing2-marketing
   clickability
   test-clock-seam
