@@ -32,6 +32,10 @@
 //   §13 A partly sent campaign says "Sent to N of M · K not sent" with its
 //       reasons, a campaign where nothing went says "Not sent", and every
 //       surface says the same (the truth check, mailCampaigns).
+//   §14 Idle sign-out: an org's idle minutes (15 to 480) end a session with
+//       no activity for that long, on the server.
+//   §15 A sign-in from a browser this person has not used before sends them
+//       one email; their first ever sign-in and a known browser send none.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -347,6 +351,56 @@ async function fixtures() {
     const others = ["people", "gifts", "thisYear", "vsLastYear", "homeLine", "drift", "groups", "events", "campaigns", "moveReport", "search", "ask", "atlas", "exports", "deleted", "finance"];
     const agree = await assertSurfacesAgree(ORG, { token: admin, soft: true, skip: others, label: "SECURE-2 §13" });
     ok("the truth check: the campaign list, the sent list, Communications and the as-sent page agree with the database", agree.ok, agree.diffs);
+  }
+
+  console.log("\n§14 · a session with no activity for the org's idle minutes is signed out");
+  {
+    const lo = await api("PUT", "/org/security", admin, { idleMinutes: 14 });
+    const hi = await api("PUT", "/org/security", admin, { idleMinutes: 481 });
+    const odd = await api("PUT", "/org/security", admin, { idleMinutes: 30.5 });
+    ok("an admin cannot set fewer than 15 minutes, more than 480, or part of a minute", lo.status === 400 && hi.status === 400 && odd.status === 400, [lo.status, hi.status, odd.status]);
+    const set = await api("PUT", "/org/security", admin, { idleMinutes: 15 });
+    ok("…and can set 15", set.status === 200 && set.body.idleMinutes === 15, set.body);
+    const staffSet = await api("PUT", "/org/security", staff, { idleMinutes: 480 });
+    ok("…a staff member cannot change it", staffSet.status === 403, staffSet.status);
+    const tok = await login(STAFF_EMAIL);
+    const sid = JSON.parse(Buffer.from(tok.split(".")[1], "base64url").toString()).sid;
+    await q(`UPDATE user_sessions SET last_active_at = NOW() - INTERVAL '14 minutes' WHERE id=$1`, [sid]);
+    const at14 = await api("GET", "/me/mfa", tok);
+    ok("14 minutes idle at a 15-minute org: still signed in", at14.status === 200, at14.status);
+    await q(`UPDATE user_sessions SET last_active_at = NOW() - INTERVAL '16 minutes' WHERE id=$1`, [sid]);
+    const at16 = await api("GET", "/me/mfa", tok);
+    ok("16 minutes idle: signed out, and told why (session_idle)", at16.status === 401 && at16.body.error === "session_idle", { status: at16.status, body: at16.body });
+    const again = await api("GET", "/me/mfa", tok);
+    ok("…and it stays signed out", again.status === 401, again.status);
+    await q(`UPDATE orgs SET idle_minutes = 60 WHERE id=$1`, [ORG]).catch(() => {});
+  }
+
+  console.log("\n§15 · a sign-in from a new browser is told to the person, once");
+  {
+    const SINK = require("./helpers").SINK_PORT;
+    const mails = [];
+    const sinkSrv = http.createServer((req, res) => { let b = ""; req.on("data", c => b += c); req.on("end", () => {
+      try { mails.push(JSON.parse(b)); } catch { /* not json */ }
+      res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "sunk_" + mails.length })); }); });
+    const bound = await new Promise(r => { sinkSrv.on("error", () => r(false)); sinkSrv.listen(SINK, () => r(true)); });
+    ok("the mail sink is up", bound, SINK);
+    await q(`DELETE FROM user_devices WHERE user_id=$1`, [STAFF]).catch(() => {});
+    const signIn = deviceId => fetch(BASE + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: STAFF_EMAIL, password: "loadtest1234", deviceId }) }).then(r => r.json());
+    const toStaff = () => mails.filter(m => (Array.isArray(m.to) ? m.to : [m.to]).includes(STAFF_EMAIL) && /New sign-in/.test(m.subject || ""));
+    const settle = () => new Promise(r => setTimeout(r, 800));
+    const A = "devA" + crypto.randomBytes(12).toString("hex"), B = "devB" + crypto.randomBytes(12).toString("hex");
+    const first = await signIn(A); await settle();
+    ok("the first sign-in ever is recorded without an email", !!first.token && toStaff().length === 0, { token: !!first.token, n: toStaff().length });
+    await signIn(B); await settle();
+    ok("a sign-in from a browser never seen sends exactly one email to the person", toStaff().length === 1, toStaff().map(m => m.subject));
+    ok("…saying which browser, with a way to secure the account", /Not you\?/.test((toStaff()[0] || {}).html || "") && /section=security/.test((toStaff()[0] || {}).html || ""), (toStaff()[0] || {}).subject);
+    await signIn(B); await signIn(A); await settle();
+    ok("the same browsers again send nothing more", toStaff().length === 1, toStaff().length);
+    const [row] = await q(`SELECT device_hash FROM user_devices WHERE user_id=$1 LIMIT 1`, [STAFF]);
+    ok("only a fingerprint of the browser id is kept", row && !row.device_hash.includes(A) && !row.device_hash.includes(B) && /^[0-9a-f]{64}$/.test(row.device_hash), row);
+    await new Promise(r => sinkSrv.close(r));
   }
 
   summary();

@@ -1,5 +1,6 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
+import { saveDrafts } from "./lib/idleDraft";
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -55,6 +56,7 @@ const AUTH_MESSAGES = {
   no_token:            "Please log in again.",
   account_deactivated: "This account has been removed from the organization. Ask an admin to add you back.",
   user_not_found:      "That account no longer exists. Please log in again.",
+  session_idle:        "You were signed out after a while with no activity. Sign in again; anything you were typing is kept.",
 };
 const AUTH_FALLBACK_MESSAGE = "Your session is no longer valid, please log in again.";
 
@@ -93,6 +95,8 @@ let _leavingForLogin = false;
 export const leavingForLogin = () => _leavingForLogin;
 
 export function handleAuthFailure(code) {
+  // SECURE-2 item 7: an idle sign-out keeps what was being typed.
+  if (code === "session_idle") saveDrafts();
   localStorage.removeItem("npe_token");
   localStorage.removeItem("npe_user");
   localStorage.removeItem("npe_org");

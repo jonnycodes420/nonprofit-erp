@@ -184,6 +184,20 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   }
 
   const { token } = await TF.issueSession(user, req, signToken);
+  // SECURE-2 item 7: a browser this person has not signed in from before
+  // gets them one short email (sign-in mail: always on, only to themselves,
+  // never on the shared demo login). The answer does not wait for it.
+  try {
+    const dev = await TF.rememberDevice(user, req, req.body && req.body.deviceId);
+    if (dev.isNew && !TF.isDemoOrg(org)) {
+      const where = TF.deviceLabel(req);
+      const secure = `${publicAppUrl()}/settings?section=security`;
+      TF.mailUser(user, resend, `New sign-in to Steward from ${where}`,
+        `New sign-in to Steward from <strong>${where}</strong> on ${new Date().toUTCString()}.`
+        + `<br><br>Not you? <a href="${secure}" style="color:#0D5C3A">Secure your account</a>: change your password, then sign out every other browser in Settings, Security.`)
+        .catch(e => console.error("[new-device] mail failed:", e.message));
+    }
+  } catch (e) { console.error("[new-device] could not record the browser:", e.message); }
   res.json({ token, trustToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 }));
 
