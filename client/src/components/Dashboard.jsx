@@ -17,7 +17,6 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from 
 import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { rowFigure } from "../../../shared/threadFigures";
 import { Figure } from "./Figure";
-import { firstThingSentences } from "../../../shared/firstThing.js";
 import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
@@ -45,8 +44,7 @@ import { AskHero } from "./AskRail";
 import { openTellSteward } from "./TellSteward";   // AGENT-5: one input, Atlas over the page
 import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
-import { HomeLead } from "./HomeLead";   // HOME-2
-import { HomeInsights } from "./Insights";   // INSIGHTS-1
+import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -560,7 +558,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const railAt=k=>{const i=homeRail.indexOf(k);return i<0?99:i;};
   const thankClockLow=railAt("thankClock")>railAt("tiles");
   // The meeting in the lead is drawn there in full; the rail lists it, not twice.
-  const leadMeetingId=((homeDay&&homeDay.lead)||[]).find(c=>c.kind==="meeting")?.meetingId||null;
+  const leadMeetingId=null;   // HOME-3: no lead card, so the rail shows every meeting
   const [agentText,setAgentText]=useState("");
   const loadAgentDaily=()=>apiFetch("/agent/daily-line")
     .then(setAgentDaily).catch(()=>setAgentDaily(null));
@@ -591,6 +589,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // gate that re-read the flag would kill the banner on the very next
   // re-render (it did, in the live drive).
   const [setupCelebrate,setSetupCelebrate]=useState(false);
+  // HOME-3: on Home the checklist is one line under the deck until she opens it.
+  const [setupOpen,setSetupOpen]=useState(false);
   useEffect(()=>{
     apiFetch("/org/setup-status").then(s=>{
       let seen=false,fired=false;
@@ -2938,50 +2938,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     return (
       <div>
         <span style={{...sSerif,display:"inline-block",marginBottom:12}}>Today</span>
-        {/* HOME-TIDY 2 — WHAT IS IN FRONT OF HER TODAY sits here, beside the
-            work: "how did the meeting go?" when one just ended, then the
-            Thread's first thing (threadList[0], threadRank's own answer). */}
-        {/* HOME-2 · the rail reorders with the day (GET /home/lead `rail`): a
-            meeting soon goes to the top, and the gift-to-thank-you tile drops
-            below the numbers when nothing is waiting to be thanked. */}
-        {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
-          {/* CAPTURE-1: the gift-to-thank-you clock, approved from the mockup. */}
-          {!thankClockLow&&<div style={{order:railAt("thankClock")}}><HomeThankClock onNavigate={onNavigate}/></div>}
-          <div style={{order:railAt("mailbox")}}><MailboxBanner onNavigate={onNavigate}/></div>
-          <div style={{order:railAt("meetings")}} data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
-          {threadList.length>0&&<div style={{order:railAt("firstThing")}}>{(()=>{
-            const first=threadList[0];
-            return (
-              <div data-testid="home-first-thing" style={{border:"1px solid "+T.bg2,borderRadius:14,padding:"14px 16px",background:T.white}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First thing</div>
-                <a href={`/donors/${first.donorId}`}
-                  onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button>0)return;e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
-                  style={{display:"block",textDecoration:"none",color:"inherit"}}>
-                  {/* TASKS-2 — one subject per sentence: "Christine asked for
-                      the impact report. Send it today." (shared/firstThing.js) */}
-                  {(()=>{const s=firstThingSentences(first,orgTodayPlus(0));return(<>
-                  <div data-testid="home-first-sentence" style={{fontFamily:"'DM Serif Display',serif",fontSize:17,lineHeight:1.3,color:T.ink}}>
-                    {s.happened}
-                  </div>
-                  <div data-testid="home-first-step" style={{fontSize:12.5,color:first.overdue?T.gold700:T.ink3,marginTop:4,lineHeight:1.45}}>
-                    {s.next}
-                  </div></>);})()}
-                </a>
-                <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <DonorLink id={first.donorId} data-testid="home-first-open"
-                    onOpen={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
-                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                    Open {firstNameOf(first.donorName)||first.donorName}
-                  </DonorLink>
-                  <button data-testid="home-first-done" disabled={isReadOnly}
-                    onClick={()=>setConvoFor({donor:{id:first.donorId,name:first.donorName},thread:first})}
-                    style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 11px",color:T.ink,fontSize:12.5,fontWeight:700,
-                      cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"inherit"}}>Mark it done</button>
-                  <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
-                </div>
-              </div>);
-          })()}</div>}
-        </div>}
         {/* HOME-TIDY — the day is the header's line, so the rail does not say it
             again. Three numbers side by side; each definition travels with its
             label on the profile tiles' "?" (keyboard-reachable, BUILD-100). */}
@@ -3004,7 +2960,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           ))}
         </div>
-        {!editMode&&thankClockLow&&<div style={{marginTop:14}}><HomeThankClock onNavigate={onNavigate}/></div>}
         {/* FIX-22: one quiet line, only when somebody has a birthday this week. */}
         {birthdaysThisWeek.length>0&&(
           <div {...interactive(()=>setRailView({kind:"list",key:"birthdays"}),{label:`${birthdaysThisWeek.length} birthday${birthdaysThisWeek.length===1?"":"s"} this week`})}
@@ -3016,6 +2971,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         )}
         {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
         <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
+        {/* HOME-3 — the rail is Today, Calls to make, To confirm (the
+            thank-you clock) and the mailbox notice, then the day's meetings;
+            the moves are the deck's. */}
+        {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+          <HomeThankClock onNavigate={onNavigate}/>
+          <MailboxBanner onNavigate={onNavigate}/>
+          {/* SEND-GATE-2's line, where the approved HOME-3 mockup draws it: the foot of the rail. */}
+          <HomeMailLine onNavigate={onNavigate}/>
+          <div data-testid="home-rail-meetings"><MorningBrief compact skipMeetingId={leadMeetingId} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>
+        </div>}
       </div>
     );
   })();
@@ -3087,7 +3052,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
@@ -3183,6 +3148,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // dash-root the containing block for every position:fixed descendant —
   // dropping the set-goal modal (and any drill-down not portalled to body) at
   // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
+  // HOME-3 — SET UP STEWARD, OUT OF THE WAY. One quiet line under the deck
+  // ("Set up Steward · 5 of 8 done"), which opens the checklist in place.
+  const setupLine=(()=>{
+    if(surface!=="home"||!setupStatus||setupStatus.cardState==="hidden")return null;
+    if(setupStatus.complete)return setupCelebrate?<GoldMoment moment="setup_complete" title="Steward is set up."
+      line="Donors in, giving connected, automations watching. This line retires itself, everything it linked to lives in Settings."/>:null;
+    return(
+      <div data-testid="home-setup-line">
+        <button type="button" onClick={()=>setSetupOpen(o=>!o)} aria-expanded={setupOpen}
+          style={{background:"none",border:"none",padding:0,fontFamily:"inherit",fontSize:13.5,color:T.ink3,cursor:"pointer",textAlign:"left"}}>
+          Set up Steward · {setupStatus.doneCount} of {setupStatus.totalCount} done · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",textUnderlineOffset:3}}>{setupOpen?"Finish later":"Show the steps"}</span>
+        </button>
+        {setupOpen&&<div style={{marginTop:10}}><SetupChecklist status={{...setupStatus,cardState:null}} onNavigate={onNavigate} isAdmin={isAdmin}
+          onSetCardState={st=>{if(st==="collapsed")setSetupOpen(false);else setSetupCardState(st);}}/></div>}
+      </div>
+    );
+  })();
   const homeHead=(<>
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
@@ -3217,9 +3199,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               reading it. You get to the pressure when you go looking for it.
               The header is the greeting and the day. */}
           {surface==="home"&&!editMode&&(
-            <div className="home-day" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:30,lineHeight:1.2,letterSpacing:"-0.02em",color:T.ink,marginTop:6}}>
+            <h1 className="home-day" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:44,fontWeight:400,lineHeight:1.08,letterSpacing:"-0.02em",color:T.ink,margin:"6px 0 0"}}>
               {todayLongStr}
-            </div>
+            </h1>
+          )}
+          {/* HOME-3 — one sentence on pace: numbers.vsLastYear over the org's
+              fiscal year, the number Fundraising and the Board show. None
+              without a year of history. */}
+          {surface==="home"&&!editMode&&homeDay&&homeDay.pace&&(
+            <p data-testid="home-pace" data-pace-dir={homeDay.pace.dir} style={{margin:"12px 0 0",fontSize:18,lineHeight:1.5,color:T.ink,maxWidth:720}}>
+              {homeDay.pace.lead}{homeDay.pace.figure?<b><Figure variant="inline" kind="money" value={Math.round(homeDay.pace.amount)} label={homeDay.pace.dir==="behind"?"Behind last year":"Ahead of last year"}
+                definition={homeDay.pace.definition} source={homeDay.pace.source} figureKey="home-pace"/></b>:null}{homeDay.pace.tail}{homeDay.pace.after?<> {homeDay.pace.after}</>:null}
+            </p>
           )}
           {/* The board screen says what it is and as of when, and nothing else
               about itself. */}
@@ -3253,11 +3244,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           over the two doors, Why and What, each saying what it is. */}
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px"}}>
-          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay}
-            lead={homeDay?<HomeLead lead={homeDay.lead||[]} onNavigate={onNavigate} isReadOnly={isReadOnly} onSetAside={loadHomeDay}/>:null}
+          {/* HOME-3 — the old "For you today" card and the Why and What doors
+              are gone: pace is the sentence above, the moves are the deck below. */}
+          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay} doors={false}
             agent={{available:true,line:agentDaily&&agentDaily.line,
               onSend:t=>openTellSteward(null,{text:t,send:true}),
               onOpen:()=>openTellSteward(null)}}/>
+        </div>
+      )}
+      {surface==="home"&&!editMode&&(
+        <div style={{padding:"0 2px",marginTop:6}}>
+          <HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} footer={setupLine}/>
         </div>
       )}
       </>);
@@ -3281,11 +3278,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           single hairline between them. Everything inside the panel is a
           block separated by air and a rule — no card carries its own border,
           because the panel already drew it. */}
-      {/* INSIGHTS-1 — Home leads with the ladder, then the cards in rank order,
-          then what Home shows today. */}
-      {/* SEND-GATE-2 — at the top of Home: what Steward sends on its own, in one line. */}
-      {surface==="home"&&!editMode&&<HomeMailLine onNavigate={onNavigate}/>}
-      {surface==="home"&&!editMode&&<HomeInsights onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
+      {/* HOME-3 — nothing renders above the greeting: the moves deck sits
+          under Ask, inside the header (homeHead). */}
       <div className={surface==="home"?"home-shell":""}>
       {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
       <div className={surface==="home"?"home-shell-top":""}>

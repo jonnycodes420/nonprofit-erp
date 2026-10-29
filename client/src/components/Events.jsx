@@ -10,6 +10,8 @@ import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
 import { SaveAsGroup } from "./Groups";
+import { Figure } from "./Figure";
+import EventRaised from "./EventRaised";   // HOME-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
@@ -147,7 +149,10 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
   const attended = parseInt(event.attendee_count) || 0;
   const invited = parseInt(event.invited_count) || 0;
   const goal = parseFloat(event.goal_amount) || 0;
-  const raised = parseFloat(event.raised) || 0;
+  // HOME-3: raised the way she says it (received + pledged for the event's
+  // year), from the one server function (numbers.eventsRaised).
+  const money = event.money || null;
+  const raised = money ? money.raised : (parseFloat(event.raised) || 0);
   const registered = parseInt(event.registered_count) || 0;
   const progress = eventProgress({ raisedCents: Math.round(raised * 100),
                                    goalCents: goal ? Math.round(goal * 100) : null });
@@ -183,9 +188,17 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 10 }}>
           {[
             ["Goal", goal ? fmtFull(goal) : "None set", null, "The amount this event is aiming at."],
-            ["Raised", fmtFull(raised), "raised", "Every gift attributed to this event, at its full amount."],
+            ["Raised", fmtFull(raised), "raised", money ? money.definitions.raised : "Every gift attributed to this event, at its full amount."],
             ["Registered", String(registered), "registered", "People on the list who have not cancelled. A ticket for two counts as two."],
-          ].map(([label, value, rowsKey, sentence]) => (
+          ].map(([label, value, rowsKey, sentence]) => label === "Raised" && money ? (
+            <div key={label} data-testid="ev-card-raised" title={sentence} onClick={e => e.stopPropagation()}
+              style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px", textAlign: "left" }}>
+              <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.25 }}>
+                <Figure variant="inline" kind="money" value={money.raised} label={`${event.name}, raised`} definition={sentence} source={money.sources.raised} why={false} />
+              </div>
+            </div>
+          ) : (
             <button key={label} data-testid={"ev-card-" + label.toLowerCase()} title={sentence}
               onClick={e => { e.stopPropagation(); if (rowsKey && onOpenRows) onOpenRows(event, rowsKey, label, sentence); }}
               disabled={!rowsKey}
@@ -196,6 +209,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
             </button>
           ))}
         </div>
+        {money && (money.pledgedCents || money.laterCents) ? <EventRaised e={money} showName={false} style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }} /> : null}
 
         {goal > 0 && (
           <div style={{ marginBottom: 10 }}>
@@ -323,8 +337,10 @@ function EventReport({ eventId, onOpenRows }) {
   return (
     <div data-testid="ev-report" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>After the event</div>
+      {/* HOME-3: raised the way she says it, each part opening its rows. */}
+      {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        {r.figures.map(f => (
+        {r.figures.filter(f => !(r.money && f.key === "raised")).map(f => (
           <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
             onClick={() => onOpenRows(f.key, f.label, f.sentence)}
             style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
@@ -1837,7 +1853,7 @@ export function Events({ data, isReadOnly }) {
         {[
           ["Events This Year", thisYear.length, T.ink],
           ["Total Attendees", totalAttendees, T.greenDk],
-          ["Event Revenue", fmtFull(totalRevenue), T.greenDk],
+          ["Received at events", fmtFull(totalRevenue), T.greenDk],
           ["Avg Attendance Rate", `${avgRate}%`, T.ink],
         ].map(([label, value, color]) => (
           <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: "14px 16px", boxShadow: T.shadow }}>

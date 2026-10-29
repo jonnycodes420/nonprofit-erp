@@ -210,17 +210,19 @@ async function readFacts(req, nowMs) {
     .map(d => ({ donorId: d.id, name: d.name }));
 
   // ── Why and What: this year against the same point last year.
+  // NUMBERS-2: "this year" is the org's own fiscal year (orgTz carries its start month).
+  // HARDEN-1: against the same days last year, through the one computation
+  // Fundraising and the Board read (numbers.vsLastYear), so the three agree.
+  // HOME-3: the greeting's pace sentence reads this, every day, season or not.
+  const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0, new Date(nowMs));   // ORG_TZ_SEAM_OK
+  const vs = await require("../numbers").vsLastYear(orgId, fy.start, fy.end, today);
+  const fiscal = fy.start.slice(5) !== "01-01";
+  const pace = vs ? { thisYear: vs.thisYear, lastYear: vs.lastYear, difference: vs.difference, fiscal, fyStart: fy.start,
+    span: { from: vs.from, to: vs.to, lastFrom: vs.lastFrom, lastTo: vs.lastTo }, source: vs.differenceSource, definition: vs.sentence } : null;
   let compare = null;
   if (season) compare = { label: `Giving since ${season.since}`, thisYear: season.seasonThisYear, lastYear: season.lastYearByToday, question: { why: "Why is year-end giving behind last year?", what: "What is working in year-end giving?" } };
-  else {
-    // NUMBERS-2: "this year" is the org's own fiscal year (orgTz carries its start month).
-    // HARDEN-1: against the same days last year, through the one computation
-    // Fundraising and the Board read (numbers.vsLastYear), so the three agree.
-    const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0, new Date(nowMs));   // ORG_TZ_SEAM_OK
-    const vs = await require("../numbers").vsLastYear(orgId, fy.start, fy.end, today);
-    compare = vs ? { label: "Giving this year", question: { why: "Why is giving behind last year?", what: "What is working this year?" }, thisYear: vs.thisYear, lastYear: vs.lastYear,
-      span: { from: vs.from, to: vs.to, lastFrom: vs.lastFrom, lastTo: vs.lastTo }, source: vs.differenceSource } : null;
-  }
+  else compare = pace ? { label: fiscal ? "Giving this fiscal year" : "Giving this year", question: { why: "Why is giving behind last year?", what: "What is working this year?" }, thisYear: pace.thisYear, lastYear: pace.lastYear,
+    span: pace.span, source: pace.source } : null;
 
   // ── Dismissals: this person's "Not now"s.
   const dRows = await query(`SELECT kind, card_key, created_at FROM home_lead_dismissals WHERE org_id=? AND user_id=? AND created_at > ?`,
@@ -231,7 +233,7 @@ async function readFacts(req, nowMs) {
     if (orgToday(org, new Date(r.created_at)) === today) hiddenToday.add(r.card_key);   // ORG_TZ_SEAM_OK
   }
 
-  return { now: nowIso, today, line, role: scope.role, meetings, gifts, toConfirm, drift, driftCount, failedCards, season, events, quiet, compare, dismissals, hiddenToday };
+  return { now: nowIso, today, line, role: scope.role, meetings, gifts, toConfirm, drift, driftCount, failedCards, season, events, quiet, compare, pace, dismissals, hiddenToday };
 }
 
 app.get("/home/lead", requireAuth, wrap(async (req, res) => {

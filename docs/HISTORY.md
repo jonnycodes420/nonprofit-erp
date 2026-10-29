@@ -25,6 +25,10 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## HOME-3 · Greeting first, then one move at a time (2026-10-28)
+
+Jonathan approved the "Steward Home with moves deck" mockup on 27 Oct: "the greeting should always be on top, always… the insights should be creatively and beautifully incorporated." Home now leads with the org, the greeting, the date and one pace sentence (numbers.vsLastYear over the fiscal year; "this fiscal year" when it doesn't start Jan 1), then Ask, then Your moves: the INSIGHTS-1 cards as tabs (Keep, Grow, Major, Planned) over one card per person (insights.js buildDeck). A person appears once, under their highest-value move, with the rest as "also" lines; a group card is one click away ("See all 20"), and the full ladder is "See your ladder". Each card's button makes a task dated for when to reach out (nothing sends) and records Done. The "For you today" lead and the Why and What doors left Home; the setup checklist is one line under the deck. Fixed the same night: Home said $16,475.04 behind in one card and $18,644 in another (the engine's own calendar-year pace card is gone; the truth check now compares Home's greeting with the Board and Fundraising, and can be shown to fail), and a sponsor at Platinum was offered Platinum. From Justin's Place (27 Oct): one person one move; same-day gifts read as one gift; Planned is for people only and counts people; downgrades compare the last two sponsorship years whatever they are; Review gained Partly a gift (the value received leaves giving and becomes Finance revenue; receipts and letters state it; raffle tickets stay Not a gift); a Lapsing card (regular givers quiet past their usual time, within 18 months).
+
 ## SEND-GATE-2 · One page that says exactly what Steward sends for you (2026-10-28)
 
 - **The rule, in Jonathan's words.** Nothing ever sends to a donor automatically without a clear flip of a switch from Jonathan (Donor mail, super-admin) and from the org's director (the email type, in Steward). Both always see exactly what is going out. Now at the top of `docs/decisions/mail-and-notifications.md`.

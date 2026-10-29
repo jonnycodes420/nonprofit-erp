@@ -3,6 +3,12 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **Partly a gift moves only the value received (HOME-3).** Review's third choice keeps the gift row at
+  the rest (edited as PUT /gifts/:id edits an amount: soft credits and ledger stamp follow, then the recalc
+  and `afterChange`), states the value received in `quid_pro_quo_value`/`_desc` with `deductible_amount` =
+  the rest, and writes the value received as a Finance line (`source='not_a_gift'`). `insight_reviews`
+  (`decision='partly'`, `received`) keeps the row as it was for Undo. Never offered on a raffle row; refused
+  on a gift with an active receipt, a payment or a pledge; Undo waits for a receipt issued since to be voided.
 - **An imported total is its own figure, never erased (NUMBERS-2).** A total a file (or the quick-add
   form) states with no gifts behind it lives in `donors.imported_*`: total, count, first and last gift,
   source, the day it came in and `imported_through`, the last day it covers. No recompute writes those

@@ -61,6 +61,14 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   source. Home's Why and What line, the season card, Fundraising's Raised tile (`period.compare`) and the
   Board read it, and each sentence says it compares the same days. Fundraising once compared the year so far
   with all of last year beside Home's same-point figure. (HARDEN-1)
+- **An event's "raised" is received + pledged for its year, said both ways: `numbers.eventsRaised` (HOME-3).**
+  "Finding Joy Dinner: $124,290 raised ($45,340 received, $78,950 pledged)". Received is `event-received`, pledged
+  is `event-pledged` (unpaid installments due before the event's first anniversary), raised is `event-raised` (both,
+  one list); installments due later are said apart (`later: true`), never added. The event card and page, the first
+  look and Reports' giving summary read it and draw it with `EventRaised.jsx`. A figure that counts gifts only says
+  "received". Fundraising's "Are we on pace?" leads with `numbers.vsLastYear` (received), splits pledges "due this
+  year (`pledges-due`) · over all years (`pledges-open`)", drops the grant clause for an org with no grants and hides
+  "Pledged and paid" at $0. (HOME-3)
 - **Home's file line reads live counts.** `/move`'s `homeLine` counts the onboarding card's people and gifts
   now, never the move runs' stored counters. (HARDEN-1)
 - **Every surface agrees, and a suite proves it.** `tests/lib/surfacesAgree.js assertSurfacesAgree(orgId, ctx)`
@@ -440,3 +448,11 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - No step of the check, and no fix-it, writes a gift. Adding a missing person writes a person.
 - Checkable kinds and the reason for each that is not are `CHECKABLE` / `NOT_CHECKABLE` in reconcile.js.
 
+
+## HOME-3 · greeting first, then one move at a time (2026-10-28)
+
+- Nothing renders above Home's greeting except the trial banner: org and greeting, the date, the pace sentence, Ask, then Your moves. On a phone: greeting, tabs, the card, then Today.
+- Pace is said once, in the greeting, from `numbers.vsLastYear` over the org's fiscal year (`shared/homeLead.js paceLine`). The insights engine has no pace card. `assertSurfacesAgree` compares Home's greeting with the Board and Fundraising.
+- The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
+- A move's button makes a task dated for its window (kind write, call or meeting) with the line and the ask in its notes, and records Done. Home never sends.
+- Sentences treat one giver's gifts on one day as one gift (`giftDays`). Planned excludes organisations, foundations, companies and funds.

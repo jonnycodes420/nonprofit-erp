@@ -21,6 +21,11 @@
 //      moves until she decides; Not a gift makes the row a Finance revenue line
 //      (out of every giving total, still money in) and the truth check agrees,
 //      and can fail; Undo restores the gift exactly. Ashham is not Lapsing.
+//      HOME-3: Partly a gift moves only the value received: the donor's
+//      total, Reports and the Board drop by exactly it, Finance gains exactly
+//      that revenue, the letter and the receipt state it, Undo restores all
+//      of it; a raffle row says raffle tickets are never a gift and is never
+//      offered Partly.
 //   §5 after the dinner: Belley Wilah's undated $10,000 keeps her off
 //      slipping, off Drift and off Home's "Gone quiet"; Marshaw's $20,000 pledge is in Collect pledges; Stock,
 //      Retirement Dist, Investment Dist and Foundation are planned signals
@@ -31,6 +36,14 @@
 //      card has template words; outcomes take a card away and What worked
 //      counts what followed.
 //   §8 the first look for 2,000 donors and 10,000 gifts in under 3 seconds.
+//   §9 HOME-3: the moves deck (tabs in rung order, one person one move with
+//      "also" lines, ranked by dollars, the December card's 20 givers each
+//      once, every move's numbers in its facts), Planned is for people, same-day
+//      gifts read as one gift, a top-level sponsor gets no offer, downgrades
+//      across any two years, Done/Not now/Doesn't fit advance and are recorded,
+//      and the greeting's pace is the one number (the truth check can fail).
+//      Red on main: there is no deck, OAKVILLE's upgrade says "$20,000", and
+//      RINGBURY's ask says "renew at Platinum ($8,000), and offer Platinum".
 //   §M (needs the memo-kept gift file Jonathan gives with the brief): the
 //      reimbursement, auction-table and ticket rows in Review; "Stable Moments"
 //      designated; FOXWOOD and Redwick in the Warbury network. When the
@@ -247,6 +260,91 @@ async function main() {
     ok("§4 Keep as gift: recorded, the row stays a gift and leaves the card", keep.status === 200 && !!(await giftRow())
        && !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === it.giftId), keep.status);
   }
+  // ── §4 Partly a gift (HOME-3, Justin's Place 27 Oct) ──────────────────────
+  // A sponsorship with two tickets, an auction item bought above its value:
+  // mostly a gift. Only the value received leaves giving and becomes Finance
+  // revenue; the receipt and the letter say what was received; Undo restores
+  // it all. A raffle row is never offered Partly.
+  {
+    const rvP = card(await get(), "review") || { items: [] };
+    const raffle = rvP.items.find(i => /raffle/i.test(i.memo));
+    ok("§4 a raffle row's reason says raffle tickets are never a gift, not even in part, and Partly is not offered",
+       !!raffle && /Raffle tickets are never a gift, not even in part/.test(raffle.reason) && raffle.partly === false, raffle && [raffle.reason, raffle.partly]);
+    if (raffle) {
+      const rr = await api("POST", `/insights/review/${raffle.giftId}`, tok, { decision: "partly", value: "1" });
+      ok("§4 …and the route refuses Partly on it", rr.status === 400 && !!(await q(`SELECT 1 FROM gifts WHERE id=$1 AND amount=$2`, [raffle.giftId, raffle.cents / 100])).length, rr.status);
+    }
+    const boardOf = async () => {
+      const b = (await api("GET", "/dashboards/board", tok)).body || {};
+      return { fy: b.fiscalYear || {}, today: b.asOf, cents: cents(((b.metrics || []).find(m => m.key === "revenueThisYear") || {}).value) };
+    };
+    const b0 = await boardOf();
+    const inFy = i => i.date && b0.fy.start && i.date >= b0.fy.start && i.date <= (b0.today || "9999");
+    const pt = rvP.items.find(i => i.partly !== false && inFy(i) && i.cents > 10000) || rvP.items.find(i => i.partly !== false && /ticket/i.test(i.memo));
+    ok("§4 a review row offers Partly a gift", !!pt && pt.partly === true, pt && pt.partly);
+    if (pt) {
+      const X = Math.min(25000, Math.floor(pt.cents / 2)), Y = pt.cents - X;
+      const ORIGIN = "2024-01-01";
+      const reportsOf = async () => cents(((await api("GET", `/reports/giving-summary?from=${ORIGIN}&to=${b0.today}`, tok)).body || {}).total);
+      const finOf = async () => ((await api("GET", "/finance/overview", tok)).body.byMonth || []).reduce((n, m) => n + Number(m.cents || 0), 0);
+      const lifeP = async () => Number((await q(`SELECT COALESCE(SUM(total_giving),0) AS s FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, pt.ids]))[0].s);
+      const rowP = async () => (await q(`SELECT * FROM gifts WHERE id=$1`, [pt.giftId]))[0];
+      const p0 = { life: await lifeP(), reports: await reportsOf(), board: b0.cents, fin: await finOf(), row: await rowP() };
+      // the value received is required, more than nothing and less than the row
+      const bad = await Promise.all([undefined, "0", String(pt.cents / 100), "abc"].map(v => api("POST", `/insights/review/${pt.giftId}`, tok, { decision: "partly", value: v })));
+      ok("§4 Partly needs the value received: more than $0 and less than the row's amount", bad.every(r => r.status === 400) && JSON.stringify(await rowP()) === JSON.stringify(p0.row), bad.map(r => r.status));
+      const partly = async () => api("POST", `/insights/review/${pt.giftId}`, tok, { decision: "partly", value: (X / 100).toFixed(2), as: "ticket" });
+      const pr = await partly();
+      ok("§4 Partly a gift: recorded, with an Undo", pr.status === 200 && pr.body.decision === "partly" && !!pr.body.finId && !!pr.body.undo, JSON.stringify(pr.body).slice(0, 300));
+      const g1 = await rowP();
+      ok(`§4 …the gift stays, at the rest (${Y} cents), and carries the value received`, !!g1 && cents(g1.amount) === Y && cents(g1.quid_pro_quo_value) === X && cents(g1.deductible_amount) === Y, g1 && [g1.amount, g1.quid_pro_quo_value, g1.deductible_amount]);
+      ok(`§4 …the donor's giving total drops by exactly the value received (${X} cents)`, Math.round((p0.life - (await lifeP())) * 100) === X, [p0.life, await lifeP()]);
+      ok("§4 …Reports' giving drops by exactly the value received", p0.reports - (await reportsOf()) === X, [p0.reports, await reportsOf()]);
+      ok("§4 …the Board's giving this year drops by exactly the value received", p0.board - (await boardOf()).cents === (inFy(pt) ? X : 0), [p0.board, (await boardOf()).cents, inFy(pt)]);
+      const [ln] = await q(`SELECT t.amount, t.date, t.donor_id, t.type, t.source, t.gift_id, t.description, t.created_by FROM fin_transactions t WHERE t.id=$1`, [pr.body.finId || ""]);
+      ok("§4 …Finance gains exactly that revenue: one income line for the value received, same date and person",
+         !!ln && cents(ln.amount) === X && ln.date === p0.row.date && ln.donor_id === p0.row.donor_id && ln.type === "income" && ln.source === "not_a_gift" && !ln.gift_id && !!ln.created_by, ln);
+      ok("§4 …and Finance's money in is unchanged (the gift part plus the revenue)", (await finOf()) === p0.fin, [p0.fin, await finOf()]);
+      ok("§4 …it leaves the Review card", !(card(await get(), "review") || { items: [] }).items.some(x => x.giftId === pt.giftId), "");
+      await truth("after Partly a gift");
+      if (inFy(pt) || Number(String(p0.row.date || "").slice(0, 4)) >= 2025) {
+        await q(`UPDATE fin_transactions SET source='planted' WHERE id=$1`, [pr.body.finId]);
+        let caught = false;
+        try { await assertSurfacesAgree(ORG, { token: tok, step: "planted partly" }); } catch (e) { caught = /money in/.test(e.message); }
+        await q(`UPDATE fin_transactions SET source='not_a_gift' WHERE id=$1`, [pr.body.finId]);
+        ok("§4 the truth check can fail: a Partly line missing from Finance's money in is caught", caught, "");
+      }
+      // the thank-you letter states the value received (a read-only preview)
+      await q(`UPDATE donors SET address='1 Paddock Lane', city='Lexington', state='KY', zip='40502' WHERE id=$1 AND org_id=$2 AND COALESCE(address,'')=''`, [g1.donor_id, ORG]);
+      const money2 = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const disclosure = `You received goods or services valued at ${money2(X)}; the deductible amount is ${money2(Y)}.`;
+      const lp = await api("POST", "/acknowledgments/letters/preview", tok, { giftIds: [pt.giftId] });
+      ok("§4 …the acknowledgment letter states the value received and the deductible amount", lp.status === 200 && (lp.body.letters || []).some(l => l.text.includes(disclosure)), (lp.body.letters || [])[0] && lp.body.letters[0].text.slice(-300));
+      const undo = await api("POST", `/insights/review/${pt.giftId}/undo`, tok);
+      const g2 = await rowP();
+      ok("§4 Undo restores the gift exactly (amount, value received, deductible part)", undo.status === 200 && JSON.stringify({ ...g2, updated_at: 0 }) === JSON.stringify({ ...p0.row, updated_at: 0 }), [undo.status, g2 && g2.amount]);
+      ok("§4 …and its Finance line goes", (await q(`SELECT 1 FROM fin_transactions WHERE id=$1`, [pr.body.finId])).length === 0, "");
+      ok("§4 …giving total, Reports, the Board and Finance are restored to the cent",
+         Math.round((await lifeP()) * 100) === Math.round(p0.life * 100) && (await reportsOf()) === p0.reports && (await boardOf()).cents === p0.board && (await finOf()) === p0.fin, "");
+      ok("§4 …and the row is back in Review, undecided", (card(await get(), "review") || { items: [] }).items.some(x => x.giftId === pt.giftId), "");
+      await truth("after Partly a gift, Undo");
+      // the receipt states it too; a receipt pins the gift part, so Undo then waits for a void
+      await q(`UPDATE orgs SET receipts_enabled=true WHERE id=$1`, [ORG]);
+      const pr2 = await partly();
+      const rc = await api("POST", `/gifts/${pt.giftId}/receipt`, tok);
+      const snap = rc.body && rc.body.snapshot ? (typeof rc.body.snapshot === "string" ? JSON.parse(rc.body.snapshot) : rc.body.snapshot) : {};
+      ok("§4 …the tax receipt states the value received and the deductible amount, for the gift part",
+         pr2.status === 200 && rc.status === 201 && cents(rc.body.amount) === Y && cents(rc.body.deductible_amount) === Y && String(snap.goodsServicesSentence || "").includes(disclosure), [rc.status, snap.goodsServicesSentence]);
+      const u2 = await api("POST", `/insights/review/${pt.giftId}/undo`, tok);
+      ok("§4 …with a receipt issued for the gift part, Undo is refused until the receipt is voided", u2.status === 409 && cents((await rowP()).amount) === Y, u2.status);
+      if (rc.body && rc.body.id) await api("POST", `/receipts/${rc.body.id}/void`, tok, { reason: "test" });
+      const u3 = await api("POST", `/insights/review/${pt.giftId}/undo`, tok);
+      ok("§4 …and after the void, Undo puts the amount back", u3.status === 200 && cents((await rowP()).amount) === pt.cents && (await rowP()).quid_pro_quo_value == null, u3.status);
+      await q(`UPDATE orgs SET receipts_enabled=false WHERE id=$1`, [ORG]);
+      await truth("after the receipt, the void and Undo");
+    }
+  }
+
   // The Lapsing tag respects rhythm: a yearly giver whose usual time is ahead is not Lapsing.
   const [ash] = await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Alin Ashham' AND deleted_at IS NULL`, [ORG]);
   const ashSt = ash && (await api("GET", `/donors/${ash.id}/status`, tok)).body;
@@ -321,6 +419,69 @@ async function main() {
   ok("§7 every card's words hold only numbers its facts hold", bad.length === 0, bad.slice(0, 5));
   const planted = numbersOk("Ask $7,512 by Nov 3.", [["ask", "$7,500"]]);
   ok("§7 the number check can fail (a planted $7,512 is caught)", !planted.ok && planted.bad.includes("7512"), planted);
+  {
+  // ── §9 HOME-3: the moves deck, and the words fixed on 27 Oct ──────────
+  const deck = r3.body.deck;
+  ok("§9 the deck: Keep, Grow, Major and Planned, in rung order", !!deck && deck.tabs.map(t => t.key).join() === "keep,grow,major,planned", deck && deck.tabs.map(t => t.key));
+  const moves = deck ? deck.tabs.flatMap(t => t.moves) : [];
+  const moveUnit = m => m.itemKey.split(":").slice(0, 2).join(":");
+  const dupes = moves.map(moveUnit).filter((u, i, a) => a.indexOf(u) !== i);
+  ok("§9 one person, one move: nobody leads two cards", moves.length > 0 && dupes.length === 0, dupes.slice(0, 5));
+  const multi = moves.filter(m => (m.also || []).length);
+  ok("§9 …their other moves ride on that card as 'also' lines", multi.length > 0 && multi.every(m => m.also.every(a => a.kind !== m.kind || a.line)), multi.length);
+  ok("§9 each tab counts its moves, ranked by dollars; Keep opens first", deck.tabs.every(t => t.moves.length === Math.min(t.count, 150) && t.moves.every((m, i) => i === 0 || t.moves[i - 1].cents >= m.cents)) && deck.open === "keep",
+     deck.tabs.map(t => `${t.key} ${t.count}/${t.moves.length}`));
+  const yeCard = card(r3, "year_end");
+  const yePlaced = yeCard.items.filter(it => moves.some(m => (m.kind === "year_end" && m.itemKey === it.key) || (moveUnit(m) === it.key && (m.also || []).some(a => a.kind === "year_end"))));
+  const yeLead = moves.filter(m => m.kind === "year_end");
+  ok(`§9 the ${yeCard.items.length}-giver December card is ${yeCard.items.length} people, each once, ranked by dollars`,
+     yeCard.items.length === 20 && yePlaced.length === 20 && yeLead.every((m, i) => i === 0 || yeLead[i - 1].cents >= m.cents), [yeCard.items.length, yePlaced.length]);
+  const deckBad = [];
+  for (const m of moves) for (const w of [m.what, m.why, m.say, m.ask && m.ask.words, ...(m.also || []).map(a => a.line)]) {
+    if (!w) continue;
+    const chk = numbersOk(w, m.facts);
+    if (!chk.ok) deckBad.push(`${m.kind}/${m.name}: ${chk.bad.join(",")} in "${w}"`);
+  }
+  ok("§9 every move's words hold only numbers its facts hold", deckBad.length === 0, deckBad.slice(0, 5));
+  const plannedTab = deck.tabs.find(t => t.key === "planned");
+  const orgKinds = new Map((await q(`SELECT id, kind, name FROM donors WHERE org_id=$1`, [ORG])).map(r => [r.id, r]));
+  const orgy = plannedTab.moves.filter(m => m.ids.some(id => /organi[sz]ation/.test((orgKinds.get(id) || {}).kind || "") || /\b(foundation|fund|inc|llc|company)\b/i.test((orgKinds.get(id) || {}).name || "")));
+  ok("§9 Planned is for people: no foundation, company or fund, and it counts people, not dollars", orgy.length === 0 && plannedTab.cents === null && /\b(person|people)$/.test(plannedTab.atStake),
+     { orgs: orgy.map(m => m.name), atStake: plannedTab.atStake });
+  const oak = (r3.body.cards.find(x => x.kind === "upgraded") || { items: [] }).items.find(i => /OAKVILLE/i.test(i.name));
+  ok("§9 same-day gifts are one gift in the words: OAKVILLE's $5,000 and $20,000 on Dec 16, 2025 read as $25,000", !!oak && /\$25,000/.test(oak.how.say) && !/\$20,000/.test(oak.how.say)
+     && !moves.filter(m => /OAKVILLE/i.test(m.name)).some(m => /\$20,000/.test(m.what + m.say)), oak && oak.how.say);
+  const oakUnit = oak && (await api("GET", `/insights/donor/${oak.lead}?asOf=${AS_OF}`, tok)).body.unit;
+  ok("§9 …and a foundation never gets the Planned flag", !!oakUnit && oakUnit.planned === false, oakUnit && oakUnit.plannedWhy);
+  const spCard = card(r3, "sponsors");
+  const topLevel = spCard.items.filter(i => i.levels && /platinum/i.test(i.levels.last.level) && i.state === "not_renewed");
+  ok("§9 a sponsor already at Platinum is asked to renew at Platinum, with no offer", topLevel.length > 0 && topLevel.every(i => /^Ask to renew at Platinum \(\$[\d,]+\)\.$/.test(i.how.ask.words) && !/offer/i.test(i.how.ask.words) && !/level this year/.test(i.how.say)),
+     topLevel.map(i => i.how.ask.words));
+  const lower = spCard.items.filter(i => i.down);
+  ok("§9 downgrades across any two years: the sponsors who dropped a level are counted", lower.length >= 2 && new RegExp(`${lower.length} sponsors at a lower level`).test(spCard.words.what)
+     && lower.every(i => i.levels.prev && i.levels.prev.year < i.levels.last.year), [spCard.words.what, lower.map(i => `${i.name}: ${i.levels.prev.level} ${i.levels.prev.year} to ${i.levels.last.level} ${i.levels.last.year}`)]);
+  // Done, Not now and Doesn't fit each advance the deck and are recorded as outcomes
+  const pick = k => deck.tabs.find(t => t.key === k).moves;
+  const [m1, m2, m3] = [...pick("grow"), ...pick("major")].slice(0, 3);
+  const deckAfter = async (at) => (await api("GET", `/insights?asOf=${at || AS_OF}`, tok)).body.deck.tabs.flatMap(t => t.moves).map(m => m.id);
+  await api("POST", "/insights/outcome", tok, { kind: m1.kind, itemKeys: [m1.itemKey], donorIds: m1.ids, state: "done" });
+  await api("POST", "/insights/outcome", tok, { kind: m2.kind, itemKeys: [m2.itemKey], donorIds: m2.ids, state: "snoozed", until: "2026-11-20" });
+  await api("POST", "/insights/outcome", tok, { kind: m3.kind, itemKeys: [m3.itemKey], donorIds: m3.ids, state: "dismissed", reason: "test" });
+  const after9 = await deckAfter();
+  const rec = await q(`SELECT kind, item_key, state FROM insight_outcomes WHERE org_id=$1 AND item_key = ANY($2)`, [ORG, [m1.itemKey, m2.itemKey, m3.itemKey]]);
+  ok("§9 Done, Not now and Doesn't fit take the move off the deck, each recorded as its outcome",
+     ![m1, m2, m3].some(m => after9.includes(m.id)) && ["done", "snoozed", "dismissed"].every(st => rec.some(r => r.state === st)), rec);
+  ok("§9 …and Not now brings it back on its date", (await deckAfter("2026-11-20")).includes(m2.id), m2.id);
+  // the greeting's pace is the one number (numbers.vsLastYear), and the truth check fails if Home says another
+  const lead9 = (await api("GET", "/home/lead", tok)).body;
+  ok("§9 the greeting says pace in one sentence", !!lead9.pace && /^Giving this (fiscal )?year is (\$[\d,]+ (behind|ahead of)|on pace with) last year at this point\.$/.test(lead9.pace.line), lead9.pace && lead9.pace.line);
+  let paceCaught = false;
+  try {
+    await assertSurfacesAgree(ORG, { token: tok, step: "planted pace", plant: ({ lead }) => { if (lead && lead.pace) lead.pace.line = lead.pace.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
+  } catch (e) { paceCaught = /Home's greeting/.test(e.message); }
+  ok("§9 the truth check can fail: Home saying a different pace from the Board is caught", paceCaught, "");
+  }
+
   await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]).catch(() => {});
   const r4 = await get();
   ok("§7 with Atlas off every card has its template words", r4.body.cards.length >= 5 && r4.body.cards.every(x => x.wordsFrom === "template" && x.words.what && x.words.why), r4.body.cards.map(x => x.kind));

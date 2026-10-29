@@ -19,6 +19,7 @@ import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords } from "../../../shared/sheetRead";
+import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
 const h3 = { fontSize: 13, fontWeight: 800, color: T.ink, margin: "0 0 6px" };
@@ -95,6 +96,31 @@ export async function readSheetFile(file) {
   return [{ name: "Sheet1", grid: gridFromText(dec.text) }];
 }
 
+// HOME-3 item 4 · THE PAGES BEHIND THE WINDOW KEEP UP. The Donors page still
+// said "No donors yet" after a successful import until a reload: the window
+// was closed while the import was still writing (it runs as a job on the
+// server, FIX-52), so nothing behind it was told when it finished. Closing the
+// window now tells every page that listens (told(), lib/stewardTold.js: the
+// App's data, Donors, Home), at once when the import is done, and when it
+// finishes if it is still running. One follower per import, outliving the window.
+const followed = new Set();
+function tellWhenDone(id) {
+  if (!id || followed.has(id)) return;
+  followed.add(id);
+  const tick = async () => {
+    try {
+      const j = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(id)}`);
+      if (j && j.status === "running") { setTimeout(tick, 1500); return; }
+      followed.delete(id);
+      if (j && j.status === "done") told({ import: id });
+    } catch (e) {
+      if (e && e.status === 404) { followed.delete(id); return; }
+      setTimeout(tick, 3000);   // a dropped read: ask again, never guess
+    }
+  };
+  tick();
+}
+
 // onImported fires from Done only (the imports gotcha: firing it on completion
 // closes the parent modal before she has read the result).
 export default function SpreadsheetImport({ file: fileProp, onClose, onImported }) {
@@ -136,8 +162,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 
   // FIX-55: the X, Escape and a click outside always close. Before Import
   // nothing has been written; while an import runs it keeps going on the server.
+  // HOME-3: the pages behind the window re-read, now or when the job ends.
   const running = !!(job && job.status === "running") || busy === "commit";
   const finish = () => {
+    if (result) told({ import: result.importId });
+    else if (job && job.status === "running") tellWhenDone(job.id);
     if (running && !result) sayAfterClose("It keeps going. Open Settings, Imports to see it.");
     if (result && onImported) onImported(); else if (onClose) onClose();
   };
@@ -157,7 +186,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       try {
         const j = await apiFetch(`/sheet-import/jobs/${encodeURIComponent(job.id)}`);
         if (!live) return;
-        if (j.status === "done") { setResult(j.result); setBusy(""); }
+        if (j.status === "done") { setResult(j.result); setBusy(""); told({ import: j.id }); }
         else if (j.status === "failed") { setFailed(j); setBusy(""); }
         setJob(j);
       } catch (e) {

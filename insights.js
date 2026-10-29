@@ -44,6 +44,7 @@ const RANK_ORDER = ["retain", "second", "upgrade", "major", "planned"];
 const MAJOR_DEFAULT_CAP = 500000;   // $5,000
 const SECOND_BEST_DAYS = 90, SECOND_MAX_DAYS = 365;
 const OUTCOME_DAYS = 60;
+const LAPSING_MAX_DAYS = 548;   // 18 months
 
 // ── dates (civil YYYY-MM-DD strings) ───────────────────────────────────────
 // a stored day is its own day: a Date from the driver goes through the civil helper
@@ -100,7 +101,10 @@ const NOT_GIFT = [
   [/reimburse/i, "reimbursement", "The memo says it is a reimbursement"],
   [/\brefund/i, "refund", "The memo says it is a refund"],
   [/\bpurchase(d)? of\b|\bpurchased?\b/i, "purchase", "The memo says it is a purchase"],
-  [/\btickets?\b|\braffle\b/i, "tickets", "The memo says it paid for tickets or a raffle"],
+  // HOME-3: a raffle ticket is never a gift, not even in part (it buys a
+  // chance to win), so Review never offers Partly a gift on one.
+  [/\braffle\b/i, "raffle", "The memo says it paid for raffle tickets. Raffle tickets are never a gift, not even in part"],
+  [/\btickets?\b/i, "tickets", "The memo says it paid for tickets"],
   [/\bauction\b/i, "auction", "The memo names an auction"],
   [/\b(basket|table|session|set)\b/i, "auction", "The memo names an item (basket, table, session or set)"],
 ];
@@ -238,6 +242,23 @@ function buildUnits(people, households) {
   return { units, unitOf };
 }
 
+// One giver's dated gifts, one row per day: the day's gifts summed, their words joined.
+function giftDays(dated) {
+  const m = new Map();
+  for (const g of dated) {
+    const d = m.get(g.date);
+    if (d) { d.amount_cents += g.amount_cents; d.gifts.push(g); d.sig = { ...d.sig, text: `${d.sig.text} · ${g.sig.text}` }; }
+    else m.set(g.date, { date: g.date, amount_cents: g.amount_cents, gifts: [g], sig: { ...g.sig } });
+  }
+  return [...m.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+// A unit of people: not an organisation record, and no member named like a
+// foundation, a company or a fund.
+const ORG_NAME = /\b(foundation|fund|inc|llc|ltd|corp|corporation|company|co|bank|church|association|club|partners|group|enterprises|motors|farms?)\b\.?/i;
+function isPersonUnit(u) {
+  return u.people.every(p => !/^organi[sz]ation$|^company$|^foundation$/i.test(String(p.kind || "")) && !ORG_NAME.test(String(p.name || "")));
+}
+
 function majorLine(unitTotals, setting) {
   if (setting && setting > 0) return { cents: setting, rule: `Your major-gift line: ${money(setting)} (set in Settings).` };
   const sorted = unitTotals.filter(c => c > 0).sort((a, b) => b - a);
@@ -333,6 +354,13 @@ function computeInsights(input) {
       pledges: ps, openPledges,
       rhythm: rhythmOf(dated, asOf),
     };
+    // HOME-3: gifts from one giver on one day read as one gift in every
+    // sentence (BDH gave $5,000 and $20,000 on 2025-12-16: one $25,000 gift).
+    x.days = giftDays(dated);
+    x.occasions = x.days.length + x.undated.length;
+    x.firstDay = x.days[0] || null;
+    x.lastDay = x.days[x.days.length - 1] || null;
+    x.isPerson = isPersonUnit(u);
     U.push(x);
   }
   const line = majorLine(U.map(x => x.lifetime), input.org && input.org.majorLineCents);
@@ -365,15 +393,17 @@ function computeInsights(input) {
 
     if (!x.count && !x.openPledges.length) x.rung = "new";
     else if (x.L12 >= line.cents || x.largest >= line.cents) x.rung = "major";
-    else if (x.count >= 2 && (x.grew || x.movedToFoundation || x.designated.length)) x.rung = "upgrade";
-    else if (x.count >= 2) x.rung = "retain";
+    else if (x.occasions >= 2 && (x.grew || x.movedToFoundation || x.designated.length)) x.rung = "upgrade";
+    else if (x.occasions >= 2) x.rung = "retain";
     else x.rung = "second";
 
     const plannedWhy = [];
     for (const t of ["stock", "ira", "investment", "daf", "foundation"]) if (sig.types.has(t)) plannedWhy.push(GIFT_TYPE_LABEL[t]);
     if (sig.tributes.length) plannedWhy.push(sig.tributes[0].kind === "memorial" ? "A memorial gift" : "An honor gift");
     if (x.yearsInRow >= 5) plannedWhy.push(`${x.yearsInRow} years in a row`);
-    x.planned = plannedWhy.length > 0 && x.count + x.openPledges.length > 0;
+    // HOME-3: Planned is for people. A foundation, a company or a fund never
+    // makes a will, so it never gets the flag or a legacy conversation.
+    x.planned = x.isPerson && plannedWhy.length > 0 && x.count + x.openPledges.length > 0;
     x.plannedWhy = plannedWhy;
 
     // status. Undated gifts and open pledges keep a giver off "slipping" on time.
@@ -417,8 +447,10 @@ function computeInsights(input) {
              ids: xs.flatMap(x => x.ids) };
   });
 
+  const deck = buildDeck(live);
+
   return {
-    asOf, coverage, majorLine: line, stats, ladder,
+    asOf, coverage, majorLine: line, stats, ladder, deck,
     centsSentence: "Dollars on the ladder are each rung's giving in the 12 months to the end of your gift history.",
     units: U.map(x => ({ ...unitView(x), undatedNote: undatedNote(x, importName) })),
     cards: live,
@@ -566,30 +598,20 @@ const LIBRARY = [
       reason: g.sig.notGift.why, memo: [g.memo, g.notes].filter(Boolean).join(" · "), date: g.date,
       facts: [["amount", money(g.amount_cents)], ["date", g.date ? longDate(g.date) : "no date"], ["memo", [g.memo, g.notes].filter(Boolean).join(" · ")], ["reason", g.sig.notGift.why]],
       how: null,
+      // HOME-3: Partly a gift (a sponsorship with tickets, an item bought
+      // above its value) is offered on every row but a raffle.
+      partly: g.sig.notGift.kind !== "raffle",
     }));
     return {
       kind: "review", rung: null, title: "Rows that may not be gifts",
       what: c => `${plural(c.items.length, "row")} (${money(c.items.reduce((n, i) => n + i.cents, 0))}) look like purchases, tickets or reimbursements, not gifts.`,
       why: "A purchase or a reimbursement counted as a gift makes every total and every ask built on it wrong. Nothing changes until you decide each one.",
       cardFacts: [["rows", String(items.length)], ["dollars", money(items.reduce((n, i) => n + i.cents, 0))]],
-      items, does: [{ action: "keep", label: "Keep as gift" }, { action: "not_gift", label: "Not a gift" }],
+      items, does: [{ action: "keep", label: "Keep as gift" }, { action: "partly", label: "Partly a gift" }, { action: "not_gift", label: "Not a gift" }],
     };
   },
-  // 10. Pace vs the same days last year (Home only)
-  function pace(U, ctx) {
-    const p = ctx.stats.pace;
-    if (!p.lastCents) return null;
-    const gap = p.thisCents - p.lastCents;
-    const item = { key: "org", name: "Your organisation", ids: [], lead: null, cents: Math.abs(Math.min(0, gap)),
-      facts: [["this year", money(p.thisCents)], ["this year to", longDate(p.end)], ["last year", money(p.lastCents)], ["last year to", longDate(p.lastEnd)], ["difference", money(Math.abs(gap))]], how: null };
-    return {
-      kind: "pace", rung: null, homeOnly: true, title: gap < 0 ? "Behind last year's pace" : "Ahead of last year's pace",
-      what: () => `${money(p.thisCents)} by ${longDate(p.end)}, against ${money(p.lastCents)} by ${longDate(p.lastEnd)}.`,
-      why: gap < 0 ? `Giving is ${money(-gap)} behind last year at this point. The cards below are where most of it can come back.`
-                   : `Giving is ${money(gap)} ahead of last year at this point.`,
-      cardFacts: item.facts, items: [item], does: [],
-    };
-  },
+  // 10. Pace left the cards (HOME-3): it is the greeting's sentence, read
+  // from numbers.vsLastYear so Home, Fundraising and the Board say one number.
   // 2. Year-end givers due
   function yearEnd(U, ctx) {
     const y1 = ctx.thisYear - 1, from = `${y1}-12-01`, to = `${y1}-12-31`, season = `${ctx.thisYear}-11-01`;
@@ -599,6 +621,7 @@ const LIBRARY = [
       const dec = x.dated.filter(g => g.date >= from && g.date <= to).reduce((n, g) => n + g.amount_cents, 0);
       const when = ctx.asOf <= `${ctx.thisYear}-11-15` ? windowWords(ctx.asOf > season ? ctx.asOf : season, `${ctx.thisYear}-11-15`) : windowWords(ctx.asOf, `${ctx.thisYear}-12-15`);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: dec,
+        what: `Gave ${money(dec)} in December ${y1}. Nothing yet this year-end.`,
         facts: [[`December ${y1}`, money(dec)]],
         how: { who: whoFor(x, x.rung), channel: dec >= 100000 ? "Call" : "Note", when,
           say: `${hello(x)}, thank you for your gift last December. It mattered. We're planning this year's year-end and hoped we could count on you again.`,
@@ -612,50 +635,88 @@ const LIBRARY = [
       items, does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: "Create tasks for Nov 1" }, { action: "group", label: "Make a group" }],
     };
   },
-  // 3. Sponsors not renewed, or downgraded
+  // 3. Sponsors not renewed, or downgraded. HOME-3: a downgrade is the last
+  // level against the one before it, whatever years they fall in (two sponsors
+  // went Platinum and Gold to Silver from 2024 to 2025 and the card said "0 at
+  // a lower level"); a sponsor already at the top level is offered nothing above it.
   function sponsors(U, ctx) {
     const y = ctx.thisYear, items = [];
+    const rank = lv => SPONSOR_LEVELS.indexOf(lv);
+    const top = arr => arr.reduce((b, v) => (rank(v.level) > rank(b.level) ? v : b), arr[0]);
     for (const x of U.filter(reachable)) {
       const s = x.sig.sponsor;
       if (!s.length) continue;
-      const last = s.filter(v => v.year === y - 1), now = s.filter(v => v.year === y);
-      if (!last.length) continue;
-      const top = arr => arr.reduce((b, v) => (SPONSOR_LEVELS.indexOf(v.level) > SPONSOR_LEVELS.indexOf(b.level) ? v : b), arr[0]);
-      const L = top(last);
-      const nextUp = SPONSOR_LEVELS[Math.min(SPONSOR_LEVELS.length - 1, SPONSOR_LEVELS.indexOf(L.level) + 1)];
-      const anniv = `${y}${L.date.slice(4)}`;
+      const years = [...new Set(s.map(v => v.year))].sort((a, b) => b - a);
+      const Ly = years[0], Py = years[1];
+      const L = top(s.filter(v => v.year === Ly)), P = Py ? top(s.filter(v => v.year === Py)) : null;
+      const down = !!P && rank(L.level) < rank(P.level);
       let state = null;
-      if (!now.length) state = "not_renewed";
-      else if (SPONSOR_LEVELS.indexOf(top(now).level) < SPONSOR_LEVELS.indexOf(L.level)) state = "downgraded";
+      if (Ly === y - 1) state = "not_renewed";
+      else if (Ly === y && down) state = "downgraded";
       if (!state) continue;
+      const offer = down ? P.level : (rank(L.level) < SPONSOR_LEVELS.length - 1 ? SPONSOR_LEVELS[rank(L.level) + 1] : null);
+      const lvl = v => `${v.half ? "half " : ""}${cap(v.level)}`;
+      const anniv = `${y}${L.date.slice(4)}`;
       const from = addDays(anniv, -42) > ctx.asOf ? addDays(anniv, -42) : ctx.asOf;
-      items.push({ key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: L.cents, state,
-        facts: [[`${y - 1} level`, `${L.half ? "half " : ""}${cap(L.level)}`], [`${y - 1} amount`, money(L.cents)], [`${y - 1} date`, longDate(L.date)]]
-          .concat(state === "downgraded" ? [[`${y} level`, cap(top(now).level)]] : []),
-        how: { who: whoFor(x, x.rung), channel: "Call", when: anniv >= ctx.asOf ? windowWords(from, anniv) : windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
-          say: `${hello(x)}, your ${L.half ? "half " : ""}${cap(L.level)} sponsorship last year made the night. We'd love to have you back${nextUp !== L.level ? `, and there's a ${cap(nextUp)} level this year if you'd like to go further` : ""}.`,
-          ask: x.noAsk ? null : { cents: L.cents, words: `Ask to renew at ${cap(L.level)} (${money(L.cents)}), and offer ${cap(nextUp)}.`, rule: "Sponsor renewal asks last year's level and offers the next one up." } } });
+      const facts = [[`${Ly} level`, lvl(L)], [`${Ly} amount`, money(L.cents)], [`${Ly} date`, longDate(L.date)]];
+      if (P) facts.push([`${Py} level`, lvl(P)], [`${Py} amount`, money(P.cents)]);
+      items.push({ key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: L.cents, state, down,
+        what: state === "not_renewed" ? `${cap(lvl(L))} sponsor in ${Ly} at ${money(L.cents)}${P ? `, ${lvl(P)} in ${Py}` : ""}. No renewal yet this year.`
+                                      : `${cap(lvl(P))} sponsor in ${Py}, ${lvl(L)} in ${Ly}.`,
+        levels: { last: { year: Ly, level: lvl(L), cents: L.cents }, prev: P ? { year: Py, level: lvl(P), cents: P.cents } : null },
+        facts,
+        how: { who: whoFor(x, x.rung), channel: "Call", when: state === "not_renewed" && anniv >= ctx.asOf ? windowWords(from, anniv) : windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
+          say: `${hello(x)}, your ${lvl(L)} sponsorship ${Ly === y ? "this year" : "last year"} made the night. ${state === "not_renewed" ? "We'd love to have you back" : "Thank you for staying with us"}${offer ? (down ? `, and we'd love to see you at ${cap(offer)} again, as in ${Py}` : `, and there's a ${cap(offer)} level this year if you'd like to go further`) : ""}.`,
+          ask: x.noAsk ? null : { cents: L.cents,
+            words: state === "not_renewed" ? `Ask to renew at ${cap(L.level)} (${money(L.cents)})${offer ? `, and offer ${cap(offer)}` : ""}.` : `Ask to return to ${cap(offer)} (${money(P.cents)}), their ${Py} level.`,
+            rule: !offer ? "Sponsor renewal asks last year's level. At the top level there is no higher one to offer."
+              : down ? "Sponsor renewal asks the last level and offers the level they gave at before it."
+              : "Sponsor renewal asks last year's level and offers the next one up." } } });
     }
     if (!items.length) return null;
     return {
       kind: "sponsors", rung: "retain", title: "Sponsors to renew",
-      what: c => `${plural(c.items.filter(i => i.state === "not_renewed").length, "sponsor")} from ${y - 1} not renewed, ${plural(c.items.filter(i => i.state === "downgraded").length, "sponsor")} at a lower level.`,
+      what: c => `${plural(c.items.filter(i => i.state === "not_renewed").length, "sponsor")} from ${y - 1} not renewed yet, ${plural(c.items.filter(i => i.down).length, "sponsor")} at a lower level than the year before.`,
       why: "A sponsor asked before last year's date usually renews. One asked after it often has already spent that budget.",
       cardFacts: [["year", String(y - 1)], ["this year", String(y)]], items,
-      more: c => [["not renewed", String(c.items.filter(i => i.state === "not_renewed").length)], ["downgraded", String(c.items.filter(i => i.state === "downgraded").length)]],
+      more: c => [["not renewed", String(c.items.filter(i => i.state === "not_renewed").length)], ["lower level", String(c.items.filter(i => i.down).length)]],
+      does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: "Create tasks" }],
+    };
+  },
+  // 11. Lapsing (HOME-3, Keep): a regular giver gone quiet past their usual
+  // time. Majors have their own card; one person is one move either way.
+  function lapsing(U, ctx) {
+    // lapsing, not lapsed: the last gift is within 18 months of the end of the data
+    const xs = U.filter(x => reachable(x) && x.status === "slipping" && x.timeQuiet && x.rung !== "major" && x.lastDay && daysBetween(x.lastDay.date, ctx.dataEnd) <= LAPSING_MAX_DAYS);
+    if (!xs.length) return null;
+    const items = xs.map(x => {
+      const g = x.lastDay, yr = g.date.slice(0, 4), yearCents = x.byYear[yr] || g.amount_cents;
+      return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: yearCents,
+        what: `Last gave ${money(g.amount_cents)} on ${longDate(g.date)}${x.rhythm.words ? ` (${x.rhythm.words.toLowerCase()})` : ""}. Nothing since.`,
+        facts: [["last gift", money(g.amount_cents)], ["last gift date", longDate(g.date)], [`${yr} giving`, money(yearCents)]],
+        how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 100000 ? "Call" : "Note", when: windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
+          say: `${hello(x)}, thank you for your gift in ${monthYear(g.date)}. It did real good, and we'd love to have you with us again this year.`,
+          ask: x.noAsk ? null : { cents: wholeDollars(g.amount_cents), words: `Ask ${money(wholeDollars(g.amount_cents))}: their last gift.`, rule: "A lapsing donor is asked their last gift, never more." } } };
+    });
+    return {
+      kind: "lapsing", rung: "retain", title: "Lapsing donors",
+      what: c => `${plural(c.items.length, "regular donor")} gave before and ${c.items.length === 1 ? "has" : "have"} gone quiet past their usual time.`,
+      why: "A donor who misses their usual time is easiest to keep in the first months after it. Ask for what they gave last, and thank them first.",
+      cardFacts: [], items,
       does: [{ action: "call_list", label: "Make a call list" }, { action: "task", label: "Create tasks" }],
     };
   },
   // 4. First gift, no second yet
   function secondGift(U, ctx) {
     const from = addDays(ctx.dataEnd, -SECOND_MAX_DAYS + 1);
-    const xs = U.filter(x => reachable(x) && x.count === 1 && x.first && x.first.date >= from);
+    const xs = U.filter(x => reachable(x) && x.occasions === 1 && x.firstDay && x.firstDay.date >= from);
     if (!xs.length) return null;
     const ft = ctx.stats.firstTime;
     const items = xs.map(x => {
-      const g = x.first, best = addDays(g.date, SECOND_BEST_DAYS), last = addDays(g.date, SECOND_MAX_DAYS);
+      const g = x.firstDay, best = addDays(g.date, SECOND_BEST_DAYS), last = addDays(g.date, SECOND_MAX_DAYS);
       const when = best >= ctx.asOf ? windowWords(ctx.asOf, best) : windowWords(ctx.asOf, last);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: g.amount_cents,
+        what: `First gift of ${money(g.amount_cents)} on ${longDate(g.date)}. Nothing since.`,
         facts: [["first gift", money(g.amount_cents)], ["first gift date", longDate(g.date)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 25000 ? "Call" : "Note", when,
           say: `${hello(x)}, your first gift in ${monthYear(g.date)} is already at work. Here's one thing it did. Would you give again before the year is out?`,
@@ -672,20 +733,21 @@ const LIBRARY = [
   },
   // 5. Upgraded on their own
   function upgraded(U, ctx) {
-    const xs = U.filter(x => reachable(x) && x.count >= 2 && x.status === "up" || (reachable(x) && x.count >= 2 && x.designated.length && x.status !== "slipping"));
+    const xs = U.filter(x => reachable(x) && x.occasions >= 2 && x.status === "up" || (reachable(x) && x.occasions >= 2 && x.designated.length && x.status !== "slipping"));
     if (!xs.length) return null;
     const items = xs.map(x => {
       const ask = naturalCents(Math.round(x.L12 * 1.5));
       const fdn = x.dated.find(g => g.date >= addDays(ctx.dataEnd, -364) && /\bfoundation\b/i.test(g.sig.text));
       const fdnName = fdn ? (String(fdn.sig.text).match(/((?:The\s+)?[A-Z][\w'&]*(?:\s+[A-Z][\w'&]*)*\s+Family Foundation|(?:The\s+)?[A-Z][\w'&]*(?:\s+[A-Z][\w'&]*)*\s+Foundation)/) || [])[1] : null;
-      const before = x.dated.filter(g => g.date < addDays(ctx.dataEnd, -364)).slice(-1)[0];
-      const after = x.dated.filter(g => g.date >= addDays(ctx.dataEnd, -364)).sort((a, b) => b.amount_cents - a.amount_cents)[0];
+      const before = x.days.filter(g => g.date < addDays(ctx.dataEnd, -364)).slice(-1)[0];
+      const after = x.days.filter(g => g.date >= addDays(ctx.dataEnd, -364)).sort((a, b) => b.amount_cents - a.amount_cents)[0];
       const facts = [["12 months before", money(x.P12)], ["last 12 months", money(x.L12)]];
       if (before) facts.push(["earlier gift", `${money(before.amount_cents)} (${monthYear(before.date)})`]);
       if (after) facts.push(["recent gift", `${money(after.amount_cents)} (${monthYear(after.date)})`]);
       if (fdnName) facts.push(["through", fdnName]);
       if (x.designated.length) facts.push(["designated", x.designated[0]]);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: x.L12,
+        what: `${money(x.P12)} in the 12 months before, then ${money(x.L12)} in the last 12 months${after ? `, including ${money(after.amount_cents)} in ${monthYear(after.date)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""}.`,
         facts,
         how: { who: whoFor(x, "upgrade"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 30)),
           say: `${hello(x)}, thank you. Your gift${after ? ` of ${money(after.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
@@ -709,6 +771,7 @@ const LIBRARY = [
       const lo = naturalCents(Math.round(last * 0.5)), hi = naturalCents(last);
       const decGiver = x.rhythm.kind === "year_end";
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: last - now,
+        what: `${money(last)} in ${y1}, ${money(now)} so far in ${y0}: ${money(last - now)} behind.`,
         facts: [["giving by year", yearsLine(x)], [`${y1}`, money(last)], [`${y0} so far`, money(now)], ["behind", money(last - now)]],
         how: { who: "The director", channel: "Visit", when: decGiver ? windowWords(ctx.asOf <= `${y0}-11-01` ? `${y0}-11-01` : ctx.asOf, `${y0}-11-15`) : windowWords(ctx.asOf, addDays(ctx.asOf, 21)),
           say: `${hello(x)}, your support has carried this work${Object.keys(x.byYear).length > 1 ? " year after year" : ""}. Before we plan next year, I'd like to sit down and hear what matters most to you now.`,
@@ -735,7 +798,8 @@ const LIBRARY = [
         const facts = [["pledged", money(p.cents)], ["paid", money(p.paid)], ["still to come", money(p.balance)]];
         if (multi) for (const i of inst) facts.push([`${i.due_date.slice(0, 4)} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
         const due = (dueNow[0] && dueNow[0].due_date) || p.due_date && ymd(p.due_date);
-        items.push({ key: x.key + ":" + p.id, pledgeId: p.id, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
+        items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
+          what: `Pledged ${money(p.cents)}: ${money(p.paid)} received, ${money(p.balance)} still to come.${multi && nowCents ? ` ${money(nowCents)} is due this year.` : ""}`,
           installments: inst.map(i => ({ year: i.due_date ? i.due_date.slice(0, 4) : null, due: i.due_date, cents: i.cents, paid: !!i.paid_gift_id })),
           facts,
           how: { who: whoFor(x, x.rung), channel: p.balance >= 100000 ? "Call" : "Letter",
@@ -759,6 +823,7 @@ const LIBRARY = [
     const xs = U.filter(x => reachable(x) && x.planned);
     if (!xs.length) return null;
     const items = xs.map(x => ({ key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: x.lifetime + x.openPledges.reduce((n, p) => n + p.balance, 0),
+      what: `Signals: ${x.plannedWhy.join(", ")}. ${money(x.lifetime)} given in all.`,
       facts: [["signals", x.plannedWhy.join(", ")], ["lifetime", money(x.lifetime)]],
       how: { who: whoFor(x, "major"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 60)),
         say: `${hello(x)}, you've given in a way that tells us this work matters to you for the long run. I'd love to hear what you hope it looks like years from now.`,
@@ -854,6 +919,81 @@ function undatedNote(x, importName) {
   return `Has an undated gift from ${from}; set its date.`;
 }
 
+// ── THE DECK (HOME-3) ──────────────────────────────────────────────────────
+// Home shows one move at a time: one person or organisation per card, never a
+// group of twenty. Each card's people become moves under four tabs, in rung
+// order; a person appears once, under their highest-value move, and their
+// other moves ride on that card as "also" lines. Planned counts people, not
+// dollars, and never outranks a move with money in it.
+const DECK_TABS = [["keep", "Keep"], ["grow", "Grow"], ["major", "Major"], ["planned", "Planned"]];
+const TAB_OF = { year_end: "keep", pledges: "keep", sponsors: "keep", lapsing: "keep", second_gift: "grow", upgraded: "grow", major_slipping: "major", planned: "planned" };
+const MOVE_LABEL = { year_end: "Year-end giver", pledges: "Pledge to collect", sponsors: "Sponsor to renew", lapsing: "Lapsing",
+  second_gift: "Second gift", upgraded: "Moving up", major_slipping: "Slipping", planned: "Legacy signal" };
+// The card's one button, and the task it makes (nothing on Home sends).
+const MOVE_ACTION = {
+  draft: { label: "Draft the note", taskKind: "write" }, calls: { label: "Add to calls", taskKind: "call" },
+  visit: { label: "Book a visit", taskKind: "meeting" }, brief: { label: "Build a briefing", taskKind: "meeting" },
+  coffee: { label: "Invite to coffee", taskKind: "meeting" }, collect: { label: "Collect", taskKind: "call" },
+};
+const DECK_CAP = 150;
+function actionFor(kind, how) {
+  if (kind === "pledges") return "collect";
+  if (kind === "upgraded") return "visit";
+  if (kind === "major_slipping") return "brief";
+  if (kind === "planned") return "coffee";
+  return how && how.channel === "Call" ? "calls" : "draft";
+}
+function buildDeck(cards) {
+  const byUnit = new Map();
+  let order = 0;
+  for (const c of cards) {
+    const tab = TAB_OF[c.kind];
+    if (!tab) continue;
+    for (const it of c.items) {
+      const unit = it.unit || it.key;
+      const how = it.how || {};
+      const act = actionFor(c.kind, how);
+      const m = {
+        id: `${c.kind}:${it.key}`, kind: c.kind, itemKey: it.key, tab, label: `${tab === "keep" ? "Keep" : tab === "grow" ? "Grow" : tab === "major" ? "Major" : "Planned"} · ${MOVE_LABEL[c.kind]}`,
+        name: it.name, lead: it.lead, ids: it.ids, cents: it.cents, value: c.kind === "planned" ? -1 : it.cents, n: order++,
+        what: it.what || "", why: c.words.why, say: how.say || null, who: how.who || null, channel: how.channel || null,
+        when: how.when ? how.when.words : null, whenFrom: how.when ? how.when.from : null,
+        ask: how.ask ? { words: how.ask.words, rule: how.ask.rule } : null,
+        action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind },
+        group: { kind: c.kind, title: c.title, count: c.items.length, cents: c.cents },
+        // the card's facts, and its ask and when (the card's own number check counts them too)
+        facts: [...it.facts, ...(c.cardFacts || []), ...(how.ask ? [["ask", how.ask.words]] : []), ...(how.when ? [["when", how.when.words]] : [])],
+      };
+      (byUnit.get(unit) || byUnit.set(unit, []).get(unit)).push(m);
+    }
+  }
+  const tabs = new Map(DECK_TABS.map(([key, label]) => [key, { key, label, moves: [] }]));
+  for (const ms of byUnit.values()) {
+    ms.sort((a, b) => b.value - a.value || a.n - b.n);
+    const [m, ...rest] = ms;
+    m.also = rest.map(r => ({ kind: r.kind, label: MOVE_LABEL[r.kind], line: r.what }));
+    for (const r of rest) m.facts.push(...r.facts);
+    tabs.get(m.tab).moves.push(m);
+  }
+  const out = [];
+  for (const t of tabs.values()) {
+    t.moves.sort((a, b) => b.cents - a.cents || a.n - b.n);
+    const count = t.moves.length;
+    const cents = t.moves.reduce((n, m) => n + (m.cents || 0), 0);
+    out.push({ key: t.key, label: t.label, count, cents: t.key === "planned" ? null : cents, people: t.key === "planned" ? count : null,
+      atStake: t.key === "planned" ? plural(count, "person", "people") : money(cents),
+      moves: t.moves.slice(0, DECK_CAP).map(({ value, n, ...m }) => m) });
+  }
+  const keep = out.find(t => t.key === "keep");
+  const open = keep && keep.count ? "keep" : ((out.find(t => t.count) || out[0]).key);
+  const review = cards.find(c => c.kind === "review");
+  const family = cards.find(c => c.kind === "family");
+  return { tabs: out, open,
+    review: review ? { count: review.items.length, cents: review.cents } : null,
+    family: family ? { count: family.items.length } : null,
+    sentence: "Each move is one person or organisation, under their highest-value move. Dollars at stake are what each move is about: last December's gift, a pledge's balance, last year's sponsorship, a donor's last 12 months. Planned counts people." };
+}
+
 // One unit's next move: the first card item about them, by rank.
 function nextMoveFor(result, donorId) {
   for (const c of result.cards) {
@@ -866,5 +1006,5 @@ function nextMoveFor(result, donorId) {
 
 module.exports = {
   RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
-  computeInsights, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
+  computeInsights, buildDeck, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

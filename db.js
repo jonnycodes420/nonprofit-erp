@@ -7201,7 +7201,9 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (org_id, gift_id)
     )`);
-  for (const c of ["as_type TEXT", "row_data JSONB", "fin_id TEXT", "fin_prev JSONB", "donor_id TEXT"])
+  // HOME-3: `received` is the value received on a row marked Partly a gift
+  // (decision 'partly'): the part that is Finance revenue, not giving.
+  for (const c of ["as_type TEXT", "row_data JSONB", "fin_id TEXT", "fin_prev JSONB", "donor_id TEXT", "received NUMERIC"])
     await pool.query(`ALTER TABLE insight_reviews ADD COLUMN IF NOT EXISTS ${c}`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS insight_links (

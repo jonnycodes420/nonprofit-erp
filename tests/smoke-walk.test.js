@@ -165,6 +165,58 @@ async function groupsAreQuick() {
   }
 }
 
+// HOME-3 · THE GREETING IS ALWAYS FIRST. "The greeting should always be on
+// top, always" (Jonathan, 27 Oct). For an org with data (the demo), an empty
+// org and an org mid-setup (people in, setup not done), the first words on
+// Home are the greeting (org and "Good …"), the date is its heading, and the
+// moves deck, the setup line and the rail all come after it. Red on main: the
+// INSIGHTS-1 ladder box rendered above the greeting.
+async function greetingFirst(browser, demoAuth) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const make = async (org, people) => {
+    const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Home3 " + org.slice(10), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Robin Home','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    for (let i = 1; i <= people; i++) {
+      await q(`INSERT INTO donors (id,org_id,name,created_by,created_by_name) VALUES ($1,$2,$3,'system:test','test')`, [`d_${org}_${i}`, org, `Home Person ${i}`]);
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`,
+        [`g_${org}_${i}`, org, `d_${org}_${i}`, 100 * i, i % 2 ? "2025-12-10" : "2026-03-02"]);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["with data (the demo)", demoAuth], ["empty", await make("org_home3_empty", 0)], ["mid-setup", await make("org_home3_setup", 6)]];
+  for (const [what, a] of cases) for (const vp of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    const ctx = await browser.newContext({ viewport: vp, serviceWorkers: "block" });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector('[data-testid="home-moves"]', { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const r = await page.evaluate(() => {
+      const root = document.querySelector(".dash-root");
+      if (!root) return { root: false };
+      const day = root.querySelector(".home-day");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => n.textContent.trim() && n.parentElement.offsetParent !== null ? 1 : 3 });
+      const firstText = walker.nextNode();
+      const head = day && day.closest(".home-head-wide, .home-head-narrow");
+      const after = sel => [...root.querySelectorAll(sel)].every(el => day && (day.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+      return { root: true, day: !!day && day.tagName, first: firstText ? firstText.textContent.trim().slice(0, 60) : null,
+        firstInHead: !!(firstText && head && head.contains(firstText.parentElement)),
+        greet: /Good (morning|afternoon|evening)/.test(head ? head.textContent : ""),
+        afterIt: after('[data-testid="home-moves"], [data-testid="home-setup-line"], [data-testid="ladder-strip"], .home-rail, .home-block') };
+    });
+    ok(`§home-3 Home ${what} at ${vp.width}: the greeting is first, the date is its heading, everything else follows`,
+       r.root && r.firstInHead && r.greet && r.day === "H1" && r.afterIt, r);
+    await ctx.close();
+  }
+}
+
 // FIX-32 · THE DEMO DOOR, AND SAMPLE DONORS ARE NOT AN IMPORT. On 7 Oct a
 // signup chose "Explore the demo" on the start page: 25 sample donors loaded
 // and the page never moved, because /dashboard bounces an org whose
@@ -643,6 +695,7 @@ async function demoDoor(browser) {
   }
 
   await demoDoor(browser);
+  await greetingFirst(browser, auth);
 
   await browser.close();
   await closeDb();

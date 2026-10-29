@@ -3719,7 +3719,10 @@ async function renderReceiptPdf(snapshot) {
       doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.paymentMethod || "Not set", 390, y + 22);
       y += 84;
 
-      if (snapshot.quidProQuoDesc) {
+      if (snapshot.paidInAll != null && snapshot.goodsServicesSentence) {
+        // HOME-3: Partly a gift. AMOUNT above is the gift part; this says what was paid in all.
+        doc.font("Helvetica").fontSize(9).fillColor(INK).text(snapshot.goodsServicesSentence, 50, y, { width: PW - 100, lineGap: 2 });
+      } else if (snapshot.quidProQuoDesc) {
         doc.font("Helvetica").fontSize(9).fillColor(INK).text(
           `In exchange for this contribution, ${snapshot.orgLegalName} provided: ${snapshot.quidProQuoDesc} (estimated fair market value ${fmtD(snapshot.quidProQuoValue)}). Only the amount of your contribution in excess of that value, ${fmtD(snapshot.deductibleAmount)}, is tax-deductible.`,
           50, y, { width: PW - 100, lineGap: 2 }
@@ -3894,6 +3897,20 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO, 
     quidProQuoDesc: gift.quid_pro_quo_desc || null,
     quidProQuoValue: gift.quid_pro_quo_value != null ? parseFloat(gift.quid_pro_quo_value) : null,
   };
+  // HOME-3: the quid-pro-quo disclosure, in one sentence the receipt prints.
+  // A row she marked Partly a gift in Review is stored at the gift part (the
+  // value received left giving and is Finance revenue), so its receipt also
+  // says what was paid in all; a gala ticket's gift is stored at what was paid.
+  const qpqCents = gift.quid_pro_quo_value != null ? Math.round(parseFloat(gift.quid_pro_quo_value) * 100) : 0;
+  if (qpqCents > 0) {
+    const fmtC = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const [partly] = await query("SELECT received FROM insight_reviews WHERE org_id=? AND gift_id=? AND decision='partly'", [org.id, gift.id]);
+    const said = `You received goods or services valued at ${fmtC(qpqCents)}; the deductible amount is ${fmtC(_line.deductibleCents)}.`;
+    snapshot.goodsServicesSentence = partly
+      ? `You paid ${fmtC(_line.amountCents + qpqCents)} in all, and ${snapshot.orgLegalName} provided in exchange: ${snapshot.quidProQuoDesc || "goods or services"}. ${said}`
+      : said;
+    if (partly) snapshot.paidInAll = toDollars(_line.amountCents + qpqCents);
+  }
 
   // BUILD-54 §2 — org-authored campaign copy for the cover email, frozen into
   // the snapshot at issue time like everything else (a later campaign edit
