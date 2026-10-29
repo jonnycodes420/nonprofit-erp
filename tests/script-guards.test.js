@@ -31,6 +31,10 @@ const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8")
 
 // Writes data (API or DB) — must resolve its target through prodGuard.
 const GUARDED_WRITERS = [
+  // FIX-58 item 6 — moves theme files that fell back to Postgres into S3. A dry
+  // run by default; --apply resolves its database through writerDbUrl(), so a
+  // remote one also needs --i-know-this-is-prod. Jonathan runs it.
+  "move-theme-assets-to-s3",
   // BUILD-92 — the close-an-existing-org walk. Seeds its own org + admin
   // straight into the scratch DB (an org that ALREADY exists is the premise,
   // and no route creates one), then drives the console in Playwright.

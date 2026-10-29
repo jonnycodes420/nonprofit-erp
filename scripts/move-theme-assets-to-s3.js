@@ -16,12 +16,17 @@
 //   DATABASE_URL=… PORTAL_ASSETS_S3_ENDPOINT=… PORTAL_ASSETS_S3_KEY=… \
 //   PORTAL_ASSETS_S3_SECRET=… PORTAL_ASSETS_S3_BUCKET=… \
 //     node scripts/move-theme-assets-to-s3.js            # dry run
-//     node scripts/move-theme-assets-to-s3.js --apply    # move, 50 at a time
+//     node scripts/move-theme-assets-to-s3.js --apply --i-know-this-is-prod   # move, 50 at a time
+//
+// --apply resolves its database through scripts/lib/prodGuard.js: a remote
+// DATABASE_URL needs --i-know-this-is-prod as well (BUILD-55). The dry run only
+// reads.
 //
 // The read-only count is scripts/sql/theme-fallback-rows.sql.
 const apply = process.argv.includes("--apply");
 const batchArg = process.argv.find(a => a.startsWith("--batch="));
 const BATCH = Math.max(1, Math.min(500, parseInt(batchArg ? batchArg.slice(8) : "50", 10) || 50));
+if (apply) process.env.DATABASE_URL = require("./lib/prodGuard").writerDbUrl();
 
 (async () => {
   const AS = require("../assetStore");
