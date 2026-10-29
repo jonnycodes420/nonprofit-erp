@@ -28,6 +28,7 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { EmailAsSentPanel } from "./EmailAsSent";
 import { ThankYouDrafts } from "./ThankYouDrafts";
+import { allPages } from "../lib/pages";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -168,17 +169,21 @@ const STATUS_META = {
   awaiting_approval: { label: statusWord("awaiting_approval"), color: T.ink, bg: T.gold500 + "55" },
 };
 function StatusBadge({ status, campaign, onFailed }) {
-  const recs = (campaign && campaign.recipients) || [];
-  const failed = recs.filter(r => r.failure_reason).length;
-  const partial = status === "sent" && failed > 0;
-  const m = partial ? STATUS_META.partial : (STATUS_META[status] || STATUS_META.draft);
-  const label = partial ? `Sent to ${recs.filter(r => r.sent_at).length} of ${recs.length}` : m.label;
-  const clickable = (partial || status === "failed") && onFailed;
+  // SECURE-2: what the campaign did is the server's one answer
+  // (campaignDelivery.js): "Sent to 412 of 500 · 88 not sent", or "Not sent".
+  const d = campaign && campaign.delivery;
+  const partial = !!d && d.state === "partial";
+  const notSent = !!d && d.state === "not_sent";
+  const m = partial ? STATUS_META.partial : notSent ? STATUS_META.failed : (STATUS_META[status] || STATUS_META.draft);
+  const label = d && d.sentence && status !== "sending" ? d.sentence : m.label;
+  const clickable = (partial || notSent || status === "failed") && onFailed;
   return (
-    <span data-testid="camp-status" data-status={partial ? "partial" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
-      title={clickable ? "Show the ones that did not go" : undefined}
+    <span data-testid="camp-status" data-status={partial ? "partial" : notSent ? "failed" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
+      title={clickable ? ((d && d.reasons && d.reasons.length ? "Why: " + d.reasons.map(r => `${r.n.toLocaleString("en-US")} ${r.reason.toLowerCase()}`).join(", ") + ". " : "") + "Show the ones that did not go") : undefined}
       onClick={clickable ? e => { e.stopPropagation(); onFailed(); } : undefined}
-      style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default", whiteSpace: "nowrap" }}>
+      style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: label.length > 14 ? 10 : 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default",
+               // SECURE-2: "Sent to 412 of 500 · 88 not sent" wraps inside its column rather than running into the next one.
+               whiteSpace: label.length > 14 ? "normal" : "nowrap", display: "inline-block", lineHeight: 1.35, maxWidth: "100%" }}>
       {status === "sending" ? <span style={{ animation: "pulse 1.2s ease-in-out infinite" }}>{m.label}</span> : label}
     </span>
   );
@@ -1545,7 +1550,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     if (allDonors.length) return;
     // Summaries carry every field the segment predicates read (email,
     // total_giving, status, stage, capacity_tier) at a fraction of the payload
-    try { setAllDonors(await apiFetch("/donors/summaries")); } catch (e) { console.error(e); }
+    try { setAllDonors(await allPages("/donors/summaries")); } catch (e) { console.error(e); }   // SECURE-2: a page at a time
   };
 
   // BUILD-94 Part 4 — the sent list's counts, server-computed so the screen
@@ -2333,9 +2338,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
                             <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
-                              {c.status === "sent"
-                                ? `Sent to ${(c.recipient_count || 0).toLocaleString()}`
-                                : c.status === "sending" ? "Sending…" : statusWord(c.status)}
+                              {/* SECURE-2: the server's one sentence (campaignDelivery.js), never a count worked out here. */}
+                              {(c.delivery && c.delivery.sentence) || (c.status === "sending" ? "Sending…" : statusWord(c.status))}
                             </div>
                           </div>
                           {c.status === "sent" && rate !== null && (

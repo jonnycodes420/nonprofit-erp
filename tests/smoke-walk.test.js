@@ -11,6 +11,11 @@
 //   3. a 5xx from anything the page fetched;
 //   4. a console error, including an uncaught exception or a failed request.
 //
+// SECURE-2 item 5: and a fifth, on EVERY page any leg opens (giving pages,
+// the donor portal and the marketing site included): a Content-Security-
+// Policy violation. The preview serves vercel.json's policy, so a script the
+// policy refuses on production is refused here, and fails the walk.
+//
 // HOW IT NAVIGATES, and why that matters. Until FIX-13 Part 6 only
 // `/dashboard` and `/donors/:id` were real routes; every other tab was
 // state inside <App/>, switched by `navigateTo(id)` (tabs are /app/:tab now). The first draft of this
@@ -443,6 +448,26 @@ async function demoDoor(browser) {
   }
 }
 
+// SECURE-2 item 5 · THE PAGES A DONOR OR A VISITOR OPENS, under the policy:
+// the marketing site (prerendered), sign-in and sign-up, a giving page (its own
+// entry, give.html, with the prefetch that used to be inline), a campaign
+// giving page, and the donor portal. Signed out, as a donor is. Each must
+// draw and throw nothing; CSP refusals are collected by the walk's watcher.
+async function publicPagesUnderTheCsp(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
+  const page = await ctx.newPage();
+  for (const p of ["/", "/pricing", "/security", "/login", "/signup", "/give/harborlight", "/give/harborlight/harbor-run", "/portal/harborlight"]) {
+    const errors = [];
+    const onErr = e => errors.push(e.message.slice(0, 160));
+    page.on("pageerror", onErr);
+    await page.goto(APP + p, { waitUntil: "networkidle", timeout: 45000 }).catch(e => errors.push("goto: " + e.message.slice(0, 120)));
+    const drawn = await page.evaluate(() => (document.body.innerText || "").trim().length);
+    page.off("pageerror", onErr);
+    ok(`§csp ${p} draws and throws nothing`, drawn > 0 && errors.length === 0, { drawn, errors: errors.slice(0, 3) });
+  }
+  await ctx.close();
+}
+
 (async () => {
   console.log("smoke-walk");
   const login = await api("POST", "/auth/login", null, DEMO);
@@ -460,6 +485,18 @@ async function demoDoor(browser) {
   ok("the demo has donors to walk", three.length === 3, three.length);
 
   const browser = await chromium.launch();
+  // SECURE-2 item 5 · every page any leg opens is watched for a CSP violation.
+  // Chromium says "Refused to … because it violates the following Content
+  // Security Policy directive" on the console, for scripts, handlers and the rest.
+  const csp = [], watched = new WeakSet();
+  const watchCsp = p => {
+    if (watched.has(p)) return;
+    watched.add(p);
+    p.on("console", m => { const t = m.text(); if (/Content Security Policy/i.test(t)) csp.push(`${(p.url() || "").replace(APP, "") || "/"}: ${t.slice(0, 200)}`); });
+  };
+  { const nc = browser.newContext.bind(browser), np = browser.newPage.bind(browser);
+    browser.newContext = async (...a) => { const c = await nc(...a); c.on("page", watchCsp); return c; };
+    browser.newPage = async (...a) => { const p = await np(...a); watchCsp(p); return p; }; }
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 
   // Everything that means "on fire", collected per screen.
@@ -865,6 +902,16 @@ async function demoDoor(browser) {
   await demoDoor(browser);
   await greetingFirst(browser, auth);
   await emailEditorEverywhere(browser);
+  await publicPagesUnderTheCsp(browser);
+
+  // SECURE-2 item 5: the policy is really served (so a clean walk means
+  // something), it runs no inline script and no eval, and nothing any leg
+  // opened was refused by it.
+  const head = (await fetch(APP + "/")).headers.get("content-security-policy") || "";
+  const scriptSrc = (/(?:^|;)\s*script-src ([^;]*)/.exec(head) || [])[1] || "";
+  ok("§csp the app is served an enforced Content-Security-Policy with a script-src", !!scriptSrc, head.slice(0, 200));
+  ok("§csp …which runs no inline script and no eval", !/'unsafe-inline'|'unsafe-eval'/.test(scriptSrc), scriptSrc);
+  ok(`§csp no Content-Security-Policy violation on any page the walk opened`, csp.length === 0, csp.slice(0, 5));
 
   await browser.close();
   await closeDb();

@@ -82,7 +82,11 @@ app.post("/admin/debug/sentry-test", requireAuth, requireAdmin, wrap(async (req,
     setTimeout(() => { Promise.reject(new Error(`[sentry-test] deliberate unhandledRejection by ${req.user.userId} at ${new Date().toISOString()}`)); }, 10);
     return res.json({ ok: true, fired: "rejection" });
   }
-  throw new Error(`[sentry-test] deliberate route error by ${req.user.userId} at ${new Date().toISOString()}`);
+  // SECURE-2: an optional note rides in the message, so a test can plant a
+  // donor's details here and prove the redactor took them out of the log
+  // line and the Sentry event.
+  const note = typeof (req.body && req.body.note) === "string" ? " " + req.body.note.slice(0, 300) : "";
+  throw new Error(`[sentry-test] deliberate route error by ${req.user.userId} at ${new Date().toISOString()}${note}`);
 }));
 app = routers.r1;
 
@@ -180,6 +184,20 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   }
 
   const { token } = await TF.issueSession(user, req, signToken);
+  // SECURE-2 item 7: a browser this person has not signed in from before
+  // gets them one short email (sign-in mail: always on, only to themselves,
+  // never on the shared demo login). The answer does not wait for it.
+  try {
+    const dev = await TF.rememberDevice(user, req, req.body && req.body.deviceId);
+    if (dev.isNew && !TF.isDemoOrg(org)) {
+      const where = TF.deviceLabel(req);
+      const secure = `${publicAppUrl()}/settings?section=security`;
+      TF.mailUser(user, resend, `New sign-in to Steward from ${where}`,
+        `New sign-in to Steward from <strong>${where}</strong> on ${new Date().toUTCString()}.`
+        + `<br><br>Not you? <a href="${secure}" style="color:#0D5C3A">Secure your account</a>: change your password, then sign out every other browser in Settings, Security.`)
+        .catch(e => console.error("[new-device] mail failed:", e.message));
+    }
+  } catch (e) { console.error("[new-device] could not record the browser:", e.message); }
   res.json({ token, trustToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 }));
 
@@ -191,6 +209,10 @@ app.post("/auth/logout", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, password, name, orgName, orgMission, ein } = req.body;
   if (!email || !password || !orgName) {
     return res.status(400).json({ error: "Email, password, and org name required" });
@@ -257,6 +279,9 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   const frontendUrl = publicAppUrl();
   const resetLink = `${frontendUrl}/reset-password?token=${token}`;
 
+  // SECURE-2 item 2: answer first, then send, so an address with an account
+  // takes no longer to answer than one without.
+  res.json({ success: true });
   if (process.env.RESEND_API_KEY) {
     const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
     try {
@@ -308,8 +333,6 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   } else {
     console.warn("[forgot-password] RESEND_API_KEY not set — reset email not sent");
   }
-
-  res.json({ success: true });
 }));
 
 // POST /auth/reset-password — validate token and update password
@@ -340,6 +363,10 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
 app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   // INCIDENT 2026-09-22 — `provisioned: true` is how an org gets created FOR
   // somebody rather than BY them. It is the difference between a signup and a
   // handover, and until tonight the route could not tell them apart: Allie's
@@ -467,6 +494,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 
 // ── Invite ─────────────────────────────────────────────────────────────────
 app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const { email, role } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
   // VOL-1 — three roles now. A volunteer coordinator sees volunteers and
@@ -1496,9 +1527,18 @@ async function sendSigninLinkEmail(user) {
 }
 
 const SIGNUP_ACTOR_ID = "system:public-signup";
+// SECURE-2 item 2: the sign-up sentence, the same whether or not the address
+// has an account, and the floor both answers wait for.
+const SIGNUP_SENT = "If that email can sign up, we've sent a link to finish. Check your inbox; the link works for 24 hours.";
+const SIGNUP_FLOOR_MS = Number(process.env.SIGNUP_FLOOR_MS || 900);
+const escapeHtml = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
+  // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
+  { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["contactEmail"] });
+    if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
+    if (req.body) Object.assign(req.body, cv.values); }
   const b = req.body || {};
   const orgName = String(b.orgName || "").trim();
   const contactName = String(b.contactName || "").trim();
@@ -1549,14 +1589,6 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
 
   // The same refusal the close link gives, for the same reason: users.email is
   // globally unique and this path mints the first admin.
-  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
-  if (clash.length) {
-    return res.status(409).json({
-      error: "email_in_use",
-      message: "That email already has a Steward account. Sign in instead, or use a different address.",
-    });
-  }
-
   const plan = closePlan(`${tier.id}_${interval}`);
   if (!plan) return res.status(500).json({ error: "plan_missing", message: "That band is not configured. Nothing has been created." });
 
@@ -1600,6 +1632,32 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   } catch (err) {
     if (handleBillingConfigError(err, res, { plan: plan.id, surface: "public signup price check" })) return;
     throw err;
+  }
+
+  // SECURE-2 item 2: the answer never says whether the address has an
+  // account. Both branches end in the same sentence, the same status and the
+  // same shape, no sooner than SIGNUP_FLOOR_MS, and the link (or, for an
+  // address that already has an account, a note saying so) goes by email.
+  const started = Date.now();
+  const sameAnswer = async () => {
+    const wait = SIGNUP_FLOOR_MS - (Date.now() - started);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    res.status(202).json({
+      sent: true, message: SIGNUP_SENT,
+      tier: tier.id, band: tier.band, interval,
+      amountUsd: planAmountUsd(plan),
+      setupUsd: setupPriceId ? plan.setupUsd : null,
+      firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
+      agreementVersion: agr.version,
+    });
+  };
+  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
+  if (clash.length) {
+    await sendSignupMail(contactEmail, "You already have a Steward account",
+      `<p>Someone, probably you, started a new Steward sign-up with this address. It already has a Steward account, so nothing new was created.</p>`
+      + `<p><a href="${publicAppUrl()}/login" style="color:#0D5C3A">Sign in</a>, or use "Forgot password" on that page.</p>`
+      + `<p>If you meant to set up a second organization, reply to this email and we will do it with you.</p>`);
+    return sameAnswer();
   }
 
   const closeLinkId = "cl_" + uuid().slice(0, 8);
@@ -1650,16 +1708,31 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
                           agreementVersion: agr.version })
     .catch(e => console.error("[signup] founder notification failed:", e.message));
 
-  res.status(201).json({
-    url: session.url,
-    tier: tier.id, band: tier.band, interval,
-    amountUsd: planAmountUsd(plan),
-    setupUsd: setupPriceId ? plan.setupUsd : null,
-    firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
-    notice: params.custom_text.submit.message,
-    agreementVersion: agr.version,
-  });
+  await sendSignupMail(contactEmail, `Finish setting up Steward for ${orgName}`,
+    `<p>Here is the link to finish setting up Steward for ${escapeHtml(orgName)}. It opens a secure Stripe checkout and works for 24 hours.</p>`
+    + `<p><a href="${session.url}" style="color:#0D5C3A">Finish setting up Steward</a></p>`
+    + `<p>${escapeHtml(params.custom_text.submit.message || "")}</p>`
+    + `<p>If you did not ask for this, ignore this email; nothing is charged unless the checkout is completed.</p>`);
+  return sameAnswer();
 }));
+
+// The one mail a sign-up sends: to the address typed into the form, which
+// asked for it. Never to a blocked address.
+async function sendSignupMail(to, subject, bodyHtml) {
+  if (require("../mailBlock").isBlockedAddress(to)) return { sent: false };
+  if (!process.env.RESEND_API_KEY) { console.error("[signup] MAIL IS NOT CONFIGURED: the sign-up link was NOT sent."); return { sent: false }; }
+  try {
+    const { error } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, subject,
+      html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">${bodyHtml}</div>`,
+    });
+    if (error) throw new Error(error.message);
+    return { sent: true };
+  } catch (e) {
+    console.error("[signup] sign-up email failed:", e.message);
+    return { sent: false };
+  }
+}
 
 // One message, to the founder, per signup. Not `opsAlert`: that dedupes by
 // kind and hour, which is right for an incident and wrong here — a second

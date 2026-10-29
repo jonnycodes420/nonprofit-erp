@@ -32,6 +32,15 @@
           "value": "max-age=63072000; includeSubDomains; preload"
         }
       ]
+    },
+    {
+      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'sha256-giul2Tz10285XN/XwQF702DkrNpZYabkzSOGObdIDvg=' 'sha256-6mfQDUBgxFbQM1GVn9xdVyoLoF5uyzEJq0fBU+2w3qY='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://nonprofit-erp-production.up.railway.app; media-src 'self' blob: https: https://nonprofit-erp-production.up.railway.app; connect-src 'self' https://nonprofit-erp-production.up.railway.app https://*.sentry.io; frame-src 'self' blob: data: https://nonprofit-erp-production.up.railway.app https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
+        }
+      ]
     }
   ],
   "rewrites": [

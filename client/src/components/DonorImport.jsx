@@ -15,6 +15,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { normalizeNameForDonorMatch, donorsFromUnmatchedGifts } from "../../../shared/giftFileDonors.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
+import { emailProblem, emailHint } from "../../../shared/contactCheck.js";
 import { detectNpsp, npspMapping, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
 import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
 import { membershipColumns, detectMembershipPreset, buildMembershipRows, MEMBERSHIP_FIELDS, MEMBERSHIP_FIELD_LABELS, MEMBERSHIP_PRESETS } from "../../../shared/membershipImport.js";
@@ -1052,6 +1053,15 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     if (!emailCol && !nameCol) return null;
     return assessAggregateCollapse(parsed.rows, emailCol, nameCol);
   }, [effectiveShape, parsed, mapping]);
+  // SECURE-2 item 3: an address that is not one is imported as it is, never
+  // refused; the preview counts them, and each profile says "Check this email".
+  const emailsToCheck = useMemo(() => {
+    if (!parsed) return null;
+    const emailCol = Object.keys(mapping).find(h => mapping[h] === "email") || "";
+    if (!emailCol) return null;
+    const bad = (parsed.rows || []).map(r => String(r[emailCol] || "").trim()).filter(v => v && (emailProblem(v) || emailHint(v)));
+    return bad.length ? { n: bad.length, example: bad[0], hint: emailHint(bad[0]) } : null;
+  }, [parsed, mapping]);
   const shapeBlocked = effectiveShape === "unknown" || (aggregateCollapse && aggregateCollapse.refuse);
   // BUILD-79 Part 5 — when most headers are unrecognised, one-click Auto-map
   // is demoted to an explicit contents-based guess with a warning.
@@ -3273,6 +3283,13 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                   : <span style={{color:T.ink3}}>No rows ready, map at least one column to <em>name</em>, <em>email</em>, or <em>organization</em>.</span>}
             </div>
           </div>
+
+          {emailsToCheck && (
+            <div data-testid="import-check-emails" style={{background:T.gold50,border:"1px solid "+T.gold300,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:T.ink,lineHeight:1.5}}>
+              <strong>Check {emailsToCheck.n === 1 ? "this email" : `these ${emailsToCheck.n.toLocaleString("en-US")} emails`}.</strong>{" "}
+              {emailsToCheck.n === 1 ? "It does" : "They do"} not look like a working address (for example {emailsToCheck.example}{emailsToCheck.hint ? `; ${emailsToCheck.hint}` : ""}). Steward imports {emailsToCheck.n === 1 ? "it" : "them"} as {emailsToCheck.n === 1 ? "it is" : "they are"}, and the profile says "Check this email" until someone fixes it.
+            </div>
+          )}
 
           {/* Smart stage assignment preview — BUILD-88a A.7: behind the Team
               flag, with the officer routing above it. A stage is a position in

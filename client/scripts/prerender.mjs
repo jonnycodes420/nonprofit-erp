@@ -32,6 +32,16 @@ const { GLOSSARY } = await import(pathToFileURL(path.join(CLIENT, "src", "market
 
 // A rerun reads the shell it saved the first time (vite build empties dist/,
 // so a saved app.html is always from this build).
+// SECURE-2 item 5: the preloader stays inline (a file cost a round trip, and
+// perf-app's "usable under 1 s" with it), and the app's script CSP allows it
+// by hash. Its text is fixed (PRELOAD_JS); what changes per build (the chunks,
+// the font) rides in data attributes, so the hash in vercel.json never moves.
+// Change a byte of PRELOAD_JS and change that hash with it.
+const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
+  `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
+  `JSON.parse(s.getAttribute("data-need")||"[]").forEach(function(h){add("modulepreload",h);});` +
+  `var f=s.getAttribute("data-font");if(f)add("stylesheet",f);}catch(e){}})();`;
+const attr = v => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const SHELL = path.join(DIST, "app.html");
 const PRELOAD = /<!-- app-preload -->[\s\S]*?<!-- \/app-preload -->\n?/;
 const shell = fs.readFileSync(fs.existsSync(SHELL) ? SHELL : path.join(DIST, "index.html"), "utf8").replace(PRELOAD, "");
@@ -63,11 +73,7 @@ function appPreload() {
   // nothing waits on it.
   const app = fs.readFileSync(path.join(CLIENT, "src", "App.jsx"), "utf8");
   const font = (app.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"]+/) || [])[0];
-  return `<!-- app-preload --><script>(function(){try{if(!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
-    `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
-    `${JSON.stringify(need)}.forEach(function(h){add("modulepreload",h);});` +
-    (font ? `add("stylesheet",${JSON.stringify(font.replace(/&amp;/g, "&"))});` : "") +
-    `}catch(e){}})();</script><!-- /app-preload -->\n`;
+  return `<!-- app-preload --><script data-need="${attr(JSON.stringify(need))}"${font ? ` data-font="${attr(font.replace(/&amp;/g, "&"))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
 }
 
 const base = seo.pageShell(shell);

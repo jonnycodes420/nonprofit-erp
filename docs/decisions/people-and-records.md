@@ -3,6 +3,10 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **SECURE-2 (2026-10-29): a form's email and phone.** Forms refuse an email that is not one
+  (`shared/contactCheck.js`, with a "did you mean") and store a phone in one format (`phoneNormal.js`).
+  An import never refuses a row for this: it keeps the value, and the profile and the preview say
+  "Check this email".
 - **The first Volunteers number is "On the roster": everyone with the Volunteer role, new ones included (FIX-31).**
   Served in the last 90 days is the line under it. Ask's volunteer count and its figure definition are the same rule.
 - **The tags under a donor's name are computed, never stored, from one definition.** `donorStatus.js`
