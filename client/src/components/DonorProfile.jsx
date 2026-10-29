@@ -135,6 +135,8 @@ const giftFundName = g => (g && g.fund_name) || "";
 const giftTimelineLine = (g, fundName) => {
   if (!g) return "";
   const parts = [fmtFull(g.amount)];
+  // FUNDRAISING-2: a gift for an event says the event, ahead of its fund.
+  if (g.event_name) parts.push(g.event_name);
   if (fundName) parts.push(fundName);
   // "Needs you" is the sentinel a gift carries when nobody said how the money
   // arrived (server.js GIFT_METHOD_UNKNOWN). It is a prompt, not a payment
@@ -1521,7 +1523,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       const g=(raw.gifts||[]).map(g=>({
         id:g.id,amount:parseFloat(g.amount)||0,date:g.date||null,   // IMPORT-4: no date is "No date", never the day it was entered
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
-        fund_id:g.fund_id||"",fund_name:g.fund_name||"",payment_method:g.payment_method||"",
+        fund_id:g.fund_id||"",fund_name:g.fund_name||"",event_name:g.event_name||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
         // FIX-49: the gift is the full amount paid; the processor's fee and the
         // net (what Finance reconciles to the bank) show beside it.
@@ -2868,6 +2870,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date?displayDate(g.date):<UndatedGiftDate giftId={g.id} readOnly={isReadOnly} onSaved={loadGiftsFull}/>}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}
+                              {/* FUNDRAISING-2: a gift for an event names it. */}
+                              {g.event_name&&<div data-testid="dp-gift-event" style={{fontSize:11,fontWeight:400,color:T.ink3}}>{g.event_name}</div>}
                               {g.fee>0&&g.amount>0&&<div data-testid="dp-gift-fee-net" style={{fontSize:11,fontWeight:400,color:T.ink3}}>Fee {fmtFull(g.fee)}, net {fmtFull(Math.round((g.amount-g.fee)*100)/100)}</div>}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>

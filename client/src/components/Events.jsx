@@ -3,7 +3,7 @@ import RemoveMenu, { removeOne } from "./RemoveMenu";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { usePeoplePicker } from "../lib/people";
-import { T, interactive, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
+import { T, interactive, fmtFull, fmtTotal, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
@@ -11,7 +11,7 @@ import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
 import { SaveAsGroup } from "./Groups";
 import { Figure } from "./Figure";
-import EventRaised from "./EventRaised";   // HOME-3
+import EventRaised, { EventStory } from "./EventRaised";   // HOME-3 · FUNDRAISING-2
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
@@ -66,7 +66,9 @@ function AttBadge({ status }) {
 }
 
 function TypeBadge({ type }) {
-  const t = EVENT_TYPES[type] || EVENT_TYPES.other;
+  // FUNDRAISING-2: "Other" is a blank in a form, not a kind of event.
+  if (!EVENT_TYPES[type] || type === "other") return null;
+  const t = EVENT_TYPES[type];
   return (
     <span style={{
       background: t.color + "22", color: t.color, border: `1px solid ${t.color}44`,
@@ -339,8 +341,10 @@ function EventReport({ eventId, onOpenRows }) {
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>After the event</div>
       {/* HOME-3: raised the way she says it, each part opening its rows. */}
       {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
+      {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
+      {r.story && <EventStory s={r.story} style={{ marginBottom: 12 }} />}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        {r.figures.filter(f => !(r.money && f.key === "raised")).map(f => (
+        {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended")).map(f => (
           <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
             onClick={() => onOpenRows(f.key, f.label, f.sentence)}
             style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
@@ -1411,10 +1415,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const attendedCount = event.attendees?.filter(a => a.status === "attended").length || 0;
   const noShowCount = event.attendees?.filter(a => a.status === "no_show").length || 0;
   const totalCount = event.attendees?.length || 0;
-  const convRate = totalCount > 0 ? Math.round((attendedCount / totalCount) * 100) : 0;
   const totalGifts = event.attendees?.reduce((s, a) => s + (parseFloat(a.gift_amount) || 0), 0) || 0;
-  const avgGift = attendedCount > 0 && totalGifts > 0 ? totalGifts / attendedCount : 0;
-  const topDonor = event.attendees?.filter(a => a.gift_amount > 0).sort((a, b) => b.gift_amount - a.gift_amount)[0];
 
   const existingDonorIds = new Set((event.attendees || []).filter(a => a.donor_id).map(a => a.donor_id));
   const filteredDonors = pickedPeople.filter(d => !existingDonorIds.has(d.id));
@@ -1622,23 +1623,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         {/* RIGHT */}
         <div style={{ overflowY: "auto", padding: "20px 24px 32px 20px", display: "flex", flexDirection: "column", gap: 20, background: T.ink }}>
 
-          {/* Quick stats */}
-          <div style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 14, padding: "16px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Event Stats</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {[
-                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? T.greenDk : convRate >= 40 ? T.gold500 : "rgba(240,237,230,0.7)"],
-                ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "Not set", T.greenDk],
-                ["Top Donor", topDonor ? topDonor.name : "Not set", T.gold500],
-              ].map(([label, value, color]) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 12, color: "rgba(240,237,230,0.7)" }}>{label}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
+          {/* FUNDRAISING-2: the "Event Stats" box is gone. It read amounts typed
+              onto guest rows, so it said "Avg Gift: Not set" beside $45,340
+              received; the night's story (After the event) says it from the
+              gifts and pledges themselves. */}
           {/* Add attendees */}
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>Add Attendees</div>
@@ -1827,7 +1815,9 @@ export function Events({ data, isReadOnly }) {
   const currentYear = new Date().getFullYear();
   const thisYear = events.filter(e => e.date?.startsWith(String(currentYear)));
   const totalAttendees = thisYear.reduce((s, e) => s + (parseInt(e.attendee_count) || 0), 0);
-  const totalRevenue = thisYear.reduce((s, e) => s + (parseFloat(e.total_revenue) || 0), 0);
+  // FUNDRAISING-2: received is the gifts each event's page counts
+  // (numbers.eventsRaised); the list said $0 beside a page that said $45,340.
+  const totalRevenue = thisYear.reduce((s, e) => s + (e.money ? e.money.received : (parseFloat(e.total_revenue) || 0)), 0);
   const avgRate = (() => {
     const valid = thisYear.filter(e => parseInt(e.invited_count) > 0);
     if (!valid.length) return 0;
@@ -1853,7 +1843,7 @@ export function Events({ data, isReadOnly }) {
         {[
           ["Events This Year", thisYear.length, T.ink],
           ["Total Attendees", totalAttendees, T.greenDk],
-          ["Received at events", fmtFull(totalRevenue), T.greenDk],
+          ["Received at events", fmtTotal(totalRevenue), T.greenDk],
           ["Avg Attendance Rate", `${avgRate}%`, T.ink],
         ].map(([label, value, color]) => (
           <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: "14px 16px", boxShadow: T.shadow }}>

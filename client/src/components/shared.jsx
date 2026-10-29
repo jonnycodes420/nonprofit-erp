@@ -154,12 +154,12 @@ export function interactive(onClick, opts = {}) {
 // module's scope — shared.jsx itself calls fmt()/fmtFull() (GivingHistoryChart,
 // buildContext). A re-export alone left them undefined here and crashed the
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
-import { fmt, fmtFull, quietPhrase } from "../lib/money";
+import { fmt, fmtFull, fmtTotal, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
 import { rowOpenProps } from "../lib/rowOpen";
 import { civilDaysAgo } from "../lib/orgToday";
 import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
-export { fmt, fmtFull, quietPhrase };
+export { fmt, fmtFull, fmtTotal, quietPhrase };
 // FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
 // `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
 // York, so a meeting stored a day ahead read "(Today)" at 11pm.

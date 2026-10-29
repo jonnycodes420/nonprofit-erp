@@ -28,3 +28,26 @@ export default function EventRaised({ e, showName = true, style }) {
     </div>
   );
 }
+
+// FUNDRAISING-2 · THE NIGHT'S STORY. Raised, received, pledged this year and
+// over all years, who came, who gave, and who came and did not give, each a
+// figure that opens its rows, from numbers.eventStory. The event page and
+// Fundraising's lead card draw it the same way.
+export function EventStory({ s, style }) {
+  if (!s) return null;
+  const tile = (k, label, kind = "money") => (
+    <Figure key={k} kind={kind} whole value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} figureKey={"event." + k} />
+  );
+  return (
+    <div data-testid="event-story" data-event-id={s.id} onClick={ev => ev.stopPropagation()}
+      style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, ...(style || {}) }}>
+      {tile("raised", "Raised")}
+      {tile("received", "Received")}
+      {tile("pledged", "Pledged · first year")}
+      {s.laterCents ? tile("pledgedAll", "Pledged · all years") : null}
+      {tile("attended", "Came", "count")}
+      {tile("gave", "Gave", "count")}
+      {tile("cameDidntGive", "Came, didn't give", "count")}
+    </div>
+  );
+}

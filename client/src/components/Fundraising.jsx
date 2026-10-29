@@ -1,7 +1,7 @@
 import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
-import { T, activeMark, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, fmtTotal, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { MembersView } from "./Memberships";
@@ -27,6 +27,8 @@ import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, c
 import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 import RemoveMenu from "./RemoveMenu";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
+import { EventStory } from "./EventRaised";   // FUNDRAISING-2
+import { PledgesView } from "./Pledges";   // FUNDRAISING-2
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -48,7 +50,7 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
   const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
   // An exceeded goal celebrates the overage rather than repeating "Goal reached".
-  const paceLabel = paceState === "met" && over > 0 ? `Goal reached · ${fmtFull(over)} over` : PACE_META[paceState]?.label;
+  const paceLabel = paceState === "met" && over > 0 ? `Goal reached · ${fmtTotal(over)} over` : PACE_META[paceState]?.label;
   return (
     <div style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: big ? 8 : 6, gap: 12, flexWrap: "wrap" }}>
@@ -56,9 +58,9 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
           {/* REPORTS-4: the raised figure opens the gifts behind it when the
               caller names its source. */}
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: big ? 30 : 20, color: T.ink, lineHeight: 1 }}>{raisedSource
-            ? <Figure variant="inline" kind="money" value={raised} label={raisedLabel || "Raised"} source={raisedSource} />
-            : fmtFull(raised)}</span>
-          <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>of {fmtFull(goal)}</span>
+            ? <Figure variant="inline" kind="money" whole value={raised} label={raisedLabel || "Raised"} source={raisedSource} />
+            : fmtTotal(raised)}</span>
+          <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>of {fmtTotal(goal)}</span>
         </div>
         <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{shown}%</span>
       </div>
@@ -86,10 +88,6 @@ function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
   );
 }
 
-const SOURCE_BADGE = {
-  online:  { label: "Online", bg: T.bg2, color: T.ink },
-  offline: { label: "Offline", bg: T.bg2, color: T.ink3 },
-};
 
 
 export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope }) {
@@ -163,7 +161,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   // Counts on a part (never money — the figures live on the parts themselves).
   const PART_BADGE = {
     campaigns: campaigns.length || undefined,
-    pages: pages.filter(p => p.status === "active").length || undefined,
+    pages: (overview?.givingPages?.takesGifts !== false && pages.filter(p => p.status === "active").length) || undefined,
     toconfirm: toConfirm || undefined,
   };
 
@@ -227,7 +225,6 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
         <>
           <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
             onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} onOpenCampaign={openCampaign} />
-          {fundraisingIndex(setSubtab)}
         </>
       )}
 
@@ -246,6 +243,10 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       {/* CAPTURE-1: reloads itself, for the deposit sheet's reason below. */}
       {!loading && subtab === "toconfirm" && (
         <CaptureInbox isReadOnly={isReadOnly} onOpenThanks={onNavigate ? id => onNavigate("communications", { subtab: "milestones", highlightDraftId: id }) : null} />
+      )}
+
+      {!loading && subtab === "pledges" && (
+        <PledgesView onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "deposits" && (
@@ -289,7 +290,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       )}
 
       {!loading && subtab === "pages" && (
-        <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} isReadOnly={isReadOnly}
+        <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} isReadOnly={isReadOnly} takesGifts={overview?.givingPages?.takesGifts !== false}
           onChanged={() => apiFetch("/giving-pages").then(p => setPages(p || [])).catch(() => {})} />
       )}
 
@@ -333,44 +334,28 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   );
 }
 
-// ── FIX-1 §B — everything in Fundraising, by its question ─────────────────
-// The four tabs replaced fourteen. Somebody who learned the old tabs can still
-// find each one by the name it had, one click from the Overview: every part of
-// every section, under the question it answers. Names and links, no figures.
-function fundraisingIndex(onGoto) {
-  return (
-    <div data-fr-index="" style={{ marginTop: 26, borderTop: "1px solid " + T.bg3, paddingTop: 16 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 12 }}>Everything in Fundraising</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14 }}>
-        {FR_SECTIONS.filter(s => s.id !== "overview").map(s => (
-          <div key={s.id} style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{s.label}</div>
-            <div style={{ fontSize: 12, color: T.ink3, margin: "2px 0 6px", lineHeight: 1.4 }}>{s.question}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {s.parts.map(p => (
-                <button key={p.id} onClick={() => onGoto(p.id)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: "3px 8px 3px 0", fontSize: 12.5, fontWeight: 600, color: T.greenMid, cursor: "pointer" }}>{p.label}</button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Overview ────────────────────────────────────────────────────────────────
-// Category metadata for typed goals (BUILD-16 Part 2) — Annual / Project /
-// Capital. Colors stay inside the five-color palette.
+// FUNDRAISING-2: one idea per figure. The roll-up counts only goals running
+// today and says how many; a goal that has not started says when it starts;
+// ended goals sit under Past, folded, with their result. Pledges are three
+// figures (open, due this fiscal year, overdue), the ones Home and Pledges
+// read. "Everything in Fundraising" is gone: it repeated the tabs above it.
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
-  const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory } = overview;
+  const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory, pledges, leadEvent } = overview;
   const gp = givingPages;
   const topGoals = goals.filter(g => g.isTopLevel);
+  const running = topGoals.filter(g => g.lifecycle === "active");
+  const upcoming = topGoals.filter(g => g.lifecycle === "upcoming");
+  const past = topGoals.filter(g => g.lifecycle === "ended");
+  const periodWords = overview.periodWords || "this period";
   // FIX-10 Part B — both figures open their OWN rows, in Reports, filtered to
   // exactly the window each was summed over. A figure that lands on a page
   // showing a different total is not a figure that opens.
   const openRows = (from, to) => () => onNavigate && onNavigate("reports", { report: "giving-summary", from, to });
+  const top = overview.campaigns.top && overview.campaigns.top.lifecycle === "active" ? overview.campaigns.top : null;
+  const label = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+  const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -388,7 +373,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
               Your last 12 months:{" "}
               <button onClick={openRows(last12.start, last12.end)}
                 style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>
-                {fmtFull(last12.raised)} across {last12.giftCount.toLocaleString()} gift{last12.giftCount === 1 ? "" : "s"}
+                {fmtTotal(last12.raised)} across {last12.giftCount.toLocaleString()} gift{last12.giftCount === 1 ? "" : "s"}
               </button>
               . A gift dated inside {overview.periodLabel} lands in the figure below the moment it is logged.
             </div>
@@ -399,16 +384,11 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           </button>
         </div>
       )}
-      {/* FIX-10 Part B — THE ORG GOAL, which the server has always computed and
-          this page has never shown. An org that set "Annual Fund 2026,
-          $50,000" in onboarding saw no trace of it on Fundraising. Raised,
-          goal and the pace sentence, all from the one pace function
-          (shared/pace.js via computeFundraisingPace). */}
+      {/* FIX-10 Part B — THE ORG GOAL: raised, goal and the pace sentence,
+          all from the one pace function (shared/pace.js). */}
       {orgGoal && (
         <div style={{ background: T.white, border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.greenDk, borderRadius: 18, padding: "22px 26px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
-            Your goal
-          </div>
+          <div style={{ ...label, letterSpacing: "0.14em", marginBottom: 10 }}>Your goal</div>
           {orgGoal.label && <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>}
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
@@ -419,117 +399,110 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         </div>
       )}
       {/* Goal-reached celebration — fires once per goal reaching 100% */}
-      {topGoals.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
+      {running.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
         <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal."
-          line={`${g.name}: ${fmtFull(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
+          line={`${g.name}: ${fmtTotal(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
       ))}
 
-      {/* Roll-up header: total raised across active goals + combined pace.
-          Degrades gracefully — no goals → a start-here signpost; one goal →
-          that single goal reads as the hero via the portfolio below. */}
+      {/* The roll-up counts the goals running today, and the cards under it
+          are exactly those goals. One "Start a campaign" on the page. */}
       {rollup ? (
-        <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns" })} style={{ background: T.white, borderRadius: 18, padding: "26px 28px", color: T.ink, position: "relative", overflow: "hidden", border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.gold500 }}>
-          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,"+T.gold500+"22,transparent 70%)" }} />
+        <div data-testid="fr-rollup" data-active-count={rollup.activeGoalCount} {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns" })} style={{ background: T.white, borderRadius: 18, padding: "26px 28px", color: T.ink, position: "relative", overflow: "hidden", border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.gold500 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold700, marginBottom: 10 }}>
-            {rollup.activeGoalCount === 1 ? "Active goal" : `All active goals · ${rollup.activeGoalCount}`}
+            {rollup.activeGoalCount === 1 ? "Active goal" : `Active goals · ${rollup.activeGoalCount}`}
           </div>
           <RollupThermometer rollup={rollup} />
           {rollup.activeGoalCount > 1 && (
             <div style={{ marginTop: 14, fontSize: 13, color: T.ink3 }}>
-              Combined progress across {rollup.activeGoalCount} goals. Each tracks its own gifts automatically.
+              Raised across the {rollup.activeGoalCount} goals running today, against their goals combined. Goals not started yet and goals that have ended are not in it.
             </div>
           )}
         </div>
-      ) : (
+      ) : !leadEvent && !upcoming.length ? (
         <StartHere line="Start a campaign with a goal to light up a live thermometer here. Annual funds, a Project push, a Capital campaign: each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
-      )}
+      ) : null}
 
-      {/* The typed goal portfolio — one card per goal, its own thermometer + pace */}
-      {topGoals.length > 0 && (
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>Your goals</div>
+      {running.length > 0 && (
+        <div data-testid="fr-goals-active">
+          <div style={{ ...label, marginBottom: 10 }}>Running now · {running.length}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
-            {topGoals.map(g => (
+            {running.map(g => (
+              <GoalCard key={g.id} g={g} allGoals={goals} onClick={() => onOpenCampaign ? onOpenCampaign(g.id) : onGoto && onGoto("campaigns")} />
+            ))}
+          </div>
+        </div>
+      )}
+      {upcoming.length > 0 && (
+        <div data-testid="fr-goals-upcoming">
+          <div style={{ ...label, marginBottom: 10 }}>Starting soon · {upcoming.length}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+            {upcoming.map(g => (
               <GoalCard key={g.id} g={g} allGoals={goals} onClick={() => onOpenCampaign ? onOpenCampaign(g.id) : onGoto && onGoto("campaigns")} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Momentum stat row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
-        {/* FIX-10 Part B — opens the rows behind THIS figure, not the Reports
-            landing page: the destination total equals the tile's number. */}
-        <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtFull(period.raised)}
+      {/* Momentum: the period's money and gifts, pledges, live pages. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
+        <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtTotal(period.raised)}
           accent={T.gold}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
           ariaLabel={`View the gifts behind ${overview.periodLabel} raised`}
           sub={period.priorRaised > 0
-            ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs the same days last year`
+            ? <span data-testid="fr-vs-last-year" onClick={e => e.stopPropagation()} title={period.compare ? period.compare.sentence : undefined}>{period.delta >= 0 ? "↑" : "↓"}{" "}
+                {period.compare && period.compare.source
+                  ? <Figure variant="inline" kind="money" whole abs value={period.delta} label="Against the same days last year" definition={period.compare.sentence} source={period.compare.source} figureKey="fundraising.vsLastYear" why={false} />
+                  : fmtTotal(Math.abs(period.delta))} vs the same days last year</span>
             : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
-        <StatTile label="Gifts this period" value={period.giftCount} accent={T.bg3}
+        <StatTile label={`Gifts ${periodWords}`} value={period.giftCount.toLocaleString()} accent={T.bg3}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
-          ariaLabel="View the gifts in this period"
+          ariaLabel={`View the gifts ${periodWords}`}
           sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
-        <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.bg3}
-          onClick={() => onGoto && onGoto("campaigns")}
-          ariaLabel="View campaigns"
-          sub={overview.campaigns.count > 0 ? `${fmtFull(overview.campaigns.raised)} raised across all` : "No campaigns yet"} />
+        {pledges && <PledgeTile p={pledges} onOpen={() => onGoto && onGoto("pledges")} />}
         <StatTile label="Live giving pages" value={gp.count} accent={T.bg3}
           onClick={() => onGoto && onGoto("pages")}
           ariaLabel="View giving pages"
-          sub={gp.count > 0 ? `${fmtFull(gp.raised)} raised` : "None published"} />
+          sub={gp.count > 0 ? `${fmtTotal(gp.raised)} raised` : "None can take a gift yet"} />
       </div>
       {/* IMPORT-4: the period's figures leave out gifts with no date, and say so. */}
       {overview.undated && overview.undated.count > 0 && (
         <div data-testid="fr-undated" style={{ fontSize: 12, color: T.ink3, marginTop: -4 }}>
           <Figure variant="inline" kind="count" value={overview.undated.count} suffix={overview.undated.count === 1 ? " gift" : " gifts"} label="Gifts with no date"
             definition="Gifts that came in with no date. They count in Lifetime and the campaign or event they were given to, and in no figure for a span of time, because their year is not known."
-            source={overview.undated.source} figureKey="fundraising.undated" /> with no date not counted in this period
+            source={overview.undated.source} figureKey="fundraising.undated" /> with no date not counted {periodWords}
         </div>
       )}
 
-      {/* Two-column: top campaign + recent gifts */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
-        <div {...(overview.campaigns.top ? interactive(() => onGoto && onGoto("campaigns"), { label: `View campaign ${overview.campaigns.top.name}` }) : {})}
-          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Leading campaign</span>
-            {overview.campaigns.top && <span style={{ fontSize: 12, color: T.gold600, fontWeight: 700 }}>View →</span>}
+      {/* The leading campaign, or with none running the event that raised
+          most this year, beside the recent gifts. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16, alignItems: "start" }}>
+        {top ? <LeadCampaign top={top} onOpen={() => onOpenCampaign ? onOpenCampaign(top.id) : onGoto && onGoto("campaigns")} onNavigate={onNavigate} card={card} label={label} />
+          : leadEvent ? <LeadEvent e={leadEvent} onNavigate={onNavigate} card={card} label={label} />
+          : (
+          <div style={card}>
+            <div style={{ ...label, marginBottom: 12 }}>Leading campaign</div>
+            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+              No campaign is running. A campaign gives a specific appeal its own thermometer and pace.
+              {(rollup || upcoming.length) ? <div style={{ marginTop: 12 }}>{primaryBtn("+ Start a campaign", onNewCampaign)}</div> : null}
+            </div>
           </div>
-          {overview.campaigns.top ? (
-            <div>
-              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 14 }}>{overview.campaigns.top.name}</div>
-              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} rawPercent={overview.campaigns.top.rawPercent} over={overview.campaigns.top.over} paceState={overview.campaigns.top.paceState} paceSentence={overview.campaigns.top.paceSentence} />
-              <div style={{ marginTop: 12, fontSize: 12, color: T.ink3 }}>
-                {overview.campaigns.top.donorCount} donor{overview.campaigns.top.donorCount === 1 ? "" : "s"}
-                {daysLeftText(overview.campaigns.top.daysLeft) ? ` · ${daysLeftText(overview.campaigns.top.daysLeft)}` : ""}
-              </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, padding: "12px 0" }}>
-              No campaign with a goal yet. A campaign gives a specific appeal its own thermometer and pace.
-              <div style={{ marginTop: 12 }}>{primaryBtn("+ Start a campaign", onNewCampaign)}</div>
-            </div>
-          )}
-        </div>
+        )}
 
-        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 14 }}>Recent gifts</div>
+        <div style={card}>
+          <div style={{ ...label, marginBottom: 14 }}>Recent gifts</div>
           {overview.recentGifts.length === 0 ? (
             <div style={{ fontSize: 13, color: T.ink3, padding: "12px 0" }}>Gifts will appear here as they come in, from your giving pages, campaigns, and offline entries.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {overview.recentGifts.map((g, i) => {
-                const b = SOURCE_BADGE[g.source] || SOURCE_BADGE.offline;
                 const go = g.donorId ? () => onNavigate && onNavigate("donors", { selectDonorId: g.donorId }) : null;
                 return (
                   <div key={g.id} {...interactive(go, { label: `View ${g.donorName}` })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", margin: "0 -10px", borderRadius: 8, borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorId ? <DonorLink id={g.donorId} onOpen={go}>{g.donorName}</DonorLink> : g.donorName}</div>
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {displayDate(g.date)}</div>
+                      <div data-testid="fr-recent-for" style={{ fontSize: 11, color: T.ink3 }}>{[g.campaign, g.date ? displayDate(g.date) : "No date", g.method].filter(Boolean).join(" · ")}</div>
                     </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, background: b.bg, color: b.color, borderRadius: 99, padding: "2px 8px" }}>{b.label}</span>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
                   </div>
                 );
@@ -538,6 +511,92 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           )}
         </div>
       </div>
+
+      {past.length > 0 && (
+        <details data-testid="fr-goals-past" style={{ ...card, padding: "14px 22px" }}>
+          <summary style={{ ...label, cursor: "pointer" }}>Past · {past.length}</summary>
+          <div style={{ display: "flex", flexDirection: "column", marginTop: 10 }}>
+            {past.map((g, i) => {
+              const raised = g.isOverarching ? g.rolledRaised : g.raised;
+              const pct = g.isOverarching ? g.rolledRawPercent : g.rawPercent;
+              return (
+                <div key={g.id} {...interactive(() => onOpenCampaign && onOpenCampaign(g.id), { label: `View ${g.name}` })}
+                  style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 0", borderTop: i ? "1px solid " + T.bg2 : "none", fontSize: 13, color: T.ink }}>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}{g.endDate ? <span style={{ color: T.ink3 }}> · ended {displayDate(String(g.endDate).slice(0, 10))}</span> : null}</span>
+                  <span style={{ flexShrink: 0, color: T.ink2 }}>{fmtTotal(raised)} of {fmtTotal(g.goalAmount)} · {pct ?? 0}%</span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// FUNDRAISING-2: open pledges, with what is due this fiscal year and what is
+// overdue, each opening its rows; the tile opens Pledges.
+function PledgeTile({ p, onOpen }) {
+  const fig = (k, label) => <Figure variant="inline" kind="money" whole value={p[k]} label={label} definition={p.definitions[k]} source={p.sources[k]} figureKey={"fundraising.pledges." + k} why={false} />;
+  return (
+    <div data-testid="fr-pledges" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: "3px solid " + T.bg3, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Pledged, still to come</span>
+      <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{fig("open", "Pledged, still to come")}</span>
+      <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>
+        {fig("dueThisYear", "Pledged, due this fiscal year")} due this fiscal year · {fig("overdue", "Pledged, overdue")} overdue
+      </span>
+      <button onClick={onOpen} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" }}>Every pledge →</button>
+    </div>
+  );
+}
+
+// FUNDRAISING-2: the leading campaign says what is left, how long, the pace
+// it needs, and who gave most to it this month.
+function LeadCampaign({ top, onOpen, onNavigate, card, label }) {
+  const l = top.lead || {};
+  return (
+    <div data-testid="fr-lead-campaign" style={card}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <span style={label}>Leading campaign</span>
+        <button onClick={onOpen} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Open →</button>
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{top.name}</div>
+      <Thermometer raised={top.raised} goal={top.goalAmount} percent={top.percent} rawPercent={top.rawPercent} over={top.over} paceState={top.paceState} paceSentence={top.paceSentence} />
+      <div style={{ marginTop: 12, fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+        {l.left > 0
+          ? <>{fmtTotal(l.left)} to go{daysLeftText(top.daysLeft) ? `, ${daysLeftText(top.daysLeft)}` : ""}{l.perWeek ? `: about ${fmtTotal(l.perWeek)} a week to finish on time.` : "."}</>
+          : <>The goal is met{daysLeftText(top.daysLeft) ? `, ${daysLeftText(top.daysLeft)}` : ""}.</>}
+      </div>
+      {(l.topGivers || []).length > 0 && (
+        <div style={{ marginTop: 12, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
+          <div style={{ ...label, marginBottom: 6 }}>Gave most this month</div>
+          {l.topGivers.map(x => (
+            <div key={x.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "3px 0" }}>
+              <DonorLink id={x.id} onOpen={() => onNavigate && onNavigate("donors", { selectDonorId: x.id })}>{x.name}</DonorLink>
+              <span style={{ color: T.ink2 }}>{fmtFull(x.total)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// FUNDRAISING-2: no campaign running, so the event that raised most in the
+// last twelve months leads, told the way its own page tells it.
+function LeadEvent({ e, onNavigate, card, label }) {
+  const open = () => onNavigate && onNavigate("events", { eventId: e.id });
+  return (
+    <div data-testid="fr-lead-event" style={card}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <span style={label}>Your biggest event this year</span>
+        <button onClick={open} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.greenDk, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Open the event →</button>
+      </div>
+      <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 4 }}>
+        <RecordLink to={tabHref("events", { eventId: e.id })} onOpen={open} data-record-link="event">{e.name}</RecordLink>
+      </div>
+      <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12 }}>{e.date ? displayDate(e.date) : "Date not known"}</div>
+      <EventStory s={e} />
     </div>
   );
 }
@@ -552,8 +611,8 @@ function RollupThermometer({ rollup }) {
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
-          <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtTotal(rollup.totalRaised)}</span>
+          <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtTotal(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtTotal(rollup.over)} over` : ""}</span>
         </div>
         {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold700 }}>{shown}%</span>}
       </div>
@@ -572,8 +631,8 @@ function RollupThermometer({ rollup }) {
 // summing a pledge and its payments into one number double-counts.
 function committedText(g) {
   const parts = [];
-  if ((g.pledged || 0) > 0) parts.push(`${fmtFull(g.pledged)} pledged`);
-  if ((g.grantAwarded || 0) > 0) parts.push(`incl. ${fmtFull(g.grantAwarded)} in awarded grants`);
+  if ((g.pledged || 0) > 0) parts.push(`${fmtTotal(g.pledged)} pledged`);
+  if ((g.grantAwarded || 0) > 0) parts.push(`incl. ${fmtTotal(g.grantAwarded)} in awarded grants`);
   return parts.join(" · ");
 }
 
@@ -596,14 +655,26 @@ function GoalCard({ g, allGoals, onClick }) {
         </div>
         <CategoryBadge g={g} />
       </div>
-      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceSentence={paceSentence} />
-      {g.isOverarching ? (
+      {g.lifecycle === "upcoming" ? (
+        // FUNDRAISING-2: not started, so no bar and no pace: when it starts,
+        // its goal, and what came in early.
+        <div data-testid="goal-starts" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
+          <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, lineHeight: 1.2 }}>Starts {displayDate(g.startsOn)}</div>
+          <div>Goal {fmtTotal(g.goalAmount)}{g.endDate ? `, through ${displayDate(String(g.endDate).slice(0, 10))}` : ""}.</div>
+          <div style={{ color: T.ink3 }}>{(g.pledged || 0) > 0 || (g.earlyGiven || 0) > 0
+            ? [(g.pledged || 0) > 0 ? `${fmtTotal(g.pledged)} already pledged` : null, (g.earlyGiven || 0) > 0 ? `${fmtTotal(g.earlyGiven)} given early` : null].filter(Boolean).join(" · ") + "."
+            : "Nothing pledged or given to it yet."}</div>
+        </div>
+      ) : (
+        <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceSentence={paceSentence} />
+      )}
+      {g.lifecycle === "upcoming" ? null : g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</div>
           {children.map(c => (
             <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: T.ink2 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-              <span style={{ color: T.ink3, flexShrink: 0 }}>{fmtFull(c.raised)} · {c.rawPercent ?? c.percent ?? 0}%</span>
+              <span style={{ color: T.ink3, flexShrink: 0 }}>{fmtTotal(c.raised)} · {c.rawPercent ?? c.percent ?? 0}%</span>
             </div>
           ))}
         </div>
@@ -1130,7 +1201,7 @@ function NewGivingPage({ onClose }) {
 const draftBadge = <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft waiting</span>;
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
-function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }) {
+function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, takesGifts = true }) {
   const [shareId, setShareId] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const active = pages.filter(p => p.status === "active");
@@ -1140,7 +1211,6 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }
       <button type="button" data-testid="new-giving-page" onClick={() => setNewOpen(true)} style={{ background: T.green, border: "none", borderRadius: 10, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>New giving page</button>
     </div>
   );
-  void onNavigate;
   if (active.length === 0) {
     return (
       <>
@@ -1159,6 +1229,12 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }
       <OrgDonationShare orgSlug={orgSlug} />
       {newButton}
       {newOpen && <NewGivingPage onClose={() => setNewOpen(false)} />}
+      {!takesGifts && (
+        <div data-testid="pages-connect-payments" style={{ background: T.gold100, border: "1px solid " + T.gold300, borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: T.ink, lineHeight: 1.5, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: "1 1 320px" }}>Your pages are drafts until payments are connected. Until then each address shows a friendly "not open yet" page, and none of them counts as live.</span>
+          <button onClick={() => onNavigate && onNavigate("settings", { section: "connections" })} style={{ background: T.green, border: "none", borderRadius: 9, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Connect payments</button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
         {active.map(p => {
           // One goal concept: a page linked to a campaign tracks toward THAT
@@ -1213,6 +1289,8 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }
                 <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
                 {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Counts toward {p.campaign_name}</span>}
                 {p.has_draft && draftBadge}
+                {/* FUNDRAISING-2: never "live" before it can take money. */}
+                {!takesGifts && <span data-testid="page-not-live" style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft · connect payments to go live</span>}
                 <span style={{ marginLeft: "auto" }}><RemoveMenu kind="giving_page" id={p.id} disabled={isReadOnly} onDone={onChanged} /></span>
               </div>
               {goal > 0 && p.show_goal !== false && (
@@ -1226,7 +1304,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged }
                   </div>
                 ))}
               </div>
-              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={takesGifts} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
               {shareId === p.id && url && <SharePanel url={url} filenameBase={`giving-page-${p.slug}`} />}
             </div>
           );

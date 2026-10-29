@@ -66,8 +66,9 @@ async function wipe() {
 
 async function fixture() {
   for (const [org, name, slug, email, uid] of [[ORG, "FIX-41 Remove", "fix41-rm", ADMIN, "u_fix41"], [OTHER, "FIX-41 Other", "fix41-other", OTHER_ADMIN, "u_fix41_o"]]) {
-    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone)
-             VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, name, slug]);
+    // FUNDRAISING-2: a giving page opens only once the org can take money.
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_connected,stripe_account_id)
+             VALUES ($1,$2,$3,1,'active','team','America/New_York',true,'acct_' || $1)`, [org, name, slug]);
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Fix Admin','admin')`,
       [uid, org, email, bcrypt.hashSync("loadtest1234", 4)]);
   }
