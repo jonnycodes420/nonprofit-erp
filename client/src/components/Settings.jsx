@@ -8,7 +8,7 @@ import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
 import { YourWords } from "./YourWords";
-import SpreadsheetImport from "./SpreadsheetImport";
+import SpreadsheetImport, { SheetDropTarget } from "./SpreadsheetImport";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
@@ -24,7 +24,7 @@ import { SecurityPanel } from "./SecurityPanel";
 import { PrivacyPanel } from "./PrivacyPanel";
 import { MailTypesSettings, GoingOut, MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
-import { displayDate } from "../../../shared/displayDate";
+import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
 import { fmtInZone } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
@@ -1867,6 +1867,69 @@ function BringInAFile({onNavigate,isReadOnly}){
   );
 }
 
+// FIX-55: a spreadsheet dropped anywhere on Imports opens the one reader with it.
+function ImportsDrop({isReadOnly,children}){
+  const [file,setFile]=useState(null);
+  return (
+    <SheetDropTarget disabled={isReadOnly} onFile={setFile} style={{display:"flex",flexDirection:"column",gap:16}}>
+      {children}
+      {file&&<SpreadsheetImport key={file.name+file.lastModified} file={file} onClose={()=>setFile(null)} onImported={()=>setFile(null)}/>}
+    </SheetDropTarget>
+  );
+}
+
+// FIX-55 · EMPTY TRASH. People deleted from this org stay matchable (an import
+// asks about them) until the trash is emptied. The count comes first, then a
+// second confirm; after it they are gone for good and never match an import.
+function EmptyTrash({isAdmin,isReadOnly}){
+  const [days,setDays]=useState("90");
+  const [check,setCheck]=useState(null);   // {count, sentence} for the days chosen
+  const [sure,setSure]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [done,setDone]=useState("");
+  const [err,setErr]=useState("");
+  const qs=d=>d==="all"?"":`?olderThanDays=${encodeURIComponent(d)}`;
+  useEffect(()=>{
+    if(!isAdmin) return undefined;
+    let live=true; setCheck(null); setSure(false);
+    apiFetch("/donors/purge-trash/preview"+qs(days)).then(r=>{if(live)setCheck(r);}).catch(e=>{if(live)setErr(errorMessage(e,"Could not count the trash."));});
+    return ()=>{live=false;};
+  },[days,isAdmin,done]);
+  const empty=async()=>{
+    setBusy(true); setErr("");
+    try{ const r=await apiFetch("/donors/purge-trash",{method:"POST",body:JSON.stringify({confirm:"empty",olderThanDays:days==="all"?null:Number(days)})}); setDone(r.sentence||"Done."); setSure(false); }
+    catch(e){ setErr(e?.body?.sentence||errorMessage(e,"The trash was not emptied.")); }
+    setBusy(false);
+  };
+  const btnS=(danger)=>({background:danger?T.terra700:T.white,color:danger?T.white:T.ink,border:danger?"none":"1px solid "+T.bg3,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer"});
+  return (
+    <div data-testid="empty-trash" style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 28px"}}>
+      <SectionLabel>Empty trash</SectionLabel>
+      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginBottom:10}}>
+        People you delete stay in the trash, so an import can ask whether someone in a file is the person you deleted. Emptying the trash deletes them for good: they never match an import again. The audit log keeps that a delete happened, not who.
+      </div>
+      {!isAdmin ? <div style={{fontSize:13,color:T.ink3}}>An admin can empty the trash.</div> : (
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <label style={{fontSize:13,display:"flex",gap:6,alignItems:"center"}}>Deleted
+            <select data-testid="empty-trash-days" value={days} onChange={e=>{setDays(e.target.value);setDone("");}} style={{padding:"6px 8px",border:"1px solid "+T.bg3,borderRadius:8,fontFamily:"inherit"}}>
+              <option value="30">more than 30 days ago</option><option value="90">more than 90 days ago</option><option value="365">more than a year ago</option><option value="all">at any time (all of them)</option>
+            </select>
+          </label>
+          <span data-testid="empty-trash-count" style={{fontSize:13,flex:"1 1 240px"}}>{check?check.sentence:"Counting…"}</span>
+          {!sure
+            ? <button type="button" data-testid="empty-trash-go" disabled={isReadOnly||!check||!check.count} style={{...btnS(false),opacity:isReadOnly||!check||!check.count?0.45:1}} onClick={()=>setSure(true)}>Empty trash</button>
+            : <span style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <button type="button" data-commit data-testid="empty-trash-confirm" disabled={busy} style={btnS(true)} onClick={empty}>{busy?"Deleting…":`Delete ${check.count.toLocaleString("en-US")} for good`}</button>
+                <button type="button" style={btnS(false)} onClick={()=>setSure(false)}>Keep them</button>
+              </span>}
+        </div>
+      )}
+      {done&&<div role="status" data-testid="empty-trash-done" style={{fontSize:13,marginTop:8,color:T.ink}}>{done}</div>}
+      {err&&<div role="alert" style={{fontSize:13,marginTop:8,color:T.ink}}>{err}</div>}
+    </div>
+  );
+}
+
 function ImportsHistory(){
   const [rows,setRows]=useState(null);
   const [err,setErr]=useState("");
@@ -1958,7 +2021,7 @@ function ImportsHistory(){
           {open.loading?<div style={{fontSize:13,color:T.ink3}}>Loading…</div>:(
             <div data-testid="import-receipt">
               <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Donors</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>{/* FIX-55: a contacts file adds people, not donors */}People added</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftsCreated)}</div></div>
                 <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
               </div>
@@ -1969,7 +2032,7 @@ function ImportsHistory(){
               </div>}
               {open.pledgesCreated>0&&(
                 <div style={{fontSize:12.5,color:T.ink3,marginBottom:12}}>
-                  {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges, plus anything set aside.
+                  {fmtMoney(open.dollarsIn)} in the file = {fmtMoney(open.dollarsCreated)} in gifts + {fmtMoney(open.pledgeDollarsCreated)} in pledges (every year of each pledge, so more than a total row that counts one year), plus anything set aside.
                 </div>
               )}
               {(open.notices||[]).map((n,i)=>(
@@ -1981,7 +2044,7 @@ function ImportsHistory(){
               {open.summary&&open.summary.leadSentence&&(
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
-              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDateTime(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
               {/* FIX-52: every receipt that undoes as a whole offers Undo for its
                   window, whether or not it reconciles. */}
               <div style={{marginTop:14,borderTop:"1px solid "+T.bg3,paddingTop:12}}>
@@ -3155,6 +3218,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   useEffect(()=>{apiFetch("/org/voice-samples").then(r=>{
     setVoice(r); setVoiceDraft([(r.samples||[])[0]||"",(r.samples||[])[1]||"",(r.samples||[])[2]||""]);
   }).catch(()=>setVoice({samples:[],ready:false,needs:3}));},[]);
+  // FIX-55: Home's "Teach Steward your voice" lands here (section account, focus voice).
+  const voiceRef=useRef(null);
+  useEffect(()=>{ if(wantFocus==="voice"&&voice!==null&&voiceRef.current&&voiceRef.current.scrollIntoView) voiceRef.current.scrollIntoView({behavior:"smooth",block:"start"}); },[voice]); // eslint-disable-line react-hooks/exhaustive-deps
   async function saveVoice(){
     setVoiceSaved("");
     try{ const r=await apiFetch("/org/voice-samples",{method:"PUT",body:JSON.stringify({samples:voiceDraft})});
@@ -3843,7 +3909,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 
-      {section==="imports"&&<><BringInAFile onNavigate={onNavigate} isReadOnly={isReadOnly}/><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
+      {section==="imports"&&<ImportsDrop isReadOnly={isReadOnly}><BringInAFile onNavigate={onNavigate} isReadOnly={isReadOnly}/><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/><EmptyTrash isAdmin={isAdmin} isReadOnly={isReadOnly}/></ImportsDrop>}
 
       {/* ── Audit log ─────────────────────────────────────────────────────── */}
       {section==="audit"&&(isAdmin
@@ -4275,7 +4341,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             lifted: copying somebody's habits is defensible, copying their
             sentences into a letter they did not write is not. */}
         {isAdmin&&voice!==null&&(
-          <div style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
+          <div ref={voiceRef} id="settings-voice" data-testid="settings-voice" style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
             <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Your voice, for the thank-yous Steward drafts</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2,maxWidth:560,lineHeight:1.55}}>
               Paste three thank-yous you have already sent. Steward takes your greeting and your sign-off and

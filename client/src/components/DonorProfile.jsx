@@ -18,6 +18,7 @@ import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
+import { pledgeMoneyWords } from "../../../shared/pledgeWords.js";   // FIX-55
 import { censusById } from "../../../shared/numberCensus.js";
 import { stepAgainstProposals } from "../../../shared/nextStepAgree.js";   // FIX-24 2c
 import { renderCustomValue } from "../../../shared/customFieldShape";
@@ -2182,14 +2183,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>More ▾</button>
           {dpMoreOpen&&(
             <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
-              {[["Request a gift",()=>setShowGiftModal(true),false],
+              {/* FIX-55 item 6: Request a gift needs card payments set up and
+                  Brief me needs AI; each is hidden when its service is not on,
+                  where they answered "Stripe not configured" / "brief_unavailable". */}
+              {[...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
                 // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
                 ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
                   ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
                   ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
                   ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
                 [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
-                ["Brief me",()=>setBriefOpen(true),false],
+                ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
                 // PROSPECT-1 — a one-page prospect brief from the record, the
                 // screening results and the public filing; saved to their files.
                 ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
@@ -2936,6 +2940,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         <div>
                           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                             <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(pl.amount)}</span>
+                            {/* FIX-55: a pledge over years says this year's installments and what is open in all */}
+                            {pl.status==="open"&&pl.years>1&&<span data-testid="pledge-money" style={{fontSize:12,color:T.ink2,fontWeight:600}}>{pledgeMoneyWords({dueThisYearCents:Math.round((pl.dueThisYear||0)*100),openCents:Math.round((pl.balance||0)*100),years:pl.years},c=>fmtFull(c/100))}</span>}
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>

@@ -1653,7 +1653,16 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   // FIX-50: `demo` is the one rule (orgKind.isDemoOrg); the banner reads it.
-  res.json({ ...org, demo: require("../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org) });
+  // FIX-55 item 6: what this server has connected, as booleans only (never a
+  // key). A screen whose feature needs a service that is not set up hides it.
+  res.json({ ...org, demo: require("../orgKind").isDemoOrg(org), accessState: getOrgAccessState(org),
+    capabilities: {
+      geocoding: geocode.geocodingConfigured(),
+      // aiClient.aiGate's rule without the budget: a key, and the org's switch.
+      ai: !!process.env.ANTHROPIC_API_KEY && org.ai_enabled !== false,
+      // server.js builds the donation Stripe client from this one key.
+      stripe: !!require("../stripeKeys").donationStripeKey(),
+    } });
 }));
 
 // ── BUILD-86 C.3 — FOUR DASHBOARDS, FOUR QUESTIONS ─────────────────────────
@@ -6703,11 +6712,36 @@ const PURGE_CHILD_TABLES = [
   "payment_recovery_events", "recurring_subscriptions",
   "tasks", "interaction_attachments", "interactions", "gifts",
 ];
+// FIX-55 · EMPTY TRASH (Settings, Imports). People deleted by hand, older than
+// the days she chose (or all), are deleted for good, so they never match an
+// import again. Someone merged into another record is not in the trash (the
+// merge's Undo needs them). The count comes first (GET .../preview) and the
+// write needs a second confirm (`confirm: "empty"`). The audit row says that a
+// delete happened and how many, never who.
+async function purgeableIds(orgId, olderThanDays) {
+  const days = olderThanDays == null || olderThanDays === "" ? null : Math.max(0, Math.floor(Number(olderThanDays)));
+  if (days != null && !Number.isFinite(days)) return null;
+  return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NOT NULL
+                         ${days != null ? "AND d.deleted_at < NOW() - make_interval(days => ?)" : ""}
+                         AND NOT EXISTS (SELECT 1 FROM donor_merges m WHERE m.org_id=d.org_id AND m.merged_id=d.id AND m.undone_at IS NULL)`,
+    days != null ? [orgId, days] : [orgId])).map(r => r.id);
+}
+const trashSentence = (n, days) => n
+  ? `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} deleted ${days != null && days !== "" ? `more than ${days} ${Number(days) === 1 ? "day" : "days"} ago` : "from Steward"} will be deleted for good. They will never match an import again, and this cannot be undone.`
+  : "Nobody in the trash matches that.";
+app.get("/donors/purge-trash/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const ids = await purgeableIds(req.user.orgId, req.query.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  res.json({ count: ids.length, sentence: trashSentence(ids.length, req.query.olderThanDays) });
+}));
 app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
-  const ids = trashed.map(r => r.id);
-  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {} });
+  const b = req.body || {};
+  if (b.confirm !== "empty") return res.status(400).json({ error: "confirm_required", sentence: "Confirm emptying the trash first." });
+  const ids = await purgeableIds(orgId, b.olderThanDays);
+  if (!ids) return res.status(400).json({ error: "bad_days", sentence: "Choose a number of days, or all." });
+  if (req.audit) req.audit.summary(`Emptied the trash: ${ids.length} ${ids.length === 1 ? "person" : "people"} deleted for good`, { count: ids.length, entityType: "donors" });
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {}, sentence: "The trash had nobody to delete." });
   const { MERGE_REFS, REF_SHAPE } = require("./dataHealth");
   const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
   const { purged, children, unlinked } = await withTransaction(async (client) => {
@@ -6739,10 +6773,13 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
       const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
       if (r.changes) children[t] = (children[t] || 0) + r.changes;
     }
+    // the trash's own copies go too, so no Undo or Recent change offers them back
+    const tr = await runTx(client, "DELETE FROM deleted_records WHERE org_id=? AND table_name='donors' AND record_id = ANY(?)", [orgId, ids]);
+    if (tr.changes) children.deleted_records = tr.changes;
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
     return { purged: d.changes, children, unlinked };
   });
-  res.json({ purged, children, unlinked });
+  res.json({ purged, children, unlinked, sentence: `${purged.toLocaleString("en-US")} ${purged === 1 ? "person was" : "people were"} deleted for good.` });
 }));
 
 // ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
@@ -7546,15 +7583,29 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
      WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
     [req.user.orgId, req.params.id, req.user.orgId]
   );
+  // FIX-55: a pledge over several years says this year's installments and the
+  // open total, so the profile never shows one number without saying which
+  const yearEnd = `${String(orgToday(await orgTz(req.user.orgId))).slice(0, 4)}-12-31`;   // ORG_TZ_SEAM_OK
+  const inst = rows.length ? await query(
+    `SELECT pledge_id, COUNT(*)::int AS n, MIN(LEFT(due_date,4)) AS y0, MAX(LEFT(due_date,4)) AS y1,
+            COALESCE(SUM(amount) FILTER (WHERE paid_gift_id IS NULL AND due_date <= ?),0) AS due_this_year
+       FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?) GROUP BY pledge_id`, [yearEnd, req.user.orgId, rows.map(r => r.id)]) : [];
+  const instBy = new Map(inst.map(x => [x.pledge_id, x]));
   res.json(rows.map(r => {
     const paid = round2(parseFloat(r.paid_amount) || 0);
     const amount = round2(parseFloat(r.amount) || 0);
     const surplus = round2(parseFloat(r.surplus) || 0);
+    const balance = round2(parseFloat(r.balance) || 0);
+    const ix = instBy.get(r.id);
+    const years = ix ? Number(ix.y1) - Number(ix.y0) + 1 : 1;
+    const dueThisYear = r.status !== "open" ? 0 : ix ? Math.min(balance, round2(parseFloat(ix.due_this_year) || 0))
+      : (String(r.due_date || "").slice(0, 10) <= yearEnd ? balance : 0);
     return {
       ...r,
-      paid, balance: round2(parseFloat(r.balance) || 0),
+      paid, balance,
       surplus, overpaid: surplus > 0,
       displayStatus: pledgeDisplayStatus(paid, amount, r.status),
+      installmentCount: ix ? ix.n : 1, years, dueThisYear,
     };
   }));
 }));
@@ -9709,6 +9760,7 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
     notes: await n("SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=? AND import_id=?", [orgId, id]),
     customFields: (sj.customFieldsCreated || []).length,
     peopleRestored: (sj.personChanges || []).length,
+    peopleMatched: Number(sj.peopleMatched) || 0,
   };
   const parts = [];
   const add = (k, one, many) => { if (counts[k]) parts.push(`${counts[k].toLocaleString("en-US")} ${counts[k] === 1 ? one : many}`); };
@@ -9717,7 +9769,13 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
   add("customFields", "custom field", "custom fields");
   const sentence = (parts.length ? `Undo removes ${parts.join(", ")}` : "Undo removes what is left of this import")
     + (counts.alreadyDeleted ? ` (${counts.alreadyDeleted.toLocaleString("en-US")} of the people were already deleted)` : "")
-    + (counts.peopleRestored ? `, and puts ${counts.peopleRestored.toLocaleString("en-US")} ${counts.peopleRestored === 1 ? "person who was already here" : "people who were already here"} back as they were` : "")
+    // FIX-55: the receipt counts everyone in the file who was already here; Undo
+    // puts back only those the import changed, and says which of them it is
+    + (counts.peopleRestored ? (() => {
+        const r = counts.peopleRestored, m = Number(sj.peopleMatched) || 0, rs = r.toLocaleString("en-US");
+        if (m > r) return `, and puts back as they were the ${rs} of the ${m.toLocaleString("en-US")} people already here that this import changed (it changed nothing on the other ${(m - r).toLocaleString("en-US")})`;
+        return `, and puts ${rs} ${r === 1 ? "person who was already here" : "people who were already here"} back as they were`;
+      })() : "")
     + ". It sends nothing and starts nothing.";
   res.json({ ...win, reversedAt: imp.reversed_at || null, counts, sentence });
 }));
@@ -14908,7 +14966,8 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
   // and the honest answer is that the control is unavailable — never a 500 and
   // never an invented brief.
   if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason,
-    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
+      : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -17250,7 +17309,8 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
 
   const gate = await agentGate(orgId);
   if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason,
-    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE
+      : "Not set up yet. Steward support can turn on AI drafting for this server, then an admin switches it on in Settings, Data." });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,

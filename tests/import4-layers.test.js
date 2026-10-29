@@ -160,7 +160,7 @@ async function combined() {
   ok("§1 Shirt Size and Dietary are kept under their own names", E.kept.every(h => byHdr(h).disposition === "kept"), JSON.stringify(E.kept.map(byHdr)));
   ok("§1 the Gifts sheet's ID links each gift to its person", (cols.find(c => c.sheet === "Gifts" && c.header === "ID") || {}).links === true);
   const btn = (U.button || {}).text || "";
-  ok("§1 the button says what will exist afterwards", btn === "Import 450 people (104 donors, 26 volunteers) · 106 gifts $124,290 (106 undated) · 8 pledges $78,950 open · Finding Joy Dinner: 172 attended · 4 opt-outs · 1 do not contact · 3 already in Steward", btn);
+  ok("§1 the button says what will exist afterwards", btn === "Import 450 people (104 donors, 26 volunteers) · 106 gifts $124,290 (106 undated) · 8 pledges $53,950 due this year · $78,950 over 3 years · Finding Joy Dinner: 172 attended · 4 opt-outs · 1 do not contact · 3 already in Steward", btn);
   ok("§1 the button never offers 0 gifts", !/\b0 gifts\b/.test(btn));
   ok("§1 the totals row is checked and explained", /Your total row says \$178,240.*106 gifts \(\$124,290\), \$53,950 promised and not yet received/.test((U.totalsSentence || [])[0] || ""), JSON.stringify(U.totalsSentence));
   ok("§1 the shared phone is flagged as a placeholder on 30 people", (U.placeholders || []).some(p => p.kind === "phone" && p.people === E.placeholderPeople), JSON.stringify(U.placeholders));

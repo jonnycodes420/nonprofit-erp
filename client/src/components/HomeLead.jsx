@@ -97,6 +97,8 @@ export function HomeLead({ lead: leadIn, onNavigate, onSetAside, isReadOnly }) {
   const lead = leadIn || [];
   if (!lead.length && !atlas.length) return null;
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
+  // The Drift list is a section of Home itself (#dash-drifting); with it hidden, the people who went quiet on Donors.
+  const seeDrift = () => { const el = document.getElementById("dash-drifting"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" }); else if (onNavigate) onNavigate("donors", { view: "reengage" }); };
   const notNow = c => {
     setAside(a => ({ ...a, [c.key]: true }));
     apiFetch("/home/lead/dismiss", { method: "POST", body: JSON.stringify({ kind: c.kind, key: c.key }) })
@@ -169,11 +171,13 @@ export function HomeLead({ lead: leadIn, onNavigate, onSetAside, isReadOnly }) {
               {c.kind === "confirm" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", { frSection: "toconfirm" })}>Confirm them</button>}
               {(c.kind === "drift" || c.kind === "seasonCall") && <>
                 <DonorLink id={c.donorId} onOpen={() => openPerson(c.donorId)} style={B1}>Call {first(c.donorName)}</DonorLink>
-                {c.kind === "drift" && c.count > 1 && <button type="button" style={LNK} onClick={() => onNavigate && onNavigate("donors", { view: "health" })}>See all {c.count}</button>}
+                {/* FIX-55: "See all" is the Drift list on this page, never Data health */}
+                {c.kind === "drift" && c.count > 1 && <button type="button" style={LNK} onClick={seeDrift}>See all {c.count}</button>}
               </>}
               {c.kind === "card" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", { frSection: "recurring" })}>Send the link</button>}
-              {c.kind === "season" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", { frSection: "pages" })}>Open the appeal</button>}
-              {c.kind === "event" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", { frSection: "events" })}>Open the event</button>}
+              {/* FIX-55: the appeal and the event the card names, open */}
+              {c.kind === "season" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", c.campaignId ? { frSection: "campaigns", campaignId: c.campaignId } : { frSection: "campaigns" })}>Open the appeal</button>}
+              {c.kind === "event" && <button type="button" style={B1} onClick={() => onNavigate && onNavigate("fundraising", c.eventId ? { frSection: "events", eventId: c.eventId } : { frSection: "events" })}>Open the event</button>}
             </div>
           </article>
         );

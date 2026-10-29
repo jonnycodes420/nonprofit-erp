@@ -55,6 +55,9 @@ let MB = null;
 MB_READY.then(m => { MB = m; });
 let app = routers.r0;
 const SYS_STRIPE = { id: "system:stripe-webhook", name: "Stripe (online)" };
+// FIX-55 item 6: what a screen says when card payments are not set up on this
+// server (no donation Stripe key), in place of the raw "Stripe not configured".
+const STRIPE_NOT_SET_UP = "Not set up yet. Steward support can turn on card payments for this server, then an admin connects Stripe in Settings, Connections.";
 
 // BUILD-57 §2a — event-shape normalizers. Server-side RETRIEVES ride the
 // pinned stripe-node API version (old shapes), but WEBHOOK payloads ride the
@@ -2326,7 +2329,7 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
 
 // ── Stripe Connect ────────────────────────────────────────────────────────
 app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured", message: STRIPE_NOT_SET_UP });
 
   const frontendUrl = publicAppUrl();
   console.log("[stripe/connect] frontendUrl resolved to:", frontendUrl);
@@ -2376,7 +2379,7 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 }));
 
 app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured", message: STRIPE_NOT_SET_UP });
   const { donorName, donorEmail, amount } = req.body;
   if (!donorName || !donorEmail) return res.status(400).json({ error: "A donor name and email are both needed." });
 
@@ -2432,7 +2435,7 @@ app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
 
 // ── Campaign donation link ─────────────────────────────────────────────────
 app.post("/stripe/campaign-link", requireAuth, wrap(async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured", message: STRIPE_NOT_SET_UP });
   const { campaignId, campaignName } = req.body;
 
   const orgRow = await query(

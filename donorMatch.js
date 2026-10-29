@@ -145,6 +145,7 @@ function whyLine(whys) {
 }
 
 async function historyLine(orgId, id, q) {
+  if (q.snapshot) return q.snapshot.history(id);
   const [h] = await q(`SELECT COUNT(*)::int AS n, MIN(LEFT(date,4)) AS since FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0`, [orgId, id]);
   const n = h ? Number(h.n) : 0;
   return n ? `${n} ${n === 1 ? "gift" : "gifts"} since ${h.since}` : "no gifts yet";
@@ -161,7 +162,7 @@ async function matchDonor(orgId, input = {}, q = query) {
   const empty = { state: "none", selectedId: null, sentence: null, choices: [], joint: [], names };
 
   if (email) {
-    const m = await q(`SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(email))=?
+    const m = q.snapshot ? q.snapshot.byEmail(email, 1) : await q(`SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(email))=?
                          ORDER BY created_at ASC NULLS LAST, id LIMIT 1`, [orgId, email]);
     if (m.length) {
       const history = await historyLine(orgId, m[0].id, q);
@@ -177,7 +178,7 @@ async function matchDonor(orgId, input = {}, q = query) {
   const lasts = [...new Set(names.map(n => n.last).filter(w => w.length >= 2))];
   if (!lasts.length) return empty;
   const like = lasts.map(l => `%${likeEscape(l)}%`);
-  const rows = await q(
+  const rows = q.snapshot ? q.snapshot.byLastNames(lasts, 400) : await q(
     `SELECT d.id, d.name, d.email, d.address, d.zip, d.household_id, d.spouse_name
        FROM donors d LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
       WHERE d.org_id=? AND d.deleted_at IS NULL
@@ -274,10 +275,11 @@ async function matchDonor(orgId, input = {}, q = query) {
 // file, a member of the same household, another record, or nobody Steward has.
 async function jointFor(orgId, names, person, q = query) {
   if (names.length < 2) return [];
-  const [p] = await q(`SELECT id, name, household_id, spouse_name FROM donors WHERE id=? AND org_id=?`, [person.id, orgId]);
+  const [p] = q.snapshot ? [q.snapshot.byId(person.id)].filter(Boolean)
+    : await q(`SELECT id, name, household_id, spouse_name FROM donors WHERE id=? AND org_id=?`, [person.id, orgId]);
   if (!p) return [];
-  const mates = p.household_id
-    ? await q(`SELECT id, name FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL`, [orgId, p.household_id, p.id]) : [];
+  const mates = q.snapshot ? (p.household_id ? q.snapshot.householdOf(p.household_id, p.id) : [])
+    : p.household_id ? await q(`SELECT id, name FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL`, [orgId, p.household_id, p.id]) : [];
   const own = parseName(p.name);
   const out = [];
   for (const n of names) {
@@ -294,4 +296,62 @@ async function jointFor(orgId, names, person, q = query) {
   return out;
 }
 
-module.exports = { matchDonor, jointFor, parseName, splitNames, properCase, nameFit, streetKey, sameFirst };
+// FIX-55 · THE ORG'S PEOPLE, READ ONCE, FOR A WHOLE FILE. matchDonor asks
+// three or four questions of the database per name; a preview of 650 names
+// against a remote database was 38 seconds of round trips, and every answer
+// she gave read it again. orgSnapshot reads the living people and their gift
+// history in two statements, and snapshotQuery(snap) is a `q` that answers
+// matchDonor's, jointFor's and findPersonId's reads from it: the same matcher,
+// the same rules, the same order (created_at, then id), no second matcher.
+// Only for reads that happen inside one request; a write never goes through it.
+async function orgSnapshot(orgId, q = query) {
+  const rows = await q(
+    `SELECT d.id, d.name, d.email, d.address, d.zip, d.household_id, d.spouse_name, d.is_client,
+            d.external_donor_id, d.external_donor_ids, COALESCE(h.name,'') AS hh_name
+       FROM donors d LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
+      WHERE d.org_id=? AND d.deleted_at IS NULL
+      ORDER BY d.created_at ASC NULLS LAST, d.id`, [orgId]);
+  const hist = await q(`SELECT donor_id, COUNT(*)::int AS n, MIN(LEFT(date,4)) AS since FROM gifts
+                         WHERE org_id=? AND amount > 0 AND donor_id IS NOT NULL GROUP BY donor_id`, [orgId]);
+  const byId = new Map(), byEmail = new Map(), byName = new Map(), byHh = new Map(), byExt = new Map();
+  const push = (m, k, v) => { if (!k) return; const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); };
+  for (const r of rows) {
+    r.lname = lc(r.name); r.lspouse = lc(r.spouse_name); r.lhh = lc(r.hh_name);
+    byId.set(r.id, r);
+    push(byEmail, lc(r.email), r);
+    push(byName, r.lname, r);
+    if (r.household_id) push(byHh, r.household_id, r);
+    let more = r.external_donor_ids;
+    if (typeof more === "string") { try { more = JSON.parse(more); } catch { more = []; } }
+    for (const x of [r.external_donor_id, ...(Array.isArray(more) ? more : [])]) push(byExt, lc(x), r);
+  }
+  const h = new Map(hist.map(x => [x.donor_id, x]));
+  return {
+    size: rows.length,
+    byId: id => byId.get(id) || null,
+    byEmail: (email, limit) => (byEmail.get(lc(email)) || []).slice(0, limit),
+    byExactName: (name, limit) => (byName.get(lc(name)) || []).slice(0, limit),
+    byExternalId: (x, limit) => (byExt.get(lc(x)) || []).slice(0, limit),
+    // LOWER(name) LIKE '%last%' on the name, the spouse or the household, as the query does
+    byLastNames(lasts, limit) {
+      const out = [];
+      for (const r of rows) {
+        if (lasts.some(l => r.lname.includes(l) || r.lspouse.includes(l) || r.lhh.includes(l))) out.push(r);
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
+    householdOf: (hid, notId) => (byHh.get(hid) || []).filter(r => r.id !== notId),
+    history(id) {
+      const x = h.get(id), n = x ? Number(x.n) : 0;
+      return n ? `${n} ${n === 1 ? "gift" : "gifts"} since ${x.since}` : "no gifts yet";
+    },
+  };
+}
+function snapshotQuery(snap) {
+  const q = () => { throw new Error("snapshotQuery answers the matcher's reads only"); };
+  q.snapshot = snap;
+  return q;
+}
+
+module.exports = { orgSnapshot, snapshotQuery, matchDonor, jointFor, parseName, splitNames, properCase, nameFit, streetKey, sameFirst };
