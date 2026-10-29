@@ -52,6 +52,12 @@ function signInternalToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "2m" });
 }
 
+// FIX-57: a support session's token. Two hours, like the session row; the
+// row (supportAccess.js) is what actually decides whether it lives.
+function signSupportToken(payload) {
+  return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "2h" });
+}
+
 // FIX-22 · the user a request is signed in as, from its bearer token, or null.
 // Used only to KEY a rate limiter (an office on one wifi must never share a
 // limit): a valid signature is enough here, because requireAuth still decides
@@ -75,6 +81,11 @@ async function sessionOrgOf(req) {
   let p;
   try { p = jwt.verify(auth.slice(7), SIGNING_SECRET); } catch { return null; }
   if (!p || !p.userId) return null;
+  // FIX-57: a support session is in the org it was opened for.
+  if (p.supportSid) {
+    const s = await require("./supportAccess").liveSupportSession(p.supportSid, p.userId).catch(() => null);
+    return s && s.orgId ? String(s.orgId) : null;
+  }
   const info = await sessionCache.get(p.userId, loadUserSession);
   return info && info.org_id ? String(info.org_id) : null;
 }
@@ -131,6 +142,26 @@ async function requireAuth(req, res, next) {
     // ended by sessions_valid_after, as before.
     if (payload.sid && !(await require("./twoFactor").sessionAlive(payload.sid, payload.userId))) {
       return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
+    }
+    // FIX-57 · A SUPPORT SESSION is in the org it was opened for, and only
+    // that one, as an admin; read-only until its second confirm
+    // (supportAccess.js). The live row decides every request. isSuperAdmin
+    // stays TRUE on purpose: every "a super-admin can't turn this on for
+    // them" refusal (AUTO-1, SEND-GATE) still refuses support. What it does
+    // NOT open is any /admin route: requireSuperAdmin refuses a support
+    // session, so no other org is reachable from inside one.
+    if (payload.supportSid) {
+      const S = require("./supportAccess");
+      const s = await S.liveSupportSession(payload.supportSid, payload.userId);
+      if (s.dead) return res.status(401).json({ error: "support_session_ended", message: s.dead });
+      req.user = { ...payload, role: "admin", orgId: s.orgId, isSuperAdmin: true,
+                   support: { id: s.id, name: s.name, writable: s.writable } };
+      const refusal = S.readOnlyRefusal(req, req.user.support);
+      if (refusal) {
+        if (req.audit) req.audit.skip("support_read_only");
+        return res.status(403).json(refusal);
+      }
+      return next();
     }
     // FIX-57: her name as set, so what she does is signed with it, not her email.
     req.user = { ...payload, role: info.role, orgId: info.org_id, name: String(info.name || "").trim() || null };
@@ -205,7 +236,7 @@ function coordinatorMayReach(path) {
 }
 
 function requireSuperAdmin(req, res, next) {
-  if (!req.user?.isSuperAdmin) return res.status(403).json({ error: "Forbidden" });
+  if (!req.user?.isSuperAdmin || req.user.support) return res.status(403).json({ error: "Forbidden" });
   next();
 }
 
@@ -222,4 +253,4 @@ function requireAuth404(req, res, next) {
 }
 
 module.exports = {
-  jwtSecretProblem, resetTokenHash, RESET_TOKEN_MATCH, resetTokenArgs, signToken, signInternalToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+  jwtSecretProblem, resetTokenHash, RESET_TOKEN_MATCH, resetTokenArgs, signToken, signInternalToken, signSupportToken, tokenUserId, sessionOrgOf, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
