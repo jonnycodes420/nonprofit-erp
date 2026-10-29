@@ -342,9 +342,9 @@ function EventReport({ eventId, onOpenRows }) {
       {/* HOME-3: raised the way she says it, each part opening its rows. */}
       {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
       {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
-      {r.story && <EventStory s={r.story} style={{ marginBottom: 12 }} />}
+      {r.story && <EventStory s={r.story} noGiftShownBelow={!!(r.guests && r.guests.cameNoGift.length + r.guests.cameGave.length + r.guests.invitedNoShow.length)} style={{ marginBottom: 12 }} />}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended")).map(f => (
+        {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended") && !["cameNoGift", "cameGave", "invitedNoShow"].includes(f.key)).map(f => (
           <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
             onClick={() => onOpenRows(f.key, f.label, f.sentence)}
             style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
@@ -356,6 +356,29 @@ function EventReport({ eventId, onOpenRows }) {
           </button>
         ))}
       </div>
+      {r.guests && (r.guests.cameNoGift.length + r.guests.cameGave.length + r.guests.invitedNoShow.length) > 0 && (
+        <div data-testid="ev-guest-lists" style={{ marginBottom: 12 }}>
+          {r.guests.sentence && <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 700, marginBottom: 8 }}>{r.guests.sentence}</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+            {[["cameNoGift", "Came, didn't give"], ["cameGave", "Came, gave"], ...(r.guests.past ? [["invitedNoShow", "Invited, didn't come"]] : [])].map(([k, label]) => {
+              const list = r.guests[k] || [];
+              const fig = r.figures.find(f => f.key === k) || {};
+              return (
+                <div key={k} data-testid={"ev-guests-" + k} style={{ background: T.bg, borderRadius: 11, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{label} · {list.length.toLocaleString("en-US")}</div>
+                  <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.45, margin: "2px 0 6px" }}>{fig.sentence}</div>
+                  {list.slice(0, 8).map(p => <div key={p.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>{p.name}</div>)}
+                  {list.length > 0 && (
+                    <button type="button" data-testid={"ev-guests-all-" + k} onClick={() => onOpenRows(k, label, fig.sentence)}
+                      style={{ background: "none", border: "none", padding: 0, marginTop: 4, color: T.greenDk, textDecoration: "underline", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit" }}>
+                      See all {list.length.toLocaleString("en-US")}</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{r.progress.sentence}</div>
       <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6 }}>{r.attendance.sentence}</div>
       <p data-testid="ev-report-caveat" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "10px 0 0", maxWidth: 620 }}>{r.caveat}</p>

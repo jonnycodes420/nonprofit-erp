@@ -493,6 +493,29 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   agree("people who gave this year", [["the Board's People who gave", donorCount],
     ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]]);
 
+  // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
+  // open-pledge rows for that person and Home's pledge move say one number.
+  // Up to five people with an open pledge, the largest first.
+  if (!skip.has("pledges")) {
+    const owed = await q(`SELECT p.donor_id, d.name, ROUND(SUM(GREATEST(p.amount - COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = p.org_id AND g.pledge_id = p.id), 0), 0)) * 100)::bigint AS c
+                            FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+                           WHERE p.org_id = $1 AND p.status = 'open' GROUP BY 1, 2 HAVING SUM(p.amount) > 0 ORDER BY 3 DESC, 1 LIMIT 5`, [orgId]);
+    if (owed.length) {
+      const deck = (await get("/insights?view=deck")) || {};
+      const moves = ((deck.deck && deck.deck.tabs) || []).flatMap(t => t.moves || []);
+      for (const o of owed) {
+        const prof = await get(`/donors/${encodeURIComponent(o.donor_id)}/pledges`);
+        const profC = (Array.isArray(prof) ? prof : []).filter(x => x.status === "open").reduce((n, x) => n + cents(x.balance), 0);
+        const fr = await get(`/figures/pledges-open/rows?donor=${encodeURIComponent(o.donor_id)}&page=1&pageSize=200`);
+        const m = moves.find(x => (x.ids || []).includes(o.donor_id));
+        const homeC = m ? (m.facts || []).filter(f => f[0] === "still to come").reduce((n, f) => n + cents(num(f[1])), 0) : undefined;
+        const shown = [["the database", Number(o.c)], ["the profile's open pledge", profC], ["Fundraising's open pledges for them", fr ? cents(fr.value) : undefined],
+          ...(m ? [["Home's move", homeC]] : [])];
+        for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);
+      }
+    }
+  }
+
   for (const [name, b] of [["the Donors list", list], ["Home", lead], ["Fundraising", fund], ["the Board", board], ["the workbook export", workbook]]) {
     if (b && b.__error) diffs.push(`${name} did not answer: ${b.__error}`);
     else if (b && b.error) diffs.push(`${name} answered an error: ${JSON.stringify(b).slice(0, 200)}`);

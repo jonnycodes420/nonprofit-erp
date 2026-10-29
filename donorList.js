@@ -126,9 +126,11 @@ const FIELDS = [
   F("engagement", "Engagement", "Giving", { format: "number", sort: "engagement_score", cell: "engagement" }),
   F("generosity", "Giving strength", "Giving", { format: "number", sort: "generosity_score", cell: "generosity" }),
   // Pledges
+  // IMPORT-5: "Open pledge" is a column (what is still to come, the profile's
+  // and Fundraising's number) and a filter (has one, or by how much)
   F("open_pledge", "Has an open pledge", "Pledges", { col: false, filter: BOOL_OPS }),
-  F("pledge_balance", "Pledge balance", "Pledges", { format: "money", filter: MONEY_OPS, cell: "pledge_balance",
-    sentence: "What is still to come on open pledges: each pledge's amount less what has been paid against it." }),
+  F("pledge_balance", "Open pledge", "Pledges", { format: "money", filter: MONEY_OPS, cell: "pledge_balance",
+    sentence: "What is still to come on open pledges: each pledge's amount less what has been paid against it. The profile's open pledge and Fundraising's say the same." }),
   // Events
   F("event_invited", "Invited to an event", "Events", { col: false, filter: SEL_OPS }),
   F("event_registered", "Registered for an event", "Events", { col: false, filter: SEL_OPS }),
@@ -149,6 +151,8 @@ const FIELDS = [
   F("do_not_call", "No calls", "Communication", { format: "bool", filter: BOOL_OPS, cell: "do_not_call" }),
   F("opted_out", "Opted out of anything", "Communication", { col: false, filter: BOOL_OPS }),
   F("email_unreachable", "Email bounced", "Communication", { format: "bool", filter: BOOL_OPS, cell: "email_unreachable" }),
+  // IMPORT-5 (7d): a phone her notes said is wrong
+  F("phone_unreachable", "Phone marked wrong", "Communication", { format: "bool", filter: BOOL_OPS, cell: "phone_unreachable" }),
   // SEND-GATE-1: whether Steward may send this person automatic email.
   F("auto_email", "Automatic emails", "Communication", { format: "bool", filter: BOOL_OPS, cell: "auto_email" }),
 ];
@@ -163,9 +167,9 @@ const ROW_CELL = {
   last_gift_date: "last_gift_date", last_gift_amount: "last_gift_amount", first_gift_date: "first_gift_date", gift_count: "gift_count",
   engagement: "engagement_score", generosity: "generosity_score", do_not_contact: "do_not_contact", do_not_solicit: "do_not_solicit",
   do_not_email: "do_not_email", do_not_mail: "do_not_mail", do_not_call: "do_not_call", email_unreachable: "email_unreachable",
-  auto_email: "auto_email",
+  phone_unreachable: "phone_unreachable", auto_email: "auto_email",
 };
-const BOOL_COL = { do_not_contact: 1, do_not_solicit: 1, do_not_email: 1, do_not_mail: 1, do_not_call: 1, email_unreachable: 1, auto_email: 1 };
+const BOOL_COL = { do_not_contact: 1, do_not_solicit: 1, do_not_email: 1, do_not_mail: 1, do_not_call: 1, email_unreachable: 1, phone_unreachable: 1, auto_email: 1 };
 
 // The custom fields an org keeps (BUILD-78's registry, the one IMPORT-4 adds
 // imported fields to), as fields of their own under "From your imports".
@@ -391,7 +395,7 @@ async function compileOne(orgId, c, fields) {
     }
     case "last_contact": return isDay(v) ? { rules: { noContactSince: String(v) } } : bad("A date is written 2026-01-31.");
     case "do_not_contact": case "do_not_solicit": case "do_not_email": case "do_not_mail": case "do_not_call": case "email_unreachable":
-    case "auto_email":
+    case "phone_unreachable": case "auto_email":
       return bool(c.op, `${f.key} IS TRUE`);
     case "opted_out":
       return bool(c.op, "(do_not_contact IS TRUE OR do_not_solicit IS TRUE OR do_not_email IS TRUE OR do_not_mail IS TRUE OR do_not_call IS TRUE)");

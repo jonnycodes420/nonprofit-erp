@@ -796,7 +796,7 @@ const LIBRARY = [
         const later = inst.filter(i => !i.paid_gift_id && i.due_date && +i.due_date.slice(0, 4) > y);
         const nowCents = multi ? dueNow.reduce((n, i) => n + i.cents, 0) : p.balance;
         const facts = [["pledged", money(p.cents)], ["paid", money(p.paid)], ["still to come", money(p.balance)]];
-        if (multi) for (const i of inst) facts.push([`${i.due_date.slice(0, 4)} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
+        if (multi) for (const i of inst) facts.push([`${i.due_date ? i.due_date.slice(0, 4) : "Undated"} installment`, `${money(i.cents)}${i.paid_gift_id ? " (paid)" : ""}`]);
         const due = (dueNow[0] && dueNow[0].due_date) || p.due_date && ymd(p.due_date);
         items.push({ key: x.key + ":" + p.id, unit: x.key, pledgeId: p.id, name: x.name, ids: x.ids, lead: x.lead, cents: nowCents || p.balance, multi,
           what: `Pledged ${money(p.cents)}: ${money(p.paid)} received, ${money(p.balance)} still to come.${multi && nowCents ? ` ${money(nowCents)} is due this year.` : ""}`,
@@ -1042,6 +1042,56 @@ function withDrift(deck, rows, { asOf, gone = new Set() } = {}) {
   return { ...deck, tabs, open: keep.count ? "keep" : deck.open };
 }
 
+// IMPORT-5 · CAME, DIDN'T GIVE. Everyone marked as attending a recent event
+// with no gift or pledge tied to it (numbers.eventGuests, the one answer) is a
+// Grow move: a thank-you for coming, with no ask on the first touch. One
+// person, one move: someone who already leads a move gets an "also" line.
+// `gone` is the item keys done, set aside or snoozed past today.
+const CAME_WHY = "A guest who came and didn't give already said yes to your cause once by showing up. Thank them for coming first; the ask can wait.";
+const CAME_DAYS = 120;
+function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
+  if (!deck || !Array.isArray(events) || !events.length) return deck;
+  const from = addDays(asOf, -CAME_DAYS);
+  const recent = events.filter(e => e.cameNoGift.length && (!e.date || (e.date >= from && e.date <= asOf)));
+  if (!recent.length) return deck;
+  const tabs = deck.tabs.map(t => ({ ...t, moves: t.moves.map(m => ({ ...m })) }));
+  const byId = new Map();
+  for (const t of tabs) for (const m of t.moves) for (const id of m.ids || []) byId.set(id, m);
+  const grow = tabs.find(t => t.key === "grow");
+  const added = [], seen = new Set();
+  for (const ev of recent) {
+    const total = ev.cameNoGift.length;
+    for (const p of ev.cameNoGift) {
+      const key = `${ev.id}:${p.id}`;
+      if (gone.has(key) || seen.has(p.id)) continue;
+      seen.add(p.id);
+      const what = `Came to the ${ev.name}${ev.date ? ` on ${longDate(ev.date)}` : ""} and didn't give. Thank them for coming.`;
+      const facts = [["event", ev.name], ...(ev.date ? [["event date", longDate(ev.date)]] : []), ["came, didn't give", String(total)]];
+      const led = byId.get(p.id);
+      if (led) {
+        led.also = [...(led.also || []), { kind: "came_no_gift", label: "Came, didn't give", line: what }];
+        led.facts = [...(led.facts || []), ...facts];
+        continue;
+      }
+      const when = windowWords(asOf, addDays(asOf, 14));
+      added.push({
+        id: `came_no_gift:${key}`, kind: "came_no_gift", itemKey: key, tab: "grow", label: "Grow · Came, didn't give",
+        name: p.name, lead: p.id, ids: [p.id], cents: 0, eventId: ev.id,
+        what, why: CAME_WHY, who: null, channel: "Note", when: when.words, whenFrom: when.from,
+        say: `${hello({ name: p.name })}, thank you for coming to the ${ev.name}. It meant a great deal to have you in the room.`,
+        ask: null,
+        action: { key: "draft", label: "Draft a thank-you for coming", taskKind: "write" },
+        group: { kind: "came_no_gift", title: `Came to the ${ev.name}, didn't give`, count: total, cents: null, eventId: ev.id, seeAll: `See all ${total}` },
+        facts: [...facts, ["when", when.words]],
+      });
+    }
+  }
+  if (!added.length) return { ...deck, tabs };
+  grow.moves = [...grow.moves, ...added].sort((a, b) => b.cents - a.cents).slice(0, DECK_CAP);
+  grow.count += added.length;
+  return { ...deck, tabs, open: deck.open };
+}
+
 // One unit's next move: the first card item about them, by rank.
 function nextMoveFor(result, donorId) {
   for (const c of result.cards) {
@@ -1054,5 +1104,5 @@ function nextMoveFor(result, donorId) {
 
 module.exports = {
   RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
-  computeInsights, buildDeck, withDrift, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
+  computeInsights, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

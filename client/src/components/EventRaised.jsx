@@ -33,7 +33,7 @@ export default function EventRaised({ e, showName = true, style }) {
 // over all years, who came, who gave, and who came and did not give, each a
 // figure that opens its rows, from numbers.eventStory. The event page and
 // Fundraising's lead card draw it the same way.
-export function EventStory({ s, style }) {
+export function EventStory({ s, style, noGiftShownBelow }) {
   if (!s) return null;
   const tile = (k, label, kind = "money") => (
     <Figure key={k} kind={kind} whole value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} figureKey={"event." + k} />
@@ -47,7 +47,7 @@ export function EventStory({ s, style }) {
       {s.laterCents ? tile("pledgedAll", "Pledged · all years") : null}
       {tile("attended", "Came", "count")}
       {tile("gave", "Gave", "count")}
-      {tile("cameDidntGive", "Came, didn't give", "count")}
+      {noGiftShownBelow ? null : tile("cameDidntGive", "Came, didn't give", "count")}
     </div>
   );
 }

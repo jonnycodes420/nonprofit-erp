@@ -40,7 +40,7 @@ async function importFile(tok, fileName, answers) {
   const tok = await login(EMAIL, PASSWORD);
   // The dinner goes in linked to its event, the way Allie imported it on prod;
   // the scrubbed guest list then adds who came to the same event.
-  const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: "2026-10-17" };
+  const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: "2026-10-17", useEventDate: true, pledgeDue: "event" };
   await importFile(tok, "jp-gift-history-287.xlsx");
   await importFile(tok, "jp-dinner-gifts-106.xlsx", DINNER);
   await importFile(tok, "jp-contacts-656.xlsx");

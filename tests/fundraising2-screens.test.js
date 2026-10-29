@@ -40,7 +40,7 @@ const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"
 const FX = path.join(__dirname, "fixtures", "import");
 const KEY = JSON.parse(fs.readFileSync(path.join(FX, "real-shaped", "expected.json"), "utf8"))["jp-dinner-gifts-106.xlsx"];
 const ORG = "org_fr2screens", EMAIL = "admin@fr2screens.local", PASSWORD = "loadtest1234";
-const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: civilPlusDays(-12) };
+const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: civilPlusDays(-12), useEventDate: true, pledgeDue: "event" };
 const APP = process.env.APP_URL || "http://localhost:4173";
 const DIST = path.join(__dirname, "..", "client", "dist");
 const cents = v => Math.round(Number(v || 0) * 100);
