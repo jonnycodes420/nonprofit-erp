@@ -456,3 +456,12 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
 - A move's button makes a task dated for its window (kind write, call or meeting) with the line and the ask in its notes, and records Done. Home never sends.
 - Sentences treat one giver's gifts on one day as one gift (`giftDays`). Planned excludes organisations, foundations, companies and funds.
+
+## HOME-4 · the rail, the bottom and setup (2026-10-28)
+
+- The rail draws once, whole: its reads are `lib/homeReads.js RAIL_READS`, asked for in their own bundle at the same moment as the deck's, and nothing in the rail starts a read after Home's first paint (perf-app checks it). Until then `HomeRailSkeleton` holds its shape.
+- Today is one card that never shows a zero ("Nothing due today." when nothing is); Calls to make shows three then "See all N", named by what it holds; To confirm is one line. On a wide screen the rail is sticky; the app root uses `overflow-x: clip`, never `hidden`, or sticky breaks.
+- Under the deck: one row of chips (`MoveChips`), each hidden at zero. The Thread draws on Home only when it has rows. Home has no Drift section: `insights.js withDrift` puts every person GET /drift lists (early signs too) into the deck, and the Drift chip opens Drift on the Donors page.
+- Setup: `HomeSetup.jsx setupStage` places it: "first" (under Ask) for a new org, "rail" mid-way or after "I'll finish later", nothing when done or dismissed.
+- Home reads `/insights?view=deck` (the deck, no cards); panels read the cards when they open.
+

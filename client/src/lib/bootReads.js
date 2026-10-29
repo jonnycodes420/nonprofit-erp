@@ -5,7 +5,7 @@
 // parallel with the app's code, and App takes each one once. A read nobody
 // took within a minute is dropped, so a stale answer is never used.
 import { apiFetch, prefetch } from "../api";
-import { HOME_FIRST_READS, homeScopeReads, initialScope } from "./homeReads";
+import { HOME_FIRST_READS, RAIL_READS, homeScopeReads, initialScope } from "./homeReads";
 
 export const BOOT_READS = ["/org", "/grants", "/volunteers", "/tasks", "/board", "/financials", "/billing/status"];
 let started = null, at = 0;
@@ -32,9 +32,11 @@ export function startShellReads(home) {
 // On Home, its two bundles too: the first, then (from /dashboard/my-stats in
 // it, by Home's own rule) the scoped one. Their answers are parked for Home.
 export function startHomeReads() {
-  // Home's ladder and cards (Insights.jsx useInsights("")) on their own: the
+  // Home's deck (Insights.jsx HomeMoves, useInsights("deck")) on its own: the
   // heaviest read on Home, so it does not hold the first bundle back.
-  prefetch(["/insights"], { keep: true }).catch(() => {});
+  prefetch(["/insights?view=deck"], { keep: true }).catch(() => {});
+  // HOME-4: the right rail's reads, beside the deck's.
+  prefetch(RAIL_READS, { keep: true }).catch(() => {});
   prefetch(HOME_FIRST_READS, { keep: true }).then(b => {
     const r = b && b["/dashboard/my-stats"];
     prefetch(homeScopeReads(initialScope(r && r.status === 200 ? r.body : null)), { keep: true });

@@ -994,6 +994,54 @@ function buildDeck(cards) {
     sentence: "Each move is one person or organisation, under their highest-value move. Dollars at stake are what each move is about: last December's gift, a pledge's balance, last year's sponsorship, a donor's last 12 months. Planned counts people." };
 }
 
+// HOME-4: Drift's people join the deck. Home no longer draws Drift's list, so
+// every person it would have flagged (GET /drift, not handled: past their own
+// pattern, and the early signs) is a move: under Keep as "Drifting" (or "Early
+// sign", never presented as sure) when the deck has no move for them, or
+// an "also" line on the move they already lead. `gone` is the drift item keys
+// done, set aside or snoozed past today (insight_outcomes, kind 'drift').
+const DRIFT_WHY = "A donor past their own giving rhythm is easiest to keep before the next gift is missed. Thank them first, then ask for what they usually give.";
+function withDrift(deck, rows, { asOf, gone = new Set() } = {}) {
+  if (!deck || !Array.isArray(rows) || !rows.length) return deck;
+  const tabs = deck.tabs.map(t => ({ ...t, moves: t.moves.map(m => ({ ...m })) }));
+  const byId = new Map();
+  for (const t of tabs) for (const m of t.moves) for (const id of m.ids || []) byId.set(id, m);
+  const keep = tabs.find(t => t.key === "keep");
+  const fresh = rows.filter(r => r && r.donorId && !gone.has(r.donorId));
+  const added = [];
+  for (const r of fresh) {
+    const cents = Math.round((Number(r.usualGift) || 0) * 100);
+    const facts = [["usual gift", money(cents)], ["pattern", r.reason || ""], ...(r.lastGiftDate ? [["last gift date", longDate(String(r.lastGiftDate).slice(0, 10))]] : [])];
+    const led = byId.get(r.donorId);
+    if (led) {
+      led.also = [...(led.also || []), { kind: "drift", label: r.confidence === "medium" ? "An early sign" : "Drifting", line: r.reason || "Past their own giving rhythm." }];
+      led.facts = [...(led.facts || []), ...facts];
+      continue;
+    }
+    const call = cents >= 100000;
+    const when = windowWords(asOf, addDays(asOf, 14));
+    const ask = cents > 0 ? { words: `Ask ${money(cents)}: their usual gift.`, rule: "A drifting donor is asked their usual gift, never more." } : null;
+    const act = call ? "calls" : "draft";
+    added.push({
+      id: `drift:${r.donorId}`, kind: "drift", itemKey: r.donorId, tab: "keep", label: r.confidence === "medium" ? "Keep · Early sign" : "Keep · Drifting",
+      name: r.donorName, lead: r.donorId, ids: [r.donorId], cents,
+      what: r.reason || "Past their own giving rhythm.", why: DRIFT_WHY, say: null, who: r.assignedToName || null, channel: call ? "Call" : "Note",
+      when: when.words, whenFrom: when.from, ask,
+      action: { key: act, label: MOVE_ACTION[act].label, taskKind: MOVE_ACTION[act].taskKind },
+      group: { kind: "drift", title: "Drifting donors", count: 0, cents: null },
+      facts: [...facts, ...(ask ? [["ask", ask.words]] : []), ["when", when.words]],
+    });
+  }
+  for (const m of added) m.group.count = added.length;
+  if (added.length) {
+    keep.moves = [...keep.moves, ...added].sort((a, b) => b.cents - a.cents).slice(0, DECK_CAP);
+    keep.count += added.length;
+    keep.cents = (keep.cents || 0) + added.reduce((n, m) => n + m.cents, 0);
+    keep.atStake = money(keep.cents);
+  }
+  return { ...deck, tabs, open: keep.count ? "keep" : deck.open };
+}
+
 // One unit's next move: the first card item about them, by rank.
 function nextMoveFor(result, donorId) {
   for (const c of result.cards) {
@@ -1006,5 +1054,5 @@ function nextMoveFor(result, donorId) {
 
 module.exports = {
   RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
-  computeInsights, buildDeck, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
+  computeInsights, buildDeck, withDrift, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

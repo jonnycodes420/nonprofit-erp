@@ -293,7 +293,8 @@ export function useInsights(view, skip) {
 export function HomeInsights({ onNavigate, isReadOnly, data: given, onChanged, only }) {
   const [own, load, err] = useInsights("", !!given);
   const data = given || own;
-  const reload = onChanged || load;
+  // HOME-4: a panel over Home reads its own cards; an action re-reads them and tells Home's deck.
+  const reload = () => { if (!given) load(); if (onChanged) onChanged(); };
   const [look, setLook] = useState(false);
   useSeen(data && data.cards);
   if (err && !given) return null;
@@ -367,8 +368,50 @@ const whenWords = w => {
 };
 const shortDay = d => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
-export function HomeMoves({ onNavigate, isReadOnly, footer }) {
-  const [data, load, err] = useInsights("");
+// HOME-4 · under the deck, one row of small even chips, each opening its
+// screen and hidden at zero: rows to review, possible families, the ladder,
+// and Drift (its people are moves in the deck; the chip opens its list).
+const MOVE_CHIP = { display: "inline-flex", alignItems: "center", gap: 6, background: T.white, border: "1px solid " + T.bg3, borderRadius: 999, padding: "7px 14px",
+  fontSize: 13, fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit", minHeight: 36 };
+function MoveChips({ deck, anyMoves, setPanel, onDrift }) {
+  const n = x => x.toLocaleString("en-US");
+  const d = deck.drift || {};
+  const chips = [
+    deck.review && deck.review.count > 0 && { key: "review", text: `${n(deck.review.count)} ${deck.review.count === 1 ? "row" : "rows"} to review`, title: "Rows that may not be gifts: Keep as gift, Partly a gift or Not a gift.", on: () => setPanel("review") },
+    deck.family && deck.family.count > 0 && { key: "family", text: `${n(deck.family.count)} possible ${deck.family.count === 1 ? "family" : "families"}`, title: "Groups of records that look like one family or network. Steward links nothing until you say so.", on: () => setPanel("family") },
+    anyMoves && { key: "ladder", text: "Your ladder", title: "Every giving unit on its rung, and every card in rank order.", on: () => setPanel("ladder") },
+    onDrift && (d.medium > 0 || d.high > 0) && { key: "drift", text: d.medium > 0 ? `Drift · ${n(d.medium)} early ${d.medium === 1 ? "sign" : "signs"}` : `Drift · ${n(d.high)} past their pattern`,
+      title: "Drift watches each donor's own giving rhythm. The people past it are in your moves; this opens the whole list, early signs too.", on: onDrift },
+  ].filter(Boolean);
+  if (!chips.length) return null;
+  return (
+    <div data-testid="moves-chips" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {chips.map(c => <button key={c.key} type="button" data-testid={"moves-chip-" + c.key} title={c.title} style={MOVE_CHIP} onClick={c.on}>{c.text}</button>)}
+    </div>
+  );
+}
+
+// HOME-4 · an org with no donors yet: one friendly card, never empty tabs.
+function NoDonorsCard({ onNavigate, sample }) {
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    setBusy(true);
+    try { await apiFetch("/org/load-sample-data", { method: "POST" }); window.location.reload(); } catch { setBusy(false); }
+  };
+  return (
+    <div data-testid="moves-no-donors" style={{ background: T.bg, borderRadius: 18, padding: "26px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ fontSize: 17, lineHeight: 1.5, color: T.ink }}>Bring in your donors and Steward will show you who to call first.</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button type="button" className="moves-btn" data-testid="moves-import" style={BTN_PRIMARY} onClick={() => onNavigate && onNavigate("donors", { openImport: true })}>Import a spreadsheet</button>
+        {sample && <button type="button" className="moves-btn" data-testid="moves-sample" style={BTN_QUIET} disabled={busy} onClick={load}>{busy ? "Loading sample data…" : "Explore with sample data"}</button>}
+      </div>
+    </div>
+  );
+}
+
+export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null }) {
+  // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
+  const [data, load, err] = useInsights("deck");
   const [tab, setTab] = useState(null);
   const [pos, setPos] = useState({});            // tab -> index
   const [gone, setGone] = useState(() => new Set());   // move ids acted on here
@@ -456,16 +499,18 @@ export function HomeMoves({ onNavigate, isReadOnly, footer }) {
       <style>{DECK_CSS}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: SERIF, fontSize: 28, fontWeight: 400, color: T.ink }}>Your moves</h2>
-        <div style={{ fontSize: 13, color: T.ink3 }}>{data.sentences && data.sentences.never}</div>
+        {/* HOME-4: said only above a card that has a note to say */}
+        {m && m.say && !noDonors && <div data-testid="moves-never" style={{ fontSize: 13, color: T.ink3 }}>{data.sentences && data.sentences.never}</div>}
       </div>
       {data.coverage && data.coverage.stale && <div role="note" style={{ fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10 }}>{data.coverage.sentence}</div>}
-      {!anyMoves ? (
+      {noDonors && !anyMoves ? <NoDonorsCard onNavigate={onNavigate} sample={sample} /> : !anyMoves ? (
         <div data-testid="moves-empty" style={{ background: T.bg, borderRadius: 16, padding: "26px 24px", fontSize: 15, color: T.ink, lineHeight: 1.55 }}>
           No moves yet. Once gifts are in Steward, the people to reach out to, and what to say, show here one at a time.
         </div>
       ) : <>
         <div role="tablist" aria-label="Your moves by rung" className="moves-tabs">
-          {tabs.map(t => (
+          {/* HOME-4: a tab with no moves is not drawn (no zeros as headlines) */}
+          {tabs.filter(t => t.count > 0 || t.key === cur.key).map(t => (
             <button key={t.key} type="button" role="tab" className="moves-tab" data-testid={`moves-tab-${t.key}`} data-count={t.left.length + Math.max(0, t.count - t.moves.length)}
               aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={deck.sentence}>
               <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {t.left.length + Math.max(0, t.count - t.moves.length)}</span>
@@ -536,19 +581,14 @@ export function HomeMoves({ onNavigate, isReadOnly, footer }) {
         {msg && <div role="status" style={{ fontSize: 13.5, color: T.ink, ...(msg.err ? { borderLeft: "3px solid " + T.gold, paddingLeft: 8 } : {}) }}>
           {msg.text}{msg.tasks && onNavigate && <> <button type="button" style={LNK} onClick={() => onNavigate("tasks")}>Open Tasks</button></>}</div>}
       </>}
-      <div data-testid="moves-quiet" style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13.5, color: T.ink3 }}>
-        {deck.review && <div data-testid="moves-review">{deck.review.count.toLocaleString("en-US")} {deck.review.count === 1 ? "row may not be a gift" : "rows may not be gifts"} · <button type="button" style={LNK} onClick={() => setPanel("review")}>Review</button></div>}
-        {deck.family && <div>{deck.family.count.toLocaleString("en-US")} {deck.family.count === 1 ? "group of records looks" : "groups of records look"} like one family · <button type="button" style={LNK} onClick={() => setPanel("family")}>Check</button></div>}
-        {anyMoves && <div><button type="button" style={LNK} data-testid="moves-ladder" onClick={() => setPanel("ladder")}>See your ladder</button></div>}
-        {footer}
-      </div>
+      {!noDonors && <MoveChips deck={deck} anyMoves={anyMoves} setPanel={setPanel} onDrift={drift} />}
       {panel && (
         <div role="dialog" aria-modal="true" aria-label={panel === "ladder" ? "Your donor ladder" : "Every move of this kind"} onClick={e => { if (e.target === e.currentTarget) setPanel(null); }}
           onKeyDown={e => { if (e.key === "Escape") setPanel(null); e.stopPropagation(); }}
           style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.45)", zIndex: 60, overflowY: "auto", padding: "24px 16px" }}>
           <div style={{ background: T.ground || T.bg, borderRadius: 16, padding: "18px 18px 8px", maxWidth: 880, margin: "0 auto" }}>
             <div style={{ display: "flex", justifyContent: "flex-end" }}><button type="button" className="moves-btn" style={BTN_QUIET} onClick={() => { setPanel(null); load(); setGone(new Set()); }}>Close</button></div>
-            <HomeInsights data={data} onChanged={() => { load(); setGone(new Set()); }} onNavigate={(...a) => { setPanel(null); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} only={panel === "ladder" ? null : panel} />
+            <HomeInsights onChanged={() => { load(); setGone(new Set()); }} onNavigate={(...a) => { setPanel(null); onNavigate && onNavigate(...a); }} isReadOnly={isReadOnly} only={panel === "ladder" ? null : panel} />
           </div>
         </div>
       )}

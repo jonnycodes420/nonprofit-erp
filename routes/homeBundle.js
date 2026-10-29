@@ -34,6 +34,8 @@ const HOME_READS = new Set([
   "/volunteer-hub/crossover", "/atlas/notes",
   // HARDEN-2: Home's ladder and cards (INSIGHTS-1), asked for on its own at boot.
   "/insights",
+  // HOME-4: the right rail's reads (client/src/lib/homeReads.js RAIL_READS), in their own bundle.
+  "/mail-types", "/mail-types/status",
 ]);
 const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot

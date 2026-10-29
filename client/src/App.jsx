@@ -33,6 +33,7 @@ import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
+const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
 // HARDEN-2 item 2: every tab but Home is its own chunk, fetched when it is
 // opened, so the first look downloads Home and the shell, not the whole CRM.
 // The tabs below are rendered under one Suspense with SkeletonPage.
@@ -488,7 +489,10 @@ function AppShell() {
   // that opened the window.
   useStewardTold(d=>{if(d&&d.import)loadData({quiet:true});});
 
-  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
+  // HOME-4: clip, not hidden, where the browser has it. Both stop a sideways
+  // bleed; hidden also makes this a scroll container that never scrolls, which
+  // pins every position:sticky inside it (Home's rail) to nothing.
+  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:CLIP_X,maxWidth:"100vw"};
 
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
