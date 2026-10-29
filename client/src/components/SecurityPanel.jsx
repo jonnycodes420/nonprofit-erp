@@ -172,6 +172,12 @@ export function SecurityPanel({ isAdmin }) {
             with no activity
           </label>
           <div style={small}>A minute before, Steward asks "Still there?". Anything typed into an open form is kept and put back after signing in again.</div>
+          {/* SECURE-2 item 8: a file of more than 1,000 people, taken by staff. */}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink, marginTop: 8 }}>
+            <input type="checkbox" data-testid="allow-staff-large-exports" checked={!!st.allowStaffLargeExports} disabled={busy} onChange={e => setRule("allowStaffLargeExports", e.target.checked)} />
+            Let staff export more than 1,000 people at once
+          </label>
+          <div style={small}>Off, a staff member's export of more than 1,000 people needs an admin. Every export is in the Audit log under Exports either way.</div>
         </div>}
       </div>
 

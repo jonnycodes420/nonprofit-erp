@@ -43,6 +43,9 @@
 //       no activity for that long, on the server.
 //   §17 A sign-in from a browser this person has not used before sends them
 //       one email; their first ever sign-in and a known browser send none.
+//   §18 Every export writes one audit row (who, what, how many rows), admins
+//       find it under Exports, and a staff export of more than 1,000 people
+//       is refused until an admin allows it in Settings.
 //
 // Standard scratch stack (tests/README.md). Fixtures are the suite's own org.
 
@@ -503,6 +506,40 @@ async function fixtures() {
     const [row] = await q(`SELECT device_hash FROM user_devices WHERE user_id=$1 LIMIT 1`, [STAFF]);
     ok("only a fingerprint of the browser id is kept", row && !row.device_hash.includes(A) && !row.device_hash.includes(B) && /^[0-9a-f]{64}$/.test(row.device_hash), row);
     await new Promise(r => sinkSrv.close(r));
+  }
+
+  console.log("\n§18 · every export is in the audit log; a large staff export needs an admin");
+  {
+    const auditRows = since => q(`SELECT id, user_id, action, entity_type, record_count, summary, request_path FROM fin_audit_log
+                                   WHERE org_id=$1 AND entity_type='export' AND created_at >= $2 ORDER BY created_at`, [ORG, since]);
+    const waitRows = async (since, n) => { let r = []; for (let i = 0; i < 30; i++) { r = await auditRows(since); if (r.length >= n) break; await new Promise(z => setTimeout(z, 100)); } return r; };
+    const csvGet = tok => fetch(`${BASE}/donors/export/csv`, { headers: { Authorization: "Bearer " + tok } });
+    const [{ now: t0 }] = await q(`SELECT NOW() AS now`);
+    const ex = await csvGet(admin);
+    const text = await ex.text();
+    const lines = text.split(/\r?\n/).filter(l => l.length).length - 1;
+    const rows = await waitRows(t0, 1);
+    ok("an admin's donor CSV is answered", ex.status === 200 && lines >= 1, { status: ex.status, lines });
+    ok("…and writes exactly one audit row, by that admin", rows.length === 1 && rows[0].user_id === ADMIN && rows[0].action === "downloaded", rows);
+    ok("…that says how many rows left", rows[0] && Number(rows[0].record_count) === lines && new RegExp(`${lines} rows?`).test(rows[0].summary || ""), rows[0]);
+    const log = await api("GET", "/audit/log?entityType=export", admin);
+    ok("Settings, Audit log, Exports: the row is there", log.status === 200 && (log.body.rows || []).some(r => rows[0] && r.id === rows[0].id), { status: log.status, n: (log.body.rows || []).length });
+
+    // 1,001 more people, so the file is larger than 1,000.
+    await q(`INSERT INTO donors (id,org_id,name,stage,total_giving,created_by,created_by_name)
+             SELECT 'd_s2x_' || g, $1, 'Bulk Person ' || g, 'active', 0, 'system:test', 'test' FROM generate_series(1,1001) g`, [ORG]);
+    const refused = await csvGet(staff);
+    const rb = await refused.json().catch(() => ({}));
+    ok("staff exporting more than 1,000 people is refused, in one sentence", refused.status === 403 && rb.error === "large_export_needs_admin"
+      && /more than 1,000 people need an admin's OK/.test(rb.message || ""), { status: refused.status, body: rb });
+    ok("…while an admin takes the same file", (await csvGet(admin)).status === 200);
+    const allow = await api("PUT", "/org/security", admin, { allowStaffLargeExports: true });
+    ok("an admin allows it in Settings", allow.status === 200 && allow.body.allowStaffLargeExports === true, allow.body);
+    ok("…and then staff can take it", (await csvGet(staff)).status === 200);
+    const staffOnly = await api("PUT", "/org/security", staff, { allowStaffLargeExports: false });
+    ok("staff cannot change that setting", staffOnly.status === 403, staffOnly.status);
+    await api("PUT", "/org/security", admin, { allowStaffLargeExports: false });
+    await q(`DELETE FROM donors WHERE org_id=$1 AND id LIKE 'd_s2x_%'`, [ORG]);
   }
 
   summary();

@@ -2906,6 +2906,12 @@ function AuditLog({onNavigate}){
           {state.coverage||"Every change anyone makes in Steward."}
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {/* SECURE-2 item 8: every CSV, workbook, report and "Export everything", in one click. */}
+          <button type="button" data-testid="audit-exports" aria-pressed={filters.entityType==="export"}
+            onClick={()=>setFilters(f=>({...f,entityType:f.entityType==="export"?"":"export"}))}
+            style={{...sel,cursor:"pointer",fontWeight:700,background:filters.entityType==="export"?T.ink:T.white,color:filters.entityType==="export"?T.white:T.ink}}>
+            Exports
+          </button>
           <input value={filters.q} onChange={e=>setFilters(f=>({...f,q:e.target.value}))}
             placeholder="Search a donor, a person or a record id" style={{...sel,minWidth:240,flex:"1 1 240px"}}/>
           <select value={filters.actor} onChange={e=>setFilters(f=>({...f,actor:e.target.value}))} style={{...sel,cursor:"pointer"}}>
