@@ -4553,7 +4553,7 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   const [d] = await query(
     `SELECT id, name, email, phone, address, address2, city, state, zip, country, birth_month, birth_day,
             deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable,
-            is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
+            phone_unreachable, is_client, (SELECT client_privacy FROM orgs WHERE id = donors.org_id) AS client_privacy
        FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
@@ -4687,9 +4687,10 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
   if (d.do_not_email || suppressed.length) flags.push({ key: "do_not_email", label: "No email: opted out" });
   if (d.email_unreachable) flags.push({ key: "email_unreachable", label: "Email bounced" });
   if (d.address_unmailable) flags.push({ key: "address_unmailable", label: "Address returned mail" });
+  if (d.phone_unreachable) flags.push({ key: "phone_unreachable", label: "Phone marked wrong" });
   // CLIENT-SAFE-1: the client flag has its own row (ContactExtras), shown when
   // the org's privacy mode is on or the flag is already set.
-  const contact = { email: d.email || null, phone: d.phone || null, address, preferred: null, flags,
+  const contact = { email: d.email || null, phone: d.phone || null, address, addressBad: d.address_unmailable === true, preferred: null, flags,
     isClient: d.is_client === true, privacyOn: d.client_privacy === true };
 
   res.json({ today, rhythm, recurring, thankYous, thankYousSource: thankYous.length ? thankYousSource : null,
@@ -9926,7 +9927,8 @@ async function reverseImport(req, res) {
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
     const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
-      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased"]);
+      "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",
+      "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"]);
     for (const pc of (sj.personChanges || [])) {
       const cols = Object.keys(pc.before || {}).filter(k => SAFE_COLS.has(k));
       if (!cols.length) continue;

@@ -8199,6 +8199,10 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_reason TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_at TIMESTAMPTZ`);
+  // IMPORT-5 (7d): a phone a note says is wrong ("Incorrect number") is kept
+  // as history and never dialed or texted from Steward. Schema only.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS phone_unreachable BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS phone_unreachable_reason TEXT`);
 
   // ── PROSPECT-1 · ROOM TO GIVE ────────────────────────────────────────────
   // Who may see it: admins always, and staff an admin has given the major

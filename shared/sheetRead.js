@@ -25,6 +25,7 @@ import { normalizeMoney, normalizeDate, resolveDonorIdentity } from "./importSha
 import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 import { isGivenName } from "./givenNames.js";
+import { splitAddress, contactNoteFlags } from "./addressSplit.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -1036,6 +1037,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const byId = new Map(), byEmail = new Map(), byName = new Map();
   const gifts = [], pledges = [], aside = [], totals = [], flags = [];
   const nearMisses = [];
+  const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list
   const occ = new Map();
   const sourceFile = s(fileName) || "your file";
   const personGiftCents = new Map();   // for "Gave at dinner" checks
@@ -1047,6 +1049,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const dctx = dateCol ? { serials: true, dayFirst: dateCol.profile.dayFirst, today: T } : null;
     const nameCols = ["name", "first", "last", "lastFirst", "org", "email"].map(role).filter(Boolean);
     const moneyCols = t.cols.filter(c => c.role === "amount" || c.role === "pledgeTotal");
+    // IMPORT-5 (7a): the whole address in one column, with no city, state or ZIP column beside it
+    const oneColumnAddress = !!role("address") && !role("city") && !role("state") && !role("zip");
+    const noteCols = t.cols.filter(c => c.role === "note" || c.role === "keep");
     t.readCount = 0;   // rows that are people or gifts: not titles, labels or totals
     const tableSums = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
     const sinceSubtotal = Object.fromEntries(moneyCols.map(c => [c.index, 0]));
@@ -1118,6 +1123,21 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
                       address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: stateV || null,
                       zip: fixZip(s(get(b, "zip")), stateV) || null, externalId: extId || null, lines: [],
                       roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [] };
+      if (oneColumnAddress && fresh.address) {
+        const sp = splitAddress(fresh.address);
+        if (sp.split) {
+          fresh.addressFrom = fresh.address;
+          Object.assign(fresh, { address: sp.address, address2: sp.address2, city: sp.city, state: sp.state, zip: sp.zip });
+        } else if (sp.check) { fresh.addressCheck = fresh.address; fresh.flags.push(`Check this address: "${fresh.address}" could not be split into street, city, state and ZIP for sure, so it is kept whole`); }
+      }
+      // IMPORT-5 (7d): a note that says the phone or the address is bad flags that field (the note itself is kept as before)
+      for (const c of noteCols) {
+        const v = s(cellOf(t, b, c)); if (!v) continue;
+        const nf = contactNoteFlags(v);
+        const src = { header: c.header, value: v, sheet: t.sheet, line: b.line };
+        if (nf.phoneBad && fresh.phone && !fresh.phoneBad) fresh.phoneBad = src;
+        if (nf.addressBad && fresh.address && !fresh.addressBad) fresh.addressBad = src;
+      }
       const zipRaw = s(get(b, "zip"));
       if (zipRaw && fresh.zip && fresh.zip !== zipRaw) fresh.flags.push(`ZIP ${zipRaw} read as ${fresh.zip} (the leading zero was lost)`);
       if (phonePlaceholder) fresh.flags.push(`the phone ${phoneRaw} is on ${contactNames.phone.get(phoneKey(phoneRaw)).size} different people in this file, so it was not copied`);
@@ -1186,7 +1206,14 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           }
         }
         const person = people.get(pkey);
+        // IMPORT-5 (7c): a row read into someone already on this list of people is accounted for, never silently gone
+        if (person !== fresh && t.kind === "people") merged.push({ sheet: t.sheet, line: b.line, name: who.name, into: person.name, intoLine: person.lines[0], by: linkedBy || "name" });
+        // the address is one block: it comes from one row, never a street from one and a city from another
+        if (!person.address && fresh.address) for (const f of ["address", "address2", "city", "state", "zip", "addressFrom", "addressCheck", "addressBad"]) person[f] = fresh[f];
         for (const f of ["email", "phone", "address", "address2", "city", "state", "zip", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
+        // a bad-number note is about the number on its own row
+        if (fresh.phoneBad && person.phone && phoneKey(person.phone) === phoneKey(fresh.phone) && !person.phoneBad) person.phoneBad = fresh.phoneBad;
+        if (fresh.addressBad && person.address === fresh.address && !person.addressBad) person.addressBad = fresh.addressBad;
         for (const fl of fresh.flags) if (!person.flags.includes(fl)) person.flags.push(fl);
         person.lines.push(`${t.sheet}:${b.line}`);
         if (person.externalId) byId.set(person.externalId.toLowerCase(), pkey);
@@ -1479,6 +1506,19 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const members = p => Math.max(1, p.people.length);
   const comm = k => peopleList.filter(p => p.comms[k]).length;
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
+  // IMPORT-5 (7c): every row of a list of people is a person, a row merged into
+  // one, or a row set aside, and the line says so: "656 rows · 650 people · 6 merged"
+  const rowAccount = (() => {
+    const pt = usable.filter(t => t.kind === "people");
+    if (!pt.length || giftTables.length) return null;
+    const keys = new Set(pt.map(t => t.sheet));
+    const rows = pt.reduce((a, t) => a + (t.readCount || 0), 0);
+    const asideRows = aside.filter(x => keys.has(x.sheet)).length;
+    const parts = [plural(rows, "row"), plural(peopleList.length, "person", "people")];
+    if (merged.length) parts.push(`${merged.length.toLocaleString("en-US")} merged with a near-duplicate`);
+    if (asideRows) parts.push(`${asideRows.toLocaleString("en-US")} set aside`);
+    return { rows, people: peopleList.length, merged: merged.length, aside: asideRows, balanced: rows === peopleList.length + merged.length + asideRows, sentence: parts.join(" · ") };
+  })();
   // FIX-52 · THE SHEET'S OWN FIGURES. Counts written above a header ("People
   // 443", "Invited 422") are notes, never people, and the preview's counts are
   // checked against them. A sheet counts rows; a couple's row is one row and
@@ -1517,7 +1557,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks,
+    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, merged, rowAccount,
+    addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
     placeholders: [...[...placeholder.email].map(v => ({ kind: "email", value: v, people: contactNames.email.get(v).size })),
                    ...[...placeholder.phone].map(v => ({ kind: "phone", value: contactShown.phone.get(v) || v, people: contactNames.phone.get(v).size }))],
@@ -1542,7 +1583,9 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       attended: att.filter(p => p.attendance.attended).reduce((a, p) => a + members(p), 0),
       optOuts: comm("optOut"), doNotContact: comm("doNotContact"), doNotMail: comm("doNotMail"), doNotCall: comm("doNotCall"),
       doNotEmail: comm("doNotEmail"), deceased: comm("deceased"), optIns: comm("optIn"),
-      kept: keptHeaders.size, nearMisses: nearMisses.length,
+      kept: keptHeaders.size, nearMisses: nearMisses.length, merged: merged.length,
+      addressesSplit: peopleList.filter(p => p.addressFrom).length, addressesToCheck: peopleList.filter(p => p.addressCheck).length,
+      phonesMarkedWrong: peopleList.filter(p => p.phoneBad).length, addressesMarkedReturned: peopleList.filter(p => p.addressBad).length,
       invitedRecords: recordCounts.invited, rsvpRecords: recordCounts.rsvp, attendedRecords: recordCounts.attended,
     },
     totalsSentence, needsDate: undatedCount > 0,
@@ -1606,6 +1649,7 @@ export function importButtonSentence(u, extra = {}) {
   if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
   if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
   if (extra.matched) parts.push(`${extra.matched.toLocaleString("en-US")} already in Steward`);
+  if (extra.waiting) parts.push(`${extra.waiting.toLocaleString("en-US")} waiting on your answer`);
   const importText = "Import " + parts.join(" · ");
   return review ? { review, text: `Review ${c.aside.toLocaleString("en-US")} set aside first`, importText } : { review, text: importText, importText };
 }

@@ -159,6 +159,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [failed, setFailed] = useState(null);
   const [dateAsked, setDateAsked] = useState(null);   // the date question stays on screen once answered
   const [asideOpen, setAsideOpen] = useState(false);
+  const [mergedOpen, setMergedOpen] = useState(false);   // IMPORT-5 (7c): the rows merged into someone
   const [undatedDate, setUndatedDate] = useState("");
   const [dated, setDated] = useState("");
   // FIX-55: a re-read is in flight, so what is on screen is the last answer's;
@@ -602,9 +603,23 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <div style={h3}>Before anything is written</div>
               <Layer title="People" testId="layer-people"
                 main={`${n(c.persons ?? c.people, "person", "people")}${c.households ? `, ${n(c.households, "household")}` : ""}${c.organizations ? `, ${n(c.organizations, "organization")}` : ""}`}
-                sub={`${u.newPeople} new, ${u.matchedPeople} already in Steward. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
-                notes={[...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
-                        ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)]} />
+                sub={`${u.peopleLine ? u.peopleLine.sentence.replace(/^[^:]*: /, "") : `${u.newPeople} new, ${u.matchedPeople} already in Steward`}. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
+                notes={[
+                        // IMPORT-5 (7c): every row is a person, merged into one, or set aside
+                        u.rowAccount && <span key="rows" data-testid="sheet-row-account">{u.rowAccount.sentence}
+                          {u.rowAccount.merged > 0 && <> <button type="button" data-testid="sheet-merged-see" style={{ ...linkBtn }} onClick={() => setMergedOpen(o => !o)}>{mergedOpen ? "(hide them)" : "(see them)"}</button></>}
+                          {mergedOpen && <span style={{ display: "block", marginTop: 4 }} data-testid="sheet-merged-list">
+                            {(u.merged || []).slice(0, 50).map(m => <span key={m.sheet + m.line} style={{ display: "block" }}>Row {m.line}: {m.name}, read into {m.into} (row {String(m.intoLine || "").split(":")[1] || m.intoLine}) by {m.by === "name" ? "the same name" : m.by}.</span>)}
+                          </span>}
+                        </span>,
+                        // IMPORT-5 (7a): one address split, shown as it will land
+                        u.addressExample && <span key="addr" data-testid="sheet-address-example">{n(c.addressesSplit || 0, "address", "addresses")} split into street, city, state and ZIP, for example "{u.addressExample.from}" → {[u.addressExample.address, u.addressExample.address2, u.addressExample.city, u.addressExample.state, u.addressExample.zip].filter(Boolean).join(" · ")}.</span>,
+                        c.addressesToCheck ? `${n(c.addressesToCheck, "address", "addresses")} kept whole and marked "Check this address": Steward could not split ${c.addressesToCheck === 1 ? "it" : "them"} for sure.` : null,
+                        // IMPORT-5 (7d): notes that say the contact info is bad
+                        c.phonesMarkedWrong ? <span key="ph" data-testid="sheet-phones-wrong">{n(c.phonesMarkedWrong, "phone")} marked wrong from your notes: kept, struck through, and never dialed or texted from Steward.</span> : null,
+                        c.addressesMarkedReturned ? `${n(c.addressesMarkedReturned, "address", "addresses")} marked as returned mail from your notes: kept, and left off mailings.` : null,
+                        ...(u.placeholders || []).map(p => `The ${p.kind} ${p.value} is on ${p.people} different people, so it is treated as your own ${p.kind} and copied onto nobody.`),
+                        ...(u.nearMisses || []).slice(0, 5).map(x => `${x.a} and ${x.b} (row ${x.line}): ${x.reason}.`)].filter(Boolean)} />
               <Layer title="Roles" testId="layer-roles"
                 main={[c.donors && n(c.donors, "donor"), c.pledgers && n(c.pledgers, "pledger"), c.guests && n(c.guests, "event guest"), c.volunteers && n(c.volunteers, "volunteer"),
                        c.board && `${c.board} board`, c.staff && `${c.staff} staff`, c.prospects && n(c.prospects, "prospect"), c.contacts && n(c.contacts, "contact")].filter(Boolean).join(" · ") || "Contacts"}
