@@ -17,12 +17,16 @@
 //      in the receipt's own count (it said 75 where the receipt said 79)
 //   §5 "Bring them all back" on a file whose 82 givers were deleted gives the
 //      file's full gifts and pledges; Empty trash then stops them matching
+//   §7 IMPORT-5: a column answer is saved per org against the file's header
+//      set; the next export (headers in any order) asks nothing; Change turns
+//      it off for one preview; Settings lists, edits and deletes it
 //
 // HOW IT GOES RED ON MAIN: §1 the re-read by key is refused (no fileKey on
 // main, so the screen sent the whole workbook every time); §2 the button
 // keeps "(63 undated)" while the re-read is out and Import can be pressed on
 // the stale preview; §4 there is no drop zone; §5 there is no
-// purge-trash preview and Bring them all back does not exist.
+// purge-trash preview and Bring them all back does not exist. §7 (IMPORT-5):
+// the second export asks the column question again, and /import-mappings is a 404.
 //
 // Standard scratch stack (tests/README.md), APP_URL for the browser legs. Sends nothing.
 "use strict";
@@ -100,6 +104,34 @@ async function apiLegs() {
   const wb = await sheetsOf(WORKBOOK);
   const ev = (await api("POST", "/sheet-import/understand", A.token, { fileName: "event.xlsx", sheets: wb, answers: { eventDate: "2026-10-22", useEventDate: true } })).body;
   ok("§1 the event date answered: no gift undated, the button says so", ev.counts.undatedGifts === 0 && !/undated/.test(ev.button.text) && ev.ready === true, ev.button && ev.button.text);
+
+  // §7 IMPORT-5: a column she answered is saved against the file's headers, so
+  // the next export with the same headers (in any order) asks nothing
+  const E = await freshOrg("org_fix55maps", "Saved mappings (test)");
+  const f1 = { fileName: "export-1.csv", sheets: gridOf([["Name", "Date", "Figure"], ["Rory Penn", "2026-09-03", "40.75"], ["Ada Quill", "2026-09-04", "12.00"]]) };
+  const u1 = (await api("POST", "/sheet-import/understand", E.token, f1)).body;
+  const c1 = (u1.questions || []).find(x => x.kind === "column");
+  ok("§7 the first export asks what Figure is", !!c1 && u1.ready === false && !u1.savedMapping, JSON.stringify((u1.questions || []).map(x => x.kind)));
+  const i1 = await importJob(E.token, { ...f1, overrides: { [c1.key]: "amount" } });
+  ok("§7 it imports with her answer", i1.end && i1.end.status === "done", JSON.stringify(i1.end || i1.start.body).slice(0, 200));
+  const f2 = { fileName: "export-2.csv", sheets: gridOf([["Figure", "Name", "Date"], ["99.50", "Bea Vance", "2026-09-05"]]) };
+  const u2 = (await api("POST", "/sheet-import/understand", E.token, f2)).body;
+  ok("§7 the next export, columns in another order, asks nothing and reads the amount", u2.ready === true && !(u2.questions || []).some(x => x.kind === "column")
+     && u2.counts.giftCents === 9950 && u2.savedMapping && u2.savedMapping.id, JSON.stringify([u2.ready, (u2.questions || []).map(x => x.kind), u2.counts && u2.counts.giftCents, u2.savedMapping]));
+  const off = (await api("POST", "/sheet-import/understand", E.token, { ...f2, answers: { savedMapping: "off" } })).body;
+  ok("§7 Change (savedMapping off) asks the column question again", off.ready === false && (off.questions || []).some(x => x.kind === "column") && !off.savedMapping);
+  const list = (await api("GET", "/import-mappings", E.token)).body;
+  const m = (list.mappings || [])[0] || {};
+  ok("§7 Settings, Imports lists it: Figure is the amount", (list.mappings || []).length === 1 && m.columns.some(c => c.header === "Figure" && c.role === "amount"), JSON.stringify(list.mappings));
+  const other = await freshOrg("org_fix55maps2", "Saved mappings, other org (test)");
+  ok("§7 another org neither sees nor uses it", ((await api("GET", "/import-mappings", other.token)).body.mappings || []).length === 0
+     && (await api("POST", "/sheet-import/understand", other.token, f2)).body.ready === false
+     && (await api("DELETE", `/import-mappings/${m.id}`, other.token)).status === 404);
+  const ed = await api("PATCH", `/import-mappings/${m.id}`, E.token, { columns: { figure: "keep" } });
+  ok("§7 a saved answer can be changed", ed.status === 200 && ed.body.mapping.columns.some(c => c.key === "figure" && c.role === "keep"), JSON.stringify(ed.body).slice(0, 200));
+  const del2 = await api("DELETE", `/import-mappings/${m.id}`, E.token);
+  const u3 = (await api("POST", "/sheet-import/understand", E.token, f2)).body;
+  ok("§7 deleted, the next export asks again", del2.status === 200 && u3.ready === false && !u3.savedMapping, JSON.stringify([del2.status, u3.ready]));
 
   // §5 bring them all back, then empty the trash
   const B = await freshOrg("org_fix55back", "Bring back (test)");

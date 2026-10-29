@@ -34,7 +34,12 @@
 //   column accounted for, no duplicate people, the checker passes after import,
 //   and undo leaves the org exactly as it was. Prints the report table.
 //
-// HOW IT WOULD GO RED (run against main): the combined workbook imports 0 gifts
+// import4-comma-couples (IMPORT-5) · "Alex, Brad Hubbard" in a file is two
+//   people, one household; a record already here is proposed in Data health,
+//   fixed on her click, undone exactly.
+//
+// HOW IT WOULD GO RED (run against main): "Alex, Brad Hubbard" reads as "Brad
+// Hubbard Alex" and there is no couples line in Data health; the combined workbook imports 0 gifts
 // (blank dates were refused), no event or attendance, no opt-outs, and the
 // columns are questions; with the ID link removed, gifts land on new people;
 // with the placeholder rule removed, 30 people get the org's own phone; with
@@ -61,7 +66,7 @@ const EXPECTED = JSON.parse(fs.readFileSync(path.join(FX4, "expected.json"), "ut
 const PASSWORD = "loadtest1234";
 // every org-child table an import can touch, children first
 const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", "pledges", "thank_you_drafts", "interactions", "gifts", "events",
-  "fin_transactions", "imports", "donor_scores", "readouts", "tasks", "cultivation_plans", "donors", "households", "custom_field_defs",
+  "fin_transactions", "imports", "donor_scores", "readouts", "tasks", "cultivation_plans", "name_fixes", "donors", "households", "custom_field_defs",
   "fin_funds", "budgets", "accounts", "users"];
 const { checkOrg } = require("../scripts/check-numbers");
 const NUM = require("../numbers");
@@ -372,6 +377,50 @@ async function everyFixture(rows) {
   }
 }
 
+// ── import4-comma-couples (IMPORT-5) ──────────────────────────────────────
+// "Alex, Brad Hubbard" (Justin's Place's dinner list) is a couple, not "Last,
+// First". A file reads it as two people in one household; a record already
+// here is only proposed in Data health, fixed on her click, and undone whole.
+async function commaCouples() {
+  const ORG = "org_import4cc";
+  const tok = await freshOrg(ORG, "Comma couples (test)");
+  const file = "u03-names-every-way.csv";
+  const c = await api("POST", "/sheet-import/commit", tok, { fileName: file, sheets: await sheetsOf(path.join(FX4, file)), importId: "imp_import4cc_1" });
+  const hh = await q(`SELECT h.name AS household, ARRAY_AGG(d.name ORDER BY d.name) AS people FROM donors d JOIN households h ON h.id=d.household_id
+                       WHERE d.org_id=$1 AND (d.name ~ 'Hubbard' OR d.name ~ 'Dorman') GROUP BY h.name ORDER BY h.name`, [ORG]);
+  ok("comma couples: \"Alex, Brad Hubbard\" and \"Leslie, Kelly Dorman\" are two people each, in one household each", c.status === 201
+     && JSON.stringify(hh) === JSON.stringify([{ household: "Alex & Brad Hubbard", people: ["Alex Hubbard", "Brad Hubbard"] }, { household: "Leslie & Kelly Dorman", people: ["Kelly Dorman", "Leslie Dorman"] }]),
+     JSON.stringify([c.status, hh]));
+  // records already here, as the old reading left them, and two that are not couples
+  const ORG2 = "org_import4cc2";
+  const tok2 = await freshOrg(ORG2, "Comma couples, already here (test)");
+  await q(`INSERT INTO donors (id, org_id, name, created_import_id, created_by, created_by_name) VALUES
+           ('d_cc_1',$1,'Brad Hubbard Alex','imp_old','system:test','Test'), ('d_cc_2',$1,'Leslie, Kelly Dorman',NULL,'system:test','Test'),
+           ('d_cc_3',$1,'Paul James Thomas','imp_old','system:test','Test'), ('d_cc_4',$1,'Brad Hubbard Alex',NULL,'system:test','Test')`, [ORG2]);
+  await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ('g_cc_1',$1,'d_cc_1',150,'2026-04-06','system:test','Test')`, [ORG2]);
+  // the person's totals as the gift makes them, so the snapshot is the org's true state
+  await q(`UPDATE donors SET total_giving=150, gift_count=1, last_gift_amount=150, first_gift_date='2026-04-06', last_gift_date='2026-04-06' WHERE id='d_cc_1'`);
+  const before = await snapshot(ORG2);
+  const health = (await api("GET", "/data-health", tok2)).body || {};
+  const list = (await api("GET", "/data-health/couples", tok2)).body || {};
+  ok("comma couples: Data health counts 2 names that look like couples, nothing changed yet", health.counts && health.counts.couples === 2 && (list.rows || []).length === 2
+     && /2 names look like couples written with a comma/.test(list.sentence) && snapDiff(before, await snapshot(ORG2)).length === 0, JSON.stringify([health.counts, list]));
+  const r1 = (list.rows || []).find(r => r.donorId === "d_cc_1") || {};
+  ok("comma couples: before and after are shown", r1.before === "Brad Hubbard Alex" && r1.after === "Alex & Brad Hubbard" && JSON.stringify(r1.people) === JSON.stringify(["Alex Hubbard", "Brad Hubbard"]), JSON.stringify(r1));
+  const ap = await api("POST", "/data-health/couples/apply", tok2, { donorIds: ["d_cc_1", "d_cc_2", "d_cc_3"] });
+  const after = await q(`SELECT d.id, d.name, h.name AS household, (SELECT COUNT(*) FROM gifts g WHERE g.donor_id=d.id)::int AS gifts FROM donors d LEFT JOIN households h ON h.id=d.household_id
+                          WHERE d.org_id=$1 AND (d.name ~ 'Hubbard' OR d.name ~ 'Dorman') ORDER BY d.name`, [ORG2]);
+  ok("comma couples: Fix makes each two people in one household; the gift stays with the first; the others are untouched", ap.status === 201 && ap.body.applied === 2
+     && JSON.stringify(after.map(x => [x.name, x.household, x.gifts])) === JSON.stringify([["Alex Hubbard", "Alex & Brad Hubbard", 1], ["Brad Hubbard", "Alex & Brad Hubbard", 0],
+       ["Brad Hubbard Alex", null, 0], ["Kelly Dorman", "Leslie & Kelly Dorman", 0], ["Leslie Dorman", "Leslie & Kelly Dorman", 0]])
+     && (await one("SELECT name FROM donors WHERE id='d_cc_3'")).name === "Paul James Thomas", JSON.stringify([ap.status, ap.body, after]));
+  const un = await api("POST", "/data-health/couples/undo", tok2, { batchId: ap.body.batchId });
+  const afterUndo = await snapshot(ORG2);
+  delete afterUndo.name_fixes; delete before.name_fixes;   // the fix's own log, kept as history like an import's run
+  const d = snapDiff(before, afterUndo);
+  ok("comma couples: Undo puts every name back and removes the people and households the fix made", un.status === 200 && d.length === 0, JSON.stringify([un.status, d]));
+}
+
 (async () => {
   const rows = [];
   try {
@@ -379,6 +428,8 @@ async function everyFixture(rows) {
     const c = await combined();
     console.log("import4-either-order");
     await eitherOrder();
+    console.log("import4-comma-couples");
+    await commaCouples();
     console.log("import4-every-fixture");
     await everyFixture(rows);
     const money = c => "$" + (c / 100).toLocaleString("en-US");
