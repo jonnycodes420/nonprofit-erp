@@ -98,6 +98,8 @@ export function nearDuplicate(a, b) {
   if (JOINT.test(A) || JOINT.test(B)) return null;
   const p = parts(A), q = parts(B);
   if (p.n < 2 || q.n < 2) return null;
+  // a word with a digit is not a name: "Person 12345" and "Person 12346" are two rows, never a spelling
+  if (/\d/.test(p.first + p.last + q.first + q.last)) return null;
   if (p.last === q.last) {
     if (isNickname(p.first, q.first)) return { why: "nickname", sentence: `${cap(p.first)} and ${cap(q.first)} are often one name` };
     // one or two letters apart, and long enough that it is a spelling, not a sibling ("Jay"/"Jami" are two people)
