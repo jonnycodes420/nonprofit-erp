@@ -362,7 +362,7 @@ const framedByAnotherSite = () => {
 };
 const draw = () => ReactDOM.createRoot(document.getElementById("root")).render(
   STAFF_PATHS.test(window.location.pathname) && framedByAnotherSite()
-    ? <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 15, padding: 24, color: "#0F1A12" }}>
+    ? <p style={{ fontFamily: "system-ui, sans-serif", fontSize: 15, padding: 24, margin: 0, minHeight: "100vh", boxSizing: "border-box", background: "#F0EDE6", color: "#0F1A12" }}>
         Steward can't be shown inside another website. <a href={window.location.href} target="_top" rel="noopener" style={{ color: "#0D5C3A" }}>Open it in its own tab</a>.
       </p>
     : <React.StrictMode><Root /></React.StrictMode>
