@@ -8108,8 +8108,8 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_name_fixes_batch ON name_fixes (org_id, batch_id)`);
-  // FIX-59: a name with markup or a note in it ("Scarlette (send with
-  // Tiffany's) Nesbeth") is cleaned on her click and the note moved to Notes;
+  // FIX-59: a name with markup or a note in it ("Sadie (send with
+  // Tess's) Norwood") is cleaned on her click and the note moved to Notes;
   // the Notes as they were, for its Undo.
   await pool.query(`ALTER TABLE name_fixes ADD COLUMN IF NOT EXISTS before_notes TEXT`);
   // FIX-59: imported gifts she says were already deposited, marked on her
