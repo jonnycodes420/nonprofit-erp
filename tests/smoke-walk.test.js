@@ -217,6 +217,88 @@ async function greetingFirst(browser, demoAuth) {
   }
 }
 
+// FIX-56 · EVERY COMMUNICATIONS TAB SWITCHES, AND "EDIT IN EDITOR" OPENS THE
+// EMAIL EDITOR. On 28 Oct the thank-yous' "Edit in editor" opened the plain
+// letter form, above the list and out of sight, so the card seemed to do
+// nothing. In its own fixture org (never the demo): every tab of the bar and of
+// Templates is clicked and must become the selected one and draw; then one
+// email of each kind (a thank-you, the receipt, a campaign starter, a journey
+// step's email by the link the step carries) must open the EMAIL-1 editor,
+// with its blocks and its preview frame on screen. The receipt's tax lines
+// must be the locked block.
+// HOW IT GOES RED: on main (970d9cf) the thank-you opens [data-testid=
+// template-editor], not [data-testid=email-editor-blocks]: §fix56 thank-you red.
+async function emailEditorEverywhere(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const org = "org_fix56_walk";
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Fix56 Shelter','fix56-walk',1,'active','team','America/New_York')`, [org]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Robin Hale','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+  await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,'Maria Lopez','maria@example.org','system:test','test')`, ["d_" + org, org]);
+  const a = (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  const j = await api("POST", "/journeys", a.token, { presetKey: "recurring_failed" });
+  const stepTpl = ((j.body && j.body.steps) || []).map(st => /^template:(.+)$/.exec(String(st.draft || ""))).filter(Boolean).map(m => m[1])[0];
+  ok("§fix56 the fixture journey has a step that drafts from an email template", !!stepTpl, j.body);
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+  await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+    [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(e.message.slice(0, 160)));
+  const drawn = () => page.evaluate(() => {
+    const m = document.querySelector(".comm-main") || document.querySelector(".app-content") || document.body;
+    return { text: (m.innerText || "").trim().length, boundary: /Something went wrong|An error occurred in this part/i.test(m.innerText || "") };
+  });
+  await page.goto(`${APP}/app/communications`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.waitForSelector(".comm-tabbar [role=tab]", { timeout: 20000 }).catch(() => {});
+  const bar = await page.$$eval(".comm-tabbar [role=tab]", bs => bs.map(b => b.innerText.trim()));
+  for (const label of bar) {
+    const tab = page.locator(".comm-tabbar [role=tab]", { hasText: label }).first();
+    await tab.click();
+    await page.waitForTimeout(600);
+    const d = await drawn();
+    ok(`§fix56 Communications tab "${label}" switches and draws`, (await tab.getAttribute("aria-selected")) === "true" && d.text > 0 && !d.boundary, d);
+  }
+  await page.locator(".comm-tabbar [role=tab]", { hasText: "Templates" }).first().click();
+  await page.waitForSelector("[data-template-card]", { timeout: 15000 }).catch(() => {});
+  for (const [label, sel] of [["Brand", "text=Your brand"], ["Media library", '[data-testid="templates-merged"] >> text=/photo|video|upload/i'], ["Templates", "[data-template-card]"]]) {
+    const tab = page.getByTestId("templates-merged").getByRole("tab", { name: label, exact: true });
+    await tab.click();
+    const shown = await page.locator(sel).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+    ok(`§fix56 Templates › ${label} switches and draws`, (await tab.getAttribute("aria-selected")) === "true" && shown);
+  }
+  const opensEditor = async (what, open) => {
+    await open();
+    const r = await page.locator('[data-testid="email-editor-blocks"] [data-testid="email-block-card"]').first().waitFor({ timeout: 15000 })
+      .then(() => true).catch(() => false);
+    const res = { blocks: await page.locator('[data-testid="email-block-card"]').count(), frame: await page.locator('[data-testid="email-preview-frame"]').count(),
+      plainForm: await page.locator('[data-testid="template-editor"]').count() };
+    ok(`§fix56 ${what}: "Edit in editor" opens the email editor with its blocks and preview`, r && res.blocks > 0 && res.frame === 1 && res.plainForm === 0, res);
+    return res;
+  };
+  const backToLibrary = async () => {
+    await page.getByTestId("email-editor-back").click().catch(() => {});
+    await page.waitForSelector("[data-template-card]", { timeout: 15000 }).catch(() => {});
+  };
+  const card = id => page.locator(`[data-template-id="${id}"]`).first();
+  await opensEditor("a thank-you (first gift)", () => card("letter-thanks_first").click());
+  await backToLibrary();
+  await opensEditor("the receipt", () => card("letter-receipt").click());
+  ok("§fix56 the receipt's tax lines are the locked block", await page.locator('[data-testid="email-locked-block"]').count() === 1);
+  await backToLibrary();
+  await opensEditor("a campaign starter", () => page.locator('[data-template-card="campaign"]').first().click());
+  await backToLibrary();
+  if (stepTpl) await opensEditor("a journey step's email", () => page.goto(`${APP}/app/communications?subtab=templates&template=${encodeURIComponent(stepTpl)}&back=${encodeURIComponent("/app/journeys")}`, { waitUntil: "domcontentloaded" }));
+  ok("§fix56 nothing threw on Communications", errors.length === 0, errors.slice(0, 3));
+  await ctx.close();
+}
+
 // FIX-32 · THE DEMO DOOR, AND SAMPLE DONORS ARE NOT AN IMPORT. On 7 Oct a
 // signup chose "Explore the demo" on the start page: 25 sample donors loaded
 // and the page never moved, because /dashboard bounces an org whose
@@ -696,6 +778,7 @@ async function demoDoor(browser) {
 
   await demoDoor(browser);
   await greetingFirst(browser, auth);
+  await emailEditorEverywhere(browser);
 
   await browser.close();
   await closeDb();

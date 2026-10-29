@@ -12,6 +12,8 @@ const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTran
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "16px 18px" };
 const field = { width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13.5, fontFamily: "inherit", background: T.white, color: T.ink };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+// FIX-56: the merge fields that are the organization's, not the person's.
+const ORG_FIELDS = new Set(["signature", "org_name", "org_address", "tax_language"]);
 const quiet = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 
 function Swatches({ palette, value, onPick, label, disabled }) {
@@ -183,7 +185,9 @@ export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved
               <div style={{ fontWeight: 700, color: T.ink, fontSize: 13.5 }}>{pv.subject}</div>
               <div style={{ height: 2, background: brand ? brand.secondary : T.gold }} />
               <div style={{ whiteSpace: "pre-wrap", fontSize: 13, color: T.ink, lineHeight: 1.55 }}>{pv.body}</div>
-              {pv.missing.length > 0 && <div style={{ fontSize: 12, color: T.gold700 }}>{pv.donor.name} has nothing on file for: {pv.missing.map(m => m.replace(/_/g, " ")).join(", ")}.</div>}
+              {/* FIX-56: the signature, address and tax lines are the org's, never looked up on the donor. */}
+              {pv.missing.filter(m => !ORG_FIELDS.has(m)).length > 0 && <div style={{ fontSize: 12, color: T.gold700 }}>{pv.donor.name} has nothing on file for: {pv.missing.filter(m => !ORG_FIELDS.has(m)).map(m => m.replace(/_/g, " ")).join(", ")}.</div>}
+              {pv.signatureFromBrand === false && <div data-testid="add-signature" style={{ fontSize: 12, color: T.ink2 }}>It is signed with your organization's name. <a href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your signature in Brand</a></div>}
               {pv.unknown.length > 0 && <div style={{ fontSize: 12, color: T.gold700 }}>Not merge fields: {pv.unknown.map(u => `{{${u}}}`).join(", ")}.</div>}
             </div>
           </div>

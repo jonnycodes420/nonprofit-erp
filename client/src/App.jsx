@@ -32,10 +32,12 @@ import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
 import { openRecentChanges } from "./components/RecentChanges";
+import { retryImport } from "./lib/lazyRetry";
 // HARDEN-2 item 2: every tab but Home is its own chunk, fetched when it is
 // opened, so the first look downloads Home and the shell, not the whole CRM.
 // The tabs below are rendered under one Suspense with SkeletonPage.
-const named = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+// FIX-56: a chunk that will not load is asked for once more, then says "Steward was updated".
+const named = (load, name) => lazy(() => retryImport(load).then(m => ({ default: m[name] })));
 const Donors = named(() => import("./components/Donors"), "Donors");
 const Grants = named(() => import("./components/Grants"), "Grants");
 const Communications = named(() => import("./components/Communications"), "Communications");
@@ -45,9 +47,9 @@ const Finance = named(() => import("./components/Finance"), "Finance");
 const Fundraising = named(() => import("./components/Fundraising"), "Fundraising");
 const Tasks = named(() => import("./components/Tasks"), "Tasks");
 const Settings = named(() => import("./components/Settings"), "Settings");
-const JourneyBuilder = lazy(() => import("./components/JourneyBuilder"));
-const GroupsPage = lazy(() => import("./components/Groups"));
-const CalendarPage = lazy(() => import("./components/Calendar"));
+const JourneyBuilder = lazy(() => retryImport(() => import("./components/JourneyBuilder")));
+const GroupsPage = lazy(() => retryImport(() => import("./components/Groups")));
+const CalendarPage = lazy(() => retryImport(() => import("./components/Calendar")));
 const DonorPortalHub = named(() => import("./components/DonorPortalHub"), "DonorPortalHub");
 const Events = named(() => import("./components/Events"), "Events");
 // The Help panel (Support chat and every help article) exists only while open.

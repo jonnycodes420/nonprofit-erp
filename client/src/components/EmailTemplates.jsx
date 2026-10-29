@@ -19,12 +19,13 @@ import { offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import MediaPicker from "./MediaPicker";
+import { retryImport } from "../lib/lazyRetry";
 
 // MediaLibrary and BrandPanel come from the media part of this build. They are
 // found by glob so this screen builds before they land and picks them up after.
 const MEDIA_MODULES = import.meta.glob(["./MediaLibrary.jsx", "./BrandPanel.jsx"]);
-const LazyMediaLibrary = MEDIA_MODULES["./MediaLibrary.jsx"] ? lazy(MEDIA_MODULES["./MediaLibrary.jsx"]) : null;
-const LazyBrandPanel = MEDIA_MODULES["./BrandPanel.jsx"] ? lazy(MEDIA_MODULES["./BrandPanel.jsx"]) : null;
+const LazyMediaLibrary = MEDIA_MODULES["./MediaLibrary.jsx"] ? lazy(() => retryImport(MEDIA_MODULES["./MediaLibrary.jsx"])) : null;
+const LazyBrandPanel = MEDIA_MODULES["./BrandPanel.jsx"] ? lazy(() => retryImport(MEDIA_MODULES["./BrandPanel.jsx"])) : null;
 
 const BUTTON_ACTIONS = [
   { id: "give", label: "Give" }, { id: "rsvp", label: "RSVP" },
@@ -92,6 +93,8 @@ export function templateSection(store, key, words) {
   return "appeals";
 }
 
+// FIX-56: the printed thank-yous that are also the thank-you task's email (shared/emailTemplateLibrary.js PERSON_KINDS).
+const EMAILED_LETTERS = new Set(["thanks_first", "thanks_renewal", "thanks_major", "thanks_memorial"]);
 const tplCard = { ...card, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
 const openArea = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4, color: T.ink, width: "100%" };
 const mediumStyle = { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 };
@@ -166,6 +169,19 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
       onSaved={() => { load(); loadLetters(); }} />;
   }
 
+  // FIX-56 · A LETTER OPENS IN PLACE OF THE LIBRARY. It used to open above the
+  // four sections, out of sight of a card further down, so pressing a card
+  // looked like nothing happened.
+  if (openLetter && letters) {
+    return (
+      <div style={{ padding: "4px 0 40px", display: "flex", flexDirection: "column", gap: 14 }} data-testid="letter-quick-edit">
+        <div><button style={btn.quiet} onClick={() => setOpenLetter(null)}>Back to templates</button></div>
+        <TemplateEditor t={openLetter} fields={letters.mergeFields || []} donors={donors} isReadOnly={isReadOnly} onOpenDrafts={onOpenDrafts}
+          onClose={() => setOpenLetter(null)} onSaved={t => { setOpenLetter(t); loadLetters(); }} />
+      </div>
+    );
+  }
+
   const tabs = [{ id: "templates", label: "Templates" }, { id: "brand", label: "Brand" }, { id: "media", label: "Media library" }];
   const live = (data?.templates || []).filter(t => !t.archived);
   const archived = (data?.templates || []).filter(t => t.archived);
@@ -183,14 +199,19 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
   // Every template, from every store, as one list of cards. `medium` is what
   // the card says first: a printed letter or an email.
   const cards = [];
+  // FIX-56: a thank-you is a printed letter AND the words of the thank-you
+  // task's email, so it opens in the email editor like every email and keeps
+  // "Quick edit and print" for the letter. Only a letter that is never emailed
+  // (the lapsed note) opens the letter editor, and its card says so.
   for (const t of (letters?.templates || [])) {
-    const isLetter = t.channel === "letter";
-    cards.push({ id: "letter-" + t.kind, store: isLetter ? "letter" : "person", section: templateSection("letter", t.kind, t.label),
-      name: t.label, medium: isLetter ? "Printed letter" : "Email", editor: isLetter ? "letter" : "email",
-      how: isLetter ? "Prints with this person's details" : "To one person, as a draft you send",
+    const isLetter = t.channel === "letter", emailed = !isLetter || EMAILED_LETTERS.has(t.kind);
+    cards.push({ id: "letter-" + t.kind, store: emailed ? "person" : "letter", section: templateSection("letter", t.kind, t.label),
+      name: t.label, medium: !isLetter ? "Email" : emailed ? "Email and printed letter" : "Printed letter", editor: emailed ? "email" : "letter",
+      how: !isLetter ? "To one person, as a draft you send" : emailed ? "A draft you send, or a letter you print" : "Prints with this person's details",
       review: t.reviewed ? `Reviewed${t.reviewedBy ? " by " + t.reviewedBy : ""}` : "Not yet reviewed", reviewed: !!t.reviewed,
-      onOpen: isLetter ? () => setOpenLetter(t) : (isReadOnly && !live.some(x => x.starterKey === "person_" + t.kind)) || busy ? null : () => openBridged("person_" + t.kind),
-      openLabel: busy === "person_" + t.kind ? "Opening…" : "Edit in editor" });
+      onOpen: !emailed ? () => setOpenLetter(t) : (isReadOnly && !live.some(x => x.starterKey === "person_" + t.kind)) || busy ? null : () => openBridged("person_" + t.kind),
+      openLabel: !emailed ? "Edit letter" : busy === "person_" + t.kind ? "Opening…" : "Edit in editor",
+      quick: isLetter && emailed ? t : null });
   }
   for (const t of live) {
     if (BRIDGED.test(t.starterKey || "")) continue;
@@ -238,10 +259,6 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
             Each one starts in Steward's words and says "Not yet reviewed" until someone here has read it and saved it in yours.
             A letter prints. An email to one person becomes a draft for you to send, and a designed email opens with your brand, blocks and photos.
           </p>
-          {openLetter && letters && (
-            <TemplateEditor t={openLetter} fields={letters.mergeFields || []} donors={donors} isReadOnly={isReadOnly} onOpenDrafts={onOpenDrafts}
-              onClose={() => setOpenLetter(null)} onSaved={t => { setOpenLetter(t); loadLetters(); }} />
-          )}
           {TEMPLATE_SECTIONS.map(sec => {
             const mine = cards.filter(c => c.section === sec.id);
             return (
@@ -261,6 +278,11 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
                           <span data-reviewed={c.reviewed ? "1" : "0"} style={reviewedStyle(c.reviewed)}>{c.review}</span>
                           {c.onOpen && <span data-testid={c.openLabel === "Edit in editor" ? "edit-in-editor" : undefined} style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}
                         </div>
+                        {c.quick && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                            <button style={btn.small} data-testid="quick-edit" onClick={() => setOpenLetter(c.quick)}>Quick edit and print</button>
+                          </div>
+                        )}
                         {c.designed && (
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
                             <button style={btn.small} disabled={isReadOnly || !!busy} onClick={() => start({ copyOf: c.designed.id })}>Copy</button>
@@ -640,7 +662,8 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
           ))}
           <div style={{ ...card, marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
             <label htmlFor="et-add" style={{ fontSize: 13, fontWeight: 700 }}>Add a block</label>
-            <select id="et-add" style={{ ...input, width: "auto", flex: 1 }} value={addType} onChange={e => setAddType(e.target.value)}>
+            {/* FIX-56: minWidth 0, or the longest option ("Hero: Big photo + headline…") widened the column and a scroll to a block clipped its left edge. */}
+            <select id="et-add" style={{ ...input, width: "auto", flex: "1 1 0", minWidth: 0 }} value={addType} onChange={e => setAddType(e.target.value)}>
               <option value="">Choose…</option>
               {blockTypes.filter(t => t.key !== "footer").map(t => <option key={t.key} value={t.key}>{t.label}: {t.hint}</option>)}
             </select>
@@ -684,7 +707,8 @@ function PhotoField({ value, alt, onChange, pick, what }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: value ? T.ink : T.ink3, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || `No ${what} chosen yet`}</span>
+        {/* FIX-56: minWidth 0, so a photo's long address never widens the column. */}
+        <span style={{ fontSize: 12, color: value ? T.ink : T.ink3, flex: "1 1 0", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value || `No ${what} chosen yet`}</span>
         <button style={btn.small} onClick={() => pick("photo", item => onChange({ src: item.url, alt: alt || item.alt || "" }))}>Choose from media</button>
         {value && <button style={btn.small} onClick={() => onChange({ src: null, alt })}>Clear</button>}
       </div>

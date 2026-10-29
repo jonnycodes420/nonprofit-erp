@@ -151,7 +151,8 @@ async function personSample(orgId, person) {
   const [o] = await query(`SELECT name, legal_name, receipt_signature_name, receipt_signature_title, brand_signature_extra,
                                   receipt_address, tax_language FROM orgs WHERE id=?`, [orgId]);
   const v = Object.fromEntries(BK.MERGE_FIELDS.map(f => [f.key, f.sample]));
-  const sig = [o && o.receipt_signature_name, o && o.receipt_signature_title, o && o.brand_signature_extra].filter(Boolean).join("\n");
+  // FIX-56: the sender's signature, never the brand kit's sample person.
+  const sig = BK.senderSignature(o).text;
   const GR = await import("../shared/greeting.js");
   return { ...v, first_name: GR.firstNames(person) || v.first_name, greeting: GR.greetingName(person) || v.first_name, full_name: person.name || v.full_name,
     org_name: (o && o.name) || v.org_name, signature: sig || v.signature, org_address: (o && o.receipt_address) || "",
