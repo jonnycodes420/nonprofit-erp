@@ -818,7 +818,7 @@ async function writePlan({ req, body, importId, who, report }) {
   // pledge is its own row's amount, never a total column (FIX-52).
   let giftsCreated = 0, giftCents = 0, pledgesCreated = 0, pledgeCents = 0, duplicates = 0, duplicateCents = 0, installmentGifts = 0;
   // FIX-55: the receipt says this year's installments, then the open total over the years
-  let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0;
+  let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0, pledgeUndatedMade = 0;
   const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
   const pledgeIdByRow = new Map();
   const PCOLS = ["id", "org_id", "donor_id", "amount", "due_date", "status", "notes", "idempotency_key", "frequency", "installment_count",
@@ -843,6 +843,7 @@ async function writePlan({ req, body, importId, who, report }) {
       pledgesCreated++; pledgeCents += p.pledgeCents;
       pledgeOpenMade += p.openCents; pledgeYearsMade = Math.max(pledgeYearsMade, p.years || 1);
       pledgeDueMade += p.installments.filter(i => !i.paid && i.dueDate && i.dueDate <= yearEndToday).reduce((a, i) => a + i.cents, 0);
+      pledgeUndatedMade += p.installments.filter(i => !i.paid && !i.dueDate).reduce((a, i) => a + i.cents, 0);
       summary.pledges.push(pid);
     }
     await insertRows("INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)", ["id", "org_id", "pledge_id", "seq", "due_date", "amount"], inst);
@@ -923,7 +924,7 @@ async function writePlan({ req, body, importId, who, report }) {
      rowsIn, giftsCreated, donorsCreated, u.aside.length + duplicates, dollarsInCents / 100, giftCents / 100, who.id, who.name, JSON.stringify(summary)]);
   const parts = [];
   if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
-  if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${Rm.pledgeMoneyWords({ dueThisYearCents: pledgeDueMade, openCents: pledgeOpenMade, years: pledgeYearsMade }, money)})`);
+  if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${Rm.pledgeMoneyWords({ dueThisYearCents: pledgeDueMade, openCents: pledgeOpenMade, years: pledgeYearsMade, undatedCents: pledgeUndatedMade }, money)})`);
   if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
     : `Nothing new: every row in this file was already here.`;
