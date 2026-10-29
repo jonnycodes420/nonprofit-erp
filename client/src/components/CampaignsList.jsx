@@ -45,12 +45,11 @@ export const CATEGORY_META = {
 };
 
 // An overarching (umbrella) goal is a STRUCTURE, not a category.
+// FUNDRAISING-2: "PROJECT" and "ANNUAL" on every card were the database's
+// words, not hers. Only a goal that rolls others up says so, in a sentence.
 export function CategoryBadge({ g, style }) {
-  if (g.isOverarching) {
-    return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink2, background: T.bg2, borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>Overarching</span>;
-  }
-  const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
-  return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>{cat.label}</span>;
+  if (!g.isOverarching) return null;
+  return <span style={{ fontSize: 11, fontWeight: 600, color: T.ink3, whiteSpace: "nowrap", flexShrink: 0, ...style }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</span>;
 }
 
 const SENT = {

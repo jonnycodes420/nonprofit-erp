@@ -176,6 +176,8 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   the arrival, never in the future; thanked is a sent thank-you or one marked thanked by a call or a note, never a
   receipt (a receipt sets `acknowledgement_sent`, which is why that column cannot be the clock). (CAPTURE-1)
 
+- **Pledges are said one way (FUNDRAISING-2).** Still to come, due this fiscal year and overdue are `numbers.pledgeSummary` (pledges-open, pledges-due to the org's fiscal year end, pledges-overdue before today). Fundraising's Overview and Pledges, Home's "Are we on pace?" and each profile's dueThisYear count to the same day; `assertSurfacesAgree` checks all of them.
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

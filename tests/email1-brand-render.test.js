@@ -57,7 +57,8 @@ async function sendAndWait(tok, id) {
   const reg = await api("POST", "/auth/register-org", null, { orgName: "Email One Brand Org", userName: "Brand Tester", email: `email1-${stamp}@example.com`, password: "loadtest1234" });
   if (!reg.body.token) throw new Error("register-org failed: " + reg.text);
   const tok = reg.body.token, orgId = reg.body.org.id;
-  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW() WHERE id=$1", [orgId]);
+  // FUNDRAISING-2: a giving page opens only once the org can take money.
+  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), stripe_connected=true, stripe_account_id='acct_email1' WHERE id=$1", [orgId]);
   await new Promise(res => setTimeout(res, 5100));   // the 5s mail-gate cache the signup filled
   await api("POST", "/onboarding/complete", tok);
   await api("PATCH", `/orgs/${orgId}`, tok, { legalName: "Email One Brand Org Inc.", receiptAddress: "9 Quay Street\nSalem, MA 01970" });

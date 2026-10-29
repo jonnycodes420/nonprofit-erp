@@ -192,12 +192,14 @@ export function CaptureInbox({ isReadOnly, onOpenThanks }) {
       <style>{CAPTURE_CSS}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div data-testid="capture-count" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
-          {n === 0 ? "Nothing is waiting. Every gift that came in as paper or a document has been confirmed."
+          {/* FUNDRAISING-2: the empty state says the two ways in. */}
+          {n === 0 ? <>Nothing to confirm right now. Snap a check below{data.address
+              ? <>, or forward a scan or letter to <strong data-testid="capture-address-empty" style={{ userSelect: "all", overflowWrap: "anywhere" }}>{data.address}</strong></> : null}, and it waits here for you.</>
             : n === 1 ? "One item is waiting for you to confirm it."
             : `${n} items are waiting for you to confirm them.`}
           {" "}Nothing is logged until you tap, and nothing is sent to a donor.
         </div>
-        {data.address && (
+        {data.address && n > 0 && (
           <div data-testid="capture-address" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, overflowWrap: "anywhere" }}>
             Forward anything to <strong style={{ color: T.ink, userSelect: "all" }}>{data.address}</strong>: a scan, a letter, a photo from your phone. It lands here. Only mail from your team is kept.
           </div>
