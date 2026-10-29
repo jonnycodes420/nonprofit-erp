@@ -49,6 +49,15 @@ export const fmtFull = n => {
   return `${v < 0 ? "-" : ""}$${body}`;
 };
 
+// FUNDRAISING-2 · CENTS WHERE THEY MATTER. A gift keeps its cents (fmtFull);
+// a total of a thousand dollars or more reads in whole dollars. The figure
+// still opens rows that foot to the cent.
+export const fmtTotal = n => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "$0";
+  return Math.abs(v) >= 1000 ? `${v < 0 ? "-" : ""}$${Math.round(Math.abs(v)).toLocaleString("en-US")}` : fmtFull(v);
+};
+
 // BUILD-64 Part 4 — the ONE human date formatter for every donor-facing
 // surface. A bare ISO "2026-08-17" reads mechanical in a serif giving history;
 // the cross-org dashboard already rendered "Aug 17, 2026" while the org portal

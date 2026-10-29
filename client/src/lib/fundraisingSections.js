@@ -62,6 +62,8 @@ export const FR_SECTIONS = [
     parts: [
       // CAPTURE-1: checks and gift documents waiting for a person's tap.
       { id: "toconfirm", label: "To confirm" },
+      // FUNDRAISING-2: every open pledge, what is due this year and overdue.
+      { id: "pledges", label: "Pledges" },
       { id: "deposits", label: "Deposits" },
       { id: "acknowledgments", label: "Acknowledgments" },
       { id: "funds", label: "Funds" },
@@ -100,6 +102,8 @@ export const FR_LEGACY = {
   unfinished:      { section: "moneyin",    part: "unfinished",      label: "Started, not finished" },
   // CAPTURE-1: a new part id, registered for the same reason.
   toconfirm:       { section: "moneyin",    part: "toconfirm",       label: "To confirm" },
+  // FUNDRAISING-2: a new part id, registered for the same reason.
+  pledges:         { section: "moneyin",    part: "pledges",         label: "Pledges" },
 };
 
 // Any id — an old tab id, a section id, or nothing — to {section, part}.

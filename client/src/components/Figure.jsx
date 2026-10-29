@@ -20,7 +20,7 @@
 //   cell    a row's figure, right-aligned
 //   point   a point on a chart (an SVG circle), for the Board's line
 import { createContext, useContext, useState } from "react";
-import { T, fmtFull } from "./shared";
+import { T, fmtFull, fmtTotal } from "./shared";
 import { apiFetch } from "../api";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -63,7 +63,7 @@ export function FigureWhy({ definition, label, source, tile = false }) {
 }
 
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
-                         figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color, why = true }) {
+                         figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color, why = true, whole = false }) {
   const [open, setOpen] = useState(false);
   const { openPerson } = useContext(FigureContext);
   const isBlank = value === null || value === undefined;
@@ -99,7 +99,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   }
 
   const text = isBlank ? "Not set"
-    : kind === "money" ? fmtFull(shown)
+    : kind === "money" ? (whole ? fmtTotal(shown) : fmtFull(shown))   // FUNDRAISING-2: `whole` drops cents on a big total
     : kind === "percent" ? `${shown}%`
     : Number(shown).toLocaleString("en-US") + suffix;
 

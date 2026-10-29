@@ -161,6 +161,7 @@ CORE=(
   org-bound-writes
   real-shaped
   insights
+  fundraising2-screens
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof

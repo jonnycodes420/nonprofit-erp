@@ -55,7 +55,7 @@ const RULES = {
     screens: "Fundraising cards, campaign pages, thermometers, goal drawers" },
   "campaign-window": { words: "No gift dated outside a campaign's start and end counts toward it.",
     screens: "every campaign total" },
-  "goal-rollup": { words: "The Fundraising overview's combined goal total equals the sum of its top-level active goals, and a parent goal's raised is its own gifts plus its child goals' gifts, each gift once, plus their awarded grants.",
+  "goal-rollup": { words: "The Fundraising overview's combined goal total equals the sum of its top-level goals running today (not started and ended ones are out), and a parent goal's raised is its own gifts plus its child goals' gifts, each gift once, plus their awarded grants.",
     screens: "Fundraising overview header, parent goal cards" },
   "goal-period": { words: "An organization goal counts the gifts dated inside its own start and end, the same on Home and Fundraising, from people who are not deleted, soft and matching credits left out.",
     screens: "Home goal banner, Fundraising goal card" },
@@ -330,7 +330,7 @@ async function checkOrg(orgId, opts = {}) {
   if (opts.screens && opts.screens.fundraisingPortfolio) {
     const p = await opts.screens.fundraisingPortfolio(orgId);
     if (p && p.rollup) {
-      const top = p.goals.filter(g => !g.parentGoalId && g.lifecycle !== "ended");
+      const top = p.goals.filter(g => !g.parentGoalId && g.lifecycle === "active");
       const want = top.reduce((s, g) => s + c(g.rolledRaised), 0);
       const wantGoal = top.reduce((s, g) => s + c(g.goalAmount), 0);
       if (c(p.rollup.totalRaised) !== want || c(p.rollup.totalGoal) !== wantGoal) add("goal-rollup", { shown: [c(p.rollup.totalRaised), c(p.rollup.totalGoal)], goals: [want, wantGoal] });

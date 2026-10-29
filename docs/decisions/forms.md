@@ -320,6 +320,8 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   in-kind gift"** (`recordGift`, `idempotency_key auction-inkind:<item>`, `auction_items.in_kind_gift_id`).
   Never on item creation: the value may be corrected after listing. (PARITY-2)
 
+- **A giving page is never live before it can take money (FUNDRAISING-2).** Until the org has `stripe_connected` and a Stripe account (`orgTakesGifts`), its pages read "Draft · connect payments to go live", are not counted as live, and the public address answers `notOpen` ("Not open yet").
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)
