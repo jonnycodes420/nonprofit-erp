@@ -5439,6 +5439,7 @@ app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════
 
 const PORTAL_COOKIE = "steward_portal";
+const PORTAL_HINT_COOKIE = "steward_portal_in";
 const sha256hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
 function parsePortalCookies(req) {
@@ -5457,6 +5458,16 @@ function setPortalCookie(res, token, maxAgeSec) {
   res.append("Set-Cookie",
     [`${PORTAL_COOKIE}=${encodeURIComponent(token)}`, "HttpOnly", "Secure", "SameSite=Lax", "Path=/",
      `Max-Age=${maxAgeSec}`].join("; "));
+  // FIX-57: a hint the giving page CAN read, holding no secret, only "a donor
+  // session may be here". Without it the page asked give-default on every
+  // anonymous visit and took a 401 into the console. The session itself is
+  // still only the HttpOnly cookie above; the hint opens nothing.
+  res.append("Set-Cookie",
+    [`${PORTAL_HINT_COOKIE}=1`, "Secure", "SameSite=Lax", "Path=/", `Max-Age=${maxAgeSec}`].join("; "));
+}
+function clearPortalCookie(res) {
+  clearPortalCookie(res);
+  res.append("Set-Cookie", `${PORTAL_HINT_COOKIE}=; SameSite=Lax; Path=/; Max-Age=0`);
 }
 
 // One org lookup for every portal route: slug → org row + portal settings.
@@ -6043,7 +6054,7 @@ app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) =
 app.post("/portal/:orgSlug/logout", wrap(async (req, res) => {
   const raw = parsePortalCookies(req)[PORTAL_COOKIE];
   if (raw) await run(`UPDATE portal_sessions SET revoked_at = NOW() WHERE token_hash = ?`, [sha256hex(raw)]).catch(() => {});
-  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  clearPortalCookie(res);
   res.json({ ok: true });
 }));
 
@@ -7388,7 +7399,7 @@ app.post("/account/login", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter
 app.post("/account/logout", requireFlag(DONOR_ACCOUNTS_ENABLED), wrap(async (req, res) => {
   const raw = parsePortalCookies(req)[PORTAL_COOKIE];
   if (raw) await run(`UPDATE portal_sessions SET revoked_at = NOW() WHERE token_hash = ?`, [sha256hex(raw)]).catch(() => {});
-  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  clearPortalCookie(res);
   res.json({ ok: true });
 }));
 
@@ -7645,7 +7656,7 @@ app.delete("/account", requireDonorAccount, wrap(async (req, res) => {
   await donorAudit(acct.id, null, "account_deleted", req);
   await run(`UPDATE donor_account_audit SET email = NULL WHERE account_id = ?`, [acct.id]); // PII scrub, trail kept
   await run(`DELETE FROM donor_accounts WHERE id = ?`, [acct.id]); // CASCADE: aliases, links, resets
-  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  clearPortalCookie(res);
   res.json({ ok: true });
 }));
 
