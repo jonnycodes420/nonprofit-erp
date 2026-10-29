@@ -763,7 +763,10 @@ export function mapMethodWord(raw) { return methodOf(raw); }
 // Suggested event name from a file name: "Finding Joy Dinner Gifts.xlsx" →
 // "Finding Joy Dinner".
 export function eventNameFromFile(fileName) {
-  let n = s(fileName).replace(/\.(xlsx|xls|csv|tsv|txt)$/i, "").replace(/[_]+/g, " ");
+  // FIX-59: the name keeps its punctuation. A download that wrote an
+  // apostrophe as "_" ("Justin_s Place") gets it back; "(1)" is a copy's
+  // number, never part of the name
+  let n = s(fileName).replace(/\.(xlsx|xls|csv|tsv|txt)$/i, "").replace(/\s*\(\d+\)\s*/g, " ").replace(/([A-Za-z])_s\b/g, "$1's").replace(/[_]+/g, " ");
   n = n.replace(/[-]+/g, " ").replace(/\b(gifts?|donations?|pledges?|export|final|copy|v\d+|\(\d+\)|list|sheet|results|totals?|scrubbed|tally|combined|guests?|guest list|rsvps?|attendance|seating|name tags?|invites?|invitations?|workbook)\b/gi, " ").replace(/\s+/g, " ").trim();
   // FIX-55: a row count or an id in the name ("jp dinner 106") is not the event's
   // name; a name with no capitals is a file name, so its short codes go and it

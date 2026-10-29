@@ -160,6 +160,7 @@ CORE=(
   surfaces-agree
   org-bound-writes
   real-shaped
+  fix59-event-import
   insights
   fundraising2-screens
   int4-mailbox
