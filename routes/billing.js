@@ -2975,6 +2975,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
     await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
   // SCALE-2: the stored answers (Home's figures, each person's Drift answer)
   // and the change rows that kept them honest go with the org.
+  // SEND-GATE-1/2: held and sent automatic mail, staff confirms, skips and the
+  // org's email switches all reference the org and go with it.
+  for (const t of ["mail_blocked", "auto_mail_sent", "mail_skips", "org_mail_types", "send_confirms"])
+    await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
   await run("DELETE FROM donor_drift WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM org_summary WHERE org_key=?", [orgId]).catch(() => {});
   await run("DELETE FROM org_changes WHERE org_key=?", [orgId]).catch(() => {});
