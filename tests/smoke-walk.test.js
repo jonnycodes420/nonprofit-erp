@@ -329,13 +329,34 @@ async function emailEditorEverywhere(browser) {
     const shown = await page.locator(sel).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
     ok(`§fix56 Templates › ${label} switches and draws`, (await tab.getAttribute("aria-selected")) === "true" && shown);
   }
+  // EDITOR-1: every editor is the one shell (StewardEditor): a left rail, ONE
+  // preview with the Phone / Desktop toggle, and the words typed in that
+  // preview, so no body textarea sits beside it. HOW IT GOES RED: on main
+  // (1e383a1) the email editor is form blocks beside a preview (no
+  // [data-testid=steward-editor]); the campaign builder is a body editor beside
+  // "What Margaret will see"; the giving page editor shows two previews side by
+  // side; the event page is a form card with no preview at all.
+  const shellOf = async (frameSel) => page.evaluate((fs) => {
+    const ed = document.querySelector('[data-testid="steward-editor"],[data-testid="portal-editor"]');
+    const canvas = ed && ed.querySelector('[data-testid="editor-canvas"]');
+    let editable = 0;
+    try { const f = fs && document.querySelector(fs); editable = f ? f.contentDocument.querySelectorAll("[data-st-edit]").length : document.querySelectorAll("[data-inline]").length; } catch { editable = -1; }
+    return { shell: !!ed, rail: !!(ed && ed.querySelector('[data-testid="editor-left-rail"]')),
+      toggle: !!(ed && ed.querySelector('[data-testid="editor-device-phone"]') && ed.querySelector('[data-testid="editor-device-desktop"]')),
+      previews: canvas ? canvas.querySelectorAll('iframe, [data-testid="giving-page"]').length : 0,
+      bodyTextareas: ed ? [...ed.querySelectorAll("textarea, [contenteditable=true]:not([data-inline])")].filter(t => !t.closest('[data-testid="editor-left-rail"],[data-testid="editor-right-rail"]')).length : -1,
+      editable };
+  }, frameSel);
+  const shellOk = (what, r) => ok(`§editor-1 ${what}: the one editor (rail, one preview, Phone/Desktop), typed in the preview, no body textarea beside it`,
+    r.shell && r.rail && r.toggle && r.previews === 1 && r.bodyTextareas === 0 && r.editable > 0, r);
   const opensEditor = async (what, open) => {
     await open();
-    const r = await page.locator('[data-testid="email-editor-blocks"] [data-testid="email-block-card"]').first().waitFor({ timeout: 15000 })
+    const r = await page.locator('[data-testid="steward-editor"] [data-testid="email-preview-frame"]').first().waitFor({ timeout: 15000 })
       .then(() => true).catch(() => false);
-    const res = { blocks: await page.locator('[data-testid="email-block-card"]').count(), frame: await page.locator('[data-testid="email-preview-frame"]').count(),
-      plainForm: await page.locator('[data-testid="template-editor"]').count() };
-    ok(`§fix56 ${what}: "Edit in editor" opens the email editor with its blocks and preview`, r && res.blocks > 0 && res.frame === 1 && res.plainForm === 0, res);
+    await page.waitForFunction(() => { const f = document.querySelector('[data-testid="email-preview-frame"]'); try { return f && f.contentDocument.querySelector("[data-st-edit]"); } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
+    const res = { opened: r, plainForm: await page.locator('[data-testid="template-editor"]').count(), ...(await shellOf('[data-testid="email-preview-frame"]')) };
+    ok(`§fix56 ${what}: "Edit in editor" opens the email editor with its preview`, r && res.plainForm === 0, res);
+    shellOk(what, res);
     return res;
   };
   const backToLibrary = async () => {
@@ -346,11 +367,34 @@ async function emailEditorEverywhere(browser) {
   await opensEditor("a thank-you (first gift)", () => card("letter-thanks_first").click());
   await backToLibrary();
   await opensEditor("the receipt", () => card("letter-receipt").click());
-  ok("§fix56 the receipt's tax lines are the locked block", await page.locator('[data-testid="email-locked-block"]').count() === 1);
+  ok("§fix56 the receipt's tax lines are the locked block", await page.evaluate(() => {
+    const d = document.querySelector('[data-testid="email-preview-frame"]').contentDocument;
+    const rows = d.querySelectorAll('tr[data-st-locked="1"]');
+    return rows.length > 0 && [...rows].every(r => !r.querySelector("[data-st-edit]"));
+  }));
   await backToLibrary();
   await opensEditor("a campaign starter", () => page.locator('[data-template-card="campaign"]').first().click());
   await backToLibrary();
   if (stepTpl) await opensEditor("a journey step's email", () => page.goto(`${APP}/app/communications?subtab=templates&template=${encodeURIComponent(stepTpl)}&back=${encodeURIComponent("/app/journeys")}`, { waitUntil: "domcontentloaded" }));
+  // EDITOR-1: a campaign, a giving page and an event page open in the same shell.
+  await page.goto(`${APP}/app/communications?subtab=campaigns`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.getByRole("button", { name: /new campaign/i }).first().click().catch(() => {});
+  await page.locator('[data-testid^="template-"]').first().click({ timeout: 15000 }).catch(() => {});
+  await page.locator('[data-testid="campaign-preview"]').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await page.waitForFunction(() => { const f = document.querySelector('[data-testid="campaign-preview"]'); try { return f && f.contentDocument.querySelector("[data-st-edit]"); } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
+  shellOk("a campaign", await shellOf('[data-testid="campaign-preview"]'));
+  const gp = await api("POST", "/giving-pages", a.token, { title: "Winter coats" });
+  const gpId = gp.body && (gp.body.id || (gp.body.page && gp.body.page.id));
+  await page.goto(`${APP}/portal-editor?page=${encodeURIComponent(gpId || "")}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.locator('[data-testid="real-preview"] [data-testid="giving-page"]').first().waitFor({ timeout: 20000 }).catch(() => {});
+  shellOk("a giving page", await shellOf(null));
+  const ev = await api("POST", "/events", a.token, { name: "Coat drive night", date: "2027-01-15", eventType: "community" });
+  const evId = ev.body && (ev.body.id || (ev.body.event && ev.body.event.id));
+  await page.goto(`${APP}/app/events?event=${encodeURIComponent(evId || "")}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.locator('[data-testid="event-page-open"]').first().click({ timeout: 20000 }).catch(() => {});
+  await page.locator('[data-testid="event-page-preview"]').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await page.waitForFunction(() => { const f = document.querySelector('[data-testid="event-page-preview"]'); try { return f && f.contentDocument.querySelector("[data-st-edit]"); } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
+  shellOk("an event page", await shellOf('[data-testid="event-page-preview"]'));
   ok("§fix56 nothing threw on Communications", errors.length === 0, errors.slice(0, 3));
   await ctx.close();
 }

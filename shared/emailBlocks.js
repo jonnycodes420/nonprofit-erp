@@ -93,17 +93,29 @@ export function youtubeThumb(videoId) {
 // gift date, year total or tax lines); `extra` is that list, [{ key, fallback }].
 const fieldDefs = extra => (extra && extra.length ? [...EMAIL_MERGE_FIELDS, ...extra.filter(f => f && f.key && !MERGE_KEYS.has(f.key))] : EMAIL_MERGE_FIELDS);
 const keysOf = defs => (defs === EMAIL_MERGE_FIELDS ? MERGE_KEYS : new Set(defs.map(f => f.key)));
-function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS) {
+// EDITOR-1: `chips` draws each field as a chip the editor keeps as a field
+// (data-st-token holds it exactly as typed), filled with this person's value,
+// so typing around it never turns a field into somebody's name. The greeting
+// is a chip too: "Dear {{donor_name}}" shows the greeting and saves as typed.
+export const CHIP_STYLE = "background:#edf3ee;color:#0d5c3a;border-radius:4px;padding:0 3px;white-space:nowrap;";
+function chip(name, value) {
+  return `<span class="st-chip" data-st-token="${esc(name)}" contenteditable="false" style="${CHIP_STYLE}">${esc(value)}</span>`;
+}
+function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS, chips = false) {
   // FIX-46: a name field after "Dear" is the greeting (fields.greeting).
-  const escaped = esc(greetMerge(raw, fields && fields.greeting));
+  const source = chips ? String(raw == null ? "" : raw) : greetMerge(raw, fields && fields.greeting);
+  const escaped = esc(source);
   const keys = keysOf(defs);
-  return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name) => {
+  return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name, at) => {
     const key = MERGE_ALIASES[name] || name;
+    if (chips && ["donor_name", "full_name", "name"].includes(key) && fields && fields.greeting && /\b(dear|hi|hello|hey|greetings|good (?:morning|afternoon|evening)),?[ \t]+$/i.test(escaped.slice(0, at))) {
+      return chip(name, fields.greeting);
+    }
     if (!keys.has(key)) {
       problems.push(`${where}: {{${name}}} is not a field Steward can fill. Use one of ${defs.map(f => f.token || `{{${f.key}}}`).join(", ")}.`);
-      return whole;
+      return chips ? chip(name, `{{${name}}}`) : whole;
     }
-    return esc(fieldValue(fields, key, defs));
+    return chips ? chip(name, fieldValue(fields, key, defs)) : esc(fieldValue(fields, key, defs));
   });
 }
 function fieldValue(fields, key, defs = EMAIL_MERGE_FIELDS) {
@@ -151,8 +163,12 @@ export function renderSubject(subject, fields, extraFields) {
 }
 
 // ── The renderer ───────────────────────────────────────────────────────────
-export function renderEmail({ blocks, brand, fields, preheader, subject, links, mode, extraFields } = {}) {
+// EDITOR-1: `editable` (preview only) marks every typed field of a block with
+// data-st-edit="<block>.<field>" and draws fields as chips, so the editor can
+// be typed in where the words show and read them back. A send never carries it.
+export function renderEmail({ blocks, brand, fields, preheader, subject, links, mode, extraFields, editable } = {}) {
   const defs = fieldDefs(extraFields), keys = keysOf(defs);
+  const ED = mode === "preview" && editable === true;
   const problems = [];
   const images = [];
   const text = [];
@@ -166,7 +182,13 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   const orgName = String(B.displayName || F.org_name || "").trim();
   const list = Array.isArray(blocks) ? blocks : [];
 
-  const T = (raw, where) => { blankCheck(raw, problems, where); return mergeText(raw, F, problems, where, defs); };
+  const T = (raw, where, path) => {
+    blankCheck(raw, problems, where);
+    const out = mergeText(raw, F, problems, where, defs, ED);
+    return ED && path ? `<span data-st-edit="${path}">${out}</span>` : out;
+  };
+  // An empty field still has a place to type when editing.
+  const has = v => ED || (v != null && String(v) !== "");
   // The plain-text part gets the same fields, unescaped (it is not HTML).
   const plain = s => greetMerge(String(s == null ? "" : s), F.greeting).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
@@ -192,10 +214,10 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
 
   // A bulletproof button: the colour is on the table cell, so it shows even
   // where images are off and padding on links is ignored.
-  function button(label, href, where) {
+  function button(label, href, where, path) {
     const url = mergeUrl(href, F);
     if (!url) problems.push(`${where}: the button needs a link.`);
-    const lbl = T(label || "Read more", where);
+    const lbl = T(label || "Read more", where, path);
     text.push(`${plain(label || "Read more")}: ${url || "(link to add)"}`);
     return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;"><tr>
 <td align="center" bgcolor="${btnBg}" style="background:${btnBg};border-radius:8px;mso-padding-alt:14px 28px;">
@@ -232,8 +254,8 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
         if (w.image !== undefined) {
           rows.push(`<tr><td class="st-card" bgcolor="${C.card}" style="background:${C.card};padding:0;">${img(w.image, w.alt, W, where)}</td></tr>`);
         }
-        if (w.heading) { parts.push(H(T(w.heading, where), w.size === "tall" ? 34 : 28)); text.push(plain(w.heading).toUpperCase()); }
-        if (w.sub) { parts.push(P(T(w.sub, where), "font-size:17px;")); text.push(plain(w.sub)); }
+        if (has(w.heading)) { parts.push(H(T(w.heading || "", where, `${i}.heading`), w.size === "tall" ? 34 : 28)); if (w.heading) text.push(plain(w.heading).toUpperCase()); }
+        if (has(w.sub)) { parts.push(P(T(w.sub || "", where, `${i}.sub`), "font-size:17px;")); if (w.sub) text.push(plain(w.sub)); }
         if (parts.length) rows.push(row(parts.join(""), `28px ${PAD}px 8px`));
         break;
       }
@@ -248,11 +270,16 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
             for (const it of (b.items || [])) text.push(`- ${plain(it)}`);
           } else { out.push(P(T(b.text, where).replace(/\n/g, "<br>"))); text.push(plain(b.text)); }
         }
-        if (out.length) rows.push(row(out.join(""), `12px ${PAD}px 4px`));
+        // EDITOR-1: the whole block is one place to type, paragraph by paragraph
+        // (Enter starts the next one). A locked block (a receipt's tax lines) is not.
+        if (ED && !w.locked) {
+          if (!out.length) out.push(P(""));
+          rows.push(row(`<div data-st-edit="${i}.blocks" data-st-rich="1">${out.join("")}</div>`, `12px ${PAD}px 4px`));
+        } else if (out.length) rows.push(row(out.join(""), `12px ${PAD}px 4px`));
         break;
       }
       case "image": {
-        const cap = w.caption ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:13px;line-height:1.5;color:${C.muted};">${T(w.caption, where)}</p>` : "";
+        const cap = has(w.caption) ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:13px;line-height:1.5;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : "";
         rows.push(row(img(w.image, w.alt, INNER, where) + cap, `12px ${PAD}px`));
         if (w.caption) text.push(plain(w.caption));
         break;
@@ -274,17 +301,17 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
           if (!val) problems.push(`${where}: stat ${k + 1} has no number yet; add your own figure or remove it.`);
           text.push(`${val || "[number]"} ${plain(s && s.label)}`);
           return `<td class="st-col" width="${pct}%" align="center" valign="top" style="width:${pct}%;padding:8px 6px;">
-<div class="st-ink" style="font-family:${fonts.serif};font-size:30px;line-height:1.2;color:${C.ink};">${val ? T(val, where) : "[number]"}</div>
-<div class="st-muted" style="font-family:${fonts.sans};font-size:12px;line-height:1.4;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${T((s && s.label) || "", where)}</div></td>`;
+<div class="st-ink" style="font-family:${fonts.serif};font-size:30px;line-height:1.2;color:${C.ink};">${ED ? T(val, where, `${i}.items.${k}.value`) : val ? T(val, where) : "[number]"}</div>
+<div class="st-muted" style="font-family:${fonts.sans};font-size:12px;line-height:1.4;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${T((s && s.label) || "", where, `${i}.items.${k}.label`)}</div></td>`;
         }).join("");
         rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cells}</tr></table>`, `16px ${PAD}px`));
         break;
       }
       case "quote": {
-        if (!w.text) { problems.push(`${where}: the quote is empty.`); break; }
-        const attr = w.attribution ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.attribution, where)}</p>` : "";
+        if (!w.text) { problems.push(`${where}: the quote is empty.`); if (!ED) break; }
+        const attr = has(w.attribution) ? `<p class="st-muted" style="margin:8px 0 0;font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.attribution || "", where, `${i}.attribution`)}</p>` : "";
         rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-left:4px solid ${accent};padding:4px 0 4px 18px;">
-<p class="st-ink" style="margin:0;font-family:${fonts.serif};font-size:20px;line-height:1.5;color:${C.ink};">&ldquo;${T(w.text, where)}&rdquo;</p>${attr}</td></tr></table>`, `16px ${PAD}px`));
+<p class="st-ink" style="margin:0;font-family:${fonts.serif};font-size:20px;line-height:1.5;color:${C.ink};">&ldquo;${T(w.text || "", where, `${i}.text`)}&rdquo;</p>${attr}</td></tr></table>`, `16px ${PAD}px`));
         text.push(`"${plain(w.text)}"${w.attribution ? ` ${plain(w.attribution)}` : ""}`);
         break;
       }
@@ -310,14 +337,14 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
 <td${bg} bgcolor="${C.ink}" width="${W}" height="${h}" align="center" valign="middle" class="st-video" style="${bgStyle}background-color:${C.ink};height:${h}px;text-align:center;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td width="72" height="72" align="center" valign="middle" bgcolor="${band}" style="width:72px;height:72px;border-radius:36px;background:${band};color:${bandFg};font-family:Arial,sans-serif;font-size:30px;line-height:72px;text-align:center;">&#9654;</td></tr></table>
 </td></tr></table></a>
-${w.caption ? `<p class="st-muted" style="margin:0;padding:8px ${PAD}px 0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">${T(w.caption, where)}</p>` : ""}</td></tr>`);
+${has(w.caption) ? `<p class="st-muted" style="margin:0;padding:8px ${PAD}px 0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">${T(w.caption || "", where, `${i}.caption`)}</p>` : ""}</td></tr>`);
         text.push(`Watch the video: ${href || "(link to add)"}`);
         break;
       }
       case "button": {
         const action = BUTTON_ACTIONS.includes(w.action) ? w.action : "readmore";
         const raw = String(w.url || "").trim() || (action === "give" ? "{{give_link}}" : "");
-        rows.push(row(button(w.label || BUTTON_ACTION_LABEL[action], raw, where), `12px ${PAD}px 20px`));
+        rows.push(row(button(w.label || BUTTON_ACTION_LABEL[action], raw, where, `${i}.label`), `12px ${PAD}px 20px`));
         break;
       }
       case "event": {
@@ -342,13 +369,34 @@ ${button("Give", gp.url || "", where)}</td></tr></table>`;
         text.push(plain(gp.title));
         break;
       }
+      case "divider":
+        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid ${C.hair};font-size:0;line-height:0;height:1px;">&nbsp;</td></tr></table>`, `8px ${PAD}px`));
+        break;
+      case "giftsummary": {
+        // The person's own gift, as the fields hold it. Nothing is invented: a
+        // person with no gift gets no box (a preview says what would show).
+        const amount = F.gift_amount || F.last_gift_amount || "";
+        const day = F.gift_date || F.last_gift_date || "";
+        const fund = F.fund || "";
+        if (!String(amount).trim()) {
+          if (mode === "preview") rows.push(row(`<p class="st-muted" style="margin:0;font-family:${fonts.sans};font-size:13px;color:${C.muted};">Their gift shows here: amount, date and fund. Somebody with no gift sees nothing here.</p>`, `8px ${PAD}px`));
+          break;
+        }
+        const meta = [day, fund].filter(Boolean).map(esc).join(" &middot; ");
+        rows.push(row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${C.hair};border-radius:10px;"><tr><td style="padding:16px 20px;">
+<div class="st-muted" style="font-family:${fonts.sans};font-size:12px;font-weight:bold;letter-spacing:0.06em;text-transform:uppercase;color:${C.muted};">${T(w.heading || "Your gift", where, `${i}.heading`)}</div>
+<div class="st-ink" style="font-family:${fonts.serif};font-size:28px;line-height:1.3;color:${C.ink};">${esc(amount)}</div>
+${meta ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${meta}</div>` : ""}</td></tr></table>`, `12px ${PAD}px`));
+        text.push(`${plain(w.heading || "Your gift")}: ${amount}${day ? `, ${day}` : ""}${fund ? `, ${fund}` : ""}`);
+        break;
+      }
       case "signature": {
         const name = String(w.name || "").trim();
         if (!name) problems.push(`${where}: add the name the email is signed with.`);
         const photo = w.photo ? `<td width="64" valign="middle" style="width:64px;padding:0 14px 0 0;">${img(w.photo, name || "Photo", 56, where, "border-radius:28px;")}</td>` : "";
         rows.push(row(`<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${photo}<td valign="middle">
-<div class="st-ink" style="font-family:${fonts.serif};font-size:18px;color:${C.ink};">${T(name || "[your name]", where)}</div>
-${w.title ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.title, where)}</div>` : ""}</td></tr></table>`, `8px ${PAD}px 24px`));
+<div class="st-ink" style="font-family:${fonts.serif};font-size:18px;color:${C.ink};">${ED ? T(name, where, `${i}.name`) : T(name || "[your name]", where)}</div>
+${has(w.title) ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14px;color:${C.muted};">${T(w.title || "", where, `${i}.title`)}</div>` : ""}</td></tr></table>`, `8px ${PAD}px 24px`));
         text.push(`${plain(name)}${w.title ? `\n${plain(w.title)}` : ""}`);
         break;
       }
@@ -360,7 +408,7 @@ ${w.title ? `<div class="st-muted" style="font-family:${fonts.sans};font-size:14
     }
     // POLISH-3: in a preview each block's rows carry its index, so the editor
     // can join a block in the preview to its fields. A send never carries it.
-    if (mode === "preview") for (let k = firstRow; k < rows.length; k++) rows[k] = rows[k].replace(/^<tr\b/, `<tr data-st-block="${i}"`);
+    if (mode === "preview") for (let k = firstRow; k < rows.length; k++) rows[k] = rows[k].replace(/^<tr\b/, `<tr data-st-block="${i}" data-st-type="${esc(w.type)}"${w.locked ? ` data-st-locked="1"` : ""}`);
   });
 
   const subj = subject ? mergeText(subject, F, problems, "Subject") : "";
@@ -499,6 +547,8 @@ export function validateEmailBlocks(blocks, allowedTypes) {
         case "event": out.push({ type: "event", eventId: str(w.eventId, 80) }); break;
         case "givingpage": out.push({ type: "givingpage", givingPageId: str(w.givingPageId, 80) }); break;
         case "signature": out.push({ type: "signature", name: str(w.name, 120), title: str(w.title, 120), photo: img1(w.photo, "the signature photo") }); break;
+        case "divider": out.push({ type: "divider" }); break;
+        case "giftsummary": out.push({ type: "giftsummary", heading: str(w.heading, 80) }); break;
         default: return { ok: false, error: `${at}: "${w.type}" is not an email block.` };
       }
     } catch (e) { return { ok: false, error: e.message }; }

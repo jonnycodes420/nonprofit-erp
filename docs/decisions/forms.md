@@ -3,6 +3,24 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **Anything a donor sees is edited in ONE editor, `StewardEditor`** (EDITOR-1, Jonathan 29 Oct). Giving pages,
+  volunteer pages, the org's donation form, the portal, event pages and every email open in
+  `client/src/components/StewardEditor.jsx`: a top bar (Back, name and type badge, Phone / Desktop, the draft's
+  state, History / Revert / Send me a test, ONE primary action), a left rail of folding sections (`RailSection`),
+  ONE preview at a time (no Side by side), and a right rail only when the type needs one. Below 900 px the rails
+  are sheets. The preview is the editing surface: text is typed where it shows (`InlineText` on a page; the
+  email's `editable` render in a frame), a photo is clicked for its focus (`PhotoTools`), a block shows its
+  handles on hover (up, down, duplicate, remove, and "+" under it). Never a textarea or block form beside a
+  preview that mirrors it. The cover photo is a rail section (`RailPhoto`), never a full-width panel. Editing
+  affordances inside a giving page's preview are marked `data-editor-only` / `data-editor-wrap` /
+  `data-inline`, so give3-pages can strip them and still require the preview to be the live page byte for byte.
+- **There is always a photo** (EDITOR-1). A new giving page, event and photo block starts with one of Steward's
+  ~40 licensed stock photos (`assets/stock/`, `shared/stockPhotos.js`, `routes/stockPhotos.js`), from the group
+  the org's mission words pick (`missionGroup`, community when nothing matches). A photo is stored for the org
+  through `assetStore` on first use and carries `stock: true` in its picture meta until it is replaced; the
+  server believes `stock` only of a real stock asset. Every file has a row in `assets/stock/LICENSES.md`
+  (Unsplash or Pexels licence, photographer, source); `tests/editor1.test.js` §9 holds the two together.
+  Removing a photo leaves the layout's photo-free version.
 - **Anything you can add, you can remove, through the one Remove** (FIX-41). `removal.js` is the
   registry: each kind names its table, what is attached, and whether removing it retires, archives,
   deletes or (for an auction winner) unassigns. Something with money or people on it is RETIRED
