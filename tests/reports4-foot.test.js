@@ -220,6 +220,47 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
     const ppl = await api("GET", `/figures/givers/people?from=${from}&to=${to}`, tok);
     const giv = await FS.footCheck(ORG, { key: "givers", params: { from, to } });
     ok("the people behind a figure are the people it counts", ppl.status === 200 && ppl.body.donorIds.length === giv.value, { people: ppl.body, givers: giv.value });
+
+    // FIX-60 · EQUAL SPANS. In October the 3-year comparison set four months
+    // of this year against three whole years ("a change of -69% year over
+    // year") and the annual report did the same against all of last year.
+    // While the year runs, every year counts the same days, and says which.
+    // Red on main: the columns' sources run to Dec 31 and there is no span.
+    {
+      const today = require("./helpers").civilToday();
+      const md = today.slice(5);
+      const running = md !== "12-31";
+      const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      // The same number of days from Jan 1 in each year (the Board's one
+      // window); across a Feb 29 a column ends a day off, and the page says so.
+      const dayN = (Date.parse(today) - Date.parse(`${Y}-01-01`)) / 86400000;
+      const endOf = k => running ? new Date(Date.parse(`${Y - k}-01-01`) + dayN * 86400000).toISOString().slice(0, 10) : `${Y - k}-12-31`;
+      const mdOf = d => `${MON[+d.slice(5, 7) - 1]} ${+d.slice(8)}`;
+      const offs = [1, 2].filter(k => endOf(k).slice(5) !== endOf(0).slice(5));
+      const sentence = `Jan 1 to ${mdOf(endOf(0))}, each year` + (offs.length ? ` (${offs.map(k => `to ${mdOf(endOf(k))} in ${Y - k}`).join(", ")}, the same number of days across a February 29)` : "");
+      const ty = await api("GET", `/reports/three-year?year=${Y}&yearMode=calendar`, tok);
+      const cols = (ty.body.years || []).slice().reverse();   // newest first
+      ok(`§fix60 3-year: every column counts Jan 1 to ${endOf(0).slice(5)} of its year`,
+         cols.length === 3 && cols.every((c, k) => c.source && c.source.params.from === `${Y - k}-01-01` && c.source.params.to === endOf(k)),
+         cols.map(c => c.source && c.source.params));
+      ok("§fix60 3-year: the change compares the same days", ty.body.figures?.growth?.source?.params?.prevTo === endOf(1), ty.body.figures?.growth?.source?.params);
+      ok(`§fix60 3-year: the page names the span ("${sentence}")`, ty.body.span && ty.body.span.sentence === sentence && ty.body.span.cut === running, ty.body.span);
+      const [lastYearSameDays] = await q(`SELECT COALESCE(SUM(g.amount),0)::numeric AS s FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND d.deleted_at IS NULL AND g.date >= $2 AND g.date <= $3`,
+        [ORG, `${Y - 1}-01-01`, endOf(1)]);
+      ok(`§fix60 3-year: last year's column is the same days' gifts (${lastYearSameDays.s})`, same(cols[1] && cols[1].total, lastYearSameDays.s), { column: cols[1] && cols[1].total });
+      const rowsY1 = Math.round((ty.body.rows || []).reduce((n, r) => n + Number(r.y1) * 100, 0));
+      ok("§fix60 3-year: the donor rows foot to last year's column", same(rowsY1 / 100, cols[1] && cols[1].total), { rows: rowsY1 / 100 });
+      const an = await api("GET", `/reports/annual?year=${Y}&yearMode=calendar`, tok);
+      const gp = an.body.figures?.growthPct?.source?.params || {};
+      ok("§fix60 annual: this year so far against the same days of last year", gp.to === endOf(0) && gp.prevFrom === `${Y - 1}-01-01` && gp.prevTo === endOf(1), gp);
+      ok("§fix60 annual: the page names the span", an.body.span && an.body.span.sentence && an.body.span.sentence.startsWith(`Jan 1 to ${mdOf(endOf(0))}, each year`), an.body.span);
+      for (const k of ["growthPct", "priorTotal"]) {
+        const f = an.body.figures?.[k];
+        const fc = f && f.source ? await FS.footCheck(ORG, f.source) : null;
+        ok(`§fix60 annual: ${k} opens rows and foots`, !!(fc && fc.foots) && same(fc.value, f.value), { f, fc });
+      }
+      ok("§fix60 annual: last year's figure is the same days' gifts", same(an.body.priorTotal, lastYearSameDays.s), { priorTotal: an.body.priorTotal });
+    }
     await clear(ORG);
   }
   await closeDb();

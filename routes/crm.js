@@ -22055,8 +22055,13 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
     const [bud] = await query(
       `SELECT COALESCE(SUM(b.amount),0) AS v FROM budgets b
          JOIN accounts a ON a.id = b.account_id AND a.org_id = b.org_id
-        WHERE b.org_id = ? AND b.year = ? AND a.type = 'revenue' AND a.subtype = 'contributions'`,
-      [orgId, yearMode === "fiscal" ? fyLabel : Number(String(cur.start).slice(0, 4))]);
+        WHERE b.org_id = ? AND b.year = ? AND a.type = 'revenue' AND a.subtype = 'contributions'
+          AND COALESCE(b.basis, 'calendar') = ?`,
+      // FIX-60: a budget is read on the kind of year it was set for (an old
+      // row with no basis is a calendar budget), never a calendar budget
+      // under a fiscal year's name.
+      [orgId, yearMode === "fiscal" ? fyLabel : Number(String(cur.start).slice(0, 4)),
+       yearMode === "fiscal" && orgTime.orgFiscalStartMonth(_fpTz) !== 1 ? "fiscal" : "calendar"]);
     const budgeted = parseFloat(bud?.v) || 0;
     if (budgeted > 0) {
       const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end);
@@ -23716,7 +23721,14 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const yr = orgTime.parseCivil(today).y;
   const q = Math.floor((orgTime.parseCivil(today).m - 1) / 3) + 1;
   const qMs = qb.start, qMe = qb.end;
-  const pqMs = pqb.start, pqMe = pqb.end;
+  const pqMs = pqb.start;
+  // FIX-60: a quarter still running is compared with the SAME number of days
+  // of the quarter before, never with all of it.
+  const qThrough = orgTime.compareCivil(qMe, today) > 0 ? today : qMe;
+  const qRunning = qThrough !== qMe;
+  const qDays = orgTime.daysBetween(qMs, qThrough) + 1;
+  let pqMe = orgTime.addDays(pqMs, qDays - 1);
+  if (orgTime.compareCivil(pqMe, pqb.end) > 0) pqMe = pqb.end;
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
   const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
@@ -23749,7 +23761,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     query(
       `SELECT a.name, COALESCE(b.amount, 0) as budget, COALESCE(SUM(ft.amount), 0) as actual
        FROM accounts a
-       LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ?
+       LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ? AND COALESCE(b.basis, 'calendar') = 'calendar'
        LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
        WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
        GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
@@ -23836,7 +23848,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
 
 Paragraph 1, Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
 
-Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} last quarter. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
+Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of last quarter` : "last quarter"}. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
 
 Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
@@ -23851,7 +23863,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   } catch(e) {
     console.error("[board-report] step 7: Claude FAILED (using fallback) —", e.message);
     recordAiFallback(orgId, "board_report.summary", e);
-    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} in the prior quarter. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
+    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of the prior quarter` : "in the prior quarter"}. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
   }
 
   // Generate PDF
@@ -23974,7 +23986,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.rect(50, y, PW - 100, 44).fill(BG);
     doc.font("Helvetica").fontSize(8).fillColor(INK3).text("RAISED THIS QUARTER", 62, y + 9);
     doc.font("Helvetica-Bold").fontSize(20).fillColor(GREEN).text(fmtD(raisedThisQ), 62, y + 22);
-    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`vs ${fmtD(raisedLastQ)} prior quarter`, 215, y + 26);
+    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(qRunning ? `vs ${fmtD(raisedLastQ)}, the first ${qDays} days of last quarter` : `vs ${fmtD(raisedLastQ)} prior quarter`, 215, y + 26);
     if (qChange !== null) {
       const dir = parseFloat(qChange) >= 0 ? "▲" : "▼";
       doc.font("Helvetica-Bold").fontSize(12)
@@ -24518,10 +24530,28 @@ async function reportTopDonors(orgId, p) {
 // 3-year donor giving comparison [Core]: per-donor giving this year vs last
 // vs prior (YoYoY), plus the org-level 3-year trend. Reuses reportYearBounds /
 // yearMode — one FY definition with the rest of Reports/Finance.
+// FIX-60 — EQUAL SPANS. The three years were three whole years, so in
+// October the newest column was four months against twelve and the page said
+// "a change of -69% year over year". When the selected year is still running,
+// every year is cut to the same stretch (orgTime.equalYearSpans, the same
+// point last year twice over) and `span` says which days, e.g. "Jul 1 to Oct
+// 30, each year". A finished year keeps all three whole, and says that too.
+async function yearSpans(p, bounds) {
+  const DD = await import("../shared/displayDate.js");
+  const today = p.today || orgToday(p.org || {});
+  const { years, cut } = orgTime.equalYearSpans(bounds, today);
+  // "Jan 1 to Oct 30, each year", and where a Feb 29 moved a column's last
+  // day (the window counts days), the sentence says so rather than pretend.
+  const md = s => DD.displayMonthDay(s);
+  const off = years.slice(1).filter(y => md(y.to) !== md(years[0].to));
+  const sentence = DD.eachYearSpan(years[0].from, years[0].to)
+    + (off.length ? ` (${off.map(y => `to ${md(y.to)} in ${DD.civilYear(y.to)}`).join(", ")}, the same number of days across a February 29)` : "");
+  return { years, cut, through: cut ? today : null, sentence };
+}
+
 async function reportThreeYear(orgId, p) {
-  const y0 = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);       // most recent (selected) year
-  const y1 = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
-  const y2 = reportYearBounds(p.year - 2, p.yearMode, p.fiscalStartMonth);   // oldest
+  const sp = await yearSpans(p, [0, 1, 2].map(k => reportYearBounds(p.year - k, p.yearMode, p.fiscalStartMonth)));
+  const [y0, y1, y2] = sp.years;   // most recent (selected) year first, each cut to the same span
   await FP_READY;
   const label = y => reportYearLabel(y, p);
   const rows = await query(
@@ -24557,11 +24587,12 @@ async function reportThreeYear(orgId, p) {
   return {
     figures,
     yearMode: p.yearMode,
+    span: { cut: sp.cut, through: sp.through, sentence: sp.sentence },
     // Each year's total and givers are the sources' values, and open them.
     // REPORTS-5: and what an old system's report said for that year, when one
     // was imported: beside Steward's total, never added into it.
     years: await Promise.all([[p.year - 2, y2, "t2", "d2"], [p.year - 1, y1, "t1", "d1"], [p.year, y0, "t0", "d0"]].map(async ([yy, b, t, d]) => ({
-      year: yy, label: label(yy), total: figures[t].value, donors: figures[d].value, source: figures[t].source, donorsSource: figures[d].source,
+      year: yy, label: label(yy), from: b.from, to: b.to, total: figures[t].value, donors: figures[d].value, source: figures[t].source, donorsSource: figures[d].source,
       imported: await figureSources.historicalGiving(orgId, b.from, b.to) }))),
     orgGrowthPct: figures.growth.value,
     labels: { y0: label(p.year), y1: label(p.year - 1), y2: label(p.year - 2) },
@@ -24573,8 +24604,12 @@ async function reportThreeYear(orgId, p) {
 // new vs returning, growth vs prior year, donor retention for the year, and
 // the by-fund / by-campaign breakdown — one page a board wants at year end.
 async function reportAnnual(orgId, p) {
-  const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
+  // FIX-60: a year still running is cut at today and compared with the same
+  // stretch of the year before (`priorSpan`), never with all of it. Retention
+  // keeps the whole prior year: it asks who of LAST year's donors came back.
   const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
+  const sp = await yearSpans(p, [reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior]);
+  const [cur, priorSpan] = sp.years;
   const [totals] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors,
@@ -24587,7 +24622,7 @@ async function reportAnnual(orgId, p) {
             COUNT(DISTINCT g.donor_id)::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
-    [orgId, prior.from, prior.to]);
+    [orgId, priorSpan.from, priorSpan.to]);
   const [split] = await query(
     `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?),
@@ -24620,7 +24655,8 @@ async function reportAnnual(orgId, p) {
   const figures = await reportFigures(orgId, {
     total: { key: "gifts", params: yw }, giftCount: { key: "gifts", params: { ...yw, measure: "count" } },
     uniqueDonors: { key: "givers", params: yw }, avgGift: { key: "gifts", params: { ...yw, measure: "mean" } },
-    growthPct: { key: "giving-change", params: { ...yw, prevFrom: prior.from, prevTo: prior.to } },
+    growthPct: { key: "giving-change", params: { ...yw, prevFrom: priorSpan.from, prevTo: priorSpan.to } },
+    priorTotal: { key: "gifts", params: { from: priorSpan.from, to: priorSpan.to } },
     newDonors: { key: "givers", params: { ...yw, first: "new" } }, returningDonors: { key: "givers", params: { ...yw, first: "returning" } },
     retentionRate: { key: "retention-window", params: { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to } },
   });
@@ -24631,6 +24667,7 @@ async function reportAnnual(orgId, p) {
   return {
     year: p.year, yearMode: p.yearMode, label: reportYearLabel(p.year, p),
     priorLabel: reportYearLabel(p.year - 1, p),
+    span: { cut: sp.cut, through: sp.through, sentence: sp.sentence, from: cur.from, to: cur.to, priorFrom: priorSpan.from, priorTo: priorSpan.to },
     total, giftCount: totals.gift_count, uniqueDonors: totals.unique_donors,
     avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
     priorTotal, priorGiftCount: priorT.gift_count, priorUniqueDonors: priorT.unique_donors,
@@ -25063,7 +25100,9 @@ function reportToCsv(key, data, opts = {}) {
       };
     case "three-year":
       return {
-        headers: ["Donor", "Email", "Assigned to", data.labels.y2, data.labels.y1, data.labels.y0, "YoY change %"],
+        // FIX-60: the file says which days every column counts.
+        headers: ["Donor", "Email", "Assigned to", data.labels.y2, data.labels.y1, data.labels.y0,
+          data.span && data.span.sentence ? `YoY change % (${data.span.sentence})` : "YoY change %"],
         rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.y2, r.y1, r.y0, r.changePct === null ? "new" : r.changePct]),
       };
     case "annual": {
@@ -25071,6 +25110,7 @@ function reportToCsv(key, data, opts = {}) {
         ["Total giving", data.total], ["Gifts", data.giftCount], ["Unique donors", data.uniqueDonors],
         ["Average gift", data.avgGift], ["New donors", data.newDonors], ["Returning donors", data.returningDonors],
         ["Growth vs prior year %", data.growthPct === null ? "n/a" : data.growthPct],
+        ["Prior year, same days", data.priorTotal], ["Compared over", data.span ? data.span.sentence : ""],
         ["Donor retention %", data.retentionRate === null ? "n/a" : data.retentionRate],
         ["", ""], ["BY FUND", ""],
         ...data.byFund.map(f => [f.name, f.total]),

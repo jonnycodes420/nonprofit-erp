@@ -29,7 +29,7 @@ const today = require("./helpers").civilToday();
 
 async function fixture() {
   for (const org of [ORG_A, ORG_B]) {
-    for (const t of ["fin_audit_log", "fin_transactions", "accounts", "fin_funds", "gifts", "interactions", "donors", "users"])
+    for (const t of ["fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds", "gifts", "interactions", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }
@@ -157,6 +157,55 @@ async function run() {
   {
     const rowsB = await q(`SELECT id FROM fin_transactions WHERE org_id=$1`, [ORG_B]);
     ok("org B has no ledger rows from org A's activity", rowsB.length === 0, rowsB.length);
+  }
+
+  // ── 9. FIX-60 · fair comparisons in Finance ──
+  // (a) Budgets follow the fiscal year on a page set to it. A row stores its
+  // basis; an old row (no basis) is a calendar budget and stays one. Red on
+  // main: ?basis=fiscal ignored the row's kind and drew the calendar 2026 line
+  // under the fiscal page, and a fiscal write overwrote the calendar row.
+  {
+    const Y = Number(today.slice(0, 4)), md = today.slice(5);
+    const fyEnd = md >= "07-01" ? Y + 1 : Y;   // the org never set a start month: July
+    await q(`INSERT INTO budgets (id,org_id,account_id,year,amount) VALUES ('bgt_fix60_old',$1,$2,$3,1000)`, [ORG_A, `acc_${ORG_A}`, fyEnd]);
+    const pg = await api("GET", `/finance/budgets?basis=fiscal&shape=page`, a);
+    const rows = (pg.body && pg.body.rows) || [];
+    ok("§fix60 the fiscal page names its year (FY, July to June)", pg.body && pg.body.basis === "fiscal" && pg.body.year === fyEnd
+       && pg.body.periodStart === `${fyEnd - 1}-07-01` && pg.body.periodEnd === `${fyEnd}-06-30`, pg.body && { basis: pg.body.basis, year: pg.body.year, from: pg.body.periodStart });
+    ok("§fix60 an old (calendar) budget is not drawn on the fiscal page", rows.length > 0 && !rows.some(r => r.id === "bgt_fix60_old"), rows.map(r => r.id));
+    ok("§fix60 the fiscal page says where the calendar line is", pg.body && pg.body.otherBasis && pg.body.otherBasis.lines === 1 && pg.body.otherBasis.basis === "calendar", pg.body && pg.body.otherBasis);
+    const w = await api("POST", "/finance/budgets", a, { accountId: `acc_${ORG_A}`, year: fyEnd, amount: 500, basis: "fiscal" });
+    const kept = await q(`SELECT b.id, b.amount::numeric AS amount, to_jsonb(b)->>'basis' AS basis FROM budgets b WHERE b.org_id=$1 ORDER BY b.id`, [ORG_A]);
+    ok("§fix60 a fiscal budget is its own row; the calendar one is untouched", w.status === 200 && kept.length === 2
+       && kept.some(r => r.id === "bgt_fix60_old" && Number(r.amount) === 1000 && r.basis === null)
+       && kept.some(r => r.id !== "bgt_fix60_old" && Number(r.amount) === 500 && r.basis === "fiscal"), kept);
+    const cal = await api("GET", `/finance/budgets?basis=calendar&year=${fyEnd}`, a);
+    ok("§fix60 the calendar page still reads the old line", Array.isArray(cal.body) && cal.body.some(r => r.id === "bgt_fix60_old" && r.budget === 1000 && r.basis === "calendar"), cal.body);
+    const fis = await api("GET", `/finance/budgets?basis=fiscal&year=${fyEnd}`, a);
+    ok("§fix60 the fiscal page reads the fiscal line", Array.isArray(fis.body) && fis.body.some(r => r.budget === 500) && !fis.body.some(r => r.budget === 1000), fis.body);
+  }
+  // (b) A zero variance reads "on budget", never "+$0"; and a fiscal year
+  // four months in is four months in, for the projection.
+  {
+    const W = await import("../client/src/lib/budgetWords.js").catch(e => ({ err: e.message }));
+    const money = n => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
+    ok("§fix60 a zero variance reads \"on budget\"", !W.err && W.budgetVarianceText(0, money) === "on budget" && W.budgetVarianceText(0.004, money) === "on budget", W.err);
+    ok("§fix60 a real variance keeps its sign", !W.err && W.budgetVarianceText(12.5, money) === "+$12.50" && W.budgetVarianceText(-3, money) === "-$3.00");
+    ok("§fix60 months gone by are the budget year's own", !W.err && W.budgetMonthsElapsed("2026-07-01", "2027-06-30", "2026-10-30") === 4
+       && W.budgetMonthsElapsed("2026-01-01", "2026-12-31", "2026-10-30") === 10 && W.budgetMonthsElapsed("2027-07-01", "2028-06-30", "2026-10-30") === 0);
+  }
+  // (c) The Revenue card compared this year so far with ALL of last year.
+  // It compares with the same days. Red on main: no samePointRevenue.
+  {
+    const Y = Number(today.slice(0, 4)), md = today.slice(5);
+    const txn = (date, amount) => q(`INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,source)
+      VALUES ($1,$2,$3,'fix60','fix60',$4,'income',$5,'manual')`, ["ft_fix60_" + Math.random().toString(36).slice(2, 8), ORG_A, date, amount, `acc_${ORG_A}`]);
+    await txn(`${Y - 1}-01-01`, 100);
+    if (md !== "12-31") await txn(`${Y - 1}-12-31`, 7);
+    const sm = await api("GET", "/finance/summary?yearMode=calendar", a);
+    const prevTo = md === "02-29" ? `${Y - 1}-02-28` : `${Y - 1}-${md}`;
+    ok("§fix60 the Revenue card's comparison is the same days last year", sm.body && sm.body.samePoint && sm.body.samePoint.from === `${Y - 1}-01-01` && sm.body.samePoint.to === prevTo, sm.body && sm.body.samePoint);
+    ok("§fix60 and counts only those days' income", sm.body && Number(sm.body.samePointRevenue) === (md === "12-31" ? 107 : 100), sm.body && sm.body.samePointRevenue);
   }
 
   await closeDb();
