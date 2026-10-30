@@ -62,7 +62,7 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {s.listAddsUp ? (
         <div data-testid="event-story-list-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
           {inline("invited", "Invited")} invited: {inline("registered", "Registered")} said yes or came, {inline("declined", "Declined")} declined, {inline("noReply", "No reply")} didn't reply.
-          {s.invitedDidntCome != null ? <> Of them, {inline("attended", "Came")} came and {inline("invitedDidntCome", "Said yes, didn't come")} didn't.</> : null}
+          {s.invitedDidntCome != null ? <> Of the {inline("registered", "Registered")}, {inline("attended", "Came")} came and {inline("invitedDidntCome", "Said yes, didn't come")} didn't.</> : null}
         </div>
       ) : null}
     </div>
