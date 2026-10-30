@@ -8,7 +8,8 @@ import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TW
 import StoredReports from "./StoredReports";
 import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
-import { periodChipLabel } from "../../../shared/fiscalPeriod";
+import { periodChipLabel, fyLabelFromEnd } from "../../../shared/fiscalPeriod";
+import { bookkeeperCell } from "../lib/bookkeeperCell";
 import { Figure, FigureContext } from "./Figure";
 import { Dashboards } from "./Dashboards";
 // REPORTS-3 — a dashboard she saved, the tile picker, and the board pack.
@@ -87,7 +88,7 @@ const presetsFor = (fy, fiscalStartMonth = 7) => [
   { id: "lastCY", label: periodChipLabel("lastCY", { fy, cy: CUR_CY, fiscalStartMonth }), year: CUR_CY - 1, yearMode: "calendar" },
   { id: "custom", label: "Custom" },
 ];
-const pctStr = v => v === null || v === undefined ? "Not set" : `${v}%`;
+const pctStr = v => v === null || v === undefined ? "None yet" : `${v}%`;
 // REPORTS-4 · A REPORT'S FIGURE. Every number a report states is one of its
 // `figures` (the server computed it through the source that opens it), drawn
 // as a <Figure>: it opens its rows, foots, and has its "?". `fig` is the
@@ -277,6 +278,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [fundId, setFundId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [funds, setFunds] = useState([]);
+  const [orgHasGifts, setOrgHasGifts] = useState(null);   // SWEEP-5: null until known
   const [campaigns, setCampaigns] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -344,6 +346,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     apiFetch("/dashboards").then(r => setDashboards(r.dashboards || [])).catch(() => {});
     loadSavedDashboards();
     apiFetch("/finance/funds").then(setFunds).catch(() => {});
+    apiFetch("/reports/top-donors?scope=lifetime&limit=1").then(r => setOrgHasGifts((r.rows || []).length > 0)).catch(() => {});
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
     const fiscal = yearMode === "fiscal";
     const thisId = fiscal ? "thisFY" : "thisCY", lastId = fiscal ? "lastFY" : "lastCY";
@@ -522,18 +525,18 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     } else if (active === "lybunt" || active === "sybunt") {
       empty = d.rows.length === 0;
       const atStake = d.figures?.atStake ? d.figures.atStake.value : d.rows.reduce((s, r) => s + r.priorYearTotal, 0);
-      const yl = yearMode === "fiscal" ? `FY${d.year}` : d.year;
-      const priorLabel = yearMode === "fiscal" ? `FY${d.year - 1}` : String(d.year - 1);
+      const yl = yearMode === "fiscal" ? fyLabelFromEnd(d.year, fsm) : d.year;
+      const priorLabel = yearMode === "fiscal" ? fyLabelFromEnd(d.year - 1, fsm) : String(d.year - 1);
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
       narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} /> {plural(d.rows.length, "donor")}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
-        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${yearMode === "fiscal" ? "FY" + (d.year - 1) : d.year - 1}` : "Gave prior year", type: "money" },
-        { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "Not set"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
+        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${priorLabel}` : "Gave prior year", type: "money" },
+        { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "No date"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
         { key: "lifetimeGiving", label: "Lifetime", type: "money" },
-        { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set", hideWhenEmpty: true },
-        { key: "email", label: "Email", type: "text", render: r => r.email || "Not set" },
+        { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },
+        { key: "email", label: "Email", type: "text", render: r => r.email || <span style={{ color: T.ink3 }}>No email</span> },
       ]} rows={d.rows} />;
     } else if (active === "retention") {
       empty = d.rows.every(r => r.priorDonors === 0);
@@ -551,11 +554,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "dollarRetentionRate", label: "$ retained", type: "pct", render: r => <><RF f={r.figures?.dollarRetentionRate} variant="cell" kind="percent" label={`${r.label}: dollars retained`} />{r.priorDollars > 0 && <> of <RF f={r.figures?.priorDollars} variant="cell" kind="money" label={`${r.label}: prior-year dollars`} /></>}</> },
         { key: "firstYearDonors", label: "First-yr donors", type: "number", render: r => <RF f={r.figures?.firstYearDonors} variant="cell" label={`${r.label}: first-year donors`} /> },
         { key: "firstYearRetentionRate", label: "First-yr retention", type: "pct", render: r => <RF f={r.figures?.firstYearRetentionRate} variant="cell" kind="percent" label={`${r.label}: first-year retention`} /> },
-      ]} rows={d.rows} />;
+      ]} rows={d.rows.filter((r, i) => r.priorDonors > 0 || d.rows.slice(0, i).some(x => x.priorDonors > 0))} />;
     } else if (active === "top-donors") {
       empty = d.rows.length === 0;
       const sum = d.rows.reduce((s, r) => s + r.total, 0);
-      narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{d.figures?.topTotal ? <RF f={d.figures.topTotal} kind="money" label={`Top ${d.rows.length} donors`} /> : fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.</>;
+      narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{d.figures?.topTotal ? <RF f={d.figures.topTotal} kind="money" label={`Top ${d.rows.length} donors`} /> : fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.
+        {scope === "lifetime" && d.figures?.allTime && <span data-testid="top-donors-all-time"> Everyone together has given <strong><RF f={d.figures.allTime} kind="money" label="All-time giving" /></strong> all time.</span>}</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "rank", label: "#", type: "number" },
         { key: "name", label: "Donor", type: "text", person: true },
@@ -567,7 +571,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       empty = d.years.every(y => y.total === 0);
       const g = d.orgGrowthPct;
       narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</strong> ({y.label})</span>)}
-        {g !== null && <>: {g >= 0 ? "up" : "down"} <strong><RF f={d.figures?.growth} kind="percent" label="Change on the year before" /></strong> year over year</>}. Each row compares a donor across the three years.</>;
+        {g !== null && <>: {g >= 0 ? "up " : "a change of "}<strong><RF f={d.figures?.growth} kind="percent" label="Change on the year before" /></strong> year over year</>}. Each row compares a donor across the three years.</>;
       const chg = r => r.changePct === null ? <span style={{ color: T.gold600, fontWeight: 700 }}>new</span>
         : <span style={{ color: T.ink, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
       table = <>
@@ -591,20 +595,26 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           { key: "y1", label: d.labels.y1, type: "money" },
           { key: "y0", label: d.labels.y0, type: "money" },
           { key: "changePct", label: "YoY change", type: "pct", render: chg, sortVal: r => r.changePct ?? Infinity },
-          { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set", hideWhenEmpty: true },
+          { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span>, hideWhenEmpty: true },
         ]} rows={d.rows} />
       </>;
     } else if (active === "annual") {
       empty = d.giftCount === 0;
-      narrative = <>In <strong>{d.label}</strong> you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> {plural(d.uniqueDonors, "donor")}
-        {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up" : "down"} <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> from {d.priorLabel}</>}.
+      // SWEEP-5: a year still running is "so far", and its change is against
+      // ALL of the year before, said in those words: "down 69%" for four
+      // months against twelve read as a collapse.
+      const running = d.year === (yearMode === "fiscal" ? CUR_FY : CUR_CY);
+      narrative = <>In <strong>{d.label}</strong>{running ? " so far" : ""} you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> {plural(d.uniqueDonors, "donor")}
+        {d.growthPct !== null && (running
+          ? <>, <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> against the whole of {d.priorLabel}. The year is still running; the Giving summary compares it with the same point last year</>
+          : <>: {d.growthPct >= 0 ? "up " : "a change of "}<RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> on {d.priorLabel}</>)}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
         {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Total received", <RF f={d.figures?.total} kind="money" label="Total received" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
             ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />], ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />],
-            ["Growth vs prior", <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
+            [`Against all of ${d.priorLabel}`, <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
             ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />], ["Donor retention", <RF f={d.figures?.retentionRate} kind="percent" label="Donor retention" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
@@ -621,6 +631,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
       narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} {plural(d.giftCount, "gift")} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      // SWEEP-5: the two ids are for the bookkeeper's file, not for reading.
+      const BK_FILE_ONLY = new Set(["donorId", "giftId"]);
       const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";
       table = <>
         {/* ONE line, above the button, saying what is deliberately not here. */}
@@ -633,8 +645,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {/* The file carries every column as it is; the screen reads it. The
             amount sums from the server's own integer cents. */}
         <ReportTable personOf={r => r.donorId || null} onOpen={openPerson}
-          cols={d.columns.map(c => ({ key: c.key, label: c.label, type: bkType(c), person: c.key === "donorName",
-            ...(c.money ? { value: r => (Number.isFinite(Number(r.cents)) ? Number(r.cents) / 100 : r[c.key]) } : {}) }))} rows={d.rows} />
+          cols={d.columns.filter(c => !BK_FILE_ONLY.has(c.key)).map(c => ({ key: c.key, label: c.label, type: bkType(c), person: c.key === "donorName",
+            ...(c.money ? { value: r => bookkeeperCell(c, r) } : {}) }))} rows={d.rows} />
         {subhead("Totals by fund")}
         <ReportTable foot={false} cols={[
           { key: "name", label: "Fund or designation", type: "text" },
@@ -672,10 +684,10 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           { key: "giftsClosed", label: "Won", type: "number", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
           { key: "lostAsks", label: "Lost", type: "number", render: r => `${r.lostAsks ?? 0}` },
           { key: "winRate", label: "Win rate", type: "pct", render: r => r.winRate === null
-            ? <span title="No decided asks yet" style={{ color: T.ink3 }}>Not set</span>
+            ? <span title="No decided asks yet" style={{ color: T.ink3 }}>None decided</span>
             : `${r.winRate}%` },
         ]} rows={d.byOfficer} />
-        <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Win rate = won ÷ (won + lost), decided asks only. Open asks aren't losses; “, ” means no decided asks yet.</div>
+        <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Win rate = won ÷ (won + lost), decided asks only. Open asks aren't losses, and "None decided" means no ask has been won or lost yet.</div>
         {d.aging.length > 0 && <>
           {subhead("Aging prospects")}
           <ReportTable personOf={byId} onOpen={openPerson} cols={[
@@ -683,7 +695,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             { key: "stage", label: "Stage", type: "text", render: r => cap(r.stage) },
             { key: "ask", label: "Ask", type: "money" },
             { key: "stageAge", label: "Days in stage", type: "number", render: r => <strong style={{ color: r.stageAge > 60 ? T.gold600 : T.ink }}>{r.stageAge}</strong> },
-            { key: "assignedTo", label: "Officer", type: "text", render: r => r.assignedTo || "Not set" },
+            { key: "assignedTo", label: "Officer", type: "text", render: r => r.assignedTo || <span style={{ color: T.ink3 }}>Nobody</span> },
           ]} rows={d.aging} />
         </>}
       </>;
@@ -714,7 +726,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>
           <Section title="Gifts received" items={s.gifts} empty="No gifts this week." render={g => <><span>{g.donorName}</span><strong>{fmtFull(g.amount)}</strong></>} />
           <Section title="Asks / pledges made" items={s.asks} empty="No new asks this week." render={a => <><span>{a.donorName}{a.name ? ` · ${a.name}` : ""}</span><strong>{fmtFull(a.targetAmount)}</strong></>} />
-          <Section title="Moves" items={s.moves} empty="No pipeline moves this week." render={m => <div style={{ width: "100%" }}><div style={{ fontWeight: 600 }}>{m.donorName} · {m.fromStage || "Not set"} → {m.toStage}</div><div style={{ fontSize: 12, color: T.ink3 }}>{m.description}</div></div>} />
+          <Section title="Moves" items={s.moves} empty="No pipeline moves this week." render={m => <div style={{ width: "100%" }}><div style={{ fontWeight: 600 }}>{m.donorName} · {m.fromStage || "No stage"} → {m.toStage}</div><div style={{ fontSize: 12, color: T.ink3 }}>{m.description}</div></div>} />
           <Section title="Past-due tasks" items={s.pastDueTasks} empty="Nothing past due, nice." render={t => <><span>{t.title}{t.donorName ? ` · ${t.donorName}` : ""}</span><span style={{ color: T.gold600, fontSize: 12, whiteSpace: "nowrap" }}>due {displayDate(t.due)}</span></>} />
         </div>;
       }
@@ -726,22 +738,22 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const label = reportLabel(active, REPORT_DEFS, standard, saved, dashboards, savedDashboards);
   const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
-  return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
+  return <FigureContext.Provider value={{ openPerson }}><div className="fade-in no-caps">
     <style>{REPORTS_CSS}</style>
     <PageTitle main="Your" accent="Reports" />
 
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
-    <div style={{ marginBottom: 14 }}>
+    {orgHasGifts !== false && <div style={{ marginBottom: 14 }}>
       <StartHere dismissKey="reports_intro"
         line="If you only ever open one report, make it this one: the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
         actionLabel="Open the list" onAction={() => pick("lybunt")} />
-    </div>
+    </div>}
 
     {/* PARITY-4: Show me: a plain question becomes a list. */}
     <div style={{ marginBottom: 14 }}><AskBox testid="reports-ask" /></div>
 
     {/* INT-BUILD-1 Part 6 — meetings per staff member per month. */}
-    <div style={{ marginBottom: 14 }}><MeetingsByStaffCard /></div>
+    <MeetingsByStaffCard hideWhenNone wrapStyle={{ marginBottom: 14 }} />
 
     <div className="reports-layout">
       <ReportsRail groups={groups} active={active} activeLabel={label} onPick={pick} />
@@ -788,7 +800,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             </>}
             {YEARMODE_TOGGLE_REPORTS.includes(active) && yearModeToggle}
             {YEAR_SELECT_REPORTS.includes(active) && <select value={effYear} onChange={e => setYear(parseInt(e.target.value, 10))} style={{ ...selStyle, maxWidth: 230 }}>
-              {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `FY${y} (${fyRangeLabel(y, fsm)})` : y}</option>)}
+              {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `${fyLabelFromEnd(y, fsm)} (${fyRangeLabel(y, fsm)})` : y}</option>)}
             </select>}
             {active === "week-in-review" && <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
               {["weekly", "monthly"].map(s => <button key={s} onClick={() => setDigestType(s)} aria-pressed={digestType === s}
@@ -837,9 +849,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
 
           {(() => {
             const errBlock = err && <div style={{ fontSize: 13, color: T.terracotta, padding: "24px 0", textAlign: "center" }}>{err}</div>;
+            // SWEEP-5: an org with no gifts at all is told how to bring them
+            // in, never "that's good news" about a list it cannot have.
             const body = !err && d && (empty
-              ? <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one, that's good news" : "No gifts in this period yet"}
-                  message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : "Once gifts land in this period, this report fills in automatically."} />
+              ? (orgHasGifts === false
+                ? <EmptyState title="No gifts in Steward yet" message="Bring in your giving history from a spreadsheet and every report here fills in from it."
+                    action="Import a spreadsheet" onAction={() => onNavigate && onNavigate("donors", { openImport: true })} />
+                : <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one, that's good news" : "No gifts in this period yet"}
+                  message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : "Once gifts land in this period, this report fills in automatically. Try another period above."} />)
               : d ? <>
                   {narrative && <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.7, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${T.bg2}` }}>{narrative}</div>}
                   {table}

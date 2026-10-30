@@ -185,6 +185,25 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
     ratioFootLine("share", { measure: "sum", value: 1623328 }, { measure: "sum", value: 1593572.75 }));
   ok("a people percentage's halves read as counts", ratioFootLine("share", { measure: "count", value: 1204 }, { measure: "count", value: 2410 }) === "1,204 of 2,410");
 
+  // SWEEP-5 · "Your top 50 donors gave $50 this period." Top donors' total is
+  // money, the sum of the rows it lists, never how many people there are. The
+  // `givers` source ignored measure "sum", so the figure footed (a count is a
+  // count) and was still the wrong number. Red on main: value 5, not dollars.
+  {
+    const td = await api("GET", `/reports/top-donors?scope=period&from=${from}&to=${to}&limit=5`, tok);
+    const rowsSum = Math.round((td.body.rows || []).reduce((n, r) => n + Number(r.total) * 100, 0));
+    const tt = (td.body.figures || {}).topTotal || {};
+    ok(`§sweep5 Top donors' total is the dollars its rows gave (${rowsSum / 100}), not the head count`,
+       (td.body.rows || []).length > 0 && Math.round(Number(tt.value) * 100) === rowsSum, { figure: tt.value, rows: rowsSum / 100 });
+    // The bookkeeper's screen reads each money column from its own cents: a
+    // fee column that read the gross showed a $400 fee on a $400 gift.
+    const { bookkeeperCell } = await import("../client/src/lib/bookkeeperCell.js");
+    const row = { cents: 40000, feeCents: 1190, netCents: 38810, amount: "400.00", fee: "11.90", net: "388.10" };
+    ok("§sweep5 the bookkeeper's screen: fee and net are their own columns, not the gross",
+       bookkeeperCell({ key: "amount", money: true }, row) === 400 && bookkeeperCell({ key: "fee", money: true }, row) === 11.9 && bookkeeperCell({ key: "net", money: true }, row) === 388.1,
+       ["amount", "fee", "net"].map(k => bookkeeperCell({ key: k, money: true }, row)));
+  }
+
   if (own) {
     // The wrong figure: a deleted spouse's giving was in the household total.
     const rel = await api("GET", "/donors/d_r4_ada/relationships", tok);

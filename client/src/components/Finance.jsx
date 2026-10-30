@@ -776,6 +776,9 @@ function BookkeeperFlavours({ value, onChange }) {
   );
 }
 
+// SWEEP-5: the fund cards' definitions arrive keyed by field; a person reads
+// the words, never "inPeriod.".
+const FUND_DEF_WORDS = { balance: "Balance", inPeriod: "In this period", restrictedBy: "Restricted by" };
 // ── FIN-1 · FIVE SECTIONS, EACH ONE A QUESTION ────────────────────────────
 const FIN_SECTIONS = [
   { id: "overview", label: "Overview", question: "What happened this month, and what needs you?",
@@ -988,22 +991,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     catch(e) { setBudgetErr(errorMessage(e, "That budget could not be removed.")); }
   };
 
-  const getFundSparkline = (fundId) => {
-    const now = new Date();
-    const pts = Array.from({ length: 8 }, (_, i) => {
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() - i * 7);
-      const weekStart = new Date(weekEnd);
-      weekStart.setDate(weekStart.getDate() - 7);
-      const s = weekStart.toISOString().split("T")[0];
-      const e = weekEnd.toISOString().split("T")[0];
-      return (Array.isArray(allTxns) ? allTxns : [])
-        .filter(t => t && t.fund_id === fundId && t.date >= s && t.date <= e)
-        .reduce((sum, t) => sum + (t.type === "income" ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
-    }).reverse();
-    let running = 0;
-    return pts.map(v => { running += v; return running; });
-  };
 
 
   // BUILD-12: the page-subtitle blurb was removed (it duplicated the stat
@@ -1037,7 +1024,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+    <div className="no-caps" style={{ display:"flex", flexDirection:"column", gap:14 }}>
       {/* Title + year-basis toggle share one row (no dead band under the title). */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, flexWrap:"wrap" }}>
         <PageTitle main="Your" accent="money."/>
@@ -1132,9 +1119,28 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             cent. The period tiles below are unchanged and still there: they
             answer a different question (the fiscal-year picture) and one is
             not a replacement for the other. */}
-        <FinOverview onNavigate={onNavigate}/>
-        {/* FIX-1 E — the period figures live on Overview now; Restricted leads. */}
-        {summary && (
+        <FinOverview onNavigate={onNavigate} ledgerEmpty={!!summary?.ledgerEmpty}/>
+        {/* SWEEP-5: an empty ledger is one card, with what fills it. */}
+        {summary?.ledgerEmpty && (
+          <Card>
+            <div data-testid="fin-ledger-empty">
+              <div style={{ fontSize:14, fontWeight:700, color:T.ink }}>Nothing is in the ledger yet</div>
+              <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginTop:4, maxWidth:720 }}>
+                {summary.giftHistoryTotal > 0
+                  ? <>Your {fmtFull(summary.giftHistoryTotal)} of giving across {countLabel(summary.giftHistoryCount, "gift")} is giving history, so cash on hand, revenue, expenses and fund balances start at zero and fill as money moves through Steward. </>
+                  : <>Cash on hand, revenue, expenses and fund balances fill as money moves through Steward. </>}
+                Connect Stripe and online gifts post here on their own, or log a transaction by hand.
+              </div>
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:12 }}>
+                {!isReadOnly && <button type="button" data-testid="fin-ledger-log" onClick={() => setShowTxnModal(true)}
+                  style={{ background:T.greenDk, color:T.white, border:"none", borderRadius:8, padding:"9px 14px", fontSize:12.5, fontWeight:700, cursor:"pointer" }}>Log a transaction</button>}
+                {summary.giftHistoryTotal > 0 && <button type="button" onClick={() => onNavigate("reports")}
+                  style={{ background:T.white, color:T.ink, border:"1.5px solid "+T.bg3, borderRadius:8, padding:"9px 14px", fontSize:12.5, fontWeight:700, cursor:"pointer" }}>See giving in Reports</button>}
+              </div>
+            </div>
+          </Card>
+        )}
+        {summary && !summary.ledgerEmpty && (
           <>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
               {[
@@ -1142,14 +1148,16 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 // the other three are the selected period. The captions make the scope
                 // explicit so a treasurer never reads cash and period revenue as the
                 // same kind of number.
-                ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, CASH_ON_HAND_SENTENCE, () => gotoTxns({ type: "" })],
-                [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
-                [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel, () => gotoTxns({ type: "expense" })],
-                ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel, () => gotoTxns({ type: "" })],
+                ["Cash on hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : T.gold700, CASH_ON_HAND_SENTENCE, () => gotoTxns({ type: "" })],
+                [yearMode==="fiscal" ? "FY revenue" : "YTD revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
+                // SWEEP-5: spending is not an error. Expenses read ink; a
+                // negative surplus is brass, the "look here" colour, not red.
+                [yearMode==="fiscal" ? "FY expenses" : "YTD expenses", fmt(summary.ytdExpenses), IN, summary.periodLabel, () => gotoTxns({ type: "expense" })],
+                ["Net surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : T.gold700, summary.periodLabel, () => gotoTxns({ type: "" })],
               ].map(([label, value, color, caption, onClick]) => (
                 <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })}
                   style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-                  <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:12, color:T.ink3, fontWeight:600, marginBottom:4 }}>{label}</div>
                   <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
                   {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
                 </div>
@@ -1161,7 +1169,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             showing years of giving. When imported historical giving lives in
             Reports but not the ledger, say so plainly and cross-link, so a
             treasurer can reconcile the two numbers instead of distrusting both. */}
-        {summary?.hasUnledgeredGiving && (
+        {summary?.hasUnledgeredGiving && !summary.ledgerEmpty && (
           <div style={{ background:T.gold100, border:"1px solid "+T.gold300, borderRadius:12, padding:"14px 16px", display:"flex", gap:14, alignItems:"flex-start", flexWrap:"wrap" }}>
             <div style={{ flex:"1 1 320px", minWidth:260 }}>
               <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:3 }}>
@@ -1171,7 +1179,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 {/* FIX-40: the amount opens where that giving lives */}
                 <button type="button" onClick={() => onNavigate("reports")} className="figure-inline"
                   style={{ background:"none", border:"none", padding:0, font:"inherit", color:"inherit", fontWeight:700, cursor:"pointer" }}>{fmtFull(summary.unledgeredGiving)}</button> of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
-                The ledger tracks <strong>money moving through Steward</strong> connect Stripe or log a transaction. Your full giving record is in Reports.
+                The ledger tracks <strong>money moving through Steward</strong>: connect Stripe or log a transaction. Your full giving record is in Reports.
               </div>
             </div>
             <button onClick={() => onNavigate("reports")}
@@ -1181,6 +1189,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
           </div>
         )}
         <MoneyInStrip onNavigate={onNavigate} cashOnHand={summary ? summary.cashOnHand : null} onOpenPayout={id => { setOpenPayout(id); setSubtab("payouts"); }}/>
+        {!summary?.ledgerEmpty && <>
         <Card>
           {/* Follows the selected year basis (server-supplied, Jul-first under
               fiscal) and collapses empty months into a single line instead of a
@@ -1248,6 +1257,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               </div>
             ))}
         </Card>
+        </>}
       </>}
 
       {/* ── Transactions ── */}
@@ -1359,16 +1369,17 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
           <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowFundModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add fund</button>
         </div>
         <Card>
-          <SectionLabel>Fund Accounting</SectionLabel>
+          {/* SWEEP-5: this list drew every fund a second time with a second
+              balance, summed from this year's transactions only, under the
+              cards above that show the all-time one: two numbers for one fund.
+              It is where a fund is managed now, and the balance is said once. */}
+          <SectionLabel>Manage funds</SectionLabel>
           <div style={{ fontSize:12, color:T.ink3, marginBottom:14, lineHeight:1.6 }}>
-            Every transaction is tagged to a fund. Restricted funds hold donor- or grant-restricted dollars and must be spent only for the designated purpose.
+            Rename a fund, mark it restricted, see its transactions or retire it. Restricted funds hold donor- or grant-restricted dollars and must be spent only for the designated purpose.
           </div>
           {funds.length === 0
             ? <EmptyState title="No funds yet" message="Create your first fund, most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
             : funds.map((f, i) => {
-            const fb = _fbMap[f.id] || { income:0, expense:0 };
-            const balance = fb.income - fb.expense;
-            const sparkVals = getFundSparkline(f.id);
             return (
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "" }}>
                 <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.ink3, flexShrink:0 }}/>
@@ -1378,14 +1389,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?T.gold700:T.ink3 }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
                   </div>
                   {f.description && <div style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.description}</div>}
-                  <div style={{ fontSize:11, color:T.ink3, marginTop:4 }}>
-                    ↑ {fmtFull(fb.income)} in &nbsp;·&nbsp; ↓ {fmtFull(fb.expense)} out &nbsp;·&nbsp;
-                    <span style={{ fontWeight:700, color:balance >= 0?IN:OUT }}>Balance: {fmtFull(balance)}</span>
-                  </div>
-                </div>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                  <Sparkline values={sparkVals}/>
-                  <span style={{ fontSize:9, color:T.ink3, textTransform:"uppercase", letterSpacing:".05em" }}>8 wks</span>
                 </div>
                 <RecordLink to={tabHref("finance", { subtab: "transactions", fundId: f.id })} data-record-link="fund-txns"
                   style={{ ...ghostBtn, display:"inline-flex", alignItems:"center" }} onOpen={() => gotoTxns({ fund: f.id })}>View txns →</RecordLink>
@@ -1400,13 +1403,22 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       {/* ── Budgets ── */}
       {subtab === "budgets" && <>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          <span style={{ fontSize:13, color:T.ink3 }}>Year:</span>
+          {/* SWEEP-5: the years were 2023 to 2026, written in by hand, and
+              nothing said a budget year is a calendar year while the page's
+              basis reads fiscal. Three back and one ahead of this year. */}
+          <span style={{ fontSize:13, color:T.ink3 }}>Calendar year:</span>
           <select value={budgetYear} onChange={e => { const yr = parseInt(e.target.value); setBudgetYear(yr); reloadBudgets(yr); }} style={{ ...inp, width:90, cursor:"pointer" }}>
-            {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+            {[...new Set([...Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 3 + i), budgetYear])].sort().map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline. A budget can name a fund; leave it on "Whole account" for the whole column.</span>}
         </div>
         {budgetErr && <div role="alert" style={{ fontSize:12.5, color:T.terra700 }}>{budgetErr}</div>}
+        {/* SWEEP-5: "Actual $0" beside a year of giving reads as a fault. */}
+        {summary && (summary.ledgerEmpty || summary.hasUnledgeredGiving) && budgets.length > 0 && (
+          <div data-testid="budget-actual-note" style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55 }}>
+            Actual is the ledger: what has moved through Steward this year. Imported giving history is not in the ledger, so it is not in Actual; it is in Reports.
+          </div>
+        )}
         {budgets.length === 0 && (
           <Card><EmptyState title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts, which Steward sets up when your organization starts. Once it has revenue and expense accounts they appear here to budget against."/></Card>
         )}
@@ -1518,31 +1530,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   );
 }
 
-// ── Sparkline — 8-week SVG trend line ─────────────────────────────────────
-function Sparkline({ values, width = 80, height = 28 }) {
-  // Drop any non-finite point (a null/NaN amount upstream) so bad data degrades
-  // to a flat/short line instead of emitting "NaN,NaN" SVG coords (BUILD-21).
-  values = (Array.isArray(values) ? values : []).filter(v => Number.isFinite(v));
-  if (!values || values.length < 2) {
-    return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke={T.bg3} strokeWidth="1" strokeDasharray="3,2"/></svg>;
-  }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pad = 3;
-  const pts = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * (width - pad * 2) + pad;
-    const y = (height - pad * 2) - ((v - min) / range) * (height - pad * 2) + pad;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  const trending = values[values.length - 1] >= values[0];
-  const color = trending ? T.ink : T.gold600;
-  return (
-    <svg width={width} height={height} style={{ display:"block", overflow:"visible" }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
-    </svg>
-  );
-}
 
 // ── BudgetInput — inline editable cell ────────────────────────────────────
 function BudgetInput({ value, onSave }) {
@@ -1582,7 +1569,7 @@ function FinFigure({ f, onOpen }) {
     <button data-testid={"fin-figure-" + f.key} onClick={() => onOpen(f)} title={f.definition}
       style={{ background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"15px 16px",
                textAlign:"left", cursor:"pointer", fontFamily:"inherit", minWidth:0 }}>
-      <div style={{ fontSize:10.5, color:T.ink3, textTransform:"uppercase", letterSpacing:".07em", marginBottom:5 }}>{f.label}</div>
+      <div style={{ fontSize:12, color:T.ink3, fontWeight:600, marginBottom:5 }}>{f.label}</div>
       <div style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif", lineHeight:1.1 }}>{fmtFull(f.amount)}</div>
     </button>
   );
@@ -1637,7 +1624,21 @@ function SetFundModal({ item, onClose, onDone }) {
   );
 }
 
-function FinOverview({ onNavigate }) {
+// SWEEP-5 · GIVING AND THE LEDGER, SAID APART. With imported history and no
+// Stripe, Overview put "Money in this month $45,340" beside a row of ledger
+// $0s (restricted, unrestricted, cash, revenue, expenses, surplus, a "No money
+// has moved yet" card and a $0 fund list) and nothing said which was which.
+// Giving is the gifts; the ledger is money moving through Steward. Each is
+// under its own heading now, and an EMPTY ledger is one card that says so
+// and what fills it, never a wall of zeros that reads as broken.
+const GIVING_FIGS = new Set(["moneyInThisMonth", "unmatched"]);
+const FinHead = ({ title, line, testid }) => (
+  <div data-testid={testid} style={{ marginTop:4 }}>
+    <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{title}</div>
+    {line && <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:2 }}>{line}</div>}
+  </div>
+);
+function FinOverview({ onNavigate, ledgerEmpty }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);
@@ -1669,10 +1670,10 @@ function FinOverview({ onNavigate }) {
 
   return (
     <div data-testid="fin-overview" style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6 }}>{d.sentence}</div>
+      <FinHead testid="fin-giving-head" title="Giving" line={d.sentence}/>
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10 }}>
-        {d.figures.map(f => <FinFigure key={f.key} f={f} onOpen={openFigure}/>)}
+        {d.figures.filter(f => GIVING_FIGS.has(f.key)).map(f => <FinFigure key={f.key} f={f} onOpen={openFigure}/>)}
       </div>
 
       {/* MONEY IN BY MONTH, and every bar opens its gifts. Empty months are
@@ -1703,7 +1704,7 @@ function FinOverview({ onNavigate }) {
         <SectionLabel>Needs you</SectionLabel>
         {!d.needsYou.length && (
           <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6, marginTop:6 }}>
-            Nothing is waiting. Every gift is on a fund, every check is on a deposit, and no restricted grant has a report due inside sixty days.
+            Every gift is on a fund, every check is on a deposit, and no restricted grant has a report due inside sixty days.
           </div>
         )}
         {d.needsYou.map(n => (
@@ -1737,7 +1738,16 @@ function FinOverview({ onNavigate }) {
       </Card>
       {setFund && <SetFundModal item={setFund} onClose={() => setSetFund(null)} onDone={reload}/>}
 
-      <Definitions4 items={d.figures.map(f => [f.label, f.definition])}/>
+      <Definitions4 items={d.figures.filter(f => GIVING_FIGS.has(f.key)).map(f => [f.label, f.definition])}/>
+
+      <FinHead testid="fin-ledger-head" title="The ledger"
+        line="Money moving through Steward: online gifts once Stripe is connected, and the income and spending you log. Imported giving history is giving, above, and never posts here."/>
+      {!ledgerEmpty && <>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10 }}>
+          {d.figures.filter(f => !GIVING_FIGS.has(f.key)).map(f => <FinFigure key={f.key} f={f} onOpen={openFigure}/>)}
+        </div>
+        <Definitions4 items={d.figures.filter(f => !GIVING_FIGS.has(f.key)).map(f => [f.label, f.definition])}/>
+      </>}
 
       {open && (
         <Modal onClose={() => setOpen(null)} title={open.label + (open.total != null ? ` · ${fmtFull(open.total)}` : "")}>
@@ -1834,7 +1844,7 @@ function FinFundCards() {
           </RecordLink>
         ))}
       </div>
-      <Definitions4 items={Object.entries(d.definitions || {})}/>
+      <Definitions4 items={Object.entries(d.definitions || {}).map(([k, v]) => [FUND_DEF_WORDS[k] || k, v])}/>
       {open && (
         <Modal onClose={() => { setOpen(null); goUrl(fundHref(null)); }} title={open.label + (open.net != null ? ` · ${fmtFull(open.net)} net` : "")}>
           {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}

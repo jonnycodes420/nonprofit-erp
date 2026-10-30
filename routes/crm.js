@@ -24042,6 +24042,16 @@ function parseReportParams(q, org = null) {   // ORG_TZ_SEAM_OK
 // donors excluded (matching the app-wide `deleted_at IS NULL` convention),
 // optional fund/campaign filters. is_sample rows are deliberately included —
 // they're org data, and real orgs won't have any.
+// SWEEP-5 · ONE NAME FOR A FISCAL YEAR ON A REPORT. Retention, the annual
+// report and the 3-year comparison said "FY2027" while the chips above them,
+// Finance and Grants said "FY 2026–27". The label comes from
+// shared/fiscalPeriod.js, the one place that names a fiscal year.
+let FP = null;
+const FP_READY = import("../shared/fiscalPeriod.js").then(m => { FP = m; return m; });
+function reportYearLabel(y, p) {
+  if (p.yearMode !== "fiscal") return String(y);
+  return FP ? FP.fyLabelFromEnd(y, p.fiscalStartMonth || 7) : `FY${y}`;
+}
 function reportGiftWhere(p, orgId, params) {
   let sql = " g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?";
   params.push(orgId, p.from, p.to);
@@ -24296,7 +24306,7 @@ async function reportRetention(orgId, p) {
       [orgId, prior.from, prior.to, orgId, cur.from, cur.to, orgId, prior.from, prior.to, prior.from, prior.to]);
     const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
     rows.push({
-      year: y, label: p.yearMode === "fiscal" ? `FY${y}` : String(y),
+      year: y, label: reportYearLabel(y, p),
       priorDonors: r.prior_donors, retainedDonors: r.retained_donors,
       retentionRate: pct(r.retained_donors, r.prior_donors),
       priorDollars: Number(r.prior_dollars), retainedDollars: Number(r.retained_dollars),
@@ -24340,7 +24350,14 @@ async function reportTopDonors(orgId, p) {
           WHERE sc.org_id=? AND sc.donor_id = ANY(?) GROUP BY sc.donor_id`, [orgId, rows.map(r => r.id)]);
       soft = new Map(sr.map(r => [r.donor_id, Number(r.soft)]));
     }
-    const figures = await reportFigures(orgId, { topTotal: { key: "top-lifetime", params: { top: p.limit } } });
+    // SWEEP-5 · REPORTS SAYS THE ALL-TIME TOTAL. Reports had no all-time
+    // giving anywhere, so nobody could hold it against Atlas's "You raised
+    // $X ever". It is the gifts source over the same window Atlas asks for
+    // ("all time": 1900-01-01 to today, shared/askCatalog.js), so the two are
+    // one computation and cannot drift.
+    const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+    const figures = await reportFigures(orgId, { topTotal: { key: "top-lifetime", params: { top: p.limit } },
+      allTime: { key: "gifts", params: { from: "1900-01-01", to: today } } });
     return { figures, scope: "lifetime", credit: p.credit, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
       ...(p.credit === "soft" ? { softCredit: soft.get(r.id) || 0 } : {}) })) };
   }
@@ -24384,7 +24401,8 @@ async function reportThreeYear(orgId, p) {
   const y0 = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);       // most recent (selected) year
   const y1 = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
   const y2 = reportYearBounds(p.year - 2, p.yearMode, p.fiscalStartMonth);   // oldest
-  const label = y => p.yearMode === "fiscal" ? `FY${y}` : String(y);
+  await FP_READY;
+  const label = y => reportYearLabel(y, p);
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
             COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y0,
@@ -24490,8 +24508,8 @@ async function reportAnnual(orgId, p) {
   const total = Number(totals.total), priorTotal = Number(priorT.total);
   const grand = arr => arr.reduce((s, r) => s + Number(r.total), 0);
   return {
-    year: p.year, yearMode: p.yearMode, label: p.yearMode === "fiscal" ? `FY${p.year}` : String(p.year),
-    priorLabel: p.yearMode === "fiscal" ? `FY${p.year - 1}` : String(p.year - 1),
+    year: p.year, yearMode: p.yearMode, label: reportYearLabel(p.year, p),
+    priorLabel: reportYearLabel(p.year - 1, p),
     total, giftCount: totals.gift_count, uniqueDonors: totals.unique_donors,
     avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
     priorTotal, priorGiftCount: priorT.gift_count, priorUniqueDonors: priorT.unique_donors,
