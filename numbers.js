@@ -279,22 +279,36 @@ async function eventStory(orgId, eventId) {
   const src = key => ({ key, params: { event: eventId } });
   // "Came, didn't give" is IMPORT-5's one answer (event-guests, household-aware).
   const noGift = { key: "event-guests", params: { event: eventId, list: "cameNoGift" } };
-  const [attended, gave, cameDidntGive] = await Promise.all(
-    [src("event-attended"), src("event-gave"), noGift].map(s => FS.figureValue(orgId, s)));
+  // FIX-58: each a count of people, once, and they add up: came = came and
+  // gave + came and didn't; gave = came and gave + gave and didn't come.
+  const cameGaveSrc = { key: "event-gave", params: { event: eventId, came: "yes" } };
+  const gaveAwaySrc = { key: "event-gave", params: { event: eventId, came: "no" } };
+  const [registered, attended, gave, cameDidntGive, cameGave, gaveNotCame] = await Promise.all(
+    [src("event-registered"), src("event-attended"), src("event-gave"), noGift, cameGaveSrc, gaveAwaySrc].map(s => FS.figureValue(orgId, s)));
   const n = f => Number(f.value) || 0;
-  return {
+  const people = k => `${k.toLocaleString("en-US")} ${k === 1 ? "person" : "people"}`;
+  const out = {
     ...money,
-    attended: n(attended), gave: n(gave), cameDidntGive: n(cameDidntGive),
+    registered: n(registered), attended: n(attended), gave: n(gave), cameDidntGive: n(cameDidntGive), cameGave: n(cameGave), gaveNotCame: n(gaveNotCame),
     pledgedAll: Math.round((money.pledgedCents + money.laterCents)) / 100, pledgedAllCents: money.pledgedCents + money.laterCents,
-    sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } }, attended: src("event-attended"), gave: src("event-gave"), cameDidntGive: noGift },
+    sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } }, registered: src("event-registered"), attended: src("event-attended"),
+               gave: src("event-gave"), cameDidntGive: noGift, cameGave: cameGaveSrc, gaveNotCame: gaveAwaySrc },
     definitions: {
       ...money.definitions,
       pledgedAll: "Every unpaid installment of an open pledge made at this event, in every year it falls due.",
+      registered: "Each person who said they were coming or came, once.",
       attended: "Each person marked as having come to this event.",
-      gave: "Each person with a gift for this event or a pledge made at it, once.",
+      gave: "Each person with a gift for this event or a pledge made at it, and each guest who came whose household gave, once.",
       cameDidntGive: EVENT_GUEST_DEFINITIONS.cameNoGift,
+      cameGave: "Each person who came, with a gift or pledge for this event from them or someone in their household.",
+      gaveNotCame: "Each person who gave or pledged for this event and was not marked as having come.",
     },
   };
+  // the one sentence that shows the figures add up
+  out.addsUp = out.attended || out.gave
+    ? `${people(out.attended)} came: ${out.cameGave.toLocaleString("en-US")} gave and ${out.cameDidntGive.toLocaleString("en-US")} didn't. ${people(out.gave)} gave or pledged: ${out.cameGave.toLocaleString("en-US")} who came and ${out.gaveNotCame.toLocaleString("en-US")} who didn't.`
+    : null;
+  return out;
 }
 
 // FUNDRAISING-2 · PLEDGES, ONE WAY. What is still to come on open pledges,

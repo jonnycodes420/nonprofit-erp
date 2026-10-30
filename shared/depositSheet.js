@@ -38,6 +38,7 @@
 
 import { normalizeMoney, normalizeName, matchNameKey, matchNamesCompatible, normalizeHeader } from "./importShape.js";
 import { containsTokenRun } from "./textMatch.js";
+import { plural } from "./countWords.js";
 
 export const DEPOSIT_STATES = ["placed", "placed_new_donor", "needs_you", "not_a_gift"];
 
@@ -322,7 +323,7 @@ export function buildDepositPlan({ rows = [], refused = [], donors = [], funds =
     // an unstated total is not a passed check.
     balanced: slipCents == null ? null : accounted + needsCents === slipCents,
     canCommit: needsYou.length === 0 && slipCents != null && accounted === slipCents && giftCents >= 0,
-    commitLabel: `Record deposit of ${(giftCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}, ${lines.filter(l => l.state === "placed" || l.state === "placed_new_donor").length} gift${giftCents === 0 || lines.filter(l => l.state === "placed" || l.state === "placed_new_donor").length === 1 ? "" : "s"}`,
+    commitLabel: `Record deposit of ${(giftCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}, ${lines.filter(l => l.state === "placed" || l.state === "placed_new_donor").length} ${plural(giftCents === 0 || lines.filter(l => l.state === "placed" || l.state === "placed_new_donor").length, "gift")}`,
   };
 }
 

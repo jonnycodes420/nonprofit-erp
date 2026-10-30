@@ -27,6 +27,8 @@ import { DonorMap } from "./DonorMap";
 import { DataHealth } from "./DataHealth";
 import { DriftList } from "./DriftList";   // HOME-4: Drift opens here from Home's chip
 import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from "./DonorDirectory";
+import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
+import { useCanMajorGifts } from "../lib/majorGifts";
 import { FALLBACK_SETUP, PAGE_SIZES, cleanColumns } from "./DonorColumns";
 import { EMPTY_WHERE, whereParam } from "./DonorFilters";
 import { MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
@@ -63,6 +65,12 @@ class ErrorBoundary extends Component {
 export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,initialOpenConversation,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
+  // FIX-58: the screening tools, under Import & tools. PROSPECT-1's rule holds:
+  // admins and the major gifts permission only (the routes refuse anyone else).
+  const canMajorGifts=useCanMajorGifts();
+  const [screenFor,setScreenFor]=useState(null);
+  const [screenImport,setScreenImport]=useState(false);
+  const [includeScreening,setIncludeScreening]=useState(false);
   const userId=auth?.user?.id||"";
   const userName=auth?.user?.name||auth?.user?.email||"";
   // FIX-13 Part 6 — the list's search, filters and view live in the URL
@@ -693,6 +701,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<SpreadsheetImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<SpreadsheetImport onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
+      {screenFor&&<ScreeningFileModal who={screenFor} onClose={()=>setScreenFor(null)}/>}
+      {screenImport&&<ScreeningImportModal onClose={()=>setScreenImport(false)} onDone={()=>reloadDonors()}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
       {/* REPORTS-5: the second door to the one old-reports wizard. */}
@@ -804,8 +814,19 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 {label:"Import grants",hint:"A grants spreadsheet from another system, or your own",act:()=>setShowGrantImport(true)},
                 {label:"Import old reports",hint:"Reports from the system you used before, kept under Reports",act:()=>setShowOldReports(true)},
                 {label:"Data health",hint:"Duplicates, addresses, moves and emails to tidy",act:()=>setView("health")},
-              ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:(
-                <button key={i} role="menuitem" onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>
+                // FIX-58: screening lives here, not on the toolbar.
+                ...(canMajorGifts?[{divider:true},
+                  {label:"Prepare a screening file",hint:"A saved group, in the layout screening providers take",testid:"dir-screening-group",act:()=>setScreenFor({donorIds:[]})},
+                  ...(!isReadOnly?[{label:"Bring in screening results",hint:"A screening provider's file of capacity and real estate ranges",testid:"dir-screening-import",act:()=>setScreenImport(true)}]:[]),
+                  ...(isAdmin?[{check:true,label:"Include screening results in Export CSV",hint:"Adds provider, date, capacity range and real estate range",testid:"dir-export-screening"}]:[]),
+                ]:[]),
+              ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:it.check?(
+                <label key={i} data-testid={it.testid} className="click-card" style={{borderRadius:8,padding:"9px 10px",cursor:"pointer",display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <input type="checkbox" checked={includeScreening} onChange={e=>setIncludeScreening(e.target.checked)} style={{accentColor:T.greenDk,marginTop:2}}/>
+                  <span><span style={{fontSize:13,fontWeight:700,color:T.ink,display:"block"}}>{it.label}</span><span style={{fontSize:11.5,color:T.ink3}}>{it.hint}</span></span>
+                </label>
+              ):(
+                <button key={i} role="menuitem" data-testid={it.testid} onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{it.label}</span>
                     {it.badge&&<span style={{background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"1px 8px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{it.badge}</span>}
@@ -880,7 +901,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null||(searchPending&&dirPageRows.length===0)} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={0} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirWhereStr?{where:dirWhereStr}:{}),...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={v=>{setDirSort(v);setDirDir("");}} sortDir={dirDir} setSort={(k,d)=>{setDirSort(k);setDirDir(d);}} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly} listSetup={listSetup} layout={layout} setLayoutLocal={setLayout} persistLayout={persistLayout} resetLayout={resetLayout} saveOrgLayout={saveOrgLayout} where={dirWhere} setWhere={w=>{setDirWhere(w);}} filterError={filterError} views={(listSetup&&listSetup.views)||[]} activeViewId={activeViewId} onPickView={pickView} onSaveView={saveView} onDeleteView={deleteView} onPageSize={n=>persistLayout({pageSize:n}).catch(e=>console.warn("[list-layout]",e&&e.message))} includeScreening={includeScreening}/>}
 
       {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
       {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}

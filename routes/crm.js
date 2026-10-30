@@ -8886,6 +8886,33 @@ app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// FIX-58 · WHO, BY NAME. The person who ran an import, by the name they go by
+// now; a row stamped before FIX-57 holds an email there, and a system run its
+// identity, which reads as Steward.
+const IMPORT_WHO_SQL = `CASE WHEN i.actor_user_name LIKE 'system:%' THEN 'Steward'
+                              ELSE COALESCE(NULLIF(TRIM(u.name), ''), i.actor_user_name) END`;
+// FIX-58 · "DOLLARS IN" IS NEVER ONE SUM OF GIFTS AND PROMISES. What came in
+// as gifts (a pledge's paid first year included) and what is still pledged,
+// each from the receipt as it was stored. A spreadsheet receipt from before
+// FIX-58 did not store its first payments' dollars, so those are read from
+// the payments it wrote. The gift history read "$566,183.93" here, the file's
+// net with its refunds, while its 278 gifts are $571,129.93.
+async function importGivenParts(orgId, rows) {
+  const old = rows.filter(r => r.shape === "sheet" && !(r.summary_json && (typeof r.summary_json === "string" ? /"givenCents"/.test(r.summary_json) : r.summary_json.givenCents != null))).map(r => r.id);
+  const paid = new Map(old.length ? (await query(`SELECT import_id, ROUND(SUM(amount)*100)::bigint AS c FROM gifts WHERE org_id=? AND import_id = ANY(?) AND pledge_id IS NOT NULL GROUP BY import_id`,
+    [orgId, old])).map(x => [x.import_id, Number(x.c) || 0]) : []);
+  return (r, summary) => {
+    const c = v => money.toCents(v) ?? 0;
+    const sc = summary.counts && typeof summary.counts === "object" ? summary.counts : {};
+    const pledgeC = summary.pledgeDollarsCreated != null ? c(summary.pledgeDollarsCreated) : sc.pledgeCents != null ? Number(sc.pledgeCents) || 0 : 0;
+    const firstC = summary.givenCents != null ? Number(summary.givenCents) - c(r.dollars_created) : paid.get(r.id) || 0;
+    const givenC = c(r.dollars_created) + firstC;
+    const pledgedC = summary.pledgedOpenCents != null ? Number(summary.pledgedOpenCents) || 0 : Math.max(0, pledgeC - firstC);
+    return { dollarsGiven: givenC / 100, dollarsPledged: pledgedC / 100,
+             dollarsInWords: pledgedC ? `${money.formatCentsPlain(givenC)} given · ${money.formatCentsPlain(pledgedC)} pledged` : givenC || Number(r.gifts_created) ? money.formatCentsPlain(givenC) : "No gifts" };
+  };
+}
+
 // POLISH-2 Part 6: the Imports list shows files she brought in. A connection's
 // scheduled check ("PayPal - checked 2026-10-12", shape 'source') is that
 // connection's history and is read there (GET /connections/:id/log), so it is
@@ -8893,14 +8920,16 @@ app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
 app.get("/imports", requireAuth, wrap(async (req, res) => {
   const withChecks = req.query.include === "checks";
   const rows = await query(
-    `SELECT id, name, source_filename, shape,
-            TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
-            committed_at, actor_user_name, rows_in, gifts_created, donors_created,
-            donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
-            migration_source, thanks_answer, reversed_at
-       FROM imports WHERE org_id=? ${withChecks ? "" : "AND COALESCE(shape, '') <> 'source'"}
-      ORDER BY committed_at DESC, id DESC LIMIT 200`,
-    [req.user.orgId]);
+    `SELECT i.id, i.name, i.source_filename, i.shape,
+            TO_CHAR(i.committed_at AT TIME ZONE ?, 'YYYY-MM-DD') AS committed_on,
+            i.committed_at, ${IMPORT_WHO_SQL} AS actor_user_name, i.rows_in, i.gifts_created, i.donors_created,
+            i.donors_merged, i.rows_set_aside, i.rows_errored, i.dollars_in, i.dollars_created, i.summary_json,
+            i.migration_source, i.thanks_answer, i.reversed_at
+       FROM imports i LEFT JOIN users u ON u.id = i.actor_user_id AND u.org_id = i.org_id
+      WHERE i.org_id=? ${withChecks ? "" : "AND COALESCE(i.shape, '') <> 'source'"}
+      ORDER BY i.committed_at DESC, i.id DESC LIMIT 200`,
+    [await orgTzName(req.user.orgId), req.user.orgId]);
+  const given = await importGivenParts(req.user.orgId, rows);
   // FIX-52: a spreadsheet import still being written, or one that failed and
   // was rolled back, is on the list too, read from its job, never guessed.
   const jobs = await query(`SELECT j.id, j.file_name, j.status, j.phase, j.done, j.total, j.error, j.started_at, j.created_by_name
@@ -8916,7 +8945,8 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
       rowsIn: 0, giftsCreated: 0, donorsCreated: 0, donorsMerged: 0, rowsSetAside: 0, rowsErrored: 0, dollarsIn: 0, dollarsCreated: 0,
       reconciled: true, findings: [], notices: [] })).concat(rows.map(r => {
       const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
-      const findings = importFindings(r, summary);
+      // FIX-58: an undone import says Undone, and only that
+      const findings = r.reversed_at ? [] : importFindings(r, summary);
       return {
         id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,
         committedOn: r.committed_on, committedAt: r.committed_at, by: r.actor_user_name || null,
@@ -8924,6 +8954,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         donorsCreated: Number(r.donors_created) || 0, donorsMerged: Number(r.donors_merged) || 0,
         rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
         dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
+        ...given(r, summary),
         reconciled: findings.length === 0, findings, notices: importNotices(r),
         // TRANS-1 — a named import says where the file came from, and whether
         // it has a Move Report to open. `hasMoveReport` is the presence of the
@@ -8988,10 +9019,16 @@ function peopleLine(r, summary) {
 
 // One run, with the receipt exactly as it was shown.
 app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
-  const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const [r] = await query(`SELECT i.*, ${IMPORT_WHO_SQL} AS actor_user_name FROM imports i LEFT JOIN users u ON u.id = i.actor_user_id AND u.org_id = i.org_id
+                             WHERE i.id=? AND i.org_id=?`, [req.params.id, req.user.orgId]);
   if (!r) return res.status(404).json({ error: "import not found" });
   const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
-  const findings = importFindings(r, summary);
+  // FIX-58: an undone import says Undone, and only that
+  const findings = r.reversed_at ? [] : importFindings(r, summary);
+  const given = (await importGivenParts(req.user.orgId, [r]))(r, summary);
+  // FIX-58: the gift rows said once, each part opening its rows
+  const src = part => ({ key: "import-gifts", params: { import: r.id, ...(part ? { part } : {}) } });
+  const giftLine = summary.giftLine ? { ...summary.giftLine, sources: { gifts: src("gifts"), first: src("first"), all: src(null) } } : null;
   res.json({
     import: {
       id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,
@@ -9005,6 +9042,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       hasMoveReport: !!(summary && summary.moveFile),
       thanks: (await recentGiftRuns(req.user.orgId, [r])).has(r.id) ? IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null : null,
       ...peopleLine(r, summary),
+      ...given, giftLine,
       // FIX-52: the pledges it made are part of what it brought in, and every
       // receipt that reverses as a whole offers Undo for its window, whether
       // or not it reconciles: an import that went wrong is when undo matters.
@@ -22682,7 +22720,7 @@ const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
-          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id,
+          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.stripe_connected,
           ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
 async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {
@@ -22712,7 +22750,17 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(orgPageSql("o.org_slug = $1"), [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
-  res.json(await orgPagePublicPayload(orgs[0], req.params.orgSlug));
+  // FIX-58: the org's own donation form is gated like its giving pages: until
+  // payments are connected it is not open, and its address says so. The
+  // memberships page reads the same payload for the org's brand and asks with
+  // ?memberships=1; a membership's checkout is refused by donateHandler on its
+  // own until payments are connected, so that page never takes money either.
+  const org = orgs[0];
+  if (req.query.memberships !== "1" && !orgTakesGifts(org)) {
+    const name = String(org.display_name || "").trim() || org.name;
+    return res.status(404).json({ notOpen: true, orgName: name, error: `${name}'s giving page isn't open yet. Please check back soon.` });
+  }
+  res.json(await orgPagePublicPayload(org, req.params.orgSlug));
 }));
 // The editor's preview of the org's own Donation form: the same payload, with
 // the drafted amounts. A GET: nothing is written.
@@ -28209,10 +28257,14 @@ const EVENT_ROW_SQL = {
              FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
             WHERE g.org_id=? AND g.event_id=?
             ORDER BY g.amount DESC`,
-  registered: `SELECT a.id, a.donor_id, a.name, a.quantity, a.table_label, l.name AS level_name
+  // FIX-58: each person who said they were coming or came, once
+  // (figureSources EVENT_REGISTERED, the "event-registered" source)
+  registered: `SELECT * FROM (SELECT DISTINCT ON (COALESCE(a.donor_id, a.id)) a.id, a.donor_id, COALESCE(d.name, a.name) AS name, a.quantity, a.table_label, l.name AS level_name
                  FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
-                WHERE a.org_id=? AND a.event_id=? AND a.status <> 'cancelled'
-                ORDER BY a.name`,
+                 LEFT JOIN donors d ON d.id=a.donor_id AND d.org_id=a.org_id
+                WHERE a.org_id=? AND a.event_id=? AND a.status IN ('registered','confirmed','attended','no_show')
+                  AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
+                ORDER BY COALESCE(a.donor_id, a.id)) r ORDER BY r.name`,
   attended: `SELECT a.id, a.donor_id, a.name, a.table_label, l.name AS level_name
                FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
               WHERE a.org_id=? AND a.event_id=? AND a.status='attended'
@@ -28246,12 +28298,9 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   // function the card, the first look and Reports read (numbers.eventsRaised).
   const [money] = await require("../numbers").eventsRaised(orgId, { ids: [event.id] });
   const raisedCents = money ? money.raisedCents : 0;
-  // `|| 1` COUNTS A ZERO AS A ONE. A named guest brought on somebody else's
-  // ticket carries quantity 0 on purpose — they have a seat and a name tag and
-  // they are not a second place — and `Number(0) || 1` turned every one of
-  // them back into a place. The walk caught it: three places and two guests
-  // reported as five.
-  const registered = counts.registered.reduce((a, r) => a + (r.quantity == null ? 1 : Number(r.quantity)), 0);
+  // FIX-58: Registered is people, once each, never seats: "Registered 263"
+  // on the dinner was 233 party places for 165 guests plus 30 who declined.
+  const registered = counts.registered.length;
   const progress = EV.eventProgress({ raisedCents,
     goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
   const attendance = EV.attendanceRate({ registered, attended: counts.attended.length });
@@ -28325,7 +28374,7 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
   for (const sp of sponsors) {
     if (!sp.donor_id) continue;
     const [g] = await query(
-      `SELECT id, amount FROM gifts WHERE org_id=? AND event_id=? AND donor_id=?
+      `SELECT id, amount, date FROM gifts WHERE org_id=? AND event_id=? AND donor_id=?
         ORDER BY amount DESC LIMIT 1`, [orgId, event.id, sp.donor_id]);
     // A sponsor who has only PLEDGED has no gift to thank them for yet, and
     // thanking somebody for money that has not arrived is the one mistake a
@@ -28335,7 +28384,7 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
     if (dupe) { out.alreadyThere++; continue; }
     const t = draftMod.thankYouDraft({
       donorName: sp.name, giftCents: Math.round(Number(g.amount) * 100),
-      fundName: null, campaignName: event.name, orgName: org?.name, voice,
+      fundName: null, campaignName: event.name, orgName: org?.name, voice, date: g.date || null,
     });
     await run(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES (?,?,?,?,?,?)`,
       ["ty_" + uuid().slice(0, 10), orgId, sp.donor_id, g.id, t.body, t.voice]);
@@ -28548,7 +28597,7 @@ app.get("/events", requireAuth, async (req, res) => {
         COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
         COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
         COUNT(ea.id)::int AS invited_count,
-        COALESCE(SUM(CASE WHEN ea.status <> 'cancelled' THEN COALESCE(ea.quantity,1) END),0)::int AS registered_count,
+        COUNT(DISTINCT COALESCE(ea.donor_id, ea.id)) FILTER (WHERE ea.status IN ('registered','confirmed','attended','no_show'))::int AS registered_count,   -- FIX-58: people, once
         COUNT(CASE WHEN ea.checked_in_at IS NOT NULL THEN 1 END)::int AS checked_in_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue,
         (SELECT COALESCE(SUM(g.amount),0) FROM gifts g

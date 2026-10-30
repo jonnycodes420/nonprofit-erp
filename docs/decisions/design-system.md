@@ -55,6 +55,11 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
   for overdue: the band, the row and the count already say it. (BUILD-87 F.3, BUILD-88d)
 - **Show a colleague by first name (`firstNameOf`).** When the logger and the owner are the same person,
   show one name. (BUILD-87 F.3.7)
+- **Every count's plural comes from `shared/countWords.js` (FIX-58).** A count label (a tile, chip,
+  badge, button, list header, receipt line) is `countLabel(n, "donor")`: numerals always, "1 sustainer",
+  "1,200 sustainers". A count inside a sentence is `countWords`: under ten spelled ("three donors"), ten
+  and up in numerals. Drift follows the same split. No `n === 1 ? "" : "s"` anywhere else
+  (`tests/palette.test.js` §5 fails on one). Attention, including Critical and tasks due, is brass.
 - **Send every piece of her vocabulary through `makeT`/`t()` in `shared/vocabulary.js`.** The defaults are
   today's strings, only the difference from them is stored, and the plural is stored rather than computed. (BUILD-86 B)
 - **Never let vocabulary reach a receipt, a year-end statement or the donor portal.** A §170

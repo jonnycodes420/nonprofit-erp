@@ -61,6 +61,7 @@ import { ProfileGroups } from "./Groups";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { openCheckSnap } from "./CheckSnap";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
+import { countLabel, plural } from "../../../shared/countWords.js";
 
 // IMPORT-4 · A GIFT WITH NO DATE. An import that gave no day keeps the gift
 // undated: it counts in Lifetime and its event, never in This year. "Set date"
@@ -105,7 +106,7 @@ function ContactFlag({ flags, field }) {
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
 // POLISH-2: how late a step is, said one way ("2 days late"), against the org's today.
-const lateWords=due=>{const n=civilDays(String(due||"").slice(0,10),orgTodayCivil());return n>0?`${n} day${n===1?"":"s"} late`:"Due today";};
+const lateWords=due=>{const n=civilDays(String(due||"").slice(0,10),orgTodayCivil());return n>0?`${countLabel(n, "day")} late`:"Due today";};
 
 const WEALTH_SCORE_DEFINITION = null;
 const WEALTH_SCORE_SOURCE = null;
@@ -888,7 +889,7 @@ function HeaderChips({status,donor,isReadOnly}){
         {of("status").length>0&&<span data-testid="dp-status-tags" style={{display:"contents"}}>{of("status")}</span>}
         {of("record").length>0&&<span data-testid="dp-record-tags" style={{display:"contents"}}>{of("record")}</span>}
         {of("group")}
-        {more>0&&<button type="button" data-testid="dp-tags-more" onClick={()=>setAll(true)} aria-label={`Show ${more} more tag${more===1?"":"s"} and group${more===1?"":"s"}`}
+        {more>0&&<button type="button" data-testid="dp-tags-more" onClick={()=>setAll(true)} aria-label={`Show ${countLabel(more, "more tag")} and ${plural(more, "group")}`}
           style={{fontSize:11.5,fontWeight:700,padding:"2px 9px",borderRadius:99,border:"1px solid "+T.bg3,background:T.white,color:T.ink2,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>+{more}</button>}
         {all&&items.length>limit&&<button type="button" data-testid="dp-tags-fewer" onClick={()=>setAll(false)}
           style={{fontSize:11.5,fontWeight:600,padding:0,border:"none",background:"none",color:T.ink3,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit"}}>Fewer</button>}
@@ -2743,7 +2744,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800}}>{meta.label}</span>
                     <span style={{fontSize:12,color:T.ink3}}>
                       Recurring gift{recurringSub.amount!=null?` · ${fmtFull(recurringSub.amount)}/${recurringSub.interval==="year"?"yr":"mo"}`:""}
-                      {atRisk&&recurringSub.failure_count>0&&` · ${recurringSub.failure_count} failed attempt${recurringSub.failure_count===1?"":"s"}`}
+                      {atRisk&&recurringSub.failure_count>0&&` · ${countLabel(recurringSub.failure_count, "failed attempt")}`}
                     </span>
                   </div>
                   {atRisk&&(
@@ -3066,7 +3067,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
                             <div style={{height:"100%",background:T.greenDk,borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
                           </div>
-                          <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {displayDate(f.lastDate)}</div>
+                          <div style={{fontSize:11,color:T.ink3}}>{countLabel(f.giftCount, "gift")} · Last: {displayDate(f.lastDate)}</div>
                         </div>
                       ))}
                     </div>

@@ -15,14 +15,14 @@
 // House style for every sentence here: spell numbers under ten, no colons, no
 // em dashes, time in words.
 
-const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-export function spell(n) { return n >= 0 && n < WORDS.length ? WORDS[n] : String(n); }
+import { spell, countWords } from "./countWords.js";
+export { spell };
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 export function dollars(cents) {
   const c = Math.abs(Math.round(Number(cents) || 0));
   return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 }
-const plural = (n, one, many) => `${spell(n)} ${n === 1 ? one : many}`;
+const plural = countWords;
 
 // ── The seven questions ────────────────────────────────────────────────────
 // `needs` says what the question is about: a campaign, a donor, or nothing.

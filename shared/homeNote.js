@@ -30,11 +30,11 @@
 
 import { makeT, giverCountWord } from "./vocabulary.js";
 import { threadFigures, rowFigure } from "./threadFigures.js";
+import { spell } from "./countWords.js";
 
 export const NOTHING_WAITING = "Nothing is waiting on you this morning.";
 
-const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
-export function spell(n) { return n >= 0 && n < WORDS.length ? WORDS[n] : String(n); }
+export { spell };
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 // ── Time, in words ─────────────────────────────────────────────────────────

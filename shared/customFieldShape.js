@@ -13,6 +13,7 @@
 // to a wider surface.
 
 import { normalizeDate, normalizeMoney } from "./importShape.js";
+import { countLabel } from "./countWords.js";
 
 export const CF_TYPES = ["text", "long_text", "number", "money", "date", "select", "multi_select", "checkbox"];
 
@@ -519,7 +520,7 @@ export function buildMapperPlan({ headers = [], fields = [], rows = [], txMap = 
   // surface at all — refused, with the reason and the row count.
   for (let i = 0; i < orphanColumns; i++) {
     columns.push({ index: headers.length + i, header: "", field: null,
-                   status: "refused", reason: `overflow cells beyond the header row (${overflowRows} row${overflowRows === 1 ? "" : "s"})` });
+                   status: "refused", reason: `overflow cells beyond the header row (${countLabel(overflowRows, "row")})` });
   }
   return { columns };
 }

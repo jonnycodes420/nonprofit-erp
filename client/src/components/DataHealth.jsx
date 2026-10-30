@@ -8,9 +8,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card, Modal } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
+import { countLabel } from "../../../shared/countWords.js";
 
 const fmtMoney = c => "$" + (Number(c || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+const plural = countLabel;
 const CONF_WORD = { high: "High", medium: "Medium", low: "Low" };
 const btn = (primary, disabled) => ({
   background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink2,
@@ -88,6 +89,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
     ...(c.couples ? [{ id: "couples", label: "Couples written with a comma", count: c.couples,
       sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written with a comma ("Alex, Brad Hubbard").`,
       action: "Fix them" }] : []),
+    // FIX-58: pledges an import dated from the event's own day
+    ...(c.pledgesOnEventDay ? [{ id: "pledgeDates", label: "Pledges due the day of the event", count: c.pledgesOnEventDay,
+      sentence: `${c.pledgesOnEventDay === 1 ? "1 pledge has" : `${c.pledgesOnEventDay.toLocaleString("en-US")} pledges have`} a first installment dated the event day, so ${c.pledgesOnEventDay === 1 ? "it reads" : "they read"} overdue the week after.`,
+      action: "Move to Dec 31" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
@@ -110,6 +115,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "unreachable" && <UnreachablePanel onOpenDonor={onOpenDonor} />}
       {open === "couples" && <CouplesPanel onDone={done} isReadOnly={isReadOnly} />}
+      {open === "pledgeDates" && <PledgeDatesPanel onDone={done} isReadOnly={isReadOnly} />}
       <MergesPanel key={tick} onDone={done} isReadOnly={isReadOnly} />
     </div>
   );
@@ -394,6 +400,55 @@ function CouplesPanel({ onDone, isReadOnly }) {
             <div style={{ color: T.ink, fontWeight: 700 }}>Fixed: {r.after} ({r.people.join(" and ")})</div>
           </div>
           <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => apply([r.donorId])}>Fix</button>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// ── Pledges due the day of the event (FIX-58) ────────────────────────────
+// Before and after for each, applied only when she clicks, with Undo.
+function PledgeDatesPanel({ onDone, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [batch, setBatch] = useState(null);
+  const load = () => apiFetch("/data-health/pledge-dates").then(setData).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const apply = async ids => {
+    setBusy(true); setErr(null);
+    try { const r = await apiFetch("/data-health/pledge-dates/apply", { method: "POST", body: JSON.stringify({ pledgeIds: ids }) }); setBatch(r.batchId); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  const undo = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await apiFetch("/data-health/pledge-dates/undo", { method: "POST", body: JSON.stringify({ batchId: batch }) }); setBatch(null); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.message); }
+    finally { setBusy(false); }
+  };
+  if (!data) return <Card>{err ? `Couldn't load the pledges. ${err}` : "Reading pledges…"}</Card>;
+  const all = data.rows.map(r => r.pledgeId);
+  const dates = list => list.map(i => displayDate(i) || "No date").join(", ");
+  return (
+    <Card data-testid="dh-pledge-dates">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{data.sentence}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {batch && <button data-testid="dh-pledge-dates-undo" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={undo}>Undo</button>}
+          {all.length > 0 && <button data-testid="dh-pledge-dates-apply" style={btn(true, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => apply(all)}>Move to Dec 31</button>}
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>A pledge made at an event is due by Dec 31 of the event's year, then each Dec 31 after. Amounts don't change, and a paid installment stays paid.</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {data.rows.map(r => (
+        <div key={r.pledgeId} style={{ ...rowStyle, alignItems: "flex-start" }} data-testid="dh-pledge-date">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13 }}>
+            <div style={{ color: T.ink, fontWeight: 700 }}>{r.name} · ${r.amount.toLocaleString("en-US")} at {r.eventName}</div>
+            <div style={{ color: T.ink3 }}>Now: {dates(r.installments.map(i => i.before))}</div>
+            <div style={{ color: T.ink, fontWeight: 700 }}>Moved: {dates(r.installments.map(i => i.after))}</div>
+          </div>
+          <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => apply([r.pledgeId])}>Move</button>
         </div>
       ))}
     </Card>

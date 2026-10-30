@@ -27,6 +27,7 @@
 // the last one makes the third fact sound like a conclusion, and it also
 // collided with the comma inside the Thread's own clause. Each fact is its own
 // clause instead, which is why threadClauses returns an array.
+import { plural as pluralWord } from "../../../shared/countWords.js";
 function joinClauses(parts) {
   return parts.join(", ");
 }
@@ -43,7 +44,7 @@ function spell(n, { capitalize = false } = {}) {
   const w = n >= 0 && n < WORDS.length ? WORDS[n] : String(n);
   return capitalize && /^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w;
 }
-const plural = (n, one, many) => `${spell(n)} ${n === 1 ? one : many}`;
+const plural = (n, one, many) => `${spell(n)} ${pluralWord(n, one, many)}`;
 
 // The Thread clause. Overdue is the fact worth leading with; where nothing is
 // overdue the clause is about what is due, and where neither, the queue says

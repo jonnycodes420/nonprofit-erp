@@ -117,6 +117,15 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   second such run prints who holds it and waits; a lock whose pid is gone is taken over. A serial
   run against an already-booted `$BASE` (pre-push, `affected.sh`) boots nothing and takes none.
   CI is unaffected (one runner, one machine). `BATTERY_LOCK=0` skips it.
+- **A run never removes a lock it does not own (FIX-58).** Every lock goes through
+  `tests/lib/battery-lock.sh`: release checks the pid is ours, and a stale lock is taken over only
+  under `<lock>.takeover` after re-reading its pid (two waiters on one dead owner used to delete
+  each other's fresh lock). A lock with no pid yet is not stale for 10 s. Never `rm` a lock by
+  hand, even one that looks stale: let the next run take it over (`tests/battery-lock.test.js`).
+- **Every suite runs or says why not (FIX-58).** A `tests/*.test.js` or `*.spec.js` is in
+  `run-all.sh`'s CORE list or in `tests/NOT-IN-BATTERY.md` with a reason
+  (`tests/every-test-runs.test.js`). IMPORT-5, SEND-GATE-2 and FIX-55 each merged a suite the
+  battery never ran.
 - **A suite that spawns a child server must pass `DATABASE_URL` explicitly.** `run-all.sh` does
   not export it, so the child falls back to :5432. On a non-default port, also match `SINK_PORT`,
   `STRIPE_MOCK_PORT` and `BILLING_MOCK_PORT`. (BUILD-92, BUILD-98)

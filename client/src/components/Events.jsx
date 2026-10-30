@@ -13,6 +13,7 @@ import { SaveAsGroup } from "./Groups";
 import { Figure } from "./Figure";
 import EventRaised, { EventStory } from "./EventRaised";   // HOME-3 · FUNDRAISING-2
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
+import { countLabel } from "../../../shared/countWords.js";
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
 const CHAIR = 44;
@@ -191,7 +192,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
           {[
             ["Goal", goal ? fmtFull(goal) : "None set", null, "The amount this event is aiming at."],
             ["Raised", fmtFull(raised), "raised", money ? money.definitions.raised : "Every gift attributed to this event, at its full amount."],
-            ["Registered", String(registered), "registered", "People on the list who have not cancelled. A ticket for two counts as two."],
+            ["Registered", String(registered), "registered", "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted."],
           ].map(([label, value, rowsKey, sentence]) => label === "Raised" && money ? (
             <div key={label} data-testid="ev-card-raised" title={sentence} onClick={e => e.stopPropagation()}
               style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px", textAlign: "left" }}>
@@ -1710,7 +1711,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           {attendedCount > 0 && (
             <div style={{ background: T.bgElevated, border: "1px solid "+T.gold500+"44", borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.gold500, marginBottom: 8 }}>Follow-up Tasks</div>
-              <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{attendedCount} donor{attendedCount !== 1 ? "s" : ""} attended, create follow-up tasks for each.</div>
+              <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{countLabel(attendedCount, "donor")} attended, create follow-up tasks for each.</div>
               <button onClick={() => setShowFollowUp(true)} style={{ background: T.gold500+"22", border: "1px solid "+T.gold500+"44", borderRadius: 8, padding: "8px 14px", color: T.gold500, fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}>
                 ✦ Create Follow-up Tasks
               </button>

@@ -38,6 +38,7 @@
 //
 // Pure: no DB, no network, no clock, no vendor SDK, no JSX.
 
+import { countLabel } from "./countWords.js";
 export const VENDORS = {
   quickbooks: {
     key: "quickbooks", label: "QuickBooks Online",
@@ -84,7 +85,7 @@ export function mappingReady({ funds = [], feeAccountId = null, depositAccounts 
   const missingFunds = funds.filter(f => !f.accountId).map(f => f.name || f.id);
   const missingDeposits = sources.filter(s => !depositAccounts[s]).map(s => s);
   const problems = [];
-  if (missingFunds.length) problems.push(`${missingFunds.length} fund${missingFunds.length === 1 ? "" : "s"} with no account: ${missingFunds.slice(0, 5).join(", ")}`);
+  if (missingFunds.length) problems.push(`${countLabel(missingFunds.length, "fund")} with no account: ${missingFunds.slice(0, 5).join(", ")}`);
   if (!feeAccountId) problems.push("no account for the processing fee");
   if (missingDeposits.length) problems.push(`no bank account for ${missingDeposits.slice(0, 5).join(", ")}`);
   return {
@@ -156,7 +157,7 @@ export function buildDeposit(payout, gifts = [], revenue = [], mapping = {}) {
       sentence: `This deposit's lines come to ${money(linesTotal)} and ${money(net)} arrived in the bank, ${money(Math.abs(d))} ${d > 0 ? "more" : "less"} than Steward can account for. Nothing was sent.` };
   }
 
-  return { ok: true, sentence: `${lines.length} line${lines.length === 1 ? "" : "s"} totalling ${money(net)}, which is what arrived in the bank.`,
+  return { ok: true, sentence: `${countLabel(lines.length, "line")} totalling ${money(net)}, which is what arrived in the bank.`,
     deposit: {
       payoutId: payout.id, sourceKey: payout.sourceKey, bankAccountId,
       date: String(payout.arrivedOn || "").slice(0, 10),
@@ -174,7 +175,7 @@ export function idempotencyKey(payout) {
 function describeLine(row, donorNames) {
   const base = row.fundName ? `Gifts to ${row.fundName}` : "Gifts";
   const n = row.giftIds.length;
-  const count = `${n} gift${n === 1 ? "" : "s"}`;
+  const count = `${countLabel(n, "gift")}`;
   if (!donorNames || !row.donors.length) return `${base} (${count})`;
   const shown = row.donors.slice(0, 6).join(", ");
   return `${base} (${count}): ${shown}${row.donors.length > 6 ? ` and ${row.donors.length - 6} more` : ""}`;
@@ -209,7 +210,7 @@ export function agree(stewardDeposits = [], vendorDeposits = [], { month = "" } 
     month, matched, onlyInSteward, onlyInVendor, differing,
     stewardCents, vendorCents, differenceCents: vendorCents - stewardCents, agreed,
     sentence: agreed
-      ? `${matched.length} deposit${matched.length === 1 ? "" : "s"} totalling ${money(stewardCents)}, and the two agree to the cent.`
+      ? `${countLabel(matched.length, "deposit")} totalling ${money(stewardCents)}, and the two agree to the cent.`
       : [onlyInSteward.length ? `${onlyInSteward.length} Steward sent that ${onlyInSteward.length === 1 ? "is" : "are"} not there` : null,
          onlyInVendor.length ? `${onlyInVendor.length} there that Steward did not send` : null,
          differing.length ? `${differing.length} where the amounts differ` : null]

@@ -60,6 +60,14 @@ export function civilYear(value) {
   return p ? p.y : null;
 }
 
+// FIX-58 · "April 30, 2026": the month in full, the way a letter writes a
+// date. The thank-you letter and the header above it both read this.
+const MONTH = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export function displayDateLong(value) {
+  const p = parts(value);
+  return p ? `${MONTH[p.mo - 1]} ${p.d}, ${p.y}` : "";
+}
+
 // "Sep 2026" — a month, for a chart axis or a period heading.
 export function displayMonth(value) {
   const p = parts(/^\d{4}-\d{2}$/.test(String(value)) ? value + "-01" : value);

@@ -31,6 +31,7 @@ import { tabHref, urlParam } from "../lib/appUrls";
 import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule";   // PARITY-3 Part 4
 import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";          // PARITY-3 Part 2
 import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
+import { countLabel } from "../../../shared/countWords.js";
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -632,7 +633,7 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
                   <span style={{ color: expired ? T.terra700 : soon ? T.gold700 : T.ink3 }}>
                     {expired
                       ? ` · expired ${displayDate(c.expires_on)}`
-                      : ` · ${soon ? "expires" : "valid until"} ${displayDate(c.expires_on)}${soon ? `, in ${days} day${days === 1 ? "" : "s"}` : ""}`}
+                      : ` · ${soon ? "expires" : "valid until"} ${displayDate(c.expires_on)}${soon ? `, in ${countLabel(days, "day")}` : ""}`}
                   </span>
                 </div>);
             }) : <div style={{ fontSize: 13, color: T.ink3 }}>Nothing on file yet.</div>}

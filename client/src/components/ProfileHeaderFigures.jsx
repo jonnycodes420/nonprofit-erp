@@ -19,6 +19,7 @@ import { T, fmtFull } from "./shared";
 import { Figure, FigureWhy } from "./Figure";
 import { censusById } from "../../../shared/numberCensus.js";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import { countLabel } from "../../../shared/countWords.js";
 
 // IMPORT-4: a gift with no date reads "No date", never "null".
 const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : "No date");
@@ -26,7 +27,7 @@ const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : "No date");
 // POLISH-1 · the average says what it is the average OF, and what came off it.
 function averageSub(a) {
   if (!a || !a.count) return null;
-  const bits = [`of ${a.count} gift${a.count === 1 ? "" : "s"}`];
+  const bits = [`of ${countLabel(a.count, "gift")}`];
   if (a.refunds > 0) bits.push(`after ${fmtFull(a.refundCents / 100)} refunded`);
   if (a.importedCents > 0) bits.push(`not counting ${fmtFull(a.importedCents / 100)} given before Steward`);
   return bits.join(", ");

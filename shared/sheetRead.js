@@ -26,6 +26,7 @@ import { pledgeMoneyWords } from "./pledgeWords.js";
 import { EXPORT_SHAPES, shapeOfTable, shapeColumn, knownShapeSentence, reshapeKnownGrid } from "./exportShapes.js";
 import { isGivenName } from "./givenNames.js";
 import { splitAddress, contactNoteFlags } from "./addressSplit.js";
+import { countLabel } from "./countWords.js";
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
@@ -243,7 +244,7 @@ const hnorm = h => s(h).toLowerCase().replace(/[_]+/g, " ").replace(/\s+/g, " ")
 const isBlank = v => s(v) === "";
 const cents = v => Math.round(v * 100);
 const fmt$ = c => (c < 0 ? "-$" : "$") + (Math.abs(Math.round(c)) / 100).toLocaleString("en-US", { minimumFractionDigits: (c % 100) ? 2 : 0, maximumFractionDigits: 2 });
-const plural = (n, a, b) => `${n.toLocaleString("en-US")} ${n === 1 ? a : (b || a + "s")}`;
+const plural = countLabel;
 
 function moneyOf(v) {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -938,10 +939,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const dateAnswer = answers.date && /^\d{4}-\d{2}-\d{2}$/.test(answers.date) ? answers.date : null;
   // "Date them all" with the event linked is the event's date too (the write reads it the same way)
   const eventDateAnswer = answers.eventDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.eventDate) ? answers.eventDate : (answers.linkEvent && dateAnswer) || null;
-  // IMPORT-5: a pledge with no date of its own is due from the event's date
-  // (counted as before: a one-year pledge by that year's end, a multi-year one
-  // yearly from it), from a date she chose (that day, then yearly), or has no
-  // set due date. Unanswered, it has none, and the question blocks.
+  // IMPORT-5: a pledge with no date of its own is due from the event's date,
+  // from a date she chose (that day, then yearly), or has no set due date.
+  // Unanswered, it has none, and the question blocks. FIX-58 (Jonathan, 29
+  // Oct): from the event's date means Dec 31 of the event's year, then yearly
+  // on Dec 31, for one-year and multi-year pledges alike, so a pledge made at
+  // a dinner is never overdue the week after it.
   const pledgeDueDate = answers.pledgeDueDate && /^\d{4}-\d{2}-\d{2}$/.test(answers.pledgeDueDate) ? answers.pledgeDueDate : null;
   const pledgeDueBase = answers.pledgeDue === "event" ? eventDateAnswer : answers.pledgeDue === "choose" ? pledgeDueDate : null;
   const singleDue = base => !base ? null : answers.pledgeDue === "choose" && base === pledgeDueDate ? base : yearEnd(base);
@@ -1343,8 +1346,11 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       // (the event's date, a date she chose, or "No set due date"). Never from
       // the day of the import: Steward does not make up a day.
       const ownDate = datedBy === "file" || datedBy === "you" ? date : null;
-      const dueBase = ownDate || pledgeDueBase;
-      if (!ownDate) noteParts.push(dueBase ? `Your file gave no date. Due dates count from ${dueBase}, ${answers.pledgeDue === "choose" ? "the date you chose" : "the event's date"}` : "No set due date");
+      // FIX-58: due from the event's day (her answer, never the file's own
+      // date) counts from Dec 31 of that year
+      const fromEvent = !ownDate && answers.pledgeDue === "event" && !!pledgeDueBase;
+      const dueBase = ownDate || (fromEvent ? yearEnd(pledgeDueBase) : pledgeDueBase);
+      if (!ownDate) noteParts.push(dueBase ? `Your file gave no date. Due dates count from ${dueBase}, ${answers.pledgeDue === "choose" ? "the date you chose" : `the end of the event's year (the event was ${pledgeDueBase})`}` : "No set due date");
       if (freq.kind === "multiYear" && freq.years > 1) {
         const yearly = cents(amt);
         const total = multiTotal != null && cents(multiTotal) > 0 ? cents(multiTotal) : yearly * freq.years;
@@ -1444,8 +1450,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const multi = undatedPledges.filter(p => p.years > 1).length;
     questions.push({ id: "pledgeDue", kind: "pledgeDue", count: undatedPledges.length, multiYear: multi,
                      text: `When are ${undatedPledges.length === 1 ? "this pledge" : `these ${undatedPledges.length.toLocaleString("en-US")} pledges`} due?`,
-                     hint: (eventDateAnswer ? `From the event's date: a one-year pledge is due by ${longIso(yearEnd(eventDateAnswer))}` : "Your file gives no due dates")
-                       + (multi ? `; ${plural(multi, "multi-year pledge")} ${multi === 1 ? "gets" : "get"} a yearly installment from the first date.` : ".")
+                     hint: (eventDateAnswer ? `Same as the event date: the first installment is due ${longIso(yearEnd(eventDateAnswer))}, the end of the event's year` : "Your file gives no due dates")
+                       + (multi ? `; ${plural(multi, "multi-year pledge")} ${multi === 1 ? "gets" : "get"} a yearly installment from the first date${eventDateAnswer ? ", each on Dec 31" : ""}.` : ".")
                        + " Steward never counts from the day of the import.",
                      options: [...(eventNamed ? [{ key: "event", label: "Same as the event date", needs: eventDateAnswer ? null : "the event's date" }] : []),
                                { key: "choose", label: "A date I choose" }, { key: "none", label: "No set due date" }] });

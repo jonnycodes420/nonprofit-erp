@@ -43,6 +43,7 @@
 //
 // Ordering of this array is presentation only; scoring sums all that apply.
 
+import { countLabel } from "./countWords.js";
 export const OVERDUE_CAP_DAYS = 21;      // past three weeks, more lateness adds nothing
 export const THANK_DECAY_CAP_DAYS = 14;  // a thank-you is already cold by then
 export const STALE_DAYS = 30;
@@ -80,7 +81,7 @@ export const RANK_SIGNALS = [
     key: "overdue",
     points: t => Math.min(t.overdueDays || 0, OVERDUE_CAP_DAYS) * 3,
     applies: t => (t.overdueDays || 0) > 0,
-    why: t => `${t.overdueDays} day${t.overdueDays === 1 ? "" : "s"} late`,
+    why: t => `${countLabel(t.overdueDays, "day")} late`,
   },
   {
     // VOICE-4: a task made for a gift ("Send Margaret the receipt") says the
@@ -122,7 +123,7 @@ export const RANK_SIGNALS = [
     // the fact with a clock on it. A `lead` signal is one whose value is
     // expiring; it takes the headline and the rest stay available underneath.
     lead: true,
-    why: t => `Thank-you ${t.overdueDays} day${t.overdueDays === 1 ? "" : "s"} late. This is the one that goes cold.`,
+    why: t => `Thank-you ${countLabel(t.overdueDays, "day")} late. This is the one that goes cold.`,
   },
   {
     key: "first_gift",

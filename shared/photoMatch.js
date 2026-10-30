@@ -47,6 +47,7 @@
 
 // The extensions the product accepts, mirroring the single-upload path. A file
 // refused here is refused BY NAME so the report can say which one.
+import { countLabel } from "./countWords.js";
 export const PHOTO_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
 
 // "Margaret Whitfield.jpeg" -> { stem: "Margaret Whitfield", ext: "jpeg" }
@@ -157,6 +158,6 @@ export function matchOne(fileName, index) {
 // is a sentence with a hole in it (the BUILD-86 C.2 rule).
 export function photoReport({ attached, needsYou }) {
   const a = attached || 0, n = needsYou || 0;
-  const photos = `${a} photo${a === 1 ? "" : "s"} attached`;
+  const photos = `${countLabel(a, "photo")} attached`;
   return n > 0 ? `${photos}, ${n} need${n === 1 ? "s" : ""} you.` : `${photos}.`;
 }

@@ -14,6 +14,7 @@ import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import ImportUndo from "./ImportUndo";
+import ImportGiftLine from "./ImportGiftLine";   // FIX-58: one accounting
 import { FirstLook } from "./Insights";   // INSIGHTS-1 the first look
 import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
@@ -521,7 +522,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   {(pledgeQ.options || []).map(o => (
                     <button type="button" key={o.key} data-testid={`sheet-pledge-due-${o.key}`} aria-pressed={answers.pledgeDue === o.key}
                       style={{ ...btn(answers.pledgeDue === o.key), padding: "6px 12px", fontSize: 12.5 }}
-                      onClick={() => setAnswer({ pledgeDue: o.key })}>{o.label}{o.key === "event" && answers.eventDate ? ` (${longDate(answers.eventDate)})` : ""}</button>
+                      onClick={() => setAnswer({ pledgeDue: o.key })}>{o.label}{o.key === "event" && answers.eventDate ? ` (first due ${longDate(`${answers.eventDate.slice(0, 4)}-12-31`)})` : ""}</button>
                   ))}
                   {answers.pledgeDue === "choose" && (
                     <input type="date" data-testid="sheet-pledge-due-date" aria-label="First due date" value={answers.pledgeDueDate || ""} onChange={e => setAnswer({ pledgeDueDate: e.target.value })} style={{ ...field, flex: "0 0 auto" }} />
@@ -700,6 +701,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
           <div style={box} data-testid="sheet-result">
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
+            {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
             {!undone && result.undatedGifts > 0 && (
               <div data-testid="sheet-undated" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>

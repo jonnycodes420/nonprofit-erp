@@ -157,11 +157,14 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   ("When was the Dinner? · 106 rows, no dates"); "This file isn't from an event" (`answers.notEvent`) is the way out for
   a list with no attendance. Then two more answers, each once for the file: "Use the {event} date for these 63
   gifts?" (`answers.useEventDate`, true or false: No leaves them No date) and the pledges' due dates
-  (`answers.pledgeDue`: `event` counts as before, a one-year pledge by that year's end and a multi-year one yearly from
-  the day; `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
+  (`answers.pledgeDue`: `event` is Dec 31 of the event's year, then each Dec 31, for one-year and multi-year pledges
+  alike, so nothing is overdue the week after the event (FIX-58, Jonathan's rule of 29 Oct); `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
   import day is never a due date. An installment with no set date counts in the event's raised by its place: the first
   is pledged, the later ones later years (`EVENT_PLEDGE_OPEN`). Existing pledges were not changed;
   `scripts/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
+  Pledges an older import dated from the event's own day are a Data health Review item ("N pledges have a first
+  installment dated the event day · Move to Dec 31", `/data-health/pledge-dates`): before and after per pledge, applied
+  on her click, each date it changed kept in `pledge_date_fixes` for Undo. Nothing moves at deploy.
 - **An event the file shows is created even without a date** when she says so (`events.date_unknown`, on the import's
   day, "Date not known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
   only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).
@@ -379,3 +382,13 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   queue.
 - Undo now also removes the timeline lines an import's journeys wrote ("Journey started", each step), so a
   person the file created is removed rather than kept alive by them.
+
+## FIX-58 · one accounting on every import receipt (2026-10-29)
+
+- A spreadsheet receipt says every part of its gift rows and the whole: "106 rows · 100 gifts $111,790 · 6 first
+  payments on pledges $12,500 · $124,290 in all" (`summary.giftLine`), each part a figure opening its rows
+  (`import-gifts`, `part=gifts|first`). A pledge's paid first year is a gift row, so the preview's count is the receipt's.
+- "Dollars in" on the Imports list is what came in as gifts and what is still pledged, never one sum ("$45,340 given ·
+  $104,050 pledged"); it is never the file's net. The gift history read $566,183.93 (its 287 rows with the refunds
+  set aside) while its 278 gifts are $571,129.93. The truth check holds a spreadsheet import's "given" to its gifts.
+- An undone import says Undone, never a finding; Who is the person's current name; the date reads "Oct 28, 2026".

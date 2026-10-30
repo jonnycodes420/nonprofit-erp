@@ -12,6 +12,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import EventRaised from "./EventRaised";   // HOME-3: the first look's events
+import { countLabel } from "../../../shared/countWords.js";
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -124,7 +125,7 @@ function Does({ card, items, onNavigate, isReadOnly, onDone }) {
           await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: `${card.title}: ${it.name}${it.how && it.how.ask && it.how.ask.words ? ". " + it.how.ask.words : ""}`.slice(0, 240), due, type: "donor", donorId: it.lead, priority: "medium" }) });
           n++;
         }
-        setMsg(`${n} task${n === 1 ? "" : "s"} made, each dated for when to reach out.`);
+        setMsg(`${countLabel(n, "task")} made, each dated for when to reach out.`);
         return;
       }
       if (d.action === "group" || d.action === "call_list") {
