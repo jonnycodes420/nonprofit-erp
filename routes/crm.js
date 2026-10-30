@@ -28042,8 +28042,8 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
   const shareUrl = `${publicAppUrl()}/e/${encodeURIComponent(e.public_slug || "")}`;
   const share = `<div class="card share" data-testid="event-share">
       <h2>Tell a friend</h2>
-      <div class="copy"><input readonly value="${esc(shareUrl)}" aria-label="The page address" onfocus="this.select()">
-        <button class="btn small quiet" type="button" onclick="var i=this.previousElementSibling;i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).then(function(){},function(){document.execCommand&&document.execCommand('copy')});this.textContent='Copied'">Copy link</button></div>
+      <div class="copy"><input readonly value="${esc(shareUrl)}" aria-label="The page address"${editable ? "" : ` onfocus="this.select()"`}>
+        <button class="btn small quiet" type="button"${editable ? "" : ` onclick="var i=this.previousElementSibling;i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).then(function(){},function(){document.execCommand&&document.execCommand('copy')});this.textContent='Copied'"`}>Copy link</button></div>
       <p class="links">${EPG.shareLinks(shareUrl, e.name).map(s => `<a href="${esc(s.href)}" target="_blank" rel="noopener noreferrer">${esc(s.label)}</a>`).join("")}</p>
     </div>`;
 
@@ -28119,9 +28119,9 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
       ? `Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.`
       : `Registering here tells ${esc(brand.displayName || "the organization")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
   ` });
-  // EDITOR-1: the editor's preview runs no script, so the one inline handler
-  // (the share box's copy button) is left out of it.
-  return editable ? html.replace(/ on[a-z]+="[^"]*"/g, "") : html;
+  // EDITOR-1: the editor's preview runs no script, so the share box's two
+  // inline handlers are never written into it (above).
+  return html;
 }
 
 // ── EVENTS-2 · THE ATTENDEE'S SIDE ────────────────────────────────────────
