@@ -196,6 +196,7 @@ const resend = new Proxy(_rawResend, {
   },
 });
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
+const PW = require("./pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const { DONOR_SUMMARY_UPDATE } = require("./donorSummary");   // NUMBERS-1: the totals kept on a person
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
@@ -1806,31 +1807,34 @@ async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName 
   if (extras.match) {
     const m = extras.match;
     const due = m.dueDate || orgTime.addDays(String(gift.date).slice(0, 10), 90);
-    const pid = "pl_" + uuid().slice(0, 8);
-    const ins = await query(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,is_match,matches_gift_id,created_by,created_by_name)
-       VALUES (?,?,?,?,?,'open',?,true,?,?,?) ON CONFLICT (matches_gift_id) WHERE matches_gift_id IS NOT NULL DO NOTHING RETURNING id`,
-      [pid, orgId, m.employerId, m.cents / 100, due, "Expected matching gift", gift.id, actorId, actorName]);
-    if (ins.length) {
-      // One instalment for the whole match, so the existing rule in recordGift
-      // applies the employer's cheque to it from any door, to the cent.
-      await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-        ["pi_" + uuid().slice(0, 8), orgId, pid, due, m.cents / 100]);
+    // FIX-60 · THE ONE PLEDGE WRITER: one installment for the whole match, so
+    // the existing rule in recordGift applies the employer's cheque to it from
+    // any door, to the cent. The match may ALREADY be here (an import carries
+    // the employee's gift and the company's cheque in the same file, or staff
+    // record the match after the fact): an employer gift for exactly the
+    // expected amount, on or after this gift, not already paying another
+    // pledge, is that match, linked as it is written and its installment paid.
+    let alreadyId = null;
+    const w = await PW.writePledge({ orgId, donorId: m.employerId, amountCents: m.cents, dueDate: due,
+      notes: "Expected matching gift", isMatch: true, matchesGiftId: gift.id, createdBy: actorId, createdByName: actorName,
+      plan: { firstDue: due },
+      link: async pledgeId => {
+        const [already] = await query(
+          `SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
+             AND round(amount::numeric * 100)::bigint = ? AND date >= ? ORDER BY date ASC, id LIMIT 1`,
+          [orgId, m.employerId, m.cents, String(gift.date).slice(0, 10)]);
+        if (!already) return [];
+        await run("UPDATE gifts SET pledge_id=? WHERE id=? AND org_id=?", [pledgeId, already.id, orgId]);
+        alreadyId = already.id;
+        return [already.id];
+      } }, { door: "pledge" });
+    if (w.created) {
+      const pid = w.id;
       await run("UPDATE gifts SET match_employer_id=?, match_pledge_id=? WHERE id=? AND org_id=?", [m.employerId, pid, gift.id, orgId]);
       result.matchPledgeId = pid;
-      // The match may ALREADY be here — an import carries the employee's gift
-      // and the company's cheque in the same file, or staff record the match
-      // after the fact. An employer gift for exactly the expected amount, on or
-      // after this gift, not already paying another pledge, is that match.
-      const [already] = await query(
-        `SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
-           AND round(amount::numeric * 100)::bigint = ? AND date >= ? ORDER BY date ASC, id LIMIT 1`,
-        [orgId, m.employerId, m.cents, String(gift.date).slice(0, 10)]);
-      if (already) {
-        await run("UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW() WHERE pledge_id=? AND org_id=? AND paid_gift_id IS NULL", [already.id, pid, orgId]);
-        await run("UPDATE gifts SET pledge_id=? WHERE id=? AND org_id=?", [pid, already.id, orgId]);
+      if (alreadyId) {
         await recalcPledgePayment(pid, orgId).catch(e => console.error("[match] recalc:", e.message));
-        result.matchAlreadyReceived = already.id;
+        result.matchAlreadyReceived = alreadyId;
       }
     } else {
       const [existing] = await query("SELECT id FROM pledges WHERE matches_gift_id=? AND org_id=?", [gift.id, orgId]);
@@ -10824,16 +10828,14 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   } else if (!giftId) {
     // An unpaid sponsorship is a promise: a pledge due on the event day,
     // attributed to nothing but itself. It is NOT money until it arrives.
-    pledgeId = "pl_" + uuid().slice(0, 8);
     // HARDEN-1: events.date is a DATE, so pg hands a Date; String(Date) is
     // "Thu Jan 01 2026 …", which sorted above every ISO day and became the due date.
     const evDay = orgTime.civilOf(event.date);
-    await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
-               VALUES (?,?,?,?,?,'open',?,?,?)`,
-      [pledgeId, orgId, donorId, split.totalCents / 100, evDay && evDay > day ? evDay : day,
-       `Sponsorship: ${level.name}, ${event.name}`, who.id, who.name]);
-    await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-      ["pi_" + uuid().slice(0, 8), orgId, pledgeId, evDay && evDay > day ? evDay : day, split.totalCents / 100]);
+    const dueOn = evDay && evDay > day ? evDay : day;
+    // FIX-60: the one pledge writer, one installment of the whole sponsorship
+    ({ id: pledgeId } = await PW.writePledge({ orgId, donorId, amountCents: split.totalCents, dueDate: dueOn,
+      notes: `Sponsorship: ${level.name}, ${event.name}`, createdBy: who.id, createdByName: who.name,
+      plan: { firstDue: dueOn } }, { door: "event_checkin" }));
   }
   // EVENTS-1 — stamp WHICH EVENT this gift is, so "raised" is a sum over an
   // id rather than a match on a name that somebody may rename tonight.

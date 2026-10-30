@@ -55,6 +55,99 @@ async function freshOrg(id, name) {
 const one = async (sql, args) => (await q(sql, args))[0];
 const fig = (rep, key) => ((rep.figures || []).find(f => f.key === key) || {}).value;
 
+// FIX-60: what a pledge's installments must be, read from the database: they
+// exist, they sum to the pledge to the cent, the paid ones are the payments
+// linked to it (each of exactly its gift's amount, up to the pledge), and each
+// paid one's gift is that pledge's.
+async function installmentsRight(where, args) {
+  const rows = await q(`SELECT p.id, ROUND(p.amount*100)::bigint AS cents,
+      (SELECT COUNT(*)::int FROM pledge_installments i WHERE i.pledge_id=p.id) AS n,
+      (SELECT COALESCE(SUM(ROUND(i.amount*100)),0)::bigint FROM pledge_installments i WHERE i.pledge_id=p.id) AS inst,
+      (SELECT COALESCE(SUM(ROUND(i.amount*100)),0)::bigint FROM pledge_installments i WHERE i.pledge_id=p.id AND i.paid_gift_id IS NOT NULL) AS paid,
+      (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.pledge_id=p.id AND g.org_id=p.org_id) AS linked,
+      (SELECT COUNT(*)::int FROM pledge_installments i JOIN gifts g ON g.id=i.paid_gift_id
+         WHERE i.pledge_id=p.id AND (g.pledge_id IS DISTINCT FROM p.id OR ROUND(g.amount*100) < ROUND(i.amount*100))) AS wrong
+      FROM pledges p WHERE ${where} ORDER BY p.id`, args);
+  const bad = rows.filter(r => !(r.n > 0 && Number(r.inst) === Number(r.cents)
+    && Number(r.paid) === Math.min(Number(r.linked), Number(r.cents)) && r.wrong === 0));
+  return { rows, bad };
+}
+
+async function fix60(tok) {
+  for (const [k, name] of [["fay", "Fay Lantern"], ["gus", "Gus Lantern"], ["hal", "Hal Lantern"], ["ivy", "Ivy Lantern"]])
+    await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`, [P(k), ORG, name, `${k}@sweep4.test`]);
+  const pay = async (k, amount, date, notes) => {
+    const r = await api("POST", `/donors/${P(k)}/gifts`, tok, { amount, date, type: "one-time", notes });
+    if (!(r.body && r.body.gift)) throw new Error("payment not recorded: " + JSON.stringify(r.body).slice(0, 200));
+    return r.body.gift.id;
+  };
+  // Gus paid twice on his pledge G-77; Fay paid two of four on a pledge no row states (a shell)
+  await pay("gus", 300, "2026-01-15", "Payment on pledge G-77");
+  await pay("gus", 200.5, "2026-03-15", "Payment on pledge G-77");
+  await pay("fay", 250, "2026-02-01", "Pledge payment 1 of 4");
+  await pay("fay", 250, "2026-03-01", "Pledge payment 2 of 4");
+
+  // the history import's commitments (POST /donors/import-semantics), as DonorImport sends them
+  const sem = await api("POST", "/donors/import-semantics", tok, { pledges: [
+    { donorName: "Gus Lantern", donorEmail: "gus@sweep4.test", amount: 1000.75, date: "2026-01-10", dueDate: "2026-12-31", externalId: "G-77", status: "open" },
+    { donorName: "Fay Lantern", donorEmail: "fay@sweep4.test", amount: 1000, date: "2026-02-01", shell: true, installments: 4, status: "open" },
+    { donorName: "Hal Lantern", donorEmail: "hal@sweep4.test", amount: 600, date: "2026-05-01", dueDate: "2027-01-31", externalId: "G-81", status: "open" },
+  ] });
+  ok("§7 the history import wrote its three pledges", sem.status === 200 && sem.body.counts && sem.body.counts.pledges === 3, { status: sem.status, counts: sem.body && sem.body.counts });
+  const semP = await installmentsRight(`p.org_id=$1 AND p.donor_id = ANY($2)`, [ORG, [P("gus"), P("fay"), P("hal")]]);
+  ok("§7 each history pledge has installments that sum to it to the cent, and the paid ones are its linked payments",
+     semP.rows.length === 3 && semP.bad.length === 0, semP.rows);
+  const gusInst = await q(`SELECT i.seq, ROUND(i.amount*100)::bigint AS c, i.paid_gift_id IS NOT NULL AS paid, LEFT(i.due_date::text,10) AS due
+                             FROM pledge_installments i JOIN pledges p ON p.id=i.pledge_id WHERE p.donor_id=$1 ORDER BY i.seq`, [P("gus")]);
+  ok("§7 Gus's payments are marked oldest first, to the cent: $300.00 and $200.50 paid, $500.25 still due on the pledge's date",
+     JSON.stringify(gusInst.map(i => [Number(i.c), i.paid, i.due])) === JSON.stringify([[30000, true, "2026-01-15"], [20050, true, "2026-03-15"], [50025, false, "2026-12-31"]]), gusInst);
+  const fayInst = await q(`SELECT ROUND(i.amount*100)::bigint AS c, i.paid_gift_id IS NOT NULL AS paid, i.due_date
+                             FROM pledge_installments i JOIN pledges p ON p.id=i.pledge_id WHERE p.donor_id=$1 ORDER BY i.seq`, [P("fay")]);
+  ok("§7 the shell's two payments are its two paid installments; the rest has no date anybody wrote down",
+     JSON.stringify(fayInst.map(i => [Number(i.c), i.paid, i.due_date])) === JSON.stringify([[25000, true, "2026-02-01"], [25000, true, "2026-03-01"], [50000, false, null]]), fayInst);
+  // the next payment of exactly what is left lands on that installment, from the one gift path
+  await pay("gus", 500.25, "2026-06-01", "Last payment");
+  const [gusP] = await q(`SELECT status FROM pledges WHERE donor_id=$1 AND org_id=$2`, [P("gus"), ORG]);
+  const gusAfter = await installmentsRight(`p.org_id=$1 AND p.donor_id=$2`, [ORG, P("gus")]);
+  ok("§7 the payment of what is left pays the last installment and fulfils the pledge",
+     gusP.status === "fulfilled" && gusAfter.bad.length === 0 && Number(gusAfter.rows[0].paid) === 100075, { gusP, rows: gusAfter.rows });
+
+  // the history import, undone: its pledges and their installments go with it
+  const RUN = "imp_fix60sem" + Date.now().toString(36);
+  const hist = await api("POST", "/gifts/import-history", tok, { importId: RUN,
+    gifts: [{ donorId: P("ivy"), amount: 400, date: "2026-04-01", notes: "Payment on pledge G-90" }] });
+  const rec = await api("POST", "/imports", tok, { id: RUN, name: "Fix60 history", shape: "gifts", summary: {} });
+  const sem2 = await api("POST", "/donors/import-semantics", tok, { importId: RUN, pledges: [
+    { donorName: "Ivy Lantern", donorEmail: "ivy@sweep4.test", amount: 1000, date: "2026-03-01", dueDate: "2026-12-31", externalId: "G-90", status: "open" }] });
+  const ivy = await installmentsRight(`p.org_id=$1 AND p.donor_id=$2`, [ORG, P("ivy")]);
+  ok("§7 the imported payment is the pledge's first installment, paid", hist.status === 200 && rec.status < 300 && sem2.status === 200
+     && ivy.rows.length === 1 && ivy.bad.length === 0 && Number(ivy.rows[0].paid) === 40000, { hist: hist.status, rec: [rec.status, rec.body], rows: ivy.rows });
+  const un = await api("POST", `/imports/${RUN}/reverse`, tok, {});
+  const [left] = await q(`SELECT (SELECT COUNT(*)::int FROM pledges WHERE org_id=$1 AND donor_id=$2) AS p,
+                                 (SELECT COUNT(*)::int FROM pledge_installments i WHERE i.org_id=$1 AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.id=i.pledge_id)) AS orphan`, [ORG, P("ivy")]);
+  ok("§7 Undo takes the import's pledge and every installment it wrote", un.status === 200 && left.p === 0 && left.orphan === 0, { status: un.status, body: un.body, left });
+
+  // To confirm: a pledge form, confirmed in three monthly payments
+  await q(`INSERT INTO capture_items (id,org_id,kind,stakes,status,source,headline,created_by) VALUES ('cap_fix60_pl',$1,'pledge','money','waiting','upload','A pledge form from Hal','system:test')`, [ORG]);
+  const cf = await api("POST", "/capture/cap_fix60_pl/confirm", tok, { kind: "pledge", amountCents: 100001, donorId: P("hal"), frequency: "monthly", installments: 3, startDate: "2026-11-01" });
+  const capP = await installmentsRight(`p.org_id=$1 AND p.idempotency_key='capture:cap_fix60_pl'`, [ORG]);
+  ok("§7 To confirm's pledge is three installments summing to $1,000.01", cf.status === 200 && capP.rows.length === 1 && capP.rows[0].n === 3 && capP.bad.length === 0,
+     { status: cf.status, body: cf.body, rows: capP.rows });
+
+  // the profile (and the API) with a cadence
+  const prof = await api("POST", `/donors/${P("hal")}/pledges`, tok, { amount: "1,000.00", dueDate: "2027-01-15", frequency: "quarterly", installmentCount: 3 });
+  const profP = await installmentsRight(`p.id=$1`, [prof.body && prof.body.id]);
+  ok("§7 the profile's pledge in three quarterly payments sums to the pledge", prof.status === 201 && profP.rows.length === 1 && profP.rows[0].n === 3 && profP.bad.length === 0, profP.rows);
+
+  // an unpaid sponsorship at the event is a pledge with its installment
+  const sp = await api("POST", `/events/${EVENT}/register`, tok, { levelId: "evl_sweep4_s", donorId: P("hal"), quantity: 1, paid: false });
+  const spP = await installmentsRight(`p.org_id=$1 AND p.donor_id=$2 AND p.notes LIKE 'Sponsorship:%'`, [ORG, P("hal")]);
+  ok("§7 an unpaid sponsorship is a pledge with one installment of the whole", sp.status === 201 && spP.rows.length === 1 && spP.bad.length === 0, { status: sp.status, body: sp.body, rows: spP.rows });
+
+  const all = await installmentsRight(`p.org_id=$1`, [ORG]);
+  ok("§7 every pledge in the org: installments to the cent, paid ones its payments", all.bad.length === 0, all.bad);
+}
+
 (async () => {
   try {
     const tok = await freshOrg(ORG, "Sweep4 events (test)");
@@ -155,6 +248,9 @@ const fig = (rep, key) => ((rep.figures || []).find(f => f.key === key) || {}).v
     const ask = await api("POST", "/ask", tok, { text: "How did the Lantern Gala do?" });
     ok("§6 Ask says what came in and what was pledged there", ask.status === 200 && /\$500 in gifts/.test(ask.body.sentence || "") && /\$750 more was pledged there/.test(ask.body.sentence || ""),
        { status: ask.status, sentence: ask.body && ask.body.sentence });
+
+    // ── §7 FIX-60: every door that makes a pledge writes its installments
+    await fix60(tok);
 
     // ── the truth check
     let agree = null;

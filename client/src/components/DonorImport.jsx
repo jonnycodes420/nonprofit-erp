@@ -1698,6 +1698,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
         if (payloadForSummary.semantics && (payloadForSummary.semantics.pledges.length || payloadForSummary.semantics.inKind.length || payloadForSummary.semantics.links.length || payloadForSummary.semantics.reviewTwins.length)) {
           try {
             const semRes = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
+              importId: runId,   // FIX-60: Undo import takes these pledges with the gifts
               pledges: payloadForSummary.semantics.pledges.map(p => ({ ...p, dueDate: p.dueDate })),
               inKind: payloadForSummary.semantics.inKind,
               links: payloadForSummary.semantics.links,

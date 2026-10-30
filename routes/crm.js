@@ -56,6 +56,7 @@ const routers = {
   r1: express.Router(),
 };
 const giftHooks = {};
+const PW = require("../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 // FIX-2 D — the one way another module runs a report: the SAME handler and
 // params GET /reports/:key uses, so Agent's count is the report's count.
 const reportHooks = {};
@@ -7833,41 +7834,29 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   try { pledgeAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
-  // SWEEP-4: a schedule that does not sum to the pledge is refused BEFORE the
-  // pledge is written. It was written, then the schedule threw into a catch
-  // that only logged, and the pledge answered 201 with no installments.
-  try { await planPledgeInstallments({ amountCents: parseMoneyOrThrow(pledgeAmt, "amount"), schedule: req.body.installments,
-          frequency: req.body.frequency, count: req.body.installmentCount, firstDue: dueDate }); }
-  catch (e) { return res.status(400).json({ error: e.message, code: e.code || "bad_schedule" }); }
-
+  // SWEEP-4 / FIX-60: the pledge and its installments are written by the one
+  // writer (pledgeWrite.js). A schedule that does not sum to the pledge is
+  // refused BEFORE the pledge is written. An explicit schedule is honoured; a
+  // stated cadence (frequency + count) generates one, the remainder on the
+  // first installment so it SUMS to the pledge; neither is one installment of
+  // the whole on its due date.
   const id = "pl_" + uuid().slice(0, 8);
-  const inserted = await query(
-    `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-     RETURNING id`,
-    [id, req.user.orgId, req.params.id, pledgeAmt, dueDate, notes || "", campaignId, idemKey,
-     actor(req).id, actor(req).name]
-  );
-  if (!inserted.length && idemKey) {
+  let wrote;
+  try {
+    wrote = await PW.writePledge({ id, orgId: req.user.orgId, donorId: req.params.id, amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
+      dueDate, notes: notes || "", campaignId, idempotencyKey: idemKey, createdBy: actor(req).id, createdByName: actor(req).name,
+      plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: dueDate } },
+      { door: "pledge" });
+  } catch (e) {
+    if (e.code === "schedule_does_not_sum") return res.status(400).json({ error: e.message, code: e.code });
+    throw e;
+  }
+  if (!wrote.created && idemKey) {
     // A replay. Return the ORIGINAL pledge with 200 — never a second row, and
     // never an error the user has to interpret mid-demo.
     const dup = await query("SELECT * FROM pledges WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
     if (dup.length) return res.status(200).json({ ...dup[0], duplicate: true });
   }
-  // ── BUILD-88b B.1/B.2 — A PLEDGE STORES ITS INSTALMENTS ──────────────────
-  // A pledge was one amount and one due date, so "the March instalment
-  // arrived" had nowhere to land and a twelve-month pledge could only ever be
-  // all or nothing. An explicit schedule is honoured; a stated CADENCE
-  // (frequency + count) generates one, with the remainder on the first
-  // instalment so the schedule SUMS to the pledge; neither given leaves the
-  // pledge with no schedule, which B.2 surfaces as "Needs you: amount and
-  // schedule" rather than treating as late.
-  await writePledgeInstallments(req.user.orgId, id, {
-    amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
-    schedule: req.body.installments, frequency: req.body.frequency,
-    count: req.body.installmentCount, firstDue: dueDate,
-  });
 
   // WIRE-1: the promise is on the person's timeline the day it is made.
   { const who = await staffWho(req);
@@ -7880,12 +7869,13 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   res.status(201).json({ ...rows[0], installments: insts });
 }));
 
-// The ONE writer of a pledge's schedule. Called on create, on a schedule edit,
-// and by the shell-pledge repair in B.2 — so "what a schedule is" is decided
+// A pledge's schedule, REWRITTEN: a schedule edit and the shell-pledge repair
+// in B.2. A new pledge is written with its schedule by pledgeWrite.js (FIX-60);
+// both plan through the same planner, so "what a schedule is" is decided
 // once. Never rewrites an instalment that has already been PAID: a payment is
 // a fact and a new schedule is a plan.
 async function writePledgeInstallments(orgId, pledgeId, opts) {
-  const rows = await planPledgeInstallments(opts);
+  const rows = await PW.planInstallments(opts);
   if (!rows.length) return { installments: 0 };
   const { frequency } = opts;
   const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
@@ -7902,32 +7892,6 @@ async function writePledgeInstallments(orgId, pledgeId, opts) {
     [frequency || null, rows.length, pledgeId, orgId]);
   return { installments: rows.length };
 }
-// What the schedule IS, written nowhere: an explicit schedule (it must sum to
-// the pledge), a cadence, or (SWEEP-4) neither, which is ONE installment of the
-// whole pledge on its due date. A pledge made through the API with no schedule
-// had no installments, so recordGift had nothing to apply a payment to and the
-// Pledges view drew it with no row under it. Every pledge has its installments.
-async function planPledgeInstallments({ amountCents, schedule, frequency, count, firstDue }) {
-  const dep = await depositMod();
-  let rows = [];
-  if (Array.isArray(schedule) && schedule.length) {
-    rows = schedule.map((r, i) => ({ seq: i + 1, dueDate: String(r.dueDate || r.due_date || ""),
-                                     amountCents: money.toCents(r.amount != null ? r.amount : r.amountCents / 100) ?? 0 }))
-      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) && r.amountCents > 0);
-    const sum = rows.reduce((s, r) => s + r.amountCents, 0);
-    if (rows.length && amountCents && sum !== amountCents) {
-      const e = new Error(`a schedule must sum to the pledge: ${money.formatCents(sum)} of ${money.formatCents(amountCents)}`);
-      e.code = "schedule_does_not_sum"; throw e;
-    }
-  } else if (frequency && count) {
-    rows = dep.generateInstallments({ amountCents, frequency, count, firstDue });
-  }
-  if (!rows.length && amountCents > 0 && /^\d{4}-\d{2}-\d{2}/.test(String(firstDue || ""))) {
-    rows = [{ seq: 1, dueDate: String(firstDue).slice(0, 10), amountCents }];
-  }
-  return rows;
-}
-
 // GET /pledges/:id/installments — the schedule, with what has paid each one.
 app.get("/pledges/:id/installments", requireAuth, wrap(async (req, res) => {
   const [p] = await query("SELECT id, amount::float AS amount, status, is_shell FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -8516,27 +8480,30 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     return r.length > 0;
   };
 
+  // FIX-60: the run this history file is (the client mints it before the
+  // gifts are written), so Undo import takes these pledges with its gifts.
+  const semRunId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
   for (const p of pledges) {
     const donor = await findDonor(p.donorEmail, p.donorName, p.donorExternalId);
     if (!donor) { counts.unresolved.push({ kind: "pledge", name: p.donorName }); continue; }
     const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
     const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
-    const ins = await query(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key,created_by,created_by_name,import_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-       RETURNING id`,
-      [importId("pl_"), orgId, donor.id, p.amount, due, p.status === "fulfilled" ? "fulfilled" : "open",
-       (p.notes || "").slice(0, 500) || null, idem, actor(req).id, actor(req).name,
-       "semantics:" + idem.slice(0, 120)]);   // SEND-GATE-1: an imported pledge is never reminded
-    if (ins.length) {
-      counts.pledges++;
-      // link the payments that name this pledge in their notes
+    let amountCents;
+    try { amountCents = parseMoneyOrThrow(p.amount, "amount"); } catch { amountCents = 0; }
+    if (!(amountCents > 0)) { counts.unresolved.push({ kind: "pledge", name: p.donorName, reason: "no_amount" }); continue; }
+    // FIX-60 · THE ONE PLEDGE WRITER, with its installments. The payments that
+    // name this pledge are linked once it is written, and each becomes a paid
+    // installment of exactly its amount, oldest first; what is left is one
+    // installment due on the pledge's date. A SHELL states no schedule anybody
+    // wrote down, so what is left of it has no date (never late, never chased).
+    const link = async pledgeId => {
       if (p.externalId) {
-        await run(
-          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ?`,
-          [ins[0].id, orgId, `%on pledge ${p.externalId}%`]);
-      } else if (p.shell) {
+        // link the payments that name this pledge in their notes
+        return (await query(
+          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ? RETURNING id`,
+          [pledgeId, orgId, `%on pledge ${p.externalId}%`])).map(r => r.id);
+      }
+      if (p.shell) {
         // BUILD-88a A.7 — a SHELL pledge: the export carried the payments and
         // no commitment row. Its payments are this donor's gifts whose notes
         // are in the pledge-payment family (the same BUILD-80 vocabulary that
@@ -8545,13 +8512,24 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
         const linked = await query(
           `UPDATE gifts SET pledge_id=? WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
              AND notes ~* 'pledge[[:space:]]+(payment|installment)' RETURNING id`,
-          [ins[0].id, orgId, donor.id]);
+          [pledgeId, orgId, donor.id]);
         counts.pledgePaymentsLinked = (counts.pledgePaymentsLinked || 0) + linked.length;
+        return linked.map(r => r.id);
       }
+      return [];
+    };
+    const wrote = await PW.writePledge({ orgId, donorId: donor.id, amountCents, dueDate: due,
+      status: p.status === "fulfilled" ? "fulfilled" : "open", notes: (p.notes || "").slice(0, 500) || null,
+      idempotencyKey: idem, createdBy: actor(req).id, createdByName: actor(req).name,
+      importId: semRunId || "semantics:" + idem.slice(0, 120),   // SEND-GATE-1: an imported pledge is never reminded
+      plan: p.shell ? { firstDue: null, undatedOk: true } : { firstDue: due }, link },
+      { door: "history_import", history: true });
+    if (wrote.created) {
+      counts.pledges++;
       // NUMBERS-2: the linked payments decide the pledge's status (fulfilled,
       // surplus), the same as a payment recorded by hand.
       // A pledge the file called fulfilled stays so (its payments may be in no file).
-      if (p.status !== "fulfilled") await recalcPledgePayment(ins[0].id, orgId);
+      if (p.status !== "fulfilled") await recalcPledgePayment(wrote.id, orgId);
     }
   }
 
@@ -10108,15 +10086,22 @@ async function reverseImport(req, res) {
   // IMPORT-3: a spreadsheet import also made pledges, households and perhaps
   // the event its gifts were given at. Each goes, and what it changed on a
   // person who was already here (a household, the monthly-giver flag) is put back.
+  // FIX-60: a history file's pledges (import-semantics) carry the run too, so
+  // every shape takes the pledges its run wrote, and their installments go
+  // with them (ON DELETE CASCADE): nothing is left scheduled for a pledge that
+  // no longer exists, and a payment it linked that stays is unlinked.
   let pledgesRemoved = 0;
-  if (imp.shape === "sheet") {
+  {
     const pl = await query("SELECT id, donor_id FROM pledges WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     if (pl.length) {
       await run("UPDATE gifts SET pledge_id=NULL WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
+      await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
       await run("DELETE FROM pledges WHERE org_id=? AND id = ANY(?)", [orgId, pl.map(p => p.id)]);
       for (const p of pl) if (!donorIds.includes(p.donor_id)) donorIds.push(p.donor_id);
     }
     pledgesRemoved = pl.length;
+  }
+  if (imp.shape === "sheet") {
     for (const id of (sj.householdAssigned || [])) await run("UPDATE donors SET household_id=NULL WHERE org_id=? AND id=?", [orgId, id]);
     for (const id of (sj.sustainerFlagged || [])) await run("UPDATE donors SET imported_sustainer=false, imported_sustainer_amount=NULL WHERE org_id=? AND id=?", [orgId, id]);
     // IMPORT-4: attendance, communication choices, kept columns and the
@@ -12198,24 +12183,21 @@ app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async 
             : askCents;
           if (!(committedCents > 0)) return res.status(400).json({ error: "A positive committed amount is required." });
           const due = req.body.pledgeDueDate || existing.expected_close_civil || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-          const pid = "pl_" + uuid().slice(0, 8);
-          await run(
-            `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
-             VALUES (?,?,?,?,?,'open',?,?,?)`,
-            [pid, orgId, existing.donor_id, toDollars(committedCents), String(due).slice(0, 10),
-             `Committed from the proposal: ${existing.name || "Ask"}`, actor(req).id, actor(req).name]);
-          // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give a
-          // real schedule; neither given leaves one instalment for the whole
-          // commitment, so the existing rule in recordGift applies her cheque to
-          // it from any door, to the cent.
-          await writePledgeInstallments(orgId, pid, {
-            amountCents: committedCents, schedule: req.body.installments,
-            frequency: req.body.frequency, count: req.body.installmentCount,
-            firstDue: String(due).slice(0, 10),
-          }).catch(e => console.error("[proposal] installments:", e.message));
-          const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pid]);
-          if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-            ["pli_" + uuid().slice(0, 10), orgId, pid, String(due).slice(0, 10), toDollars(committedCents)]);
+          // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
+          // count give a real schedule; neither given is one installment for the
+          // whole commitment, so the existing rule in recordGift applies her
+          // cheque to it from any door, to the cent. A schedule that does not
+          // sum is refused before anything is written.
+          let pid;
+          try {
+            ({ id: pid } = await PW.writePledge({ orgId, donorId: existing.donor_id, amountCents: committedCents, dueDate: String(due).slice(0, 10),
+              notes: `Committed from the proposal: ${existing.name || "Ask"}`, createdBy: actor(req).id, createdByName: actor(req).name,
+              plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: String(due).slice(0, 10) } },
+              { door: "pledge" }));
+          } catch (e) {
+            if (e.code === "schedule_does_not_sum") return res.status(400).json({ error: e.message, code: e.code });
+            throw e;
+          }
           put("pledge_id", pid); put("commit_kind", P.COMMIT_PLEDGE); put("gift_id", null); put("gift_amount", null);
           wrote = { kind: P.COMMIT_PLEDGE, id: pid };
         }
@@ -16318,24 +16300,20 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   // total the funder appears in.
   let pledgeId = g.award_pledge_id || null;
   if (!pledgeId) {
-    pledgeId = "pl_" + uuid().slice(0, 8);
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
-    await run(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
-       VALUES (?,?,?,?,?,'open',?,?,?)`,
-      [pledgeId, orgId, g.funder_donor_id, toDollars(awardedCents), due,
-       `Grant award: ${g.program || "grant"}`, actor(req).id, actor(req).name]);
-    // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give the
-    // funder's real payment schedule; neither given leaves one instalment for
-    // the whole award, so recordGift applies their cheque to it to the cent from
-    // whichever door it arrives through.
-    await writePledgeInstallments(orgId, pledgeId, {
-      amountCents: awardedCents, schedule: req.body.installments,
-      frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due,
-    }).catch(e => console.error("[grant] installments:", e.message));
-    const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
-    if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, due, toDollars(awardedCents)]);
+    // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
+    // count give the funder's real payment schedule; neither given is one
+    // installment for the whole award, so recordGift applies their cheque to it
+    // to the cent from whichever door it arrives through.
+    try {
+      ({ id: pledgeId } = await PW.writePledge({ orgId, donorId: g.funder_donor_id, amountCents: awardedCents, dueDate: due,
+        notes: `Grant award: ${g.program || "grant"}`, createdBy: actor(req).id, createdByName: actor(req).name,
+        plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due } },
+        { door: "pledge" }));
+    } catch (e) {
+      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return res.status(400).json({ error: e.message, code: e.code });
+      throw e;
+    }
   }
 
   await run(
@@ -30120,8 +30098,6 @@ const namedOrGivingSql = (a = "d") =>
 // other doors that record one (Agent → confirm). Filled once, here, when the
 // functions exist; the gift form above calls them directly.
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
-// CAPTURE-1: a pledge confirmed from a card gets its schedule from the one writer.
-giftHooks.writePledgeInstallments = writePledgeInstallments;
 giftHooks.calcWealthScore = calcWealthScore;
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
 // FIX-9 Part B.4 — `sendReportCsv` is THE csv writer: the injection guard and
