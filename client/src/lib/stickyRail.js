@@ -1,21 +1,33 @@
 // PROFILE-2 Part 1 · a rail that sticks without a scrollbar of its own.
-// A rail shorter than the window sticks under the top bar. A taller one scrolls
-// with the page until its last card is in view and sticks there, so it never
-// needs a scroll box inside the page (which is what made the wheel stop over
-// it). Returns the `top` for a position:sticky element.
+// The rail is plain CSS position:sticky under the top bar; nothing is measured
+// while the page loads. After the first paint the rail is measured once, and
+// only a rail taller than the window gets a different top: it scrolls with the
+// page until its last card is in view and sticks there, so it never needs a
+// scroll box inside the page (which is what made the wheel stop over it).
+// Returns the `top` for a position:sticky element.
 import { useEffect, useState } from "react";
 
 export function useStickyTop(ref, under = 52) {
   const [top, setTop] = useState(under);
   useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof window === "undefined") return undefined;
-    const fit = () => setTop(Math.min(under, window.innerHeight - el.offsetHeight));
-    fit();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
-    if (ro) ro.observe(el);
-    window.addEventListener("resize", fit);
-    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", fit); };
+    if (typeof window === "undefined") return undefined;
+    let ro = null, f1 = 0, f2 = 0;
+    const fit = () => {
+      const el = ref.current;
+      if (!el) return;
+      const tall = el.offsetHeight > window.innerHeight - under;
+      const next = tall ? window.innerHeight - el.offsetHeight : under;
+      setTop(t => (t === next ? t : next));
+    };
+    // two frames: the first paint has happened before anything is measured
+    f1 = requestAnimationFrame(() => {
+      f2 = requestAnimationFrame(() => {
+        fit();
+        if (typeof ResizeObserver !== "undefined" && ref.current) { ro = new ResizeObserver(fit); ro.observe(ref.current); }
+        window.addEventListener("resize", fit);
+      });
+    });
+    return () => { cancelAnimationFrame(f1); cancelAnimationFrame(f2); if (ro) ro.disconnect(); window.removeEventListener("resize", fit); };
   }, [ref, under]);
   return top;
 }
