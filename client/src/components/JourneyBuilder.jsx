@@ -890,7 +890,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   const needsAmount = !!(data.triggers || []).find(t => t.key === (meta?.trigger || "") && t.needsAmount);
 
   return (
-    <div data-testid="journey-builder">
+    <div data-testid="journey-builder" className="no-caps">
       <style>{`
         /* SUBTLE MOTION, and none of it for anybody who asked for none. */
         .jb-node{ transition: transform .18s cubic-bezier(.2,.7,.3,1), box-shadow .18s ease,
@@ -919,7 +919,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
       <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginBottom: 16, maxWidth: 680 }}>
         A journey is a set of steps that starts on its own when something happens, like somebody giving
         for the first time or a lapsed donor coming back, and then reminds you one step at a time.
-        <strong style={{ color: T.ink }}> It never sends anything.</strong> Every step waits for you.
+        {/* SWEEP-3: a step can be set to send itself, so "It never sends anything" was not true. */}
+        <strong style={{ color: T.ink }}> Every step waits for you</strong> unless you set it to send itself and turn on Journey emails in Settings, Automatic email.
       </div>
 
       {/* ── FIX-5 item 1 · THE ONE ACTION, AT THE TOP ───────────────────── */}

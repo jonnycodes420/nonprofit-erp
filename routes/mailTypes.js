@@ -66,7 +66,7 @@ async function typesFor(orgId) {
       key: t.key, group: t.group, name: t.name, short: t.short, sentence: t.sentence, turnOn: t.turnOn, offLine: t.offLine, place: t.place,
       on, audience: on ? r.audience : null,
       since: on ? `On since ${fmtDay(r.set_at)} by ${r.set_by_name || "someone on your team"}`
-        : r && r.set_at ? `Off since ${fmtDay(r.set_at)}, turned off by ${r.set_by_name || "someone on your team"}` : "Off since created",
+        : r && r.set_at ? `Off since ${fmtDay(r.set_at)}, turned off by ${r.set_by_name || "someone on your team"}` : "Off. Nobody has turned it on yet",
       whoGetsIt: !on ? null : r.audience === "chosen" ? "Only donors you choose" : "Everyone, from now on",
       lastSentAt: l ? l.last_at : null,
       sentThisMonth: l ? l.month_n : 0,
@@ -124,8 +124,13 @@ app.get("/mail-types/:key/preview", requireAuth, wrap(async (req, res) => {
     const p = typeof held.payload === "string" ? JSON.parse(held.payload) : held.payload;
     return res.json({ subject: held.subject, html: p.html || `<pre>${String(p.text || "")}</pre>`, note: `The last one Steward made and held, ${fmtDay(held.created_at)}.` });
   }
-  const s = GOING.sampleFor(t.key);
-  const name = await donorFacingOrgName(orgId, null).catch(() => null) || "your organization";
+  // SWEEP-3: the org's own name (it read "your organization", because the
+  // fallback passed was null) and the first name of its newest giver.
+  const [o] = await query(`SELECT name FROM orgs WHERE id = ?`, [orgId]);
+  const [d] = await query(`SELECT d.name FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id
+                            WHERE d.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST, g.id LIMIT 1`, [orgId]).catch(() => []);
+  const s = GOING.sampleFor(t.key, d ? (String(d.name || "").split(/\s+/)[0]) : "");
+  const name = await donorFacingOrgName(orgId, o && o.name).catch(() => null) || (o && o.name) || "your organization";
   const header = await brandEmailHeaderHtml(orgId).catch(() => "");
   res.json({ subject: s.subject.replace(/\{org\}/g, name), html: header + s.html.replace(/\{org\}/g, name), note: "A sample. The real one uses the donor's name and gift." });
 }));
