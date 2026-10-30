@@ -27962,6 +27962,17 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // EMBEDDABLE, the same rule the donation form follows.
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", "frame-ancestors *");
+  // SWEEP-4: an event page is not open to the public until the org can take
+  // money through it, the same rule as its giving pages (FUNDRAISING-2). It
+  // offered "Register" and promised somebody would be in touch about paying.
+  // The staff editor's preview (eventPageHtml editable) still draws the page.
+  const [payOrg] = await query("SELECT name, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
+  if (!(payOrg && payOrg.stripe_connected && payOrg.stripe_account_id)) {
+    const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+    const who = String(brand.displayName || "").trim() || payOrg?.name || "This organization";
+    return res.status(404).send(evPage({ title: "Not open yet", brand, body:
+      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
+  }
   res.send(await eventPageHtml(e, req.query || {}));
 }));
 
@@ -27980,15 +27991,6 @@ async function eventPageHtml(e, q = {}, { editable = false } = {}) {
   const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
   const [org] = await query("SELECT name, org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
-  // SWEEP-4: an event page is not open to the public until the org can take
-  // money through it, the same rule as its giving pages (FUNDRAISING-2). It
-  // offered "Register" and promised somebody would be in touch about paying.
-  if (!canTakeACard) {
-    const who = String(brand.displayName || "").trim() || (org && org.name) || "This organization";
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(404).send(evPage({ title: "Not open yet", brand, body:
-      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
-  }
   const levels = await query(
     `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits, picture
        FROM event_levels WHERE org_id=? AND event_id=? AND retired_at IS NULL ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
