@@ -357,8 +357,9 @@ async function seed() {
             // a separate element and is not part of the name.
     const tabs = await page.$$eval('.dp-tabs button', bs => bs.map(b => (b.childNodes[0] || {}).textContent.trim()));
     // PROFILE-1 (header): one row of ten tabs replaced the six and the chips.
-    ok("§1 the tabs are Overview · Gifts & pledges · Asks & pipeline · Conversations · Emails · Tasks · Notes · Funds · Related · Files",
-       JSON.stringify(tabs) === JSON.stringify(["Overview", "Gifts & pledges", "Asks & pipeline", "Conversations", "Emails", "Tasks", "Notes", "Funds", "Related", "Files"]), tabs);
+    // PROFILE-2: seven tabs; Giving holds gifts, pledges, asks and funds, and Related is the rail's.
+    ok("§1 the tabs are Activity · Giving · Conversations · Emails · Tasks · Notes · Files",
+       JSON.stringify(tabs) === JSON.stringify(["Activity", "Giving", "Conversations", "Emails", "Tasks", "Notes", "Files"]), tabs);
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim()).filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
 
@@ -382,12 +383,12 @@ async function seed() {
     await p2.goto(`${APP}/donors/d_hf1`, { waitUntil: "domcontentloaded", timeout: 60000 });
     const early = [];
     for (let i = 0; i < 8; i++) {
-      early.push(await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 150 }).catch(() => null));
+      early.push(await p2.locator('[data-tab-count="giving"]').first().textContent({ timeout: 150 }).catch(() => null));
       await p2.waitForTimeout(150);
     }
     ok("§1b while the record's read is out, the gifts tab shows no count rather than 0", !early.includes("0"), early);
-    const settled = await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 20000 }).catch(() => null);
-    ok("§1b after a failed first read, the record recovers by itself: Gifts & pledges 1", settled === "1" && held >= 2, { settled, held });
+    const settled = await p2.locator('[data-tab-count="giving"]').first().textContent({ timeout: 20000 }).catch(() => null);
+    ok("§1b after a failed first read, the record recovers by itself: Giving 1", settled === "1" && held >= 2, { settled, held });
     await ctx2.close();
     // §8 FIX-45 — donor search filters as you type. The server's answer is
     // held back three seconds here (a slow day on prod), and the list must

@@ -165,18 +165,20 @@ function inventory() {
     await goTo(A);
 
     // §3 — the old boxes and the chip row are gone.
-    ok("§3 the header numbers are in the header", await page.locator('.donor-profile-header [data-testid=dp-header-figures]').count() === 1);
+    ok("§3 the header numbers are in the header's white band", await page.locator('[data-testid=dp-band] [data-testid=dp-header-figures]').count() === 1);
     ok("§3 the old number boxes are gone", await page.locator('[data-testid=dp-figures], [data-testid=dp-glance], .donor-stat-grid').count() === 0);
     ok("§3 the \"Everything with\" chip row is gone", await page.locator('[data-filter=all]').count() === 0 && !(await page.locator("text=/^Everything with/i").count()));
-    ok("§3 one row of ten tabs, directly under the header", await page.locator('[data-testid=dp-tabs] [role=tab]').count() === 10);
+    ok("§3 one row of seven tabs, directly under the header (PROFILE-2)", await page.locator('[data-testid=dp-tabs] [role=tab]').count() === 7);
 
     // §1 — every inventory item, where its Now cell says.
     for (const r of rows) {
       if (r.check === "code") { ok(`§1 ${r.id} (${r.what.slice(0, 40)}) is still drawn by the profile's code`, src.includes(r.probe), r.probe); continue; }
       await closeAll();
       const where = r.where;
-      if (["overview", "gifts", "asks", "conversations", "emails", "tasks", "notes", "funds", "related", "files"].includes(where)) await tab(where);
-      else await tab("overview");
+      if (["activity", "giving", "conversations", "emails", "tasks", "notes", "files"].includes(where)) await tab(where);
+      else await tab("activity");
+      // PROFILE-2: Related is the rail's Household and related, opened from Manage.
+      if (where === "related") { await page.locator("[data-testid=dp-rail-related-manage]").click().catch(() => {}); await page.waitForTimeout(400); }
       if (where === "more" && !(await page.locator('[data-testid=dp-more-menu]').count())) { await page.locator('[data-testid=dp-more]').click(); await page.waitForTimeout(200); }
       const el = page.locator(r.probe).first();
       const there = await el.count() > 0;
@@ -208,6 +210,7 @@ function inventory() {
 
     // The ask card's Mark won opens the same Move dialog as the row's Move.
     await goTo(A);
+    await tab("giving");   // PROFILE-2: the ask card is on Giving
     await page.locator('[data-testid=dp-ask-mark-won]').click().catch(() => {});
     await page.waitForTimeout(400);
     ok("§1 the ask card's Mark won opens the Move dialog, already on Committed",
@@ -227,15 +230,15 @@ function inventory() {
     await page.locator('[data-filter=stage]').click().catch(() => {});
     await page.waitForTimeout(300);
     ok("§4 conversations: Stage changes still has its own chip and rows", await page.locator('[data-testid=dp-timeline]:has-text("Stage")').count() === 1);
-    await tab("gifts");
+    await tab("giving");
     ok("§4 gifts: Giving by year heads the gifts list", await page.locator('[data-testid=dp-giving-by-year]').count() === 1);
 
     // §5 — the stage bar writes through the audit write and moves the chip.
-    await tab("overview");
+    // PROFILE-2: the stage lives on the Giving tab's ask card; the header holds
+    // the two tags, so the stage bar itself is where it reads Solicit.
+    await tab("giving");
     await page.locator('[data-testid=dp-stage-bar] [data-stage=solicit]').click();
     await page.waitForTimeout(1200);
-    const chip = await page.locator('.donor-profile-header').innerText();
-    ok("§5 the header chip says Solicit", /Solicit/.test(chip), chip.slice(0, 120));
     const [{ stage }] = await q(`SELECT stage FROM donors WHERE id=$1`, [A]);
     ok("§5 the stage was saved", stage === "solicit", stage);
     const audit = await q(`SELECT request_method, request_path FROM fin_audit_log WHERE org_id=$1 AND request_path LIKE $2`, [ORG, `%/donors/${A}/stage%`]);
@@ -248,9 +251,13 @@ function inventory() {
       const r = await page.evaluate(() => {
         const rail = document.querySelector("[data-testid=dp-right-rail]").getBoundingClientRect();
         const body = document.querySelector(".donor-profile-body").getBoundingClientRect();
-        return { railBottom: rail.bottom, bodyBottom: body.bottom, vh: innerHeight, bg: getComputedStyle(document.querySelector("[data-testid=dp-right-rail]")).backgroundColor };
+        const bodyEl = document.querySelector(".donor-profile-body");
+        return { railTop: rail.top, bodyTop: body.top, railBottom: rail.bottom, bodyBottom: body.bottom, vh: innerHeight, ground: getComputedStyle(bodyEl).backgroundImage,
+          bg: getComputedStyle(document.querySelector("[data-testid=dp-right-rail]")).backgroundColor };
       });
-      ok(`§6 the rail runs to the bottom on ${label}`, Math.abs(r.railBottom - r.bodyBottom) <= 1 && r.bodyBottom >= r.vh - 1, r);
+      // PROFILE-2: the rail sticks, so its box is a window tall; the column's
+      // green ground under it is what runs to the bottom of the profile.
+      ok(`§6 the rail runs to the bottom on ${label}`, Math.abs(r.railTop - r.bodyTop) <= 1 && r.bodyBottom >= r.vh - 1 && r.ground.includes(r.bg) && r.railBottom <= r.bodyBottom + 1, r);
     }
     await goTo(A);
     for (const card of ["dp-rail-rhythm", "dp-rail-thankyous"]) {

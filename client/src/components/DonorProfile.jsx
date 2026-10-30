@@ -31,7 +31,7 @@ import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures, ProfileMoreNumbers } from "./ProfileHeaderFigures";
-import { ProfileLadder } from "./Insights";   // INSIGHTS-1
+import { ProfileNextMove } from "./Insights";   // INSIGHTS-1, PROFILE-2
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras, AutoEmailCard } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { EmailsReceived } from "./EmailAsSent";
@@ -42,6 +42,7 @@ import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./Lo
 import { ItemMenu, EditedMarker, offerUndo, HistoryList } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { useStickyTop, useIsPhone } from "../lib/stickyRail";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 import { civilDays } from "../../../shared/firstThing.js";
@@ -790,7 +791,7 @@ function PhotoAdjuster({ file, onCancel, onSet }) {
 // format; the server checks the bytes are what the file says they are, crops
 // to a 512 square WebP and throws the original away. "Remove" appears on hover
 // (and on focus, so it is reachable without a mouse) once there is a photo.
-function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
+function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged,size=46}){
   const fileRef=useRef(null);
   const photoCtx=useContext(PhotoContext);
   const [busy,setBusy]=useState(false);
@@ -841,7 +842,7 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
         onDrop={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(false);pick(e.dataTransfer.files&&e.dataTransfer.files[0]);}}
         style={{padding:0,border:dragOver?`2px dashed ${T.gold500}`:"2px solid transparent",borderRadius:"50%",
           background:"none",cursor:isReadOnly?"default":"pointer",lineHeight:0,opacity:busy?0.6:1,display:"block"}}>
-        <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={46}/>
+        <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={size}/>
       </button>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{display:"none"}}
         onChange={e=>{pick(e.target.files&&e.target.files[0]);e.target.value="";}}/>
@@ -1005,10 +1006,11 @@ const OPEN_PROPOSAL_KEYS = PROPOSAL_STAGES.filter(s => s.kind === "open").map(s 
 // Notes and Files are the old chips' filtered timelines. Materials folded into
 // Files; the old Activity tab's log is the timeline itself (Lately and the
 // kind tabs), and its History moved to Files.
+// PROFILE-2: seven tabs that never wrap. Giving holds gifts and pledges, the
+// ask, Funds and Asks & pipeline; Related is the rail's Household and related.
 const PROFILE_TABS = [
-  ["overview", "Overview"], ["gifts", "Gifts & pledges"], ["asks", "Asks & pipeline"],
-  ["conversations", "Conversations"], ["emails", "Emails"], ["tasks", "Tasks"],
-  ["notes", "Notes"], ["funds", "Funds"], ["related", "Related"], ["files", "Files"],
+  ["activity", "Activity"], ["giving", "Giving"], ["conversations", "Conversations"], ["emails", "Emails"],
+  ["tasks", "Tasks"], ["notes", "Notes"], ["files", "Files"],
 ];
 // Which timeline kind each list tab shows, and the other kinds it offers.
 const TAB_KIND = { conversations: "conversation", emails: "email", tasks: "task", notes: "note", files: "file" };
@@ -1016,6 +1018,38 @@ const TAB_SUBCHIPS = { conversations: ["conversation", "stage", "activity", "ser
 // The stage bar on the ask card, in the order a relationship moves.
 const STAGE_BAR = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 
+
+// PROFILE-2 · the rail's Groups: the groups this person is in, as small
+// chips, with Add to a group. Hidden when there are none and nothing to add.
+function RailGroups({donorId,isReadOnly}){
+  return <ProfileGroups donorId={donorId} isReadOnly={isReadOnly}>{(groupChips,addCtl)=>{
+    if(!groupChips.length&&!addCtl)return null;
+    return <RailSection title="Groups" testid="dp-rail-groups">
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",background:T.white,borderRadius:10,padding:"10px 12px"}}>{groupChips}{addCtl}</div>
+    </RailSection>;
+  }}</ProfileGroups>;
+}
+
+// PROFILE-2 · COMING UP, in the main column: the open tasks (each with Mark
+// done) and the meetings ahead. Hidden when there is nothing.
+function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
+  const open=(tasks||[]).filter(t=>!(Number(t.done)===1||t.done===true)).sort((a,b)=>String(a.due||"9999").localeCompare(String(b.due||"9999")));
+  const ahead=(meetings||[]).slice(0,3);
+  if(!open.length&&!ahead.length)return null;
+  const today=orgTodayCivil();
+  return <section data-testid="dp-coming-up" style={{display:"flex",flexDirection:"column",gap:8}}>
+    <h2 style={{margin:0,fontSize:11,letterSpacing:"0.12em",fontWeight:700,textTransform:"uppercase",color:T.ink3}}>Coming up</h2>
+    {ahead.map(m=><div key={"m:"+m.id} data-testid="dp-coming-meeting" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
+      <span style={{fontSize:14,fontWeight:600,color:T.ink}}>{m.title||"Meeting"}</span>
+      <span style={{fontSize:13,color:T.ink3,whiteSpace:"nowrap"}}>{displayDateShort(String(m.date||m.startsAt||"").slice(0,10),today)}</span>
+    </div>)}
+    {open.slice(0,5).map(t=><div key={"t:"+t.id} data-testid="dp-coming-task" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
+      <span style={{minWidth:0}}><span style={{fontSize:14,fontWeight:600,color:T.ink}}>{t.title||t.text||"A task"}</span>
+        {t.due&&<span style={{fontSize:13,color:String(t.due).slice(0,10)<today?T.gold700:T.ink3,marginLeft:8}}>{String(t.due).slice(0,10)<today?"Overdue, ":"Due "}{displayDateShort(String(t.due).slice(0,10),today)}</span>}</span>
+      {!isReadOnly&&onTaskToggle&&<button type="button" data-testid="dp-task-done" onClick={()=>onTaskToggle(t)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:700,color:T.ink,cursor:"pointer",whiteSpace:"nowrap",minHeight:36}}>Mark done</button>}
+    </div>)}
+  </section>;
+}
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
@@ -1254,9 +1288,26 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // FIX-11 Part 1 — "+ Log → Gift" lands HERE, on the gift form, with the date
   // the person chose. Opening on the Gifts tab with the panel already open is
   // what makes the hand-off one step rather than two.
-  const [dpTab,setDpTab]=useState(initialAddGift?"gifts":"overview");
+  const [dpTab,setDpTab]=useState(initialAddGift?"giving":"activity");
+  const [relatedOpen,setRelatedOpen]=useState(false);   // PROFILE-2: Related opens from the rail
+  const [tlSearch,setTlSearch]=useState("");   // PROFILE-2: the tabs' search
+  const [tlSearchOpen,setTlSearchOpen]=useState(false);
   const [whyStopOpen,setWhyStopOpen]=useState(false);
+  const railRef=useRef(null);   // PROFILE-2 Part 1
+  const [noteOpen,setNoteOpen]=useState(false);   // PROFILE-2: the header's Note
+  const railTop=useStickyTop(railRef);
+  const isPhone=useIsPhone();   // PROFILE-2 Part 3
+  // The window is the profile's scroller now: a profile opened from far down the list starts at its top.
+  useEffect(()=>{if(typeof window!=="undefined")window.scrollTo(0,0);},[donor.id]);
   const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
+  // PROFILE-2: More closes on a click outside it or Escape (it sits over the tabs now).
+  useEffect(()=>{
+    if(!dpMoreOpen)return undefined;
+    const out=e=>{if(!(e.target.closest&&e.target.closest("[data-testid=dp-more-menu],[data-testid=dp-more]")))setDpMoreOpen(false);};
+    const esc=e=>{if(e.key==="Escape")setDpMoreOpen(false);};
+    document.addEventListener("mousedown",out);document.addEventListener("keydown",esc);
+    return ()=>{document.removeEventListener("mousedown",out);document.removeEventListener("keydown",esc);};
+  },[dpMoreOpen]);
 
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
@@ -1515,7 +1566,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // isolation could have seen it.
   useEffect(()=>{
     if(!initialAddGift)return;
-    setDpTab("gifts");
+    setDpTab("giving");
     setAddGiftOpen(true);
     if(initialAddGift.date)setAddGiftForm(f=>({...f,date:initialAddGift.date}));
   },[initialAddGift]);
@@ -1716,7 +1767,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
   useEffect(()=>{
     if(dpTab==="files")loadMaterials();
-    if(dpTab==="funds"&&!fundAffinity)loadFundAffinity();
+    if(dpTab==="giving"&&!fundAffinity)loadFundAffinity();
   },[dpTab,donor.id]);
 
   useEffect(()=>{
@@ -2002,11 +2053,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(!m&&h!=="gifts")return undefined;
     // PROFILE-1 (header): a timeline entry lives on the tab of its kind.
     const itemType=m&&m[1]==="item"?String(((localInts??donor.interactions??[]).find(i=>i.id===m[2])||{}).type||""):"";
-    const wantTab=m&&m[1]==="item"?(itemType==="note"?"notes":itemType==="email"?"emails":"conversations"):"gifts";
+    const wantTab=m&&m[1]==="item"?(itemType==="note"?"notes":itemType==="email"?"emails":"conversations"):"giving";
     if(m&&m[1]==="gift"&&!giftsFull.length)return undefined;
     const el=m?document.getElementById(h):null;
     if(!el){
-      if(dpTab!==wantTab&&(dpTab==="overview"||h==="gifts"))setDpTab(wantTab);
+      if(dpTab!==wantTab&&(dpTab==="activity"||h==="gifts"))setDpTab(wantTab);
       return undefined;
     }
     if(el.dataset.marked)return undefined;
@@ -2071,283 +2122,408 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const sortedGifts=[...gifts].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const lastGiftDisplay=giftLoading||giftReadErr?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
 
+  // ── PROFILE-2 · THE HEADER'S NAME AND ITS TWO TAGS ─────────────────────
+  // One tag set on the profile: donorStatus's (level, lifecycle, retained,
+  // lapsing), each opening its people. The ladder's own rung chips are not
+  // drawn here any more; they were a second opinion that read "Major, New"
+  // beside "Major, Steady". The header shows two: a safety flag first when
+  // there is one, then the level, then Lapsing, Monthly (a monthly plan that
+  // is charging) or the lifecycle. Everything else is in About.
+  const isOrgRec=["org","organization","organisation"].includes(donor.kind);
+  const headName=displayName(donor.name,{isOrg:isOrgRec});
+  // An organisation is called by its whole name ("Nothing is open for Darlie" was a foundation).
+  const callName=isOrgRec?headName:(firstNameOf(donor.name)||donor.name);
+  const stTags=(status&&status.tags)||[];
+  const headStatusEls=statusTagItems({tags:stTags.map(t=>t.kind==="level"?{...t,label:t.key==="mid"?"Mid-level donor":`${t.label} donor`}:t)});
+  const tagEl=k=>{const i=stTags.findIndex(t=>t.key===k);return i>=0?headStatusEls[i]:null;};
+  const levelKey=(stTags.find(t=>t.kind==="level")||{}).key;
+  const lifeKey=(stTags.find(t=>t.kind==="lifecycle")||{}).key;
+  const monthlyOn=!!(railData&&railData.recurring&&railData.recurring.interval==="month"&&railData.recurring.nextCharge);
+  const flagEl=(donor.deceased||donor.doNotContact||donor.doNotSolicit)?<span data-testid="dp-head-flag" style={{display:"contents"}}><>{donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
+                {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
+                {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks. Excluded from the drift list, re-engage, suggested outreach and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}</></span>:null;
+  const secondKey=stTags.some(t=>t.key==="lapsing")?"lapsing":monthlyOn?"monthly":lifeKey;
+  const headTagList=[flagEl?{key:"flag",el:flagEl}:null,levelKey?{key:levelKey,el:tagEl(levelKey)}:null,
+    secondKey==="monthly"?{key:"monthly",el:<span key="monthly" data-testid="dp-tag-monthly" style={{fontSize:10.5,fontWeight:700,padding:"3px 10px",borderRadius:99,background:T.white,color:T.greenDk,border:"1px solid "+T.green200,whiteSpace:"nowrap"}}>Monthly</span>}
+      :secondKey?{key:secondKey,el:tagEl(secondKey)}:null].filter(x=>x&&x.el).slice(0,2);
+  const headTags=headTagList.map(x=>x.el);
+  const headTagKeys=new Set(headTagList.map(x=>x.key));
+  // and never two that read against each other: Current beside Lapsing, or
+  // Retained beside New, says the second one only.
+  const hasTag=k=>stTags.some(t=>t.key===k);
+  const aboutStatusTags={tags:stTags.filter(t=>!headTagKeys.has(t.key)&&!(t.key==="current"&&hasTag("lapsing"))&&!(t.key==="retained"&&hasTag("new")))};
+
+  // ── PROFILE-2 Part 3 · three nodes that move on a phone: the next move and
+  // the rail's Next step and Open pledge sit above the tabs at 390.
+  const railNextNode=<div data-testid="dp-next" style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold}}>Next step</div>
+              {dpItems.length>0?(
+                <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+                  {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
+                  {dpItems.map(it=>(
+                    <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                      <div style={{flex:"1 1 240px",minWidth:0}}>
+                        {(()=>{
+                          // FIX-24 2c: with no proposal open, the step is to write it.
+                          const ag=proposalsKnown?stepAgainstProposals(it.nextStep.label,openProposals.length):{label:it.nextStep.label,changed:false};
+                          return <>
+                            <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{ag.label}</div>
+                            {ag.changed&&<div data-testid="dp-step-agree" style={{fontSize:12.5,color:T.ink3,lineHeight:1.5,marginBottom:4}}>{ag.why}</div>}
+                          </>;
+                        })()}
+                        {it.suggestedAsk&&<SuggestedAskLine ask={it.suggestedAsk} style={{marginBottom:4}}/>}
+                        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                          {/* POLISH-2: lateness is said once. A late step reads "2 days
+                              late", not that plus "day 4" plus "Overdue Oct 10". */}
+                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:(it.overdue&&/^(Overdue |\d+ days? late)/i.test(it.rank?.why||"")?null:it.rank?.why||null)}
+                          {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
+                          {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
+                          {it.overdue?null:<>{" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}</>}
+                          {" "}
+                          <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
+                            {it.overdue?lateWords(it.nextStep.due):<>Due {displayDateShort(it.nextStep.due,new Date())}</>}
+                          </span>
+                        </div>
+                        {/* FIX-33 · a booked meeting IS the next step, with its two moves;
+                            its prep and after tasks open the brief and the note. */}
+                        {(()=>{
+                          const ev=it.calendarEventId;
+                          if(!ev||isReadOnly)return null;
+                          const fire=action=>window.dispatchEvent(new CustomEvent(MEETING_ACTION,{detail:{action,eventId:ev}}));
+                          const findMeeting=()=>[...(rel?.upcoming||[]),...(rel?.past||[])].find(m=>m.id===ev);
+                          const link={background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 12px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"};
+                          return <div data-testid="dp-meeting-step-actions" style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                            {it.nextStep.type==="meeting"&&<><button type="button" data-testid="dp-meeting-prep" onClick={()=>fire("prep")} style={link}>Prep</button>
+                              <button type="button" data-testid="dp-meeting-reschedule" onClick={()=>fire("reschedule")} style={link}>Reschedule</button></>}
+                            {it.nextStep.type==="meeting_prep"&&<button type="button" onClick={()=>fire("prep")} style={link}>Open the brief</button>}
+                            {it.nextStep.type==="meeting_after"&&<button type="button" data-testid="dp-meeting-howdid" onClick={()=>{const m=findMeeting();if(m)setLogMeeting(m);}} style={link}>How did it go?</button>}
+                          </div>;
+                        })()}
+                        {stepEdit&&stepEdit.id===it.id&&(
+                          <div data-testid="dp-step-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                            <input aria-label="Next step" value={stepEdit.label} onChange={e=>setStepEdit({...stepEdit,label:e.target.value})} style={{flex:"1 1 160px",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 9px",fontSize:13,fontFamily:"inherit"}}/>
+                            <input aria-label="Due" type="date" value={stepEdit.due} onChange={e=>setStepEdit({...stepEdit,due:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 8px",fontSize:13,fontFamily:"inherit"}}/>
+                            <button onClick={saveStep} disabled={stepBusy||!stepEdit.label.trim()} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{stepBusy?"Saving…":"Save"}</button>
+                            <button onClick={()=>setStepEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                      {it.kind!=="task"&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          {/* PROFILE-1 follow-up — an INK OUTLINE, not a second
+                              emerald. The mockup drew this filled, and the
+                              standing rule it did not account for is that
+                              emerald is the ONE action colour and exactly one
+                              control on a screen may mean "this is the
+                              button" (BUILD-86 C.1). The header's Log a
+                              conversation is that control. Caught by
+                              tests/fix2-c-cream §2c, which had been skipping
+                              in CI for want of a browser. */}
+                          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
+                            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
+                          <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
+                            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
+                          {/* BUILD-94 Part 5 — the same three outputs as the
+                              Home row, from the same builder. */}
+                          {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
+                          {/* FIX-14 Part 3 — the one next step is edited and deleted here.
+                              POLISH-3 — in the "…" menu, with who edited it, not as a
+                              row of underlined words beside the buttons. */}
+                          <ThreadDismissMenu thread={it} onDone={loadDpThread}
+                            extra={it.kind==="thread"&&!isReadOnly?[
+                              {label:"Edit the step",testid:"dp-step-edit-btn",onClick:()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})},
+                              {label:"Delete the step",testid:"dp-step-delete",onClick:()=>deleteStep(it)},
+                            ]:null}
+                            footer={it.kind==="thread"&&it.edited_at?<EditedMarker item={it}/>:null}/>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {snoozeErr&&<div style={{fontSize:12,color:T.terra700}}>{snoozeErr}</div>}
+                </div>
+              ):openProposals.length>0?(
+                /* HOTFIX-1's RULE, AND THE REASON IT IS A RULE. A donor can
+                   have no thread and no task and still have an ask in flight,
+                   and the first draft of this very section answered "nothing
+                   is open" on exactly that record — with the proposal sitting
+                   four inches below it. An open proposal IS the next step, so
+                   it is named here, with what it asks for and when an answer
+                   is expected. (tests/profile1-screen §6 is the guard.) */
+                <div data-testid="dp-open-items" data-open-item="proposal" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+T.greenDk,borderRadius:10,padding:"16px 18px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",minWidth:0}}>
+                    <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{openProposals[0].purpose||"An open ask"}</div>
+                    <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                      {openProposals[0].askAmount!=null?<>{fmtFull(openProposals[0].askAmount)} · </>:null}
+                      {PROPOSAL_STAGE_LABEL[openProposals[0].stage]||openProposals[0].stage}
+                      {openProposals[0].expectedClose?<> · <span style={{fontWeight:700,color:T.greenDk}}>An answer is expected {displayDateShort(openProposals[0].expectedClose,new Date())}</span></>:null}
+                      {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
+                    </div>
+                  </div>
+                </div>
+              ):(
+                <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
+                    {/* FIX-57: a sentence that needs a name waits for it ("Nothing is open for ." while the record loaded) */}
+                    {String(donor.name||"").trim()?<>Nothing is open for {callName}.</>
+                      :<span data-testid="dp-name-wait" aria-label="Loading" style={{display:"inline-block",width:"min(320px,80%)",height:12,borderRadius:6,background:T.bg2,verticalAlign:"middle"}}/>}
+                  </div>
+                  {!isReadOnly&&<button type="button" data-testid="dp-next-plan" onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:9,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",minHeight:40}}>Plan a follow-up</button>}
+                </div>
+              )}
+            </div>;
+  const railPledgeNode=pledges.some(p=>p.status==="open"&&Number(p.balance)>0)?<RailSection title="Open pledge" testid="dp-rail-pledge"><div style={{background:T.white,color:T.ink,borderRadius:10,padding:"2px 2px"}}>
+          <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
+            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
+        </div></RailSection>:null;
+  const nextMoveNode=<div className="dp2-nextmove"><ProfileNextMove donorId={donor.id} firstName={callName} isReadOnly={isReadOnly||!isTeam}
+              aiOn={!!(org&&org.capabilities&&org.capabilities.ai)&&isTeam} onDraft={()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);}}/></div>;
+
   return(
-    <div className="fade-in fullscreen-takeover" style={{position:"fixed",top:52,left:0,right:0,bottom:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div className="fade-in page-takeover" data-testid="donor-profile" style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
+      {/* PROFILE-2 Part 1: the profile is the page, not a fixed panel over it.
+          HOTFIX-1 made it position:fixed with overflow:hidden, and once
+          INSIGHTS-1 and IMPORT-5 grew the header to 540px nothing over it
+          scrolled at all; the window scrolls now, and only the rail sticks. */}
       {showGiftModal&&<GiftLinkModal donor={donor} orgName={orgName} onClose={()=>setShowGiftModal(false)}/>}
       {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
           Code intact, re-enable by uncommenting.
       {showVoiceMemo&&<VoiceMemoModal donor={donor} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>{setShowVoiceMemo(false);if(onInteractionAdded)onInteractionAdded();}}/>}
       */}
-      {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
-          below it the mark (photo or initials, one size) sits top-aligned with
-          the name, and everything about the person is one column beside it.
-          Centred rows let the mark and Back float to the middle of a column
-          whose height changed with the person, so a photo moved the name. */}
-      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px 12px",display:"flex",flexWrap:"wrap",alignItems:"flex-start",gap:"8px 12px",flexShrink:0}}>
-        <div className="dph-backrow" style={{flexBasis:"100%"}}>
-          <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
-        </div>
-        <div className="dph-identity" data-testid="dp-identity" style={{display:"flex",alignItems:"flex-start",gap:12,flex:1,minWidth:0}}>
-          {/* BUILD-94 Part 1 — the face. Drop an image on it or click to pick
-              one; the old mark was a stage-tinted first letter, which told you
-              the stage twice (the pill beside it already says it) and told you
-              nothing about the person. */}
-          <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl}/>
-          <div style={{minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              {/* FIX-8 Part B.1 — ONE THING TO READ FIRST. The name was 16px
-                  and sat in a row with the stage, the email, four safety
-                  flags and a drift badge, so nothing in the header was the
-                  first thing. It is display type now; the email moved to the
-                  rail's contact block, where somebody looks when they are
-                  about to call. */}
-              <span className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
-                fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{displayName(donor.name,{isOrg:donor.kind==="org"||donor.kind==="organization"})}</span>
-              {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
-                  it is brass (the overdue colour), never terracotta. */}
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.id==="lapsed"?T.gold100:stage.color+"22",color:stageTone(stage)}}>{stage.label}</span>
-              <DriftBadge drift={donor.drift}/>
-              {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
-              {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
-              {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
-              {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks. Excluded from the drift list, re-engage, suggested outreach and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
-              {donor.importedSustainer&&<span title={`Sustainer history from import, with no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
-            </div>
-            {/* FIX-8 Part B.2 — the roles are ONE QUIET LINE, and the two
-                add-actions live in a "+" beside it. Three chips put two verbs
-                ("+ Volunteer", "+ Staff and board") where the reader expects
-                facts, so the header said what this person IS and what you
-                could do to them in the same breath, in the same shape. */}
-            <RoleLine donor={donor} isReadOnly={isReadOnly} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
-            {/* PROFILE-1 (header) — tags and groups on one line: the giving
-                level, lifecycle and Retained (each opening its donors), the
-                record's own tags, then the groups with "Add to a group". */}
-            <HeaderChips status={status} donor={donor} isReadOnly={isReadOnly}/>
-            {/* The Close line, under the tags. */}
-            <ClosenessLine status={status}/>
-            {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
-                to read donors.total_giving while the tile below it now reads
-                the gifts themselves (figureSources donor-lifetime), and on the
-                fixture record those two disagreed by $60,000 four inches
-                apart. The rule is that when two surfaces show the same number
-                it is computed once, so this line reads the figure the tile
-                reads, and falls back to the column only before the figures
-                have loaded. */}
-            {/* FIX-8 Part B.3 — the "$167,916 lifetime · 4 gifts" line is
-                gone. The Lifetime card four inches below says the same number
-                from the same computation, and PROFILE-1 already had to fix
-                these two disagreeing by $60,000. One number, one place. */}
-            {/* BUILD-76 — the drift reason, inline on the record (hover-only
-                would hide the one sentence that explains the badge). */}
-            {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
-            {/* FIX-33: the rows an import could not read are their own plain
-                line (admins only, with the rows behind it), never a raw tag and
-                never folded into the drift sentence above. */}
-            <ImportRefusalsLine status={status}/>
-            {/* BUILD-89S 89f — "Gives $50 monthly through PayPal" when the
-                provider named it; "Looks like $50 monthly through PayPal"
-                while it is still Steward's own reading of the pattern. One
-                sentence, built server-side, shared with the dashboard. */}
-            {donor.sourceRecurring&&(
-              <div data-testid="donor-source-recurring"
-                style={{fontSize:12,color:T.ink3,fontWeight:600,marginTop:3,lineHeight:1.4}}>
-                {donor.sourceRecurring.phrase}
-                {donor.sourceRecurring.confidence==="inferred"&&!donor.sourceRecurring.confirmed
-                  ?<span style={{fontWeight:400}}> · nobody has confirmed it</span>:null}
-              </div>
-            )}
-          </div>
-        </div>
-        {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
-            carried five actions across the top of the record, which is four
-            more than anybody presses in a row; at 390 the overflow already
-            existed and at 1440 it did not, so the same screen taught two
-            different habits. Now: Log a conversation (the one emerald), Plan
-            a follow-up when there is no open thread, and More — a real
-            BUTTON with a menu, never a link, because it does something on
-            this page rather than going somewhere. Everything that was in the
-            row is in the menu, so nothing was dropped. */}
-        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",alignSelf:"flex-start",position:"relative"}}>
-          {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
-              buttons in two different colours (a brass "Log a conversation" and
-              an emerald "Request Gift"), so nothing on it was the obvious thing
-              to press. Emerald means "this is the button" and exactly one thing
-              may mean that; the rest are outlines. */}
-          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-            Log a call
-          </button>
-          {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
-              because one open step per donor is the model and a second button
-              that can only 409 is a button that teaches people to distrust
-              buttons. */}
-          {!dpThread&&<button onClick={()=>setPlanOpen(true)} disabled={isReadOnly} data-testid="dp-plan-followup"
-            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-            Plan a follow-up
-          </button>}
-          {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
-          <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward"
-            style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"9px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7}}>
-            <MicGlyph size={15}/>{atlasName()}
-          </button>
-          {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
-              Code intact, re-enable by uncommenting.
-          <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
-            Voice memo
-          </button>
-          */}
-          <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" aria-haspopup="menu" aria-expanded={dpMoreOpen}
-            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>More ▾</button>
-          {dpMoreOpen&&(
-            <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
-              {/* FIX-55 item 6: Request a gift needs card payments set up and
-                  Brief me needs AI; each is hidden when its service is not on,
-                  where they answered "Stripe not configured" / "brief_unavailable". */}
-              {[...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
-                // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
-                ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
-                  ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
-                  ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
-                  ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
-                [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
-                ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
-                // PROSPECT-1 — a one-page prospect brief from the record, the
-                // screening results and the public filing; saved to their files.
-                ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
-                ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
-                // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
-                ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
-                // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record; for
-                // somebody who is not a volunteer yet, the form that makes them one.
-                isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
-                  :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
-                // WHY-1 — only for a lapsed donor: the facts on their record
-                // before they stopped, and the one touch that fits.
-                ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
-                ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
-                [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
-                /* MEMBERS-2 — the one page this person has: their membership,
-                   their tickets, their shifts and their giving. Staff send the
-                   link; they never see the token it carries, because somebody
-                   who could read it could open somebody else's page. */
-                ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
-                ["Edit record",onEdit,false],
-                // TRUST-2 — a person's own data, in one file, when they ask.
-                ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
-                // FIX-14 Part 3 — Erase and Delete, at the bottom of More, never on the page.
-                ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
-                ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",!(!isReadOnly)]]:[])].map(([label,fn,disabled,tid,sep])=>(
-                <button key={label} role="menuitem" disabled={disabled} data-testid={tid} onClick={()=>{setDpMoreOpen(false);fn();}}
-                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderTop:sep?"1px solid "+T.bg3:"none",marginTop:sep?4:0,borderRadius:sep?0:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
-              ))}
-            </div>
-          )}
-          {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
-          {makeVolOpen&&<AddVolunteerModal person={{id:donor.id,name:donor.name,email:donor.email,phone:donor.phone}} onClose={()=>setMakeVolOpen(false)} onDone={()=>{setMadeVol(true);if(onInteractionAdded)onInteractionAdded();}}/>}
-          {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
-          {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
-          {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
-          {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
-          {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
-          {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
-            return m.via==="thread_log"
-              ?<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} editing={editingInt} onSaved={onIntEdited} onClose={()=>setEditingInt(null)}/>
-              :<LogTouchpointModal donor={donor} editing={editingInt} onSave={onIntEdited} onClose={()=>setEditingInt(null)}/>;})()}
-          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
-            onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
-              // FIX-14 Part 1 — every count on the record re-reads the one
-              // source: the header's figures, the rail, the rhythm, the timeline.
-              loadRel();loadGiftsFull();}}
-            onClose={()=>setConvoOpen(false)}/>}
-          {suggestOpen&&<Modal onClose={()=>setSuggestOpen(false)} width={640} title="Suggested">
-            <div data-testid="dp-suggested" style={{display:"flex",flexDirection:"column",gap:12}}>
-              {!SUGGEST_KINDS.some(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`])&&<div style={{fontSize:13,color:T.ink3}}>{loadingKey&&String(loadingKey).startsWith(donor.id+"_")?<Spin/>:"Nothing drafted yet. Pick a draft from More."}</div>}
-              {/* ── SUGGESTED ────────────────────────────────────────────
-                  What Steward drafted, beside the step it is about. Every
-                  line came through the HOTFIX-1 checker: a sentence naming
-                  somebody, stating a number or making a claim the record does
-                  not carry is dropped SILENTLY (the count goes to the
-                  console), timing that is already behind today is refused,
-                  and when nothing survives this renders nothing at all. */}
-              {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
-                <div key={t} data-testid={`dp-suggested-${t}`}>
-                  <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
-                  <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
-                    From <button onClick={()=>{setSuggestOpen(false);setDpTab("conversations");}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
-                    {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
-                  </div>
-                </div>
-              ):null)}
-
-              {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
-                  to be written into aiMap and rendered as though Steward had
-                  suggested it, carrying the HTTP status ("Stream failed: 503")
-                  into a panel headed "Suggested". It is its own row now, in the
-                  Agent room's voice, with the one control that helps. */}
-              {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
-                <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
-                  style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
-                    background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
-                    borderRadius:14,padding:"12px 16px",marginTop:12}}>
-                  <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
-                    {aiErr[`${donor.id}_${t}`]}
-                  </span>
-                  <button data-testid={`dp-suggested-retry-${t}`}
-                    onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
-                    disabled={loadingKey===`${donor.id}_${t}`}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
-                      padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
-                      cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
-                    {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
-                  </button>
-                </div>
-              ):null)}
-            </div>
-          </Modal>}
-          {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
-            <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
-          </Modal>}
-          {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
-            onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
-        </div>
-        {/* PROFILE-1 (header) · POLISH-3 — four numbers across the header's
-            bottom edge; the other four head the Gifts & pledges tab. */}
-        {/* INSIGHTS-1 — the rung, its status, the signals and the one next move */}
-        {/* IMPORT-5 — an open pledge sits up top, under the header */}
-        {pledges.some(p=>p.status==="open"&&Number(p.balance)>0)&&<div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}>
-          <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
-            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
-        </div>}
-        <div style={{padding:"0 2px",flex:"1 1 100%",width:"100%",minWidth:0}}><ProfileLadder donorId={donor.id} isReadOnly={isReadOnly}/></div>
-        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
-      </div>
-
-      <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+      <div className="donor-profile-body dp2-body" data-rail-ground={RAIL.bg} style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1fr) var(--rail-w,360px)",backgroundImage:`linear-gradient(to right, ${T.bg} calc(100% - var(--rail-w,360px)), ${RAIL.bg} calc(100% - var(--rail-w,360px)))`}}>
         {/* LEFT — the main column. HOTFIX-1: its ground is named here rather
             than inherited, because the rail beside it is defined as being on a
             CONTRASTING ground and a contrast between two inherited values is
             not a contrast anybody can check. See docs/decisions/design-system.md. */}
-        <div data-testid="dp-main-column" style={{overflowY:"auto",background:T.bg,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
+        <div data-testid="dp-main-column" style={{background:T.bg,minWidth:0,display:"flex",flexDirection:"column"}}>
+          {/* PROFILE-2 · THE WHITE BAND: the header, the four numbers, then the tabs
+              as its bottom edge. It sits in the main column, so the rail beside it
+              runs from the top of the profile. */}
+          <div data-testid="dp-band" style={{background:T.white}}>
+      {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
+            below it the mark (photo or initials, one size) sits top-aligned with
+            the name, and everything about the person is one column beside it.
+            Centred rows let the mark and Back float to the middle of a column
+            whose height changed with the person, so a photo moved the name. */}
+        {/* PROFILE-2 · THE HEADER, TWO ROWS. Row one: the face (72px), the name in
+            the display serif, and the actions on the right (Log a call is the one
+            emerald). Row two: the top tag under the face and the second under the
+            name: at most two tags here, the rest are in About on the rail. The
+            roles line, closeness, drift and recurring sentences moved to the rail
+            (About and Engagement), so the header is the person and what to do. */}
+        <div className="donor-profile-header dp2-head" data-testid="dp-head" style={{padding:"12px 28px 10px",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:18,rowGap:8,alignItems:"center"}}>
+          <div className="dph-backrow" style={{gridColumn:"1 / 3",gridRow:1,alignSelf:"center"}}>
+            <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"6px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>← Donors</button>
+          </div>
+          <div className="dph-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"start"}}>
+            <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={72}/>
+          </div>
+          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:"2 / -1",gridRow:2,minWidth:0,alignSelf:"start",paddingTop:4}}>   {/* POLISH-1: top-aligned with the face, photo or not */}
+            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,fontSize:38,fontWeight:400,color:T.ink,letterSpacing:"-0.015em",
+              fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.08,overflowWrap:"break-word"}}>{headName||"\u00a0"}</h1>
+          </div>
+          <div className="dph-tags" data-testid="dp-head-tags" style={{display:"contents"}}>
+            {headTags[0]&&<div className="dph-tag1" data-testid="dp-head-tag-1" style={{gridColumn:1,gridRow:3,justifySelf:"center",whiteSpace:"nowrap"}}>{headTags[0]}</div>}
+            {headTags[1]&&<div className="dph-tag2" data-testid="dp-head-tag-2" style={{gridColumn:"2 / -1",gridRow:3,justifySelf:"start",whiteSpace:"nowrap"}}>{headTags[1]}</div>}
+          </div>
+          {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
+              carried five actions across the top of the record, which is four
+              more than anybody presses in a row; at 390 the overflow already
+              existed and at 1440 it did not, so the same screen taught two
+              different habits. Now: Log a conversation (the one emerald), Plan
+              a follow-up when there is no open thread, and More — a real
+              BUTTON with a menu, never a link, because it does something on
+              this page rather than going somewhere. Everything that was in the
+              row is in the menu, so nothing was dropped. */}
+          <div className="dph-actions" style={{gridColumn:3,gridRow:1,display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
+                buttons in two different colours (a brass "Log a conversation" and
+                an emerald "Request Gift"), so nothing on it was the obvious thing
+                to press. Emerald means "this is the button" and exactly one thing
+                may mean that; the rest are outlines. */}
+            <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{whiteSpace:"nowrap",minHeight:40,background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+              Log a call
+            </button>
+            {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
+                because one open step per donor is the model and a second button
+                that can only 409 is a button that teaches people to distrust
+                buttons. */}
+            {/* PROFILE-2 — Note, Email and Task beside Log a call. Email opens her own
+              mail program to their address (Steward sends nothing); it is not
+              offered when there is no address, or Deceased or Do not contact is set. */}
+          <button type="button" onClick={()=>setNoteOpen(true)} disabled={isReadOnly} data-testid="dp-note" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Note</button>
+          {donor.email&&!donor.deceased&&!donor.doNotContact&&<a href={`mailto:${donor.email}`} data-testid="dp-email" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Email</a>}
+          {onAddTask&&<button type="button" onClick={onAddTask} disabled={isReadOnly} data-testid="dp-task" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Task</button>}
+            {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
+            <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward"
+              style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"9px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7}}>
+              <MicGlyph size={15}/>{atlasName()}
+            </button>
+            {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
+                Code intact, re-enable by uncommenting.
+            <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
+              Voice memo
+            </button>
+            */}
+            <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" aria-haspopup="menu" aria-expanded={dpMoreOpen}
+              style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>More ▾</button>
+            {dpMoreOpen&&(
+              <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
+                {/* FIX-55 item 6: Request a gift needs card payments set up and
+                    Brief me needs AI; each is hidden when its service is not on,
+                    where they answered "Stripe not configured" / "brief_unavailable". */}
+                {[...(!dpThread?[["Plan a follow-up",()=>setPlanOpen(true),isReadOnly,"dp-plan-followup"]]:[]),
+                ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
+                  // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
+                  ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
+                    ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
+                    ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
+                    ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
+                  [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
+                  ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
+                  // PROSPECT-1 — a one-page prospect brief from the record, the
+                  // screening results and the public filing; saved to their files.
+                  ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
+                  ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
+                  // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
+                  ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
+                  // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record; for
+                  // somebody who is not a volunteer yet, the form that makes them one.
+                  isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
+                    :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
+                  // WHY-1 — only for a lapsed donor: the facts on their record
+                  // before they stopped, and the one touch that fits.
+                  ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
+                  ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
+                  [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
+                  /* MEMBERS-2 — the one page this person has: their membership,
+                     their tickets, their shifts and their giving. Staff send the
+                     link; they never see the token it carries, because somebody
+                     who could read it could open somebody else's page. */
+                  ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
+                  ["Edit record",onEdit,false],
+                  // TRUST-2 — a person's own data, in one file, when they ask.
+                  ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
+                  // FIX-14 Part 3 — Erase and Delete, at the bottom of More, never on the page.
+                  ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
+                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",!(!isReadOnly)]]:[])].map(([label,fn,disabled,tid,sep])=>(
+                  <button key={label} role="menuitem" disabled={disabled} data-testid={tid} onClick={()=>{setDpMoreOpen(false);fn();}}
+                    style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderTop:sep?"1px solid "+T.bg3:"none",marginTop:sep?4:0,borderRadius:sep?0:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
+                ))}
+              </div>
+            )}
+            {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
+            {makeVolOpen&&<AddVolunteerModal person={{id:donor.id,name:donor.name,email:donor.email,phone:donor.phone}} onClose={()=>setMakeVolOpen(false)} onDone={()=>{setMadeVol(true);if(onInteractionAdded)onInteractionAdded();}}/>}
+            {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
+            {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
+            {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
+            {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
+            {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
+            {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
+              return m.via==="thread_log"
+                ?<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} editing={editingInt} onSaved={onIntEdited} onClose={()=>setEditingInt(null)}/>
+                :<LogTouchpointModal donor={donor} editing={editingInt} onSave={onIntEdited} onClose={()=>setEditingInt(null)}/>;})()}
+            {noteOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} onNavigate={onNavigate} initialTouch="note_only"
+            onSaved={()=>{loadDpThread();loadRel();loadGiftsFull();if(onInteractionAdded)onInteractionAdded();}} onClose={()=>setNoteOpen(false)}/>}
+          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
+              onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
+                // FIX-14 Part 1 — every count on the record re-reads the one
+                // source: the header's figures, the rail, the rhythm, the timeline.
+                loadRel();loadGiftsFull();}}
+              onClose={()=>setConvoOpen(false)}/>}
+            {suggestOpen&&<Modal onClose={()=>setSuggestOpen(false)} width={640} title="Suggested">
+              <div data-testid="dp-suggested" style={{display:"flex",flexDirection:"column",gap:12}}>
+                {!SUGGEST_KINDS.some(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`])&&<div style={{fontSize:13,color:T.ink3}}>{loadingKey&&String(loadingKey).startsWith(donor.id+"_")?<Spin/>:"Nothing drafted yet. Pick a draft from More."}</div>}
+                {/* ── SUGGESTED ────────────────────────────────────────────
+                    What Steward drafted, beside the step it is about. Every
+                    line came through the HOTFIX-1 checker: a sentence naming
+                    somebody, stating a number or making a claim the record does
+                    not carry is dropped SILENTLY (the count goes to the
+                    console), timing that is already behind today is refused,
+                    and when nothing survives this renders nothing at all. */}
+                {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
+                  <div key={t} data-testid={`dp-suggested-${t}`}>
+                    <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
+                    <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
+                      From <button onClick={()=>{setSuggestOpen(false);setDpTab("conversations");}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
+                      {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
+                    </div>
+                  </div>
+                ):null)}
+
+                {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
+                    to be written into aiMap and rendered as though Steward had
+                    suggested it, carrying the HTTP status ("Stream failed: 503")
+                    into a panel headed "Suggested". It is its own row now, in the
+                    Agent room's voice, with the one control that helps. */}
+                {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
+                  <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
+                    style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
+                      background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
+                      borderRadius:14,padding:"12px 16px",marginTop:12}}>
+                    <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
+                      {aiErr[`${donor.id}_${t}`]}
+                    </span>
+                    <button data-testid={`dp-suggested-retry-${t}`}
+                      onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
+                      disabled={loadingKey===`${donor.id}_${t}`}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
+                        padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
+                        cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
+                      {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
+                    </button>
+                  </div>
+                ):null)}
+              </div>
+            </Modal>}
+            {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
+              <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
+            </Modal>}
+            {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
+              onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
+          </div>
+      </div>
+        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
+          </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
               Directly under the header, left-aligned. It replaces the old six
               tabs and the "Everything with" chips; it scrolls sideways at 390
               (and only it does). Each count is the length of the list it
               opens. */}
-          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,padding:"0 12px",position:"sticky",top:0,zIndex:5}}>
+          {isPhone&&<div className="dp2-phone-top" data-testid="dp-phone-top" style={{display:"flex",flexDirection:"column",gap:14,padding:"16px 16px 18px",background:T.bg}}>
+            {nextMoveNode}
+            <div style={{background:RAIL.bg,color:RAIL.text,borderRadius:14,padding:"16px 16px 4px"}}>{railNextNode}{railPledgeNode}</div>
+          </div>}
+          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,borderBottom:"1px solid "+T.bg3,position:"sticky",top:52,zIndex:5,padding:"0 16px 0 18px"}}>
+          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none"}}>
             {PROFILE_TABS.map(([id,label])=>{
-              const n=id==="gifts"?(giftLoading||giftReadErr?null:giftCountReal):id==="asks"?(openProposals.length+opps.filter(o=>o.status==="open").length)
-                :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0):null;
-              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13,fontWeight:dpTab===id?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",...activeMark(dpTab===id,"bottom")}}>
+              // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
+              const n=id==="giving"?(giftLoading||giftReadErr?null:giftCountReal+pledges.length)
+                :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0)
+                :id==="notes"?(tlCounts.note||0):id==="files"?(tlCounts.file||0):null;
+              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"13px 9px 11px",color:dpTab===id?T.ink:T.ink3,fontSize:13,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44}}>
                 {label}
-                {n!=null&&<span data-tab-count={id} style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{n}</span>}
+                {n!=null&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
               </button>;
             })}
+          </div>
+          {/* PROFILE-2: search the timeline, live. */}
+          <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,paddingLeft:8}}>
+            {tlSearchOpen&&<input autoFocus value={tlSearch} onChange={e=>{setTlSearch(e.target.value);if(!TAB_KIND[dpTab]&&dpTab!=="activity")setDpTab("activity");}} placeholder="Search this record" aria-label="Search this record" data-testid="dp-tl-search"
+              onKeyDown={e=>{if(e.key==="Escape"){setTlSearch("");setTlSearchOpen(false);}}} style={{width:180,padding:"7px 10px",fontSize:13,borderRadius:8}}/>}
+            <button type="button" data-testid="dp-tl-search-btn" aria-label={tlSearchOpen?"Close search":"Search this record"} onClick={()=>{if(tlSearchOpen){setTlSearch("");setTlSearchOpen(false);}else setTlSearchOpen(true);}}
+              style={{background:"none",border:"none",cursor:"pointer",padding:8,minWidth:40,minHeight:40,color:T.ink3,fontSize:17,lineHeight:1}}>{tlSearchOpen?"×":<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>}</button>
+          </div>
           </div>
 
           {/* ── OVERVIEW (PROFILE-1 header) ──────────────────────────────
               Top to bottom: the next meeting, How did it go?, Lately, the ask,
               Highlights, then About. Everything else that lived here has a
               tab of its own now (docs/profile-1/inventory.md says where). */}
-          {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {/* ── PROFILE-2 · ACTIVITY: the next move, Coming up, then everything
+              that happened, by month. The other tabs filter the same timeline. */}
+          {dpTab==="activity"&&<div className="dp2-cream" data-testid="dp-tab-activity" style={{padding:"22px 28px 32px",display:"flex",flexDirection:"column",gap:18}}>
+            {!isPhone&&nextMoveNode}
+            <ComingUpMain tasks={tasks} meetings={(rel&&rel.upcoming)||[]} onTaskToggle={onTaskToggle} isReadOnly={isReadOnly} onAddTask={onAddTask}/>
             {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} before={before&&before.meeting.id===rel.nextMeeting.id?before:null} onReload={()=>{loadRel();loadDpThread();}}/>}
             {/* VOICE-3 · a meeting logged ahead by hand has no calendar card, so the brief stands alone. */}
             {before&&!(rel?.nextMeeting&&before.meeting.id===rel.nextMeeting.id)&&<BeforeYourMeeting data={before}/>}
@@ -2386,10 +2562,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 opening its record; "See everything" opens Conversations. */}
             {/* AGENT-5: what Atlas did for this person, in order, with Undo. */}
             <AtlasNote place="person" id={donor.id} onNavigate={onNavigate}/>
-            {rel&&<ProfileTimeline lately={3} onSeeAll={()=>setDpTab("conversations")} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&<ProfileTimeline byMonth noChips search={tlSearch} heading="Everything, by month" extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
+          </div>}
+
+          {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
+              Asks & pipeline, one tab. */}
+          {dpTab==="giving"&&<div className="dp2-cream" data-testid="dp-tab-giving-ask" style={{padding:"22px 28px 0",display:"flex",flexDirection:"column",gap:18}}>
             {/* THE ASK — one card: the stage bar, the open ask, the suggested
                 next ask with Why?, Mark won and Update. Everything else the old
                 section held is on the Asks & pipeline tab. */}
@@ -2399,7 +2580,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               return <section data-testid="dp-ask-card" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12}}>
                   <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>The ask</div>
-                  <button type="button" data-testid="dp-ask-open-tab" onClick={()=>setDpTab("asks")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Open Asks &amp; pipeline</button>
+                  <button type="button" data-testid="dp-ask-open-tab" onClick={()=>setDpTab("giving")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Open Asks &amp; pipeline</button>
                 </div>
                 <div role="radiogroup" aria-label="Stage" data-testid="dp-stage-bar" style={{display:"grid",gridTemplateColumns:`repeat(${STAGES.length},minmax(0,1fr))`,gap:3}}>
                   {STAGES.map(st=>{
@@ -2440,7 +2621,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                       ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:13,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
                       :<span style={{fontSize:13,color:T.ink3}}>Not in a household</span>}
                     {household
-                      ?<button type="button" data-testid="dp-household-see" style={link} onClick={()=>setDpTab("related")}>See who's in it</button>
+                      ?<button type="button" data-testid="dp-household-see" style={link} onClick={()=>setRelatedOpen(true)}>See who's in it</button>
                       :!isReadOnly&&<button type="button" data-testid="dp-household-add" style={link} onClick={()=>setHhModalOpen(true)}>Add</button>}
                   </div>
                   <div data-testid="dp-planned-giving" style={{...cell,borderLeft:"1px solid "+T.bg3}}>
@@ -2510,105 +2691,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           </div>}
 
-          {/* ── ASKS & PIPELINE (PROFILE-1 header) — everything the old "The
-              ask" section held that the Overview's card does not: every
-              proposal row, moves and pipeline asks, New ask, the weighted line. */}
-          {dpTab==="asks"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
-            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} data={propData||null} reload={reloadProps}
-              title="Asks & pipeline" addLabel="+ New ask" testid="dp-the-ask"
-              after={<div style={{marginTop:12}}>
-              {/* Pipeline: Moves & Asks (BUILD-15). Every plan has it (FIX-32). */}
-              {lockMajor(
-                <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Moves and pipeline asks</div>
-                    <div style={{display:"flex",gap:6}}>
-                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
-                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Pipeline ask"}</button>}
-                    </div>
-                  </div>
-                  {askOpen&&(
-                    <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
-                      <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <button onClick={addAsk} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.white,cursor:"pointer"}}>Save</button>
-                    </div>
-                  )}
-                  {opps.length>0&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
-                      {opps.map(o=>(
-                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?T.gold500+"14":T.bg2}}>
-                          <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
-                          <span style={{color:T.gold600,fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
-                          {o.status==="won"&&<span style={{color:T.greenDk,fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
-                          {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
-                          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
-                            {o.status==="open"&&isTeam&&!isReadOnly&&<>
-                              <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
-                              <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
-                            </>}
-                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {moves.length>0&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      {moves.slice(0,6).map(m=>(
-                        <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
-                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"no officer"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
-                          {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves logged yet. Move this donor on the Pipeline board.</div>}
-                </div>
-              )}
-              </div>}>
-          {/* The stage, and the smart moves that argue for changing it. Both
-              are the major-gifts layer, which every plan includes (FIX-32). */}
-          {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:12}}>
-            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}} data-testid="dp-ask-suggest">
-              {/* FIX-24 2c: The Ask says the same next step as the rail; the
-                  stage's general advice only when there is no open step. */}
-              {dpItems.length>0&&dpItems[0].nextStep?.label
-                ?`Next step: ${proposalsKnown?stepAgainstProposals(dpItems[0].nextStep.label,openProposals.length).label:dpItems[0].nextStep.label}.`
-                :STAGE_ACTION[donor.stage||"cultivate"]}
-            </div>
-            {(() => {
-              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
-              // Lapsed is set automatically elsewhere; these are the judgment
-              // moves the officer owns, offered one-click. They sit WITH the
-              // stage now, because that is the only thing they are about.
-              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
-              if(!shown.length) return null;
-              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
-                {shown.map(s=>(
-                  <div key={s.signal} style={{background:T.bg,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
-                    <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {s.toStage&&!isReadOnly&&(
-                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
-                        </button>
-                      )}
-                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
-                    </div>
-                  </div>
-                ))}
-              </div>;
-            })()}
-          </div>}
-            {/* ENGAGE-1 §3 — the suggested ask, from their own gifts only. */}
-            {scores&&scores.suggestedAsk&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:"0 0 10px"}}/>}
-            </ProposalsPanel>)}
-
-          </div>}
 
           {/* Gifts & Pledges tab */}
-          {dpTab==="gifts"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div style={{padding:"20px 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
             {/* POLISH-3 — the numbers that left the header head the Gifts tab:
                 Average, First / Largest, Last met and Last email. */}
             {(figs||donor.figures)&&<ProfileMoreNumbers figures={figs||donor.figures} glance={status&&status.glance}/>}
@@ -3041,7 +3126,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           {/* Materials tab */}
           {/* Funds tab */}
-          {dpTab==="funds"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div style={{padding:"0 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
             {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
             {!fundLoading&&fundAffinity&&(()=>{
               const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds}=fundAffinity;
@@ -3112,10 +3197,108 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {!fundLoading&&!fundAffinity&&<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Could not load fund data.</div>}
           </div>}
 
+          {/* ── ASKS & PIPELINE (PROFILE-1 header) — everything the old "The
+              ask" section held that the Overview's card does not: every
+              proposal row, moves and pipeline asks, New ask, the weighted line. */}
+          {dpTab==="giving"&&<div style={{padding:"20px 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} data={propData||null} reload={reloadProps}
+              title="Asks & pipeline" addLabel="+ New ask" testid="dp-the-ask"
+              after={<div style={{marginTop:12}}>
+              {/* Pipeline: Moves & Asks (BUILD-15). Every plan has it (FIX-32). */}
+              {lockMajor(
+                <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Moves and pipeline asks</div>
+                    <div style={{display:"flex",gap:6}}>
+                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
+                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Pipeline ask"}</button>}
+                    </div>
+                  </div>
+                  {askOpen&&(
+                    <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+                      <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <button onClick={addAsk} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.white,cursor:"pointer"}}>Save</button>
+                    </div>
+                  )}
+                  {opps.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
+                      {opps.map(o=>(
+                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?T.gold500+"14":T.bg2}}>
+                          <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
+                          <span style={{color:T.gold600,fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
+                          {o.status==="won"&&<span style={{color:T.greenDk,fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
+                          {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
+                          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                            {o.status==="open"&&isTeam&&!isReadOnly&&<>
+                              <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
+                              <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
+                            </>}
+                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {moves.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {moves.slice(0,6).map(m=>(
+                        <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
+                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"no officer"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
+                          {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves logged yet. Move this donor on the Pipeline board.</div>}
+                </div>
+              )}
+              </div>}>
+          {/* The stage, and the smart moves that argue for changing it. Both
+              are the major-gifts layer, which every plan includes (FIX-32). */}
+          {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:12}}>
+            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}} data-testid="dp-ask-suggest">
+              {/* FIX-24 2c: The Ask says the same next step as the rail; the
+                  stage's general advice only when there is no open step. */}
+              {dpItems.length>0&&dpItems[0].nextStep?.label
+                ?`Next step: ${proposalsKnown?stepAgainstProposals(dpItems[0].nextStep.label,openProposals.length).label:dpItems[0].nextStep.label}.`
+                :STAGE_ACTION[donor.stage||"cultivate"]}
+            </div>
+            {(() => {
+              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
+              // Lapsed is set automatically elsewhere; these are the judgment
+              // moves the officer owns, offered one-click. They sit WITH the
+              // stage now, because that is the only thing they are about.
+              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
+              if(!shown.length) return null;
+              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+                {shown.map(s=>(
+                  <div key={s.signal} style={{background:T.bg,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {s.toStage&&!isReadOnly&&(
+                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
+                        </button>
+                      )}
+                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>;
+            })()}
+          </div>}
+            {/* ENGAGE-1 §3 — the suggested ask, from their own gifts only. */}
+            {scores&&scores.suggestedAsk&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:"0 0 10px"}}/>}
+            </ProposalsPanel>)}
+
+          </div>}
+
           {/* Related tab — manual household/spouse/family/employer_match
               links. No auto-detection (matching last name, address, etc.) —
               a real fast-follow idea, not built here. */}
-          {dpTab==="related"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+          {relatedOpen&&<Modal onClose={()=>setRelatedOpen(false)} width={720} title="Household and related">
+          <div data-testid="dp-related" style={{display:"flex",flexDirection:"column",gap:16}}>
             {/* PROFILE-1 (header) — the household, in full, moved here from the Overview. */}
             {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
             <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
@@ -3212,7 +3395,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ))}
                 </div>
             }
-          </div>}
+          </div></Modal>}
 
           {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
               Conversations, Emails, Tasks, Notes and Files are the old
@@ -3270,7 +3453,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </>}
             {dpTab==="conversations"&&<InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>}
             {dpTab==="emails"&&<><ThankYouDrafts donorId={donor.id} hideWhenEmpty testid="dp-ty-drafts"/><EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/></>}
-            {rel?<ProfileTimeline key={dpTab} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
+            {rel?<ProfileTimeline key={dpTab} search={tlSearch} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
             {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
               <h2 style={{margin:0,fontSize:13,letterSpacing:"0.12em",fontWeight:600,textTransform:"uppercase"}}>History</h2>
               <HistoryList donorId={donor.id}/>
@@ -3332,137 +3515,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             emphasis (the quick actions). Nothing new enters the palette: the
             rail's greys are cream at reduced opacity (T.sage400/600), which
             is the design system's own answer for secondary text on ink. */}
-        <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
+        <div data-testid="dp-right-rail" ref={railRef} className="dp-rail-sticky" style={{position:"sticky",top:railTop,alignSelf:"start",minHeight:"calc(100vh - 52px)",boxSizing:"border-box",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
           {/* INT-BUILD-1 Part 3, FIX-14 Part 3 — the ONE next step (with Edit and
               Delete), then Rhythm: past touches and planned steps on one strip,
               and the journey chosen or changed in the same panel. */}
           {(()=>{
-            const nextNode=<div data-testid="dp-next" style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold}}>Next step</div>
-              {dpItems.length>0?(
-                <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
-                  {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
-                  {dpItems.map(it=>(
-                    <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-                      <div style={{flex:"1 1 240px",minWidth:0}}>
-                        {(()=>{
-                          // FIX-24 2c: with no proposal open, the step is to write it.
-                          const ag=proposalsKnown?stepAgainstProposals(it.nextStep.label,openProposals.length):{label:it.nextStep.label,changed:false};
-                          return <>
-                            <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{ag.label}</div>
-                            {ag.changed&&<div data-testid="dp-step-agree" style={{fontSize:12.5,color:T.ink3,lineHeight:1.5,marginBottom:4}}>{ag.why}</div>}
-                          </>;
-                        })()}
-                        {it.suggestedAsk&&<SuggestedAskLine ask={it.suggestedAsk} style={{marginBottom:4}}/>}
-                        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
-                          {/* POLISH-2: lateness is said once. A late step reads "2 days
-                              late", not that plus "day 4" plus "Overdue Oct 10". */}
-                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:(it.overdue&&/^(Overdue |\d+ days? late)/i.test(it.rank?.why||"")?null:it.rank?.why||null)}
-                          {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
-                          {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
-                          {it.overdue?null:<>{" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}</>}
-                          {" "}
-                          <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
-                            {it.overdue?lateWords(it.nextStep.due):<>Due {displayDateShort(it.nextStep.due,new Date())}</>}
-                          </span>
-                        </div>
-                        {/* FIX-33 · a booked meeting IS the next step, with its two moves;
-                            its prep and after tasks open the brief and the note. */}
-                        {(()=>{
-                          const ev=it.calendarEventId;
-                          if(!ev||isReadOnly)return null;
-                          const fire=action=>window.dispatchEvent(new CustomEvent(MEETING_ACTION,{detail:{action,eventId:ev}}));
-                          const findMeeting=()=>[...(rel?.upcoming||[]),...(rel?.past||[])].find(m=>m.id===ev);
-                          const link={background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 12px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"};
-                          return <div data-testid="dp-meeting-step-actions" style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
-                            {it.nextStep.type==="meeting"&&<><button type="button" data-testid="dp-meeting-prep" onClick={()=>fire("prep")} style={link}>Prep</button>
-                              <button type="button" data-testid="dp-meeting-reschedule" onClick={()=>fire("reschedule")} style={link}>Reschedule</button></>}
-                            {it.nextStep.type==="meeting_prep"&&<button type="button" onClick={()=>fire("prep")} style={link}>Open the brief</button>}
-                            {it.nextStep.type==="meeting_after"&&<button type="button" data-testid="dp-meeting-howdid" onClick={()=>{const m=findMeeting();if(m)setLogMeeting(m);}} style={link}>How did it go?</button>}
-                          </div>;
-                        })()}
-                        {stepEdit&&stepEdit.id===it.id&&(
-                          <div data-testid="dp-step-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                            <input aria-label="Next step" value={stepEdit.label} onChange={e=>setStepEdit({...stepEdit,label:e.target.value})} style={{flex:"1 1 160px",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 9px",fontSize:13,fontFamily:"inherit"}}/>
-                            <input aria-label="Due" type="date" value={stepEdit.due} onChange={e=>setStepEdit({...stepEdit,due:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 8px",fontSize:13,fontFamily:"inherit"}}/>
-                            <button onClick={saveStep} disabled={stepBusy||!stepEdit.label.trim()} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{stepBusy?"Saving…":"Save"}</button>
-                            <button onClick={()=>setStepEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
-                          </div>
-                        )}
-                      </div>
-                      {it.kind!=="task"&&(
-                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                          {/* PROFILE-1 follow-up — an INK OUTLINE, not a second
-                              emerald. The mockup drew this filled, and the
-                              standing rule it did not account for is that
-                              emerald is the ONE action colour and exactly one
-                              control on a screen may mean "this is the
-                              button" (BUILD-86 C.1). The header's Log a
-                              conversation is that control. Caught by
-                              tests/fix2-c-cream §2c, which had been skipping
-                              in CI for want of a browser. */}
-                          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
-                            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
-                          <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
-                            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
-                          {/* BUILD-94 Part 5 — the same three outputs as the
-                              Home row, from the same builder. */}
-                          {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
-                          {/* FIX-14 Part 3 — the one next step is edited and deleted here.
-                              POLISH-3 — in the "…" menu, with who edited it, not as a
-                              row of underlined words beside the buttons. */}
-                          <ThreadDismissMenu thread={it} onDone={loadDpThread}
-                            extra={it.kind==="thread"&&!isReadOnly?[
-                              {label:"Edit the step",testid:"dp-step-edit-btn",onClick:()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})},
-                              {label:"Delete the step",testid:"dp-step-delete",onClick:()=>deleteStep(it)},
-                            ]:null}
-                            footer={it.kind==="thread"&&it.edited_at?<EditedMarker item={it}/>:null}/>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {snoozeErr&&<div style={{fontSize:12,color:T.terra700}}>{snoozeErr}</div>}
-                </div>
-              ):openProposals.length>0?(
-                /* HOTFIX-1's RULE, AND THE REASON IT IS A RULE. A donor can
-                   have no thread and no task and still have an ask in flight,
-                   and the first draft of this very section answered "nothing
-                   is open" on exactly that record — with the proposal sitting
-                   four inches below it. An open proposal IS the next step, so
-                   it is named here, with what it asks for and when an answer
-                   is expected. (tests/profile1-screen §6 is the guard.) */
-                <div data-testid="dp-open-items" data-open-item="proposal" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+T.greenDk,borderRadius:10,padding:"16px 18px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 240px",minWidth:0}}>
-                    <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{openProposals[0].purpose||"An open ask"}</div>
-                    <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
-                      {openProposals[0].askAmount!=null?<>{fmtFull(openProposals[0].askAmount)} · </>:null}
-                      {PROPOSAL_STAGE_LABEL[openProposals[0].stage]||openProposals[0].stage}
-                      {openProposals[0].expectedClose?<> · <span style={{fontWeight:700,color:T.greenDk}}>An answer is expected {displayDateShort(openProposals[0].expectedClose,new Date())}</span></>:null}
-                      {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
-                    </div>
-                  </div>
-                </div>
-              ):(
-                <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
-                    {/* FIX-57: a sentence that needs a name waits for it ("Nothing is open for ." while the record loaded) */}
-                    {String(donor.name||"").trim()?<>Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan a follow-up and it appears here, with the day you promised it.</>
-                      :<span data-testid="dp-name-wait" aria-label="Loading" style={{display:"inline-block",width:"min(320px,80%)",height:12,borderRadius:6,background:T.bg2,verticalAlign:"middle"}}/>}
-                  </div>
-                </div>
-              )}
-              {/* ENGAGE-1 — how close they are, and how much they give. Inside
-                  the Next step panel: no new layout. */}
-              <ScoreCard donorId={donor.id} scores={scores} onLog={isReadOnly?null:()=>setConvoOpen(true)}>
-                {canMajorGifts&&<RoomToGiveBlock donorId={donor.id} isReadOnly={isReadOnly}/>}
-                {canMajorGifts&&donor.kind==="organisation"&&<PublicFilingBlock data={publicFiling}/>}
-              </ScoreCard>
-            </div>;
             // WHY-1 Part 7 — JOURNEY, NOT RHYTHM. The twelve-month touch
             // strip is gone from the profile (the timeline is where touch
             // history lives); this panel is the plan for the next touches.
             const rhythmNode=<div data-testid="dp-rail-journey-panel" style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.sage400}}>Journey</div>
+              <div style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:T.gold500}}>Journeys</div>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
               "Step 3 of 7 · Impact report · due Jan 3" and a small
               done / today / upcoming timeline, exactly as the direction
@@ -3767,13 +3829,62 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             // Volunteering; Connected. Then the folded cards as before.
             const R=railData||{};
             return <>
-              <div style={{paddingBottom:16}}>{nextNode}</div>
+              {!isPhone&&<div style={{paddingBottom:16}}>{railNextNode}</div>}
               {railErr&&<div data-testid="dp-rail-error" style={{fontSize:12.5,color:RAIL.dim,padding:"8px 0"}}>Some of this person's facts could not be loaded just now.</div>}
+        {!isPhone&&railPledgeNode}
+              <div style={{borderTop:"1px solid "+RAIL.line,padding:"16px 0"}}>{rhythmNode}</div>
+              {/* PROFILE-2 · 4 HOUSEHOLD AND RELATED: the household and the people and
+                  organisations linked to them, each opening its profile. Manage
+                  opens the full Related editor (link, retype, unlink with Undo). */}
+              {(household||relationships.length>0||!isReadOnly)&&<RailSection title="Household and related" testid="dp-rail-related"
+                actionNode={<button type="button" data-testid="dp-rail-related-manage" onClick={()=>setRelatedOpen(true)} style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{household||relationships.length?"Manage":"Add"}</button>}>
+                {household&&<div style={{fontSize:13,marginBottom:6}}><RecordLink to={householdHref(household.id)} data-record-link="household" style={{color:RAIL.text,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink></div>}
+                {household&&(household.members||[]).filter(m=>m.id!==donor.id).map(m=><button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name} <span style={{color:RAIL.dim}}>· household</span></button>)}
+                {relationships.filter(r=>!(household&&(household.members||[]).some(m=>m.id===r.relatedDonorId))).map(r=><button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{r.relatedDonorName} <span style={{color:RAIL.dim}}>· {(DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)||[])[1]||r.relationshipType}</span></button>)}
+                {!household&&!relationships.length&&<div style={{fontSize:12.5,color:RAIL.dim}}>No one linked yet.</div>}
+              </RailSection>}
+              {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
+                  pattern, how to reach them, and the tags the header did not show. */}
+              <RailSection title="About" testid="dp-rail-about">
+                <div style={{background:T.white,color:T.ink,borderRadius:10,padding:"12px 14px",display:"flex",flexDirection:"column",gap:6}}>
+                  <RoleLine donor={donor} isReadOnly={isReadOnly} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
+                  {donor.sourceRecurring&&(
+                <div data-testid="donor-source-recurring"
+                  style={{fontSize:12,color:T.ink3,fontWeight:600,marginTop:3,lineHeight:1.4}}>
+                  {donor.sourceRecurring.phrase}
+                  {donor.sourceRecurring.confidence==="inferred"&&!donor.sourceRecurring.confirmed
+                    ?<span style={{fontWeight:400}}> · nobody has confirmed it</span>:null}
+                </div>
+              )}
+                  {donor.importedSustainer&&<span title={`Sustainer history from import, with no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
+                  {(aboutStatusTags.tags.length>0||(donor.tags||[]).length>0)&&<div data-testid="dp-about-tags" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>{statusTagItems(aboutStatusTags)}{(donor.tags||[]).map(t=><Pill key={"t:"+t} label={t}/>)}</div>}
+                  {/* the giving pattern, in plain words, each fact opening its rows (was the Giving rhythm card, which could say "No pattern yet" beside it) */}
+                  {status&&(status.closeness||status.meetingSet)&&<div data-testid="dp-about-pattern"><ClosenessLine status={status}/></div>}
+                  {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
+                  <ImportRefusalsLine status={status}/>
+                </div>
+              </RailSection>
               <RhythmCard rhythm={R.rhythm}/>
-              <RecurringCard recurring={R.recurring}/>
-              <ThankYousCard thankYous={R.thankYous} source={R.thankYousSource} donorId={donor.id}/>
-              <ComingUpCard items={R.comingUp} onNavigate={onNavigate}/>
-              {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel} inboxConnected={inboxConnected} yearOnly/>}
+          <RailSection title="Relationship owner" testid="dp-rail-owner"
+            actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
+              style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":(donor.assignedToName?"Reassign":"Assign")}</button>}>
+            <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:RAIL.line,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:RAIL.text,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
+                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.white}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
+              </div>
+              {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer"}}>
+                  <option value="">Select team member…</option>
+                  {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                </select>
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:reassignId?"pointer":"not-allowed"}}>
+                  {reassignLoading?"Saving…":"Confirm reassignment"}
+                </button>
+              </div>}
+            </div>
+          </RailSection>
           {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
               email lived in the header's name row, competing with the name
               for the first read, while this section, which already held the
@@ -3792,33 +3903,52 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
             </dl>
           </RailSection>
+              {/* PROFILE-2 · 6 ENGAGEMENT: one word and the facts behind it. */}
+              {/* PROFILE-2 · 6 ENGAGEMENT: ENGAGE-1's card says the word (Warm,
+                  Nothing logged yet) and the facts; Room to give sits in it. */}
+              <div data-testid="dp-rail-engagement" style={{borderTop:"1px solid "+RAIL.line,paddingTop:16}}>
+              {/* ENGAGE-1 — how close they are, and how much they give. Inside
+                  the Next step panel: no new layout. */}
+              <ScoreCard donorId={donor.id} scores={scores} onLog={isReadOnly?null:()=>setConvoOpen(true)}>
+                {canMajorGifts&&<RoomToGiveBlock donorId={donor.id} isReadOnly={isReadOnly}/>}
+                {canMajorGifts&&donor.kind==="organisation"&&<PublicFilingBlock data={publicFiling}/>}
+              </ScoreCard>
+              </div>
+          {donorEvents.length>0&&(
+            <RailSection title="Events" testid="dp-rail-events" fold foldOpenLabel="Hide" foldShutLabel={`Show ${donorEvents.length}`}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {donorEvents.slice(0,5).map(e=>{
+                  // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
+                  // sample seed writes timestamps) — blindly appending T12:00:00
+                  // to the latter produced "Invalid Date" on the profile card.
+                  const _raw=e.date?String(e.date):"";
+                  const _iso=_raw.match(/^\d{4}-\d{2}-\d{2}/);
+                  const d=_iso?displayDate(_iso[0]):"";
+                  return(
+                    <div key={e.id} style={{background:RAIL.panel,borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:RAIL.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
+                        <div style={{fontSize:10.5,color:RAIL.dim}}>{d}</div>
+                      </div>
+                      <span style={{border:"1px solid "+RAIL.line,color:RAIL.dim,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </RailSection>
+          )}
+              {/* PROFILE-2 · 8 GROUPS, as small chips, with Add to a group. */}
+              <RailGroups donorId={donor.id} isReadOnly={isReadOnly}/>
+              <RecurringCard recurring={R.recurring}/>
+              <ThankYousCard thankYous={R.thankYous} source={R.thankYousSource} donorId={donor.id}/>
+              <ComingUpCard items={R.comingUp} onNavigate={onNavigate}/>
+              {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel} inboxConnected={inboxConnected} yearOnly/>}
           {/* SEND-GATE-1: the person's automatic-email switch and what it held. */}
           {donor&&donor.id&&<AutoEmailCard donorId={donor.id} email={donor.email} isReadOnly={isReadOnly}/>}
-
-          <RailSection title="Relationship owner" testid="dp-rail-owner"
-            actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
-              style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":"Reassign"}</button>}>
-            <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:32,height:32,borderRadius:"50%",background:RAIL.line,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:RAIL.text,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
-                {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
-                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.white}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
-              </div>
-              {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer"}}>
-                  <option value="">Select team member…</option>
-                  {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                </select>
-                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:reassignId?"pointer":"not-allowed"}}>
-                  {reassignLoading?"Saving…":"Confirm reassignment"}
-                </button>
-              </div>}
-            </div>
-          </RailSection>
-
-              <div style={{borderTop:"1px solid "+RAIL.line,padding:"16px 0"}}>{rhythmNode}</div>
               <VolunteeringCard volunteering={R.volunteering}/>
               <ConnectedCard connected={R.connected}/>
+
+
             </>;
           })()}
 
@@ -3925,29 +4055,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             <div>{lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
           </RailSection>
 
-          {donorEvents.length>0&&(
-            <RailSection title="Events" testid="dp-rail-events" fold foldOpenLabel="Hide" foldShutLabel={`Show ${donorEvents.length}`}>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {donorEvents.slice(0,5).map(e=>{
-                  // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
-                  // sample seed writes timestamps) — blindly appending T12:00:00
-                  // to the latter produced "Invalid Date" on the profile card.
-                  const _raw=e.date?String(e.date):"";
-                  const _iso=_raw.match(/^\d{4}-\d{2}-\d{2}/);
-                  const d=_iso?displayDate(_iso[0]):"";
-                  return(
-                    <div key={e.id} style={{background:RAIL.panel,borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:600,color:RAIL.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
-                        <div style={{fontSize:10.5,color:RAIL.dim}}>{d}</div>
-                      </div>
-                      <span style={{border:"1px solid "+RAIL.line,color:RAIL.dim,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </RailSection>
-          )}
 
           {/* BUILD-88a A.4 — THE WEALTH SCORE IS HIDDEN UNTIL IT CAN SAY WHAT
               IT IS (WEALTH_SCORE_DEFINITION + WEALTH_SCORE_SOURCE). Kept here,

@@ -259,7 +259,8 @@ jobs:
           path: |
             .playwright
             .playwright-browsers
-          key: playwright-${{ runner.os }}-1.61.1
+          # PROFILE-2: WebKit too (smoke-walk §scroll drives Safari's engine), so the key names it.
+          key: playwright-${{ runner.os }}-1.61.1-webkit
       # FIX-34: PR #170's job sat on this step for five hours on 7 Oct. The
       # step now has its own ceiling, each attempt is capped at six minutes
       # by `timeout`, and a failed or hung attempt is retried once before the
@@ -282,7 +283,7 @@ jobs:
             # --with-deps installs the shared libraries Chromium needs on the
             # runner image; it is a no-op when they are already present, and it
             # is NOT covered by the cache (it writes outside the workspace).
-            (cd .playwright && timeout 360 npx playwright install --with-deps chromium)
+            (cd .playwright && timeout 360 npx playwright install --with-deps chromium webkit)
           }
           # FIX-48: on 23 Oct the first attempt's apt-get (from --with-deps) hung
           # on a slow mirror. `timeout` killed npx but not the sudo apt-get it

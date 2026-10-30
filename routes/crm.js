@@ -4512,8 +4512,8 @@ const PROFILE_FIGURE_BLANKS = {
     short: "Not met yet.",
   },
   thisYear: {
-    blank: "Nothing given yet this year. A gift dated this year shows here the day it is recorded.",
-    short: "Nothing yet this year.",
+    blank: "Nothing given yet this fiscal year. A gift dated in it shows here the day it is recorded.",
+    short: "Nothing yet this fiscal year.",   // PROFILE-2: the number is the fiscal year
   },
   lastEmail: {
     blank: "No email with this person is on the record. Connect your inbox, or BCC Steward, and the next one lands here.",
@@ -4577,6 +4577,13 @@ async function donorProfileFigures(orgId, donorId, today) {
       const full = await figureSources.figure(orgId, source, deps, { page: 1, pageSize: 1 });
       const r = full && full.rows && full.rows[0];
       under = r ? UNDER[k](r) : null;
+      // PROFILE-2: how the last gift was paid, from the gift itself (the drawer
+      // row's detail is its thank-you state).
+      if (k === "lastGift" && under && r.id) {
+        const [g] = await query(`SELECT NULLIF(payment_method, '') AS m FROM gifts WHERE id = ? AND org_id = ?`, [r.id, orgId]);
+        // "Needs you" is recordGift's word for a method nobody gave (server.js GIFT_METHOD_UNKNOWN).
+        under.method = g && g.m && g.m !== "Needs you" ? g.m : null;
+      }
     }
     return [k, {
       value: empty ? null : f.value,
@@ -4746,7 +4753,17 @@ app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
     const DR = require("../drift");
     const sentence = (r.rhythm === "yearly" || r.rhythm === "year_end") && exp
       ? `Gives every ${RAIL_MONTHS[+exp.slice(5, 7) - 1]}` : (DR.RHYTHM_WORDS[r.rhythm] || DR.RHYTHM_WORDS.none);
-    rhythm = { sentence, expectedNext: exp, late: !!exp && exp < today, source: lifetimeSrc };
+    // PROFILE-2 Part 4: a steady gap between the named bands (every two
+    // months, say) was stored as "none" beside an expected next gift, and the
+    // card read "No pattern yet" over a closeness line that named the gap.
+    // Drift's own reading names it here too, the way routes/profileStatus.js does.
+    let said = sentence;
+    if (r.rhythm === "none" && exp) {
+      const gs = await query(`SELECT LEFT(date,10) AS date, amount::text AS amount FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) <= ?`, [orgId, id, today]);
+      const a = DR.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
+      if (a && a.cadenceDays) said = `Gives ${DR.humanCadence(a.cadenceDays)}`;
+    }
+    rhythm = { sentence: said, expectedNext: exp, late: !!exp && exp < today, source: lifetimeSrc };
   }
 
   // RECURRING: a monthly plan Steward charges, else a schedule in a source.

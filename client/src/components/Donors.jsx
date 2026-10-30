@@ -684,19 +684,20 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   return(
     <SheetDropTarget disabled={isReadOnly} onFile={f=>setDroppedFile(f)} style={{display:"flex",flexDirection:"column",gap:8}}>
-      <PageTitle main="Your" accent="donors."/>
+      {/* PROFILE-2 Part 1: an open profile is the whole page; the list's title and chips sat above it once the profile stopped being a fixed panel. */}
+      {!selected&&<PageTitle main="Your" accent="donors."/>}
       {/* FIX-55: a spreadsheet dropped anywhere on Donors opens the one reader with it */}
       {droppedFile&&<SpreadsheetImport key={droppedFile.name+droppedFile.lastModified} file={droppedFile} onClose={()=>setDroppedFile(null)} onImported={()=>{reloadDonors();setDroppedFile(null);}}/>}
       {/* INT-BUILD-1 Part 6 — moves management: who has not been met. */}
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      {!selected&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" data-testid="filter-no-meeting" aria-pressed={noMeetingOpen} onClick={()=>setNoMeetingOpen(o=>!o)}
           style={{background:noMeetingOpen?T.ink:T.white,color:noMeetingOpen?T.inkInverse:T.ink,border:"1px solid "+(noMeetingOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>No meeting in 90 days</button>
         {/* ENGAGE-1 — the people closest to giving more who have not been asked. */}
         <button type="button" data-testid="filter-warm-not-asked" aria-pressed={warmOpen} onClick={()=>setWarmOpen(o=>!o)}
           style={{background:warmOpen?T.ink:T.white,color:warmOpen?T.inkInverse:T.ink,border:"1px solid "+(warmOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Warm but not asked this year</button>
-      </div>
-      {warmOpen&&<WarmNotAskedPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setWarmOpen(false)}/>}
-      {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}
+      </div>}
+      {!selected&&warmOpen&&<WarmNotAskedPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setWarmOpen(false)}/>}
+      {!selected&&noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}
         initialOwner={nmFilter.owner} initialMin={nmFilter.min} onFilterChange={setNmFilter}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<SpreadsheetImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}

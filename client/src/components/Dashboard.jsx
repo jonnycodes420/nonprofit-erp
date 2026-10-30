@@ -56,7 +56,7 @@ import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
 import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
-import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads } from "./HomeRail";   // HOME-4
+import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn } from "./HomeRail";   // HOME-4, PROFILE-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 import { countLabel, countWords, plural } from "../../../shared/countWords";
 
@@ -2874,7 +2874,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     );
   })();
   // HOME-4: the rail column stretches beside the work; what is in it stays in view (sticky) on a wide screen.
-  const todayRail=<div className="home-rail"><div className="home-rail-inner">{railBody}</div></div>;
+  const todayRail=<HomeRailColumn>{railBody}</HomeRailColumn>;
 
   const impactVisible=!!impact&&((impact.atRiskAmount||0)>0||(impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
