@@ -2100,8 +2100,22 @@ async function runSchemaInit(pool) {
   // with it (COALESCE so a NULL fund is one slot, not infinitely many).
   await pool.query(`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS fund_id TEXT`);
   await pool.query(`ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_org_id_account_id_year_key`).catch(() => {});
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS budgets_account_year_fund
-                      ON budgets (org_id, account_id, year, COALESCE(fund_id, ''))`);
+  // FIX-60: budgets_account_year_fund is superseded by
+  // budgets_account_year_fund_basis, just below, and is no longer built.
+
+  // ── FIX-60 — A BUDGET SAYS WHICH YEAR IT IS ───────────────────────────────
+  // `year` alone could not say whether 2027 meant the calendar year or the
+  // fiscal year ending in 2027. `basis` ('calendar' | 'fiscal') is written by
+  // every new budget. It is NULLABLE and NOTHING is back-filled: no row is
+  // rewritten at deploy. A NULL basis reads as 'calendar', which is what the
+  // page that wrote every old row measured it against (it sent no basis, and
+  // the server's default was the calendar). The one-slot rule gains the basis,
+  // so a fiscal and a calendar budget for the same account can sit side by
+  // side; the new index is built before the old one is dropped.
+  await pool.query(`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS basis TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS budgets_account_year_fund_basis
+                      ON budgets (org_id, account_id, year, COALESCE(fund_id, ''), COALESCE(basis, 'calendar'))`);
+  await pool.query(`DROP INDEX IF EXISTS budgets_account_year_fund`).catch(() => {});
 
   // ── BUILD-88b B.1 — A FUND ANSWERS TO MORE THAN ONE NAME ──────────────────
   // A deposit slip's memo line says "Xenia", "Xenia UMC" or "for Xenia trip";
@@ -9333,9 +9347,11 @@ async function seedData() {
       // one un-chunked async function that aborted the WHOLE REST of the demo
       // seed. These rows are the general, unfunded budget — one per
       // org/account/year with no fund — so COALESCE(fund_id,'') is exactly
-      // right, and matches the upsert in server.js's budget route.
+      // right, and matches the upsert in server.js's budget route. FIX-60:
+      // the surviving index is now budgets_account_year_fund_basis, which adds
+      // COALESCE(basis,'calendar'); these rows carry no basis, so calendar.
       `INSERT INTO budgets (id,org_id,account_id,year,amount)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, '')) DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, ''), COALESCE(basis, 'calendar')) DO NOTHING`,
       b
     );
   }

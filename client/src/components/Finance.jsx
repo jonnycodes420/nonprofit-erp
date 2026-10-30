@@ -10,10 +10,13 @@ import { usePeopleById } from "../lib/people";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
-import { displayDate, displayDateShort, civilYear } from "../../../shared/displayDate";
+import { displayDate, displayDateShort, civilYear, displayMonthDay } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { countLabel } from "../../../shared/countWords.js";
+import { fyLabelFromEnd } from "../../../shared/fiscalPeriod.js";
+import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
+import { orgTodayCivil } from "../lib/orgToday";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
@@ -817,10 +820,15 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [funds, setFunds] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  // FIX-60: what the server says around the rows: the kind of year, its name,
+  // its dates, and lines set on the other kind of year (`?shape=page`).
+  const [budgetMeta, setBudgetMeta] = useState(null);
   const [budgetErr, setBudgetErr] = useState("");
   const [summary, setSummary] = useState(null);
   const [txnYear, setTxnYear] = useState(new Date().getFullYear());
-  const [budgetYear, setBudgetYear] = useState(new Date().getFullYear());
+  // FIX-60: null until the server names this year (a fiscal year is named by
+  // the year it ends in, so the calendar's year would be the wrong default).
+  const [budgetYear, setBudgetYear] = useState(null);
   const [sortCol, setSortCol] = useState("date");
   const [sortDir, setSortDir] = useState(-1);
   const [txnFilter, setTxnFilter] = useState("");
@@ -836,15 +844,22 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // Persisted in localStorage so it survives page reloads
   const [yearMode, setYearMode] = useState(() => localStorage.getItem("steward_fin_yearmode") || "fiscal");
 
+  // FIX-60 — BUDGETS FOLLOW THE PAGE'S YEAR BASIS. On "Fiscal Year" a budget
+  // is for the org's fiscal year; on "Calendar Year" for the calendar one.
+  const budgetsUrl = (byr, ym) => `/finance/budgets?shape=page&basis=${ym === "calendar" ? "calendar" : "fiscal"}${byr ? `&year=${byr}` : ""}`;
+  const takeBudgets = b => {
+    if (Array.isArray(b)) { setBudgets(b); return; }
+    setBudgets(b.rows || []); setBudgetMeta(b); setBudgetYear(b.year);
+  };
   const loadAll = (yr = txnYear, byr = budgetYear, ym = yearMode) => {
     Promise.all([
       apiFetch("/finance/accounts"),
       apiFetch("/finance/funds"),
       apiFetch(`/finance/transactions?year=${yr}`),
-      apiFetch(`/finance/budgets?year=${byr}`),
+      apiFetch(budgetsUrl(byr, ym)),
       apiFetch(`/finance/summary?yearMode=${ym}`),
     ]).then(([a, f, t, b, s]) => {
-      setAccounts(a); setFunds(f); setTransactions(t); setBudgets(b); setSummary(s);
+      setAccounts(a); setFunds(f); setTransactions(t); takeBudgets(b); setSummary(s);
       setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   };
@@ -852,12 +867,13 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   useEffect(() => { loadAll(); }, []);
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
-  const reloadBudgets = (yr) => apiFetch(`/finance/budgets?year=${yr}`).then(setBudgets);
+  const reloadBudgets = (yr, ym = yearMode) => apiFetch(budgetsUrl(yr, ym)).then(takeBudgets);
   const reloadSummary = (ym = yearMode) => apiFetch(`/finance/summary?yearMode=${ym}`).then(setSummary);
   const handleYearModeChange = (v) => {
     localStorage.setItem("steward_fin_yearmode", v);
     setYearMode(v);
     reloadSummary(v); // pass explicitly to avoid stale closure
+    reloadBudgets(null, v); // FIX-60: the budgets' year follows the basis too
   };
 
   // ── Reports & derived views (fund balances, monthly breakdown) ──
@@ -877,7 +893,10 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const finFundBalances = summary?.fundBalances
     || Object.values(_fbMap).map(f => ({ ...f, balance: f.income - f.expense }));
 
-  const monthsElapsed = new Date().getMonth() + 1;
+  // FIX-60: months gone by in the BUDGET's year (four in October of a July
+  // fiscal year, not ten), from the dates the server gave the page.
+  const monthsElapsed = budgetMeta ? budgetMonthsElapsed(budgetMeta.periodStart, budgetMeta.periodEnd, orgTodayCivil()) : new Date().getMonth() + 1;
+  const budgetBasisNow = budgetMeta ? budgetMeta.basis : (yearMode === "calendar" ? "calendar" : "fiscal");
 
   // ── Donor lookup for transactions ──
   // SCALE-2: only the people these transactions name, read by id.
@@ -972,7 +991,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // against, and a local patch would have shown the old comparison.
   const handleBudgetChange = async (accountId, amount, fundId = null) => {
     try {
-      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId, year: budgetYear, amount, fundId: fundId || null }) });
+      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId, year: budgetYear, amount, fundId: fundId || null , basis: budgetBasisNow }) });
       await reloadBudgets(budgetYear);
     } catch(e) { setBudgetErr(errorMessage(e, "That budget could not be saved.")); }
   };
@@ -980,7 +999,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     try {
       // Write the new line first, then remove the one it left: a budget that
       // vanishes between two requests is worse than one that briefly exists twice.
-      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId: row.accountId, year: budgetYear, amount: row.budget, fundId: fundId || null }) });
+      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId: row.accountId, year: budgetYear, amount: row.budget, fundId: fundId || null , basis: budgetBasisNow }) });
       if (row.id) await apiFetch(`/finance/budgets/${row.id}`, { method:"DELETE" });
       await reloadBudgets(budgetYear);
     } catch(e) { setBudgetErr(errorMessage(e, "That budget could not be moved.")); }
@@ -998,11 +1017,15 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // surfaced on the Revenue card caption below so nothing is silently lost.
   const revDeltaCaption = (() => {
     if (!summary) return null;
-    const rev = summary.ytdRevenue || 0, prior = summary.priorRevenue || 0;
+    // FIX-60: against the SAME DAYS last year (the server's samePoint), and
+    // the caption names them: "↓ $1,200 vs Jul 1 to Oct 30 last FY".
+    const sp = summary.samePoint;
+    const rev = summary.ytdRevenue || 0, prior = sp ? (summary.samePointRevenue || 0) : (summary.priorRevenue || 0);
     const delta = rev - prior;
     if (!(prior > 0 && delta !== rev)) return null;
     const lastWord = yearMode === "fiscal" ? "last FY" : "last year";
-    return `${delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(delta))} vs ${lastWord}`;
+    const days = sp ? `${displayMonthDay(sp.from)} to ${displayMonthDay(sp.to)} ` : "";
+    return delta === 0 ? `Level with ${days}${lastWord}` : `${delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(delta))} vs ${days}${lastWord}`;
   })();
 
   if (loading) return (
@@ -1403,16 +1426,25 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       {/* ── Budgets ── */}
       {subtab === "budgets" && <>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-          {/* SWEEP-5: the years were 2023 to 2026, written in by hand, and
-              nothing said a budget year is a calendar year while the page's
-              basis reads fiscal. Three back and one ahead of this year. */}
-          <span style={{ fontSize:13, color:T.ink3 }}>Calendar year:</span>
-          <select value={budgetYear} onChange={e => { const yr = parseInt(e.target.value); setBudgetYear(yr); reloadBudgets(yr); }} style={{ ...inp, width:90, cursor:"pointer" }}>
-            {[...new Set([...Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 3 + i), budgetYear])].sort().map(y => <option key={y} value={y}>{y}</option>)}
+          {/* FIX-60: the picker follows the page's year basis. On Fiscal Year
+              a budget is for the org's fiscal year, named the one way
+              (FY 2026–27); three back and one ahead of this year. */}
+          <span style={{ fontSize:13, color:T.ink3 }}>{budgetBasisNow === "fiscal" ? "Fiscal year:" : "Calendar year:"}</span>
+          <select value={budgetYear || ""} data-testid="budget-year" onChange={e => { const yr = parseInt(e.target.value); setBudgetYear(yr); reloadBudgets(yr); }} style={{ ...inp, width: budgetBasisNow === "fiscal" ? 130 : 90, cursor:"pointer" }}>
+            {budgetYear && [...new Set([...Array.from({ length: 5 }, (_, i) => budgetYear - 3 + i), budgetYear])].sort().map(y =>
+              <option key={y} value={y}>{budgetBasisNow === "fiscal" ? fyLabelFromEnd(y, budgetMeta?.fiscalStartMonth || 7) : y}</option>)}
           </select>
           {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline. A budget can name a fund; leave it on "Whole account" for the whole column.</span>}
         </div>
         {budgetErr && <div role="alert" style={{ fontSize:12.5, color:T.terra700 }}>{budgetErr}</div>}
+        {/* FIX-60: lines set on the other kind of year are not lost, and the
+            page says where they are. A budget set before budgets followed the
+            fiscal year was a calendar budget, and stays one until set again. */}
+        {budgetMeta && budgetMeta.otherBasis && budgetMeta.otherBasis.lines > 0 && (
+          <div data-testid="budget-other-basis" style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55 }}>
+            {countLabel(budgetMeta.otherBasis.lines, "budget line")} {budgetMeta.otherBasis.lines === 1 ? "was" : "were"} set on the {budgetMeta.otherBasis.basis === "calendar" ? "calendar" : "fiscal"} year ({budgetMeta.otherBasis.years.join(", ")}) and {budgetMeta.otherBasis.lines === 1 ? "is" : "are"} kept there; switch the year basis to {budgetMeta.otherBasis.basis === "calendar" ? "Calendar Year" : "Fiscal Year"} at the top to see {budgetMeta.otherBasis.lines === 1 ? "it" : "them"}. A budget set here is for {budgetMeta.yearName}, {displayDate(budgetMeta.periodStart)} to {displayDate(budgetMeta.periodEnd)}.
+          </div>
+        )}
         {/* SWEEP-5: "Actual $0" beside a year of giving reads as a fault. */}
         {summary && (summary.ledgerEmpty || summary.hasUnledgeredGiving) && budgets.length > 0 && (
           <div data-testid="budget-actual-note" style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55 }}>
@@ -1477,8 +1509,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                           <div>{fmtFull(b.actual)}</div>
                           {b.budget > 0 && <div style={{ fontSize:10, color:T.ink3 }}>{pct}% of budget</div>}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?OUT:IN }}>
-                          {b.variance >= 0 ? "+" : ""}{fmtFull(b.variance)}
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(b.variance*100)===0?T.ink3:over?OUT:IN }}>
+                          {budgetVarianceText(b.variance, fmtFull)}
                         </td>
                         <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?OUT:T.ink3 }}>
                           {fmtFull(projected)}
@@ -1499,7 +1531,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     <td/>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
-                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?IN:OUT }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
+                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(totVar*100)===0?T.ink3:totVar>=0?IN:OUT }}>{budgetVarianceText(totVar, fmtFull)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:T.ink3 }}>{fmtFull(monthsElapsed>0?Math.round((totActual/monthsElapsed)*12):totActual)}</td>
                     <td/>
                   </tr>

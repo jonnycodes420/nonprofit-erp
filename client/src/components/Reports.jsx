@@ -571,7 +571,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       empty = d.years.every(y => y.total === 0);
       const g = d.orgGrowthPct;
       narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</strong> ({y.label})</span>)}
-        {g !== null && <>: {g >= 0 ? "up " : "a change of "}<strong><RF f={d.figures?.growth} kind="percent" label="Change on the year before" /></strong> year over year</>}. Each row compares a donor across the three years.</>;
+        {g !== null && <>: {g >= 0 ? "up " : "a change of "}<strong><RF f={d.figures?.growth} kind="percent" label="Change on the year before" /></strong> on the year before</>}.
+        {/* FIX-60: every column is the same span of days, and the page says which. */}
+        {d.span?.sentence && <span data-testid="three-year-span"> {d.span.cut ? "The year is still running, so every year is counted over the same days" : "Every year is counted whole"}: {d.span.sentence}.</span>} Each row compares a donor across the three years.</>;
       const chg = r => r.changePct === null ? <span style={{ color: T.gold600, fontWeight: 700 }}>new</span>
         : <span style={{ color: T.ink, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
       table = <>
@@ -600,21 +602,21 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "annual") {
       empty = d.giftCount === 0;
-      // SWEEP-5: a year still running is "so far", and its change is against
-      // ALL of the year before, said in those words: "down 69%" for four
-      // months against twelve read as a collapse.
-      const running = d.year === (yearMode === "fiscal" ? CUR_FY : CUR_CY);
+      // FIX-60: a year still running is "so far", and its change is against
+      // the SAME days of the year before (the server cuts both, `span`), said
+      // in those words: "down 69%" for four months against twelve read as a
+      // collapse, and was one.
+      const running = d.span ? !!d.span.cut : d.year === (yearMode === "fiscal" ? CUR_FY : CUR_CY);
       narrative = <>In <strong>{d.label}</strong>{running ? " so far" : ""} you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> {plural(d.uniqueDonors, "donor")}
-        {d.growthPct !== null && (running
-          ? <>, <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> against the whole of {d.priorLabel}. The year is still running; the Giving summary compares it with the same point last year</>
-          : <>: {d.growthPct >= 0 ? "up " : "a change of "}<RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> on {d.priorLabel}</>)}.
+        {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up " : "a change of "}<RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> on <RF f={d.figures?.priorTotal} kind="money" label={`${d.priorLabel}, the same days`} /> in {d.priorLabel}</>}
+        {d.span?.sentence && <span data-testid="annual-span"> ({running ? "the same days" : "the whole year"}, {d.span.sentence})</span>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
         {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Total received", <RF f={d.figures?.total} kind="money" label="Total received" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
             ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />], ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />],
-            [`Against all of ${d.priorLabel}`, <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
+            [running ? `Against ${d.priorLabel}, same days` : `Against ${d.priorLabel}`, <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
             ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />], ["Donor retention", <RF f={d.figures?.retentionRate} kind="percent" label="Donor retention" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>

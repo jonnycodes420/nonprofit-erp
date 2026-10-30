@@ -306,10 +306,17 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       const boardDiff = board.answer && (board.answer.parts || []).find(p => p.figure && p.figure.key === "givingDifference");
       const fp = fund && fund.period;
       const fundCmp = fp && (fp.compare || null);
+      // FIX-60: Reports' annual report for this year compares the same days
+      // of the year before (it set four months against twelve).
+      const calYear = /-01-01$/.test(fyStart);
+      const annual = await get(`/reports/annual?yearMode=${calYear ? "calendar" : "fiscal"}&year=${String(board.fiscalYear.end).slice(0, 4)}`).catch(() => null);
+      const annualCmp = annual && annual.span && annual.span.cut && annual.span.priorFrom === w.from && annual.span.priorTo === w.to;
+      if (annual && annual.span && !annualCmp) diffs.push(`vs last year: the annual report compares ${annual.span.priorFrom} to ${annual.span.priorTo}; the Board compares ${w.from} to ${w.to}`);
       agree(`ahead of or behind the same days last year (${w.from} to ${w.to})`, [
         ["the database", thisYear - lastYear],
         ["the Board", boardDiff ? cents(boardDiff.figure.value) : undefined],
         ["Fundraising's Raised tile", fp && fp.priorRaised > 0 && fp.delta !== undefined ? cents(fp.delta) : undefined],
+        ["Reports' annual report", annual && annual.total !== undefined ? cents(annual.total) - cents(annual.priorTotal) : undefined],
       ], money);
       // Home writes whole dollars ("$63,984"), so it is held to the dollar.
       if (door && !seasonal) {
