@@ -76,6 +76,14 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **Never write Postgres's `?` jsonb operator in a query.** db.js turns every `?` into a parameter; use
   `jsonb_exists(col, ?)`. `availability ? ?` was a syntax error on prod for weeks. (FIX-27)
 
+- **The truth check knows units (FIX-60).** `tests/lib/units.js` holds the rules: a figure drawn as money
+  opens a source that adds up money and shows a currency sign, a count never does; a total foots to its rows
+  (money to the cent, a count to its rows); a fee is less than its gift and net is gross less fee.
+  `assertSurfacesAgree` runs them over every report's figures and the bookkeeper's rows (`skip: ["units"]` to
+  leave out), and smoke-walk over every `<Figure>` on every screen (it reads `data-kind`, `data-source-params`
+  and `data-shown`, which Figure.jsx writes for it) and every fee column. Both of SWEEP-5's bugs, planted back,
+  go red.
+
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
   not even to describe the error digest. A squash merge copies every commit message into one, GitHub honours
