@@ -58,6 +58,21 @@ know exactly what is going out.** Every screen, word and test about donor mail s
   once. In send mode any problem (an image without alt text, an unknown field, a blank still in brackets)
   throws `EMAIL_NOT_READY` and the whole send is refused. The footer slot is always emitted and is filled
   with `unsubscribeEmailFooterHtml` for each person. No WebP in email: media photos are stored as JPEG.
+- **Every email is written in its preview (EDITOR-1).** `client/src/components/EmailEditor.jsx` (templates,
+  one-person emails, starters, journey steps' templates) and `CampaignEditor.jsx` (campaigns) sit on
+  StewardEditor. The preview is the server's render with `editable: true` (`renderEmail`, preview mode only):
+  typed fields carry `data-st-edit="<block>.<field>"` (a text block is one region, Enter makes a paragraph) and
+  every field is a chip (`data-st-token`) filled for the person previewed, so typing around it keeps the field;
+  the editor reads chips back as `{{field}}`. "Preview as" names any person of the org (`as`, org-scoped); "+ Field"
+  puts a chip at the caret. A locked block (the tax lines) is never marked and has no Remove. A send never
+  carries any of it. A campaign keeps its own blocks (`campaigns.email_blocks`, written by PUT/POST
+  `emailBlocks`), and an older HTML campaign is converted to blocks when it is opened (`htmlToBlocks`), never in
+  the database. Unsaved blocks preview through `POST /email-preview`.
+- **A campaign says who it can reach in one line that adds up (EDITOR-1).** `segment-preview` answers `audience`:
+  total = can get it + one group per reason, and while Donor mail is off (or the demonstration org, or not
+  onboarded) the people it would reach are one group and `sendable` is 0. "Send to N" names who it would reach
+  and is never live while `sendable` is 0; `blocked` is the sentence beside it. A scheduled time that has gone
+  is refused by the server; the Send it later field starts empty.
 - **Every email in Templates opens in the EMAIL-1 editor (FIX-30).** A one-person email (the five
   `channel:"email"` kinds in shared/brandKit.js) and a campaign starter (shared/emailTemplates.js) open as a
   saved template with `starter_key` `person_<kind>` or `campaign_<key>`, made from the org's current words on

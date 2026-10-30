@@ -1780,6 +1780,14 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
      VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?::date,?,?,?)`,
     [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || (tpl ? tpl.story : ""), imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, req.body.p2pRequiresApproval === true, endsOn, actor(req).id, actor(req).name, tplForm ? JSON.stringify(tplForm) : null]
   );
+  // EDITOR-1 · THERE IS ALWAYS A PHOTO. A new page with no photo of its own
+  // starts with one of Steward's, matched to the org's mission, marked stock
+  // until somebody replaces it. Only here, at creation; never on an old page.
+  if (!imageUrl) {
+    const pic = await require("./stockPhotos").stockPictureForOrg(req.user.orgId, id);
+    if (pic) await run(`UPDATE giving_pages SET image_url = ?, image_meta = ?::jsonb WHERE id = ? AND org_id = ?`,
+      [pic.url, JSON.stringify({ alt: pic.alt, fx: pic.fx, fy: pic.fy, stock: true }), id, req.user.orgId]);
+  }
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);
 }));
@@ -2010,6 +2018,11 @@ app.post("/campaigns/from-template", requireAuth, adminUnlessEmailTemplate, chec
     [pageId, orgId, slug, plan.page.title, goal, plan.page.story, campaignId,
      JSON.stringify(widgets), JSON.stringify(widgets), actor(req).id, actor(req).name,
      JSON.stringify(plan.formConfig)]);
+  // EDITOR-1 · THERE IS ALWAYS A PHOTO: the new page's cover is one of
+  // Steward's, matched to the org's mission, until somebody replaces it.
+  const pagePic = await require("./stockPhotos").stockPictureForOrg(orgId, pageId);
+  if (pagePic) await run(`UPDATE giving_pages SET image_url = ?, image_meta = ?::jsonb WHERE id = ? AND org_id = ?`,
+    [pagePic.url, JSON.stringify({ alt: pagePic.alt, fx: pagePic.fx, fy: pagePic.fy, stock: true }), pageId, orgId]);
 
   // THE PLAN. Dated tasks, unassigned: whoever picks one up owns it, which is
   // how a two-person shop actually divides a fortnight.
@@ -2450,6 +2463,8 @@ app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWrite
   const base = GPE.currentSettings(pg, F, ids.orgFundIds);
   const v = GPE.validateSettings(base, patch, F, ids);
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_page_settings", errors: v.errors });
+  // EDITOR-1: "stock" is believed only of a photo that IS one of Steward's.
+  if (v.settings.imageMeta && v.settings.imageMeta.stock && !(await require("./stockPhotos").isStockUrl(req.user.orgId, v.settings.imageUrl))) delete v.settings.imageMeta.stock;
   await run(`UPDATE giving_pages SET draft_settings = ?, draft_updated_at = NOW(), updated_at = NOW() WHERE id = ? AND org_id = ?`,
     [JSON.stringify(v.settings), pg.id, req.user.orgId]);
   // FIX-41: a drafted cover is a pointer too, and its history says who saved
@@ -6743,7 +6758,9 @@ async function validateWidget(raw, orgId) {
         break;
       case "quote":
         w.text = wStr(raw.text, 500);
-        if (!w.text) return { error: "The quote needs text." };
+        // EDITOR-1: a quote just added from the editor's "+" has no words yet,
+        // and the draft must still save (it is typed in the preview). An empty
+        // quote draws nothing on the page (PortalWidgets), so none is published.
         w.attribution = wStr(raw.attribution, 120);
         break;
       case "staff": {
@@ -6810,6 +6827,19 @@ async function validateWidget(raw, orgId) {
       case "groupsignup":
         w.heading = wStr(raw.heading, 120); w.text = wStr(raw.text, 500);
         break;
+      // EDITOR-1: CAMPAIGN-2's three give-only blocks had no case here, so a
+      // page carrying them (the campaign wizard's, the demo's year-end page)
+      // could not be saved again from the editor: "Unknown widget type."
+      case "recentgifts":
+        w.heading = wStr(raw.heading, 120) || "Recent gifts";
+        w.count = Math.min(20, Math.max(1, Math.round(Number(raw.count) || 8)));
+        w.showAmounts = raw.showAmounts === true;
+        break;
+      case "countdown":
+        w.heading = wStr(raw.heading, 120);
+        break;
+      case "matchchallenge":
+        break;      // no fields: it reads the campaign's own match
       case "mygiving":
         break;      // no fields — renders the signed-in donor's own data,
                     // degrades to a sign-in prompt on a public view

@@ -67,6 +67,12 @@ export const WIDGETS = [
     defaults: { eventId: "" } },
   { key: "givingpage", label: "Giving page card", hint: "One of your giving pages",    surfaces: ["email"], full: true,
     defaults: { givingPageId: "" } },
+  // EDITOR-1: a line between parts, and the person's own gift (amount, date and
+  // fund, filled for each person; nothing is shown to somebody with no gift).
+  { key: "divider",    label: "Divider",          hint: "A thin line between parts",  surfaces: ["email"], full: true,
+    defaults: {} },
+  { key: "giftsummary", label: "Gift summary",    hint: "Their gift: amount, date and fund", surfaces: ["email"], full: true,
+    defaults: { heading: "Your gift" } },
   { key: "signature",  label: "Signature",        hint: "A name, a title and a photo", surfaces: ["email"], full: true,
     defaults: { name: "", title: "", photo: null } },
   { key: "footer",     label: "Footer",           hint: "Your address and unsubscribe (always included)", surfaces: ["email"], full: true,

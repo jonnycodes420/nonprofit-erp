@@ -27,6 +27,7 @@ import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
 import MembershipsPage from "./MembershipsPage";
 import Picture from "../components/Picture";
+import InlineText, { INLINE_CSS } from "../components/InlineText";
 import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 // GIVE-3 — the page's layout, trust panel, other ways to give and impact lines,
 // said once and read by this page AND the editor's preview of it.
@@ -1646,15 +1647,20 @@ export default function Donate({ preview = null }) {
         <PortalBanner url={th.headerImage} focal={th.headerFocal} crop={th.headerCrop} bandColor={th.primary} ratio={PORTAL_HEADER_RATIO} scrim={false} priority alt="" />
       </div>
     ) : null;
+    // EDITOR-1: in the editor the photo carries its tools (replace, focus),
+    // and the headline and story are typed where they show.
+    const tools = preview && preview.photoTools ? preview.photoTools(!!cover) : null;
     const photo = cover ? (
-      <div className="g3-photo" data-edit="photo"><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" /></div>
-    ) : headerBanner ? null : (
-      <div className="g3-fill" data-edit="photo">{brandLogo}</div>
+      <div className="g3-photo" data-edit="photo" style={tools ? { position: "relative" } : undefined}><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" />{tools}</div>
+    ) : headerBanner && !tools ? null : (
+      <div className="g3-fill" data-edit="photo" style={tools ? { position: "relative" } : undefined}>{brandLogo}{tools}</div>
     );
+    const onText = preview && preview.onText;
     return (
       <div className={"g3 g3-" + layout} data-testid="giving-page" data-layout={layout} style={vars} onClickCapture={pick}>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
         <style>{G3_CSS}</style>
+        {onText && <style data-editor-only="">{INLINE_CSS}</style>}
         {signupModal}
         {layout === "simple" && !headerBanner ? (
           <div className="g3-band" data-edit="photo">{brandLogo || <span className="g3-bar-name" style={{ color: th.primaryFg }}>{th.displayName || org.name}</span>}</div>
@@ -1670,7 +1676,9 @@ export default function Donate({ preview = null }) {
             <div className="g3-top">
               {layout !== "simple" && photo}
               <div className="g3-org">{org.name}</div>
-              <h1 className="g3-h1" data-edit="headline">{headline}</h1>
+              {onText
+                ? <InlineText as="h1" className="g3-h1" field="headline" testid="inline-headline" value={headline} placeholder="Your headline" label="Headline" onChange={t => onText("headline", t)} />
+                : <h1 className="g3-h1" data-edit="headline">{headline}</h1>}
             </div>
             <div className="g3-side">
               <div className="g3-formcard" data-edit="amounts">{formNode}</div>
@@ -1692,7 +1700,11 @@ export default function Donate({ preview = null }) {
             </div>
             {layout !== "simple" && (
               <div className="g3-body">
-                {paras.length > 0 && (
+                {onText && !hasRichtext && (
+                  <InlineText as="div" className="g3-story" field="story" testid="inline-story" multiline value={givingPage.story || ""}
+                    placeholder="What this gift makes possible, in your own words." label="The story" onChange={t => onText("story", t)} />
+                )}
+                {!onText && paras.length > 0 && (
                   <div className="g3-story" data-edit="story">
                     {shownParas.map((t, i) => <p key={i}>{t}</p>)}
                     {paras.length > READ_MORE_AFTER && (
@@ -1704,9 +1716,10 @@ export default function Donate({ preview = null }) {
                 )}
                 {bodyWidgets.length > 0 && (
                   <div className="pt-page" data-edit="blocks" style={{ width: "100%", marginTop: paras.length ? 18 : 0 }}>
-                    <PageRenderer page={{ widgets: bodyWidgets }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
+                    <PageRenderer page={{ widgets: bodyWidgets }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} decorate={preview ? preview.decorate : undefined} />
                   </div>
                 )}
+                {preview && preview.afterBlocks}
                 {impacts.length > 0 && (
                   <ul className="g3-impact" data-testid="impact-list" data-edit="amounts">
                     {impacts.map(([c, line]) => <li key={c}><b>{fmtAmt(c / 100)}</b> {line}</li>)}
