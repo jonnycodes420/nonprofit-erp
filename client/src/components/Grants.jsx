@@ -463,7 +463,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     setSelected(null);
   };
 
-  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+  return <div className="no-caps" style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected ? (
     <GrantProfile grant={selected} onClose={()=>{setSelected(null);setBoardKey(k=>k+1);}} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org} isReadOnly={isReadOnly} onOpenFunder={openFunder}/>
     ) : (<>
@@ -480,7 +480,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     {subTab==="findgrants"&&aiOn&&<FindGrants data={data}/>}
     {subTab==="funders"&&<GrantFunders isReadOnly={isReadOnly} onOpenGrant={openGrant} openFunderId={openFunderId}/>}
     {subTab==="library"&&<GrantLibrary isReadOnly={isReadOnly}/>}
-    {subTab==="reports"&&<GrantOverview onOpenGrant={openGrant}/>}
+    {subTab==="reports"&&<GrantOverview onOpenGrant={openGrant} onGoPipeline={()=>setSubTab("pipeline")}/>}
     {subTab==="deadlines"&&<>{openMiss&&<div role="status" style={{fontSize:13,color:T.ink3}}>{openMiss}</div>}<DeadlinesView isReadOnly={isReadOnly} isAdmin={isAdmin} onOpenGrant={openGrant}/></>}
     {subTab==="pipeline"&&<>
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>

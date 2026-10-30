@@ -391,6 +391,11 @@ export function GlobalStyles() {
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
+    /* SWEEP-5 · NO ALL-CAPS LABELS on Finance, Reports and Grants. The
+       eyebrows and table heads set text-transform inline, so the screens that
+       have been swept say their labels in sentence case from one rule, the
+       way they are written, and nobody edits forty inline styles by hand. */
+    .no-caps [style*="text-transform: uppercase"],.no-caps th{text-transform:none!important;letter-spacing:.01em!important;}
     /* ── FIX-8 Part A · THE STRAY BRASS BAR WAS A SCROLLBAR ────────────────
        The thumb was painted gold500, the brand's brass, so on a Mac set to
        "Show scroll bars: Always" every region that overflowed by a rounding

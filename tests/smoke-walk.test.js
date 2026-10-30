@@ -649,6 +649,157 @@ async function profileLayout(pw, auth) {
   await br.close();
 }
 
+// SWEEP-5 · FINANCE, REPORTS AND GRANTS, EVERY PART, ON TWO ORGS. Every
+// Finance section and part (and the year basis both ways), every report in
+// the Reports rail and every Grants tab, at 1440, on an org with imported
+// history and no Stripe and on an empty org, and each must say nothing the
+// quality bar names mechanically: "Not set", "undefined", "NaN", "null", a
+// hole where a word was ("gave in ."), an ALL-CAPS label, a console error, a
+// 4xx or 5xx from the API. Then the three things the walk found wrong:
+//   · with imported history and no ledger, Finance says the ledger is empty
+//     in one card and draws no row of ledger $0s (it read as broken);
+//   · Top donors' total is the dollars its rows gave, never the head count
+//     ("Your top 50 donors gave $50");
+//   · the bookkeeper's Processing fee column is the fee, not the gross.
+// HOW IT GOES RED: on main (1e383a1) "Not set" is on LYBUNT, Retention, the
+// Board and Grants · Reports; Finance's labels are ALL-CAPS; the ledger-empty
+// card is missing and the four $0 tiles are drawn; Top donors says $5 for
+// five people. Proven by planting "Not set" back in Figure.jsx: §sweep5 red.
+async function moneyScreensSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  const make = async (org, people) => {
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Sweep5 " + org.slice(11), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    // Imported history: gifts this month, last fiscal year and two years back,
+    // a check with a processing fee, people without an email; no ledger rows.
+    const today = require("./clock").civilDay(), ym = today.slice(0, 7);   // the org's New York day, through the test clock
+    for (let i = 1; i <= people; i++) {
+      await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`,
+        [`d_${org}_${i}`, org, `Walk Person ${i}`, i % 3 ? null : `walk${i}@example.org`]);
+      const dates = [`${ym}-01`, `${Number(today.slice(0, 4)) - 1}-0${1 + (i % 6)}-15`, `${Number(today.slice(0, 4)) - 2}-0${1 + (i % 6)}-20`];
+      for (const [k, dt] of dates.entries())
+        await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,processor_fee_amount,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'Check',$6,'system:test','test')`,
+          [`g_${org}_${i}_${k}`, org, `d_${org}_${i}`, 100 * i + k, dt, k === 0 && i === 1 ? 4.5 : 0]);
+    }
+    // Last month: one gift that does not say how the money arrived.
+    if (people) {
+      const lm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 10)).toISOString().slice(0, 10);
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name) VALUES ($1,$2,$3,250,$4,'Needs you','system:test','test')`,
+        [`g_${org}_lm`, org, `d_${org}_1`, lm]);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["imported history, no ledger", await make("org_sweep5_hist", 8)], ["empty", await make("org_sweep5_none", 0)]];
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"],
+    [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"]];
+  // Month close: a gift with no payment method may be a check, so "Every
+  // check is on a deposit" is not ticked while the bookkeeper's file for the
+  // same month says that gift is not matched to a deposit. Red on main.
+  {
+    const tok = cases[0][1].token;
+    const close = (await api("GET", "/finance/month-close", tok)).body || {};
+    const banked = (close.items || []).find(i => i.key === "banked") || {};
+    const from = close.from || (close.month && close.month.from), to = close.to || (close.month && close.month.to);
+    const bk = (await api("GET", `/reports/bookkeeper?from=${from}&to=${to}`, tok)).body || {};
+    const unmatched = ((bk.issues || []).find(i => i.key === "no_deposit") || {}).count || 0;
+    ok("§sweep5 Month close does not tick \"every check is on a deposit\" beside gifts the bookkeeper's file says are not on one",
+       unmatched > 0 && banked.done === false && banked.count === unmatched, { banked, unmatched, from, to });
+  }
+  for (const [what, a] of cases) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    const settle = async () => {
+      await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+      await page.waitForFunction(() => !/Loading|Running |Adding up|Opening the rows/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
+    };
+    const check = async screen => {
+      const r = await page.evaluate(SAYS_SRC => {
+        const m = document.querySelector(".app-content") || document.body;
+        const says = SAYS_SRC.map(([src, name]) => [new RegExp(src), name]);
+        const bad = [];
+        for (const line of (m.innerText || "").split("\n")) for (const [re, name] of says) if (re.test(line)) bad.push(`${name}: ${line.trim().slice(0, 100)}`);
+        const caps = [];
+        for (const el of m.querySelectorAll("*")) {
+          if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+          if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+        }
+        return { bad: bad.slice(0, 4), caps: caps.slice(0, 4), text: (m.innerText || "").trim().length };
+      }, SAYS.map(([re, n]) => [re.source, n]));
+      ok(`§sweep5 ${what} · ${screen}: draws, says nothing the bar names, no ALL-CAPS label, nothing on fire`,
+         r.text > 0 && !r.bad.length && !r.caps.length && !trouble.length, { bad: r.bad, caps: r.caps, trouble: trouble.slice(0, 3) });
+      trouble = [];
+    };
+    // Finance: every section and part, and the year basis both ways
+    await page.goto(`${APP}/app/finance`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector("[data-fin-section]", { timeout: 20000 }).catch(() => {});
+    await settle();
+    for (const sec of await page.$$eval("[data-fin-section]", bs => bs.map(b => b.getAttribute("data-fin-section")))) {
+      await page.click(`[data-fin-section="${sec}"]`); await settle();
+      const parts = await page.$$eval("[data-fin-part]", bs => bs.map(b => b.getAttribute("data-fin-part")));
+      if (!parts.length) await check(`Finance › ${sec}`);
+      for (const p of parts) { await page.click(`[data-fin-part="${p}"]`); await settle(); await check(`Finance › ${sec} › ${p}`); }
+    }
+    await page.click(`[data-fin-section="overview"]`); await settle();
+    for (const basis of ["Calendar Year", "Fiscal Year"]) {
+      await page.locator("button", { hasText: basis }).first().click(); await settle();
+      await check(`Finance › This month on the ${basis.toLowerCase()}`);
+    }
+    if (what !== "empty") {
+      const fin = await page.evaluate(() => ({ empty: !!document.querySelector('[data-testid="fin-ledger-empty"]'),
+        tiles: [...document.querySelectorAll(".app-content div")].filter(e => !e.children.length && /^(Cash on hand|FY revenue|FY expenses|Net surplus|Restricted balance|Unrestricted balance)$/i.test(e.textContent.trim())).length,
+        giving: !!document.querySelector('[data-testid="fin-giving-head"]') && !!document.querySelector('[data-testid="fin-ledger-head"]') }));
+      ok("§sweep5 imported history and no ledger: Finance says the ledger is empty in one card, under its own heading, with no ledger $0 tiles", fin.empty && fin.tiles === 0 && fin.giving, fin);
+    }
+    // Reports: every report in the rail
+    await page.goto(`${APP}/app/reports`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector('[data-testid="reports-rail"] [data-report-id]', { timeout: 20000 }).catch(() => {});
+    await settle();
+    await check("Reports");
+    for (const id of await page.$$eval('[data-testid="reports-rail"] [data-report-id]', bs => [...new Set(bs.map(b => b.getAttribute("data-report-id")))])) {
+      await page.locator(`[data-testid="reports-rail"] [data-report-id="${id}"]`).first().click(); await settle();
+      await check(`Reports › ${id}`);
+      if (what !== "empty" && id === "top-donors") {
+        const say = await page.locator('[data-testid="report-table"]').first().evaluate(t => {
+          const cells = [...t.querySelectorAll("tbody tr")].map(tr => Number((tr.children[2] || {}).textContent.replace(/[$,]/g, "")) || 0);
+          return { rows: Math.round(cells.reduce((a, b) => a + b, 0) * 100), narrative: (document.querySelector(".app-content").innerText.match(/donors gave \$([\d,.]+)/) || [])[1] };
+        }).catch(e => ({ error: e.message }));
+        ok("§sweep5 Top donors says the dollars its rows gave, not how many people", say.narrative && Math.round(Number(say.narrative.replace(/,/g, "")) * 100) === say.rows, say);
+      }
+      if (what !== "empty" && id === "bookkeeper") {
+        await page.locator("button", { hasText: /^This CY/ }).first().click().catch(() => {}); await settle();
+        const fee = await page.evaluate(() => {
+          const t = document.querySelector('[data-testid="report-table"]'); if (!t) return null;
+          const heads = [...t.querySelectorAll("th")].map(h => h.textContent.trim().toLowerCase());
+          const fi = heads.findIndex(h => h.startsWith("processing fee")), ai = heads.findIndex(h => h.startsWith("amount"));
+          return [...t.querySelectorAll("tbody tr")].map(tr => [tr.children[ai] && tr.children[ai].textContent.trim(), tr.children[fi] && tr.children[fi].textContent.trim()]);
+        });
+        ok("§sweep5 the bookkeeper's Processing fee column is the fee ($4.50 on one gift, $0 on the rest), not the gross",
+           !!fee && fee.some(([, f]) => f === "$4.50") && fee.filter(([, f]) => f !== "$4.50").every(([, f]) => f === "$0"), (fee || []).slice(0, 4));
+      }
+    }
+    // Grants: every tab
+    await page.goto(`${APP}/app/grants`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await settle();
+    for (const t of await page.$$eval(".app-content [role=tab]", bs => bs.map(b => b.innerText.trim()).filter(Boolean))) {
+      await page.locator(".app-content [role=tab]", { hasText: t }).first().click(); await settle();
+      await check(`Grants › ${t.split("\n")[0]}`);
+    }
+    await ctx.close();
+  }
+}
+
 (async () => {
   console.log("smoke-walk");
   const login = await api("POST", "/auth/login", null, DEMO);
@@ -1094,6 +1245,7 @@ async function profileLayout(pw, auth) {
   await publicPagesUnderTheCsp(browser);
   await everyPageScrolls(PW_ALL, auth);
   await profileLayout(PW_ALL, auth);
+  await moneyScreensSayNothingWrong(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg

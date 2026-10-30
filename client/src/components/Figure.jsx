@@ -98,7 +98,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     );
   }
 
-  const text = isBlank ? "Not set"
+  const text = isBlank ? "None yet"   // SWEEP-5: a blank figure says so in words; its reason stays under it
     : kind === "money" ? (whole ? fmtTotal(shown) : fmtFull(shown))   // FUNDRAISING-2: `whole` drops cents on a big total
     : kind === "percent" ? `${shown}%`
     : Number(shown).toLocaleString("en-US") + suffix;
