@@ -4111,11 +4111,15 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
     await one("banked", "Every check is on a deposit",
       `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
-          AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash')
+          -- SWEEP-5: a gift that does not say how the money arrived may be a
+          -- check, so it cannot be ticked off as banked. The tick said "every
+          -- check is on a deposit" three lines above the bookkeeper's file
+          -- saying the same gifts were not matched to one.
+          AND lower(btrim(COALESCE(g.payment_method,''))) IN ('check','cheque','cash','','needs you','unknown')
           AND ${ON_NO_DEPOSIT}`,
       [orgId, from, to],
       n => n === 0,
-      n => n ? `${n} ${n === 1 ? "check or cash gift is" : "check and cash gifts are"} not on a deposit slip.`
+      n => n ? `${n} ${n === 1 ? "gift is" : "gifts are"} not on a deposit slip: checks, cash, or gifts that don't say how the money arrived.`
              : "Every check and cash gift this month is on a deposit."),
     // A RECEIPT IS A ROW IN `receipts`, not a column on the gift. Writing
     // this against `gifts.receipt_number` would have compiled and counted
@@ -4613,6 +4617,9 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     })),
     giftHistoryTotal, giftHistoryCount, ledgerGiftTotal,
     unledgeredGiving, hasUnledgeredGiving: unledgeredGiving > 1,
+    // SWEEP-5: nothing has ever posted. Overview then says so in one card
+    // instead of drawing the ledger's figures as a row of zeros.
+    ledgerEmpty: allRows.length === 0,
   });
 }));
 

@@ -251,6 +251,17 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   cancelling on either side (Steward or the synced calendar) goes through `applyMeeting` / `revertMeeting`.
   `meeting_effects` is the receipt and is in the merge's MERGE_REFS.
 
+- **A report names a fiscal year one way: FY 2026–27 (SWEEP-5).** Server labels go through
+  `reportYearLabel` (routes/crm.js), client labels through `fyLabelFromEnd`; both read
+  `shared/fiscalPeriod.js`. Never `FY${year}`.
+- **A blank figure reads "None yet" and keeps its reason under it; a blank cell says what is missing
+  ("No email", "Nobody", "No date"). "Not set" never reaches a report (SWEEP-5).**
+- **A source that takes `measure` honours it.** `givers` with `measure: "sum"` is dollars; a figure that
+  foots can still be the wrong measure, so a money figure is checked against its rows' dollars
+  (reports4-foot §sweep5).
+- **Reports' all-time total is the gifts source from 1900-01-01 to today**, the window Atlas's "ever"
+  uses (`shared/askCatalog.js` all_time), on Top donors · Lifetime (SWEEP-5).
+
 ## Gotchas
 - **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
   figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)
