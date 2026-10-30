@@ -26,7 +26,9 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:donors",
     name: "All donors",
-    description: "Everyone who has given, and nobody who hasn't.",
+    // SWEEP-3: every count here is people with an email address, and a donor
+    // who has pledged and not paid yet is a donor (it said "everyone who has given").
+    description: "Every donor with an email address, whether they have given or pledged. People who only volunteer or work here are not in it.",
     mode: "donors",
     kind: "builtin",
     tone: "green",
@@ -34,7 +36,7 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:volunteers",
     name: "Volunteers",
-    description: "People who give time. Invisible to every number that means money.",
+    description: "People who give time, with an email address. Invisible to every number that means money.",
     mode: "volunteers",
     kind: "builtin",
     tone: "gold",
@@ -42,7 +44,7 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:staff_board",
     name: "Staff and board",
-    description: "The people inside the organization.",
+    description: "The people inside the organization, with an email address.",
     mode: "staff_board",
     kind: "builtin",
     tone: "greenDk",
@@ -55,7 +57,7 @@ export const BUILT_IN_AUDIENCES = [
     description: "Every person on file who can be reached. Crosses every type.",
     mode: "everyone",
     kind: "builtin",
-    tone: "terracotta",
+    tone: "ink",
   },
 ];
 

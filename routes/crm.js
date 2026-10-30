@@ -193,8 +193,17 @@ app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
   // PARITY-1 E — which starters a person here has already made their own.
   const reviewedRows = await query("SELECT starter_key FROM email_starter_reviews WHERE org_id=?", [orgId]).catch(() => []);
   const reviewed = new Set(reviewedRows.map(r => r.starter_key));
+  // SWEEP-3: a subject on a template card is filled with one of her donors
+  // (the newest giver, as the editor's preview is), never the sample "Margaret".
+  const [giver] = await query(`SELECT d.name, d.total_giving, g.amount FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+                                WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.name,'') <> ''
+                                ORDER BY g.date DESC NULLS LAST, g.id LIMIT 1`, [orgId]).catch(() => []);
+  const GR = await import("../shared/greeting.js");
+  const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
   res.json({
     orgName: dfName,
+    sampleDonor: giver ? { name: giver.name, firstName: GR.firstNames(giver) || String(giver.name).split(/\s+/)[0],
+      giftAmount: money(giver.amount), totalGiving: money(giver.total_giving) } : null,
     // The org's own colours and logo, so the gallery is THEIR email and not a
     // stock one with their name pasted in.
     brand: theme ? { band: theme.band, bandFg: theme.bandFg, logo: theme.logoDataUri || theme.logoAbsUrl || null, displayName: theme.displayName } : null,
@@ -251,13 +260,17 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     : PERSON_SEGMENTS.has(seg.mode) ? "people"
     : t("giver", 2);
   const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
+  const [firstGift] = donors[0] ? await query("SELECT amount FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC NULLS LAST LIMIT 1", [donors[0].id, req.user.orgId]) : [];
   res.json({
     count: donors.length,
     names: donors.slice(0, 8).map(d => ({ id: d.id, name: displayNameCase(d.name || ""), email: d.email })),
     sentence: T.segmentSentence(donors.length, names, noun),
     // The first recipient is whose name the preview shows, so what she reads on
     // the right of the screen is the email the first person will get.
-    first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+    // SWEEP-3: with the gift and total the send fills (legacyCampaignBody).
+    first: donors[0] ? { id: donors[0].id, name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret",
+      ...(firstGift ? { giftAmount: `$${Number(firstGift.amount).toLocaleString()}` } : {}),
+      ...(Number(donors[0].total_giving) > 0 ? { totalGiving: `$${Number(donors[0].total_giving).toLocaleString()}` } : {}) } : null,
     // Who the segment holds and this send will not reach, by reason, with the
     // first names of each so "3 left out" opens onto people, not a number.
     leftOutCount: aud.leftOutCount,
@@ -22402,7 +22415,8 @@ async function audienceRoster(orgId) {
 
   // FIX-49 decision 7: "Major" is the Major giving level, resolved once.
   const { majorIds } = await resolveSegmentSpec({ mode: "major" }, orgId);
-  const segOf = sg => (sg && sg.mode === "major" ? { ...sg, majorIds } : sg);
+  const { lapsedIds } = await resolveSegmentSpec({ mode: "lapsed" }, orgId);
+  const segOf = sg => (sg && sg.mode === "major" ? { ...sg, majorIds } : sg && sg.mode === "lapsed" ? { ...sg, lapsedIds } : sg);
   const builtins = A.BUILT_IN_AUDIENCES.map(a => ({
     id: a.id, name: a.name, description: a.description, kind: "builtin", tone: a.tone,
     mode: a.mode,

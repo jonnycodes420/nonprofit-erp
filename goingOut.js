@@ -165,9 +165,11 @@ const SAMPLES = {
   journey_steps: ["A note from {org}", "The words of each step are the template you picked for it in the journey."],
   campaign: ["Your campaign's subject", "The words are the campaign you wrote."],
 };
-function sampleFor(key) {
+// SWEEP-3: greeted as one of the org's own donors when it has one, never "Sam".
+function sampleFor(key, firstName = "") {
   const [subject, body] = SAMPLES[key] || ["A note from {org}", ""];
-  return { subject, html: `<div style="padding:22px;font-family:Helvetica,Arial,sans-serif;color:#0f1a12"><p>Hi Sam,</p><p>${body}</p><p>With gratitude,<br/>{org}</p></div>` };
+  const hi = String(firstName || "").replace(/[<>&"]/g, "").trim() || "there";
+  return { subject, html: `<div style="padding:22px;font-family:Helvetica,Arial,sans-serif;color:#0f1a12"><p>Hi ${hi},</p><p>${body}</p><p>With gratitude,<br/>{org}</p></div>` };
 }
 
 module.exports = { setJourneySkip, nextDays, sentRows, heldRows, goingOut, sampleFor, plannedEmails, NOT_AHEAD };

@@ -26,7 +26,7 @@ export const PALETTE_HEX = PALETTE.map(p => p.hex);
 export const isPaletteColour = c => PALETTE_HEX.includes(String(c || "").toLowerCase());
 
 export const DEFAULT_TAX_LANGUAGE = (legalName) =>
-  `${legalName || "This organization"} is a tax-exempt organization. No goods or services were provided in exchange for your gift unless this receipt says so. Please keep this for your tax records.`;
+  `${legalName || "This organization"} is a tax-exempt organization. No goods or services were provided in exchange for your giving unless it says so here. Please keep this for your tax records.`;
 
 // ── MERGE FIELDS ────────────────────────────────────────────────────────────
 // Each is filled from the donor's own record. A template that uses a field this
