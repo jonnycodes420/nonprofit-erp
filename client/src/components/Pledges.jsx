@@ -29,7 +29,7 @@ export function PledgesView({ onNavigate }) {
     ? <button onClick={() => onNavigate && onNavigate("events", { eventId: m.id })} style={linkBtn}>{m.name}</button>
     : <span>{m.name}</span>;
   return (
-    <div data-testid="pledges-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="no-caps" data-testid="pledges-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         {[["open", "Still to come, all years"], ["dueThisYear", "Due this fiscal year"], ["overdue", "Overdue"]].map(([k, label]) => (
           <Figure key={k} kind="money" whole value={d[k]} label={label} definition={d.definitions[k]} source={d.sources[k]} figureKey={"pledges." + k} />

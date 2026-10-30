@@ -24,7 +24,7 @@ const EVENT_TYPES = {
   site_visit:    { label: "Site Visit",     icon: "•", color: T.greenDk },
   board_meeting: { label: "Board Meeting",  icon: "•", color: T.greenDk },
   volunteer:     { label: "Volunteer Day",  icon: "•", color: T.gold500 },
-  webinar:       { label: "Webinar",        icon: "•", color: T.terracotta },
+  webinar:       { label: "Webinar",        icon: "•", color: T.gold700 },
   other:         { label: "Other",          icon: "•", color: T.ink3 },
 };
 
@@ -35,7 +35,7 @@ const isIn = g => !!(g && (g.in || g.status === "attended" || g.checked_in_at));
 
 const ATT_COLORS = {
   invited: T.ink3, registered: T.greenDk, confirmed: T.greenDk, attended: T.greenDk,
-  no_show: T.terracotta, declined: T.ink3, cancelled: T.ink3,
+  no_show: T.gold700, declined: T.ink3, cancelled: T.ink3,
 };
 const ATT_LABELS = {
   invited: "Invited", registered: "Registered", confirmed: "Confirmed", attended: "Attended",
@@ -43,15 +43,18 @@ const ATT_LABELS = {
 };
 
 function fmtDate(d) {
-  if (!d) return "Not set";
-  return displayDate(d) || "Not set"; // FIX-2 finding 10 — the one formatter
+  if (!d) return "No date";
+  return displayDate(d) || "No date"; // FIX-2 finding 10 — the one formatter
 }
 
-function StatusBadge({ status, small }) {
+function StatusBadge({ status, small, onDark }) {
   const color = STATUS_COLORS[status] || T.ink3;
+  // SWEEP-4: emerald on the dark header was a whisper; on dark it is cream
+  const look = onDark ? { background: "rgba(240,237,230,0.14)", color: T.inkInverse, border: "1px solid rgba(240,237,230,0.4)" }
+    : { background: color + "22", color, border: `1px solid ${color}44` };
   return (
     <span style={{
-      background: color + "22", color, border: `1px solid ${color}44`,
+      ...look,
       borderRadius: 99, padding: small ? "2px 8px" : "3px 10px",
       fontSize: small ? 10 : 11, fontWeight: 700, letterSpacing: "0.04em",
       textTransform: "capitalize",
@@ -83,8 +86,9 @@ function TypeBadge({ type }) {
 
 // ── New Event Form Panel ────────────────────────────────────────────────────
 function NewEventPanel({ onSave, onClose }) {
+  const [err, setErr] = useState("");
   const [form, setForm] = useState({
-    name: "", eventType: "gala", date: new Date().toISOString().slice(0, 10),
+    name: "", eventType: "gala", date: (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`)(new Date()),   // her today, not London's
     endDate: "", location: "", description: "", capacity: "", cost: "",
   });
   const [saving, setSaving] = useState(false);
@@ -107,7 +111,7 @@ function NewEventPanel({ onSave, onClose }) {
         }),
       });
       onSave(evt);
-    } catch(e) { alert(errorMessage(e)); }
+    } catch(e) { setErr(errorMessage(e, "The event was not created.")); }
     setSaving(false);
   };
 
@@ -138,9 +142,12 @@ function NewEventPanel({ onSave, onClose }) {
           <div><label style={LBL}>Est. Cost ($)</label><input type="number" value={form.cost} onChange={set("cost")} placeholder="0" style={INP} /></div>
         </div>
 
+        {/* SWEEP-4: the button said nothing and did nothing without a date */}
+        {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
+        {form.name.trim() && !form.date && <div style={{ fontSize: 12.5, color: T.ink3 }}>Give it a date, then it can be made.</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button onClick={save} disabled={saving || !form.name.trim()} style={{ flex: 1, background: form.name.trim() ? T.greenDk : T.bg3, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
-            {saving ? "Saving…" : "Create Event →"}
+          <button onClick={save} disabled={saving || !form.name.trim() || !form.date} style={{ flex: 1, background: form.name.trim() && form.date ? T.greenDk : T.bg3, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: form.name.trim() && form.date ? "pointer" : "not-allowed" }}>
+            {saving ? "Saving…" : "Create the event"}
           </button>
           <button onClick={onClose} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
         </div>
@@ -245,58 +252,81 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
 }
 
 // ── Follow-up Task Modal ────────────────────────────────────────────────────
-function FollowUpModal({ eventId, eventName, onDone, onClose }) {
-  const [taskTitle, setTaskTitle] = useState(`Follow up with {{event_name}} attendee`);
+// SWEEP-4 · FOLLOW-UP TASKS, COUNTED FIRST. The server says how many it will
+// make (one per person who came, never a second for somebody who already has
+// one open) before anything is made, and the result carries an Undo.
+function FollowUpModal({ eventId, onDone, onClose }) {
+  const [plan, setPlan] = useState(null);
+  const [taskTitle, setTaskTitle] = useState("");
   const [dueDate, setDueDate] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
   const [priority, setPriority] = useState("medium");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
   const INP = { width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.ink, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+  const LBL = { fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 4 };
+  const readPlan = () => apiFetch(`/events/${eventId}/follow-up`).then(p => { setPlan(p); setTaskTitle(t => t || p.title); })
+    .catch(e => setErr(errorMessage(e, "Could not count who came. Try again in a moment.")));
+  useEffect(() => { readPlan(); }, [eventId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
-    setSaving(true);
+    setSaving(true); setErr("");
     try {
-      const r = await apiFetch(`/events/${eventId}/follow-up`, {
-        method: "POST",
-        body: JSON.stringify({ taskTitle, dueDate, priority }),
-      });
-      setResult(r.count);
-    } catch(e) { alert(errorMessage(e)); }
+      setResult(await apiFetch(`/events/${eventId}/follow-up`, { method: "POST", body: JSON.stringify({ taskTitle, dueDate, priority }) }));
+    } catch (e) { setErr(errorMessage(e, "The tasks were not made.")); }
     setSaving(false);
   };
+  const undo = async () => {
+    setSaving(true); setErr("");
+    try {
+      const r = await apiFetch(`/events/${eventId}/follow-up/undo`, { method: "POST", body: JSON.stringify({ batch: result.batch }) });
+      setResult({ count: 0, undone: true, sentence: r.sentence });
+      await readPlan();
+    } catch (e) { setErr(errorMessage(e, "Undo did not go through.")); }
+    setSaving(false);
+  };
+  const n = plan ? plan.toCreate : 0;
 
   return (
     <Modal onClose={onClose} width={440} zIndex={400} blur={false} padding="28px 28px 24px"
-      ariaLabel="Create follow-up tasks">
-      <div>
-        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Create Follow-up Tasks</div>
-        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Creates tasks for all <strong>Attended</strong> donors from {eventName}</div>
+      ariaLabel="Follow-up tasks for who came">
+      <div data-testid="ev-followup">
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 6 }}>Follow-up tasks for who came</div>
+        <div data-testid="ev-followup-plan" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginBottom: 18, minHeight: 20 }}>
+          {plan ? plan.sentence : "Counting who came…"}
+        </div>
+        {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginBottom: 12 }}>{err}</div>}
 
-        {result !== null ? (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: T.greenDk, marginBottom: 8 }}>{result}</div>
-            <div style={{ fontSize: 14, color: T.ink3, marginBottom: 20 }}>tasks created ✓</div>
-            <button onClick={onDone} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Done</button>
+        {result ? (
+          <div style={{ padding: "4px 0" }}>
+            <div role="status" data-testid="ev-followup-result" style={{ fontSize: 14, color: T.ink, lineHeight: 1.55, marginBottom: 16 }}>{result.sentence}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onDone} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Done</button>
+              {result.count > 0 && result.batch && (
+                <button data-testid="ev-followup-undo" onClick={undo} disabled={saving} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                  {saving ? "Undoing…" : "Undo"}
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <>
             <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4 }}>Task Title Template</div>
-                <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} style={INP} />
-                <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>Use {"{{event_name}}"} it will be replaced with "{eventName}"</div>
+                <div style={LBL}>Each task says</div>
+                <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} style={INP} aria-label="What each task says" />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4 }}>Due Date</div>
-                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={INP} />
+                  <div style={LBL}>Due</div>
+                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={INP} aria-label="Due" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4 }}>Priority</div>
-                  <select value={priority} onChange={e => setPriority(e.target.value)} style={{ ...INP, cursor: "pointer" }}>
+                  <div style={LBL}>Priority</div>
+                  <select value={priority} onChange={e => setPriority(e.target.value)} style={{ ...INP, cursor: "pointer" }} aria-label="Priority">
                     <option value="high">High</option>
                     <option value="medium">Medium</option>
                     <option value="low">Low</option>
@@ -305,10 +335,12 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={create} disabled={saving} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                {saving ? "Creating…" : "Create Tasks →"}
+              <button type="button" data-testid="ev-followup-make" onClick={create} disabled={saving || !plan || n === 0}
+                style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700,
+                         cursor: saving || !plan || n === 0 ? "not-allowed" : "pointer", opacity: !plan || n === 0 ? 0.45 : 1 }}>
+                {saving ? "Making them…" : !plan ? "Counting…" : n === 0 ? "Nothing to make" : `Make ${countLabel(n, "task")}`}
               </button>
-              <button onClick={onClose} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button type="button" onClick={onClose} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
             </div>
           </>
         )}
@@ -527,7 +559,11 @@ function EventSeating({ eventId }) {
   if (!data) return null;
   const guests = (data.guests || []).filter(g => g.status !== "cancelled");
   const tableRows = data.tables || [];
-  const chart = seatingChart(data.guests || [], { tables: tableRows });
+  // SWEEP-4: once the day has passed the chart is who came, and seating
+  // anyone still unseated is not the job any more
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+  const past = !!(data.event && data.event.date && String(data.event.date).slice(0, 10) < today);
+  const chart = seatingChart(data.guests || [], { tables: tableRows, cameOnly: past });
   const tags = nameTags(data.guests || []);
   const pickedGuests = guests.filter(g => picked.includes(g.id));
   // A party moves together, so the count the button shows is the count that
@@ -648,7 +684,7 @@ function EventSeating({ eventId }) {
           Lay the room out first. Ten tables of eight is the usual shape for a gala.
         </div>
         <TableAdder testid="ev-tables-adder" />
-        {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginTop: 10 }}>{err}</div>}
+        {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>{err}</div>}
         {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>{msg}</div>}
       </div>
     );
@@ -662,12 +698,12 @@ function EventSeating({ eventId }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <div style={label}>Tables and seating</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={previewEveryone} disabled={busy || !chart.unseated.length}
+          {!past && <button onClick={previewEveryone} disabled={busy || !chart.unseated.length}
             data-testid="ev-seat-everyone"
             title={chart.unseated.length ? undefined : "Everybody already has a seat."}
             style={{ ...btn, opacity: chart.unseated.length ? 1 : 0.45, cursor: chart.unseated.length ? "pointer" : "not-allowed" }}>
             Seat everyone
-          </button>
+          </button>}
           <button onClick={chartWhy ? undefined : () => printSheet("chart")} data-testid="ev-print-chart"
             disabled={!!chartWhy} title={chartWhy || undefined}
             style={{ ...btn, opacity: chartWhy ? 0.45 : 1, cursor: chartWhy ? "not-allowed" : "pointer" }}>Print the chart</button>
@@ -698,7 +734,7 @@ function EventSeating({ eventId }) {
       `}</style>
       {printing && createPortal(<SeatingPrintSheet kind={printing} event={data.event} chart={chart} />, document.body)}
 
-      {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 8 }}>{err}</div>}
+      {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginBottom: 8 }}>{err}</div>}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <span>{msg}</span>
         {undo && <button data-testid="ev-undo" onClick={doUndo} style={{ ...btn, padding: "4px 10px" }}>{undo.label}</button>}
@@ -760,8 +796,8 @@ function EventSeating({ eventId }) {
             ones this screen exists to find. */}
         <div data-testid="ev-unseated" onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, "")}
           style={{ background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96, alignSelf: "start", minWidth: 0 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Not seated · {chart.unseated.length}</div>
-          {chart.unseated.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>Everybody has a seat.</div>}
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>{past ? "Came, no seat recorded" : "Not seated"} · {chart.unseated.length}</div>
+          {chart.unseated.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>{past ? "Everybody who came had a seat." : "Everybody has a seat."}</div>}
           {chart.unseated.map(g => (
             <GuestChip key={g.id} g={g} picked={picked.includes(g.id)}
               onToggle={() => setPicked(p => p.includes(g.id) ? p.filter(x => x !== g.id) : [...p, g.id])}
@@ -1208,7 +1244,7 @@ export function EventKiosk({ eventId }) {
   const big = { border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", minHeight: 48 };
 
   return (
-    <div data-testid="ev-kiosk" id={`ev-kiosk-${eventId}`} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+    <div className="no-caps" data-testid="ev-kiosk" id={`ev-kiosk-${eventId}`} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Check-in</div>
         {/* THE LIVE COUNT, and it opens: tap it for the people behind it. */}
@@ -1320,6 +1356,8 @@ export function EventKiosk({ eventId }) {
 
 // ── Event Detail ────────────────────────────────────────────────────────────
 function EventDetail({ eventId, onClose, onEventUpdated }) {
+  // SWEEP-4: a failed save says so on the page; it was a browser alert()
+  const [actErr, setActErr] = useState("");
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editingStatus, setEditingStatus] = useState(null);
@@ -1361,7 +1399,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         ...ev,
         attendees: ev.attendees.map(a => a.id === attId ? { ...a, ...updated } : a),
       }));
-    } catch(e) { alert(errorMessage(e)); }
+    } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setSavingAtt(null);
   };
 
@@ -1390,7 +1428,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       setDonorSearch("");
       await reload();
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(errorMessage(e)); }
+    } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingDonors(false);
   };
 
@@ -1404,7 +1442,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       setGuestForm({ name: "", email: "" });
       await reload();
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(errorMessage(e)); }
+    } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setAddingGuest(false);
   };
 
@@ -1417,7 +1455,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       setEvent(ev => ({ ...ev, ...updated }));
       setEditing(false);
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(errorMessage(e)); }
+    } catch(e) { setActErr(errorMessage(e, "That did not save.")); }
     setEditSaving(false);
   };
 
@@ -1446,17 +1484,21 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const INP_DARK = { background: T.ink, border: "1px solid "+T.green650, borderRadius: 8, padding: "8px 10px", color: T.inkInverse, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
+    <div className="no-caps" style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
+      {actErr && <div role="alert" data-testid="ev-action-error" onClick={() => setActErr("")}
+        style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: T.white, color: T.ink, border: "1px solid " + T.bg3,
+                 borderRadius: 10, padding: "10px 16px", boxShadow: T.shadow, fontSize: 13, maxWidth: "90vw", cursor: "pointer" }}>{actErr}</div>}
       {/* Header */}
       <div style={{ background: T.ink, borderBottom: "1px solid "+T.bgElevated, padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap" }}>
         <button onClick={onClose} style={{ background: "transparent", border: "1px solid "+T.green650, borderRadius: 8, padding: "6px 12px", color: "rgba(240,237,230,0.7)", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
           ← Back
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* SWEEP-4: the name keeps at least 200px; on a phone the buttons wrap below it */}
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.inkInverse, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2 }}>{event.name}</div>
             <TypeBadge type={event.event_type} />
-            <StatusBadge status={event.status} small />
+            <StatusBadge status={event.status} small onDark />
           </div>
           <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
             {event.date_unknown ? "Date not known: the import's file did not give it" : fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
@@ -1472,7 +1514,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           </button>
           <button onClick={() => { setEditing(true); setEditForm({ name: event.name, eventType: event.event_type, date: event.date, endDate: event.end_date || "", location: event.location || "", description: event.description || "", capacity: event.capacity || "", status: event.status, revenue: event.revenue || 0, cost: event.cost || 0, notes: event.notes || "" }); }}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-            Edit Event
+            Edit event
           </button>
         </div>
       </div>
@@ -1511,9 +1553,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             const maxVal = Math.max(totalRev, cost, 1);
             return (
               <div style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 14, padding: "16px 18px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Revenue vs Cost</div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Received against cost</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[["Revenue", totalRev, T.greenDk], ["Cost", cost, T.terracotta]].map(([lbl, val, col]) => (
+                  {/* SWEEP-4: four colours: cost is brass, never terracotta */}
+                  {[["Received", totalRev, T.greenDk], ["Cost", cost, T.gold500]].map(([lbl, val, col]) => (
                     <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 60, fontSize: 11, color: "rgba(240,237,230,0.7)", textAlign: "right", flexShrink: 0 }}>{lbl}</div>
                       <div style={{ flex: 1, height: 16, background: T.ink, borderRadius: 4, overflow: "hidden" }}>
@@ -1525,8 +1568,9 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                 </div>
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid "+T.green650, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Net</span>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? T.greenDk : T.terracotta, fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? T.inkInverse : T.gold500, fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
                 </div>
+                <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", marginTop: 6, lineHeight: 1.5 }}>Received is the gifts that came in for this event. A pledge counts here once it is paid.</div>
               </div>
             );
           })()}
@@ -1557,7 +1601,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               )}
               {attendedCount > 0 && (
                 <button onClick={() => setShowFollowUp(true)} style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "5px 12px", color: T.gold500, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  ✦ Follow-up Tasks
+                  Follow-up tasks
                 </button>
               )}
             </div>
@@ -1585,8 +1629,8 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                 {event.attendees.map(a => (
                   <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "8px 10px", borderRadius: 8, background: T.bgElevated, border: "1px solid "+T.green650, alignItems: "center" }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: T.inkInverse, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
-                    <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "Not set"}</div>
-                    <div>{a.stage ? <Pill label={a.stage} color={SC[a.stage] || T.ink3} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Not set</span>}</div>
+                    <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "No email"}</div>
+                    <div>{a.stage ? <Pill label={stageName(a.stage)} color={SC[a.stage] || T.ink3} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Not a donor yet</span>}</div>
                     <div>
                       {savingAtt === a.id ? (
                         <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Saving…</span>
@@ -1691,10 +1735,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           {/* Follow-up tasks call-to-action */}
           {attendedCount > 0 && (
             <div style={{ background: T.bgElevated, border: "1px solid "+T.gold500+"44", borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.gold500, marginBottom: 8 }}>Follow-up Tasks</div>
-              <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{countLabel(attendedCount, "donor")} attended, create follow-up tasks for each.</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.gold500, marginBottom: 8 }}>Follow-up tasks</div>
+              <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{countLabel(attendedCount, "person", "people")} came. Make a task to thank each one; you'll see how many before anything is made.</div>
               <button onClick={() => setShowFollowUp(true)} style={{ background: T.gold500+"22", border: "1px solid "+T.gold500+"44", borderRadius: 8, padding: "8px 14px", color: T.gold500, fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-                ✦ Create Follow-up Tasks
+                Plan follow-up tasks
               </button>
             </div>
           )}
@@ -1748,7 +1792,6 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       {showFollowUp && (
         <FollowUpModal
           eventId={eventId}
-          eventName={event.name}
           onDone={() => setShowFollowUp(false)}
           onClose={() => setShowFollowUp(false)}
         />
@@ -1809,10 +1852,14 @@ export function Events({ data, isReadOnly }) {
 
   useEffect(() => { reload(); }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // SWEEP-4: today where she is, not in London: at 8pm in New York an event
+  // tonight moved to Past.
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
   const filtered = events.filter(e => {
-    if (filter === "upcoming") return e.status === "upcoming" || e.date >= today;
-    if (filter === "past") return e.status === "completed" || e.status === "cancelled" || e.date < today;
+    // one or the other, never both: an event left "upcoming" after its day is past
+    const isPast = e.status === "completed" || e.status === "cancelled" || (!!e.date && String(e.date).slice(0, 10) < today);
+    if (filter === "upcoming") return !isPast;
+    if (filter === "past") return isPast;
     return true;
   });
 
@@ -1826,7 +1873,7 @@ export function Events({ data, isReadOnly }) {
   const avgRate = (() => {
     // FIX-59: came of registered, as each event page says it (declined apart)
     const valid = thisYear.filter(e => parseInt(e.registered_count) > 0);
-    if (!valid.length) return 0;
+    if (!valid.length) return null;
     return Math.round(valid.reduce((s, e) => s + (parseInt(e.attendee_count) || 0) / (parseInt(e.registered_count) || 1), 0) / valid.length * 100);
   })();
 
@@ -1841,22 +1888,22 @@ export function Events({ data, isReadOnly }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageTitle main="Your" accent="events." />
 
-      {/* Stats strip */}
-      <div className="events-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-        {[
-          ["Events This Year", thisYear.length, T.ink],
-          ["Total Attendees", totalAttendees, T.greenDk],
-          ["Received at events", fmtTotal(totalRevenue), T.greenDk],
-          ["Avg Attendance Rate", `${avgRate}%`, T.ink],
-        ].map(([label, value, color]) => (
-          <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: "14px 16px", boxShadow: T.shadow }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>{label}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{value}</div>
-          </div>
-        ))}
+      {/* Stats strip. SWEEP-4: each number says what it counts (a sentence on
+          its "?"), in sentence case, and an average with nothing to average is
+          said, not drawn as 0%. */}
+      <div className="events-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
+        <Figure kind="count" value={thisYear.length} label="Events this year" figureKey="events.thisYear"
+          definition={`Every event dated in ${currentYear}, upcoming and past.`} />
+        <Figure kind="count" value={totalAttendees} label="Came, this year" figureKey="events.came"
+          definition={`Each person marked as having come to an event dated in ${currentYear}, once per event.`} />
+        <Figure kind="money" whole value={totalRevenue} label="Received at events" figureKey="events.received"
+          definition={`Every gift received for an event dated in ${currentYear}, the same figure each event's page calls Received. Pledges are not in it.`} />
+        <Figure kind="count" value={avgRate == null ? null : avgRate} suffix="%" label="Came of registered" figureKey="events.rate"
+          blank="No event this year has anybody registered yet." blankShort="No guest lists yet"
+          definition="Of the people registered for each event this year, the share who came, averaged across those events." />
       </div>
 
       {/* Toolbar */}
@@ -1869,7 +1916,7 @@ export function Events({ data, isReadOnly }) {
           ))}
         </div>
         <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
-          + New Event
+          New event
         </button>
       </div>
 
@@ -1878,9 +1925,9 @@ export function Events({ data, isReadOnly }) {
         <div style={{ fontSize: 13, color: T.ink3, padding: "32px 0", textAlign: "center" }}>Loading events…</div>
       ) : filtered.length === 0 ? (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>No {filter === "all" ? "" : filter} events yet</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{filter === "past" ? "No past events yet" : filter === "upcoming" ? "Nothing coming up" : "No events yet"}</div>
           <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Track galas, cultivation dinners, site visits, and more.</div>
-          <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create Your First Event</button>
+          <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create an event</button>
         </div>
       ) : (
         <div className="events-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>

@@ -4,6 +4,9 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ## Rules
 
+- **Every pledge has its installments (SWEEP-4).** `writePledgeInstallments` is the one schedule writer;
+  with no schedule and no cadence it writes one installment of the whole pledge on its due date. A schedule
+  that does not sum is refused before the pledge is written, never swallowed after.
 - **SECURE-1 (2026-10-28): who may delete money.** A gift, pledge or grant is deleted by the
   person who entered it (`created_by`) or by an admin (`mayEditLogged`), never by another staff
   member. An imported gift (a `system:` actor) is an admin's to delete.

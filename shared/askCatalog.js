@@ -650,7 +650,10 @@ export function answerSentence(a, plan, ctx = {}) {
       if (a.donorName) { t(`${a.donorName} gave `); f("value"); t(per === " ever" ? " in all" : per); }
       else { t("You raised "); f("value"); t(sc + per2); }
       break;
-    case "event_revenue": t(`${a.eventName || "The event"} brought in `); f("value"); break;
+    case "event_revenue":
+      t(`${a.eventName || "The event"} has received `); f("value"); t(" in gifts");
+      if (a.alsoFig && a.alsoFig.value) { t(", and "); f("also"); t(" more was pledged there, due within a year of it"); }
+      break;
     case "gift_count": t("You received "); f("value"); t(` ${unit("gift_count", v.value)}${sc}${per2}`); break;
     case "donor_count": f("value"); t(` ${v.value === 1 ? "person" : "people"} gave${sc}${per2}`); break;
     case "new_donor_count": f("value"); t(` ${v.value === 1 ? "person" : "people"} gave for the first time${per}`); break;

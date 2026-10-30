@@ -347,7 +347,7 @@ export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
     } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
   };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="auctions-view">
+    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="auctions-view">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: T.ink3, maxWidth: 560 }}>An online auction with its own page: items people donated, bidding that opens and closes on time, and winners who pay through your own Stripe account.
           <MailTypeSwitches keys={["auction_signin"]} from="auctions" /></div>

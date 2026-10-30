@@ -74,7 +74,9 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
     <div data-testid="event-page-editor" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", color: T.ink }}>
       <div style={head}>The public page</div>
       <div style={{ fontSize: 13, color: T.ink3, marginBottom: 12, lineHeight: 1.55 }}>
-        {published
+        {ev.payments_connected === false
+          ? <span data-testid="event-page-not-open">{published ? <>Its address is <b style={{ color: T.ink, wordBreak: "break-all" }}>{ev.public_page_url}</b>, and it</> : "It"} reads "Not open yet" until payments are connected, the way your giving pages do. Connect them in Settings, then people can buy tickets, sponsor and give from it.</span>
+          : published
           ? <>Live at <a href={ev.public_page_url} target="_blank" rel="noreferrer" data-testid="event-page-link" style={{ color: T.greenDk, fontWeight: 700, wordBreak: "break-all" }}>{ev.public_page_url}</a>. People buy tickets, sponsor, give and add it to their calendar there.</>
           : "Not published yet. Give it an address and people can buy tickets, sponsor and give from it."}
       </div>

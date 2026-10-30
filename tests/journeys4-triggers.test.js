@@ -227,6 +227,8 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   // A guest named on a registration is a person record of their own.
   await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price) VALUES ('evl_j4',$1,'ev_j4_next','ticket','Lunch',40)`, [ORG]);
   await q(`UPDATE events SET public_slug='j4-spring-lunch' WHERE id='ev_j4_next'`);
+  // SWEEP-4: an event page takes registrations only once payments are connected
+  await q(`UPDATE orgs SET stripe_connected=true, stripe_account_id='acct_j4_fixture' WHERE id=$1`, [ORG]);
   const BASE = process.env.BASE || "http://localhost:5601";
   const reg = await fetch(`${BASE}/e/j4-spring-lunch/register`, { method: "POST", redirect: "manual",
     headers: { "content-type": "application/x-www-form-urlencoded" },

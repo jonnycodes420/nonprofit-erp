@@ -167,11 +167,15 @@ function fmtCents(c) {
 // table has a NUMBER OF SEATS, which is the fact the whole screen turns on.
 // Called without tables it behaves exactly as it did, so every existing caller
 // (the print chart, the name tags) is unchanged.
-export function seatingChart(guests = [], { perTable = 10, tables: tableRows = null } = {}) {
+// SWEEP-4: `cameOnly` is a past event's chart. It speaks only of who came:
+// "9 still without a seat" was about guests who never came through the door.
+export const guestCame = g => g.status === "attended" || (!!g.checked_in_at && !["cancelled", "canceled", "declined"].includes(g.status));
+export function seatingChart(guests = [], { perTable = 10, tables: tableRows = null, cameOnly = false } = {}) {
   const byTable = new Map();
   const unseated = [];
   for (const g of guests) {
     if (g.status === "cancelled" || g.status === "declined") continue;   // FIX-59: a guest who said no has no seat
+    if (cameOnly && !guestCame(g)) continue;
     const t = tableLabel(g.table_label ?? g.table);
     if (!t) { unseated.push(g); continue; }
     if (!byTable.has(t)) byTable.set(t, []);
@@ -242,9 +246,9 @@ export function seatingChart(guests = [], { perTable = 10, tables: tableRows = n
     sentence: !tables.length
       ? (unseated.length
           ? `${unseated.length} ${unseated.length === 1 ? "guest" : "guests"} and no tables yet.`
-          : "Nobody has been given a seat yet.")
-      : `${seated} seated across ${tables.length} ${tables.length === 1 ? "table" : "tables"}`
-        + (unseated.length ? `, ${unseated.length} still without a seat.` : "."),
+          : cameOnly ? "Nobody who came had a seat recorded." : "Nobody has been given a seat yet.")
+      : `${seated} ${cameOnly ? "who came sat" : "seated"} across ${tables.length} ${tables.length === 1 ? "table" : "tables"}`
+        + (unseated.length ? (cameOnly ? `, and ${unseated.length} who came had no seat recorded.` : `, ${unseated.length} still without a seat.`) : "."),
     over: tables.filter(t => t.over > 0).map(t => ({ label: t.label, over: t.over })),
   };
 }
