@@ -278,10 +278,11 @@ async function eventList(tok) {
     const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, skip: ["atlas"], plantEvent: (id, b) => {
       if (id !== EV) return b;
       const rr = JSON.parse(JSON.stringify(b.rep)); rr.figures.find(x => x.key === "registered").value += 1;
+      rr.figures.find(x => x.key === "invited").value += 1; rr.figures.find(x => x.key === "gave").value += 1;
       return { rep: rr, kiosk: { ...b.kiosk, checkedIn: b.kiosk.checkedIn - 1 } };
     } });
-    ok("§7 the truth check goes red when the page's Registered or the door's count is off by one",
-       !planted.ok && planted.diffs.some(x => /Marigold's Harvest Supper" registered/.test(x)) && planted.diffs.some(x => /Marigold's Harvest Supper" came/.test(x)), JSON.stringify(planted.diffs).slice(0, 400));
+    ok("§7 the truth check goes red when the page's Registered, Invited or Gave, or the door's count, is off by one",
+       !planted.ok && ["registered", "came", "invited", "gave"].every(k => planted.diffs.some(x => new RegExp(`Marigold's Harvest Supper" ${k}\\b`).test(x))), JSON.stringify(planted.diffs).slice(0, 600));
     let err = null;
     try { await assertSurfacesAgree(ORG, { token: tok, skip: ["atlas"] }); } catch (e) { err = e.message; }
     ok("§7 the surfaces agree on every event's list: database, page, rows, drawer, Events list, the door, Fundraising, Home, Ask", !err, err && err.slice(0, 800));
