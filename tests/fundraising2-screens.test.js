@@ -35,6 +35,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilPlusDays, browserLegOrSkip, BASE } = require("./helpers");
+const { testNow } = require("./clock");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import");
@@ -159,8 +160,133 @@ async function main() {
   ok("§5 once payments are connected it counts as live and its address opens", ov5b.givingPages && ov5b.givingPages.count === 1 && pub2.status === 200 && !pub2.body.notOpen,
      JSON.stringify([ov5b.givingPages && ov5b.givingPages.count, pub2.status]));
 
+  // §7 an event's list adds up (FIX-59)
+  await eventList(tok);
+
   // §6 the browser
   await browserLeg(tok);
+}
+
+// §7 FIX-59 · AN EVENT'S LIST ADDS UP. A real dinner read Registered 552,
+// Came 249, Came didn't give 127, Invited didn't come 303 and "0 of 552
+// checked in" against a file of 443 people of whom 172 came. Built here in
+// SQL, the shape of tests/fixtures/import/event-patterns (its expected.json):
+// 25 came (9 gave, 16 didn't; only 5 have a time at the door, the rest are
+// marked attended as an import marks them, and 5 carry a party size of 2),
+// 6 who said yes and didn't come and 3 invited who never replied, 4 declined (one of whom gave
+// anyway), one cancelled, one deleted person marked attended, a spouse not on
+// the list whose gift counts for their household, and a giver not on the
+// list. 13 are seated at a table of 10.
+async function eventList(tok) {
+  const FIG = JSON.parse(fs.readFileSync(path.join(FX, "event-patterns", "expected.json"), "utf8")).figures;
+  const EV = "ev_fr2_marigold", NAME = "Marigold's Harvest Supper", sys = ["system:test", "fix59 suite"];
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status,created_by,created_by_name) VALUES ($1,$2,$3,'other',$4,'completed',$5,$6)`, [EV, ORG, NAME, civilPlusDays(-20), ...sys]);
+  await q(`INSERT INTO event_tables (id,org_id,event_id,label,seats,sort,created_by,created_by_name) VALUES ('et_fr2_m1',$1,$2,'Table 1',10,1,$3,$4),('et_fr2_m2',$1,$2,'Table 2',10,2,$3,$4)`, [ORG, EV, ...sys]);
+  const person = async (key, extra = "") => {
+    const id = "d_fr2m_" + key;
+    await q(`INSERT INTO donors (id,org_id,name,created_by,created_by_name${extra ? ",household_id" : ""}) VALUES ($1,$2,$3,$4,$5${extra ? ",$6" : ""})`,
+      [id, ORG, "Marigold " + key, ...sys, ...(extra ? [extra] : [])]);
+    return id;
+  };
+  const guest = (id, status, o = {}) => q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,quantity,checked_in_at,table_label,table_id)
+                                           VALUES ($1,$2,$3,$4,(SELECT name FROM donors WHERE id=$4),$5,$6,$7,$8,$9)`,
+    ["ea_" + id, EV, ORG, id, status, o.qty || 1, o.at ? new Date(testNow()).toISOString() : null, o.table ? "Table 2" : null, o.table ? "et_fr2_m2" : null]);
+  // through the one gift path (and the pledge route), then tied to the event as the registration page ties its gift
+  const gift = async (id, amt) => {
+    const r = await api("POST", `/donors/${id}/gifts`, tok, { amount: amt, date: civilPlusDays(-20), paymentMethod: "Check" });
+    await q(`UPDATE gifts SET event_id=$1 WHERE id=$2 AND org_id=$3`, [EV, (r.body && (r.body.id || (r.body.gift && r.body.gift.id))) || "", ORG]);
+  };
+  await q(`INSERT INTO households (id,org_id,name,created_by,created_by_name) VALUES ('hh_fr2m_9',$1,'The Marigold household',$2,$3)`, [ORG, ...sys]);
+  const ids = {};
+  for (let i = 1; i <= 9; i++) ids["cg" + i] = await person("cg" + i, i === 9 ? "hh_fr2m_9" : "");
+  for (let i = 1; i <= 16; i++) ids["cn" + i] = await person("cn" + i);
+  for (const k of ["r1", "r2", "r3", "r4", "r5", "r6", "i1", "i2", "i3", "d1", "d2", "d3", "d4", "x1", "del", "ng"]) ids[k] = await person(k);
+  ids.sp = await person("sp", "hh_fr2m_9");
+  for (let i = 1; i <= 9; i++) await guest(ids["cg" + i], "attended", { table: true });
+  for (let i = 1; i <= 16; i++) await guest(ids["cn" + i], "attended", { at: i <= 5, qty: i >= 6 && i <= 10 ? 2 : 1, table: i <= 4 });
+  for (const k of ["r1", "r2", "r3", "r4", "r5", "r6"]) await guest(ids[k], "registered");
+  for (const k of ["i1", "i2", "i3"]) await guest(ids[k], "invited");
+  for (const k of ["d1", "d2", "d3", "d4"]) await guest(ids[k], "declined");
+  await guest(ids.x1, "cancelled");
+  await guest(ids.del, "attended");
+  await q(`UPDATE donors SET deleted_at=NOW() WHERE id=$1`, [ids.del]);
+  for (let i = 1; i <= 7; i++) await gift(ids["cg" + i], 250);
+  await gift(ids.sp, 300); await gift(ids.d1, 100); await gift(ids.ng, 75);
+  const pl = await api("POST", `/donors/${ids.cg8}/pledges`, tok, { amount: 1500, dueDate: civilPlusDays(60), installments: [{ dueDate: civilPlusDays(60), amount: 1500 }] });
+  await q(`UPDATE pledges SET event_id=$1 WHERE id=$2 AND org_id=$3`, [EV, pl.body && pl.body.id, ORG]);
+  ok("§7 the event's gifts and pledge are recorded", (await q(`SELECT (SELECT COUNT(*) FROM gifts WHERE org_id=$1 AND event_id=$2)::int AS g, (SELECT COUNT(*) FROM pledges WHERE org_id=$1 AND event_id=$2)::int AS p`, [ORG, EV]))
+     .every(r => r.g === 10 && r.p === 1), "");
+
+  const rep = (await api("GET", `/events/${EV}/report`, tok)).body || {};
+  const f = Object.fromEntries((rep.figures || []).map(x => [x.key, x.value]));
+  const st = rep.story || {};
+  ok(`§7 Registered is ${FIG.registered} people who said yes or came (party sizes, the invited who never replied and the declined are not registrations)`,
+     f.registered === FIG.registered && st.registered === FIG.registered, JSON.stringify([f.registered, st.registered]));
+  ok(`§7 Declined is its own figure (${FIG.declined}), with its sentence and a source that opens its rows`,
+     f.declined === FIG.declined && st.declined === FIG.declined && (rep.figures.find(x => x.key === "declined") || {}).sentence && st.sources && st.sources.declined, JSON.stringify(rep.figures && rep.figures.find(x => x.key === "declined")));
+  ok(`§7 Came ${FIG.came} = came, gave ${FIG.cameGave} + came, didn't give ${FIG.cameDidntGive}; gave or pledged ${FIG.gave}`,
+     f.attended === FIG.came && st.attended === FIG.came && f.cameGave === FIG.cameGave && f.cameNoGift === FIG.cameDidntGive && f.cameGave + f.cameNoGift === f.attended && st.gave === FIG.gave,
+     JSON.stringify([f.attended, st.attended, f.cameGave, f.cameNoGift, st.gave]));
+  const lab = k => (rep.figures.find(x => x.key === k) || {}).label;
+  ok(`§7 Said yes, didn't come is Registered less Came (${FIG.saidYesDidntCome}), under that name`,
+     f.invitedNoShow === FIG.saidYesDidntCome && st.invitedDidntCome === FIG.saidYesDidntCome && f.registered === f.attended + f.invitedNoShow && lab("invitedNoShow") === "Said yes, didn't come",
+     JSON.stringify([f.invitedNoShow, st.invitedDidntCome, lab("invitedNoShow")]));
+  ok(`§7 Invited ${FIG.invited} = Registered ${FIG.registered} + Declined ${FIG.declined} + No reply ${FIG.noReply}, each with its sentence and source`,
+     f.invited === FIG.invited && st.invited === FIG.invited && f.noReply === FIG.noReply && st.noReply === FIG.noReply && f.invited === f.registered + f.declined + f.noReply
+     && ["invited", "noReply"].every(k => (rep.figures.find(x => x.key === k) || {}).source && (rep.figures.find(x => x.key === k) || {}).sentence),
+     JSON.stringify([f.invited, st.invited, f.noReply, st.noReply]));
+  ok(`§7 Gave ${FIG.gave} (household-aware) = came, gave ${FIG.cameGave} + gave, didn't come ${FIG.gaveNotCame}`,
+     f.gave === FIG.gave && st.gave === FIG.gave && st.gaveNotCame === FIG.gaveNotCame && st.cameGave + st.gaveNotCame === st.gave, JSON.stringify([f.gave, st.gave, st.cameGave, st.gaveNotCame]));
+  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} people invited: ${FIG.registered} said yes or came, ${FIG.declined} declined, ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
+  const rows = async k => (await api("GET", `/events/${EV}/rows?rows=${k}`, tok)).body || {};
+  const [regRows, decRows] = [await rows("registered"), await rows("declined")];
+  const declinedIds = new Set(["d1", "d2", "d3", "d4"].map(k => ids[k]));
+  ok("§7 Registered's rows are its people, with no one who declined; Declined's rows are the four",
+     regRows.count === FIG.registered && !(regRows.donors || []).some(r => declinedIds.has(r.donor_id)) && decRows.count === FIG.declined && (decRows.donors || []).every(r => declinedIds.has(r.donor_id)),
+     JSON.stringify([regRows.count, decRows.count]));
+  const fr = async list => ((await api("GET", `/figures/event-guests/rows?event=${EV}&list=${list}&page=1&pageSize=50`, tok)).body || {});
+  const [frReg, frDec] = [await fr("registered"), await fr("declined")];
+  ok("§7 the figure drawer opens the same people: registered and declined", Number(frReg.value) === FIG.registered && Number(frDec.value) === FIG.declined, JSON.stringify([frReg.value, frDec.value]));
+  const list = ((await api("GET", "/events", tok)).body || []).find(x => x.id === EV) || {};
+  ok("§7 the Events list's Registered is the event page's", list.registered_count === FIG.registered && list.attendee_count === FIG.came, JSON.stringify([list.registered_count, list.attendee_count]));
+  const door = (await api("GET", `/events/${EV}/kiosk`, tok)).body || {};
+  ok(`§7 the door says ${FIG.checkedIn} of ${FIG.registered} checked in: marked attended counts as in, as Came does`,
+     door.checkedIn === FIG.checkedIn && door.expected === FIG.registered && list.checked_in_count === FIG.checkedIn && new RegExp(`^${FIG.checkedIn} of ${FIG.registered} checked in`).test(door.sentence || ""),
+     JSON.stringify([door.checkedIn, door.expected, list.checked_in_count, door.sentence]));
+  // out at the door is out of Came too
+  const r1 = `ea_${ids.r1}`;
+  await api("POST", `/events/${EV}/check-in`, tok, { attendeeId: r1 });
+  const inRep = (await api("GET", `/events/${EV}/report`, tok)).body || {};
+  await api("POST", `/events/${EV}/check-in`, tok, { attendeeId: r1, undo: true });
+  const outRep = (await api("GET", `/events/${EV}/report`, tok)).body || {};
+  const came = r => ((r.figures || []).find(x => x.key === "attended") || {}).value;
+  ok("§7 a check-in counts in Came, and its undo takes it back out", came(inRep) === FIG.came + 1 && came(outRep) === FIG.came, JSON.stringify([came(inRep), came(outRep)]));
+  const detail = (await api("GET", `/events/${EV}`, tok)).body || {};
+  const given = id => ((detail.attendees || []).find(a => a.donor_id === id) || {}).event_given;
+  ok("§7 the guest table's Gift is each person's gift or pledge to this event", given(ids.cg1) === 250 && given(ids.cg8) === 1500 && given(ids.d1) === 100 && given(ids.cn1) === 0
+     && (detail.attendees || []).reduce((n, a) => n + cents(a.event_given), 0) === cents(250 * 7 + 1500 + 100), JSON.stringify([given(ids.cg1), given(ids.cg8), given(ids.d1), given(ids.cn1)]));
+  const S = await import("../shared/eventShape.js");
+  const gl = (await api("GET", `/events/${EV}/guests`, tok)).body || {};
+  const t2 = (S.seatingChart(gl.guests || [], { tables: gl.tables || [] }).tables || []).find(t => t.label === "Table 2") || {};
+  ok("§7 a table seated over its size says how many over, in words", t2.count === 13 && t2.over === 3 && /3 over/.test(t2.sentence || "") && /3 over/.test(t2.fill || ""), JSON.stringify([t2.sentence, t2.fill]));
+  ok("§7 the name keeps its apostrophe on the page, the story and the list", rep.event && rep.event.name === NAME && st.name === NAME && list.name === NAME, JSON.stringify([rep.event && rep.event.name, st.name, list.name]));
+  const ask = (await api("POST", "/ask", tok, { text: `Who came to the ${NAME} and didn't give?` })).body || {};
+  ok("§7 Ask says the page's came-and-didn't-give, by the event's own name", ask.figures && ask.figures.value && ask.figures.value.value === FIG.cameDidntGive && (ask.sentence || "").includes(NAME),
+     JSON.stringify([ask.figures && ask.figures.value && ask.figures.value.value, ask.sentence]));
+  if (assertSurfacesAgree) {
+    // PLANTED, to prove the event checks can go red: the page says one more registered, the door one fewer in.
+    const planted = await assertSurfacesAgree(ORG, { token: tok, soft: true, skip: ["atlas"], plantEvent: (id, b) => {
+      if (id !== EV) return b;
+      const rr = JSON.parse(JSON.stringify(b.rep)); rr.figures.find(x => x.key === "registered").value += 1;
+      rr.figures.find(x => x.key === "invited").value += 1; rr.figures.find(x => x.key === "gave").value += 1;
+      return { rep: rr, kiosk: { ...b.kiosk, checkedIn: b.kiosk.checkedIn - 1 } };
+    } });
+    ok("§7 the truth check goes red when the page's Registered, Invited or Gave, or the door's count, is off by one",
+       !planted.ok && ["registered", "came", "invited", "gave"].every(k => planted.diffs.some(x => new RegExp(`Marigold's Harvest Supper" ${k}\\b`).test(x))), JSON.stringify(planted.diffs).slice(0, 600));
+    let err = null;
+    try { await assertSurfacesAgree(ORG, { token: tok, skip: ["atlas"] }); } catch (e) { err = e.message; }
+    ok("§7 the surfaces agree on every event's list: database, page, rows, drawer, Events list, the door, Fundraising, Home, Ask", !err, err && err.slice(0, 800));
+  }
 }
 
 async function browserLeg(tok) {

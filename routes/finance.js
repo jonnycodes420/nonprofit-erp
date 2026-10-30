@@ -120,6 +120,20 @@ const FIN_FIGURES = [
     definition: "Gifts recorded as a check, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
 ];
 
+// WHAT PUTS A GIFT ON A DEPOSIT. A deposit run (an `imports` row with
+// shape='deposit', BUILD-88b) holding it, or a day it reached the bank
+// (`gifts.deposited_on`: a payout's arrival, or FIX-59's "They were already
+// deposited" on imported history). One fragment, so "Not yet on a deposit",
+// its rows, the close checklist and the imported-gifts line cannot disagree.
+const ON_NO_DEPOSIT = `NOT EXISTS (SELECT 1 FROM imports im
+                            WHERE im.id = g.import_id AND im.org_id = g.org_id
+                              AND im.shape = 'deposit' AND im.reversed_at IS NULL)
+          AND COALESCE(g.deposited_on, '') = ''`;
+// The gifts that came in as money somebody banked, in the last ninety days,
+// and are on no deposit: the "Not yet on a deposit" set.
+const BANKED_UNDEPOSITED = `lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
+          AND g.date >= (CURRENT_DATE - 90)::text AND ${ON_NO_DEPOSIT}`;
+
 // The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
 // 31st belongs to that month, not to the next one in UTC.
 function monthRange(today) {
@@ -178,11 +192,7 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
       `SELECT ${sel} FROM gifts g
          JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM imports im
-                            WHERE im.id = g.import_id AND im.org_id = g.org_id
-                              AND im.shape = 'deposit' AND im.reversed_at IS NULL)
-          AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
-          AND g.date >= (CURRENT_DATE - 90)::text
+          AND ${BANKED_UNDEPOSITED}
         ${rows ? "ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000" : ""}`, [orgId]).catch(() => rows ? [] : [{ cents: 0 }]);
     return rows ? r : Number((r[0] || {}).cents || 0);
   }
@@ -258,15 +268,22 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   const [unmatchedN] = await query(
     `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
       WHERE g.org_id=? AND d.deleted_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM imports im
-                          WHERE im.id = g.import_id AND im.org_id = g.org_id
-                            AND im.shape = 'deposit' AND im.reversed_at IS NULL)
-        AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
-        AND g.date >= (CURRENT_DATE - 90)::text`, [orgId]).catch(() => [{ n: 0 }]);
+        AND ${BANKED_UNDEPOSITED}`, [orgId]).catch(() => [{ n: 0 }]);
   if (unmatchedN.n) needsYou.push({ key: "unmatched", label: "Not yet on a deposit", count: unmatchedN.n,
     amount: toDollars(cents.unmatched),
     sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a check, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
     rows: "unmatched" });
+  // FIX-59 · IMPORTED HISTORY WAITING FOR A DEPOSIT. Gifts from a file are
+  // usually money that was banked long ago; she says so with one click, per
+  // run or all of them, and can undo it. Nothing is marked without her.
+  const importedRuns = await importedUndeposited(orgId);
+  const importedN = importedRuns.reduce((n, r) => n + r.count, 0);
+  if (importedN) needsYou.push({ key: "importedUndeposited", label: "Imported gifts waiting for a deposit", count: importedN,
+    amount: toDollars(importedRuns.reduce((n, r) => n + r.cents, 0)),
+    sentence: `${importedN} imported ${importedN === 1 ? "gift is" : "gifts are"} waiting for a deposit. If ${importedN === 1 ? "it was" : "they were"} banked before ${importedN === 1 ? "it was" : "they were"} imported, mark ${importedN === 1 ? "it" : "them"} deposited.`,
+    action: "alreadyDeposited", actionLabel: `${importedN === 1 ? "It was" : "They were"} already deposited`,
+    runs: importedRuns.map(r => ({ importId: r.importId, name: r.name, count: r.count, amount: toDollars(r.cents) })),
+    rows: "importedUndeposited" });
 
   // Restricted money with a grant deadline coming. Only AWARDED grants hold
   // money, and only a REPORT or SPEND deadline inside sixty days is a thing
@@ -339,6 +356,18 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
       totalCents: total, total: toDollars(total), foots: true,
       sentence: `${rows.length} ${rows.length === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(total)}, with no fund on them.` });
   }
+  if (key === "importedUndeposited") {
+    const rows = await query(
+      `SELECT g.id, g.date, g.amount, g.payment_method, d.name AS who, g.import_id, im.name AS import_name
+         FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+         LEFT JOIN imports im ON im.id=g.import_id AND im.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND g.import_id IS NOT NULL AND ${BANKED_UNDEPOSITED}
+        ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [orgId]);
+    const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
+    return res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
+      totalCents: total, total: toDollars(total), foots: true,
+      sentence: `${rows.length} imported ${rows.length === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(total)}, on no deposit.` });
+  }
   if (key === "grantDeadline") {
     const rows = await query(
       `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
@@ -350,6 +379,57 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
       sentence: `${rows.length} awarded ${rows.length === 1 ? "grant" : "grants"} with a report due inside sixty days.` });
   }
   return res.status(400).json({ error: "unknown_rows", message: "That is not a figure this screen can open." });
+}));
+
+// FIX-59 · the imported gifts on no deposit, by run. The same set as "Not
+// yet on a deposit", narrowed to gifts a file brought in.
+async function importedUndeposited(orgId, importId = null) {
+  const rows = await query(
+    `SELECT g.import_id, MAX(im.name) AS name, COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+       LEFT JOIN imports im ON im.id=g.import_id AND im.org_id=g.org_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND g.import_id IS NOT NULL AND (?::text IS NULL OR g.import_id = ?)
+        AND ${BANKED_UNDEPOSITED}
+      GROUP BY g.import_id ORDER BY 3 DESC, 1`, [orgId, importId, importId]).catch(() => []);
+  return rows.map(r => ({ importId: r.import_id, name: r.name || "an import", count: r.n, cents: Number(r.cents) }));
+}
+// Her click: the gifts of one run (or every run) are marked deposited on the
+// day they were given. `deposit_ref` is left empty on purpose: QuickBooks'
+// deposit mode groups gifts by it (qboSync.js), and a shared marker there
+// would post one made-up deposit holding all of them.
+app.post("/finance/imported-deposited", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const importId = req.body && req.body.importId ? String(req.body.importId) : null;
+  const batchId = "dmb_" + uuid().replace(/-/g, "").slice(0, 12);
+  const marked = await require("../db").withTransaction(async (client) => {
+    const gifts = await client.query(
+      `SELECT g.id, g.import_id, g.date, g.deposited_on, g.deposit_ref FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=$1 AND d.deleted_at IS NULL AND g.import_id IS NOT NULL AND ($2::text IS NULL OR g.import_id = $2)
+          AND ${BANKED_UNDEPOSITED} FOR UPDATE OF g`, [orgId, importId]);
+    for (const g of gifts.rows) {
+      await client.query(`INSERT INTO deposit_marks (id, org_id, batch_id, gift_id, import_id, before_deposited_on, before_deposit_ref, created_by, created_by_name)
+                          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        ["dmk_" + uuid().replace(/-/g, "").slice(0, 14), orgId, batchId, g.id, g.import_id, g.deposited_on, g.deposit_ref, who.id, who.name]);
+      await client.query(`UPDATE gifts SET deposited_on = COALESCE(NULLIF(substring(date from 1 for 10), ''), to_char(CURRENT_DATE, 'YYYY-MM-DD')) WHERE id=$1 AND org_id=$2`, [g.id, orgId]);
+    }
+    return gifts.rows.length;
+  });
+  if (!marked) return res.status(404).json({ error: "nothing_to_mark", message: "No imported gift is waiting for a deposit." });
+  res.status(201).json({ marked, batchId,
+    sentence: `${marked} imported ${marked === 1 ? "gift is" : "gifts are"} marked as deposited on the day ${marked === 1 ? "it was" : "they were"} given. Undo puts ${marked === 1 ? "it" : "them"} back under Not yet on a deposit.` });
+}));
+app.post("/finance/imported-deposited/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, batchId = String((req.body && req.body.batchId) || "");
+  const n = await require("../db").withTransaction(async (client) => {
+    const marks = await client.query(`SELECT * FROM deposit_marks WHERE org_id=$1 AND batch_id=$2 AND undone_at IS NULL FOR UPDATE`, [orgId, batchId]);
+    for (const m of marks.rows) {
+      await client.query(`UPDATE gifts SET deposited_on=$1, deposit_ref=$2 WHERE id=$3 AND org_id=$4`, [m.before_deposited_on, m.before_deposit_ref, m.gift_id, orgId]);
+      await client.query(`UPDATE deposit_marks SET undone_at=NOW() WHERE id=$1 AND org_id=$2`, [m.id, orgId]);
+    }
+    return marks.rows.length;
+  });
+  if (!n) return res.status(404).json({ error: "nothing_to_undo", message: "Nothing to undo." });
+  res.json({ undone: n, sentence: `Undone. ${n} ${n === 1 ? "gift is" : "gifts are"} back under Not yet on a deposit.` });
 }));
 
 // The gifts behind ONE month's bar.
@@ -4036,8 +4116,7 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
           -- check is on a deposit" three lines above the bookkeeper's file
           -- saying the same gifts were not matched to one.
           AND lower(btrim(COALESCE(g.payment_method,''))) IN ('check','cheque','cash','','needs you','unknown')
-          AND NOT EXISTS (SELECT 1 FROM imports im WHERE im.id=g.import_id AND im.org_id=g.org_id
-                            AND im.shape='deposit' AND im.reversed_at IS NULL)`,
+          AND ${ON_NO_DEPOSIT}`,
       [orgId, from, to],
       n => n === 0,
       n => n ? `${n} ${n === 1 ? "gift is" : "gifts are"} not on a deposit slip: checks, cash, or gifts that don't say how the money arrived.`

@@ -6786,6 +6786,7 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     }
     return { changes: gone.length, undoIds };
   });
+  require("./dataHealth").recheckSoon(req.user.orgId, "delete");   // FIX-59: Data health is current
   res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
@@ -9950,6 +9951,7 @@ app.get("/imports/:id/undo-preview", requireAuth, wrap(async (req, res) => {
 // undo waits for that work (cancelRecentWork), which would wait forever.
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await withAdvisoryLock(`import-undo:${req.user.orgId}:${req.params.id}`, () => reverseImport(req, res));
+  if (res.statusCode < 300) require("./dataHealth").recheckSoon(req.user.orgId, "undo");   // FIX-59: Data health is current
 }));
 async function reverseImport(req, res) {
   const orgId = req.user.orgId;
@@ -10043,6 +10045,9 @@ async function reverseImport(req, res) {
     // was already here is put back exactly as they were.
     await run("DELETE FROM event_attendees WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    // FIX-59: the tables the seating chart made, once nobody sits at them
+    if ((sj.tablesCreated || []).length) await run(`DELETE FROM event_tables t WHERE t.org_id=? AND t.id = ANY(?)
+                                                      AND NOT EXISTS (SELECT 1 FROM event_attendees a WHERE a.table_id = t.id)`, [orgId, sj.tablesCreated]);
     if ((sj.suppressions || []).length) await run("DELETE FROM email_suppressions WHERE org_id=? AND id = ANY(?)", [orgId, sj.suppressions]);
     const SAFE_COLS = new Set(["email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "person_types",
       "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased",
@@ -27335,7 +27340,8 @@ async function eventGuestsPayload(eventId, orgId) {
   const guests = await query(
     `SELECT ${eventGuestCols}
        FROM event_attendees a LEFT JOIN event_levels l ON l.id = a.level_id
-      WHERE a.event_id=? AND a.org_id=? ORDER BY a.table_label NULLS LAST, a.name`, [eventId, orgId]);
+      WHERE a.event_id=? AND a.org_id=? AND ${figureSources.EVENT_GUEST_LIVE("a")}   -- FIX-59: a deleted person has no seat
+      ORDER BY a.table_label NULLS LAST, a.name`, [eventId, orgId]);
   const tables = await query(
     `SELECT id, label, seats, sponsor_name, sort, shape FROM event_tables
       WHERE event_id=? AND org_id=? ORDER BY sort NULLS LAST, label`, [eventId, orgId]);
@@ -28275,18 +28281,6 @@ const EVENT_ROW_SQL = {
              FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
             WHERE g.org_id=? AND g.event_id=?
             ORDER BY g.amount DESC`,
-  // FIX-58: each person who said they were coming or came, once
-  // (figureSources EVENT_REGISTERED, the "event-registered" source)
-  registered: `SELECT * FROM (SELECT DISTINCT ON (COALESCE(a.donor_id, a.id)) a.id, a.donor_id, COALESCE(d.name, a.name) AS name, a.quantity, a.table_label, l.name AS level_name
-                 FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
-                 LEFT JOIN donors d ON d.id=a.donor_id AND d.org_id=a.org_id
-                WHERE a.org_id=? AND a.event_id=? AND a.status IN ('registered','confirmed','attended','no_show')
-                  AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                ORDER BY COALESCE(a.donor_id, a.id)) r ORDER BY r.name`,
-  attended: `SELECT a.id, a.donor_id, a.name, a.table_label, l.name AS level_name
-               FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
-              WHERE a.org_id=? AND a.event_id=? AND a.status='attended'
-              ORDER BY a.name`,
   firstTime: `SELECT d.id AS donor_id, d.name, g.amount::float AS amount, g.date
                 FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
                WHERE g.org_id=? AND g.event_id=?
@@ -28316,16 +28310,19 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   // function the card, the first look and Reports read (numbers.eventsRaised).
   const [money] = await require("../numbers").eventsRaised(orgId, { ids: [event.id] });
   const raisedCents = money ? money.raisedCents : 0;
-  // FIX-58: Registered is people, once each, never seats: "Registered 263"
-  // on the dinner was 233 party places for 165 guests plus 30 who declined.
-  const registered = counts.registered.length;
+  // IMPORT-5: who came and gave, who came and didn't, who was invited and didn't
+  // come: numbers.eventGuests, the answer Home's Grow moves and Ask read too.
+  // FIX-59: Registered and Came are that answer too, counted in PEOPLE: an
+  // imported party size ("2") on one of a couple's two rows made 443 people
+  // read as 552 places. Declined is its own figure, never registered.
+  const [guests] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+  const G = guests || { cameNoGift: [], cameGave: [], invitedNoShow: [], notYet: [], saidYes: [], declined: [], noReply: [], came: 0, registered: 0, invited: 0, past: true,
+                        definitions: figureSources.EVENT_GUEST_WORDS };
   const progress = EV.eventProgress({ raisedCents,
     goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
-  const attendance = EV.attendanceRate({ registered, attended: counts.attended.length });
-  // IMPORT-5: who came and gave, who came and didn't, who was invited and didn't
-  // come: numbers.eventGuests, the answer Home's Grow moves and Ask read too
-  const [guests] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
-  const G = guests || { cameNoGift: [], cameGave: [], invitedNoShow: [], past: true, definitions: {} };
+  const attendance = EV.attendanceRate({ registered: G.registered, attended: G.came });
+  const gsrc = list => ({ key: "event-guests", params: { event: event.id, list } });
+  const story = await require("../numbers").eventStory(orgId, event.id);
 
   res.json({
     event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
@@ -28334,17 +28331,23 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
     guests: { past: G.past, cameNoGift: G.cameNoGift, cameGave: G.cameGave, invitedNoShow: G.invitedNoShow,
               sentence: G.cameNoGift.length ? `${G.cameNoGift.length} ${G.cameNoGift.length === 1 ? "person" : "people"} came and didn't give. Thank them for coming; the ask can wait.` : null },
     // FUNDRAISING-2: the night's story, each count opening its people.
-    story: await require("../numbers").eventStory(orgId, event.id),
+    story,
     figures: [
       { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
         count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
-      { key: "registered", label: "Registered", value: registered,
-        count: counts.registered.length, sentence: EV.EVENT_FIGURES.registered },
-      { key: "attended", label: "Came", value: counts.attended.length,
-        count: counts.attended.length, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence },
-      { key: "cameNoGift", label: "Came, didn't give", value: G.cameNoGift.length, count: G.cameNoGift.length, sentence: G.definitions.cameNoGift },
-      { key: "cameGave", label: "Came, gave", value: G.cameGave.length, count: G.cameGave.length, sentence: G.definitions.cameGave },
-      ...(G.past ? [{ key: "invitedNoShow", label: "Invited, didn't come", value: G.invitedNoShow.length, count: G.invitedNoShow.length, sentence: G.definitions.invitedNoShow }] : []),
+      { key: "invited", label: "Invited", value: G.invited, count: G.invited, sentence: G.definitions.invited, source: gsrc("invited") },
+      { key: "registered", label: "Registered", value: G.registered,
+        count: G.registered, sentence: EV.EVENT_FIGURES.registered, source: gsrc("registered") },
+      { key: "attended", label: "Came", value: G.came,
+        count: G.came, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence, source: { key: "event-attended", params: { event: event.id } } },
+      { key: "declined", label: "Declined", value: G.declined.length, count: G.declined.length, sentence: EV.EVENT_FIGURES.declined, source: gsrc("declined") },
+      { key: "noReply", label: "No reply", value: G.noReply.length, count: G.noReply.length, sentence: G.definitions.noReply, source: gsrc("noReply") },
+      { key: "cameNoGift", label: "Came, didn't give", value: G.cameNoGift.length, count: G.cameNoGift.length, sentence: G.definitions.cameNoGift, source: gsrc("cameNoGift") },
+      { key: "cameGave", label: "Came, gave", value: G.cameGave.length, count: G.cameGave.length, sentence: G.definitions.cameGave, source: gsrc("cameGave") },
+      ...(G.past ? [{ key: "invitedNoShow", label: "Said yes, didn't come", value: G.invitedNoShow.length, count: G.invitedNoShow.length, sentence: G.definitions.invitedNoShow, source: gsrc("invitedNoShow") }] : []),
+      // FIX-58: Gave, household-aware: Gave = Came, gave + Gave, didn't come
+      ...(story ? [{ key: "gave", label: "Gave", value: story.gave, count: story.gave, sentence: story.definitions.gave, source: story.sources.gave },
+                   { key: "gaveNotCame", label: "Gave, didn't come", value: story.gaveNotCame, count: story.gaveNotCame, sentence: story.definitions.gaveNotCame, source: story.sources.gaveNotCame }] : []),
       { key: "firstTime", label: "First-time givers", value: counts.firstTime.length,
         count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime },
       { key: "sponsors", label: "Sponsors", value: counts.sponsors.length,
@@ -28362,14 +28365,19 @@ app.get("/events/:id/rows", requireAuth, wrap(async (req, res) => {
   const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const key = String(req.query.rows || "");
-  if (["cameNoGift", "cameGave", "invitedNoShow"].includes(key)) {
+  // FIX-59: registered, came and declined open the same answer their figures
+  // count (numbers.eventGuests), so a figure and its rows cannot drift.
+  if (["cameNoGift", "cameGave", "invitedNoShow", "registered", "attended", "declined", "invited", "noReply"].includes(key)) {
     const [g] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
-    const list = g ? g[key] : [];
-    return res.json({ eventId: event.id, rows: key, count: list.length, donors: list.map(p => ({ donor_id: p.id, name: p.name })) });
+    const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+    const list = !g ? [] : key === "attended" ? [...g.cameGave, ...g.cameNoGift].sort(byName)
+      : key === "registered" ? [...g.cameGave, ...g.cameNoGift, ...g.saidYes].sort(byName)
+      : key === "invited" ? [...g.cameGave, ...g.cameNoGift, ...g.saidYes, ...g.declined, ...g.noReply].sort(byName) : g[key];
+    return res.json({ eventId: event.id, rows: key, count: list.length, donors: list.map(p => ({ donor_id: p.noRecord ? null : p.id, name: p.name })) });
   }
   const sql = EVENT_ROW_SQL[key];
   if (!sql) return res.status(400).json({ error: "unknown_rows",
-    message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(EVENT_ROW_SQL).join(", ")}.` });
+    message: `There is no set of rows called "${key}". Ask for one of: ${["invited", "registered", "attended", "declined", "noReply", "cameNoGift", "cameGave", "invitedNoShow", ...Object.keys(EVENT_ROW_SQL)].join(", ")}.` });
   const rows = await query(sql, [orgId, event.id]);
   res.json({ eventId: event.id, rows: key, count: rows.length, donors: rows.slice(0, 1000) });
 }));
@@ -28438,13 +28446,20 @@ app.get("/events/:id/kiosk", requireAuth, wrap(async (req, res) => {
     `SELECT a.id, a.name, a.email, a.status, a.quantity, a.table_label, a.checked_in_at, a.dietary, a.vip, a.donor_id,
             l.name AS level_name, l.kind AS level_kind
        FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
-      WHERE a.org_id=? AND a.event_id=? AND a.status <> 'cancelled'
+      WHERE a.org_id=? AND a.event_id=? AND ${figureSources.EVENT_REGISTERED("a")} AND ${figureSources.EVENT_GUEST_LIVE("a")}
       ORDER BY a.name`, [orgId, event.id]);
   const levels = await query(
     "SELECT id, name, kind, price::float AS price, fmv::float AS fmv FROM event_levels WHERE org_id=? AND event_id=? ORDER BY position, price", [orgId, event.id]);
-  const inCount = guests.filter(g => g.checked_in_at).length;
-  res.json({ event, guests, levels, checkedIn: inCount,
-    sentence: `${inCount} of ${guests.length} checked in.` });
+  // FIX-59: IN IS CAME. Somebody marked as attending (by an import, by hand)
+  // is in, the same people the event's Came counts; expected is Registered
+  // (the list, declined apart). "0 of 552 checked in" beside "Came 249" was
+  // two answers to one question.
+  for (const g of guests) g.in = g.status === "attended" || !!g.checked_in_at;
+  const inCount = guests.filter(g => g.in).length;
+  const noDoor = guests.filter(g => g.in && !g.checked_in_at).length;
+  res.json({ event, guests, levels, checkedIn: inCount, expected: guests.length,
+    sentence: `${inCount} of ${guests.length} checked in.`
+      + (noDoor ? ` ${noDoor === inCount ? (noDoor === 1 ? "They were" : "All of them were") : `${noDoor} of them ${noDoor === 1 ? "was" : "were"}`} marked as attending without a time at the door, from an import or by hand.` : "") });
 }));
 
 app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -28466,7 +28481,9 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
   }
   const rows = await query(
     undo
-      ? `UPDATE event_attendees SET checked_in_at=NULL WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
+      // FIX-59: out again is not attending either, or Came would still count them
+      ? `UPDATE event_attendees SET checked_in_at=NULL, status=CASE WHEN status='attended' THEN 'registered' ELSE status END
+          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
       : `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
           WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at, donor_id`,
     [String(req.body?.attendeeId || ""), event.id, orgId]);
@@ -28615,8 +28632,6 @@ app.get("/events", requireAuth, async (req, res) => {
         COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
         COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
         COUNT(ea.id)::int AS invited_count,
-        COUNT(DISTINCT COALESCE(ea.donor_id, ea.id)) FILTER (WHERE ea.status IN ('registered','confirmed','attended','no_show'))::int AS registered_count,   -- FIX-58: people, once
-        COUNT(CASE WHEN ea.checked_in_at IS NOT NULL THEN 1 END)::int AS checked_in_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue,
         (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
           WHERE g.org_id = e.org_id AND ${NOT_DELETED("g")}
@@ -28632,7 +28647,14 @@ app.get("/events", requireAuth, async (req, res) => {
     // HOME-3: raised the way she says it (received + pledged for the event's
     // year), one function for the card, the event page, the first look and Reports.
     const money = new Map((await require("../numbers").eventsRaised(orgId, { ids: rows.map(r => r.id) })).map(m => [m.id, m]));
-    res.json(rows.map(r => ({ ...r, money: money.get(r.id) || null })));
+    // FIX-59: Registered and who is in are the event page's own answer
+    // (numbers.eventGuests): people, declined apart, attended counts as in.
+    const guests = new Map((await require("../numbers").eventGuests(orgId, { ids: rows.map(r => r.id) })).map(g => [g.id, g]));
+    res.json(rows.map(r => {
+      const g = guests.get(r.id);
+      return { ...r, attendee_count: g ? g.came : 0, registered_count: g ? g.registered : 0, checked_in_count: g ? g.came : 0,
+               declined_count: g ? g.declined.length : 0, money: money.get(r.id) || null };
+    }));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -28847,9 +28869,19 @@ app.get("/events/:id", requireAuth, async (req, res) => {
       WHERE ea.event_id=$1 AND (d.id IS NULL OR d.deleted_at IS NULL)
       ORDER BY ea.created_at ASC
     `, [req.params.id]);
+    // FIX-59: each guest's Gift is what they gave for this event or pledged
+    // at it, the rows "Gave or pledged at the event" (event-gave) sums, never
+    // the amount typed onto the guest row.
+    const given = new Map((await query(
+      `SELECT x.donor_id, ROUND(SUM(x.amount)::numeric, 2)::float AS amount FROM (${figureSources.EVENT_GIVERS_SQL}) x GROUP BY x.donor_id`,
+      [orgId, req.params.id, orgId, req.params.id])).map(r => [r.donor_id, r.amount]));
+    for (const a of attendees) a.event_given = a.donor_id && given.has(a.donor_id) ? given.get(a.donor_id) : 0;
     // PARITY-2 Part 3: the page's address, built on the one public origin.
     const public_page_url = evts[0].public_slug ? `${publicAppUrl()}/e/${encodeURIComponent(evts[0].public_slug)}` : null;
-    res.json({ ...evts[0], attendees, public_page_url });
+    const [money] = await require("../numbers").eventsRaised(orgId, { ids: [req.params.id] });
+    res.json({ ...evts[0], attendees, public_page_url, money: money || null,
+      givenSource: { key: "event-gave", params: { event: req.params.id } },
+      givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -162,6 +162,7 @@ CORE=(
   surfaces-agree
   org-bound-writes
   real-shaped
+  fix59-event-import
   insights
   fundraising2-screens
   int4-mailbox
@@ -176,6 +177,7 @@ CORE=(
   trust2-erase
   clean1-merge
   clean1-duplicates
+  fix59-data-health
   prospect1-room-to-give
   prospect1-who-sees
   help1-ask
@@ -267,6 +269,7 @@ CORE=(
   import-columns
   palette
   no-emoji
+  claude-md
   landing2-marketing
   clickability
   test-clock-seam

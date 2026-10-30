@@ -102,6 +102,15 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   email fixes and change-of-address moves; each change is a POST a person pressed. "Not a duplicate" is a
   `data_health_dismissals` row by the two ids, so it survives every later import. A bounce mark clears only
   on a separate confirm. The old address is kept in `donor_address_history`. (CLEAN-1)
+- **Spouses are a family, never a duplicate (FIX-59).** Two people of one surname with two different full first
+  names (not one cut short, not a short name a letter off) who share an address, email or phone are offered under
+  Data health's "Possible families" (Make one household / Not a family), never as a pair. A shared phone with two
+  different names is nothing. A near-duplicate by name alone (`shared/nearNames.js nearDuplicate`, the import's own
+  reader) is a low pair that says "name only". Two spellings on one event's list are asked as the import asks ("Is
+  Fran the same as Frances?"): Same merges through `mergePeople`, Different is a `pair` dismissal; both undo.
+  A name with markup or a bracketed note is cleaned on her click, the note moved to Notes (`name_fixes`
+  kind `name_notes`, Undo restores name and Notes). Data health re-runs in the background after an import, its
+  undo, a merge, a merge's undo and a bulk delete (`recheckSoon`), and says when and why.
 - **OR the mail-blocking flags on merge** (`deceased`, `do_not_contact`). A survivor never loses a restriction
   that the other record carried. (BUILD-58)
 - **Check every client-supplied donor, member or household id with an org-scoped ownership check**

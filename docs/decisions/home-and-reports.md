@@ -487,6 +487,24 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   with the note drafted. One person, one move (otherwise an "also" line). "See all N" opens the event page. Grow draws
   150 cards by dollars, so $0 thank-yous can sit past the cap, still counted on the tab.
 
+## FIX-59 · an event's list adds up (2026-10-29)
+
+- An event's list, each person once (FIX-58 + FIX-59, Jonathan 29 Oct): Invited is everyone on the list; Registered is
+  each person who said yes or came (never a party size, never someone only invited or who declined); Declined said no;
+  No reply = Invited − Registered − Declined. Came = Came, gave + Came, didn't give; "Said yes, didn't come" (once the day
+  has passed) = Registered − Came. Gave is household-aware (FIX-58): Gave = Came, gave + Gave, didn't come. The
+  predicates live once in figureSources (EVENT_INVITED, EVENT_REGISTERED, EVENT_DECLINED, EVENT_NO_REPLY, EVENT_CAME);
+  `numbers.eventGuests` and `eventStory` read them, and the event page, its rows, the Events list, the check-in door,
+  Fundraising's lead card, Home's Grow moves and Ask read those. `assertSurfacesAgree` checks every figure and the four
+  sums.
+- Came (and the door's "in") is marked attending OR checked in at the door; an undo at the door takes them out of Came.
+  A walk-in row with no person record is a guest; a deleted person is nobody.
+- A guest's Gift on the event page is what they gave for the event or pledged at it (`event-gave` per person), never
+  `gift_amount` typed on the row. A table seated over its size says "13 seated at 10 seats, 3 over".
+- Grow leads with second gifts (FIX-59): second gifts, then came-didn't-give, then the rest, by dollars inside
+  each (`insights.js byGrow`); the tab reads "85 second gifts · 112 more". The 150-card cap now cuts from the
+  rest, never a second gift first.
+
 ## FIX-58 · an event counts people once (2026-10-29)
 
 - Registered is each person who said they were coming or came (status registered, confirmed, attended, no_show),
