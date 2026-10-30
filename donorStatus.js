@@ -53,6 +53,7 @@ const PLEDGE_OVERDUE = Object.freeze({ label: "Pledge payment overdue", kind: "p
 const CLOSENESS = Object.freeze({
   close: { label: "Close" }, warm: { label: "Warm" }, on_track: { label: "On track" }, cooling: { label: "Cooling" }, new: { label: "New" },
 });
+const PLEDGE_HELD_SENTENCE = "No gift in the last 12 months, but they pledged in that time or hold an open pledge on schedule, and a pledge counts as giving.";
 const TAG_KEYS = [...Object.keys(LEVELS), ...Object.keys(LIFECYCLES), "retained", "lapsing", "pledge_overdue"];
 
 function dollars(cents) {
@@ -120,7 +121,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   const hold = lapseRule.pledgeHoldSql("a.donor_id", w.today);
   const overdue = lapseRule.pledgeOverdueSql("a.donor_id", w.today);
   const args = [w.lapsingFrom, w.lapsingTo, ...ahead.args, ...hold.args, cuts.majorCents, cuts.midCents, w.w0From, ...hold.args,
-    ...overdue.args,
+    ...overdue.args, w.w0From, ...hold.args,
     w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.w0From, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
@@ -140,6 +141,8 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
                 WHEN ${hold.sql} THEN 'current'
                 ELSE 'lapsed' END AS lifecycle,
            ${overdue.sql} AS pledge_overdue,
+           -- FIX-60: Current only because of a pledge (no gift in the last 12 months)
+           (NOT a.w0 AND NOT COALESCE(a.imp_last >= ?, false) AND ${hold.sql}) AS pledge_held,
            (a.this_cy AND a.last_cy) AS retained
       FROM (
         SELECT g.donor_id,
@@ -203,6 +206,7 @@ function closenessSql(today, alias = "") {
   const a = alias ? alias + "." : "donors.";
   const w = windowsFor(today);
   const hold = lapseRule.pledgeHoldSql(`${a}id`, today);
+  const late = lapseRule.pledgeOverdueSql(`${a}id`, today);   // a pledge past due is not on track
   const band = `COALESCE((SELECT ds.band FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id), 'distant')`;
   const pattern = `(SELECT ds.pattern FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id)`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
@@ -210,9 +214,9 @@ function closenessSql(today, alias = "") {
   // record was made (an import made today is not a new relationship).
   const isNew = `(${firstSeenSql(a)} >= ?)`;
   return {
-    // FIX-60: a person held by a pledge (lapseRule.js) is on track, not cooling.
-    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${pattern} = 'on_track' THEN 'on_track' WHEN ${hold.sql} THEN 'on_track' ELSE 'cooling' END)`,
-    args: [w.newFrom, ...hold.args],
+    // FIX-60: a person held by a pledge on schedule (lapseRule.js) is on track, not cooling.
+    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${pattern} = 'on_track' THEN 'on_track' WHEN ${hold.sql} AND NOT ${late.sql} THEN 'on_track' ELSE 'cooling' END)`,
+    args: [w.newFrom, ...hold.args, ...late.args],
   };
 }
 function firstSeenSql(a) {
@@ -235,13 +239,15 @@ async function statusFor(orgId, donorId, { today = null, cuts = null } = {}) {
   const { sql, args } = statusSql(orgId, today, cuts, { donorId });
   const [row] = await query(sql, args);
   if (!row) return { today, cuts, row: null, tags: [] };
-  const keys = [row.level, row.lifecycle];
+  // FIX-60: a person Current only because of a pledge is told so; one whose
+  // pledge is past due carries Pledge payment overdue in Current's place.
+  const keys = [row.level, ...(row.pledge_held && row.pledge_overdue ? [] : [row.lifecycle])];
   if (row.retained) keys.push("retained");
   if (row.lapsing) keys.push("lapsing");
   if (row.pledge_overdue) keys.push("pledge_overdue");
   const tags = keys.map(k => ({
     key: k, label: tagLabel(k), kind: LEVELS[k] ? "level" : LIFECYCLES[k] ? "lifecycle" : k,
-    sentence: tagSentence(k, cuts),
+    sentence: k === "current" && row.pledge_held ? PLEDGE_HELD_SENTENCE : tagSentence(k, cuts),
     source: { key: "donors-by-status", params: { tag: k, today } },
   }));
   return { today, cuts, row, tags };
