@@ -167,6 +167,8 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
   const today = deps.orgToday(await deps.orgTz(orgId));   // ORG_TZ_SEAM_OK
   try {
     if (recalc) await recalcDonorSummaryBatch(deps.query, ids, orgId);
+    // FIX-60: a pledge is giving activity; an automatic Lapsed it outlived goes.
+    if (deps.unlapseHeldByPledge) await deps.unlapseHeldByPledge(orgId, ids);
     const r = await rhythmFor(orgId, ids, { door: stamp, today });
     result.becameLate = r.becameLate;
     result.crossings = await groupCrossings(orgId, ids, { door: stamp, today, fire: history ? null : fire });

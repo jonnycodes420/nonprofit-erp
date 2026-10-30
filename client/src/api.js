@@ -322,6 +322,8 @@ export function adaptDonor(d) {
     // that 1,111 giftless imports gave TODAY (the "Sep 2026" column, the
     // 35-score, un-drifting every surface). Read paths default to nothing.
     lastGift:       d.last_gift_date || null,
+    // FIX-60 — a pledge keeps them off Lapsed (lapseRule.js pledgeHold).
+    pledgeHold:     !!d.pledge_hold,
     lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,

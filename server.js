@@ -1644,7 +1644,7 @@ function scheduleScores(orgId) {
 }
 // LIVE-1 — the after-change step's helpers, handed over once at boot.
 const AFTER = require("./afterChange");
-AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors });
+AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors, unlapseHeldByPledge });
 // SCALE-2: the per-org summary (orgSummary.js) and the in-process door the
 // Home bundle and the summary's refresh use (inProcess.js). An internal token
 // is signed for one stored answer's recompute and never leaves this process.
@@ -3535,6 +3535,7 @@ async function autoLapseOrg(orgId) {
         AND d.gift_count > 0
         AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
         AND d.last_gift_date::date <= ?::date
+        AND NOT ${lapseRule.pledgeHoldSql("d.id", today).sql}
         AND d.stage NOT IN ('lapsed','solicit')
         AND NOT EXISTS (SELECT 1 FROM opportunities o
                           WHERE o.org_id=d.org_id AND o.donor_id=d.id AND o.status='open')
@@ -3543,7 +3544,7 @@ async function autoLapseOrg(orgId) {
                             AND m.officer_id IS NOT NULL AND m.to_stage <> 'lapsed'
                             AND m.created_at::date > d.last_gift_date::date)
       LIMIT 200`,
-    [orgId, cutoff]);
+    [orgId, cutoff, ...lapseRule.pledgeHoldSql("d.id", today).args]);
   let moved = 0;
   const months = Math.round(LAPSE_DAYS / 30);
   for (const d of rows) {
@@ -3554,6 +3555,34 @@ async function autoLapseOrg(orgId) {
       [d.id, orgId, d.stage]);
     if (!upd.length) continue;
     await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed: no gift in the last ${months} months`);
+    moved++;
+  }
+  await unlapseHeldByPledge(orgId);
+  return moved;
+}
+
+// FIX-60 · A PLEDGE UN-LAPSES. Somebody placed in Lapsed automatically who has
+// since pledged (an open pledge, or one made in the last 12 months: lapseRule.js
+// pledgeHold) is back to Stewardship, logged as an automatic move, exactly as
+// a gift does (autoUnlapseOnGift). Only automatic lapses are undone: a person
+// an officer moved to Lapsed by hand stays there. `ids` narrows it to the
+// people one write touched (the after-change step); with none, the whole org.
+async function unlapseHeldByPledge(orgId, ids = null) {
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const hold = lapseRule.pledgeHoldSql("d.id", today);
+  const rows = await query(
+    `SELECT d.id FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
+        AND ${hold.sql}
+        AND NOT EXISTS (SELECT 1 FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id
+                          AND m.officer_id IS NOT NULL AND m.to_stage='lapsed')
+      LIMIT 200`,
+    [orgId, ...(ids ? [ids] : []), ...hold.args]);
+  let moved = 0;
+  for (const d of rows) {
+    const upd = await query("UPDATE donors SET stage='steward', updated_at=NOW() WHERE id=? AND org_id=? AND stage='lapsed' RETURNING id", [d.id, orgId]);
+    if (!upd.length) continue;
+    await recordAutoMove(orgId, d.id, "lapsed", "steward", "Auto: they made a pledge");
     moved++;
   }
   return moved;
@@ -7618,7 +7647,7 @@ async function autoEnroll() {
         // FIX-51: both lapsed triggers are the one lapse rule (lapseRule.js),
         // 12 months and more since the last gift, in the org's own day. The
         // old 90- and 180-day clocks are gone; the stage still has to say it.
-        const lapsedNow = lapseRule.sql("lapsed", "last_gift_date", orgToday(await orgTz(seq.org_id)));
+        const lapsedNow = lapseRule.sql("lapsed", "last_gift_date", orgToday(await orgTz(seq.org_id)), "d.id");   // FIX-60: a pledge holds them
         donors = await query(
           `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND ${lapsedNow.sql}`,
           [seq.org_id, ...lapsedNow.args]

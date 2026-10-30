@@ -956,7 +956,8 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null) : null;
+  // FIX-60: ctx.pledges (lapseRule.pledgesFor) holds a pledger off lapsing.
+  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null, ctx.pledges || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
@@ -4254,6 +4255,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   // that wants everyone pages through (client/src/lib/pages.js).
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  // FIX-60: a pledge keeps a person off Lapsed (lapseRule.js), on every list.
+  const _sumHold = lapseRule.pledgeHoldSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -4264,8 +4267,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
-                  birth_month, birth_day, birth_year
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [req.user.orgId, limit, offset]),
+                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
@@ -6307,7 +6310,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // timezone alongside the server's and UTC, so a donor could cross the
       // 365-day lapsed line on a different day than their own calendar says.
       const _stageToday = orgToday(await orgTz(orgId));
-      const stageParams = [_stageToday, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
+      // FIX-60: a pledge holds a person off Lapsed (lapseRule.js pledgeHold).
+      const stageParams = [_stageToday, ...lapseRule.pledgeHoldSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
@@ -6320,7 +6324,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
+                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _stageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -10520,7 +10525,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
+                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -10535,7 +10541,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            AND stage IS NULL
            AND deleted_at IS NULL`,
         // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
-        [_giftStageToday, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
+        [_giftStageToday, ...lapseRule.pledgeHoldSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
@@ -11784,7 +11790,8 @@ app.post("/pipeline/:donorId/move", requireAuth, requireCrm, checkWriteAccess, w
 app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
-  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: orgToday(await orgTz(req.user.orgId)) }) });
+  const _msToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await lapseRule.pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
@@ -21432,7 +21439,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     [orgId]
   );
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
-  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
   const lapsedDonors = await query(
     `SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count, 0) > 0
         AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsedRule.sql} ORDER BY last_gift_date ASC LIMIT 5`,
@@ -26781,6 +26788,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
   const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
+  const _quietPledge = lapseRule.pledgeHoldSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
@@ -26796,9 +26804,10 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
         -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
         AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
+        AND NOT ${_quietPledge.sql}
       ORDER BY d.total_giving DESC
       LIMIT 50`,
-    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args]
+    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args, ..._quietPledge.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 

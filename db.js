@@ -2317,6 +2317,9 @@ async function runSchemaInit(pool) {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_org_donor ON pledges (org_id, donor_id)`);
+  // FIX-60: the lapse rule asks "does this person hold an open pledge" by donor id
+  // (lapseRule.pledgeHoldSql), once per person in a list. Schema only.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_donor ON pledges (donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_reminder ON pledges (status, next_reminder_at)`);
   // BUILD-72 Part 2 — the same seam on PLEDGES. A pledge is a money row on a
   // screen a finance person reads, and it had no idempotency at all: two

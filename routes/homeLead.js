@@ -170,11 +170,14 @@ async function readFacts(req, nowMs) {
       ]);
       const ly = { n: vs ? vs.lastYear : 0 }, ty = { n: vs ? vs.thisYear : 0 };
       const y = Number(today.slice(0, 4)) - 1;
+      // FIX-60: somebody who has pledged since is not lapsed (lapseRule.js).
+      const _seasonHold = require("../lapseRule").pledgeHoldSql("d.id", today);
       const lapsedRows = await query(
         `SELECT d.id, d.name, SUM(g.amount) AS amount FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
           WHERE g.org_id=? AND g.date >= ? AND g.date <= ? AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE${M}
             AND NOT EXISTS (SELECT 1 FROM gifts n WHERE n.org_id=g.org_id AND n.donor_id=g.donor_id AND n.date >= ? AND n.date <= ?)
-          GROUP BY d.id, d.name ORDER BY SUM(g.amount) DESC, d.id`, [orgId, `${y}-12-01`, `${y}-12-31`, ...Ma, `${y + 1}-01-01`, today]);
+            AND NOT ${_seasonHold.sql}
+          GROUP BY d.id, d.name ORDER BY SUM(g.amount) DESC, d.id`, [orgId, `${y}-12-01`, `${y}-12-31`, ...Ma, `${y + 1}-01-01`, today, ..._seasonHold.args]);
       const after = num(lyAll.n) - num(ly.n);
       season = {
         campaignId: c.id, label: c.name, goal: num(c.goal_amount), raised: num(r.n), seasonThisYear: num(ty.n), lastYearByToday: num(ly.n),

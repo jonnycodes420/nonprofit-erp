@@ -300,7 +300,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(filters.pattern==="one-time"&&d.gifts!==1)return false;
     if(filters.pattern==="recurring"&&d.gifts<2)return false;
     if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||isLapsed(d.lastGift,orgTodayCivil())))return false;
+    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(!d.pledgeHold&&isLapsed(d.lastGift,orgTodayCivil()))))return false;
     if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
     if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
     if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;

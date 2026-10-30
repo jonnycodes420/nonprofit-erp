@@ -291,7 +291,11 @@ async function closenessNow(q, orgId, donorId, today, bandKey) {
   const w = await weights();
   const DS = require("./donorStatus");
   const { gifts } = await givingRows(q, orgId, donorId);
-  const pattern = patternOf(gifts.filter(g => g.date && g.date <= today), today);
+  // FIX-60: a person held by a pledge (lapseRule.js pledgeHold) is on track,
+  // the same as donorStatus.closenessSql says for lists.
+  const LR = require("./lapseRule");
+  const held = !!LR.pledgeHold(await LR.pledgesFor(q, orgId, donorId, today), today);
+  const pattern = held ? "on_track" : patternOf(gifts.filter(g => g.date && g.date <= today), today);
   const [fs] = await q(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [donorId, orgId]);
   const isNew = !!(fs && fs.first && String(fs.first).slice(0, 10) >= DS.windowsFor(today).newFrom);
   return { key: w.closenessFor(bandKey || "distant", { isNew, pattern }), pattern };

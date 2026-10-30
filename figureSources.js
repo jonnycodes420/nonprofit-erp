@@ -1499,7 +1499,7 @@ const SOURCES = {
       if (!DS.TAG_KEYS.includes(p.tag)) throw new FigureParamError("tag is not a tag Steward knows.");
       const cuts = await DS.cutsFor(orgId);
       const st = DS.statusSql(orgId, p.today, cuts);
-      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : p.tag === "lapsing" ? "s.lapsing" : "s.retained";
+      const col = DS.tagColumn(p.tag);
       return {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
                      'Given in the last 12 months' AS detail

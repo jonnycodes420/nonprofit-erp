@@ -310,6 +310,29 @@ async function main() {
   const drc = (await api("GET", `/imports/${D_RUN}`, tok)).body.import || {};
   ok("§D the receipt reconciles (gifts + pledges = rows) and offers Undo", drc.reconciled === true && drc.canUndo === true && drc.rowsIn === DK.personRows, JSON.stringify([drc.reconciled, drc.rowsIn, drc.findings]));
   await surfaces(ORG, { step: "after dinner", importId: D_RUN });
+  // §D FIX-60 · A FRESH PLEDGE IS ACTIVITY. A $15,000 pledger with no gift in
+  // a year read Lapsed: the rule read gifts only. Nobody who pledged at the
+  // dinner reads Lapsed or Lapsing: not the tags under their name, the list's
+  // filters, the ladder, nor Home's lapsing card. Red on main: the dinner's
+  // pledgers who last gave in 2024 or 2025 were tagged Lapsed.
+  {
+    const pledgers = (await q("SELECT DISTINCT donor_id FROM pledges WHERE org_id=$1 AND import_id=$2", [ORG, D_RUN])).map(r => r.donor_id);
+    const quietTags = [];
+    for (const id of pledgers) {
+      const st = (await api("GET", `/donors/${id}/status`, tok)).body || {};
+      for (const t of st.tags || []) if (t.key === "lapsed" || t.key === "lapsing") quietTags.push(`${id}:${t.key}`);
+    }
+    const listed = async qs => ((await api("GET", `/donors?${qs}&limit=500`, tok)).body.donors || []).map(d => d.id);
+    const inLists = [...await listed("lifecycle=lapsed"), ...await listed("lapsing=1")].filter(id => pledgers.includes(id));
+    const ins = (await api("GET", "/insights", tok)).body || {};
+    const lapsingCard = (ins.cards || []).filter(c => c.kind === "lapsing").flatMap(c => (c.items || []).flatMap(i => i.ids || [i.donorId || i.lead])).filter(id => pledgers.includes(id));
+    const hist = (await q("SELECT COUNT(DISTINCT p.donor_id)::int AS n FROM pledges p WHERE p.org_id=$1 AND p.import_id=$2 AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=p.donor_id AND g.amount > 0 AND g.date < $3)",
+      [ORG, D_RUN, require("../lapseRule").bounds(require("../orgTime").orgToday({})).lapsedOnOrBefore]))[0].n;
+    console.log(`  [real-shaped] ${pledgers.length} dinner pledgers, ${hist} with a gift more than a year ago`);
+    ok(`§D FIX-60 no dinner pledger (${pledgers.length}) reads Lapsed or Lapsing: tags, list filters, Home's lapsing card`,
+       pledgers.length > 0 && hist > 0 && quietTags.length === 0 && inLists.length === 0 && lapsingCard.length === 0,
+       JSON.stringify({ quietTags: quietTags.slice(0, 8), inLists: inLists.slice(0, 8), lapsingCard }));
+  }
   const S2 = await snapshot(ORG);
   const C2 = await counts(ORG);
 

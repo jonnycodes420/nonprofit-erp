@@ -99,7 +99,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   // unlinked imported sustainer belongs to the recurring reconnect list —
   // their card stopped, they did not choose to leave.
   const askable=d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer;
-  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||isLapsed(d.lastGift,orgTodayCivil()))).sort((a,b)=>b.total-a.total);
+  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||(!d.pledgeHold&&isLapsed(d.lastGift,orgTodayCivil())))).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
   // with no dates contributes nothing rather than a today-anchored zero.
