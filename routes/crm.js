@@ -269,7 +269,62 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // switched off): nobody gets it, said once rather than per person.
     orgSends: !!(aud.orgGate && aud.orgGate.send),
     orgReason: aud.orgGate && !aud.orgGate.send ? aud.orgGate.reason : null,
+    // EDITOR-1 · ONE LINE THAT ADDS UP. Everyone in the segment is either
+    // somebody this email can reach now or in exactly one group that says why
+    // not; while Donor mail is off (or this is the demonstration org) the
+    // people it would reach are that group. The Send button reads `wouldReach`
+    // and is never live while `sendable` is 0, with `blocked` as its reason.
+    audience: await audienceLine(orgId, aud, noun),
   });
+}));
+
+const AUDIENCE_WORDS = {
+  no_email: n => `${n === 1 ? "has" : "have"} no email address`,
+  auto_email_off: n => `${n === 1 ? "has" : "have"} automatic email off`,
+  deceased: () => "deceased", do_not_contact: () => "marked do not contact",
+  unsubscribed: n => `${n === 1 ? "has" : "have"} unsubscribed`, unsubscribe: n => `${n === 1 ? "has" : "have"} unsubscribed`,
+  bounced: n => `${n === 1 ? "has an address that bounced" : "have addresses that bounced"}`,
+  complained: n => `marked a past email as spam`, blocked_address: () => "on the list Steward never mails",
+  sample_donor: () => "sample records, not real people",
+};
+async function audienceLine(orgId, aud, noun) {
+  const [o] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const orgName = displayNameCase(await donorFacingOrgName(orgId, (o && o.name) || "").catch(() => (o && o.name) || ""));
+  const groups = aud.leftOut.map(g => ({ reason: g.reason, count: g.count,
+    sentence: `${g.count.toLocaleString()} ${(AUDIENCE_WORDS[g.reason] || (() => `can't get it (${g.reason.replace(/_/g, " ")})`))(g.count)}`,
+    people: g.people.slice(0, 25).map(d => ({ id: d.id, name: displayNameCase(d.name || "") })) }));
+  const wouldReach = aud.recipients.length;
+  const off = !(aud.orgGate && aud.orgGate.send);
+  const offReason = off ? aud.orgGate.reason : null;
+  const orgs = /s$/i.test(orgName) ? `${orgName}'` : `${orgName}'s`;
+  const offWords = offReason === "demo_org" ? "can't get email: nothing is sent from the demonstration organization"
+    : offReason === "not_onboarded" ? `can't get email until ${orgs} donor file is in`
+    : `can't get email while Donor mail is off for ${orgName}`;
+  if (off && wouldReach) groups.push({ reason: "org_" + (offReason || "off"), count: wouldReach, sentence: `${wouldReach.toLocaleString()} ${offWords}`,
+    people: aud.recipients.slice(0, 25).map(d => ({ id: d.id, name: displayNameCase(d.name || "") })) });
+  const sendable = off ? 0 : wouldReach;
+  const total = sendable + groups.reduce((n, g) => n + g.count, 0);
+  const blocked = off ? (offReason === "demo_org" ? "Nothing is sent from the demonstration organization."
+      : offReason === "not_onboarded" ? `Email turns on once ${orgs} donor file is in.`
+      : `Donor mail is off for ${orgName}, so nothing is sent until it is turned on.`)
+    : sendable === 0 ? (total ? "Nobody in this group can get this email." : "Nobody is in this group yet.") : null;
+  return {
+    total, sendable, wouldReach, blocked, groups, noun,
+    line: `${total.toLocaleString()} ${noun} \u00b7 ${sendable.toLocaleString()} can get this email${groups.length ? ": " + groups.map(g => g.sentence).join(", ") : ""}.`,
+  };
+}
+
+// EDITOR-1 · A CAMPAIGN'S HISTORY: every save, approval, schedule and send of
+// it, from the one audit trail (middleware/auditTrail.js), newest first. Reading only.
+app.get("/campaigns/:id/history", requireAuth, wrap(async (req, res) => {
+  const [c] = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!c) return res.status(404).json({ error: "Campaign not found" });
+  const rows = await query(`SELECT id, created_at, user_name, actor_kind, request_method, request_path FROM fin_audit_log
+                             WHERE org_id=? AND entity_id=? AND request_path LIKE '/campaigns%' ORDER BY created_at DESC LIMIT 50`, [req.user.orgId, c.id]).catch(() => []);
+  const what = r => { const p = String(r.request_path || "");
+    return /\/send$/.test(p) ? "Sent" : /\/test$/.test(p) ? "Sent a test" : /\/(request-approval)$/.test(p) ? "Asked for approval" : /\/approve$/.test(p) ? "Approved"
+      : /\/(unapprove|withdraw-approval)$/.test(p) ? "Approval taken back" : r.request_method === "POST" ? "Started" : "Saved"; };
+  res.json({ versions: rows.map(r => ({ id: r.id, at: r.created_at, byName: r.user_name || (r.actor_kind === "system" ? "Steward" : "someone on your team"), what: what(r) })) });
 }));
 
 // POLISH-3 · WHAT ELEANOR WILL SEE. A template campaign's preview is the
@@ -21369,6 +21424,22 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
 // zone: 9:00 typed in Chicago was stored as 9:00 UTC and went out at 4 in the
 // morning. The conversion happens HERE, server-side, so every write path gets
 // it — a client that forgets is a client that schedules at the wrong hour.
+// EDITOR-1 · A CAMPAIGN'S OWN EMAIL, AS BLOCKS. The editor writes a
+// campaign's words as blocks (the same blocks a template is), checked by the
+// one validator. Returns { ok, blocks } or { ok:false, sentence }.
+async function campaignBlocksFrom(raw) {
+  if (!Array.isArray(raw)) return { ok: false, sentence: "The email's blocks are missing." };
+  const B = await emailCompose.blocksMod();
+  const PW = await import("../shared/pageWidgets.js");
+  const v = B.validateEmailBlocks(raw, PW.typesForSurface("email"));
+  return v.ok ? { ok: true, blocks: v.blocks } : { ok: false, sentence: v.error };
+}
+// A time to send that has already gone is refused, never taken as "now".
+async function pastSchedule(orgId, raw) {
+  if (!raw) return false;
+  const at = await scheduledInstant(orgId, raw);
+  return !at || at.getTime() <= Date.now();
+}
 async function scheduledInstant(orgId, raw) {
   if (!raw) return null;
   // An explicit instant (a Z or an offset) is already unambiguous — honoured
@@ -21458,6 +21529,14 @@ app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
 app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, type, subject, body, segment, scheduledAt } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
+  if (scheduledAt && await pastSchedule(req.user.orgId, scheduledAt))
+    return res.status(400).json({ error: "schedule_in_past", sentence: "That time has already gone. Pick a time from now on, or leave it empty and send it yourself." });
+  let blocks = null;
+  if (req.body.emailBlocks !== undefined && req.body.emailBlocks !== null) {
+    const v = await campaignBlocksFrom(req.body.emailBlocks);
+    if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.sentence });
+    blocks = v.blocks;
+  }
 
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
@@ -21467,6 +21546,8 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}),
      await scheduledInstant(req.user.orgId, scheduledAt), actor(req).id, actor(req).name]
   );
+  if (blocks) await run("UPDATE campaigns SET email_blocks=?::jsonb, preheader=? WHERE id=? AND org_id=?",
+    [JSON.stringify(blocks), String(req.body.preheader || "").slice(0, 300), id, req.user.orgId]);
   await markStarterReviewed(req, req.body.starterKey, body, id).catch(e => console.error("[campaigns] starter review:", e.message));
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -21483,6 +21564,14 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
   if (!["draft", "scheduled", "awaiting_approval"].includes(existing[0].status))
     return res.status(400).json({ error: "Only draft, scheduled or waiting campaigns can be edited" });
+  if (scheduledAt && status === "scheduled" && await pastSchedule(req.user.orgId, scheduledAt))
+    return res.status(400).json({ error: "schedule_in_past", sentence: "That time has already gone. Pick a time from now on, or leave it empty and send it yourself." });
+  let newBlocks = null;
+  if (Array.isArray(req.body.emailBlocks)) {
+    const v = await campaignBlocksFrom(req.body.emailBlocks);
+    if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.sentence });
+    newBlocks = v.blocks;
+  }
 
   // EMAIL-1 — AN APPROVAL COVERS THE WORDS THAT WERE APPROVED. A campaign that
   // is waiting stays waiting whatever status the composer sends, and one that
@@ -21517,6 +21606,9 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
   if (req.body.emailBlocks === null) {
     await run("UPDATE campaigns SET email_blocks=NULL, template_id=NULL WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   }
+  // EDITOR-1: the editor's blocks are the campaign's own words (it keeps its
+  // own copy, as a template campaign always has).
+  if (newBlocks) await run("UPDATE campaigns SET email_blocks=?::jsonb WHERE id=? AND org_id=?", [JSON.stringify(newBlocks), req.params.id, req.user.orgId]);
   if (typeof req.body.preheader === "string") {
     await run("UPDATE campaigns SET preheader=? WHERE id=? AND org_id=?", [req.body.preheader.slice(0, 300), req.params.id, req.user.orgId]);
   }
@@ -27842,6 +27934,25 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   if (!e) return res.status(404).send(evPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
     body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this event has been taken down. Ask the organization for its current link.</p></div>` }));
+  res.setHeader("Cache-Control", "no-store");
+  // EMBEDDABLE, the same rule the donation form follows.
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "frame-ancestors *");
+  res.send(await eventPageHtml(e, req.query || {}));
+}));
+
+// EDITOR-1 · THE EVENT PAGE, IN THE EDITOR. The same page /e/:slug sends, drawn
+// for the staff editor with its name and description marked to be typed in
+// place and its photo marked to be clicked. Org-scoped, reading only, and
+// drawn whether or not the page has an address yet.
+app.get("/events/:id/page/preview", requireAuth, wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const [e] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!e) return res.status(404).json({ error: "Event not found" });
+  res.json({ html: await eventPageHtml(e, {}, { editable: true }) });
+}));
+
+async function eventPageHtml(e, q = {}, { editable = false } = {}) {
   const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
   const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
@@ -27849,14 +27960,10 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits, picture
        FROM event_levels WHERE org_id=? AND event_id=? AND retired_at IS NULL ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
   const esc = PPG.escapeHtml;
-  res.setHeader("Cache-Control", "no-store");
-  // EMBEDDABLE, the same rule the donation form follows.
-  res.removeHeader("X-Frame-Options");
-  res.setHeader("Content-Security-Policy", "frame-ancestors *");
 
   const seats = new Map();
   for (const l of levels) seats.set(l.id, await evSeatsLeft(l));
-  const slugPath = `/e/${esc(e.public_slug)}`;
+  const slugPath = e.public_slug ? `/e/${esc(e.public_slug)}` : "#";
   const tickets = levels.filter(l => l.kind === "ticket");
   const sponsors = levels.filter(l => l.kind === "sponsor");
 
@@ -27911,7 +28018,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
         : form}
     </div>`;
   };
-  const problem = String(req.query.problem || "").slice(0, 200);
+  const problem = String(q.problem || "").slice(0, 200);
 
   // ── PARITY-2 Part 3: THE TOP OF THE PAGE ─────────────────────────────
   // The picture (or the film), then when and where, in the words a poster
@@ -27922,7 +28029,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     ? `<div class="hero video"><iframe src="${esc(video.embedUrl)}" title="${esc(e.name)}" loading="lazy"
          allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`
     : /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(e.hero_image_url || ""))
-    ? `<div class="hero"><img src="${esc(e.hero_image_url)}?w=1280" srcset="${esc(e.hero_image_url)}?w=640 640w, ${esc(e.hero_image_url)}?w=1280 1280w, ${esc(e.hero_image_url)}?w=1920 1920w" sizes="(max-width: 760px) 100vw, 720px" alt="${esc((e.hero_meta && e.hero_meta.alt) || e.name)}" style="object-position:${require("../pictures").focusCss(require("../pictures").readPicture({ url: e.hero_image_url, ...(e.hero_meta || {}) }))}"></div>`
+    ? `<div class="hero"${editable ? ` data-st-photo="cover"` : ""}><img src="${esc(e.hero_image_url)}?w=1280" srcset="${esc(e.hero_image_url)}?w=640 640w, ${esc(e.hero_image_url)}?w=1280 1280w, ${esc(e.hero_image_url)}?w=1920 1920w" sizes="(max-width: 760px) 100vw, 720px" alt="${esc((e.hero_meta && e.hero_meta.alt) || e.name)}" style="object-position:${require("../pictures").focusCss(require("../pictures").readPicture({ url: e.hero_image_url, ...(e.hero_meta || {}) }))}"></div>`
     : "";
   const day = EPG.civil(e.date), lastDay = EPG.civil(e.end_date);
   const dateWords = lastDay && lastDay !== day ? `${evDayWords(day)} to ${evDayWords(lastDay)}` : evDayWords(day);
@@ -27932,11 +28039,11 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // THE SHARE ROW. Plain links built on the one public address (publicAppUrl),
   // and a copy button that is the only script on the page and is not needed
   // to read it: the address is printed in the box beside it.
-  const shareUrl = `${publicAppUrl()}/e/${encodeURIComponent(e.public_slug)}`;
+  const shareUrl = `${publicAppUrl()}/e/${encodeURIComponent(e.public_slug || "")}`;
   const share = `<div class="card share" data-testid="event-share">
       <h2>Tell a friend</h2>
-      <div class="copy"><input readonly value="${esc(shareUrl)}" aria-label="The page address" onfocus="this.select()">
-        <button class="btn small quiet" type="button" onclick="var i=this.previousElementSibling;i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).then(function(){},function(){document.execCommand&&document.execCommand('copy')});this.textContent='Copied'">Copy link</button></div>
+      <div class="copy"><input readonly value="${esc(shareUrl)}" aria-label="The page address"${editable ? "" : ` onfocus="this.select()"`}>
+        <button class="btn small quiet" type="button"${editable ? "" : ` onclick="var i=this.previousElementSibling;i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).then(function(){},function(){document.execCommand&&document.execCommand('copy')});this.textContent='Copied'"`}>Copy link</button></div>
       <p class="links">${EPG.shareLinks(shareUrl, e.name).map(s => `<a href="${esc(s.href)}" target="_blank" rel="noopener noreferrer">${esc(s.label)}</a>`).join("")}</p>
     </div>`;
 
@@ -27990,17 +28097,17 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     a{color:#0d5c3a}
   </style>`;
 
-  res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, wide: true, body: `${style}
+  const html = evPage({ title: `${e.name} · ${brand.displayName}`, brand, wide: true, body: `${style}
     ${problem ? `<div class="err">${esc(problem)}</div>` : ""}
-    ${req.query.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organization")} will be in touch if a place comes free.</div>` : ""}
-    ${req.query.gave === "1" ? `<div class="ok">Thank you. Your gift went through, and your receipt is on its way by email.</div>` : ""}
+    ${q.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organization")} will be in touch if a place comes free.</div>` : ""}
+    ${q.gave === "1" ? `<div class="ok">Thank you. Your gift went through, and your receipt is on its way by email.</div>` : ""}
     ${hero}
     <div class="card when" data-testid="event-when">
-      <h1>${esc(e.name)}</h1>
+      <h1${editable ? ` data-st-edit="name"` : ""}>${esc(e.name)}</h1>
       <p><strong>${esc(dateWords)}</strong>${times ? `<br>${esc(times)}` : ""}</p>
       ${e.location ? `<p>${esc(e.location)} · <a href="${esc(mapHref)}" target="_blank" rel="noopener">Map and directions</a></p>` : ""}
       ${isOver ? "" : `<p class="small"><a href="${slugPath}/calendar.ics" data-testid="event-ics">Add to my calendar</a></p>`}
-      ${e.description ? `<p style="margin-top:10px">${esc(e.description)}</p>` : ""}
+      ${e.description || editable ? `<p style="margin-top:10px"${editable ? ` data-st-edit="description" data-st-multi="1"` : ""}>${esc(e.description || "")}</p>` : ""}
     </div>
     ${gallery}
     ${!isOver && tickets.length ? `<h2 class="sec">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
@@ -28011,8 +28118,11 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     <p class="small" style="text-align:center">${isOver && !canTakeACard ? "" : canTakeACard
       ? `Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.`
       : `Registering here tells ${esc(brand.displayName || "the organization")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
-  ` }));
-}));
+  ` });
+  // EDITOR-1: the editor's preview runs no script, so the share box's two
+  // inline handlers are never written into it (above).
+  return html;
+}
 
 // ── EVENTS-2 · THE ATTENDEE'S SIDE ────────────────────────────────────────
 // Where Stripe sends somebody after they pay. It writes NOTHING: the webhook
@@ -28675,6 +28785,12 @@ app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
     const { goalAmount: _g, publicSlug: _s, ...pageBody } = req.body || {};
     const pageErr = await saveEventPageFields(orgId, id, pageBody);
     if (pageErr) console.error("[events] new event's page fields:", pageErr.error);
+    // EDITOR-1 · THERE IS ALWAYS A PHOTO: a new event's page starts with one
+    // of Steward's, matched to the org's mission and marked stock until it is
+    // replaced. Only at creation, and only when the event has no picture.
+    const pic = await require("./stockPhotos").stockPictureForOrg(orgId, id);
+    if (pic) await run(`UPDATE events SET hero_image_url=$1, hero_meta=$2::jsonb WHERE id=$3 AND org_id=$4 AND hero_image_url IS NULL`,
+      [pic.url, JSON.stringify({ alt: pic.alt, fx: pic.fx, fy: pic.fy, stock: true }), id, orgId]);
     const [row] = await query("SELECT * FROM events WHERE id=$1", [id]);
     res.json({ ...row, attendee_count: 0, confirmed_count: 0, no_show_count: 0, invited_count: 0, total_revenue: 0 });
   } catch(e) { res.status(500).json({ error: e.message }); }

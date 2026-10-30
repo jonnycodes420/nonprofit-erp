@@ -66,7 +66,9 @@ const templateList = () => Object.entries(TEMPLATES).map(([key, t]) => ({ key, l
 function readImageMeta(v) {
   const m = v && typeof v === "object" ? v : {};
   const n = x => { const f = Number(x); return Number.isFinite(f) ? Math.min(1, Math.max(0, Math.round(f * 1000) / 1000)) : 0.5; };
-  return { alt: String(m.alt || "").slice(0, 200), fx: n(m.fx ?? 0.5), fy: n(m.fy ?? 0.5) };
+  // EDITOR-1: a photo from Steward's stock library says so until it is
+  // replaced (the settings route keeps the mark only on a real stock photo).
+  return { alt: String(m.alt || "").slice(0, 200), fx: n(m.fx ?? 0.5), fy: n(m.fy ?? 0.5), ...(m.stock === true ? { stock: true } : {}) };
 }
 
 // ── THE SETTINGS OF A PAGE, AS THE EDITOR SEES THEM ───────────────────────

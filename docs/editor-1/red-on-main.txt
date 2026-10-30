@@ -1,0 +1,34 @@
+  PASS  fixture org signs in
+  PASS  §1 the receipt opens as blocks with one locked tax block
+  PASS  §1 a save without the tax block is refused
+  PASS  §1 a save with the tax words changed is refused
+  FAIL  §1 the editable preview never marks the tax block to type in — 0
+  FAIL  §2 previewed as a real person: the preview says whose it is
+  FAIL  §2 a field is a chip that keeps its field and shows her value — []
+  FAIL  §2 her own last gift fills the gift field
+  FAIL  §2 the words are marked to be typed in
+  PASS  §2 a plain preview carries no marks and no chips
+  PASS  §2 another org's person is never previewed as
+  FAIL  §2 a campaign's unsaved blocks preview the same way, for the person chosen — {"s":404}
+  FAIL  §4 the audience is there — {"count":3,"names":[{"id":"d_e1_maria","name":"Maria Lopez","email":"maria@example.org"},{"id":"d_e1_ben","name":"Ben Ortiz","email":"ben@example.org"},{"id":"d_e1_ada","name":"Ada Kim","email":"ada@example.org"}],"sentence":"3 donors, including Maria Lopez and Ben Ortiz.","first":{"id":"d_e1_maria","name":"Maria Lopez","firstName":"Maria"},"leftOutCount":3,"leftOut":[{"reason":"no_email","count":
+  FAIL  §4 the reasons add up to the segment: total = can get it + every reason — {"au":{},"count":3,"left":3}
+  FAIL  §4 while Donor mail is off, nobody can get it and Send has its reason
+  FAIL  §4 the people it would reach are one reason, named, with its count
+  FAIL  §4 no address is a reason with its people
+  FAIL  §4 the line reads as one sentence
+  FAIL  §4 with Donor mail on, the same people can get it and it still adds up — {}
+  FAIL  §5 a time that has gone is refused on create — {"id":"cmp_bef42afb","org_id":"org_editor1","name":"Late","type":"appeal","subject":"x","body":"<p>x</p>","status":"scheduled","segment":"{\"mode\":\"all\"}","sent_at":null,"recipient_count":0,"open_count":0,"created_at":"2026-10-30T02:39:12.564Z","updated_at":"2026-10-30T02:39:12.564Z","scheduled_at":"2020-01-01T14:00:00.000Z","briefing":null,"goal_amount":null,"raised_amount":"0","start_date":nu
+  FAIL  §5 a time that has gone is refused when scheduling — {"id":"cmp_81bb87a8","org_id":"org_editor1","name":"Spring barn","type":"appeal","subject":"x","body":"<p>x</p>","status":"scheduled","segment":"{\"mode\":\"all\"}","sent_at":null,"recipient_count":0,"open_count":0,"created_at":"2026-10-30T02:39:12.573Z","updated_at":"2026-10-30T02:39:12.581Z","scheduled_at":"2020-01-01T14:00:00.000Z","briefing":null,"goal_amount":null,"raised_amount":"0","start_d
+  FAIL  §6 the campaign keeps its own blocks and preview line — {"s":200,"row":{"email_blocks":null,"preheader":"From the barn","status":"draft"}}
+  FAIL  §6 blocks the email cannot carry are refused — {"id":"cmp_81bb87a8","org_id":"org_editor1","name":"Spring barn","type":"appeal","subject":"x","body":"","status":"draft","segment":"{\"mode\":\"all\"}","sent_at":null,"recipient_count":0,"open_count":0,"created_at":"2026-10-30T02:39:12.573Z","updated_at":"2026-10-30T02:39:12.597Z","scheduled_at":null,"briefing":null,"goal_amount":null,"raised_amount":"0","start_date":null,"end_date":null,"goal_ca
+  PASS  §6 nothing was sent
+  FAIL  §7 a draft with a countdown, a matching challenge and recent gifts saves — {"s":400,"b":"bad_widget"}
+  FAIL  §8 the event page preview is the page, its name and description marked to type in — 404
+  PASS  §8 and it carries no inline script handler
+  PASS  §8 another org's event is a 404
+  FAIL  §9 every bundled photo has its LICENSES.md row, and every row its photo — "Cannot find module '/Users/jonathanatkinson/nonprofit-erp-editor1-main/shared/stockPhotos.js' imported from /Users/jonathanatkinson/nonprofit-erp-editor1-main/tests/lib/stockPhotosCheck.js"
+  FAIL  §9 mission words pick the photo group — "Cannot find module '/Users/jonathanatkinson/nonprofit-erp-editor1-main/shared/stockPhotos.js' imported from /Users/jonathanatkinson/nonprofit-erp-editor1-main/tests/lib/stockPhotosCheck.js"
+  FAIL  §9 a new giving page and a new event start with a stock photo from the org's group — "Cannot find module '/Users/jonathanatkinson/nonprofit-erp-editor1-main/shared/stockPhotos.js' imported from /Users/jonathanatkinson/nonprofit-erp-editor1-main/tests/lib/stockPhotosCheck.js"
+  SKIP [leg-skip]  (browser leg) client/dist not built
+
+9 passed, 22 failed

@@ -641,6 +641,11 @@ const PARAM_EXEMPT = [
   // proven directly in tests/dashboards.test.js §6, which asserts org B never
   // sees org A's people or figures on any of the four.
   [/^\/dashboards\/:key(\/pdf)?$/, "param is a dashboard NAME from a fixed registry, not a row id — see dashboards.test.js §6"],
+  // EDITOR-1 — the param is a STOCK PHOTO id from the bundled catalog in
+  // shared/stockPhotos.js, never a row id. "use" stores that photo for the
+  // token's own org (assetStore, content-addressed per org); the thumbnail is
+  // a bundled file with no org at all.
+  [/^\/stock-photos\/(thumb\/)?:id(\/use)?$/, "param is a STOCK PHOTO id from a fixed bundled catalog, not a row id; the org is the token's"],
   // FIX-2 A — the param is a SOURCE NAME from the fixed registry in
   // figureSources.js (gifts · givers · retention · …), never a row id. The org
   // comes from the token and is the first argument of every source's query;

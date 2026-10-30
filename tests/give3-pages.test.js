@@ -26,6 +26,11 @@
 //      the header image shows with its focus and crop, and the preview's
 //      markup equals the live page's → §7. Red on main: no preview route, no
 //      real page in the org form, no header image.
+//   8. EDITOR-1: the editor is the one shell with ONE preview at a time; the
+//      headline is typed in the page and saves as the draft. Its editing
+//      affordances are marked data-editor-*, and with them out the preview is
+//      still the live page byte for byte → §5/§7. Planted: an editor-only
+//      element left unmarked turns §5's markup comparison red.
 // On main the whole suite is red: the preview route, the design field and the
 // layouts do not exist. 1, 3 and 6 were planted and watched go red.
 //
@@ -215,43 +220,71 @@ async function reset() {
     await ctx.addInitScript(([tk, u, o]) => { localStorage.setItem("npe_token", tk); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
       [TOK, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
     const page = await ctx.newPage();
-    const html = async (sel) => page.evaluate(s => { const el = document.querySelector(s); return el ? el.innerHTML : null; }, sel);
+    // EDITOR-1: the editor shows ONE preview at a time (Phone or Desktop), and
+    // the page in it carries the editing affordances (the headline and story
+    // typed in place, the photo's tools, a block's handles). Those are marked
+    // data-editor-only / data-editor-wrap / data-inline; with them taken out,
+    // and the typed-in-place headline and story compared by their words, the
+    // rest of the preview is the live page byte for byte.
+    const norm = (sel, editor) => page.evaluate(([s, ed]) => {
+      const el = document.querySelector(s); if (!el) return null;
+      const c = el.cloneNode(true);
+      c.querySelectorAll("[data-editor-only]").forEach(n => n.remove());
+      c.querySelectorAll("[data-editor-wrap]").forEach(w => { const inner = w.querySelector("[data-editor-node]"); w.replaceWith(...(inner ? [...inner.childNodes] : [])); });
+      c.querySelectorAll(ed ? "[data-inline]" : "h1.g3-h1, .g3-story").forEach(n => n.remove());
+      c.querySelectorAll('[data-edit="photo"][style]').forEach(n => { if (/^position: relative;?$/.test(n.getAttribute("style"))) n.removeAttribute("style"); });
+      return c.innerHTML;
+    }, [sel, editor]);
+    const liveNorm = (pg) => pg.evaluate(() => { const el = document.querySelector('[data-testid="giving-page"]'); if (!el) return null;
+      const c = el.cloneNode(true); c.querySelectorAll("h1.g3-h1, .g3-story").forEach(n => n.remove()); return c.innerHTML; });
     const PREV_DESK = '[data-testid="scaled-desktop"] [data-testid="giving-page"]';
-    const PREV_PHONE = '[data-testid="real-preview"]:not([data-testid="scaled-desktop"] *) [data-testid="giving-page"]';
+    const PREV_PHONE = '[data-testid="real-preview"] [data-testid="giving-page"]';
 
-    // §5 the same markup, desktop pane and phone frame, against the live page.
+    // §5 the same markup, desktop and phone, against the live page.
     await page.goto(`${APP}/portal-editor?page=${PAGES.story}`, { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.waitForSelector(PREV_DESK, { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);
-    const desk = await html(PREV_DESK), phone = await html(PREV_PHONE);
+    const shell = await page.evaluate(() => ({ rail: !!document.querySelector('[data-testid="editor-left-rail"]'), previews: document.querySelectorAll('[data-testid="giving-page"]').length,
+      sideBySide: !!document.querySelector('[data-testid="preview-side-by-side"],[data-testid="editor-device-both"]') }));
+    ok("§5 EDITOR-1: the shell, with one preview at a time and no Side by side", shell.rail && shell.previews === 1 && !shell.sideBySide, shell);
+    const desk = await norm(PREV_DESK, true);
+    const deskH1 = await page.evaluate(s => { const h = document.querySelector(s + " [data-inline=headline]"); return h ? h.innerText : null; }, PREV_DESK);
+    await page.click('[data-testid="editor-device-phone"]');
+    await page.waitForTimeout(600);
+    const phone = await norm(PREV_PHONE, true);
     const live = await ctx.newPage();
     const liveHtml = async (w, h) => { await live.setViewportSize({ width: w, height: h }); await live.goto(`${APP}/give/${SLUG}/story-page`, { waitUntil: "networkidle" });
       await live.waitForSelector('[data-testid="giving-page"]', { timeout: 15000 }).catch(() => {});
-      return live.evaluate(() => { const el = document.querySelector('[data-testid="giving-page"]'); return el ? el.innerHTML : null; }); };
+      return { html: await liveNorm(live), h1: await live.evaluate(() => { const h = document.querySelector("h1.g3-h1"); return h ? h.textContent : null; }) }; };
     const l1440 = await liveHtml(1440, 900), l390 = await liveHtml(390, 844);
-    ok("§5 the editor draws the real page (desktop pane and phone frame)", !!desk && !!phone, { desk: !!desk, phone: !!phone });
-    ok("§5 desktop preview markup = the live page at 1440", !!desk && desk === l1440, { d: desk && desk.length, l: l1440 && l1440.length });
-    ok("§5 phone preview markup = the live page at 390", !!phone && phone === l390, { p: phone && phone.length, l: l390 && l390.length });
+    ok("§5 the editor draws the real page (desktop, then phone)", !!desk && !!phone, { desk: !!desk, phone: !!phone });
+    ok("§5 desktop preview markup = the live page at 1440", !!desk && desk === l1440.html, { d: desk && desk.length, l: l1440.html && l1440.html.length });
+    ok("§5 phone preview markup = the live page at 390", !!phone && phone === l390.html, { p: phone && phone.length, l: l390.html && l390.html.length });
+    ok("§5 the headline typed in place is the live page's headline", deskH1 === l1440.h1, { deskH1, live: l1440.h1 });
     const layoutAt = async (w) => { await live.setViewportSize({ width: w, height: 900 }); await live.waitForTimeout(150);
       return live.evaluate(() => { const g = document.querySelector(".g3-grid"); return g ? getComputedStyle(g).gridTemplateColumns.split(" ").length : 0; }); };
     ok("§5 two columns at 1440, one at 390", (await layoutAt(1440)) === 2 && (await layoutAt(390)) === 1);
 
-    // §5 the headline, typed, shows in the preview with no reload.
+    // §5 the headline, typed in the page itself, shows with no reload and saves as the draft.
     await page.evaluate(() => { window.__give3NoReload = true; });
-    await page.click('[data-testid="editor-mode-details"]');
-    await page.fill('[data-testid="details-headline"]', "Typed just now");
-    await page.waitForTimeout(150);
-    const h1s = await page.evaluate(() => [...document.querySelectorAll('[data-testid="real-preview"] h1')].map(h => h.textContent));
-    ok("§5 typing the headline changes every preview frame at once", h1s.length >= 2 && h1s.every(t => t === "Typed just now"), h1s);
+    await page.click(`${PREV_PHONE} [data-inline=headline]`);
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.type("Typed just now");
+    await page.waitForTimeout(200);
+    const h1s = await page.evaluate(() => [...document.querySelectorAll('[data-testid="real-preview"] h1')].map(h => h.innerText));
+    ok("§5 typing the headline in the preview changes it there", h1s.length >= 1 && h1s.every(t => t === "Typed just now"), h1s);
     ok("§5 without a reload", await page.evaluate(() => window.__give3NoReload === true));
-    // Clicking the headline in the preview jumps to its field.
-    await page.click('[data-testid="editor-mode-design"]');
-    await page.click(`${PREV_PHONE} h1`);
-    await page.waitForTimeout(250);
-    ok("§5 clicking the preview's headline opens its field", await page.evaluate(() => document.activeElement && document.activeElement.getAttribute("data-testid") === "details-headline"));
+    await page.waitForTimeout(1800);
+    const drafted = await api("GET", `/giving-pages/${PAGES.story}/page`, TOK);
+    ok("§5 and it saves as the draft", ((drafted.body.draftSettings || {}).title || "") === "Typed just now", drafted.body.draftSettings && drafted.body.draftSettings.title);
+    // Clicking the amounts in the preview opens the rail section that sets them.
+    await page.click(`${PREV_PHONE} [data-edit="amounts"]`);
+    await page.waitForTimeout(400);
+    ok("§5 clicking the preview's amounts opens The gift", await page.evaluate(() => !!document.querySelector('[data-rail-section="gift"] [data-testid="details-amounts"]')));
 
     // §6 the logo, whole, in the Design thumbnail and on the page.
-    await page.click('[data-testid="editor-mode-design"]');
+    await page.click('[data-testid="editor-device-desktop"]');
+    await page.click('[data-rail-section="design"] > button');
     await page.waitForTimeout(400);
     const thumb = await page.evaluate(() => { const i = [...document.querySelectorAll("img")].find(x => /portal-assets|data:image/.test(x.src) && x.closest('[style*="1 / 1"],[style*="aspect-ratio: 1"]'));
       return i ? getComputedStyle(i).objectFit : null; });
@@ -283,11 +316,9 @@ async function reset() {
     const hd = await api("PUT", "/portal-settings", TOK, { headerImageData: "data:image/png;base64," + banner.toString("base64"), headerFocalX: 0.2, headerFocalY: 0.8 });
     ok("§7 a header image saves (no layout was ever chosen)", hd.status === 200, hd.status);
     await page.goto(`${APP}/portal-editor?form=org`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForSelector('[data-testid="editor-mode-design"]', { timeout: 20000 }).catch(() => {});
-    await page.click('[data-testid="editor-mode-design"]').catch(() => {});
     await page.waitForSelector(PREV_DESK, { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);
-    const oDesk = await html(PREV_DESK), oPhone = await html(PREV_PHONE);
+    const oDesk = await norm(PREV_DESK, true);
     const shown = await page.evaluate(sel => { const g = document.querySelector(sel); const i = g && g.querySelector('[data-testid="page-header-image"] img');
       return g ? { layout: g.getAttribute("data-layout"), header: !!i, pos: i ? getComputedStyle(i).objectPosition : null, form: !!g.querySelector("#give-form") } : null; }, PREV_DESK);
     ok("§7 the editor draws the real page in Story, with the header image and the form", !!shown && shown.layout === "story" && shown.header && shown.form, shown);
@@ -298,8 +329,14 @@ async function reset() {
     const o1440 = await oLive(1440, 900), o390 = await oLive(390, 844);
     ok("§7 the public donation page shows the header image", /data-testid="page-header-image"/.test(o1440 || ""), !!o1440);
     ok("§7 desktop preview markup = the live donation page at 1440", !!oDesk && oDesk === o1440, { d: oDesk && oDesk.length, l: o1440 && o1440.length });
+    await page.click('[data-testid="editor-device-phone"]');
+    await page.waitForTimeout(600);
+    const oPhone = await norm(PREV_PHONE, true);
     ok("§7 phone preview markup = the live donation page at 390", !!oPhone && oPhone === o390, { p: oPhone && oPhone.length, l: o390 && o390.length });
     // A new header image shows the moment it is dropped, before any save.
+    await page.click('[data-testid="editor-device-desktop"]');
+    await page.click('[data-rail-section="design"] > button');
+    await page.waitForTimeout(300);
     const headerInput = page.locator('[data-field="header-image"] + * input[type="file"]');
     const hi = await headerInput.count();
     const next = await sharp({ create: { width: 1200, height: 400, channels: 3, background: { r: 40, g: 90, b: 70 } } }).png().toBuffer();
