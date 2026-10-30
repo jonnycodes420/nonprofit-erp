@@ -1249,7 +1249,10 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           const at = person.attendance || (person.attendance = { invited: false, rsvp: null, attended: false, table: null, party: null, logistics: [] });
           const inv = yes("invited"), rs = yes("rsvp"), att = yes("attended");
           if (inv) at.invited = true;
-          if (rs === true) at.rsvp = true; else if (rs === false && at.rsvp == null) at.rsvp = false;
+          // FIX-60: a "No" reply on a row the file itself marks not invited is no
+          // decline (nobody asked her): a giver who was never on the guest list
+          // stays off the event's list, never "Declined" or "Invited"
+          if (rs === true) at.rsvp = true; else if (rs === false && at.rsvp == null && !(inv === false && !at.invited)) at.rsvp = false;
           if (att) at.attended = true;
           const tb = s(get(bb, "table")); if (tb && !at.table) at.table = /^\d+$/.test(tb) ? `Table ${tb}` : tb;
           const ps = s(get(bb, "partySize")); if (ps && /^\d{1,2}$/.test(ps) && !at.party) at.party = +ps;

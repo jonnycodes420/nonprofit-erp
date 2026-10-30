@@ -24,7 +24,10 @@
 //      net ($566,183.93); an undone import says Undone only.
 //   §6 FIX-58, people once: the dinner's gift sheet and its guest list read
 //      "Registered 263" (party places plus declines); Registered is people,
-//      and came / gave add up. Red on main: 9 of 41.
+//      and came / gave add up. Red on main: 9 of 41. FIX-60: on the combined
+//      Finding Joy workbook (guest list and gifts in one file, Jonathan's key
+//      in expected-finding-joy.json), the people registered and came are the
+//      key's 219 and 172 rows (a couple's row is two people, one household).
 //
 // HOW IT GOES RED ON MAIN: the dinner preview is ready with no date (§1), the
 // pledges are due from the import day (§1), the event report has no guest
@@ -301,20 +304,26 @@ async function giftHistory() {
   await undo(tok, j.importId);
 }
 
-// §6 FIX-58: an event counts people once. The dinner's gift sheet and its
-// guest list, one event: "Registered 263" was 233 party places for 165 guests
-// plus 30 who declined.
+// §6 FIX-58: an event counts people once. The dinner's guest list and its
+// gifts, one event: "Registered 263" was 233 party places for 165 guests plus
+// 30 who declined. FIX-60: read from the combined Finding Joy workbook, whose
+// guest list and gifts are the same people (the old guest list belonged to
+// another gift sheet).
 async function eventPeople() {
   const ORG = "org_import5_people";
   const tok = await freshOrg(ORG, "IMPORT-5 event people (test)");
   const A = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event", eventName: "Finding Joy Dinner" };
-  const jd = await importJob(tok, { fileName: "jp-dinner-gifts-106.xlsx", sheets: await sheetsOf(path.join(RS, "jp-dinner-gifts-106.xlsx")), answers: A });
-  const jg = await importJob(tok, { fileName: "event-guest-list-scrubbed.xlsx", sheets: await sheetsOf(path.join(__dirname, "fixtures", "import", "event-guest-list-scrubbed.xlsx")), answers: A });
-  ok("§6 both files import into one event", jd.end && jd.end.status === "done" && jg.end && jg.end.status === "done", JSON.stringify([jd.end && jd.end.status, jg.end && jg.end.status]));
+  const FJ = "jp-finding-joy-combined-443.xlsx", K = JSON.parse(fs.readFileSync(path.join(RS, "expected-finding-joy.json"), "utf8"));
+  const jd = await importJob(tok, { fileName: FJ, sheets: await sheetsOf(path.join(RS, FJ)), answers: A });
+  ok("§6 the Finding Joy workbook imports into one event", jd.end && jd.end.status === "done", JSON.stringify([jd.end && jd.end.status]));
   const evs = await q("SELECT id FROM events WHERE org_id=$1", [ORG]);
   const ev = evs[0] || {};
   const key = await one(`SELECT COUNT(DISTINCT donor_id) FILTER (WHERE status IN ('registered','confirmed','attended','no_show'))::int AS reg,
                                 COUNT(*) FILTER (WHERE status='attended')::int AS came FROM event_attendees WHERE org_id=$1 AND event_id=$2`, [ORG, ev.id]);
+  const byRow = await one(`SELECT COUNT(DISTINCT COALESCE(d.household_id, d.id)) FILTER (WHERE a.status IN ('registered','confirmed','attended','no_show'))::int AS reg,
+                                   COUNT(DISTINCT COALESCE(d.household_id, d.id)) FILTER (WHERE a.status='attended')::int AS came
+                              FROM event_attendees a JOIN donors d ON d.id = a.donor_id WHERE a.org_id=$1 AND a.event_id=$2 AND d.deleted_at IS NULL`, [ORG, ev.id]);
+  ok(`§6 the people registered and came are the key's ${K.rsvp_yes} and ${K.attended} rows`, byRow.reg === K.rsvp_yes && byRow.came === K.attended, JSON.stringify([byRow, K.rsvp_yes, K.attended]));
   const rep = (await api("GET", `/events/${ev.id}/report`, tok)).body || {};
   const fig = k => ((rep.figures || []).find(f => f.key === k) || {}).value;
   const card = (((await api("GET", "/events", tok)).body) || []).find(e => e.id === ev.id) || {};
@@ -331,7 +340,7 @@ async function eventPeople() {
   let agree = null;
   try { agree = await assertSurfacesAgree(ORG, { token: tok, label: "after the dinner and its guest list", soft: true }); } catch (e) { agree = { ok: false, diffs: [String(e.message)] }; }
   ok("§6 the truth check: registered on the database, the page, the story and the card, and the counts add up", agree.ok, (agree.diffs || []).join("\n"));
-  await undo(tok, jg.importId); await undo(tok, jd.importId);
+  await undo(tok, jd.importId);
 }
 
 (async () => {
