@@ -421,6 +421,12 @@ export function GlobalStyles() {
        (No backticks in here: this block is inside a template literal and one
        backtick ends the string. It did, and 'takeover' became an identifier.) */
     .fullscreen-takeover{left:var(--sidebar-w,0px)!important;}
+    /* PROFILE-2 Part 1 - A PAGE THAT FILLS THE CONTENT AREA IS STILL A PAGE.
+       The donor profile and the event page were position:fixed panels with
+       overflow hidden and their own scroll boxes, so the wheel did nothing
+       over most of the screen. They sit in the content area now, edge to edge
+       (the margins undo .app-content's padding), and the window scrolls. */
+    .page-takeover{margin:-20px -32px -28px -32px;min-height:calc(100vh - 52px);}
     .app-topbar{user-select:none;}
     /* POLISH-2 - A PLACEHOLDER LOOKS LIKE ONE. "She asked for the impact
        report." in the log-a-call box read as a note already written. Every
@@ -576,7 +582,7 @@ export function GlobalStyles() {
          height; what is in it sticks under the 52px top bar. The panel clips
          rather than hides its overflow, which would stop the stick. */
       .home-shell{overflow:clip;}
-      .home-rail-inner{position:sticky;top:68px;max-height:calc(100vh - 84px);overflow-y:auto;}
+      .home-rail-inner{position:sticky;top:68px;}
 
     }
     /* A row in the rail is pressable and says so quietly. */
@@ -745,7 +751,9 @@ export function GlobalStyles() {
          so it height-capped and SLICED the Giving History card mid-render
          with the dark rail starting straight through it. The body is now the
          only scroll container; both columns grow to their content. */
-      .donor-profile-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      .page-takeover,.fade-in.page-takeover{margin:-20px -16px 0 -16px!important;min-height:0!important;max-width:none!important;}
+      .donor-profile-body{grid-template-columns:1fr!important;overflow-x:hidden!important;overflow-x:clip!important;}
+      .dp-rail-sticky{position:static!important;min-height:0!important;}
       /* min-width:0 matters: with overflow:visible a grid item's auto min
          size is its content's min-content (the 537px tab row), without it
          the whole column blows out sideways. */
@@ -819,7 +827,7 @@ export function GlobalStyles() {
 
       /* Grants pipeline + profile */
       .grants-pipeline-grid{grid-template-columns:repeat(2,1fr)!important;}
-      .grant-profile-body{display:flex!important;flex-direction:column!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      .grant-profile-body{display:flex!important;flex-direction:column!important;overflow-x:hidden!important;overflow-x:clip!important;}
       .grant-profile-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
       .grant-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
       .grant-2col{grid-template-columns:1fr!important;}
@@ -834,7 +842,7 @@ export function GlobalStyles() {
       /* Events */
       .events-stats-grid{grid-template-columns:repeat(2,1fr)!important;}
       .events-grid{grid-template-columns:1fr!important;}
-      .event-detail-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      .event-detail-body{grid-template-columns:1fr!important;overflow-x:hidden!important;overflow-x:clip!important;}
       .event-detail-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
 
       /* Reports: tabs scroll horizontally at any width (SectionTabs base);

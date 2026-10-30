@@ -42,6 +42,7 @@ import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./Lo
 import { ItemMenu, EditedMarker, offerUndo, HistoryList } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { useStickyTop } from "../lib/stickyRail";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
 import { civilDays } from "../../../shared/firstThing.js";
@@ -1256,6 +1257,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // what makes the hand-off one step rather than two.
   const [dpTab,setDpTab]=useState(initialAddGift?"gifts":"overview");
   const [whyStopOpen,setWhyStopOpen]=useState(false);
+  const railRef=useRef(null);   // PROFILE-2 Part 1
+  const railTop=useStickyTop(railRef);
+  // The window is the profile's scroller now: a profile opened from far down the list starts at its top.
+  useEffect(()=>{if(typeof window!=="undefined")window.scrollTo(0,0);},[donor.id]);
   const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
 
   // Full gift data for Gifts & Pledges tab
@@ -2072,7 +2077,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const lastGiftDisplay=giftLoading||giftReadErr?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
 
   return(
-    <div className="fade-in fullscreen-takeover" style={{position:"fixed",top:52,left:0,right:0,bottom:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div className="fade-in page-takeover" data-testid="donor-profile" style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
+      {/* PROFILE-2 Part 1: the profile is the page, not a fixed panel over it.
+          HOTFIX-1 made it position:fixed with overflow:hidden, and once
+          INSIGHTS-1 and IMPORT-5 grew the header to 540px nothing over it
+          scrolled at all; the window scrolls now, and only the rail sticks. */}
       {showGiftModal&&<GiftLinkModal donor={donor} orgName={orgName} onClose={()=>setShowGiftModal(false)}/>}
       {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
           Code intact, re-enable by uncommenting.
@@ -2321,18 +2330,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
       </div>
 
-      <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+      <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)"}}>
         {/* LEFT — the main column. HOTFIX-1: its ground is named here rather
             than inherited, because the rail beside it is defined as being on a
             CONTRASTING ground and a contrast between two inherited values is
             not a contrast anybody can check. See docs/decisions/design-system.md. */}
-        <div data-testid="dp-main-column" style={{overflowY:"auto",background:T.bg,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
+        <div data-testid="dp-main-column" style={{background:T.bg,minWidth:0,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
               Directly under the header, left-aligned. It replaces the old six
               tabs and the "Everything with" chips; it scrolls sideways at 390
               (and only it does). Each count is the length of the list it
               opens. */}
-          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,padding:"0 12px",position:"sticky",top:0,zIndex:5}}>
+          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,padding:"0 12px",position:"sticky",top:52,zIndex:5}}>
             {PROFILE_TABS.map(([id,label])=>{
               const n=id==="gifts"?(giftLoading||giftReadErr?null:giftCountReal):id==="asks"?(openProposals.length+opps.filter(o=>o.status==="open").length)
                 :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0):null;
@@ -3332,7 +3341,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             emphasis (the quick actions). Nothing new enters the palette: the
             rail's greys are cream at reduced opacity (T.sage400/600), which
             is the design system's own answer for secondary text on ink. */}
-        <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
+        <div data-testid="dp-right-rail" ref={railRef} className="dp-rail-sticky" style={{position:"sticky",top:railTop,alignSelf:"start",minHeight:"calc(100vh - 52px)",boxSizing:"border-box",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
           {/* INT-BUILD-1 Part 3, FIX-14 Part 3 — the ONE next step (with Edit and
               Delete), then Rhythm: past touches and planned steps on one strip,
               and the journey chosen or changed in the same panel. */}

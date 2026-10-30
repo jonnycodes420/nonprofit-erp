@@ -55,8 +55,8 @@ const assetDir = path.join(DIST, "assets");
 const distJs = fs.existsSync(assetDir) ? fs.readdirSync(assetDir).filter(f => f.endsWith(".js")) : [];
 if (!distJs.some(f => fs.readFileSync(path.join(assetDir, f), "utf8").includes(API_ORIGIN)))
   skip("client/dist not built against the local API");
-let chromium;
-try { ({ chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); }
+let chromium, PW_ALL;
+try { ({ chromium } = PW_ALL = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); }
 catch { skip("Playwright not found (set PLAYWRIGHT_DIR)"); }
 
 // ── the routes, read from the registry rather than listed here ────────────
@@ -466,6 +466,113 @@ async function publicPagesUnderTheCsp(browser) {
     ok(`§csp ${p} draws and throws nothing`, drawn > 0 && errors.length === 0, { drawn, errors: errors.slice(0, 3) });
   }
   await ctx.close();
+}
+
+// ── PROFILE-2 Part 1 · EVERY PAGE SCROLLS AS ONE PAGE ─────────────────────
+// Justin's Place, 29 Oct: the donor profile was a fixed panel with overflow
+// hidden, its 540px header scrolled nowhere and the two columns under it each
+// had their own scrollbar, so the wheel did nothing over most of the screen
+// (HOTFIX-1 e4c1dfe made it fixed; INSIGHTS-1 ff4302b and IMPORT-5 58cc062 grew
+// the header). The event page and the grant profile had the same shape. Here,
+// in Chromium AND WebKit, at 1440x900 and 390x844, on each page:
+//   · a wheel turn over the main column moves the window (when the page is
+//     taller than the screen, which the profile and the event page must be);
+//   · Page Down moves it too, and at the very bottom the last element is on screen;
+//   · nothing has its own vertical scrollbar except the allowed: the app's nav
+//     sidebar, a select/textarea/pre, a listbox, and a pick-list marked
+//     data-own-scroll (the event's 195-guest seating list and its people picker).
+// HOW IT GOES RED ON MAIN: the profile's window never moves (it is position
+// fixed) and dp-main-column / dp-right-rail / donor-profile-body scroll alone;
+// the event page's event-detail-body does the same.
+async function everyPageScrolls(pw, auth) {
+  const { q } = require("./helpers");
+  const orgId = auth.org && auth.org.id;
+  const [rich] = await q("SELECT donor_id FROM gifts WHERE org_id=$1 AND donor_id IS NOT NULL GROUP BY donor_id ORDER BY count(*) DESC LIMIT 1", [orgId]);
+  const [ev] = await q("SELECT id FROM events WHERE org_id=$1 ORDER BY date DESC NULLS LAST LIMIT 1", [orgId]);
+  const [gr] = await q("SELECT id FROM grants WHERE org_id=$1 LIMIT 1", [orgId]).catch(() => []);
+  ok("§scroll the walked org has a donor with gifts and an event", !!rich && !!ev, { rich, ev });
+  const pages = ["/dashboard", "/donors", rich && `/donors/${rich.donor_id}`, "/app/fundraising", "/app/events", "event", "/app/communications", "/app/finance", "/app/reports", "/app/settings", gr && "grant"].filter(Boolean);
+  const MUST_BE_LONG = new Set([rich && `/donors/${rich.donor_id}`, "event"]);
+  for (const engine of ["chromium", "webkit"]) {
+    if (!pw[engine]) { ok(`§scroll ${engine} is installed`, false, "no " + engine + " in Playwright"); continue; }
+    const br = await pw[engine].launch();
+    for (const [w, h] of [[1440, 900], [390, 844]]) {
+      const ctx = await br.newContext({ viewport: { width: w, height: h } });
+      await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+        [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+      const page = await ctx.newPage();
+      for (const where of pages) {
+        const tag = `§scroll ${engine} ${w} ${where}`;
+        if (where === "event" || where === "grant") {
+          const tab = where === "event" ? "events" : "grants";
+          await page.goto(`${APP}/app/${tab}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+          if (where === "event") {
+            const all = page.getByRole("button", { name: "All", exact: true });
+            if (await all.count()) await all.first().click();
+            await page.waitForTimeout(400);
+            const m = page.getByRole("button", { name: /Manage/ });
+            if (!(await m.count())) { ok(`${tag} — an event opens`, false, "no Manage button"); continue; }
+            await m.first().click();
+            await page.locator("[data-testid=event-detail]").waitFor({ timeout: 8000 }).catch(() => {});
+          } else {
+            const g = page.locator("[data-testid^=grant-card], [data-testid=grant-row]").first();
+            if (!(await g.count())) { console.log(`  SKIP  ${tag} — no grant card to open`); continue; }
+            await g.click();
+            await page.locator("[data-testid=grant-profile]").waitFor({ timeout: 8000 }).catch(() => {});
+          }
+        } else {
+          await page.goto(APP + where, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+        }
+        await page.waitForTimeout(700);
+        const docH = await page.evaluate(() => document.documentElement.scrollHeight);
+        if (MUST_BE_LONG.has(where)) ok(`${tag} — the page is taller than the screen (it is one page)`, docH > h + 50, { docH, h });
+        if (docH > h + 50) {
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const x = w < 500 ? Math.round(w / 2) : Math.round(240 + (w - 240) * 0.35);
+          await page.mouse.move(x, Math.round(h * 0.55));
+          await page.mouse.wheel(0, 500);
+          await page.waitForTimeout(350);
+          ok(`${tag} — the wheel over the main column moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          await page.evaluate(() => { window.scrollTo(0, 0); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+          await page.mouse.click(x, 4 + (w < 500 ? 60 : 56)).catch(() => {});   // a click on blank page ground, so the keys go to the page
+          await page.evaluate(() => { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); });
+          await page.keyboard.press("PageDown");
+          await page.waitForTimeout(450);
+          ok(`${tag} — Page Down moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+          await page.waitForTimeout(300);
+          // The lowest thing a person can see: visible, sized, and not inside a
+          // closed fold or a box that scrolls on its own (the allowed ones).
+          const last = await page.evaluate(() => {
+            const root = document.querySelector(".app-content") || document.body;
+            let low = { bottom: 0, what: "" };
+            for (const el of root.querySelectorAll("*")) {
+              const r = el.getBoundingClientRect();
+              if (!r.width || !r.height) continue;
+              if (el.checkVisibility && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+              if (el.closest("details:not([open]) > :not(summary)")) continue;
+              let p = el.parentElement, boxed = false;
+              while (p && p !== root) { const s = getComputedStyle(p); if (/(auto|scroll|hidden|clip)/.test(s.overflowY) && p.scrollHeight > p.clientHeight + 2) { boxed = true; break; } p = p.parentElement; }
+              if (boxed) continue;
+              if (r.bottom > low.bottom) low = { bottom: Math.round(r.bottom), what: (el.innerText || el.tagName).slice(0, 40) };
+            }
+            return { ...low, vh: innerHeight };
+          });
+          ok(`${tag} — at the bottom, the last element is on screen`, last.bottom <= last.vh + 2, last);
+        }
+        const stray = await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => {
+          const s = getComputedStyle(el);
+          if (!/(auto|scroll)/.test(s.overflowY) || el.scrollHeight <= el.clientHeight + 2 || el.clientHeight < 30) return false;
+          if (["SELECT", "TEXTAREA", "PRE", "CODE"].includes(el.tagName)) return false;
+          if (el.closest(".app-sidebar,[role=listbox],[role=dialog],[aria-modal=true],[data-own-scroll]")) return false;
+          return true;
+        }).map(el => (el.dataset.testid || (typeof el.className === "string" && el.className) || el.tagName).slice(0, 40)));
+        ok(`${tag} — no section has its own scrollbar`, stray.length === 0, stray);
+      }
+      await ctx.close();
+    }
+    await br.close();
+  }
 }
 
 (async () => {
@@ -903,6 +1010,7 @@ async function publicPagesUnderTheCsp(browser) {
   await greetingFirst(browser, auth);
   await emailEditorEverywhere(browser);
   await publicPagesUnderTheCsp(browser);
+  await everyPageScrolls(PW_ALL, auth);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg
