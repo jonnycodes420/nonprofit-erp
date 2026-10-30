@@ -2314,10 +2314,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           <div className="dph-backrow" style={{gridColumn:"1 / 3",gridRow:1,alignSelf:"center"}}>
             <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"6px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>← Donors</button>
           </div>
-          <div className="dph-avatar" style={{gridColumn:1,gridRow:2}}>
+          <div className="dph-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"start"}}>
             <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={72}/>
           </div>
-          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:"2 / -1",gridRow:2,minWidth:0}}>
+          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:"2 / -1",gridRow:2,minWidth:0,alignSelf:"start",paddingTop:4}}>   {/* POLISH-1: top-aligned with the face, photo or not */}
             <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,fontSize:38,fontWeight:400,color:T.ink,letterSpacing:"-0.015em",
               fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.08,overflowWrap:"break-word"}}>{headName||"\u00a0"}</h1>
           </div>

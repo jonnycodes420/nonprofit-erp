@@ -128,7 +128,7 @@ module.exports = async function partOne(h) {
         await pg.goto(`${APP}/donors/${id}`, { waitUntil: "domcontentloaded" });
         await pg.waitForSelector('[data-testid="dp-name"]', { timeout: 30000 }).catch(() => {});
         await pg.waitForTimeout(1500);
-        const photo = await pg.locator('[data-testid="dp-identity"] img[data-testid="person-mark"]').count();
+        const photo = await pg.locator('[data-testid="dp-head"] img[data-testid="person-mark"]').count();   // PROFILE-2: the face sits beside dp-identity in the header grid
         const n = await pg.locator('[data-testid="dp-name"]').first().boundingBox({ timeout: 4000 }).catch(() => null);
         const m = await pg.locator('[data-testid="donor-photo-drop"]').first().boundingBox({ timeout: 4000 }).catch(() => null);
         box[id] = { photo, n, m };
