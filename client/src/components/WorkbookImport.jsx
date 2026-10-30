@@ -22,6 +22,7 @@ import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { displayDate } from "../../../shared/displayDate";
 import { buildMoveFileFacts, newRunId } from "../../../shared/movePlan";
+import { countLabel } from "../../../shared/countWords.js";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? T.green600 : r === "pledges" || r === "recurring" ? T.gold600 : T.ink3;
@@ -179,7 +180,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   // ── build the ONE submission (summary + write share it) ──────────────────
   const buildNow = async () => {
     setBuilding(true); setErr("");
-    setProgressText(`Reading ${fmtN(roled.filter(s => s.role === "gifts").reduce((a, s) => a + s.rowCount, 0))} gift rows across ${giftSheets.length} sheet${giftSheets.length === 1 ? "" : "s"}…`);
+    setProgressText(`Reading ${fmtN(roled.filter(s => s.role === "gifts").reduce((a, s) => a + s.rowCount, 0))} gift rows across ${countLabel(giftSheets.length, "sheet")}…`);
     await new Promise(r => setTimeout(r, 60));   // let the status paint before the sync build
     try {
       const customAssignments = {};
@@ -703,7 +704,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, maxHeight: 140, overflowY: "auto" }}>
             {s.merges.slice(0, 300).flatMap((m, i) => (m.folded || []).map((f, j) => (
               <div key={`${i}-${j}`} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}>
-                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong>, {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
+                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong>, {f.via}; {f.giftIds && f.giftIds.length ? `${countLabel(f.giftIds.length, "gift")} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
               </div>
             )))}
           </div>

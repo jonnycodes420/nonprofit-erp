@@ -9,6 +9,7 @@ import { GivingSourcesManager } from "../components/Settings";
 import { USERS_SENTENCE, SEAT_REFUSED_SENTENCE } from "../../../shared/seats";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
+import { countLabel } from "../../../shared/countWords.js";
 
 // The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
 // Team org can slot in an extra "Invite your team" step while Core skips it
@@ -610,7 +611,7 @@ export default function WelcomePage() {
                  the sample only after she confirms it. */
               <div data-testid="import-sample-loaded" style={{ background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
                 <div style={{ fontSize: 14, color: ink, fontWeight: 700, marginBottom: 4 }}>
-                  Sample data is loaded: {sampleCount.toLocaleString()} sample donor{sampleCount === 1 ? "" : "s"}.
+                  Sample data is loaded: {countLabel(sampleCount, "sample donor")}.
                 </div>
                 <div style={{ fontSize: 13, color: ink3, lineHeight: 1.55, marginBottom: 12 }}>
                   They are there to show you around, and none of them is yours. Your own file is still to come.
@@ -645,7 +646,7 @@ export default function WelcomePage() {
                 <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,${T.gold500} 40%,${T.gold300} 50%,${T.gold500} 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
                 <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: T.gold500 }} />
                 <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 18, color: ink, marginBottom: 3 }}>
-                  {realDonorCount.toLocaleString()} donor{realDonorCount === 1 ? "" : "s"}, safely home.
+                  {countLabel(realDonorCount, "donor")}, safely home.
                 </div>
                 <div style={{ fontSize: 12.5, color: ink3 }}>That was the hard part. You can import more anytime from Donors → Import.</div>
               </div>
@@ -919,7 +920,7 @@ export default function WelcomePage() {
               <p style={{ fontSize: 14, fontStyle: "italic", color: T.gold600, margin: 0 }}>Every great organization starts here.</p>
               <div style={{ fontSize: 13, color: ink3, marginTop: 14, lineHeight: 1.7 }}>
                 {realDonorCount > 0
-                  ? <>{realDonorCount.toLocaleString()} donor{realDonorCount === 1 ? "" : "s"} imported · 1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>
+                  ? <>{countLabel(realDonorCount, "donor")} imported · 1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>
                   : <>1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>}
               </div>
             </div>

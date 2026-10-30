@@ -1,5 +1,6 @@
 // shared/agentShape.js — BUILD-97 Part 3. THE AGENT YOU CAN TELL WHAT TO DO.
 import { clipAtWord } from "./askGuide.js";
+import { countLabel } from "./countWords.js";
 //
 // BUILD-75 C.2 drew the line and it has not moved:
 //
@@ -953,7 +954,7 @@ export function dailyLine({ did = 0, sent = 0, waiting = 0 } = {}) {
   const n = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
   did = n(did); sent = n(sent); waiting = n(waiting);
   if (!did && !sent && !waiting) return "";
-  const plural = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+  const plural = (k, word) => countLabel(k, word);
   let done = "";
   if (did) done = `Steward did ${plural(did, "thing")} for you yesterday` + (sent ? ` and sent ${plural(sent, "message")}` : "");
   else if (sent) done = `Steward sent ${plural(sent, "message")} for you yesterday`;

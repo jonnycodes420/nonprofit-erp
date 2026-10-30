@@ -8,6 +8,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
 import { DonorLink } from "./RecordLink";
 import { driftCounts, driftBadgeLabel, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING } from "../../../shared/driftWords";
+import { countLabel } from "../../../shared/countWords.js";
 
 export function DriftList({ onSelectDonor, onBack }) {
   const [d, setD] = useState(null);
@@ -37,7 +38,7 @@ export function DriftList({ onSelectDonor, onBack }) {
       {d && <>
         <p style={{ fontSize: 13.5, color: T.ink3, margin: "6px 0 10px", lineHeight: 1.5 }}>
           {c.high > 0 ? `${c.high} past their own pattern: ${fmtFull(d.atRiskAmount)} at risk, the sum of what they usually give. ` : ""}
-          {c.medium > 0 ? `${c.medium} early sign${c.medium === 1 ? "" : "s"}: ${EARLY_SIGNS_MEANING}.` : ""}
+          {c.medium > 0 ? `${countLabel(c.medium, "early sign")}: ${EARLY_SIGNS_MEANING}.` : ""}
           {!c.anyDrifting ? "Nobody is past their own pattern. Steward watches every donor's own giving rhythm." : ""}
         </p>
         {high.length > 0 && <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{high.map(row)}</ul>}

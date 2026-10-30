@@ -322,15 +322,42 @@ function eventPairCounts(rows) {
   }
   return [...by.values()];
 }
+// FIX-58 · pledges whose first installment is dated the event's own day (an
+// import before Jonathan's 29 Oct rule), so a dinner pledge read overdue the
+// week after the dinner. Proposed only: each installment dated on the event's
+// day of the year moves to Dec 31 of its own year, the way an import dates it
+// now. A pledge already moved, or whose event falls on Dec 31, is left alone.
+const PLEDGE_EVENT_DAY_SQL = `
+  SELECT p.id, p.donor_id, d.name AS donor_name, p.amount, p.due_date AS pledge_due, ev.name AS event_name,
+         to_char(ev.date, 'YYYY-MM-DD') AS event_day,
+         json_agg(json_build_object('id', i.id, 'seq', i.seq, 'due', LEFT(i.due_date::text, 10), 'paid', i.paid_gift_id IS NOT NULL) ORDER BY i.seq) AS inst
+    FROM pledges p
+    JOIN events ev ON ev.id = p.event_id AND ev.org_id = p.org_id
+    JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
+    JOIN pledge_installments i ON i.pledge_id = p.id AND i.org_id = p.org_id
+   WHERE p.org_id = ? AND p.status = 'open' AND to_char(ev.date, 'MM-DD') <> '12-31' AND p.id = ANY(COALESCE(?::text[], ARRAY[p.id]))
+   GROUP BY p.id, d.name, ev.name, ev.date
+  HAVING MIN(LEFT(i.due_date::text, 10)) FILTER (WHERE i.seq = 1) = to_char(ev.date, 'YYYY-MM-DD')
+   ORDER BY d.name, p.id`;
+async function pledgeEventDayRows(orgId, onlyIds = null) {
+  const rows = await query(PLEDGE_EVENT_DAY_SQL, [orgId, onlyIds]);
+  return rows.map(r => {
+    const md = r.event_day.slice(5);
+    const moves = (r.inst || []).map(i => ({ id: i.id, seq: i.seq, paid: i.paid, before: i.due, after: i.due && i.due.slice(5) === md ? `${i.due.slice(0, 4)}-12-31` : i.due }));
+    const pd = String(r.pledge_due || "").slice(0, 10);
+    return { pledgeId: r.id, donorId: r.donor_id, name: r.donor_name, amount: Math.round(parseFloat(r.amount) * 100) / 100, eventName: r.event_name, eventDay: r.event_day,
+             pledgeDueBefore: pd, pledgeDueAfter: pd.slice(5) === md ? `${pd.slice(0, 4)}-12-31` : pd, installments: moves };
+  });
+}
 
 // The counts, computed once. The page, the nightly run and the import hook
 // all read this, so a count and the rows it opens cannot disagree.
 async function healthCounts(orgId) {
   const people = await livePeople(orgId);
-  const [found, addresses, emails, moves, couples, names, eventPairs] = await Promise.all([
+  const [found, addresses, emails, moves, couples, names, eventPairs, pledgeDays] = await Promise.all([
     pairsAndFamilies(orgId, people), addressRows(orgId, people), emailRows(orgId, people),
     query("SELECT COUNT(*)::int AS n FROM ncoa_moves WHERE org_id=? AND status='pending'", [orgId]),
-    coupleRows(orgId, people), nameNoteRows(orgId, people), eventPairRows(orgId, people),
+    coupleRows(orgId, people), nameNoteRows(orgId, people), eventPairRows(orgId, people), pledgeEventDayRows(orgId),
   ]);
   const pairs = found.pairs;
   const [{ n: ncoaFiles } = { n: 0 }] = await query("SELECT COUNT(*)::int AS n FROM ncoa_batches WHERE org_id=?", [orgId]);
@@ -349,6 +376,7 @@ async function healthCounts(orgId) {
     namesWithNotes: names.length,
     eventDuplicates: eventPairs.length,
     eventDuplicatesByEvent: eventPairCounts(eventPairs),
+    pledgesOnEventDay: pledgeDays.length,
     _pairs: pairs, _people: people,
   };
 }
@@ -1104,6 +1132,59 @@ app.post("/data-health/pairs/undismiss", requireAuth, checkWriteAccess, wrap(asy
   const r = await run("DELETE FROM data_health_dismissals WHERE org_id=? AND kind='pair' AND key=?", [req.user.orgId, DH.pairKey(String(a), String(b))]);
   if (!r.changes) return res.status(404).json({ error: "Nothing to undo." });
   res.json({ ok: true });
+}));
+
+// ── Pledges whose first installment is the event's day (FIX-58) ──────────
+const pledgeWord = n => `${n.toLocaleString("en-US")} ${n === 1 ? "pledge has" : "pledges have"}`;
+app.get("/data-health/pledge-dates", requireAuth, wrap(async (req, res) => {
+  const rows = await pledgeEventDayRows(req.user.orgId);
+  res.json({ rows, sentence: `${pledgeWord(rows.length)} a first installment dated the event day` });
+}));
+// Her click: re-decided from the pledges as they are now, never from the
+// screen. One batch, each date it changed kept, so Undo puts each one back.
+app.post("/data-health/pledge-dates/apply", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body?.pledgeIds) ? [...new Set(req.body.pledgeIds.map(String))].slice(0, 5000) : null;
+  if (ids && !ids.length) return res.status(400).json({ error: "Choose at least one pledge." });
+  const orgId = req.user.orgId, me = await who(req);
+  const batchId = "pdf_" + uuid().replace(/-/g, "").slice(0, 12);
+  const touched = new Set();
+  let n = 0;
+  // one click at a time per org, so two clicks cannot move one pledge twice
+  await withAdvisoryLock(`pledge-dates:${orgId}`, () => withTransaction(async (client) => {
+    const props = await pledgeEventDayRows(orgId, ids);
+    for (const p of props) {
+      for (const i of p.installments) {
+        if (i.after === i.before) continue;
+        await runTx(client, "UPDATE pledge_installments SET due_date=? WHERE id=? AND org_id=? AND due_date=?", [i.after, i.id, orgId, i.before]);
+        await runTx(client, `INSERT INTO pledge_date_fixes (id, org_id, batch_id, pledge_id, installment_id, before_due, after_due, created_by, created_by_name)
+                             VALUES (?,?,?,?,?,?,?,?,?)`, ["pdx_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, p.pledgeId, i.id, i.before, i.after, me.id, me.name]);
+      }
+      if (p.pledgeDueAfter !== p.pledgeDueBefore) {
+        await runTx(client, "UPDATE pledges SET due_date=?, updated_at=NOW() WHERE id=? AND org_id=?", [p.pledgeDueAfter, p.pledgeId, orgId]);
+        await runTx(client, `INSERT INTO pledge_date_fixes (id, org_id, batch_id, pledge_id, installment_id, before_due, after_due, created_by, created_by_name)
+                             VALUES (?,?,?,?,NULL,?,?,?,?)`, ["pdx_" + uuid().replace(/-/g, "").slice(0, 12), orgId, batchId, p.pledgeId, p.pledgeDueBefore, p.pledgeDueAfter, me.id, me.name]);
+      }
+      touched.add(p.donorId); n++;
+    }
+  }));
+  if (touched.size) await require("../afterChange").afterChange(orgId, [...touched], { door: "data_health_pledge_dates" }).catch(e => console.error("[data-health] pledge dates after change:", e.message));
+  res.status(201).json({ applied: n, batchId: n ? batchId : null, sentence: `${pledgeWord(n)} ${n === 1 ? "its" : "their"} first installment on Dec 31 of the event's year now.` });
+}));
+app.post("/data-health/pledge-dates/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, batchId = String(req.body?.batchId || "");
+  const rows = await query("SELECT * FROM pledge_date_fixes WHERE org_id=? AND batch_id=? AND undone_at IS NULL", [orgId, batchId]);
+  if (!rows.length) return res.status(404).json({ error: "Nothing to undo." });
+  const pledgeIds = [...new Set(rows.map(r => r.pledge_id))];
+  await withTransaction(async (client) => {
+    for (const r of rows) {
+      if (r.installment_id) await runTx(client, "UPDATE pledge_installments SET due_date=? WHERE id=? AND org_id=?", [r.before_due, r.installment_id, orgId]);
+      else await runTx(client, "UPDATE pledges SET due_date=?, updated_at=NOW() WHERE id=? AND org_id=?", [r.before_due, r.pledge_id, orgId]);
+    }
+    await runTx(client, "UPDATE pledge_date_fixes SET undone_at=NOW() WHERE org_id=? AND batch_id=?", [orgId, batchId]);
+  });
+  const donors = (await query("SELECT DISTINCT donor_id FROM pledges WHERE org_id=? AND id = ANY(?)", [orgId, pledgeIds])).map(r => r.donor_id);
+  await require("../afterChange").afterChange(orgId, donors, { door: "data_health_pledge_dates_undo" }).catch(() => {});
+  res.json({ undone: pledgeIds.length, sentence: `Undone. ${pledgeIds.length.toLocaleString("en-US")} ${pledgeIds.length === 1 ? "pledge is" : "pledges are"} back as ${pledgeIds.length === 1 ? "it was" : "they were"}.` });
 }));
 
 // ── Emails ─────────────────────────────────────────────────────────────────

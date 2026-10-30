@@ -13,6 +13,7 @@ import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/pa
 import { displayDate, displayDateShort, civilYear } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
+import { countLabel } from "../../../shared/countWords.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
@@ -602,7 +603,7 @@ function MonthlyClose() {
           {d.giftCount === 0
             ? `No gifts were received in ${monthName}, so there is nothing to send the bookkeeper.`
             : d.balanced
-              ? `${d.giftCount} gift${d.giftCount === 1 ? "" : "s"} totalling ${fmtFull(d.totalCents / 100)}`
+              ? `${countLabel(d.giftCount, "gift")} totalling ${fmtFull(d.totalCents / 100)}`
                 + (d.feeCents ? `, less ${fmtFull(d.feeCents / 100)} in processing fees, ${fmtFull(d.netCents / 100)} to the bank` : "")
                 + `. It checks out: the rows, the fund totals and the database agree to the cent.`
               : d.exportRefused}
@@ -621,7 +622,7 @@ function MonthlyClose() {
                     data-testid={"close-issue-" + i.key}
                     style={{ background:"none", border:"none", padding:0, font:"inherit", color:T.greenDk,
                              fontWeight:700, textDecoration:"underline dotted", cursor:"pointer" }}>
-                    {i.count} {i.noun || "gift"}{i.count === 1 ? "" : "s"}
+                    {countLabel(i.count, i.noun || "gift")}
                   </button>
                   {` ${i.label}`}{i.cents ? ` (${i.display || fmtFull(i.cents / 100)})` : ""}
                 </span>
@@ -657,7 +658,7 @@ function MonthlyClose() {
           <div style={{ marginBottom:14 }}>
             {d.byFund.map((f, i) => (
               <div key={f.name} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0", borderTop: i ? "1px solid "+T.bg3 : "" }}>
-                <span style={{ fontSize:13, color:T.ink }}>{f.name} <span style={{ color:T.ink3 }}>· {f.giftCount} gift{f.giftCount === 1 ? "" : "s"}</span></span>
+                <span style={{ fontSize:13, color:T.ink }}>{f.name} <span style={{ color:T.ink3 }}>· {countLabel(f.giftCount, "gift")}</span></span>
                 <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{fmtFull(f.cents / 100)}</span>
               </div>
             ))}
@@ -684,7 +685,7 @@ function MonthlyClose() {
             <button data-testid="close-download-noncash" onClick={() => download("non-cash", "non-cash-gifts")}
               disabled={!!busy}
               style={{ ...quiet, ...(busy ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
-              {busy === "non-cash" ? "Preparing…" : `Download ${dep.nonCash.length} non-cash gift${dep.nonCash.length === 1 ? "" : "s"}`}
+              {busy === "non-cash" ? "Preparing…" : `Download ${countLabel(dep.nonCash.length, "non-cash gift")}`}
             </button>
           )}
         </div>
@@ -1217,7 +1218,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               })}
               {hidden > 0 && (
                 <div style={{ fontSize:12, color:T.ink3, fontStyle:"italic", paddingTop:2 }}>
-                  No activity yet in the other {hidden} month{hidden === 1 ? "" : "s"}.
+                  No activity yet in the other {countLabel(hidden, "month")}.
                 </div>
               )}
             </>;

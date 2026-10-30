@@ -854,7 +854,7 @@ async function writePlan({ req, body, importId, who, report }) {
 
   // pledges first, so a paid first year lands on its own instalment. Each
   // pledge is its own row's amount, never a total column (FIX-52).
-  let giftsCreated = 0, giftCents = 0, pledgesCreated = 0, pledgeCents = 0, duplicates = 0, duplicateCents = 0, installmentGifts = 0;
+  let giftsCreated = 0, giftCents = 0, pledgesCreated = 0, pledgeCents = 0, duplicates = 0, duplicateCents = 0, installmentGifts = 0, installmentCents = 0;
   // FIX-55: the receipt says this year's installments, then the open total over the years
   let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0, pledgeUndatedMade = 0;
   const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
@@ -917,7 +917,7 @@ async function writePlan({ req, body, importId, who, report }) {
     if (inst) {
       await run("UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW() WHERE id=? AND org_id=? AND paid_gift_id IS NULL", [r.gift.id, inst.id, orgId]);
       await recalcPledgePayment(args.pledgeId, orgId);
-      installmentGifts++;
+      installmentGifts++; installmentCents += g.cents;
     } else { giftsCreated++; giftCents += g.cents; }
     await report(`Writing gifts ${gi} of ${u.gifts.length}`, memberCount + u.pledges.length + gi, total);
   }
@@ -952,7 +952,16 @@ async function writePlan({ req, body, importId, who, report }) {
   const asideCents = u.aside.reduce((n, x) => n + (x.cents || 0), 0);
   const rowsIn = giftRows.length + u.pledges.length + u.aside.length;
   const dollarsInCents = giftRows.reduce((n, g) => n + g.cents, 0) + u.pledges.reduce((n, p) => n + p.pledgeCents, 0) + asideCents;
-  summary.counts = { ...u.counts, giftsCreated, giftCents, pledgesCreated, pledgeCents, duplicates, donorsCreated, attendees: summary.attendees, installmentGifts };
+  summary.counts = { ...u.counts, giftsCreated, giftCents, pledgesCreated, pledgeCents, duplicates, donorsCreated, attendees: summary.attendees, installmentGifts, installmentCents };
+  // FIX-58 · ONE ACCOUNTING. The preview said "106 gifts $124,290" and the
+  // receipt "100 gifts ($111,790)": six were a pledge's paid first year,
+  // counted apart and never said. The receipt now says every part and the
+  // whole: "106 rows · 100 gifts $111,790 · 6 first payments on pledges
+  // $12,500 · $124,290 in all", each part opening its rows (import-gifts).
+  summary.giftLine = giftLineOf({ giftsCreated, giftCents, installmentGifts, installmentCents });
+  // what came in as money, and what is still promised: never one sum
+  summary.givenCents = giftCents + installmentCents;
+  summary.pledgedOpenCents = Math.max(0, pledgeCents - installmentCents);
   summary.pledgesCreated = pledgesCreated;
   summary.pledgeDollarsCreated = pledgeCents / 100;
   summary.dollarsSetAside = (asideCents + duplicateCents) / 100;
@@ -976,6 +985,7 @@ async function writePlan({ req, body, importId, who, report }) {
      rowsIn, giftsCreated, donorsCreated, u.aside.length + duplicates, dollarsInCents / 100, giftCents / 100, who.id, who.name, JSON.stringify(summary)]);
   const parts = [];
   if (giftsCreated) parts.push(`${giftsCreated.toLocaleString("en-US")} ${giftsCreated === 1 ? "gift" : "gifts"} (${money(giftCents)})`);
+  if (installmentGifts) parts.push(`${installmentGifts.toLocaleString("en-US")} ${installmentGifts === 1 ? "first payment" : "first payments"} on pledges (${money(installmentCents)})`);
   if (pledgesCreated) parts.push(`${pledgesCreated.toLocaleString("en-US")} ${pledgesCreated === 1 ? "pledge" : "pledges"} (${Rm.pledgeMoneyWords({ dueThisYearCents: pledgeDueMade, openCents: pledgeOpenMade, years: pledgeYearsMade, undatedCents: pledgeUndatedMade }, money)})`);
   if (donorsCreated) parts.push(`${donorsCreated.toLocaleString("en-US")} new ${donorsCreated === 1 ? "person" : "people"}`);
   const sentence = parts.length ? `Imported ${parts.join(", ")}.` + (duplicates ? ` ${duplicates} ${duplicates === 1 ? "row was" : "rows were"} already here.` : "")
@@ -984,7 +994,19 @@ async function writePlan({ req, body, importId, who, report }) {
     aside: u.aside.length, sentence, totals: u.totals, totalsSentence: u.totalsSentence,
     undatedGifts: summary.undatedGiftIds.length, attendees: summary.attendees, eventName: evName || null,
     eventDateKnown: !!evDate, optOuts: u.counts.optOuts, doNotContact: u.counts.doNotContact,
-    columnAccount: u.columnAccount, button: summary.button, reconciled: true } };
+    columnAccount: u.columnAccount, button: summary.button, reconciled: true, giftLine: summary.giftLine,
+    givenCents: summary.givenCents, pledgedOpenCents: summary.pledgedOpenCents } };
+}
+
+// FIX-58: the gift rows of an import, said once: its gifts, the paid first
+// years of its pledges, and the two together. Each part names the rows it opens.
+function giftLineOf({ giftsCreated = 0, giftCents = 0, installmentGifts = 0, installmentCents = 0 }) {
+  const rows = giftsCreated + installmentGifts, totalCents = giftCents + installmentCents;
+  if (!rows) return null;
+  const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
+  const words = [n(rows, "row", "rows"), `${n(giftsCreated, "gift", "gifts")} ${money(giftCents)}`];
+  if (installmentGifts) words.push(`${n(installmentGifts, "first payment", "first payments")} on pledges ${money(installmentCents)}`, `${money(totalCents)} in all`);
+  return { rows, gifts: giftsCreated, giftCents, firstPayments: installmentGifts, firstPaymentCents: installmentCents, totalCents, sentence: words.join(" · ") };
 }
 
 // One job: under the org's import lock, in one transaction. Anything that

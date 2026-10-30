@@ -7,6 +7,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 import { enterSupport } from "../lib/supportSession";   // FIX-57
+import { countLabel } from "../../../shared/countWords.js";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -201,7 +202,7 @@ function RowsDrawer({ title, sentence, rows, onClose }) {
           <button onClick={onClose} style={{ background: "none", border: "none", color: A.muted, fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
         {sentence && <div style={{ fontSize: 12.5, color: A.secondary, marginBottom: 14, lineHeight: 1.5 }}>{sentence}</div>}
-        <div style={{ fontSize: 12, color: A.muted, marginBottom: 10 }}>{rows.length} org{rows.length === 1 ? "" : "s"}{total ? `, ${fmt$(total / 100)} a month` : ""}</div>
+        <div style={{ fontSize: 12, color: A.muted, marginBottom: 10 }}>{countLabel(rows.length, "org")}{total ? `, ${fmt$(total / 100)} a month` : ""}</div>
         {rows.length === 0 && <div style={{ fontSize: 13, color: A.muted }}>No orgs.</div>}
         {rows.map(r => (
           <div key={r.id} style={{ borderTop: `1px solid ${A.borderSub}`, padding: "10px 0", display: "flex", gap: 10, alignItems: "baseline" }}>
@@ -333,7 +334,7 @@ function Overview({ metrics, orgs }) {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <PlanBadge plan={g.plan} />
-                  <span style={{ fontSize: 12, color: A.secondary }}>{g.count} org{g.count !== 1 ? "s" : ""}</span>
+                  <span style={{ fontSize: 12, color: A.secondary }}>{countLabel(g.count, "org")}</span>
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: A.ink, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmt$(g.revenue)}</span>
               </div>

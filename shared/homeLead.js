@@ -20,6 +20,7 @@
 // its sentence is a template over that fact. The lead is never empty: on a
 // quiet day it is "Nothing urgent" and three people worth a note.
 
+import { countLabel } from "./countWords.js";
 export const KINDS = ["meeting", "gift", "confirm", "drift", "card", "season", "seasonCall", "event", "quiet"];
 // A card has to clear this to lead. Below it, the day is quiet.
 export const LEAD_FLOOR = 15;
@@ -29,7 +30,7 @@ export const DISMISS_RUN = 3;
 const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
 const rel = (dollars, line) => Math.min(1, Math.max(0, Number(dollars) || 0) / Math.max(Number(line) || 0, 1000));
 const first = name => String(name || "").trim().split(/\s+/)[0] || "them";
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const plural = countLabel;
 const mins = (fromIso, toIso) => Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 60000);
 const inWords = m => {
   if (m <= 0) return "now";

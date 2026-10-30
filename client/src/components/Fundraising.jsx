@@ -29,6 +29,7 @@ import RemoveMenu from "./RemoveMenu";
 import { ThankYouDrafts } from "./ThankYouDrafts";   // CHECK-2
 import { EventStory } from "./EventRaised";   // FUNDRAISING-2
 import { PledgesView } from "./Pledges";   // FUNDRAISING-2
+import { countLabel } from "../../../shared/countWords.js";
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -373,7 +374,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
               Your last 12 months:{" "}
               <button onClick={openRows(last12.start, last12.end)}
                 style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>
-                {fmtTotal(last12.raised)} across {last12.giftCount.toLocaleString()} gift{last12.giftCount === 1 ? "" : "s"}
+                {fmtTotal(last12.raised)} across {countLabel(last12.giftCount, "gift")}
               </button>
               . A gift dated inside {overview.periodLabel} lands in the figure below the moment it is logged.
             </div>
@@ -454,11 +455,11 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
                 {period.compare && period.compare.source
                   ? <Figure variant="inline" kind="money" whole abs value={period.delta} label="Against the same days last year" definition={period.compare.sentence} source={period.compare.source} figureKey="fundraising.vsLastYear" why={false} />
                   : fmtTotal(Math.abs(period.delta))} vs the same days last year</span>
-            : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
+            : `${countLabel(period.donorCount, "donor")}`} />
         <StatTile label={`Gifts ${periodWords}`} value={period.giftCount.toLocaleString()} accent={T.bg3}
           onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
           ariaLabel={`View the gifts ${periodWords}`}
-          sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
+          sub={`${countLabel(period.donorCount, "donor")}`} />
         {pledges && <PledgeTile p={pledges} onOpen={() => onGoto && onGoto("pledges")} />}
         <StatTile label="Live giving pages" value={gp.count} accent={T.bg3}
           onClick={() => onGoto && onGoto("pages")}
@@ -670,7 +671,7 @@ function GoalCard({ g, allGoals, onClick }) {
       )}
       {g.lifecycle === "upcoming" ? null : g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {countLabel(g.childCount, "goal")}</div>
           {children.map(c => (
             <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: T.ink2 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
@@ -680,7 +681,7 @@ function GoalCard({ g, allGoals, onClick }) {
         </div>
       ) : (
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
-          {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
+          {countLabel(g.donorCount, "donor")}
           {daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : g.lifecycle === "upcoming" ? " · upcoming" : g.lifecycle === "ended" ? " · ended" : ""}
           {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>

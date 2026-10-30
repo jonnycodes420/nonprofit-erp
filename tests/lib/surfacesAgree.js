@@ -135,7 +135,13 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     q(`SELECT id, name, email FROM donors WHERE org_id = $1 AND deleted_at IS NOT NULL`, [orgId]),
     q(`SELECT COUNT(*) FILTER (WHERE imported_total IS NOT NULL OR imported_gift_count IS NOT NULL)::int AS summarised
          FROM donors d WHERE ${LIVE}`, [orgId]),
-    q(`SELECT id, migration_source FROM imports WHERE org_id = $1 AND reversed_at IS NULL ORDER BY committed_at ASC, id ASC`, [orgId]),
+    q(`SELECT i.id, i.migration_source, i.gifts_created, i.shape,
+              (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_rows,
+              (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_cents,
+              (SELECT COALESCE(SUM(ROUND(r.received*100)),0)::bigint FROM insight_reviews r JOIN gifts g ON g.id = r.gift_id AND g.org_id = r.org_id
+                WHERE r.org_id = i.org_id AND g.import_id = i.id AND r.decision = 'partly') AS partly_cents,
+              (i.summary_json->'giftLine'->>'rows')::int AS line_rows
+         FROM imports i WHERE i.org_id = $1 AND i.reversed_at IS NULL ORDER BY i.committed_at ASC, i.id ASC`, [orgId]),
     q(`SELECT gr.id, gr.name, (SELECT COUNT(*)::int FROM group_members m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
                                  WHERE m.group_id = gr.id AND m.org_id = gr.org_id AND d.deleted_at IS NULL) AS live
          FROM groups gr WHERE gr.org_id = $1 AND COALESCE(gr.kind,'static') = 'static'`, [orgId]).catch(() => []),
@@ -144,13 +150,18 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
                 WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS live,
               (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
                 WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND a.status NOT IN ('cancelled','canceled','declined')))) AS attended,
-              -- FIX-59: registered is the list less who declined or cancelled; declined is said apart
-              (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
+                  AND (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined')))) AS attended,
+              -- FIX-58 + FIX-59, written out here, never read from figureSources: invited is the whole list,
+              -- registered said yes or came, declined said no; no reply is the rest
+              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
                 WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined')) AS registered,
-              (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL) AND a.status = 'declined') AS declined,
+                  AND (a.status IN ('registered','confirmed','attended','no_show') OR (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))))) AS registered,
+              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
+                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
+                  AND a.status = 'declined' AND NOT (a.status IN ('registered','confirmed','attended','no_show') OR (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))))) AS declined,
+              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
+                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
+                  AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled')) AS invited,
               (e.date_unknown IS TRUE OR e.date IS NULL OR e.date::date <= (NOW() AT TIME ZONE COALESCE((SELECT timezone FROM orgs WHERE id = e.org_id), 'America/New_York'))::date) AS past
          FROM events e WHERE e.org_id = $1`, [orgId]),
     q(`SELECT c.id, c.name, c.goal_amount,
@@ -430,7 +441,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       // each event: its page's pledges over all years = the Pledges rows made there;
       // its page's "came" = the people marked as having come
       const evIds = [...new Set([...pl.pledges.filter(r => r.madeAt && r.madeAt.kind === "event").map(r => r.madeAt.id),
-                                 ...eventRows.filter(e => e.attended > 0).map(e => e.id)])].slice(0, 20);
+                                 ...eventRows.filter(e => e.attended > 0 || e.registered > 0).map(e => e.id)])].slice(0, 20);
       const evReports = await Promise.all(evIds.map(id => get(`/events/${encodeURIComponent(id)}/report`).catch(() => null)));
       evIds.forEach((id, i) => {
         const st = evReports[i] && evReports[i].story;
@@ -439,6 +450,14 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const e = eventRows.find(x => x.id === id) || {};
         agree(`event "${st.name}" pledged, all years`, [["its event page", st.pledgedAllCents], ["Pledges' rows made there", rows.reduce((n, r) => n + cents(r.balance), 0)]], money);
         agree(`event "${st.name}" came`, [["the database", e.attended], ["its event page", st.attended]]);
+        // FIX-58: people, once each, and the counts add up
+        const regFig = ((evReports[i].figures || []).find(f => f.key === "registered") || {}).value;
+        const card = Array.isArray(events) ? (events.find(x => x.id === id) || {}).registered_count : undefined;
+        agree(`event "${st.name}" registered`, [["the database", e.registered], ["its event page", regFig], ["its story", st.registered], ["the Events card", card]]);
+        if (st.cameGave !== undefined) {
+          agree(`event "${st.name}" came = came and gave + came and didn't`, [["came", st.attended], ["the two parts", st.cameGave + st.cameDidntGive]]);
+          agree(`event "${st.name}" gave = came and gave + gave and didn't come`, [["gave", st.gave], ["the two parts", st.cameGave + st.gaveNotCame]]);
+        }
         if (fund && fund.leadEvent && fund.leadEvent.id === id) {
           agree(`event "${st.name}" on Fundraising's lead card`, [["its event page", st.raisedCents], ["Fundraising's Overview", fund.leadEvent.raisedCents]], money);
           agree(`event "${st.name}" came and didn't give, on the lead card`, [["its event page", st.cameDidntGive], ["Fundraising's Overview", fund.leadEvent.cameDidntGive]]);
@@ -448,8 +467,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   }
 
   // ── AN EVENT'S LIST ADDS UP, AND SAYS ONE THING EVERYWHERE (FIX-59) ─────
-  // Registered, Came, Came gave, Came didn't give, Declined and Invited didn't
-  // come: Came = gave + didn't give, Registered = Came + invited didn't come,
+  // Invited, Registered, Declined, No reply, Came, Came gave, Came didn't give,
+  // Said yes didn't come, Gave and Gave didn't come: Invited = Registered +
+  // Declined + No reply, Registered = Came + Said yes didn't come, Came = gave
+  // + didn't give, Gave = Came gave + Gave didn't come,
   // and each equals the database, the event page (figures and story), its
   // rows, the figure drawer, the Events list, the check-in door, Fundraising's
   // lead card, Home's Grow moves and Ask. A real dinner read Registered 552,
@@ -485,7 +506,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       agree(`${name} declined`, [["the database", e.declined], ["its page", fig("declined")], ["its story", st.declined],
         ["its rows", decRows ? decRows.count : undefined], ["the figure drawer", fv(frDec)]]);
       agree(`${name} came and didn't give`, [["its page", fig("cameNoGift")], ["its story", st.cameDidntGive], ["the figure drawer", fv(frNoGift)]]);
-      if (e.past) agree(`${name} invited and didn't come`, [["registered less came", e.registered - e.attended], ["its page", fig("invitedNoShow")],
+      agree(`${name} invited`, [["the database", e.invited], ["its page", fig("invited")], ["its story", st.invited],
+        ["registered + declined + no reply", (fig("registered") || 0) + (fig("declined") || 0) + (fig("noReply") || 0)]]);
+      agree(`${name} no reply`, [["invited less registered less declined", e.invited - e.registered - e.declined], ["its page", fig("noReply")], ["its story", st.noReply]]);
+      agree(`${name} gave`, [["its page", fig("gave")], ["its story", st.gave], ["came, gave + gave, didn't come", (st.cameGave || 0) + (st.gaveNotCame || 0)]]);
+      if (e.past) agree(`${name} said yes and didn't come`, [["registered less came", e.registered - e.attended], ["its page", fig("invitedNoShow")],
         ["its story", st.invitedDidntCome], ["the figure drawer", fv(frNoShow)]]);
       if (fund && fund.leadEvent && fund.leadEvent.id === e.id) {
         const L = fund.leadEvent;
@@ -500,6 +525,25 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (st.name !== undefined && st.name !== e.name) diffs.push(`${name}: its story names it "${st.name}"`);
       if (rep.event && rep.event.name !== e.name) diffs.push(`${name}: its page names it "${rep.event.name}"`);
     });
+  }
+  // ── FIX-58 · AN IMPORT'S RECEIPT IS ITS GIFTS ────────────────────────────
+  // While every gift a spreadsheet import wrote is still there, the Imports list's
+  // "given" is exactly those gifts, to the cent, and a receipt's gift line
+  // counts exactly those rows.
+  if (!skip.has("imports")) {
+    const list = await get("/imports").catch(() => null);
+    for (const imp of imports) {
+      const shown = list && Array.isArray(list.imports) ? list.imports.find(x => x.id === imp.id) : null;
+      // a spreadsheet import's receipt is written by the server from the gifts it
+      // wrote; the older doors post a receipt the page counted (POST /imports)
+      if (imp.shape !== "sheet" || !shown || shown.dollarsGiven === undefined) continue;
+      const made = Number(imp.line_rows != null ? imp.line_rows : imp.gifts_created);
+      if (imp.gift_rows !== made) continue;   // a gift was removed since: the stored receipt is history
+      // A row marked Partly a gift later (HOME-3) is a smaller gift now; the
+      // receipt still says what the file brought, which is that gift plus the
+      // value received that went to Finance.
+      agree(`import ${imp.id} given`, [["its gifts in the database (plus any value received on rows marked Partly a gift)", Number(imp.gift_cents) + Number(imp.partly_cents || 0)], ["the Imports list", cents(shown.dollarsGiven)]], money);
+    }
   }
 
   // ── THE MOVE REPORT: what Steward holds is live people's gifts ───────────

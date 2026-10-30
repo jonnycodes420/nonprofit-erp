@@ -32,6 +32,7 @@ import { useNavigate } from "react-router-dom";
 import { resolvePairing, cardChrome } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { fmtDay } from "../lib/money"; // BUILD-64 Part 4 — the ONE donor-facing date formatter
+import { countLabel } from "../../../shared/countWords.js";
 
 export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (the list just below)
 
@@ -705,7 +706,7 @@ function TakeoverHome({ org, linked, impact, onOpen, onConnect, onUnfollow, load
             <div style={{ fontFamily: t.serif, fontSize: 17 }}>Your history with {t.displayName || org.orgName}</div>
             <div style={{ ...S.muted, fontSize: 13, marginTop: 3 }}>
               {org.lastGiftDate ? `Last gift ${fmtDay(org.lastGiftDate)}` : "No gifts yet"}
-              {org.recurringCount > 0 && ` · ${org.recurringCount} recurring gift${org.recurringCount === 1 ? "" : "s"}`}
+              {org.recurringCount > 0 && ` · ${countLabel(org.recurringCount, "recurring gift")}`}
             </div>
           </div>
           <button onClick={onOpen}
@@ -947,7 +948,7 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
                 {grp.rows.map(y => (
                   <div key={y.year + y.orgSlug} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${G.hair}` }}>
                     <div><b>{y.year}</b>{tt ? null : <span style={S.muted}> · {y.orgName}</span>}</div>
-                    <div>{fmtMoney(y.total)} <span style={S.muted}>({y.gifts} gift{y.gifts === 1 ? "" : "s"})</span></div>
+                    <div>{fmtMoney(y.total)} <span style={S.muted}>({countLabel(y.gifts, "gift")})</span></div>
                   </div>
                 ))}
               </div>

@@ -222,7 +222,11 @@ async function captureBattery(tokenA) {
   // recognition happens ONLY inside an established portal session (the donor's
   // own history). Run last so it never disturbs the frozen world-1/2 battery.
   {
+    // FIX-58: the org-wide form is open only with payments connected, so the
+    // comparison runs on an open page (two identical 404s would prove nothing).
+    await q(`UPDATE orgs SET stripe_account_id='acct_ob61', stripe_connected=true WHERE id=$1`, [ORG_A]);
     const beforeGive = await raw("GET", `/org/${SLUG_A}/public`);
+    ok("the anonymous give page is open for the donor-blind comparison", beforeGive.status === 200, beforeGive.status);
     // An Org-A donor now has a gift AND an active recurring arrangement.
     await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status)
              VALUES ('rs_ob61',$1,'d_obA_w','sub_ob61',30,'month','active') ON CONFLICT (id) DO NOTHING`, [ORG_A]);

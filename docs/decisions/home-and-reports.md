@@ -478,11 +478,14 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 
 ## FIX-59 · an event's list adds up (2026-10-29)
 
-- Registered is people, not places: everyone on the list who has not declined or cancelled, once ('invited' counts).
-  Declined is its own figure. Came = Came, gave + Came, didn't give; Registered = Came + Invited, didn't come. All of
-  them are `numbers.eventGuests` (sources `event-guests` lists registered / declined / cameGave / cameNoGift /
-  invitedNoShow, and `event-attended`); the event page, its rows, the Events list, the check-in door, the story,
-  Fundraising's lead card, Home's Grow moves and Ask read it. `assertSurfacesAgree` checks them all.
+- An event's list, each person once (FIX-58 + FIX-59, Jonathan 29 Oct): Invited is everyone on the list; Registered is
+  each person who said yes or came (never a party size, never someone only invited or who declined); Declined said no;
+  No reply = Invited − Registered − Declined. Came = Came, gave + Came, didn't give; "Said yes, didn't come" (once the day
+  has passed) = Registered − Came. Gave is household-aware (FIX-58): Gave = Came, gave + Gave, didn't come. The
+  predicates live once in figureSources (EVENT_INVITED, EVENT_REGISTERED, EVENT_DECLINED, EVENT_NO_REPLY, EVENT_CAME);
+  `numbers.eventGuests` and `eventStory` read them, and the event page, its rows, the Events list, the check-in door,
+  Fundraising's lead card, Home's Grow moves and Ask read those. `assertSurfacesAgree` checks every figure and the four
+  sums.
 - Came (and the door's "in") is marked attending OR checked in at the door; an undo at the door takes them out of Came.
   A walk-in row with no person record is a guest; a deleted person is nobody.
 - A guest's Gift on the event page is what they gave for the event or pledged at it (`event-gave` per person), never
@@ -490,3 +493,13 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Grow leads with second gifts (FIX-59): second gifts, then came-didn't-give, then the rest, by dollars inside
   each (`insights.js byGrow`); the tab reads "85 second gifts · 112 more". The 150-card cap now cuts from the
   rest, never a second gift first.
+
+## FIX-58 · an event counts people once (2026-10-29)
+
+- Registered is each person who said they were coming or came (status registered, confirmed, attended, no_show),
+  once: never a party size and never a declined or merely invited row (`figureSources.EVENT_REGISTERED`, source
+  `event-registered`). "Registered 263" on the dinner was 233 party places for 165 guests plus 30 who declined. The
+  event page, its story, the Events card and the attendance sentence read it.
+- Gave is each person with their own gift or pledge for the event, and each guest who came whose household gave
+  (`event-gave`; `came=yes|no` splits it). So Came = came and gave + came and didn't, and Gave = came and gave + gave
+  and didn't come; the story says so in one sentence (`numbers.eventStory` `addsUp`), and the truth check holds both.

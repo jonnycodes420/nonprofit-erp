@@ -185,6 +185,10 @@ async function newPage(ctx) {
   page.on("dialog", d => d.accept().catch(() => {}));
   page.on("pageerror", e => ctx.errors.push(String(e.message || e)));
   page.writes = [];
+  // FIX-58: the writes SENT, too, so a check can wait for every one of them to
+  // be answered instead of reading page.writes while one is still in flight.
+  page.sent = [];
+  page.on("request", r => { const m = r.method(); if (m !== "GET" && m !== "HEAD" && m !== "OPTIONS") page.sent.push(m + " " + r.url().replace(BASE, "")); });
   page.on("response", r => { const m = r.request().method(); if (m !== "GET" && m !== "HEAD" && m !== "OPTIONS") page.writes.push({ m, url: r.url().replace(BASE, ""), status: r.status() }); });
   return page;
 }
@@ -273,8 +277,17 @@ async function caseClicks() {
   await page.setInputFiles('[data-testid="sheet-file"]', csvFile("bring.csv", ["Date", "Donor", "Email", "Amount"], [["2026-10-01", "Cleo Ashby", "brk-c1@test.local", "15"]]));
   await page.waitForSelector('[data-testid="sheet-bring-back"]', { timeout: 60000 });
   await page.locator('[data-testid="sheet-bring-back"]').click({ clickCount: 3 });
-  await waitForDb(async () => !(await one("SELECT deleted_at FROM donors WHERE id='d_brk_c1'")).deleted_at, 15000);
-  const bb = writesTo(page, /\/sheet-import\/bring-back$/);
+  // FIX-58: wait for the ANSWER, not the row. The route clears deleted_at, then
+  // runs the after-change step, then answers; under load the row was back
+  // seconds before the response, and this check read "no bring-back request
+  // recorded" from a write that was still in flight. So: every bring-back sent
+  // has been answered, and the person is back.
+  const BB = /\/sheet-import\/bring-back$/;
+  await waitForDb(async () => {
+    const sent = page.sent.filter(u => BB.test(u)).length;
+    return sent >= 1 && writesTo(page, BB).length === sent && !(await one("SELECT deleted_at FROM donors WHERE id='d_brk_c1'")).deleted_at;
+  }, 60000);
+  const bb = writesTo(page, BB);
   ok(`${L} §1 Bring them back pressed three times: one bring-back, the person is here once`, bb.filter(w => w.status < 300).length === 1
     && !(await one("SELECT deleted_at FROM donors WHERE id='d_brk_c1'")).deleted_at
     && (await one("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND LOWER(name)='cleo ashby'", [o.orgId])).n === 1, bb);

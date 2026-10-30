@@ -38,6 +38,9 @@ export function EventStory({ s, style, noGiftShownBelow }) {
   const tile = (k, label, kind = "money") => (
     <Figure key={k} kind={kind} whole value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} figureKey={"event." + k} />
   );
+  const inline = (k, label) => (
+    <Figure variant="inline" kind="count" value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} why={false} />
+  );
   return (
     <div data-testid="event-story" data-event-id={s.id} onClick={ev => ev.stopPropagation()}
       style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, ...(style || {}) }}>
@@ -48,6 +51,20 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {tile("attended", "Came", "count")}
       {tile("gave", "Gave", "count")}
       {noGiftShownBelow ? null : tile("cameDidntGive", "Came, didn't give", "count")}
+      {/* FIX-58: each count is people, once, and the line shows they add up */}
+      {s.addsUp ? (
+        <div data-testid="event-story-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
+          {inline("attended", "Came")} came: {inline("cameGave", "Came and gave")} gave and {inline("cameDidntGive", "Came, didn't give")} didn't.{" "}
+          {inline("gave", "Gave")} gave or pledged: {inline("cameGave", "Came and gave")} who came and {inline("gaveNotCame", "Gave, didn't come")} who didn't.
+        </div>
+      ) : null}
+      {/* FIX-59: the list adds up too: invited = said yes or came + declined + no reply */}
+      {s.listAddsUp ? (
+        <div data-testid="event-story-list-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
+          {inline("invited", "Invited")} invited: {inline("registered", "Registered")} said yes or came, {inline("declined", "Declined")} declined, {inline("noReply", "No reply")} didn't reply.
+          {s.invitedDidntCome != null ? <> Of them, {inline("attended", "Came")} came and {inline("invitedDidntCome", "Said yes, didn't come")} didn't.</> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2957,9 +2957,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // FIX-45: the greeting reads the record's salutation or both names on it.
   const person = { salutation: d.salutation, spouseName: d.spouse_name, kind: d.kind };
   const draft = reason === "pledge_completed"
-    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person });
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift?.date || null });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, ...facts });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, date: thisGift?.date || null, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she
@@ -11951,6 +11951,12 @@ app.use((err, req, res, next) => {
   // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
   // so scripts/error-digest.js can group a day of these by type and route.
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
+  // FIX-58: an upload S3 refused every try is a 503 with its sentence, never a
+  // 500 (and never a copy in Postgres; assetStore.putThemeAsset).
+  if (err && err.code === "asset_store_unavailable") {
+    console.error(`[503] ${req.method} ${route} asset store unavailable`);
+    return res.status(503).json({ error: err.message, code: err.code });
+  }
   // FIX-44: a body parser's own refusal (a body too large, JSON that does not
   // parse, a charset it cannot read) is the sender's mistake, answered with its
   // own 4xx, never a 500.
@@ -12602,8 +12608,11 @@ require("./routes/crm").mount({
 // timer; the worker lanes still run, because an import's recent gifts are
 // queued work, not a tick. STEWARD_PROCESS=web runs no lanes at all.
 // The probe job scale1-queue drives: it records which process ran it and when,
-// and can be told to take a while or to fail. TEST_MODE only.
-if (testMode()) {
+// and can be told to take a while or to fail. TEST_MODE only, and only in a
+// process that suite started (STEWARD_TEST_PROBE=1): the battery's shard server
+// shares the suite's database and runs lanes, and with this handler it raced
+// the suite's worker for the probes (FIX-58, red at 12:02 AM).
+if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
   require("./jobQueue").handle("testProbe", async (p, job) => {
     const t0 = new Date();
     if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));

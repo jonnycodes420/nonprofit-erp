@@ -14,7 +14,7 @@
 //      with its apostrophe.
 //   §2 the import with the defaults: 39 people; the notes on Kerry Lusk, Hugo
 //      Ramsey and Ada Whitlock; Neil & Martha Lyle a household with the note;
-//      the couples two people; registered 34, came 25, declined 4 from the
+//      the couples two people; registered 31 (said yes or came), came 25, declined 4 from the
 //      rows; 25 checked in; the tables sized to the chart; every gift and the
 //      pledge on the event; no received gift left off a deposit. Undo takes
 //      it all back.
@@ -128,7 +128,7 @@ const ANSWERED = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" 
     }
     const ev = await one(`SELECT id, name FROM events WHERE org_id=$1`, [ORG]);
     ok(`§2 the event keeps its apostrophe: "${EXP.eventName}"`, ev && ev.name === EXP.eventName, ev && ev.name);
-    const st = await one(`SELECT COUNT(*) FILTER (WHERE status NOT IN ('cancelled','declined'))::int AS registered,
+    const st = await one(`SELECT COUNT(*) FILTER (WHERE status IN ('registered','confirmed','attended','no_show'))::int AS registered,
                                  COUNT(*) FILTER (WHERE status='attended')::int AS came, COUNT(*) FILTER (WHERE status='declined')::int AS declined,
                                  COUNT(*) FILTER (WHERE status='invited')::int AS invited,
                                  COUNT(*) FILTER (WHERE checked_in_at IS NOT NULL)::int AS checked,
@@ -136,7 +136,7 @@ const ANSWERED = { eventDate: EVENT_DAY, useEventDate: true, pledgeDue: "event" 
                                  COUNT(DISTINCT donor_id)::int AS people, COUNT(*)::int AS n
                             FROM event_attendees a JOIN orgs o ON o.id=a.org_id WHERE a.org_id=$1 GROUP BY o.timezone`, [ORG, EVENT_DAY]);
     ok(`§2 from the rows: registered ${EXP.figures.registered}, came ${EXP.figures.came}, declined ${EXP.figures.declined}, the 3 with no reply invited, one row per person`,
-       st.registered === EXP.figures.registered && st.came === EXP.figures.came && st.declined === EXP.figures.declined && st.invited === 3 && st.people === st.n, JSON.stringify(st));
+       st.registered === EXP.figures.registered && st.came === EXP.figures.came && st.declined === EXP.figures.declined && st.invited === EXP.figures.noReply && st.people === st.n, JSON.stringify(st));
     ok(`§2 ${EXP.figures.checkedIn} checked in, at noon on the event's day in the org's zone`, st.checked === EXP.figures.checkedIn && st.noon === EXP.figures.checkedIn, JSON.stringify(st));
     const tables = await q(`SELECT t.label, t.seats, (SELECT COUNT(*) FROM event_attendees a WHERE a.table_id=t.id)::int AS seated
                               FROM event_tables t WHERE t.org_id=$1 AND t.event_id=$2 ORDER BY t.label`, [ORG, ev.id]);

@@ -173,7 +173,7 @@ async function main() {
 // SQL, the shape of tests/fixtures/import/event-patterns (its expected.json):
 // 25 came (9 gave, 16 didn't; only 5 have a time at the door, the rest are
 // marked attended as an import marks them, and 5 carry a party size of 2),
-// 5 registered and 4 invited who didn't come, 4 declined (one of whom gave
+// 6 who said yes and didn't come and 3 invited who never replied, 4 declined (one of whom gave
 // anyway), one cancelled, one deleted person marked attended, a spouse not on
 // the list whose gift counts for their household, and a giver not on the
 // list. 13 are seated at a table of 10.
@@ -200,12 +200,12 @@ async function eventList(tok) {
   const ids = {};
   for (let i = 1; i <= 9; i++) ids["cg" + i] = await person("cg" + i, i === 9 ? "hh_fr2m_9" : "");
   for (let i = 1; i <= 16; i++) ids["cn" + i] = await person("cn" + i);
-  for (const k of ["r1", "r2", "r3", "r4", "r5", "i1", "i2", "i3", "i4", "d1", "d2", "d3", "d4", "x1", "del", "ng"]) ids[k] = await person(k);
+  for (const k of ["r1", "r2", "r3", "r4", "r5", "r6", "i1", "i2", "i3", "d1", "d2", "d3", "d4", "x1", "del", "ng"]) ids[k] = await person(k);
   ids.sp = await person("sp", "hh_fr2m_9");
   for (let i = 1; i <= 9; i++) await guest(ids["cg" + i], "attended", { table: true });
   for (let i = 1; i <= 16; i++) await guest(ids["cn" + i], "attended", { at: i <= 5, qty: i >= 6 && i <= 10 ? 2 : 1, table: i <= 4 });
-  for (const k of ["r1", "r2", "r3", "r4", "r5"]) await guest(ids[k], "registered");
-  for (const k of ["i1", "i2", "i3", "i4"]) await guest(ids[k], "invited");
+  for (const k of ["r1", "r2", "r3", "r4", "r5", "r6"]) await guest(ids[k], "registered");
+  for (const k of ["i1", "i2", "i3"]) await guest(ids[k], "invited");
   for (const k of ["d1", "d2", "d3", "d4"]) await guest(ids[k], "declined");
   await guest(ids.x1, "cancelled");
   await guest(ids.del, "attended");
@@ -220,15 +220,24 @@ async function eventList(tok) {
   const rep = (await api("GET", `/events/${EV}/report`, tok)).body || {};
   const f = Object.fromEntries((rep.figures || []).map(x => [x.key, x.value]));
   const st = rep.story || {};
-  ok(`§7 Registered is ${FIG.registered} people, declined apart (not ${FIG.registered + 5 + FIG.declined}: party sizes and declines are not registrations)`,
+  ok(`§7 Registered is ${FIG.registered} people who said yes or came (party sizes, the invited who never replied and the declined are not registrations)`,
      f.registered === FIG.registered && st.registered === FIG.registered, JSON.stringify([f.registered, st.registered]));
   ok(`§7 Declined is its own figure (${FIG.declined}), with its sentence and a source that opens its rows`,
      f.declined === FIG.declined && st.declined === FIG.declined && (rep.figures.find(x => x.key === "declined") || {}).sentence && st.sources && st.sources.declined, JSON.stringify(rep.figures && rep.figures.find(x => x.key === "declined")));
   ok(`§7 Came ${FIG.came} = came, gave ${FIG.cameGave} + came, didn't give ${FIG.cameDidntGive}; gave or pledged ${FIG.gave}`,
      f.attended === FIG.came && st.attended === FIG.came && f.cameGave === FIG.cameGave && f.cameNoGift === FIG.cameDidntGive && f.cameGave + f.cameNoGift === f.attended && st.gave === FIG.gave,
      JSON.stringify([f.attended, st.attended, f.cameGave, f.cameNoGift, st.gave]));
-  ok(`§7 Invited, didn't come is Registered less Came (${FIG.invitedDidntCome}), declined not in it`,
-     f.invitedNoShow === FIG.invitedDidntCome && st.invitedDidntCome === FIG.invitedDidntCome && f.registered === f.attended + f.invitedNoShow, JSON.stringify([f.invitedNoShow, st.invitedDidntCome]));
+  const lab = k => (rep.figures.find(x => x.key === k) || {}).label;
+  ok(`§7 Said yes, didn't come is Registered less Came (${FIG.saidYesDidntCome}), under that name`,
+     f.invitedNoShow === FIG.saidYesDidntCome && st.invitedDidntCome === FIG.saidYesDidntCome && f.registered === f.attended + f.invitedNoShow && lab("invitedNoShow") === "Said yes, didn't come",
+     JSON.stringify([f.invitedNoShow, st.invitedDidntCome, lab("invitedNoShow")]));
+  ok(`§7 Invited ${FIG.invited} = Registered ${FIG.registered} + Declined ${FIG.declined} + No reply ${FIG.noReply}, each with its sentence and source`,
+     f.invited === FIG.invited && st.invited === FIG.invited && f.noReply === FIG.noReply && st.noReply === FIG.noReply && f.invited === f.registered + f.declined + f.noReply
+     && ["invited", "noReply"].every(k => (rep.figures.find(x => x.key === k) || {}).source && (rep.figures.find(x => x.key === k) || {}).sentence),
+     JSON.stringify([f.invited, st.invited, f.noReply, st.noReply]));
+  ok(`§7 Gave ${FIG.gave} (household-aware) = came, gave ${FIG.cameGave} + gave, didn't come ${FIG.gaveNotCame}`,
+     f.gave === FIG.gave && st.gave === FIG.gave && st.gaveNotCame === FIG.gaveNotCame && st.cameGave + st.gaveNotCame === st.gave, JSON.stringify([f.gave, st.gave, st.cameGave, st.gaveNotCame]));
+  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} people invited: ${FIG.registered} said yes or came, ${FIG.declined} declined, ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
   const rows = async k => (await api("GET", `/events/${EV}/rows?rows=${k}`, tok)).body || {};
   const [regRows, decRows] = [await rows("registered"), await rows("declined")];
   const declinedIds = new Set(["d1", "d2", "d3", "d4"].map(k => ids[k]));

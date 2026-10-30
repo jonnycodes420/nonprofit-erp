@@ -118,7 +118,7 @@ export const QPQ_DISCLOSURE =
 export const EVENT_FIGURES = {
   raised: "Every gift attributed to this event: tickets, sponsorships and anything given on the night. The full amount paid, not the deductible part.",
   goal: "What the event was aiming at. Set when the event was created, and changed by a person.",
-  registered: "Everyone on the event's list who has not declined or cancelled, once. Invited counts: they are on the list and have not said no.",
+  registered: "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted.",
   attended: "People marked as having come, or checked in at the door. Nobody is counted as attending until somebody says they did.",
   declined: "Everyone on the event's list who said they would not come. Not counted as registered.",
   firstTime: "People whose FIRST gift to you was this event. An event that brings new donors has done something a number on its own cannot show.",

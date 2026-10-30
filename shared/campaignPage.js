@@ -30,6 +30,7 @@
 // It moves every year, so it is computed rather than listed: a hard-coded table
 // is a thing that silently stops being true, and this one would stop being true
 // on a date the whole campaign is about.
+import { countLabel } from "./countWords.js";
 export function thanksgivingDate(year) {
   let thursdays = 0;
   for (let day = 1; day <= 30; day++) {
@@ -259,7 +260,7 @@ export function countdownSentence(endDate, today) {
   if (n === 1) return "One day left.";
   if (n <= 14) return `${n} days left.`;
   const weeks = Math.round(n / 7);
-  return `${weeks} week${weeks === 1 ? "" : "s"} left.`;
+  return `${countLabel(weeks, "week")} left.`;
 }
 
 // ── THE MATCHING CHALLENGE ────────────────────────────────────────────────

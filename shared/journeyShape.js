@@ -31,6 +31,7 @@ import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
 import { TASK_OUTCOMES, TASK_OUTCOME_KEYS, taskOutcomeLabel } from "./taskShape.js";
+import { countLabel } from "./countWords.js";
 
 // ── THE TRIGGERS ──────────────────────────────────────────────────────────
 // Eight, and each one is an event Steward already observes. `needsAmount` marks
@@ -829,8 +830,8 @@ export function touchesSentence(steps = []) {
   // POLISH-2: the plural follows the number shown ("1 touch over 1 week",
   // never "1 weeks": a same-day step rounded to 0 weeks but showed as 1).
   const weeks = Math.max(1, Math.round(last / 7));
-  const span = last < 45 ? `${weeks} week${weeks === 1 ? "" : "s"}`
-             : `${months} month${months === 1 ? "" : "s"}`;
+  const span = last < 45 ? `${countLabel(weeks, "week")}`
+             : `${countLabel(months, "month")}`;
   return `${n} touch${n === 1 ? "" : "es"} over ${span}. Nothing is sent without you.`;
 }
 

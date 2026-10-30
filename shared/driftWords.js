@@ -17,6 +17,7 @@
 //   2. No surface says "no donors drifting" while anyone is drifting at any
 //      confidence. That sentence was the one a customer believed.
 
+import { countLabel, spell } from "./countWords.js";
 export const DRIFT_WORD = "Drifting";
 export const UNSURE_SUFFIX = " · unsure";   // the directory badge's own words
 
@@ -41,8 +42,7 @@ export function driftCounts(payload) {
 // "3 early signs" / "1 early sign" — the quiet line under Home's drift card,
 // and the count beside the see-all group heading.
 export function earlySignsPhrase(medium) {
-  const n = Number(medium) || 0;
-  return `${n.toLocaleString()} early sign${n === 1 ? "" : "s"}`;
+  return countLabel(medium, "early sign");
 }
 
 // The sentence that defines what an early sign IS, shown wherever the phrase
@@ -59,7 +59,7 @@ export function driftSinceYesterday(s) {
   const names = list => {
     const n = list.map(x => x.donorName).filter(Boolean);
     if (n.length <= 2) return n.join(" and ");
-    return `${n.slice(0, 2).join(", ")} and ${n.length - 2} more`;
+    return `${n.slice(0, 2).join(", ")} and ${spell(n.length - 2)} more`;
   };
   const crossed = Array.isArray(s.crossed) ? s.crossed : [];
   const left = Array.isArray(s.left) ? s.left : [];

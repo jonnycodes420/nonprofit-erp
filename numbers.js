@@ -236,10 +236,10 @@ const EVENT_GUEST_DEFINITIONS = FS.EVENT_GUEST_WORDS;
 // Grow moves, Ask and Atlas. A guest "gave" when a gift (the event's own gift
 // match) or a pledge is tied to the event for them or anyone in their
 // household: a couple's gift sits on one of the two.
-// FIX-59 · THE LIST ADDS UP. Registered is everyone on the list who has not
-// declined or cancelled (an 'invited' row counts); Declined is said apart.
-// Came = came, gave + came, didn't give; Registered = Came + not yet come.
-// "Invited, didn't come" is the not-yet-come list once the event is past.
+// FIX-58 + FIX-59 · THE LIST ADDS UP, EACH PERSON ONCE (figureSources'
+// predicates). Invited = Registered + Declined + No reply; Registered = Came +
+// Said yes, didn't come; Came = came, gave + came, didn't give. "Said yes,
+// didn't come" (invitedNoShow) is shown once the event's day has passed.
 // A walk-in with no person record is a guest (keyed by the attendee row).
 async function eventGuests(orgId, { ids = null, asOf = null } = {}) {
   const args = [orgId];
@@ -248,28 +248,30 @@ async function eventGuests(orgId, { ids = null, asOf = null } = {}) {
   const rows = await query(
     `SELECT DISTINCT ON (e.id, COALESCE(d.id, a.id)) e.id AS event_id, e.name AS event_name, LEFT(e.date::text, 10) AS date, e.date_unknown,
             COALESCE(d.id, a.id) AS person_id, d.id AS donor_id, COALESCE(d.name, a.name) AS name,
-            ${FS.EVENT_CAME("a")} AS came, ${FS.EVENT_DECLINED("a")} AS declined,
+            ${FS.EVENT_CAME("a")} AS came, ${FS.EVENT_REGISTERED("a")} AS registered, ${FS.EVENT_DECLINED("a")} AS declined,
             ${FS.EVENT_GUEST_GAVE("d", "e")} AS gave
        FROM event_attendees a
        JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
        LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
-      WHERE a.org_id = ? AND a.status NOT IN ('cancelled','canceled') AND ${FS.EVENT_GUEST_LIVE("a")}${where}
-      ORDER BY e.id, COALESCE(d.id, a.id), ${FS.EVENT_CAME("a")} DESC`, args);
+      WHERE a.org_id = ? AND ${FS.EVENT_INVITED("a")} AND ${FS.EVENT_GUEST_LIVE("a")}${where}
+      ORDER BY e.id, COALESCE(d.id, a.id), ${FS.EVENT_CAME("a")} DESC, ${FS.EVENT_REGISTERED("a")} DESC, ${FS.EVENT_DECLINED("a")} DESC`, args);
   const byEvent = new Map();
   for (const r of rows) {
     const ev = byEvent.get(r.event_id) || byEvent.set(r.event_id, { id: r.event_id, name: r.event_name, date: r.date_unknown ? null : r.date,
-      past: r.date_unknown || !asOf || r.date <= asOf, cameGave: [], cameNoGift: [], notYet: [], declined: [] }).get(r.event_id);
+      past: r.date_unknown || !asOf || r.date <= asOf, cameGave: [], cameNoGift: [], saidYes: [], declined: [], noReply: [] }).get(r.event_id);
     const person = { id: r.person_id, name: r.name, ...(r.donor_id ? {} : { noRecord: true }) };
     if (r.came) (r.gave ? ev.cameGave : ev.cameNoGift).push(person);
+    else if (r.registered) ev.saidYes.push(person);
     else if (r.declined) ev.declined.push(person);
-    else ev.notYet.push(person);
+    else ev.noReply.push(person);
   }
   const byName = (a, b) => String(a.name).localeCompare(String(b.name));
   return [...byEvent.values()].map(ev => {
-    for (const k of ["cameGave", "cameNoGift", "notYet", "declined"]) ev[k].sort(byName);
+    for (const k of ["cameGave", "cameNoGift", "saidYes", "declined", "noReply"]) ev[k].sort(byName);
     const came = ev.cameGave.length + ev.cameNoGift.length;
-    return { ...ev, invitedNoShow: ev.past ? ev.notYet : [],
-      came, registered: came + ev.notYet.length, definitions: EVENT_GUEST_DEFINITIONS };
+    const registered = came + ev.saidYes.length;
+    return { ...ev, invitedNoShow: ev.past ? ev.saidYes : [], notYet: ev.saidYes,
+      came, registered, invited: registered + ev.declined.length + ev.noReply.length, definitions: EVENT_GUEST_DEFINITIONS };
   });
 }
 
@@ -288,31 +290,51 @@ async function eventStory(orgId, eventId) {
   const src = key => ({ key, params: { event: eventId } });
   const guestSrc = list => ({ key: "event-guests", params: { event: eventId, list } });
   // "Came, didn't give" is IMPORT-5's one answer (event-guests, household-aware).
-  // FIX-59: the whole list is that one answer: registered, came, declined.
-  const [[G], gave] = await Promise.all([eventGuests(orgId, { ids: [eventId], asOf: await todayFor(orgId) }), FS.figureValue(orgId, src("event-gave"))]);
-  const g = G || { cameGave: [], cameNoGift: [], notYet: [], declined: [], invitedNoShow: [], past: true, came: 0, registered: 0 };
+  // FIX-58 + FIX-59: the list is numbers.eventGuests (invited, registered,
+  // declined, no reply, came); Gave is FIX-58's household-aware event-gave, and
+  // Gave = came and gave + gave and didn't come.
+  const gaveAwaySrc = { key: "event-gave", params: { event: eventId, came: "no" } };
+  const [[G], gave, gaveNotCame] = await Promise.all([eventGuests(orgId, { ids: [eventId], asOf: await todayFor(orgId) }),
+    FS.figureValue(orgId, src("event-gave")), FS.figureValue(orgId, gaveAwaySrc)]);
+  const g = G || { cameGave: [], cameNoGift: [], saidYes: [], declined: [], noReply: [], invitedNoShow: [], past: true, came: 0, registered: 0, invited: 0 };
   const n = f => Number(f.value) || 0;
-  return {
+  const people = k => `${k.toLocaleString("en-US")} ${k === 1 ? "person" : "people"}`;
+  const out = {
     ...money,
-    registered: g.registered, attended: g.came, cameGave: g.cameGave.length, cameDidntGive: g.cameNoGift.length,
-    declined: g.declined.length, invitedDidntCome: g.past ? g.notYet.length : null, past: g.past,
-    gave: n(gave),
+    invited: g.invited, registered: g.registered, declined: g.declined.length, noReply: g.noReply.length,
+    attended: g.came, cameGave: g.cameGave.length, cameDidntGive: g.cameNoGift.length,
+    invitedDidntCome: g.past ? g.saidYes.length : null, past: g.past,
+    gave: n(gave), gaveNotCame: n(gaveNotCame),
     pledgedAll: Math.round((money.pledgedCents + money.laterCents)) / 100, pledgedAllCents: money.pledgedCents + money.laterCents,
     sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } },
-      registered: guestSrc("registered"), attended: src("event-attended"), gave: src("event-gave"),
-      cameGave: guestSrc("cameGave"), cameDidntGive: guestSrc("cameNoGift"), declined: guestSrc("declined"), invitedDidntCome: guestSrc("invitedNoShow") },
+      invited: guestSrc("invited"), registered: guestSrc("registered"), declined: guestSrc("declined"), noReply: guestSrc("noReply"),
+      attended: src("event-attended"), gave: src("event-gave"), gaveNotCame: gaveAwaySrc,
+      cameGave: guestSrc("cameGave"), cameDidntGive: guestSrc("cameNoGift"), invitedDidntCome: guestSrc("invitedNoShow") },
     definitions: {
       ...money.definitions,
       pledgedAll: "Every unpaid installment of an open pledge made at this event, in every year it falls due.",
+      invited: EVENT_GUEST_DEFINITIONS.invited,
       registered: EVENT_GUEST_DEFINITIONS.registered,
+      declined: EVENT_GUEST_DEFINITIONS.declined,
+      noReply: EVENT_GUEST_DEFINITIONS.noReply,
       attended: "Each person marked as having come to this event, or checked in at the door, once.",
-      gave: "Each person with a gift for this event or a pledge made at it, once.",
+      gave: "Each person with a gift for this event or a pledge made at it, and each guest who came whose household gave, once.",
       cameGave: EVENT_GUEST_DEFINITIONS.cameGave,
       cameDidntGive: EVENT_GUEST_DEFINITIONS.cameNoGift,
-      declined: EVENT_GUEST_DEFINITIONS.declined,
+      gaveNotCame: "Each person who gave or pledged for this event and was not marked as having come.",
       invitedDidntCome: EVENT_GUEST_DEFINITIONS.invitedNoShow,
     },
   };
+  // the one sentence that shows the figures add up
+  out.addsUp = out.attended || out.gave
+    ? `${people(out.attended)} came: ${out.cameGave.toLocaleString("en-US")} gave and ${out.cameDidntGive.toLocaleString("en-US")} didn't. ${people(out.gave)} gave or pledged: ${out.cameGave.toLocaleString("en-US")} who came and ${out.gaveNotCame.toLocaleString("en-US")} who didn't.`
+    : null;
+  // FIX-59: the list's own sentence: who was asked, and what they answered
+  out.listAddsUp = out.invited
+    ? `${people(out.invited)} invited: ${out.registered.toLocaleString("en-US")} said yes or came, ${out.declined.toLocaleString("en-US")} declined, ${out.noReply.toLocaleString("en-US")} didn't reply.`
+      + (out.invitedDidntCome != null ? ` Of the ${out.registered.toLocaleString("en-US")}, ${out.attended.toLocaleString("en-US")} came and ${out.invitedDidntCome.toLocaleString("en-US")} didn't.` : "")
+    : null;
+  return out;
 }
 
 // FUNDRAISING-2 · PLEDGES, ONE WAY. What is still to come on open pledges,

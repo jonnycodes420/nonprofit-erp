@@ -102,24 +102,38 @@ const paid = GIFTS.filter(g => g[2] === "Yes"), owed = GIFTS.filter(g => g[2] ==
 const tableSizes = {};
 for (const g of ATTENDED) tableSizes[`Table ${g.table}`] = (tableSizes[`Table ${g.table}`] || 0) + g.persons;
 const near = ATTENDED.filter(g => g.near);
-const registered = came + persons(NO_SHOW) + persons(NO_REPLY);
+// FIX-58 + FIX-59 (Jonathan, 29 Oct): Registered is each person who said yes or
+// came; Invited is the whole list; No reply = Invited − Registered − Declined.
+const registered = came + persons(NO_SHOW);
+const invited = registered + persons(DECLINED) + persons(NO_REPLY);
+// Gave is household-aware (FIX-58): each person with their own gift or pledge,
+// and each guest who came whose household gave (both of a couple who came).
+const gaveNames = new Set(GIFTS.map(g => g[0]));
+const gave = sum([...gaveNames].map(n => attendedNames.has(n) ? personOf.get(n) : 1));
+const gaveNotCame = sum([...gaveNames].filter(n => !attendedNames.has(n)).map(() => 1));
 const expected = {
   file: FILE,
   eventName: EVENT,
   sheets: { guestListRows: guestAoa.length - 3, seatingRows: seatAoa.length - 3, giftRows: GIFTS.length },
   // every person once, after the near-duplicate questions are answered with their default (Same person)
   persons: persons([...ATTENDED, ...NO_SHOW, ...DECLINED, ...NO_REPLY]) + 1,   // + Yusuf Brennan, gifts only
-  // the event's figures, in people (a couple is two)
+  // the event's figures, in people (a couple is two). They add up:
+  //   invited = registered + declined + noReply; registered = came + saidYesDidntCome;
+  //   came = cameGave + cameDidntGive; gave = cameGave + gaveNotCame
   figures: {
-    registered,                                   // excludes declined
-    came,
-    gave: GIFTS.length,                           // each record with a gift or pledge for the event, once
-    cameGave,
-    cameDidntGive: came - cameGave,
+    invited,                                      // everyone on the list
+    registered,                                   // said yes or came
     declined: persons(DECLINED),
-    invitedDidntCome: registered - came,          // registered minus came
+    noReply: invited - registered - persons(DECLINED),
+    came,
+    saidYesDidntCome: registered - came,          // was "Invited, didn't come"
+    gave,
+    cameGave,
+    gaveNotCame,
+    cameDidntGive: came - cameGave,
     checkedIn: came,                              // an imported attendance mark counts as checked in
   },
+  note: "Changed after the build, by Jonathan's ruling on 29 Oct when FIX-58 and FIX-59 met: Gave is household-aware (11 -> 12: Celeste Abara came and her household gave), Registered is said yes or came (34 -> 31), and Invited, Declined and No reply are shown. Everything else is as written before the build.",
   money: {
     gifts: paid.length, giftCents: sum(paid.map(g => g[1] * 100)),
     pledges: owed.length, pledgeCents: sum(owed.map(g => g[1] * 100)),

@@ -18,6 +18,7 @@ import { T, PageTitle, SectionLabel, Pill } from "./shared";
 import { ImpactUpdatesManager, PortalWebsiteSnippetCard } from "./Settings";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { countLabel } from "../../../shared/countWords.js";
 
 const btnPrimary = { display: "inline-block", background: T.gold500, border: "none", borderRadius: 9, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none" };
 const btnSecondary = { ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 };
@@ -76,7 +77,7 @@ function CampaignContentCard({ onNavigate }) {
         A gift attributed to a campaign shows that campaign's name in the donor's history, and its story,
         photo, and updates when you've written them. {rows.length === 0
           ? "Create a campaign in Fundraising to get started."
-          : `${withContent.length} of ${rows.length} campaign${rows.length === 1 ? "" : "s"} ${withContent.length === 1 ? "has" : "have"} donor-facing content.`}
+          : `${withContent.length} of ${countLabel(rows.length, "campaign")} ${withContent.length === 1 ? "has" : "have"} donor-facing content.`}
       </div>
       <button onClick={() => onNavigate && onNavigate("fundraising")} style={btnPrimary}>
         Edit campaign stories in Fundraising →

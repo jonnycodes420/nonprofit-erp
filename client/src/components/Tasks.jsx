@@ -11,6 +11,7 @@ import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 import { greetingName } from "../../../shared/greeting.js";
 import { useStewardTold } from "../lib/stewardTold";
+import { countLabel } from "../../../shared/countWords.js";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -140,7 +141,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
         : action === "done"
           ? async () => { await apiFetch("/tasks/bulk", { method: "POST", body: JSON.stringify({ ids: r.changed, action: "undone" }) }); await load(); }
           : async () => { await apiFetch("/tasks/bulk", { method: "POST", body: JSON.stringify({ ids: r.changed, action: "restore", before: r.before }) }); await load(); };
-      offerUndo({ message: `${word} ${n} task${n === 1 ? "" : "s"}.${skippedLine}`, undoAction }, `${n} tasks`);
+      offerUndo({ message: `${word} ${countLabel(n, "task")}.${skippedLine}`, undoAction }, `${n} tasks`);
     } catch (e) { say(e); }
   };
 

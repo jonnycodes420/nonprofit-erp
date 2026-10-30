@@ -18,7 +18,7 @@ import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
-import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
+import { ScreeningFileModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
 import { usePrivacy } from "./PrivacyPanel";
 import { displayDate, displayMonth } from "../../../shared/displayDate.js";
@@ -26,6 +26,7 @@ import { displayName } from "../../../shared/displayName.js";
 // FIX-49: the one lapse rule, on the org's own calendar.
 import lapseRuleMod from "../../../lapseRule.js";
 import { orgTodayCivil } from "../lib/orgToday";
+import { countLabel, plural } from "../../../shared/countWords.js";
 const { isLapsed } = lapseRuleMod;
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
@@ -161,10 +162,11 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
         {lapsed.map((d,idx)=>{
           const days=(d.lastGift||d.lastTouchpoint)?daysDiff(d.lastGift||d.lastTouchpoint):null;
           const sc=donorScore(d);
-          const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
-          const rowBg=days>730?T.terracotta+"09":days>365?T.gold600+"09":T.gold600+"09";
-          const rowBorderColor=days>730?T.terracotta+"25":days>365?T.gold600+"25":T.gold600+"25";
-          const daysColor=days>730?T.terracotta:days>365?T.gold600:T.gold700;
+          const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
+          const rowBg=days>730?T.gold+"14":T.gold600+"09";
+          const rowBorderColor=days>730?T.gold+"40":T.gold600+"25";
+          // FIX-58: attention is brass, never red; the longest lapse reads darkest.
+          const daysColor=days>730?T.gold700:days>365?T.gold600:T.ink3;
           const urgencyLabel=days>730?"Critical":days>365?"At Risk":"Watch";
           const giftDate=fmtGiftDate(d.lastGift);
           return(
@@ -307,7 +309,7 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize}){
+function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
   const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).length>1?r:null;})();
@@ -329,8 +331,9 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   // the whole list, so page two continues page one.
   const roomSort=sortBy==="room_to_give";
   const [screenFor,setScreenFor]=useState(null); // {donorIds} for the file preview
-  const [screenImport,setScreenImport]=useState(false);
-  const [includeScreening,setIncludeScreening]=useState(false);
+  // FIX-58: Bring in screening results, Prepare a screening file (for a
+  // group) and the Export CSV "Include screening results" box live under
+  // Import & tools (Donors.jsx); the box arrives here as a prop.
   // Persisted across the session, not just this mount — a compact preference
   // shouldn't reset every time you navigate away from Directory and back.
   const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
@@ -456,7 +459,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     setBusy(true);
     try{
       const r=await apiFetch("/donors/bulk-stage",{method:"PATCH",body:JSON.stringify({ids,stage})});
-      flash(`${r.updated} donor${r.updated!==1?"s":""} moved to ${STAGES.find(s=>s.id===stage)?.label||stage}`);
+      flash(`${countLabel(r.updated, "donor")} moved to ${STAGES.find(s=>s.id===stage)?.label||stage}`);
       setSelIds(new Set());if(onBulkDone)onBulkDone();
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);setStageDrop(false);
@@ -480,7 +483,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     setBusy(true);
     try{
       const r=await apiFetch("/donors/bulk-assign",{method:"PATCH",body:JSON.stringify({ids,assignedTo:userId})});
-      flash(`${r.updated} donor${r.updated!==1?"s":""} assigned to ${name}${r.pending?" (held until they accept)":""}`);
+      flash(`${countLabel(r.updated, "donor")} assigned to ${name}${r.pending?" (held until they accept)":""}`);
       setSelIds(new Set());if(onBulkDone)onBulkDone();
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);setAssignDrop(false);
@@ -517,7 +520,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           if(onBulkDone)onBulkDone();
           return { restored: undoIds.length };
         } }, "people");
-      } else flash(`${n} donor${n!==1?"s":""} moved to trash`);
+      } else flash(`${countLabel(n, "donor")} moved to trash`);
     }catch(e){flash(e&&(e.error==="active_plan"||e.error==="count_changed")?e.sentence:"Error: "+e.message);}
     setBusy(false);
   }
@@ -616,7 +619,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             because a count of 40 that says "donors" is a lie about 28 of them. */}
         <span style={{fontSize:12,color:T.ink3}}>
           {donorsOnlyPage
-            ? `${Number(serverTotal).toLocaleString("en-US")} donor${serverTotal!==1?"s":""}`
+            ? `${Number(serverTotal).toLocaleString("en-US")} ${plural(serverTotal, "donor")}`
             : `${Number(serverTotal).toLocaleString("en-US")} ${serverTotal!==1?"people":"person"}`}
         </span>
         {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only, server-side filtering for these is not available yet."
@@ -636,19 +639,6 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
           {exporting?"Exporting…":"Export CSV"}
         </button>
-        {isAdmin&&canMajorGifts&&<label data-testid="dir-export-screening" title="Adds the screening provider, the date screened, the capacity range and the real estate range" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:T.ink3,cursor:"pointer"}}>
-          <input type="checkbox" checked={includeScreening} onChange={e=>setIncludeScreening(e.target.checked)} style={{accentColor:T.greenDk}}/>
-          Include screening results (adds provider, date, capacity range and real estate range)
-        </label>}
-        {canMajorGifts&&<button data-testid="dir-screening-group" onClick={()=>setScreenFor({donorIds:[]})}
-          title="A saved group, in the layout screening providers take"
-          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          Prepare a screening file
-        </button>}
-        {canMajorGifts&&!isReadOnly&&<button data-testid="dir-screening-import" onClick={()=>setScreenImport(true)}
-          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          Bring in screening results
-        </button>}
         <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
           {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
             <button key={v} onClick={()=>setDensity(v)} title={l+" row spacing"}
@@ -807,7 +797,6 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           cleared: the twenty you just planned are no longer the twenty you are
           about to act on, and leaving them checked invites a second plan. */}
       {screenFor&&<ScreeningFileModal who={screenFor} onClose={()=>setScreenFor(null)}/>}
-      {screenImport&&<ScreeningImportModal onClose={()=>setScreenImport(false)} onDone={()=>onBulkDone&&onBulkDone()}/>}
       {planSel&&<PlanFollowUpModal donors={planSel}
         onSaved={()=>{setSelIds(new Set());}} onClose={()=>setPlanSel(null)}/>}
 
@@ -870,7 +859,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           {/* Rows */}
           {shownRows.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-            const sc=donorScore(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
+            const sc=donorScore(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.gold700;
             const isLast=idx===filtered.length-1;
             const checked=selIds.has(d.id);
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
@@ -946,7 +935,10 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   </>),
                   engagement:()=>(<>
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
-                  {d.engagement!=null
+                  {d.engagement===0
+                    // FIX-58: nothing logged is not "0 On track" or "0 Cooling".
+                    ?<span data-testid="dir-closeness" style={{color:T.ink3,fontSize:11}}>{d.lastTouchpoint?"Nothing in 24 months":"Nothing logged yet"}</span>
+                    :d.engagement!=null
                     ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
                     :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
@@ -1069,7 +1061,7 @@ function TeamView({donors,orgTeam,onSelectDonor}){
               <div style={{width:36,height:36,borderRadius:"50%",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.ink,flexShrink:0}}>{member.name[0]}</div>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{member.name}</div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{md.length} donor{md.length!==1?"s":""} · {fmtFull(tv)}</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{countLabel(md.length, "donor")} · {fmtFull(tv)}</div>
               </div>
             </div>
             {md.length===0

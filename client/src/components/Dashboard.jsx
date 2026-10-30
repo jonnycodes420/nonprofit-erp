@@ -47,6 +47,7 @@ import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads } from "./HomeRail";   // HOME-4
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
+import { countLabel, countWords, plural } from "../../../shared/countWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -147,7 +148,7 @@ function ImpactLine({ impact }) {
   if (!hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
 
   const head = watching > 0
-      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards, no platform fee, no donor tip, gifts settle in your own Stripe.</>
+      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring {plural(watching, "donor")} for failed cards, no platform fee, no donor tip, gifts settle in your own Stripe.</>
       : <>No platform fee, no donor tip. <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
 
   const row = (label, value, note) => (
@@ -173,12 +174,12 @@ function ImpactLine({ impact }) {
           {hasRetried && row(
             "Failed cards, retried automatically",
             fmt(retried),
-            `${impact.recoveredCount} gift${impact.recoveredCount === 1 ? "" : "s"} whose card failed and which the dunning workflow retried. Tracked per gift, 100% attributable to a retry Steward actually ran.`
+            `${countLabel(impact.recoveredCount, "gift")} whose card failed and which the dunning workflow retried. Tracked per gift, 100% attributable to a retry Steward actually ran.`
           )}
           {returned > 0 && row(
             "Gifts after a year-long gap",
             fmt(returned),
-            `${fmt(returned)} from ${returnedDonors} donor${returnedDonors === 1 ? "" : "s"} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries, never merged into them.`
+            `${fmt(returned)} from ${countLabel(returnedDonors, "donor")} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries, never merged into them.`
           )}
           {row(
             "Platform fees you paid Steward",
@@ -1032,7 +1033,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // never fabricate a rounder/better number.
   const goalDriverHint=(()=>{
     if(!goal||!(goal.recentAmount>0))return null;
-    const donorWord=`${goal.recentDonorCount} donor${goal.recentDonorCount!==1?"s":""}`;
+    const donorWord=`${countLabel(goal.recentDonorCount, "donor")}`;
     const isTrivial=goal.goalAmount>0&&(goal.recentAmount/goal.goalAmount)<0.01;
     if(isTrivial){
       return goal.goalType==="lapsed_recovery"?`${donorWord} came back this week`:`${donorWord} gave this week`;
@@ -1075,7 +1076,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // "This week" lands on Giving Summary filtered to the chip's EXACT
   // Monday-based week (tw.start/tw.end from the server) — same predicate both
   // sides, so the destination total equals the chip's number.
-  const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} gift${(tw.giftCount||0)===1?"":"s"} logged`,
+  const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} ${plural((tw.giftCount||0), "gift")} logged`,
     onClick:tw.start&&tw.end?()=>onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end}):undefined};
   // BUILD-73 Part 3 — THE DEMO'S FIRST SCREEN. This chip used to read
   // "Re-engaged · $2M · 610 lapsed donors came back", which is a results claim
@@ -1091,11 +1092,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // answer to the product's headline capability — a healthy file and a
   // broken import read identically. Words, always.
   const reengStat=atRiskAmt>0
-    ? {label:"At risk",value:fmtFull(atRiskAmt),valueColor:T.gold,sub:`${quietCount.toLocaleString()} quiet donor${quietCount===1?"":"s"} · no gift in over ${quietPhrase(impact?.quietSinceDays)}`,onClick:()=>setReengBreakdownOpen(true)}
+    ? {label:"At risk",value:fmtFull(atRiskAmt),valueColor:T.gold,sub:`${countLabel(quietCount, "quiet donor")} · no gift in over ${quietPhrase(impact?.quietSinceDays)}`,onClick:()=>setReengBreakdownOpen(true)}
     : driftData&&driftData.counts.driftingHigh>0
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
-      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?`. ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${countLabel(driftData.counts.driftingHigh,"donor")} past their own pattern${driftData.importCaveat?`. ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
       // FIX-10 Part A — a medium flag still means someone is drifting. This
       // chip said "No donors drifting" on a file where five donors were
       // drifting at medium confidence, which is the one sentence a customer
@@ -1112,7 +1113,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
          sub:driftData
            ?((driftData.giftedDonorCount??driftData.evaluated)===0
               ?"no giving history on file yet, so nothing to check"
-              :`${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} giving pattern${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} checked`)
+              :`${countLabel(driftData.giftedDonorCount??driftData.evaluated,"giving pattern")} checked`)
            :"checking giving patterns",
          onClick:()=>setReengBreakdownOpen(true)};
 
@@ -1231,7 +1232,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
-                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"Not set"} sub="left to reach this goal"/>
+                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${countLabel(daysLeftInPeriod, "day")}`:"Not set"} sub="left to reach this goal"/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
               </div>
@@ -1274,7 +1275,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
                     {over&&(
                       <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
-                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {g.childCount} goal{g.childCount===1?"":"s"}</span>
+                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {countLabel(g.childCount, "goal")}</span>
                         {kids.map(c=>(
                           <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
                             <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
@@ -1396,7 +1397,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>At Risk From Drift</div>
               <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{fmtFull(driftData.atRiskAmount)}</div>
-                <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{driftData.counts.driftingHigh} donor{driftData.counts.driftingHigh===1?"":"s"} drifting</span>
+                <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{countLabel(driftData.counts.driftingHigh,"donor")} drifting</span>
               </div>
               <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:430}}>
                 {/* BUILD-77 Part 4 — ONE headline, the other two figures
@@ -1447,12 +1448,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       the below-sector-average verdict (QA_FRESH_ORG R2) —
                       mirrors First-Touch Delay's day-one handling below. */}
                   {retentionThin
-                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history, this file has ${stewardMetrics.retentionRate.prevYearCount} prior-year donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} month${Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44)===1?"":"s"} so far. The number will appear when it can mean something.`
+                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history, this file has ${countLabel(stewardMetrics.retentionRate.prevYearCount, "prior-year donor")} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} ${plural(Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44), "month")} so far. The number will appear when it can mean something.`
                     :retentionTooEarly
                     ?!myStats?.orgHasGiftHistory
                       ?`Too early to measure, import your donors to start tracking.`
                       :stewardMetrics.retentionRate.prevYearCount>0
-                        ?`Too early to measure, as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
+                        ?`Too early to measure, as this year's gifts land, you'll see how many of last year's ${countLabel(stewardMetrics.retentionRate.prevYearCount, "donor")} stick with you.`
                         :`Too early to measure, you'll see this once there's a prior year of giving to compare against.`
                     :(()=>{
                       // BUILD-77 Part 4 — STATE THE WINDOW AND DENOMINATOR, and
@@ -1466,7 +1467,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       const denom=rr.prevYearCount||0, kept=rr.retained||0;
                       const window=py&&cy?`${py} → ${cy}`:"year over year";
                       const same=rr.sameDatesLastYear&&rr.sameDatesLastYear.current!=null?` At this point last year it was ${rr.sameDatesLastYear.current}%.`:"";
-                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py||"the prior year"} gave again (${window}).${same}${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
+                      return `${kept.toLocaleString()} of ${countLabel(denom, "donor")} who gave in ${py||"the prior year"} gave again (${window}).${same}${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
                     })()}
                 </div>
               </div>
@@ -1593,7 +1594,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const exParts=[
       ex.singleGift>0&&`${ex.singleGift.toLocaleString()} single-gift (no pattern yet)`,
       ex.activeRecurring>0&&`${ex.activeRecurring.toLocaleString()} on active recurring`,
-      ex.unlinkedSustainer>0&&`${ex.unlinkedSustainer.toLocaleString()} sustainer${ex.unlinkedSustainer===1?"":"s"} not yet reconnected`,
+      ex.unlinkedSustainer>0&&`${countLabel(ex.unlinkedSustainer,"sustainer")} not yet reconnected`,
       ex.deceased>0&&`${ex.deceased.toLocaleString()} deceased`,
       ex.doNotSolicit>0&&`${ex.doNotSolicit.toLocaleString()} do-not-solicit`,
       ex.doNotContact>0&&`${ex.doNotContact.toLocaleString()} do-not-contact`,
@@ -1601,7 +1602,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     ].filter(Boolean);
     if(driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0)return{
       head:"No giving history on file yet, so nothing to check.",
-      body:`${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"} are on file with zero gifts between them, a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
+      body:`${countLabel(driftData.evaluated, "donor")} are on file with zero gifts between them, a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
     };
     if(driftData.evaluated===0)return{
       head:"No donors to evaluate yet.",
@@ -1609,7 +1610,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     };
     if(driftData.counts.driftingHigh>0&&driftRows.length===0)return{
       head:"Everyone drifting has been contacted.",
-      body:`All ${driftData.counts.driftingHigh} drifting donor${driftData.counts.driftingHigh===1?"":"s"} had outreach logged in the last 30 days, they stay off this list while the conversation is fresh, and come back if no gift follows.`,
+      body:`All ${countWords(driftData.counts.driftingHigh,"drifting donor")} had outreach logged in the last 30 days, they stay off this list while the conversation is fresh, and come back if no gift follows.`,
     };
     // FIX-10 Part A — THE SENTENCE A CUSTOMER BELIEVED. This read "No donors
     // drifting." on a file with five donors drifting at medium confidence.
@@ -1619,14 +1620,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       head:`${earlySignsPhrase(med)}, and no confirmed drift.`,
       body:`${med===1?"One donor is":`${med.toLocaleString()} donors are`} a little past their own giving rhythm, `
         +`not far enough past it to be sure: they are listed under ${EARLY_SIGNS_HEADING}, and they are not counted in the money at risk above. `
-        +`Checked ${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} donor${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} with giving history`
+        +`Checked ${countLabel(driftData.giftedDonorCount??driftData.evaluated,"donor")} with giving history`
         +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
         +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
         +".",
     };
     return{
       head:"No donors drifting.",
-      body:`Checked ${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} donor${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} with giving history: `
+      body:`Checked ${countLabel(driftData.giftedDonorCount??driftData.evaluated,"donor")} with giving history: `
         +`${(driftData.onPattern||0).toLocaleString()} giving on their own pattern`
         +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
         +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
@@ -1641,7 +1642,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {surface==="home"&&foldBtn("drift","the Drift list")}
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
-                ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
+                ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${countLabel(driftData.counts.driftingHigh, "donor")} past their own pattern`
                 :"watching every donor's own giving pattern"}
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
               {/* POLISH-1 Part 6: when the count moved overnight with nothing
@@ -2014,7 +2015,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 sentence read ONE figure (shared/threadFigures.js). When the
                 row has been open longer than it has been late, the figure is
                 how long it has waited, and the label says so. */}
-            {t.overdue?`${rowFigure(t)} day${rowFigure(t)===1?"":"s"}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
+            {t.overdue?`${rowFigure(t)} ${plural(rowFigure(t), "day")}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
           </div>
           <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
             {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
@@ -2077,7 +2078,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
             <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
               <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
-                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":""}
+                {age>=1?`${countLabel(age, "day")}`:age===0?"Today":""}
               </div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
                 stopped
@@ -2255,7 +2256,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                         queue planned this morning has no age yet, and saying
                         so in numerals is a machine counting. */}
                     {threadStat.open} open · {threadStat.overdue} overdue
-                    {threadStat.oldestDays>=1?` · oldest ${threadStat.oldestDays} day${threadStat.oldestDays===1?"":"s"}`:""}
+                    {threadStat.oldestDays>=1?` · oldest ${countLabel(threadStat.oldestDays, "day")}`:""}
                   </span>
                 )}
                 <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
@@ -2584,7 +2585,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <strong style={{fontSize:22,fontFamily:"'DM Serif Display',serif"}}>{threadHealth.continuationRate}%</strong> of the
         conversations you closed led straight to the next step
         {" · "}{threadHealth.closed} closed
-        {threadHealth.medianDaysToClose!=null?` · typically ${threadHealth.medianDaysToClose} day${threadHealth.medianDaysToClose===1?"":"s"} to close`:""}
+        {threadHealth.medianDaysToClose!=null?` · typically ${countLabel(threadHealth.medianDaysToClose, "day")} to close`:""}
       </div>
     </div>
   ):null;
@@ -2644,13 +2645,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       {fmt(recurringHealth.mrrAtRisk)}<span style={{fontSize:12,fontWeight:600,color:T.ink3}}>/mo at risk</span>
                     </div>
                     <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                      {recurringHealth.atRiskCount} donor{recurringHealth.atRiskCount===1?"":"s"} with a failed card
+                      {countLabel(recurringHealth.atRiskCount, "donor")} with a failed card
                       {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
                     </div>
                   </>
                 ):(
                   <div style={{fontSize:13,color:T.ink3}}>
-                    All {recurringHealth.activeCount} recurring gift{recurringHealth.activeCount===1?"":"s"} are current
+                    All {countLabel(recurringHealth.activeCount, "recurring gift")} are current
                     {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
                   </div>
                 )}
@@ -2917,7 +2918,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
                       <div style={{fontSize:11.5,color:T.gold700,marginTop:3,fontWeight:600}}>
                         {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
-                        {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
+                        {days!=null?` · failing ${countLabel(days, "day")}`:""}
                       </div>
                     </a>
                     <DonorLink id={r.donor_id} onOpen={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
@@ -3183,8 +3184,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <span aria-hidden style={{color:T.terracotta,fontSize:13,lineHeight:1}}>◑</span>
           <span style={{flex:1,fontSize:13,color:T.ink2}}>
             {recurringFailed>0
-              ?<><strong style={{color:T.ink}}>{recurringFailed}</strong> card{recurringFailed===1?"":"s"} stopped this month.{recurringAttention>recurringFailed?<> {recurringAttention-recurringFailed} more recurring item{recurringAttention-recurringFailed===1?"":"s"} need{recurringAttention-recurringFailed===1?"s":""} a person.</>:null}</>
-              :<><strong style={{color:T.ink}}>{recurringAttention}</strong> recurring item{recurringAttention===1?"":"s"} need{recurringAttention===1?"s":""} a person: expiring cards or waiting proposals.</>}
+              ?<><strong style={{color:T.ink}}>{recurringFailed}</strong> {plural(recurringFailed, "card")} stopped this month.{recurringAttention>recurringFailed?<> {recurringAttention-recurringFailed} more recurring {plural(recurringAttention-recurringFailed, "item")} need{recurringAttention-recurringFailed===1?"s":""} a person.</>:null}</>
+              :<><strong style={{color:T.ink}}>{recurringAttention}</strong> recurring {plural(recurringAttention, "item")} need{recurringAttention===1?"s":""} a person: expiring cards or waiting proposals.</>}
           </span>
           <span style={{fontSize:12,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Recurring →</span>
         </div>

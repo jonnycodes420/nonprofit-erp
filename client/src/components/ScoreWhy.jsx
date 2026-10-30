@@ -32,14 +32,18 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
   // note or meeting on file reads "No history yet", never "0, Distant": the
   // second tells a new customer their donors are cold when Steward simply has
   // not been told anything yet.
-  if (s.noHistory) return (
+  // FIX-58: and a score of 0 is the same thing said worse ("0 On track",
+  // "0 Cooling"), so it reads the same way.
+  if (s.noHistory || Number(s.engagement) === 0) return (
     <div data-testid="dp-scores" data-no-history="true" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Engagement</span>
-        <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>No history yet</span>
+        <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{s.noHistory ? "Nothing logged yet" : "Nothing in 24 months"}</span>
       </div>
       <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginTop: 4 }}>
-        No conversations, notes, or meetings are on file yet, so we can't say how close they are.
+        {s.noHistory
+          ? "No conversations, notes, or meetings are on file yet, so we can't say how close they are."
+          : "Nothing is logged in the last 24 months, so we can't say how close they are."}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         <button type="button" data-testid="dp-bring-notes" onClick={() => window.dispatchEvent(new Event("steward:history-import"))}
