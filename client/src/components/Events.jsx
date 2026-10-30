@@ -29,14 +29,17 @@ const EVENT_TYPES = {
 };
 
 const STATUS_COLORS = { upcoming: T.greenDk, completed: T.greenDk, cancelled: T.ink3 };
+// FIX-59: a guest is in when the door checked them in OR somebody marked them
+// as attending (an import, by hand): the same people the event's Came counts.
+const isIn = g => !!(g && (g.in || g.status === "attended" || g.checked_in_at));
 
 const ATT_COLORS = {
-  invited: T.ink3, confirmed: T.greenDk, attended: T.greenDk,
-  no_show: T.terracotta, cancelled: T.ink3,
+  invited: T.ink3, registered: T.greenDk, confirmed: T.greenDk, attended: T.greenDk,
+  no_show: T.terracotta, declined: T.ink3, cancelled: T.ink3,
 };
 const ATT_LABELS = {
-  invited: "Invited", confirmed: "Confirmed", attended: "Attended",
-  no_show: "No Show", cancelled: "Cancelled",
+  invited: "Invited", registered: "Registered", confirmed: "Confirmed", attended: "Attended",
+  no_show: "No Show", declined: "Declined", cancelled: "Cancelled",
 };
 
 function fmtDate(d) {
@@ -74,7 +77,7 @@ function TypeBadge({ type }) {
     <span style={{
       background: t.color + "22", color: t.color, border: `1px solid ${t.color}44`,
       borderRadius: 99, padding: "2px 10px", fontSize: 10, fontWeight: 700,
-    }}>{t.icon} {t.label}</span>
+    }}>{t.label}</span>
   );
 }
 
@@ -150,7 +153,6 @@ function NewEventPanel({ onSave, onClose }) {
 function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
   const t = EVENT_TYPES[event.event_type] || EVENT_TYPES.other;
   const attended = parseInt(event.attendee_count) || 0;
-  const invited = parseInt(event.invited_count) || 0;
   const goal = parseFloat(event.goal_amount) || 0;
   // HOME-3: raised the way she says it (received + pledged for the event's
   // year), from the one server function (numbers.eventsRaised).
@@ -166,7 +168,6 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
       <div style={{ padding: "16px 18px 12px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>{t.icon}</span>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <RecordLink to={tabHref("events", { eventId: event.id })} onOpen={() => onManage(event)} data-record-link="event">{event.name}</RecordLink>
@@ -192,7 +193,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
           {[
             ["Goal", goal ? fmtFull(goal) : "None set", null, "The amount this event is aiming at."],
             ["Raised", fmtFull(raised), "raised", money ? money.definitions.raised : "Every gift attributed to this event, at its full amount."],
-            ["Registered", String(registered), "registered", "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted."],
+            ["Registered", String(registered), "registered", EVENT_FIGURES.registered],
           ].map(([label, value, rowsKey, sentence]) => label === "Raised" && money ? (
             <div key={label} data-testid="ev-card-raised" title={sentence} onClick={e => e.stopPropagation()}
               style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px", textAlign: "left" }}>
@@ -227,7 +228,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
         )}
 
         {attended > 0 && (
-          <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>{attended} came{invited ? ` of ${invited} on the list` : ""}</div>
+          <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>{attended} came{registered ? ` of ${registered} registered` : ""}</div>
         )}
       </div>
 
@@ -345,7 +346,7 @@ function EventReport({ eventId, onOpenRows }) {
       {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
       {r.story && <EventStory s={r.story} noGiftShownBelow={!!(r.guests && r.guests.cameNoGift.length + r.guests.cameGave.length + r.guests.invitedNoShow.length)} style={{ marginBottom: 12 }} />}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended") && !["cameNoGift", "cameGave", "invitedNoShow"].includes(f.key)).map(f => (
+        {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended") && !["cameNoGift", "cameGave", "invitedNoShow"].includes(f.key) && !(r.story && ["gave", "gaveNotCame"].includes(f.key))).map(f => (
           <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
             onClick={() => onOpenRows(f.key, f.label, f.sentence)}
             style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
@@ -361,7 +362,7 @@ function EventReport({ eventId, onOpenRows }) {
         <div data-testid="ev-guest-lists" style={{ marginBottom: 12 }}>
           {r.guests.sentence && <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 700, marginBottom: 8 }}>{r.guests.sentence}</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
-            {[["cameNoGift", "Came, didn't give"], ["cameGave", "Came, gave"], ...(r.guests.past ? [["invitedNoShow", "Invited, didn't come"]] : [])].map(([k, label]) => {
+            {[["cameNoGift", "Came, didn't give"], ["cameGave", "Came, gave"], ...(r.guests.past ? [["invitedNoShow", "Said yes, didn't come"]] : [])].map(([k, label]) => {
               const list = r.guests[k] || [];
               const fig = r.figures.find(f => f.key === k) || {};
               return (
@@ -897,18 +898,18 @@ function TableDrawing({ t, picked, busy, onChair, onCentre, onDropChair, onDragG
     <div style={{ display: "flex", justifyContent: "safe center", margin: "4px 0 8px", overflowX: "auto" }}>
       <div data-testid="ev-table-drawing" style={{ position: "relative", width: w, height: h, flexShrink: 0 }}>
         <button type="button" data-testid="ev-table-centre" onClick={onCentre} disabled={busy}
-          aria-label={`${t.label}, ${t.count} of ${t.capacity} seats${picked.length ? ". Seat the picked guests here" : ""}`}
+          aria-label={`${t.label}, ${t.over ? `${t.count} seated at ${t.capacity} seats, ${t.over} over` : `${t.count} of ${t.capacity} seats`}${picked.length ? ". Seat the picked guests here" : ""}`}
           style={{ position: "absolute", left: centre.left, top: centre.top, width: centre.width, height: centre.height,
                    borderRadius: centre.radius, background: T.white, border: "1.5px solid " + (t.full ? T.gold500 : T.bg3),
                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                    font: "inherit", color: T.ink, cursor: picked.length ? "pointer" : "default", padding: 4 }}>
           <span style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, textAlign: "center" }}>{t.label}</span>
-          <span style={{ fontSize: 11, color: t.full ? T.gold700 : T.ink3 }}>{t.count} of {t.capacity}</span>
+          <span style={{ fontSize: 11, color: t.full ? T.gold700 : T.ink3 }}>{t.fill}</span>
         </button>
         {spots.map((p, i) => {
           const g = t.places[i] || null;
           const isPicked = g && picked.includes(g.id);
-          const inside = g && g.checked_in_at;
+          const inside = isIn(g);
           return (
             <button key={i} type="button" data-testid="ev-chair" data-chair={i + 1} data-filled={g ? "1" : "0"}
               draggable={!!g} onDragStart={() => g && onDragGuest(g.id)} onDragEnd={onDragEnd}
@@ -961,7 +962,7 @@ function SeatingPrintSheet({ kind, event, chart }) {
           {chart.tables.map(t => (
             <div key={t.label} style={{ border: "1px solid #d4cfc6", borderRadius: t.shape === "long" ? 4 : 14, padding: "6px 8px", breakInside: "avoid" }}>
               <div style={{ fontSize: many ? 9.5 : 11, fontWeight: 800, marginBottom: 3 }}>
-                {t.label} <span style={{ fontWeight: 400, color: grey }}>· {t.count} of {t.capacity}{t.shape === "long" ? " · long" : ""}</span>
+                {t.label} <span style={{ fontWeight: 400, color: grey }}>· {t.fill}{t.shape === "long" ? " · long" : ""}</span>
               </div>
               {t.places.slice(0, Math.max(t.capacity, t.places.length)).map((g, i) => (
                 <div key={i} style={{ fontSize: many ? 8 : 9.5, lineHeight: 1.35, color: g ? ink : "#b9b2a6" }}>
@@ -1187,14 +1188,14 @@ export function EventKiosk({ eventId }) {
 
   if (!data) return null;
   const guests = data.guests || [];
-  const inCount = guests.filter(g => g.checked_in_at).length;
-  const base = view === "in" ? guests.filter(g => g.checked_in_at) : guests;
+  const inCount = guests.filter(isIn).length;
+  const base = view === "in" ? guests.filter(isIn) : guests;
   const shown = q ? base.filter(g => (g.name || "").toLowerCase().includes(q)) : base;
   const onList = new Set(guests.map(g => g.donor_id).filter(Boolean));
   // FIX-27 Part 6: a guest the name search has picked out (one match, not yet
   // in) is SELECTED, and Check checks them in. Check is ready the moment a
   // guest is selected or a code is typed, never only after something else.
-  const notIn = shown.filter(g => !g.checked_in_at);
+  const notIn = shown.filter(g => !isIn(g));
   const picked = q && notIn.length === 1 ? notIn[0] : null;
   const canCheck = !!code.trim() || !!picked;
   const submitCheck = () => (code.trim() ? scanTyped() : picked ? tap(picked).then(() => setTerm("")) : null);
@@ -1220,7 +1221,7 @@ export function EventKiosk({ eventId }) {
         </button>
       </div>
       <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-sentence">
-        {data.sentence} Checked in counts everybody marked in; expected is everybody on the list who has not cancelled.
+        {data.sentence} Checked in counts everybody marked in, at the door or as attending; expected is everybody who said they were coming or came.
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
@@ -1276,7 +1277,7 @@ export function EventKiosk({ eventId }) {
           <div key={g.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <div role="button" tabIndex={0} data-testid="ev-kiosk-row" data-selected={picked && picked.id === g.id ? "1" : undefined}
               onClick={() => tap(g)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tap(g); } }}
-              style={{ flex: 1, minWidth: 0, textAlign: "left", background: g.checked_in_at ? T.green100 : T.white,
+              style={{ flex: 1, minWidth: 0, textAlign: "left", background: isIn(g) ? T.green100 : T.white,
                        border: (picked && picked.id === g.id ? "2px solid " + T.greenDk : "1px solid " + T.bg3), borderRadius: 10, padding: "11px 13px", minHeight: 48,
                        cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600, overflowWrap: "anywhere" }}>
@@ -1285,11 +1286,11 @@ export function EventKiosk({ eventId }) {
                   ? <RecordLink to={donorHref(g.donor_id)} data-testid="ev-kiosk-name" style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{g.name}</RecordLink>
                   : g.name}{g.vip ? <span style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
               </span>
-              <span style={{ fontSize: 12, color: g.checked_in_at ? T.greenDk : T.ink3 }}>
-                {g.checked_in_at ? "In" : g.table_label || "No seat"}{g.checked_in_at && g.table_label ? ` · ${g.table_label}` : ""}{g.dietary ? ` · ${g.dietary}` : ""}
+              <span style={{ fontSize: 12, color: isIn(g) ? T.greenDk : T.ink3 }}>
+                {isIn(g) ? "In" : g.table_label || "No seat"}{isIn(g) && g.table_label ? ` · ${g.table_label}` : ""}{g.dietary ? ` · ${g.dietary}` : ""}
               </span>
             </div>
-            {g.checked_in_at && (
+            {isIn(g) && (
               <button type="button" onClick={() => undoIn(g)} aria-label={`Undo check-in for ${g.name}`}
                 style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "0 12px", fontSize: 12, color: T.ink3, cursor: "pointer", fontFamily: "inherit", minHeight: 48 }}>Undo</button>
             )}
@@ -1323,8 +1324,6 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editingStatus, setEditingStatus] = useState(null);
-  const [editingGift, setEditingGift] = useState(null);
-  const [giftVal, setGiftVal] = useState("");
   const [savingAtt, setSavingAtt] = useState(null);
   const [notes, setNotes] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
@@ -1435,12 +1434,12 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   );
 
   const t = EVENT_TYPES[event.event_type] || EVENT_TYPES.other;
-  const invitedCount = event.attendees?.filter(a => a.status === "invited").length || 0;
   const confirmedCount = event.attendees?.filter(a => a.status === "confirmed").length || 0;
   const attendedCount = event.attendees?.filter(a => a.status === "attended").length || 0;
-  const noShowCount = event.attendees?.filter(a => a.status === "no_show").length || 0;
   const totalCount = event.attendees?.length || 0;
-  const totalGifts = event.attendees?.reduce((s, a) => s + (parseFloat(a.gift_amount) || 0), 0) || 0;
+  // FIX-59: received for the event is the gifts themselves (numbers.eventsRaised),
+  // never amounts typed onto guest rows.
+  const totalGifts = event.money ? Number(event.money.received) || 0 : 0;
 
   const existingDonorIds = new Set((event.attendees || []).filter(a => a.donor_id).map(a => a.donor_id));
   const filteredDonors = pickedPeople.filter(d => !existingDonorIds.has(d.id));
@@ -1459,7 +1458,6 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 20, lineHeight: 1 }}>{t.icon}</span>
             <div style={{ fontSize: 20, fontWeight: 700, color: T.inkInverse, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2 }}>{event.name}</div>
             <TypeBadge type={event.event_type} />
             <StatusBadge status={event.status} small />
@@ -1504,20 +1502,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             <EventPageEditor eventId={eventId} />
           </div>
 
-          {/* Stat tiles */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-            {[
-              ["Invited", totalCount, "rgba(240,237,230,0.7)"],
-              ["Confirmed", confirmedCount, T.greenDk],
-              ["Attended", attendedCount, T.greenDk],
-              ["No Show", noShowCount, T.terracotta],
-            ].map(([l, v, c]) => (
-              <div key={l} style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 12, padding: "12px 14px" }}>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 4 }}>{l}</div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: c, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{v}</div>
-              </div>
-            ))}
-          </div>
+          {/* FIX-59: the Invited / Confirmed / Attended / No Show tiles are gone.
+              "Invited" counted every row, declined included, beside a
+              Registered that does not; After the event says each of these
+              once, with its sentence and its rows. */}
 
           {/* Revenue vs Cost */}
           {(parseFloat(event.cost) > 0 || parseFloat(event.revenue) > 0 || totalGifts > 0) && (() => {
@@ -1626,19 +1614,12 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                       )}
                     </div>
                     <div>
-                      {editingGift === a.id ? (
-                        <input
-                          type="number" value={giftVal} onChange={e => setGiftVal(e.target.value)}
-                          onBlur={async () => { setEditingGift(null); await patchAttendee(a.id, { giftAmount: parseFloat(giftVal) || 0 }); }}
-                          onKeyDown={async e => { if (e.key === "Enter") { e.target.blur(); } }}
-                          autoFocus
-                          style={{ background: T.ink, border: "1px solid "+T.green650, borderRadius: 6, padding: "3px 6px", color: T.inkInverse, fontSize: 11, width: 72, outline: "none" }}
-                        />
-                      ) : (
-                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? T.greenDk : "rgba(240,237,230,0.7)", fontWeight: a.gift_amount ? 700 : 400 }}>
-                          {a.gift_amount ? fmtFull(a.gift_amount) : "Not set"}
-                        </button>
-                      )}
+                      {/* FIX-59: what they gave for this event or pledged at it
+                          (event-gave, per person), not an amount typed on the row. */}
+                      <span data-testid="ev-att-given" title={event.givenSentence}
+                        style={{ fontSize: 11, color: a.event_given ? T.greenDk : "rgba(240,237,230,0.7)", fontWeight: a.event_given ? 700 : 400 }}>
+                        {a.event_given ? fmtFull(a.event_given) : "None"}
+                      </span>
                     </div>
                     <RemoveMenu kind="guest" id={a.id} label="⋯" onDone={reload} />
                   </div>
@@ -1847,9 +1828,10 @@ export function Events({ data, isReadOnly }) {
   // (numbers.eventsRaised); the list said $0 beside a page that said $45,340.
   const totalRevenue = thisYear.reduce((s, e) => s + (e.money ? e.money.received : (parseFloat(e.total_revenue) || 0)), 0);
   const avgRate = (() => {
-    const valid = thisYear.filter(e => parseInt(e.invited_count) > 0);
+    // FIX-59: came of registered, as each event page says it (declined apart)
+    const valid = thisYear.filter(e => parseInt(e.registered_count) > 0);
     if (!valid.length) return 0;
-    return Math.round(valid.reduce((s, e) => s + (parseInt(e.attendee_count) || 0) / (parseInt(e.invited_count) || 1), 0) / valid.length * 100);
+    return Math.round(valid.reduce((s, e) => s + (parseInt(e.attendee_count) || 0) / (parseInt(e.registered_count) || 1), 0) / valid.length * 100);
   })();
 
   if (selectedId) {

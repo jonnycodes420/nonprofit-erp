@@ -41,7 +41,7 @@ async function surfacesAgree(label, orgId, token) {
 
 const PASSWORD = "loadtest1234";
 const ORG = "org_fix54a";
-const TABLES = ["audience_members", "audiences", "deleted_records", "interactions", "gifts", "imports", "sheet_import_jobs", "donor_scores",
+const TABLES = ["data_health_runs", "audience_members", "audiences", "deleted_records", "interactions", "gifts", "imports", "sheet_import_jobs", "donor_scores",
   "thank_you_drafts", "tasks", "fin_transactions", "donors", "households", "fin_funds", "accounts", "budgets", "users"];
 const one = async (sql, args) => (await q(sql, args))[0];
 

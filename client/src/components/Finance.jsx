@@ -1642,7 +1642,20 @@ function FinOverview({ onNavigate }) {
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);
   const [setFund, setSetFund] = useState(null);
+  // FIX-59: imported gifts she says were banked before they were imported
+  const [marked, setMarked] = useState(null);
+  const [markErr, setMarkErr] = useState("");
   const reload = () => apiFetch("/finance/overview").then(setD).catch(() => {});
+  async function markDeposited(importId) {
+    setMarkErr("");
+    try { const r = await apiFetch("/finance/imported-deposited", { method:"POST", body: JSON.stringify(importId ? { importId } : {}) }); setMarked(r); reload(); }
+    catch (e) { setMarkErr(errorMessage(e, "Those gifts were not marked.")); }
+  }
+  async function undoMarked() {
+    setMarkErr("");
+    try { const r = await apiFetch("/finance/imported-deposited/undo", { method:"POST", body: JSON.stringify({ batchId: marked.batchId }) }); setMarked({ sentence: r.sentence }); reload(); }
+    catch (e) { setMarkErr(errorMessage(e, "That did not undo.")); }
+  }
   useEffect(() => {
     let alive = true;
     apiFetch("/finance/overview").then(r => { if (alive) setD(r); })
@@ -1720,6 +1733,20 @@ function FinOverview({ onNavigate }) {
             </div>
             <div style={{ fontSize:12.5, color:T.ink3, marginTop:3, lineHeight:1.5 }}>{n.sentence}</div>
           </button>
+          {n.action === "alreadyDeposited" && (
+            <div data-testid="fin-needs-deposited" style={{ fontSize:12.5, color:T.ink2, lineHeight:1.5, padding:"0 2px 11px", display:"flex", gap:12, flexWrap:"wrap", alignItems:"baseline" }}>
+              <button type="button" data-testid="fin-mark-deposited" onClick={() => markDeposited(null)}
+                style={{ background:"none", border:"none", padding:0, color:T.greenDk, fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+                {n.actionLabel}
+              </button>
+              {(n.runs || []).length > 1 && n.runs.map(r => (
+                <button type="button" key={r.importId} onClick={() => markDeposited(r.importId)}
+                  style={{ background:"none", border:"none", padding:0, color:T.ink2, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+                  Only {r.name} ({r.count})
+                </button>
+              ))}
+            </div>
+          )}
           {/* POLISH-1 Part 6: a large share says why, in one line, with one action. */}
           {n.why && (
             <div data-testid={"fin-needs-why-" + n.key} style={{ fontSize:12.5, color:T.ink2, lineHeight:1.5, padding:"0 2px 11px", display:"flex", gap:10, flexWrap:"wrap", alignItems:"baseline" }}>
@@ -1735,6 +1762,15 @@ function FinOverview({ onNavigate }) {
           </div>
         ))}
       </Card>
+      {(marked || markErr) && (
+        <div role="status" data-testid="fin-marked" style={{ fontSize:13, color:T.ink2, lineHeight:1.5, display:"flex", gap:12, flexWrap:"wrap", alignItems:"baseline" }}>
+          <span>{markErr || marked.sentence}</span>
+          {marked && marked.batchId && (
+            <button type="button" data-testid="fin-mark-undo" onClick={undoMarked}
+              style={{ background:"none", border:"none", padding:0, color:T.greenDk, fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>Undo</button>
+          )}
+        </div>
+      )}
       {setFund && <SetFundModal item={setFund} onClose={() => setSetFund(null)} onDone={reload}/>}
 
       <Definitions4 items={d.figures.map(f => [f.label, f.definition])}/>
