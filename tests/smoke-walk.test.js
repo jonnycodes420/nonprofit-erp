@@ -40,6 +40,7 @@
 const path = require("path");
 const fs = require("fs");
 const { ok, summary, api, closeDb, browserLegOrSkip } = require("./helpers");
+const units = require("./lib/units");   // FIX-60: a money figure is money, a count a count
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -702,6 +703,11 @@ async function moneyScreensSayNothingWrong(browser) {
       ok(`§sweep5 ${what} · ${screen}: draws, says nothing the bar names, no ALL-CAPS label, nothing on fire`,
          r.text > 0 && !r.bad.length && !r.caps.length && !trouble.length, { bad: r.bad, caps: r.caps, trouble: trouble.slice(0, 3) });
       trouble = [];
+      // FIX-60: the units rules (tests/lib/units.js) on every money screen
+      const u = await units.figuresOnPage(page, p => api("GET", p, a.token).then(x => x.body)).catch(e => ({ problems: ["could not read: " + e.message] }));
+      const fees = await units.feeTablesOnPage(page).catch(e => ({ problems: ["could not read: " + e.message] }));
+      ok(`§fix60 ${what} · ${screen}: a money figure is money, a count a count (${u.figures || 0} figures), a fee less than its gift (${fees.rows || 0} rows)`,
+         !u.problems.length && !fees.problems.length, [...u.problems, ...fees.problems].slice(0, 4));
     };
     // Finance: every section and part, and the year basis both ways
     await page.goto(`${APP}/app/finance`, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -747,6 +753,12 @@ async function moneyScreensSayNothingWrong(browser) {
           const fi = heads.findIndex(h => h.startsWith("processing fee")), ai = heads.findIndex(h => h.startsWith("amount"));
           return [...t.querySelectorAll("tbody tr")].map(tr => [tr.children[ai] && tr.children[ai].textContent.trim(), tr.children[fi] && tr.children[fi].textContent.trim()]);
         });
+        // FIX-60: the units rule, on the year's rows as drawn: each fee less
+        // than its gift, net the gift less the fee. Red with SWEEP-5's bug
+        // planted back (bookkeeperCell reading the gross for every column).
+        const feeRule = await units.feeTablesOnPage(page).catch(e => ({ rows: 0, problems: ["could not read: " + e.message] }));
+        ok(`§fix60 the bookkeeper's year (${feeRule.rows} rows): every fee is less than its gift, net is the gift less the fee`,
+           feeRule.rows > 0 && !feeRule.problems.length, feeRule.problems.slice(0, 4));
         ok("§sweep5 the bookkeeper's Processing fee column is the fee ($4.50 on one gift, $0 on the rest), not the gross",
            !!fee && fee.some(([, f]) => f === "$4.50") && fee.filter(([, f]) => f !== "$4.50").every(([, f]) => f === "$0"), (fee || []).slice(0, 4));
       }
@@ -869,6 +881,13 @@ async function moneyScreensSayNothingWrong(browser) {
     trouble = [];
     const holes = await page.evaluate(() => { const h = window.__holes || []; window.__holes = []; return h; }).catch(() => []);
     ok(`${what} — no sentence with a missing name or number in it`, holes.length === 0, holes.slice(0, 3));
+    // FIX-60: every figure on the screen is the kind of number it is drawn as
+    // (its source adds up money or counts rows), and every fee column is less
+    // than its gift (tests/lib/units.js).
+    const u = await units.figuresOnPage(page, p => api("GET", p, auth.token).then(r => r.body)).catch(e => ({ problems: ["could not read: " + e.message] }));
+    const fees = await units.feeTablesOnPage(page).catch(e => ({ problems: ["could not read: " + e.message] }));
+    ok(`${what} — every figure is the right kind of number (${u.figures || 0} figures, ${u.sources || 0} sources), every fee less than its gift`,
+       !u.problems.length && !fees.problems.length, [...u.problems, ...fees.problems].slice(0, 4));
   };
 
   // FIX-13 Part 6 — REAL LINKS. Every donor name on Home, Donors and a report

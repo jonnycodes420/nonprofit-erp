@@ -73,6 +73,10 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     "data-figure": figureKey || label || "",
     "data-figure-key": figureKey || undefined,
     "data-source-key": openable ? source.key : undefined,
+    // FIX-60: what the figure is drawn as and what it opens, so the truth
+    // check can ask the source whether a money figure is money (tests/lib/units.js).
+    "data-kind": kind,
+    "data-source-params": openable && source.params ? JSON.stringify(source.params) : undefined,
     "data-no-source": openable ? undefined : "",
     "data-cents": kind === "money" && !isBlank ? String(centsOf(value)) : undefined,
     "data-value": isBlank ? "" : String(value),
@@ -102,6 +106,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     : kind === "money" ? (whole ? fmtTotal(shown) : fmtFull(shown))   // FUNDRAISING-2: `whole` drops cents on a big total
     : kind === "percent" ? `${shown}%`
     : Number(shown).toLocaleString("en-US") + suffix;
+  data["data-shown"] = text;   // FIX-60: the words drawn, for the units check
 
   if (variant === "inline" || variant === "cell") {
     return (

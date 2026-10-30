@@ -672,7 +672,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   {teamPortfolios&&isAdmin&&<input type="color" value={col||T.greenDk} onChange={e=>saveOfficerColor(o.id,e.target.value)} style={{position:"absolute",inset:0,opacity:0,width:14,height:14,cursor:"pointer"}}/>}
                 </label>
                 <span style={{fontSize:12,color:T.ink,fontWeight:600}}>{o.name}</span>
-                <span style={{fontSize:11,color:T.ink3}}>{/* FIX-40: both open the portfolio's donors */}<Figure variant="cell" value={Number(o.portfolio_count)} label={`${o.name}'s portfolio`} source={{key:"officer-portfolio",params:{officer:o.id}}}/> · <Figure variant="cell" kind="money" value={Number(o.portfolio_giving)} label={`${o.name}'s portfolio, given in total`} source={{key:"officer-portfolio",params:{officer:o.id}}}/></span>
+                <span style={{fontSize:11,color:T.ink3}}>{/* FIX-40: both open the portfolio's donors */}<Figure variant="cell" value={Number(o.portfolio_count)} label={`${o.name}'s portfolio`} source={{key:"officer-portfolio",params:{officer:o.id,measure:"count"}}}/> · <Figure variant="cell" kind="money" value={Number(o.portfolio_giving)} label={`${o.name}'s portfolio, given in total`} source={{key:"officer-portfolio",params:{officer:o.id}}}/></span>
               </div>
             );
           })}

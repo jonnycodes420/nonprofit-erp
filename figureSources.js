@@ -1189,8 +1189,10 @@ const SOURCES = {
   // or lapsed), the same JOIN GET /portfolio/officers counts with.
   "officer-portfolio": {
     label: "Portfolio",
-    measure: () => "sum",
-    params: { officer: "id:required" },
+    // FIX-60: the Directory draws two figures from it, how many people (count)
+    // and what they gave (sum); the count was opening a sum.
+    measure: p => p.measure || "sum",
+    params: { officer: "id:required", measure: "measure" },
     sentence: () => "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total.",
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,

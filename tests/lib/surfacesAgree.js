@@ -26,7 +26,9 @@
 //             vsLastYear, homeLine, drift, groups, events, campaigns,
 //             moveReport, search, ask, atlas, exports, deleted, finance, pledges,
 //             mailCampaigns (SECURE-2: a sent email campaign says what it did,
-//             the same on every surface, from campaign_recipients)
+//             the same on every surface, from campaign_recipients), units
+//             (FIX-60: a report's money figure is money, its count a count,
+//             each foots to its rows; a fee is less than its gift)
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
@@ -170,7 +172,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
                   AND (c.start_date IS NULL OR g.date >= to_char(c.start_date,'YYYY-MM-DD'))
                   AND (c.end_date IS NULL OR g.date <= to_char(c.end_date,'YYYY-MM-DD'))) AS raised
          FROM campaigns c WHERE c.org_id = $1 AND c.retired_at IS NULL AND c.goal_amount IS NOT NULL`, [orgId]),
-    q(`SELECT agent_paused_at FROM orgs WHERE id = $1`, [orgId]),
+    q(`SELECT agent_paused_at, timezone FROM orgs WHERE id = $1`, [orgId]),
   ]);
   const pageRows = await q(`SELECT gp.id, gp.title, (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                                WHERE g.giving_page_id = gp.id AND g.org_id = gp.org_id AND d.deleted_at IS NULL) AS raised
@@ -650,6 +652,57 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
           ...(m ? [["Home's move", homeC]] : [])];
         for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);
       }
+    }
+  }
+
+  // ── FIX-60 · A NUMBER IS THE RIGHT KIND OF NUMBER (tests/lib/units.js) ──
+  // The checks above prove surfaces agree with each other; SWEEP-5 found two
+  // numbers that agreed everywhere and were the wrong kind ("Your top 50
+  // donors gave $50", a $400 fee on a $400 gift). Every report's figures:
+  // the source counts what the report asked it for (a sum is money, a count
+  // is a count), the figure is its source's value, and a total foots to its
+  // rows (money to the cent, a count to the number of rows). The bookkeeper's
+  // rows: each fee is less than its gift and net is the gift less the fee.
+  if (!skip.has("units")) {
+    const U = require("./units");
+    const today = orgTime.orgToday(org || {});
+    const y = today.slice(0, 4);
+    const range = `from=${y}-01-01&to=${today}`;
+    const REPORTS = [["giving-summary", range], ["top-donors", `scope=period&${range}&limit=50`], ["top-donors", "scope=lifetime&limit=50"],
+      ["lybunt", ""], ["sybunt", ""], ["retention", ""], ["three-year", ""], ["annual", ""], ["bookkeeper", range], ["deposits", range]];
+    const bodies = await Promise.all(REPORTS.map(([k, qs]) => get(`/reports/${k}${qs ? "?" + qs : ""}`).catch(() => null)));
+    const qsOf = params => Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+    const srcs = new Map();
+    const source = src => {
+      const k = `${src.key}?${qsOf(src.params)}`;
+      if (!srcs.has(k)) srcs.set(k, get(`/figures/${encodeURIComponent(src.key)}/rows?${qsOf(src.params)}${src.params && Object.keys(src.params).length ? "&" : ""}pageSize=500`).catch(() => null));
+      return srcs.get(k);
+    };
+    const checks = [];
+    REPORTS.forEach(([k], i) => {
+      const b = bodies[i];
+      if (!b || b.error) return;
+      for (const [fk, f] of Object.entries(b.figures || {})) {
+        if (!f || !f.source || !f.source.key || f.blank) continue;
+        checks.push(source(f.source).then(src => {
+          if (!src || !src.measure) return;
+          const name = `Reports › ${k} › ${fk}`;
+          const out = U.figureProblems({ label: name, measure: src.measure, amountKind: src.amountKind, requested: (f.source.params || {}).measure });
+          const fc = f.cents != null ? Number(f.cents) : null, sc = src.cents != null ? Number(src.cents) : null;
+          if (fc !== null && sc !== null ? fc !== sc : Number(f.value) !== Number(src.value)) out.push(`${name}: the report says ${f.value}, its source ${src.value}`);
+          if (U.unitOfMeasure(src.measure, src.amountKind) === "count" && fc !== null && fc !== Number(f.value) * 100) out.push(`${name}: a count that carries cents (${fc})`);
+          out.push(...U.footProblems(name, src));
+          diffs.push(...out);
+        }));
+      }
+    });
+    await Promise.all(checks);
+    facts.units = { figures: checks.length, sources: srcs.size };
+    const bk = bodies[REPORTS.findIndex(([k]) => k === "bookkeeper")];
+    if (bk && Array.isArray(bk.rows)) {
+      diffs.push(...U.feeProblems(bk.rows.filter(r => r.cents != null).map(r => ({ what: `the bookkeeper's ${r.donor || r.name || r.id || "row"} (${r.date || "no date"})`,
+        gross: Number(r.cents), fee: r.feeCents == null ? null : Number(r.feeCents), net: r.netCents == null ? null : Number(r.netCents) }))).map(x => `Reports › bookkeeper: ${x}`));
     }
   }
 
