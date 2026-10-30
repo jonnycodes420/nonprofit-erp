@@ -32,10 +32,52 @@ function photoFiles() {
 }
 function licenseRows() {
   const md = fs.readFileSync(path.join(STOCK, "LICENSES.md"), "utf8");
-  return md.split("\n").filter(l => /^\|\s*[a-z]+\/[^|]+\.jpg\s*\|/.test(l)).map(l => {
+  const lines = md.split("\n");
+  const head = (lines.find(l => /^\|\s*File\s*\|/.test(l)) || "").split("|").slice(1, -1).map(x => x.trim().toLowerCase());
+  const col = (c, name) => { const i = head.indexOf(name); return i < 0 ? "" : (c[i] || ""); };
+  return lines.filter(l => /^\|\s*[a-z]+\/[^|]+\.jpg\s*\|/.test(l)).map(l => {
     const c = l.split("|").slice(1, -1).map(x => x.trim());
-    return { file: c[0], group: c[1], photographer: c[2], source: c[3], license: c[4], alt: c[5] };
+    return { file: col(c, "file"), group: col(c, "group"), photographer: col(c, "photographer"), photoId: col(c, "photo id"), source: col(c, "source"),
+      license: col(c, "license"), checked: col(c, "checked"), fingerprint: col(c, "fingerprint"), alt: col(c, "alt text") };
   });
+}
+
+// FIX-60 · EVERY ROW IS ONE PHOTO, CHECKED ON ITS OWN PAGE. EDITOR-1 wrote the
+// rows from search pages. A row now carries the photo's Unsplash ID (the last
+// 11 characters of its photo-page URL), the date that page was opened and
+// found to name this photographer under the Unsplash License (not Unsplash+),
+// and a fingerprint of the image that ID served that day. The file must still
+// be that image. No network here: the fingerprint is the offline evidence.
+const PER_PHOTO_CHECKS_SINCE = "2026-10-30";
+const FINGERPRINT_MAX_BITS = 60; // of 256: the same photo re-encoded is <= 32, two different photos >= 88
+async function fingerprint(file) {
+  const px = await require("sharp")(file).resize(17, 16, { fit: "fill" }).grayscale().raw().toBuffer();
+  let bits = "";
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) bits += px[y * 17 + x] > px[y * 17 + x + 1] ? "1" : "0";
+  return BigInt("0b" + bits).toString(16).padStart(64, "0");
+}
+function bitsApart(a, b) { let v = BigInt("0x" + a) ^ BigInt("0x" + b), n = 0; while (v) { n += Number(v & 1n); v >>= 1n; } return n; }
+async function perPhotoProblems(rows, files) {
+  const problems = [], seen = new Map();
+  const today = new Date().toISOString().slice(0, 10);
+  for (const r of rows) {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(r.photoId)) { problems.push(`${r.file}: no Unsplash photo ID ("${r.photoId}")`); continue; }
+    if (seen.has(r.photoId)) problems.push(`${r.file}: photo ID ${r.photoId} is also ${seen.get(r.photoId)}`);
+    seen.set(r.photoId, r.file);
+    const m = /^https:\/\/unsplash\.com\/photos\/(?:[a-z0-9-]+-)?([A-Za-z0-9_-]{11})$/.exec(r.source);
+    if (!m || m[1] !== r.photoId) problems.push(`${r.file}: source ${r.source} is not the photo page of ${r.photoId}`);
+    if (/plus\.unsplash|unsplash\+/i.test(r.source + " " + r.license)) problems.push(`${r.file}: Unsplash+ is not free`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.checked) || r.checked < PER_PHOTO_CHECKS_SINCE || r.checked > today) problems.push(`${r.file}: not checked on its own photo page (Checked "${r.checked}")`);
+    if (!/^[0-9a-f]{64}$/.test(r.fingerprint)) problems.push(`${r.file}: no fingerprint of the checked image`);
+    else if (files.includes(r.file)) {
+      const d = bitsApart(r.fingerprint, await fingerprint(path.join(STOCK, r.file)));
+      if (d > FINGERPRINT_MAX_BITS) problems.push(`${r.file}: the file is not the photo that was checked (${d} of 256 bits apart)`);
+      const thumb = path.join(STOCK, "thumbs", r.file);
+      const dt = fs.existsSync(thumb) ? bitsApart(r.fingerprint, await fingerprint(thumb)) : 0;
+      if (dt > FINGERPRINT_MAX_BITS) problems.push(`thumbs/${r.file}: the thumbnail is not the photo that was checked (${dt} of 256 bits apart)`);
+    }
+  }
+  return problems;
 }
 
 async function checkLicenses() {
@@ -50,6 +92,12 @@ async function checkLicenses() {
     if (!r.photographer || !/^https:\/\/(unsplash\.com|www\.pexels\.com)\//.test(r.source)) problems.push(`${r.file}: photographer or source missing`);
     if (!r.alt) problems.push(`${r.file}: no alt text`);
     if (r.group !== r.file.split("/")[0]) problems.push(`${r.file}: group "${r.group}" is not its folder`);
+  }
+  problems.push(...await perPhotoProblems(rows, files));
+  const byFile = new Map(rows.map(r => [r.file, r]));
+  for (const p of SP.STOCK_PHOTOS) {
+    const r = byFile.get(p.file);
+    if (r && (r.photographer !== p.photographer || r.source !== p.source)) problems.push(`${p.file}: shared/stockPhotos.js credits ${p.photographer} ${p.source}, LICENSES.md ${r.photographer} ${r.source}`);
   }
   const catFiles = new Set(SP.STOCK_PHOTOS.map(p => p.file));
   for (const f of files) if (!catFiles.has(f)) problems.push(`${f} is not in shared/stockPhotos.js`);
@@ -153,4 +201,4 @@ async function tinyJpeg() {
   return "data:image/jpeg;base64," + buf.toString("base64");
 }
 
-module.exports = { checkLicenses, checkMissionGroups, checkNewRowsGetStock, photoFiles, licenseRows };
+module.exports = { checkLicenses, checkMissionGroups, checkNewRowsGetStock, photoFiles, licenseRows, fingerprint };
