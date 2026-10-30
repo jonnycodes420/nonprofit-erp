@@ -10,6 +10,8 @@ one deletes its line.
 - **P3 · Check-in draws every guest on the event page.** 195 rows under the door search; the search is the door, the list could fold. Suggested: EVENTS-3.
 - **P3 · The open-pledge banner and the Next move repeat each other.** Both list the same installments on the profile. Suggested: the people sweep.
 
+- **P2 · An event's people figures count persons; the Finding Joy key counts guest-list rows.** The combined workbook's key says 443 people, 172 attended, 104 gave, 77 came and gave, 95 came without a gift; Steward makes a couple's row two people, so the event page, Home's Grow card, Fundraising and Ask say 252 came, 149 gave, 122 came and gave, 130 came without a gift (each opens to exactly the key's rows; money matches the key). Decided in FIX-60: an event's people figures count giving units (a household once), as the ladder does; not built in FIX-60's time. The plan is in FIX-60's report: `numbers.eventGuests` groups by `COALESCE(household_id, donor id)`, the four `event-*` sources open one row per unit, the Events list counts, the truth check's event truth, and the suites built on couples as two (fix59-event-import, fundraising2-screens, import5 §6, sweep4, real-shaped §FJ asserts the key directly). Suggested: EVENTS-3.
+
 ## Finance, Reports, Grants (SWEEP-5, 29 Oct 2026; walk in docs/sweeps/sweep-5/walk.md)
 
 - **P3 · Budgets' revenue variance reads backwards and in red.** Variance is budget − actual for both sections, so revenue ahead of a $0 budget reads "-$1,750" in red and revenue $39,250 short reads "+$39,250"; "over budget" and an over line are red, which is for a destructive confirm only (overdue is brass). Found by FIX-60's walk. Suggested: FIN-2.
