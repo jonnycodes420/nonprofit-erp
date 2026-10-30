@@ -24,12 +24,12 @@ const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch
 // conversation logged after 8pm in New York defaulted to tomorrow.
 const todayLocal = () => orgTodayCivil();
 
-export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null }) {
+export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null, initialTouch = null }) {
   // FIX-14 Part 2 — editing opens this same form, filled in: the touch, the
   // line and the day. The next step and any gift are their own records and
   // are changed where they live, so editing shows neither.
   const editTouch = editing ? (() => { try { const m = typeof editing.metadata === "string" ? JSON.parse(editing.metadata || "{}") : (editing.metadata || {}); return m.touch || null; } catch { return null; } })() : null;
-  const [touch, setTouch] = useState(editTouch || (editing ? (TOUCH_TYPES.find(t => t.interactionType === editing.type)?.key || "note_only") : "call_reached"));
+  const [touch, setTouch] = useState(editTouch || (editing ? (TOUCH_TYPES.find(t => t.interactionType === editing.type)?.key || "note_only") : (initialTouch || "call_reached")));   // PROFILE-2: the header's Note opens it as a note
   const [line, setLine] = useState(editing ? String(editing.note || "") : "");
   // FIX-14 Part 1: where, for a meeting or a visit (filled in when editing)
   const [place, setPlace] = useState(editing ? (() => { try { const m = typeof editing.metadata === "string" ? JSON.parse(editing.metadata || "{}") : (editing.metadata || {}); return m.location || ""; } catch { return ""; } })() : "");

@@ -1309,7 +1309,7 @@ export function EventKiosk({ eventId }) {
           <button type="button" onClick={() => setView("all")} style={{ background: "none", border: "none", color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", minHeight: 44 }}>Show everyone</button>
         </div>
       )}
-      <div style={{ maxHeight: 360, overflowY: "auto" }}>
+      <div data-own-scroll="pick-list" style={{ maxHeight: 360, overflowY: "auto" }}>
         {shown.slice(0, 200).map(g => (
           <div key={g.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <div role="button" tabIndex={0} data-testid="ev-kiosk-row" data-selected={picked && picked.id === g.id ? "1" : undefined}
@@ -1357,6 +1357,7 @@ export function EventKiosk({ eventId }) {
 
 // ── Event Detail ────────────────────────────────────────────────────────────
 function EventDetail({ eventId, onClose, onEventUpdated }) {
+  useEffect(() => { if (typeof window !== "undefined") window.scrollTo(0, 0); }, [eventId]);   // PROFILE-2 Part 1
   // SWEEP-4: a failed save says so on the page; it was a browser alert()
   const [actErr, setActErr] = useState("");
   const [event, setEvent] = useState(null);
@@ -1485,7 +1486,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const INP_DARK = { background: T.ink, border: "1px solid "+T.green650, borderRadius: 8, padding: "8px 10px", color: T.inkInverse, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 
   return (
-    <div data-testid="ev-page" data-event-id={event.id} style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
+    // PROFILE-2 Part 1: the event page is the page, in the content area, and
+    // the window scrolls it. It was a fixed panel over the whole screen whose
+    // two columns each scrolled on their own.
+    <div className="page-takeover" data-testid="event-detail" data-event-id={event.id} style={{ position: "relative", background: T.ink, display: "flex", flexDirection: "column" }}>
       {actErr && <div role="alert" data-testid="ev-action-error" onClick={() => setActErr("")}
         style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: T.white, color: T.ink, border: "1px solid " + T.bg3,
                  borderRadius: 10, padding: "10px 16px", boxShadow: T.shadow, fontSize: 13, maxWidth: "90vw", cursor: "pointer" }}>{actErr}</div>}
@@ -1521,10 +1525,10 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
       </div>
 
       {/* Body */}
-      <div className="event-detail-body" style={{ flex: 1, display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", overflow: "hidden" }}>
+      <div className="event-detail-body" style={{ flex: 1, display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)" }}>
 
         {/* LEFT */}
-        <div style={{ overflowY: "auto", padding: "20px 20px 32px 24px", display: "flex", flexDirection: "column", gap: 20, borderRight: "1px solid "+T.bgElevated }}>
+        <div style={{ minWidth: 0, padding: "20px 20px 32px 24px", display: "flex", flexDirection: "column", gap: 20, borderRight: "1px solid "+T.bgElevated }}>
 
           {/* ── EVENTS-1 · THE THREE PANELS ────────────────────────────
               The report first, because the morning after is when this screen
@@ -1671,7 +1675,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
         </div>
 
         {/* RIGHT */}
-        <div style={{ overflowY: "auto", padding: "20px 24px 32px 20px", display: "flex", flexDirection: "column", gap: 20, background: T.ink }}>
+        <div style={{ minWidth: 0, padding: "20px 24px 32px 20px", display: "flex", flexDirection: "column", gap: 20, background: T.ink }}>
 
           {/* FUNDRAISING-2: the "Event Stats" box is gone. It read amounts typed
               onto guest rows, so it said "Avg Gift: Not set" beside $45,340
@@ -1697,7 +1701,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                   placeholder="Search donors…"
                   style={INP_DARK}
                 />
-                <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+                <div data-own-scroll="pick-list" style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
                   {filteredDonors.slice(0, 40).map(d => (
                     <button key={d.id} onClick={() => setSelectedIds(s => {
                       const n = new Set(s);

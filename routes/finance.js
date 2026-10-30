@@ -1608,8 +1608,10 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     count: meetingRows.filter(r => r.date >= m.from && r.date <= m.to && r.date <= today).length,
     upcoming: upcoming.some(e => String(e.date).slice(0, 7) === m.month) }));
 
-  // THIS YEAR, from the same sources the drawer opens.
-  const jan1 = today.slice(0, 4) + "-01-01";
+  // THIS YEAR, from the same sources the drawer opens. PROFILE-2 Part 4: the
+  // org's fiscal year, the year the profile's header counts (it was January 1).
+  const DSy = require("../donorStatus");
+  const jan1 = DSy.windowsFor(today, await DSy.cutsFor(orgId)).cyFrom;
   const fv = (key, params) => figureSources.figureValue(orgId, { key, params }, {});
   const [emails, fromThem, meetingsY, given] = await Promise.all([
     fv("donor-emails", { donor: donorId, from: jan1, to: today }),

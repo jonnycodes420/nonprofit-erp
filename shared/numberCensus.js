@@ -112,12 +112,12 @@ export const NUMBER_CENSUS = [
   {
     id: "profile.thisYear",
     surface: "Donor profile",
-    label: "This year",
+    label: "This fiscal year",
     computation: "figureSources donor-gifts-between: SUM of this donor's gifts rows dated from the start of the org's fiscal year (NUMBERS-2) to the org's civil today, soft and matching credit rows left out (FIX-51); a refund comes off it",
     sentence: "Every gift on this record since the start of your fiscal year, added up. A refund comes off it. Soft and matching credits are not in it. A gift with no date is not in it, because its year is not known. Click it for the gifts behind it.",
 
     where: HOVER,
-    testid: "dp-tile-def-This year",
+    testid: "dp-tile-def-This fiscal year",
   },
 
   // IMPORT-4: gifts with no date, said under This year.

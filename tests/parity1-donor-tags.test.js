@@ -244,6 +244,38 @@ const id = k => `d_par1t_${k}`;
   ok("§11 and the audit trail recorded it", aud11a.n >= 0 && aud11.n === aud11a.n + 1, { before: aud11a.n, after: aud11.n });
   ok("§11 a user from no org of theirs is refused", (await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_nobody" })).status === 400);
 
+  // ── PROFILE-2 Part 4 · ONE YEAR ON THE PROFILE: THE ORG'S FISCAL YEAR ─────
+  // Justin's Place: "Cooling: gave once this year" sat over "Nothing yet this
+  // year" (one the calendar year, one the fiscal). An org whose fiscal year
+  // starts on the 1st of this month, one gift on Jan 15 this year: in the
+  // calendar year, before the fiscal year. Nothing on the profile may say it
+  // gave this year while the fiscal-year number is empty.
+  // HOW IT WENT RED ON MAIN: routes/profileStatus.js read windowsFor(today)
+  // with no cuts, so the closeness facts said "gave once this year".
+  const FY = "org_par1fy", fyMonth = Number(T.slice(5, 7));
+  if (fyMonth < 2) console.log("  SKIP  §12 — in January no gift can be in the calendar year and before a fiscal year that starts this month");
+  else {
+    for (const t of ["gifts", "donor_scores", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [FY]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [FY]).catch(() => {});
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,vocabulary_json) VALUES ($1,'Fiscal Fixture','par1-fy',1,'active','team','America/New_York',$2)`,
+      [FY, JSON.stringify({ fiscal_year_start_month: fyMonth })]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_par1fy',$1,'admin@par1fy.local',$2,'FY Admin','admin')`, [FY, bcrypt.hashSync("loadtest1234", 10)]);
+    await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ('d_par1fy','${FY}','Fiscal Person','cultivate','system:test','test')`);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ('g_par1fy',$1,'d_par1fy',250,$2,'system:test','test')`, [FY, `${T.slice(0, 4)}-01-15`]);
+    const tf = await login("admin@par1fy.local");
+    const d12 = (await api("GET", "/donors/d_par1fy", tf)).body || {};
+    const st12 = (await api("GET", "/donors/d_par1fy/status", tf)).body || {};
+    const ty = d12.figures && d12.figures.thisYear;
+    ok("§12 the fiscal-year number is empty (the gift is before this fiscal year)", ty && !Number(ty.value), ty && ty.value);
+    const said = [...((st12.closeness && st12.closeness.facts) || []).map(f => f.text), ...((st12.highlights || []).map(h => h.text))];
+    ok("§12 no sentence on the profile says they gave this year", !said.some(t => /this (fiscal )?year/i.test(t) && /gave|given|so far/i.test(t)), said);
+    ok("§12 the fiscal-year number's source starts on the org's fiscal start", ty && ty.source && ty.source.params && ty.source.params.from === `${T.slice(0, 7)}-01`, ty && ty.source);
+    const keys = (st12.tags || []).map(t => t.key), kinds = (st12.tags || []).map(t => t.kind);
+    ok("§12 the tags are one set: no tag twice, one level and one lifecycle", new Set(keys).size === keys.length && kinds.filter(k => k === "level").length <= 1 && kinds.filter(k => k === "lifecycle").length <= 1, st12.tags);
+    for (const t of ["gifts", "donor_scores", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [FY]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [FY]).catch(() => {});
+  }
+
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); process.exitCode = 1; await closeDb().catch(() => {}); });

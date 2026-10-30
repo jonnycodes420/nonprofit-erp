@@ -3,6 +3,11 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **PROFILE-2 (2026-10-29): the profile is a page, not a panel.** It sits in the content area and the window
+  scrolls it; only the rail sticks, without a scrollbar of its own (`lib/stickyRail.js`). The header holds at most
+  two tags from the one tag set (`donorStatus.js`), never the ladder's rung chips; "this year" on the profile is
+  the org's fiscal year, labelled with its dates, in every number and sentence. Where each old feature lives now:
+  `docs/profile-1/inventory.md` (the `Now` column, walked by `tests/profile1-everything-clicks.test.js`).
 - **SECURE-2 (2026-10-29): a form's email and phone.** Forms refuse an email that is not one
   (`shared/contactCheck.js`, with a "did you mean") and store a phone in one format (`phoneNormal.js`).
   An import never refuses a row for this: it keeps the value, and the profile and the preview say

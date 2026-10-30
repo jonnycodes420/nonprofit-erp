@@ -688,3 +688,44 @@ export function WhatWorked() {
     </section>
   );
 }
+
+// PROFILE-2 · THE NEXT MOVE, AS ONE CARD. A brass eyebrow (the kind of move),
+// the move as one plain sentence in the serif, Why in a sentence, the words in
+// the person's own voice in a quiet box, then the one emerald button, Done,
+// Not now and Doesn't fit, and the ask on the right. No field labels and no
+// rung chips: the profile's one tag set is the header's. With no move it is
+// one quiet line, so the timeline moves up.
+export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn }) {
+  const [d, setD] = useState(undefined);
+  const [copied, setCopied] = useState(false);
+  const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
+  useEffect(() => { if (donorId) { setD(undefined); load(); } }, [donorId]);
+  if (d === undefined) return <div data-testid="dp-next-move-loading" style={{ height: 22 }} />;
+  const m = d && d.move;
+  if (!m || !m.item) {
+    return <div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3, padding: "2px 2px" }}>
+      {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>;
+  }
+  const how = m.item.how || {};
+  const sentence = [how.channel, how.when && how.when.words].filter(Boolean).length
+    ? `${m.title}: ${String(how.channel || "reach out").toLowerCase()}${how.when && how.when.words ? `, ${how.when.words}` : ""}.`
+    : `${m.title}.`;
+  const copy = () => { try { navigator.clipboard.writeText(how.say || ""); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ } };
+  return (
+    <section data-testid="profile-next-move" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.gold700 }}>Next move · {m.title}</div>
+      <div data-testid="dp-next-move-sentence" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.3, color: T.ink }}>{sentence}</div>
+      {m.why && <div data-testid="dp-next-move-why" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}><b>Why:</b> {m.why}</div>}
+      {how.say && <div data-testid="dp-next-move-draft" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", fontSize: 14, lineHeight: 1.55, color: T.ink }}>“{how.say}”</div>}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {!isReadOnly && (aiOn && onDraft
+            ? <button type="button" data-testid="dp-next-move-draft-btn" onClick={onDraft} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 40 }}>Draft the note</button>
+            : how.say ? <button type="button" data-testid="dp-next-move-copy" onClick={copy} style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 40 }}>{copied ? "Copied" : "Copy the words"}</button> : null)}
+          <OutcomeButtons card={{ kind: m.kind }} items={[m.item]} onChanged={load} isReadOnly={isReadOnly} />
+        </div>
+        {how.ask && <div data-testid="dp-next-move-ask" style={{ fontSize: 13.5, color: T.ink, fontWeight: 700 }} title={how.ask.rule}>Ask: {how.ask.words}</div>}
+      </div>
+    </section>
+  );
+}

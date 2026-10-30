@@ -149,7 +149,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   const ta={...inp,resize:"vertical",lineHeight:1.5};
 
   return(
-    <div className="fade-in fullscreen-takeover" style={{position:"fixed",top:52,left:0,right:0,bottom:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div className="fade-in page-takeover" data-testid="grant-profile" style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
       {logOpen&&<GrantLogModal grant={grant} onSave={handleLogged} onClose={()=>setLogOpen(false)}/>}
 
       <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
@@ -218,9 +218,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         </div>
       </div>}
 
-      <div className="grant-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"58fr 42fr",overflow:"hidden"}}>
+      <div className="grant-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"58fr 42fr"}}>
         {/* LEFT */}
-        <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{minWidth:0,padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
               ["Amount Requested",fmtFull(grant.amount),T.ink],
@@ -286,7 +286,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
+        <div style={{minWidth:0,padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
           <div>
             <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -326,8 +326,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               <button onClick={()=>setLogOpen(true)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,
-                         padding:interactions?.length?"14px 16px 2px":"4px 16px",
-                         maxHeight:420,overflowY:"auto"}}>
+                         padding:interactions?.length?"14px 16px 2px":"4px 16px"}}>
               <TouchpointTimeline interactions={interactions}/>
             </div>
           </div>

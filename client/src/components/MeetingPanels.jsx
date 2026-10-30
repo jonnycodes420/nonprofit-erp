@@ -288,7 +288,11 @@ export function timelineCounts(built) {
 }
 
 export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
-  tasks = [], attachments = [], service = [], canWrite = false, fixed = null, subChips = null, lately = 0, onSeeAll = null }) {
+  tasks = [], attachments = [], service = [], canWrite = false, fixed = null, subChips = null, lately = 0, onSeeAll = null,
+  byMonth = false, search = "", heading = null, noChips = false }) {
+  // PROFILE-2: `byMonth` puts a small-caps month in a left gutter beside each
+  // month's cards; `search` filters what is shown, live, by its words;
+  // `heading` replaces "Everything with …" on the profile's Activity tab.
   // PROFILE-1 (header): `fixed` is a profile tab (one kind, no chip row);
   // `subChips` are the other kinds that tab also offers; `lately` is the
   // Overview's short list of the newest few, of any kind.
@@ -391,18 +395,21 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         body = "Their gift names this organization as the employer that matches it.";
         return { title, body, meta, by, type };
       }
-      title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
+      title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method && g.payment_method !== "Needs you" ? ` · ${g.payment_method}` : ""}`;
       body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
       by = g.created_by_name || "";
     }
     return { title, body, meta, by, type };
   };
   const loggedOf = it => it.logged || (it.m && byId[it.m.interactionId]) || null;
+  const q = String(search || "").trim().toLowerCase();
+  const shownQ = q ? shown.filter(it => { const d = describe(it); return [d.title, d.body, d.meta, d.type, d.by].some(x => typeof x === "string" && x.toLowerCase().includes(q)); }) : shown;
+  const monthOf = it => (it.undated || !it.date ? "No date" : new Date(String(it.date).slice(0, 10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" }));
   return (
     <section aria-label={lately ? "Lately" : "Conversations and meetings"} data-testid={lately ? "dp-lately" : "dp-timeline"} data-fixed={fixed || undefined} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {lately ? <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Lately</h2>
       : <div style={{ display: "flex", justifyContent: fixed ? "flex-end" : "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        {!fixed && <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Everything with {first}</h2>}
+        {!fixed && <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{heading || `Everything with ${first}`}</h2>}
         {fixed && subChips && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginRight: "auto" }} role="group" aria-label="Show">
           {TIMELINE_FILTERS.filter(([k]) => subChips.includes(k) && (k === fixed || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
         </div>}
@@ -410,7 +417,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           {seg("cards", "Timeline")}{seg("list", "List")}
         </div>
       </div>}
-      {!fixed && !lately && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
+      {!fixed && !lately && !noChips && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
         {TIMELINE_FILTERS.filter(([k]) => (k !== "service" || (service || []).length > 0) && ((k !== "stage" && k !== "activity") || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
       </div>}
       {!lately && (filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
@@ -420,13 +427,13 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       {quietInbox && !lately && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
         {onConnect ? <button type="button" onClick={onConnect} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Connect your inbox</button> : "Connect your inbox"} to see emails and meetings.
       </div>}
-      {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>{filter === "file" ? "No files attached to conversations or notes yet." : filter === "task" ? `No tasks for ${first}.` : "Nothing here yet."}</div>}
-      {view === "list" && shown.length > 0 && <TimelineListView
-        rows={shown.slice(0, limit).map(it => { const d = describe(it); const lg = loggedOf(it);
+      {!shownQ.length && <div style={{ fontSize: 14, color: T.ink3 }}>{q ? `Nothing matches "${search.trim()}".` : filter === "file" ? "No files attached to conversations or notes yet." : filter === "task" ? `No tasks for ${first}.` : "Nothing here yet."}</div>}
+      {view === "list" && shownQ.length > 0 && <TimelineListView
+        rows={shownQ.slice(0, limit).map(it => { const d = describe(it); const lg = loggedOf(it);
           return { id: it.id, kind: it.kind, dateLabel: (it.undated ? "No date" : relDay(it.date)), type: d.type, mass: !!it.mass,
             summary: typeof d.title === "string" ? d.title : "", by: d.by, files: lg ? (filesBy[lg.id] || []) : [] }; })}
         onOpen={r => { setPref({ view: "cards" }); setOpenId(r.id); }}/>}
-      {view !== "list" && shown.slice(0, limit).map(it => {
+      {view !== "list" && shownQ.slice(0, limit).map((it, ix, arr) => {
         const isOpen = openId === it.id;
         const { title, body, meta } = describe(it);
         let extra = null;
@@ -465,8 +472,8 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             <AttachmentChips files={files} canRemove={canWrite}/>
             {canWrite && isOpen && <AttachButton interactionId={lg.id}/>}
           </div>) : null;
-        return (
-          <div key={it.id} id={it.kind === "gift" && !it.g.matched ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+        const card = (
+          <div key={it.id} className="tl-card" id={it.kind === "gift" && !it.g.matched ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
@@ -485,8 +492,16 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             </div>
           </div>
         );
+        if (!byMonth) return card;
+        const mo = monthOf(it), firstOfMonth = ix === 0 || monthOf(arr[ix - 1]) !== mo;
+        return (
+          <div key={it.id} className="tl-month-row" style={{ display: "grid", gridTemplateColumns: "76px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
+            <div className="tl-month" data-testid={firstOfMonth ? "tl-month" : undefined} style={{ fontSize: 11, fontWeight: 700, color: T.ink3, paddingTop: 24 }}>{firstOfMonth ? mo : ""}</div>
+            {card}
+          </div>
+        );
       })}
-      {!lately && shown.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shown.length - limit)} more</button>}
+      {!lately && shownQ.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shownQ.length - limit)} more</button>}
       {lately > 0 && onSeeAll && <button type="button" data-testid="dp-lately-see-all" onClick={onSeeAll}
         style={{ background: "none", border: "none", padding: 0, alignSelf: "flex-start", color: T.greenDk, fontWeight: 700, fontSize: 14, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>See everything with {first}</button>}
     </section>
@@ -653,11 +668,11 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
         {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing coming up, on a calendar or logged ahead.</div>}
       </div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <H>This year</H>
-        {(inboxConnected || y.emails?.value || n) ? <><Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
-        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/></>
+        <H>This fiscal year</H>
+        {(inboxConnected || y.emails?.value || n) ? <><Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this fiscal year" definition="Every email with this person on the record since the start of your fiscal year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
+        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this fiscal year" definition="Every meeting with this person since the start of your fiscal year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/></>
           : <div data-testid="dp-rail-connect-inbox" style={{ fontSize: 14, color: T.sage400 }}>Connect your inbox to see emails and meetings.</div>}
-        <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this year" definition="Every gift from this person this year, to the cent." source={y.given?.source} variant="inline"/>}/>
+        <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this fiscal year" definition="Every gift from this person since the start of your fiscal year, to the cent." source={y.given?.source} variant="inline"/>}/>
       </div>
       {!booking && <button type="button" data-testid="dp-book-visit" onClick={() => setBooking(true)}
         style={{ padding: "14px 18px", minHeight: 48, border: "1.5px solid " + T.inkInverse, borderRadius: 10, background: "transparent", color: T.inkInverse, font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" }}>Book a visit on your calendar</button>}

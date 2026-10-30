@@ -20,7 +20,7 @@ import { ClientFlag } from "./PrivacyPanel";
 // Ink ground, light text. The greys are cream at reduced opacity, the design
 // system's own answer for secondary text on ink.
 export const RAIL = {
-  bg:    T.ink,
+  bg:    T.railGreen,   // PROFILE-2: the profile rail's own deep green (Jonathan, 29 Oct)
   panel: T.bgElevated,
   line:  T.green650,
   text:  T.inkInverse,
@@ -36,7 +36,7 @@ export function RailSection({ title, actionNode, children, fold = false, foldOpe
   return (
     <section data-testid={testid} data-rail-section={fold ? (open ? "open" : "folded") : "plain"}
       style={{ borderTop: first ? "none" : "1px solid " + RAIL.line, padding: first ? "0 0 16px" : "16px 0" }}>
-      <h4 style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 800, color: RAIL.dim, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+      <h4 style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 800, color: T.gold500, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span>{title}</span>
         {fold
           ? <button onClick={() => setOpen(o => !o)} aria-expanded={open} style={btn}>{open ? foldOpenLabel : foldShutLabel}</button>
