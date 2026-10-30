@@ -129,6 +129,15 @@ case "$mode" in
       echo "[pre-push] (browser legs skip without a client build; CI runs them)"
       self="SHARD_SELF=1 SHARD_BUILD_DIST=0 SHARD_PREVIEW=0"
     fi
+    # FIX-60 item 6: against a server that is already up, the browser legs use
+    # whatever client/dist is here. A dist built for that server from an older
+    # commit (or before an uncommitted edit) is rebuilt, never tested as if it
+    # were this push. scripts/dist-fresh.js is the one check; run-all.sh's
+    # sharded runs use the same one.
+    if [ -z "$self" ]; then
+      node scripts/dist-fresh.js --rebuild --if-present --api "$hbase" \
+        || echo "[pre-push] WARNING: the client rebuild failed — the browser legs will skip"
+    fi
     if ! env $self SUITES="$selection" bash tests/run-all.sh; then
       echo ""
       echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
