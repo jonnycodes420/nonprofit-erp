@@ -14,7 +14,7 @@ import { apiFetch } from "../api";
 import { T, firstNameOf } from "./shared";
 import { displayDate } from "../../../shared/displayDate.js";
 
-const LABEL = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const time = iso => (iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "");
 
 export function useBeforeMeeting(donorId, refreshKey = 0) {

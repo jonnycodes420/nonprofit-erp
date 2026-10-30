@@ -16,7 +16,7 @@ const money2 = c => "$" + ((Number(c) || 0) / 100).toLocaleString("en-US", { min
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" };
-const eyebrow = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 };
+const eyebrow = { fontSize: 10, fontWeight: 700, color: T.ink3, marginBottom: 6 };
 
 export function GrantChecklist({ grantId, isReadOnly }) {
   const [d, setD] = useState(null);

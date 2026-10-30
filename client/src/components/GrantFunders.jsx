@@ -18,7 +18,7 @@ const day = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit", boxSizing: "border-box" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px" };
-const eyebrow = { fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, marginBottom: 8 };
+const eyebrow = { fontSize: 10.5, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const CYCLE_LABEL = { annual: "Once a year", biannual: "Twice a year", quarterly: "Quarterly", rolling: "Rolling", invitation_only: "By invitation only", unknown: "Not known" };
 
 export default function GrantFunders({ isReadOnly, onOpenGrant, openFunderId, onOpenPerson }) {

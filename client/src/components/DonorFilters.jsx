@@ -13,7 +13,7 @@ export const EMPTY_WHERE = { join: "and", conditions: [] };
 const ctl = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12.5, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
 const btn = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 12px", color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const primary = { ...btn, background: T.greenDk, border: "none", color: T.white, fontWeight: 700 };
-const groupHead = { fontSize: 10.5, fontWeight: 800, color: T.ink3, letterSpacing: ".04em", textTransform: "uppercase", margin: "10px 0 3px" };
+const groupHead = { fontSize: 10.5, fontWeight: 800, color: T.ink3, margin: "10px 0 3px" };
 
 // The where param for a request, or "" when there is nothing to filter by.
 export function whereParam(where) {
@@ -127,7 +127,7 @@ export function FilterBuilder({ setup, where, setWhere, error, total }) {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", position: "relative" }}>
         {conds.map((c, i) => (
           <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            {i > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase" }}>{join}</span>}
+            {i > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{join}</span>}
             <span data-testid="filter-chip" style={{ display: "inline-flex", alignItems: "center", gap: 6, background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "4px 6px 4px 12px", fontSize: 12, fontWeight: 600, color: T.ink }}>
               {chipText(c, byKey)}
               <button type="button" aria-label={`Remove the filter ${chipText(c, byKey)}`} data-testid="filter-chip-remove" onClick={() => remove(i)}

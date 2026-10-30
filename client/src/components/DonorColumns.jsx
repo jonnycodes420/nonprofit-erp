@@ -93,7 +93,7 @@ export function moveKey(list, from, to) {
 
 const btn = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 12px", color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const primary = { ...btn, background: T.greenDk, border: "none", color: T.white, fontWeight: 700 };
-const groupHead = { fontSize: 10.5, fontWeight: 800, color: T.ink3, letterSpacing: ".04em", textTransform: "uppercase", margin: "12px 0 4px" };
+const groupHead = { fontSize: 10.5, fontWeight: 800, color: T.ink3, margin: "12px 0 4px" };
 
 // ── THE EDITOR ──────────────────────────────────────────────────────────────
 // Every field on the left, searchable and grouped; the chosen columns on the

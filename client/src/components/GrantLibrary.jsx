@@ -16,7 +16,7 @@ const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px"
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 36, fontFamily: "inherit" };
 const primaryBtn = { background: T.greenDk, border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: T.white, cursor: "pointer", minHeight: 36, fontFamily: "inherit" };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" };
-const eyebrow = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 };
+const eyebrow = { fontSize: 10, fontWeight: 700, color: T.ink3 };
 const dateLabel = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); };
 const post = (path, body) => apiFetch(path, { method: "POST", body: JSON.stringify(body || {}) });
 const put = (path, body) => apiFetch(path, { method: "PUT", body: JSON.stringify(body || {}) });

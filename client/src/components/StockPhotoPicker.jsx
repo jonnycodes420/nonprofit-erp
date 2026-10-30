@@ -22,7 +22,7 @@ const TABS = [["stock", "Steward's photos"], ["library", "Your library"], ["uplo
 const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 150px), 1fr))", gap: 10 };
 const tile = on => ({ textAlign: "left", background: T.white, border: "1px solid " + (on ? T.greenDk : T.bg2), borderRadius: 12, padding: 6,
   cursor: "pointer", fontFamily: "inherit", minWidth: 0, position: "relative" });
-const groupHead = { fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "16px 0 8px" };
+const groupHead = { fontSize: 12, fontWeight: 700, color: T.ink3, margin: "16px 0 8px" };
 
 export default function StockPhotoPicker({ onPick, onClose, title = "Choose a photo", current = null }) {
   const [tab, setTab] = useState("stock");
@@ -118,7 +118,7 @@ export default function StockPhotoPicker({ onPick, onClose, title = "Choose a ph
           <Uploader accept={PHOTO_ACCEPT} acceptLabel="JPEG, PNG, WebP or GIF" maxBytes={PHOTO_MAX_BYTES} compact shape="wide"
             hint="JPEG, PNG, WebP or GIF, up to 15 MB." preview={file || null} label="Drag a photo here, or browse"
             onFile={({ dataUrl }) => setFile(dataUrl)} onRemove={() => setFile(null)} />
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" }}>Describe the photo (required)</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, margin: "10px 0 4px" }}>Describe the photo (required)</div>
           <input style={mediaInp} value={alt} onChange={e => setAlt(e.target.value)} maxLength={200} aria-label="Describe the photo"
             placeholder="Two volunteers stacking food boxes in the warehouse" />
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>

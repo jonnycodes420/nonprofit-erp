@@ -19,7 +19,7 @@ import { DonorLink, RecordLink } from "./RecordLink";
 import { WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const CHIP = { background: T.white, color: T.greenDk, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
 const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const INPUT = { flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "8px 14px", fontSize: 14, fontFamily: "inherit", background: T.white, color: T.ink };
@@ -194,7 +194,7 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
       )}
       {t && answer.chart !== "bars" && (
         <div data-testid="ask-table" style={{ border: "1px solid " + T.bg2, borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: t.compareLabel ? "minmax(0,1fr) auto auto" : "minmax(0,1fr) auto", gap: 12, padding: "8px 12px", background: T.bg, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          <div style={{ display: "grid", gridTemplateColumns: t.compareLabel ? "minmax(0,1fr) auto auto" : "minmax(0,1fr) auto", gap: 12, padding: "8px 12px", background: T.bg, fontSize: 11, fontWeight: 700, color: T.ink3 }}>
             <span>{t.dimension}</span><span>{t.valueLabel || answer.planWords.split(" · ")[1] || "This period"}</span>{t.compareLabel && <span>{t.compareLabel}</span>}
           </div>
           {t.rows.map(r => (

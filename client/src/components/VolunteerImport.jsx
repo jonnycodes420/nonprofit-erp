@@ -20,7 +20,7 @@ import { errorMessage } from "../lib/domainError";
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box", maxWidth: "100%" };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 40 };
 const primaryBtn = { background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer", minHeight: 40 };
-const eyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 
 const Num = ({ n, label, testid }) => (
   <div data-testid={testid} style={{ minWidth: 0 }}>

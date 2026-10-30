@@ -2252,6 +2252,81 @@ const SOURCES = {
       order: "name ASC, id",
     }),
   },
+  // FIX-60 · THE EVENTS LIST'S FOUR NUMBERS OPEN. Each is across the events
+  // dated in the window (the list's "this year"), and each is the same
+  // predicate the event's own page counts with, so the list's figure is the
+  // sum of what every event page says: Came is event-attended's people, once
+  // per event; Received is event-received's gifts, per event; Came of
+  // registered is everyone who came over everyone registered.
+  "events-year-events": {
+    label: "Events this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, upcoming and past.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT e.id, 'event' AS type, NULL::text AS donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
+                   COALESCE(NULLIF(e.status, ''), 'upcoming') AS detail
+              FROM events e WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, id",
+    }),
+  },
+  "events-year-came": {
+    label: "Came, this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Each person marked as having come to an event dated ${dd(p.from)} to ${dd(p.to)}, or checked in at its door, once per event.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (e.id, COALESCE(d.id, a.id)) e.id || ':' || COALESCE(d.id, a.id) AS id, 'person' AS type, d.id AS donor_id,
+                   COALESCE(d.name, a.name) AS name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND ${EVENT_CAME("a")}
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ? AND ${EVENT_GUEST_LIVE("a")}`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, name ASC, id",
+    }),
+  },
+  "events-year-registered": {
+    label: "Registered, this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Each person who said they were coming to an event dated ${dd(p.from)} to ${dd(p.to)}, or came, once per event. Declined and no reply are not counted.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (e.id, COALESCE(a.donor_id, a.id)) e.id || ':' || COALESCE(a.donor_id, a.id) AS id, 'person' AS type, a.donor_id,
+                   COALESCE(d.name, a.name) AS name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND ${EVENT_REGISTERED("a")}
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ? AND (a.donor_id IS NULL OR d.deleted_at IS NULL)`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, name ASC, id",
+    }),
+  },
+  "events-year-received": {
+    label: "Received at events",
+    measure: () => "sum",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every gift received for an event dated ${dd(p.from)} to ${dd(p.to)}, at its full amount: the figure each event's page calls Received. Pledges are not in it, soft and matching credits are not counted, and a refund comes off.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT e.id || ':' || g.id AS id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, e.name AS detail
+              FROM events e JOIN gifts g ON g.org_id = e.org_id AND ${EVENT_GIFT_MATCH("g", "e")}
+              LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
+      args: [orgId, p.from, p.to],
+      order: "amount DESC, id",
+    }),
+  },
+  "events-year-rate": {
+    label: "Came of registered",
+    ratio: "share",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Of everyone registered for an event dated ${dd(p.from)} to ${dd(p.to)}, the share who came, counted once per event.`,
+    parts: p => [
+      { role: "numerator", label: "Came", key: "events-year-came", params: { from: p.from, to: p.to } },
+      { role: "denominator", label: "Registered", key: "events-year-registered", params: { from: p.from, to: p.to } },
+    ],
+    blank: async (orgId, p, deps, parts) => (parts[1] && parts[1].totalRows ? null
+      : "No event this year has anybody registered yet."),
+  },
   // HOME-3 · "Are we on pace?": the pledged money due by a day (the end of the
   // fiscal year), beside the open balance over all years (pledges-open).
   "pledges-due": {

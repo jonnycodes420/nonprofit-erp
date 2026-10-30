@@ -116,7 +116,7 @@ function FormFunnelBlock({pageId}){
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
-        <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.ink3}}>
           How this form is doing
         </div>
         <select value={days} onChange={e=>setDays(Number(e.target.value))}
@@ -178,7 +178,7 @@ function FormEmbedBlock({pageId,status}){
     fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"};
   return(
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+      <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>
         Put the donation form on your own website
       </div>
       <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,marginBottom:10}}>{snip.note}</div>
@@ -247,7 +247,7 @@ function FormOptionsBlock({pageId,isReadOnly}){
   if(!cfg)return null;
   return(
     <div className="form-options">
-      <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+      <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>
         Form options
       </div>
       {FORM_OPTION_ROWS.map(([key,label,help])=>(
@@ -532,7 +532,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 <UrlLinkButtons url={url}/>
                 <QrCodeBlock url={url} filenameBase={slugifyPreview(p.title)||"giving-page"}/>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Embed Code</div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Embed Code</div>
                   <EmbedCodeBlock url={isVol&&url?url+"?embed=1":url}/>
                 </div>
                 {/* BUILD-102 Part 4 — the DONATION FORM on her own website, which
@@ -722,7 +722,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
         {/* Controls */}
         <div style={{flex:"1 1 300px",display:"flex",flexDirection:"column",gap:18}}>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Logo</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Logo</div>
             <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
               shape="square" preview={logo||null}
               disabled={disabled} label={logo?"Replace logo":"Drag your logo here, or browse"}
@@ -730,7 +730,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
               onRemove={disabled?null:()=>{setDirty(true);setLogo("");}}/>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Accent color</div>
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <input type="color" value={effAccent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
               <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder={T.greenDk} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
@@ -748,7 +748,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
         </div>
         {/* Live preview */}
         <div style={{flex:"1 1 300px",minWidth:260}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Preview</div>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Preview</div>
           <div style={{border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden",background:T.bg}}>
             <div style={{background:effAccent,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
               {logo&&<img src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
@@ -1366,7 +1366,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
   }
 
   const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none",marginBottom:12,fontFamily:"inherit"};
-  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4};
 
   if(!loaded) return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",fontSize:13,color:T.ink3}}>Loading…</div>;
 
@@ -1437,7 +1437,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             Generate a consolidated statement for every donor with a gift in the selected tax year. No automatic January run, trigger this deliberately each year.
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-            <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tax year</span>
+            <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>Tax year</span>
             <input type="number" value={yearEndYear} onChange={e=>{setYearEndYear(e.target.value);setDryRunResult(null);setRunResult(null);}} style={{...inp,width:110,marginBottom:0}} disabled={!form.receiptsEnabled}/>
             <button onClick={runDryRun} disabled={dryRunLoading||!form.receiptsEnabled} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 14px",color:T.ink2,fontSize:12,fontWeight:600,cursor:(dryRunLoading||!form.receiptsEnabled)?"not-allowed":"pointer"}}>
               {dryRunLoading?"Checking…":"Dry run"}
@@ -1531,7 +1531,7 @@ export function PortalWebsiteSnippet({ps}){
     </div>
   );
 }
-const lblCopy={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em"};
+const lblCopy={fontSize:11,fontWeight:700,color:T.ink3,};
 
 // The snippet renders in the Donor Portal hub now (a share/links artifact);
 // this gate keeps the enabled+listed+slug rule in ONE place (pinned by
@@ -1560,7 +1560,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
   };
   useEffect(()=>{load();},[]);
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
-  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6};
   async function save(){
     if(disabled||busy||!form?.title?.trim())return;
     setBusy(true);setErr("");
@@ -1999,7 +1999,7 @@ function ImportsHistory(){
   };
   // SEARCH-2: ⌘K opens Settings on one import (?import=<id>).
   useEffect(()=>{ const id=urlParam("settings","import"); if(id)openOne(id); },[]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const th={fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,textAlign:"left",padding:"0 12px 8px 0"};
+  const th={fontSize:10.5,fontWeight:700,color:T.ink3,textAlign:"left",padding:"0 12px 8px 0"};
   const td={fontSize:13,color:T.ink,padding:"10px 12px 10px 0",borderTop:"1px solid "+T.bg3,verticalAlign:"top"};
   return (
     <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
@@ -2075,10 +2075,10 @@ function ImportsHistory(){
           {open.loading?<div style={{fontSize:13,color:T.ink3}}>Loading…</div>:(
             <div data-testid="import-receipt">
               <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>{/* FIX-55: a contacts file adds people, not donors */}People added</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftLine?open.giftLine.rows:open.giftsCreated)}</div></div>
-                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Given</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsGiven??open.dollarsCreated)}</div></div>
-                {open.dollarsPledged>0&&<div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Pledged</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsPledged)}</div></div>}
+                <div><div style={{fontSize:10.5,fontWeight:700,color:T.ink3}}>{/* FIX-55: a contacts file adds people, not donors */}People added</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftLine?open.giftLine.rows:open.giftsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,color:T.ink3}}>Given</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsGiven??open.dollarsCreated)}</div></div>
+                {open.dollarsPledged>0&&<div><div style={{fontSize:10.5,fontWeight:700,color:T.ink3}}>Pledged</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsPledged)}</div></div>}
               </div>
               {/* FIX-58: one accounting, each part opening its rows */}
               {open.giftLine&&<ImportGiftLine line={open.giftLine} importId={open.id} style={{marginBottom:12}}/>}
@@ -2180,7 +2180,7 @@ function InboundEmailCard({isReadOnly}){
         </div>
       )}
       {held.length>0&&<>
-        <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",margin:"18px 0 8px"}}>Unmatched ({held.length})</div>
+        <div style={{fontSize:11,fontWeight:700,color:T.ink3,margin:"18px 0 8px"}}>Unmatched ({held.length})</div>
         {held.map(m=>(
           <div key={m.id} style={{border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",marginBottom:8,background:T.bg}}>
             <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{m.subject}</div>
@@ -2408,7 +2408,7 @@ function GivingSourceTile({title,logoKey,state,statusLine,note,error,actions,onO
             <img src={SOURCE_LOGOS[logoKey]} alt="" style={{maxHeight:26,maxWidth:120}}/>
           </span>)}
         <span data-testid="gs-name" style={{fontSize:17,fontWeight:700,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25}}>{title}</span>
-        <span style={{fontSize:11.5,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:tone}}>
+        <span style={{fontSize:11.5,fontWeight:700,color:tone}}>
           {STATE_LABEL[state]||STATE_LABEL.none}
         </span>
         <span data-testid="gs-checked" style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>{statusLine}</span>
@@ -3029,7 +3029,7 @@ function AuditLog({onNavigate}){
                         {r.entity_id&&!filters.record&&!(r.link&&r.link.donorId&&/^(donor|person|organisation|organization)$/.test(r.entity_type))&&<button onClick={()=>{setFilters(f=>({...f,record:r.entity_id,person:""}));setScopeName(r.entity_label||r.entity_type||"this record");}}
                           style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>Only this record</button>}
                         {r.record_count!=null&&<span style={{fontSize:11.5,color:T.ink3}}>{r.record_count} records</span>}
-                        {r.actor_kind&&r.actor_kind!=="user"&&<span style={{fontSize:10.5,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:6,padding:"1px 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{r.actor_kind.replace(/_/g," ")}</span>}
+                        {r.actor_kind&&r.actor_kind!=="user"&&<span style={{fontSize:10.5,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:6,padding:"1px 6px"}}>{r.actor_kind.replace(/_/g," ")}</span>}
                         {moved&&<button onClick={()=>setOpenRow(open?null:r.id)}
                           style={{marginLeft:"auto",background:"none",border:"none",color:T.greenDk,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
                           {open?"Hide what changed":"What changed"}
@@ -3074,7 +3074,7 @@ function AuditRowDetail({row}){
       {keys.length>0
         ? <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Field","Was","Is now"].map(h=>(
-              <th key={h} style={{textAlign:"left",fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",padding:"0 10px 6px 0"}}>{h}</th>))}</tr></thead>
+              <th key={h} style={{textAlign:"left",fontSize:10,fontWeight:700,color:T.ink3,padding:"0 10px 6px 0"}}>{h}</th>))}</tr></thead>
             <tbody>
               {keys.map(k=>(
                 <tr key={k}>
@@ -3663,7 +3663,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Organization</div>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Organization</div>
           <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{orgName}</div>
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
@@ -4032,7 +4032,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             Download it again
           </a>
           {csvExport.counts&&<div style={{marginTop:12}}>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>What is in it</div>
+            <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>What is in it</div>
             <div data-testid="csv-export-counts" style={{fontSize:12.5,color:T.ink3,lineHeight:1.8}}>
               {Object.entries(csvExport.counts).map(([k,n])=>(
                 <div key={k}>{k}.csv: {Number(n).toLocaleString()} {Number(n)===1?"row":"rows"}</div>
@@ -4129,7 +4129,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
               <div>
-                <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Current Plan</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Current Plan</div>
                 {/* FIX-4 6 — THE PLAN'S NAME, with the donor count under it.
                     This printed the raw plan value capitalised, so a new org
                     read "T5000 monthly" on the screen that answers "what am I
@@ -4155,7 +4155,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   is not a danger, so it is BRASS, not red (THE DESIGN RULE). */}
               {billing.subscriptionStatus==="trialing"&&billing.trialEndsAt&&(
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>First Charge</div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>First Charge</div>
                   <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?T.gold600:T.ink}}>
                     {new Date(billing.trialEndsAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
                     {billing.trialDaysLeft!=null&&<span style={{fontSize:12,color:T.ink3,fontWeight:400,marginLeft:6}}>({billing.trialDaysLeft} days left)</span>}
@@ -4164,7 +4164,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               )}
               {billing.cardLast4&&(
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Card On File</div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Card On File</div>
                   <div style={{fontSize:14,fontWeight:600,color:T.ink}}><span style={{textTransform:"capitalize"}}>{billing.cardBrand||"Card"}</span> ending {billing.cardLast4}</div>
                 </div>
               )}
@@ -4224,7 +4224,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                       {brow("Platform fees you paid Steward","$0",
                         "Donations run on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
                       {online>0&&brow(
-                        <>What you'd likely have paid elsewhere <span style={{fontSize:10,fontWeight:700,color:T.gold600,textTransform:"uppercase",letterSpacing:"0.05em"}}>· estimate</span></>,
+                        <>What you'd likely have paid elsewhere <span style={{fontSize:10,fontWeight:700,color:T.gold600}}>· estimate</span></>,
                         "~"+fmt(impact.estimatedFeesElsewhere),
                         `Estimate, assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`)}
                     </div>
@@ -4361,9 +4361,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
                   {sd.verified
-                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.bg2,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,padding:"2px 9px"}}>
+                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,background:T.bg2,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,padding:"2px 9px"}}>
                        Verified {displayDate(sd.verifiedAt)}</span>
-                    :<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
+                    :<span style={{fontSize:11,fontWeight:800,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
                        Waiting for DNS</span>}
                   {!sd.verified&&(
                     <button onClick={checkDomain} disabled={sdBusy} data-testid="sd-check"
@@ -4380,7 +4380,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                     </div>
                     {sd.records.map((r,i)=>(
                       <div key={i} data-testid="sd-record" style={{padding:"10px 12px",borderTop:"1px solid "+T.bg3,display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
-                        <span style={{fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ink3,width:44,flexShrink:0}}>{r.type}</span>
+                        <span style={{fontSize:10.5,fontWeight:800,color:T.ink3,width:44,flexShrink:0}}>{r.type}</span>
                         <div style={{flex:"1 1 260px",minWidth:0}}>
                           <div style={{fontSize:12.5,color:T.ink,fontWeight:600,wordBreak:"break-all"}}>{r.name}</div>
                           <div style={{fontSize:11.5,color:T.ink3,wordBreak:"break-all",fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace"}}>{r.value}{r.priority?` · priority ${r.priority}`:""}</div>

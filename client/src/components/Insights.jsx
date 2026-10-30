@@ -19,7 +19,7 @@ const money = c => {
   const v = Math.abs(Number(c) || 0) / 100;
   return (c < 0 ? "-$" : "$") + (v % 1 ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v.toLocaleString("en-US"));
 };
-const EYEBROW = { fontSize: 11, letterSpacing: "0.1em", fontWeight: 700, textTransform: "uppercase", color: T.ink3 };
+const EYEBROW = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const B1 = { background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" };
 const B2 = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 13px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" };
 const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontFamily: "inherit" };

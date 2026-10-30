@@ -297,7 +297,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
             <div style={{ position:"absolute", top:"100%", left:0, right:0, zIndex:10, background:T.white, border:"1px solid "+T.bg3, borderRadius:10, boxShadow:"0 8px 24px rgba(15,26,18,0.14)", overflow:"hidden", marginTop:2 }}>
               {form.type === "income" && sugs.grants.length > 0 && (
                 <>
-                  <div style={{ fontSize:10, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", padding:"7px 11px 2px" }}>Open grant asks</div>
+                  <div style={{ fontSize:10, color:T.ink3, padding:"7px 11px 2px" }}>Open grant asks</div>
                   {sugs.grants.map(g => (
                     <button key={g.id} style={sugBtn} onClick={() => pickGrant(g)}
                       onMouseDown={e => e.preventDefault()}>
@@ -308,7 +308,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
               )}
               {sugs.donors.length > 0 && (
                 <>
-                  <div style={{ fontSize:10, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", padding:"7px 11px 2px" }}>Donors</div>
+                  <div style={{ fontSize:10, color:T.ink3, padding:"7px 11px 2px" }}>Donors</div>
                   {sugs.donors.map(d => (
                     <button key={d.id} style={sugBtn} onClick={() => pickDonor(d)}
                       onMouseDown={e => e.preventDefault()}>
@@ -404,11 +404,11 @@ function MoneyInStrip({ onNavigate, onOpenPayout, cashOnHand }) {
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12 }}>
         <div>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Available in Stripe</div>
+          <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Available in Stripe</div>
           <div style={{ fontSize:24, fontWeight:800, color:IN, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(s.balance?.available || 0)}</div>
         </div>
         <div>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>On its way</div>
+          <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>On its way</div>
           <div style={{ fontSize:24, fontWeight:800, color:T.gold, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(s.balance?.pending || 0)}</div>
         </div>
       </div>
@@ -423,7 +423,7 @@ function MoneyInStrip({ onNavigate, onOpenPayout, cashOnHand }) {
       </div>
       {payouts.length > 0 && (
         <div style={{ marginTop:14 }}>
-          <div style={{ fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", margin:"4px 0 6px" }}>Recent payouts</div>
+          <div style={{ fontSize:11, fontWeight:700, color:T.ink3, margin:"4px 0 6px" }}>Recent payouts</div>
           {payouts.map((p, i) => <PayoutRow key={p.id || i} p={p} first={i === 0} onOpen={onOpenPayout}/>)}
         </div>
       )}
@@ -479,7 +479,7 @@ function PayoutsView({ onNavigate, openId, onOpen }) {
         <div className="reports-table-wrap" style={{ overflowX:"auto", marginTop:14 }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
-              <tr style={{ textAlign:"left", color:T.ink3, fontSize:11, textTransform:"uppercase", letterSpacing:".05em" }}>
+              <tr style={{ textAlign:"left", color:T.ink3, fontSize:11 }}>
                 <th style={{ padding:"6px 8px" }}>Line</th><th style={{ padding:"6px 8px" }}>Donor</th>
                 <th style={{ padding:"6px 8px", textAlign:"right" }}>Amount</th><th style={{ padding:"6px 8px", textAlign:"right" }}>Fee</th>
                 <th style={{ padding:"6px 8px", textAlign:"right" }}>Net</th>
@@ -1024,7 +1024,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   return (
-    <div className="no-caps" style={{ display:"flex", flexDirection:"column", gap:14 }}>
+    <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
       {/* Title + year-basis toggle share one row (no dead band under the title). */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, flexWrap:"wrap" }}>
         <PageTitle main="Your" accent="money."/>
@@ -1092,7 +1092,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
         {summary && (
           <Card>
             <div data-testid="cash-on-hand-line" style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap" }}>
-              <span style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Cash on hand</span>
+              <span style={{ fontSize:11, color:T.ink3 }}>Cash on hand</span>
               <span style={{ fontSize:18, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif" }}>{fmt(summary.cashOnHand)}</span>
             </div>
             <div style={{ fontSize:12, color:T.ink3, marginTop:4, lineHeight:1.55 }}>{CASH_ON_HAND_SENTENCE}</div>
@@ -1251,7 +1251,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.ink3, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
-                  <div style={{ fontSize:10, color:f.restricted?T.gold700:T.ink3, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
+                  <div style={{ fontSize:10, color:f.restricted?T.gold700:T.ink3, fontWeight:600, marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:f.balance>=0?T.ink:OUT, fontFamily:"'DM Serif Display',serif" }}>{fmt(f.balance)}</div>
               </div>
@@ -1294,7 +1294,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                   <thead>
                     <tr style={{ background:T.bg2 }}>
                       {[["date","Date"],["amount","Amount"],["description","Description"],["account_name","Account"],["fund_name","Fund"]].map(([col, label]) => (
-                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, cursor:"pointer", whiteSpace:"nowrap" }}>
                           {label}{sortArrow(col)}
                         </th>
                       ))}
@@ -1386,7 +1386,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <div style={{ flex:1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{f.name}</span>
-                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?T.gold700:T.ink3 }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
+                    <span style={{ fontSize:10, fontWeight:600, color:f.restricted?T.gold700:T.ink3 }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
                   </div>
                   {f.description && <div style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.description}</div>}
                 </div>
@@ -1435,12 +1435,12 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
                   <tr style={{ background:T.bg2 }}>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3 }}>Account</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3 }}>Fund</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3 }}>Budget</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3 }}>Actual YTD</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3 }}>Variance</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3 }}>Proj. Year-End</th>
                     <th style={{ padding:"8px 12px", width:80 }}/>
                   </tr>
                 </thead>

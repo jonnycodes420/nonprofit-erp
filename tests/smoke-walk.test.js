@@ -112,6 +112,44 @@ const IGNORABLE_URL = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
 const IGNORABLE_TEXT = /Download the React DevTools|Unexpected token '<'/;
 const EXPECTED_5XX = /\/ai\/stream/;
 
+// FIX-60 item 5 · SENTENCE CASE EVERYWHERE, AND THE "?" AFTER WHAT IT EXPLAINS.
+// Runs in the page on every screen `look` checks (every tab, every profile tab).
+// (a) Labels are sentence case. The ONE exception is the eyebrow: an element
+// inside `.eyebrow` (GlobalStyles) whose computed size is at most 11px, the
+// small letter-spaced group label over the rail's lists. Anything else whose
+// computed `text-transform` is uppercase fails, and so does a literal ALL-CAPS
+// run of two or more words ("MY PORTFOLIO") typed into the source.
+// (c) A figure's "?" never sits between a count and its noun ("0 ? grants"):
+// after a count's "?" the next word may be "of", "and", "·" and the like, never
+// the thing counted.
+// HOW IT GOES RED: on main (2b4951a) SectionLabel, the profile tiles and the
+// Home eyebrows are uppercase on every tab, and Grants · Reports draws "0 ? grants".
+function wordsOnScreen() {
+  const caps = [], why = [];
+  const shown = el => { const r = el.getClientRects(); return r.length > 0 && getComputedStyle(el).visibility !== "hidden"; };
+  const eyebrow = (el, cs) => !!el.closest(".eyebrow") && parseFloat(cs.fontSize) <= 11;
+  for (const el of document.body.querySelectorAll("*")) {
+    if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|INPUT|OPTION|SELECT|TITLE)$/.test(el.tagName)) continue;
+    const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join(" ").trim();
+    if (!/[A-Za-z]{2}/.test(own) || !shown(el)) continue;
+    const cs = getComputedStyle(el);
+    if (eyebrow(el, cs)) continue;
+    if (cs.textTransform === "uppercase" && /[a-z]/.test(own)) caps.push("uppercase: " + own.slice(0, 50));
+    else if (/\b[A-Z][A-Z'’]+(?:[ \t]+[A-Z][A-Z'’]+)+\b/.test(own) && !/\b(?:LYBUNT|SYBUNT)\b/.test(own)) caps.push("typed in caps: " + own.slice(0, 50));
+  }
+  const STOP = /^\s*(?:of|and|or|to|in|at|from|for|with|by|on|than|out|over|under|per|vs|is|are|was|were|·|—|-|\)|,|\.|;|:|$)/;
+  for (const q of document.body.querySelectorAll('[data-testid="figure-why"]')) {
+    const wrap = q.parentElement, prev = wrap && wrap.previousElementSibling;
+    if (!prev || !shown(q) || !prev.hasAttribute("data-figure")) continue;
+    const num = (prev.textContent || "").trim();
+    if (!/^[\d,]+$/.test(num)) continue;                       // a count, not $ or %
+    let after = "", n = wrap.nextSibling;
+    while (n && after.trim().length < 12) { after += n.textContent || ""; n = n.nextSibling; }
+    if (/^\s*[A-Za-z]/.test(after) && !STOP.test(after)) why.push(`${num} ? ${after.trim().slice(0, 30)}`);
+  }
+  return { caps: [...new Set(caps)], why: [...new Set(why)] };
+}
+
 // SWEEP-4 · EVENTS AND PLEDGES, EVERY SCREEN, ON TWO ORGS. The Events list
 // (Upcoming, Past, All), a past event's page with its follow-up count, the
 // Pledges view, Tickets & sponsors, Auctions, Peer-to-peer and Memberships, at
@@ -180,8 +218,8 @@ async function eventsAndPledgesSayNothingWrong(browser) {
       await page.goto(APP + url, { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
       if (tab) await page.getByRole("button", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
       await page.waitForTimeout(500);
-      // only the swept screens: each wears .no-caps at its root
-      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].map(n => n.innerText).join("\n"));
+      // the screen's own area (FIX-60 retired SWEEP-5's .no-caps root class)
+      const text = await page.evaluate(() => (document.querySelector(".app-content") || document.body).innerText);
       const said = SAYS.filter(([re]) => re.test(text)).map(([, w]) => w);
       const caps = [...new Set(text.split("\n").map(l => l.trim()).filter(l => /^[A-Z][A-Z0-9 ·&'’,\-\/()]{3,}$/.test(l) && /[A-Z]{4}/.test(l)))].slice(0, 6);
       const where = `${name} (${what}, ${width})`;
@@ -701,6 +739,8 @@ async function moneyScreensSayNothingWrong(browser) {
       }, SAYS.map(([re, n]) => [re.source, n]));
       ok(`§sweep5 ${what} · ${screen}: draws, says nothing the bar names, no ALL-CAPS label, nothing on fire`,
          r.text > 0 && !r.bad.length && !r.caps.length && !trouble.length, { bad: r.bad, caps: r.caps, trouble: trouble.slice(0, 3) });
+      const w = await page.evaluate(wordsOnScreen).catch(() => ({ why: ["(could not read)"] }));
+      ok(`§fix60 ${what} · ${screen}: no figure's "?" sits between a count and its noun`, !w.why.length, w.why.slice(0, 4));
       trouble = [];
     };
     // Finance: every section and part, and the year basis both ways
@@ -869,6 +909,9 @@ async function moneyScreensSayNothingWrong(browser) {
     trouble = [];
     const holes = await page.evaluate(() => { const h = window.__holes || []; window.__holes = []; return h; }).catch(() => []);
     ok(`${what} — no sentence with a missing name or number in it`, holes.length === 0, holes.slice(0, 3));
+    const words = await page.evaluate(wordsOnScreen).catch(e => ({ caps: ["(could not read: " + e.message.slice(0, 60) + ")"], why: [] }));
+    ok(`${what} — no ALL-CAPS text outside the one eyebrow style`, words.caps.length === 0, words.caps.slice(0, 5));
+    ok(`${what} — no figure's "?" sits between a count and its noun`, words.why.length === 0, words.why.slice(0, 4));
   };
 
   // FIX-13 Part 6 — REAL LINKS. Every donor name on Home, Donors and a report
@@ -1096,6 +1139,32 @@ async function moneyScreensSayNothingWrong(browser) {
        { found: r.length, bad: bad.slice(0, 3) });
   }
   trouble = [];
+
+  // FIX-60 item 5 (e) · /app/events?eventId=… OPENS THAT EVENT. tabHref names
+  // it eventId; the Events screen read only ?event= and drew the list.
+  // (f) · HOME'S "DRAFT" OPENS THE DRAFT. The ladder's "Draft a note" asked for
+  // the profile with openCompose, App dropped it, and only the profile opened.
+  // HOW IT GOES RED: on main (2b4951a) the eventId link draws the list, and
+  // Draft lands on the profile with no Suggested draft open.
+  {
+    trouble = [];
+    const evId = [...known.event][0];
+    await page.goto(`${APP}/app/events?eventId=${encodeURIComponent(evId)}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    const opened = await page.locator(`[data-testid="ev-page"][data-event-id="${evId}"]`).waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
+    ok("§fix60 /app/events?eventId=<id> opens that event", !!evId && opened, { evId, url: page.url() });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    trouble = [];
+    await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.locator('[data-testid="moves-chip-ladder"]').click({ timeout: 20000 }).catch(() => {});
+    const draft = page.locator('[role=dialog] button', { hasText: /^Draft a / }).first();
+    await draft.waitFor({ timeout: 15000 }).catch(() => {});
+    const had = await draft.count();
+    if (had) await draft.click();
+    const composer = await page.locator('[data-testid="dp-suggested"]').waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
+    ok("§fix60 Home's Draft opens that person's profile with the draft open", had > 0 && composer && /\/donors\/[^/?]+/.test(page.url()), { had, composer, url: page.url() });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    trouble = [];
+  }
 
   // WIRE-1-ADDENDUM · ONE TEMPLATES TAB. "Templates" and "Email templates" were
   // the same thing twice. An old link to either lands on the one tab, the old

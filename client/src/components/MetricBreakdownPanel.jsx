@@ -89,7 +89,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
       {heading && (
         <div style={{ padding: "14px 24px 6px", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline",
                       borderTop: "1px solid " + T.bg2, background: T.bg }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>
+          <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>
             {heading.roleWord} · {heading.label}
           </div>
           <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }} data-figure-part-total

@@ -98,7 +98,7 @@ const btnPrimary = { background: T.green, border: "none", borderRadius: 9, paddi
 const btnQuiet = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: T.ink, cursor: "pointer" };
 const btnLink = { background: "transparent", border: "none", padding: 0, color: T.green, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" };
 const card = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 14, padding: "18px 20px" };
-const eyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 
 function useNarrow() {
   const q = "(max-width: 720px)";

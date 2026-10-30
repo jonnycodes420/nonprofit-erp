@@ -98,6 +98,22 @@ async function buildFixture() {
   await mem("m_r4_2", "d_r4_cy", "lapsed", `${y(2)}-01-01`, `${y(1)}-01-01`);
   await mem("m_r4_3", "d_r4_dee", "cancelled", `${y(1)}-01-01`, `${y(0)}-01-01`);
   await mem("m_r4_4", "d_r4_gone", "lapsed", `${y(2)}-01-01`, `${y(1)}-01-01`);
+  // FIX-60: two events this year and one last year, with guests and gifts,
+  // so the Events list's four numbers have rows to open.
+  const ev = (id, name, date) => q(`INSERT INTO events (id,org_id,name,event_type,date,status,created_by,created_by_name) VALUES ($1,$2,$3,'gala',$4,'completed','system:test','test')`, [id, ORG, name, date]);
+  await ev("ev_r4_a", "Spring dinner", `${y(0)}-01-03`);
+  await ev("ev_r4_b", "Open studio", `${y(0)}-01-04`);
+  await ev("ev_r4_old", "Last year's dinner", `${y(1)}-05-05`);
+  const guest = (id, event, donor, status) => q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,$6)`, [id, event, ORG, donor, donor || "Walk-in", status]);
+  await guest("ea_r4_1", "ev_r4_a", "d_r4_ada", "attended");
+  await guest("ea_r4_2", "ev_r4_a", "d_r4_ben", "attended");
+  await guest("ea_r4_3", "ev_r4_a", "d_r4_cy", "registered");
+  await guest("ea_r4_4", "ev_r4_a", "d_r4_dee", "declined");
+  await guest("ea_r4_5", "ev_r4_b", "d_r4_ada", "attended");
+  await guest("ea_r4_6", "ev_r4_b", "d_r4_eli", "confirmed");
+  await guest("ea_r4_7", "ev_r4_old", "d_r4_hal", "attended");
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,event_id) VALUES ('g_r4_ev1',$1,'d_r4_dee',250.25,$2,'cash','ev_r4_a'), ('g_r4_ev2',$1,'d_r4_eli',99.99,$2,'cash','ev_r4_a'), ('g_r4_ev3',$1,'d_r4_gus',40.01,$3,'cash','ev_r4_b'), ('g_r4_ev4',$1,'d_r4_hal',500,$4,'cash','ev_r4_old')`,
+    [ORG, `${y(0)}-01-03`, `${y(0)}-01-04`, `${y(1)}-05-05`]);
   await q(`UPDATE donors SET deleted_at = NOW() WHERE id = 'd_r4_gone'`);
 }
 
@@ -202,6 +218,33 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
     ok("§sweep5 the bookkeeper's screen: fee and net are their own columns, not the gross",
        bookkeeperCell({ key: "amount", money: true }, row) === 400 && bookkeeperCell({ key: "fee", money: true }, row) === 11.9 && bookkeeperCell({ key: "net", money: true }, row) === 388.1,
        ["amount", "fee", "net"].map(k => bookkeeperCell({ key: k, money: true }, row)));
+  }
+
+  // FIX-60 · THE EVENTS LIST'S FOUR NUMBERS OPEN, AND FOOT. Each events-year-*
+  // source foots to its rows, and each is what the events' own pages add up
+  // to (the /events list carries every event's came, registered and received).
+  // HOW IT GOES RED: on main (2b4951a) there is no events-year-* source, so
+  // none of the four opens.
+  {
+    const efrom = `${Y}-01-01`, eto = `${Y}-12-31`;
+    const list = (await api("GET", "/events", tok)).body || [];
+    const mine = list.filter(e => String(e.date || "").slice(0, 4) === String(Y));
+    const add = f => mine.reduce((n, e) => n + f(e), 0);
+    const want = { events: mine.length, came: add(e => Number(e.attendee_count) || 0), registered: add(e => Number(e.registered_count) || 0),
+      received: Math.round(add(e => Math.round(Number(e.money ? e.money.received : 0) * 100))) / 100 };
+    want.rate = want.registered ? Math.round(want.came / want.registered * 100) : null;
+    for (const k of ["events", "came", "registered", "received", "rate"]) {
+      const src = { key: "events-year-" + k, params: { from: efrom, to: eto } };
+      let f;
+      try { f = await FS.footCheck(orgId, src); } catch (e) { f = { error: e.message }; }
+      if (!f || f.error) { ok(`§fix60 events-year-${k} opens rows`, false, f); continue; }
+      ok(`§fix60 events-year-${k} foots: ${f.measure} ${f.value} = rows ${f.rowsFoot}`, f.foots, f);
+      ok(`§fix60 events-year-${k} is what the events' own pages add up to (${want[k]})`, same(f.value, want[k]), { source: f.value, pages: want[k] });
+    }
+    if (own) ok("§fix60 …and on the fixture that is 2 events, 3 came of 5 registered (60%), $390.25 received",
+      want.events === 2 && want.came === 3 && want.registered === 5 && want.rate === 60 && want.received === 390.25, want);
+    const shown = await api("GET", `/figures/events-year-received/rows?from=${efrom}&to=${eto}&pageSize=1`, tok);
+    ok("§fix60 the endpoint the Events list reads hands it the same value", shown.status === 200 && same(shown.body.value, want.received), { status: shown.status, value: shown.body && shown.body.value });
   }
 
   if (own) {

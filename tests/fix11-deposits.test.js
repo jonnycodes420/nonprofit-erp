@@ -233,6 +233,28 @@ const parse = text => text.trim().split(/\r?\n/).map(l => {
   ok("§7 …and the refusal says nothing is wrong with the gifts",
     /nothing is wrong with your gifts/i.test(String(DEP.depositsRefusalMessage(DEP.depositsRefusals(torn, 10000, 0)))));
 
+  // ── §9 · A DAY OF UNMATCHED GIFTS IS NOT A DEPOSIT (FIX-60) ─────────────
+  // Month close read "4 deposits, $26,777.61 gross" when nothing had been
+  // deposited: the gifts no payout or sheet holds are grouped by the day they
+  // were recorded, and the sentence called each day a deposit.
+  // HOW IT GOES RED: on main (2b4951a) both halves say "deposits".
+  const days = DEP.depositGroups([
+    { cents: 10000, type: "cash", fund: "General", date: "2026-08-03" },
+    { cents: 2500, type: "cash", fund: "General", date: "2026-08-04" },
+    { cents: 4000, feeCents: 120, type: "cash", fund: "General", depositedOn: "2026-08-06", depositRef: "po_9" },
+  ]);
+  const said = DEP.depositsSentence(days);
+  ok("§9 unmatched day-groups are days of gifts not yet on a deposit, and only matched groups are deposits",
+    /^One deposit, \$40\.00 gross less \$1\.20 in fees, \$38\.80 to the bank\./.test(said)
+    && /Two days of gifts not yet on a deposit, \$125\.00\./.test(said) && !/\bdeposits\b/.test(said), said);
+  const onlyDays = DEP.depositsSentence(DEP.depositGroups([{ cents: 100, type: "cash", fund: "G", date: "2026-08-03" }]));
+  ok("§9 …and a month with nothing deposited never says deposit as a count", !/\b(?:\d+|one|two|three) deposits?\b/i.test(onlyDays), onlyDays);
+  const live = await api("GET", `/reports/deposits?from=${MONTH.from}&to=${MONTH.to}`, tokA);
+  const lg = (live.body && live.body.groups) || [];
+  ok("§9 …and the payload counts deposits and undeposited days apart",
+    live.body && live.body.depositCount === lg.filter(g => g.matched).length && live.body.undepositedDays === lg.filter(g => !g.matched).length,
+    live.body && { depositCount: live.body.depositCount, undepositedDays: live.body.undepositedDays, groups: lg.length });
+
   // ── §8 · ONE ORG'S BOOKS ────────────────────────────────────────────────
   const bDep = await csv(`/reports/deposits?from=${MONTH.from}&to=${MONTH.to}&format=csv&flavour=quickbooks`, tokB);
   const bSum = parse(bDep.text).slice(1).reduce((s, r) => s + Math.round(parseFloat(r[qbAmt]) * 100), 0);

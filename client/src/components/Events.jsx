@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import RemoveMenu, { removeOne } from "./RemoveMenu";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
+import { SkeletonBar } from "./Skeleton";
 import { usePeoplePicker } from "../lib/people";
 import { T, interactive, fmtFull, fmtTotal, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -94,7 +95,7 @@ function NewEventPanel({ onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const INP = { width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.ink, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
-  const LBL = { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4, display: "block" };
+  const LBL = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 4, display: "block" };
 
   const save = async () => {
     if (!form.name.trim() || !form.date) return;
@@ -204,7 +205,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
           ].map(([label, value, rowsKey, sentence]) => label === "Raised" && money ? (
             <div key={label} data-testid="ev-card-raised" title={sentence} onClick={e => e.stopPropagation()}
               style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px", textAlign: "left" }}>
-              <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+              <div style={{ fontSize: 9.5, fontWeight: 800, color: T.ink3 }}>{label}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.25 }}>
                 <Figure variant="inline" kind="money" value={money.raised} label={`${event.name}, raised`} definition={sentence} source={money.sources.raised} why={false} />
               </div>
@@ -215,7 +216,7 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
               disabled={!rowsKey}
               style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px",
                        textAlign: "left", fontFamily: "inherit", cursor: rowsKey ? "pointer" : "default" }}>
-              <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+              <div style={{ fontSize: 9.5, fontWeight: 800, color: T.ink3 }}>{label}</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.25 }}>{value}</div>
             </button>
           ))}
@@ -372,7 +373,7 @@ function EventReport({ eventId, onOpenRows }) {
   if (!r) return null;
   return (
     <div data-testid="ev-report" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>After the event</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 10 }}>After the event</div>
       {/* HOME-3: raised the way she says it, each part opening its rows. */}
       {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
       {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
@@ -383,7 +384,7 @@ function EventReport({ eventId, onOpenRows }) {
             onClick={() => onOpenRows(f.key, f.label, f.sentence)}
             style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
                      cursor: "pointer", fontFamily: "inherit", textAlign: "left", minWidth: 120 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{f.label}</div>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.ink3 }}>{f.label}</div>
             <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, color: T.ink, lineHeight: 1.15 }}>
               {f.money ? fmtFull(f.value) : f.value}
             </div>
@@ -576,7 +577,7 @@ function EventSeating({ eventId }) {
   const movingParty = picked.length ? partyOf(picked) : [];
 
   const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 };
-  const label = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+  const label = { fontSize: 10, fontWeight: 800, color: T.ink3 };
   const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
   const go = { ...btn, background: T.greenDk, border: "none", color: T.white };
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12.5, outline: "none", fontFamily: "inherit" };
@@ -1244,9 +1245,9 @@ export function EventKiosk({ eventId }) {
   const big = { border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", minHeight: 48 };
 
   return (
-    <div className="no-caps" data-testid="ev-kiosk" id={`ev-kiosk-${eventId}`} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+    <div data-testid="ev-kiosk" id={`ev-kiosk-${eventId}`} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Check-in</div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>Check-in</div>
         {/* THE LIVE COUNT, and it opens: tap it for the people behind it. */}
         <button type="button" data-testid="ev-kiosk-count" onClick={() => setView(v => (v === "in" ? "all" : "in"))}
           aria-pressed={view === "in"} title="Checked in of everybody expected. Tap for the list."
@@ -1484,7 +1485,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
   const INP_DARK = { background: T.ink, border: "1px solid "+T.green650, borderRadius: 8, padding: "8px 10px", color: T.inkInverse, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 
   return (
-    <div className="no-caps" style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
+    <div data-testid="ev-page" data-event-id={event.id} style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
       {actErr && <div role="alert" data-testid="ev-action-error" onClick={() => setActErr("")}
         style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: T.white, color: T.ink, border: "1px solid " + T.bg3,
                  borderRadius: 10, padding: "10px 16px", boxShadow: T.shadow, fontSize: 13, maxWidth: "90vw", cursor: "pointer" }}>{actErr}</div>}
@@ -1553,7 +1554,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
             const maxVal = Math.max(totalRev, cost, 1);
             return (
               <div style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 14, padding: "16px 18px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Received against cost</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Received against cost</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {/* SWEEP-4: four colours: cost is brass, never terracotta */}
                   {[["Received", totalRev, T.greenDk], ["Cost", cost, T.gold500]].map(([lbl, val, col]) => (
@@ -1577,7 +1578,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
 
           {/* Notes */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(240,237,230,0.7)", marginBottom: 8 }}>
               Notes {notesSaved && <span style={{ color: T.greenDk, fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
             </div>
             <textarea
@@ -1593,7 +1594,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
           {/* Attendee table */}
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)" }}>Attendees ({totalCount})</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(240,237,230,0.7)" }}>Attendees ({totalCount})</div>
               {/* WIRE-1: the guest list as a group by rule, kept up to date. */}
               {totalCount > 0 && (
                 <SaveAsGroup name={`${event.name} guests`} rules={{ registeredEvent: event.id }} label="Save these guests as a group" testid="event-save-group"
@@ -1623,7 +1624,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                 {/* Table header */}
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "6px 10px", borderRadius: 8, background: T.ink }}>
                   {["Name", "Email", "Stage", "Status", "Gift", ""].map(h => (
-                    <div key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "rgba(240,237,230,0.7)" }}>{h}</div>
+                    <div key={h} style={{ fontSize: 10, fontWeight: 700, color: "rgba(240,237,230,0.7)" }}>{h}</div>
                   ))}
                 </div>
                 {event.attendees.map(a => (
@@ -1678,7 +1679,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               gifts and pledges themselves. */}
           {/* Add attendees */}
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>Add Attendees</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>Add Attendees</div>
 
             {/* Toggle */}
             <div style={{ display: "flex", gap: 4, marginBottom: 12, background: T.bgElevated, borderRadius: 8, padding: 3 }}>
@@ -1764,14 +1765,14 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
               ["revenue", "Revenue ($)", "number"],
             ].map(([k, lbl, type]) => (
               <div key={k} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4 }}>{lbl}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>{lbl}</div>
                 <input type={type} value={editForm[k] || ""} onChange={e => setEditForm(f => ({ ...f, [k]: e.target.value }))}
                   style={{ width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.ink, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
                 />
               </div>
             ))}
             <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3, marginBottom: 4 }}>Status</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>Status</div>
               <select value={editForm.status || "upcoming"} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
                 style={{ width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: T.ink, outline: "none", cursor: "pointer", boxSizing: "border-box" }}>
                 <option value="upcoming">Upcoming</option>
@@ -1828,7 +1829,8 @@ export function Events({ data, isReadOnly }) {
   const [filter, setFilter] = useState("upcoming");
   // FIX-14 Part 5: an event is /app/events?event=<id>, so a fresh tab opens
   // on it, and opening or closing one here moves the address bar with it.
-  const [selectedId, setSelectedIdRaw] = useState(() => urlParam("events", "event"));
+  // FIX-60: ?eventId=<id> (the name tabHref takes) opens it too.
+  const [selectedId, setSelectedIdRaw] = useState(() => urlParam("events", "event") || urlParam("events", "eventId"));
   const goUrl = useUrlWriter();
   const setSelectedId = id => { setSelectedIdRaw(id); goUrl(tabHref("events", id ? { eventId: id } : undefined)); };
   const [showNew, setShowNew] = useState(false);
@@ -1863,19 +1865,25 @@ export function Events({ data, isReadOnly }) {
     return true;
   });
 
-  // Stats
+  // Stats. FIX-60: each of the four is its figure source's own value
+  // (figureSources.js events-year-*), so a click opens the rows that make it
+  // and they foot to it; the list does no arithmetic of its own.
   const currentYear = new Date().getFullYear();
-  const thisYear = events.filter(e => e.date?.startsWith(String(currentYear)));
-  const totalAttendees = thisYear.reduce((s, e) => s + (parseInt(e.attendee_count) || 0), 0);
-  // FUNDRAISING-2: received is the gifts each event's page counts
-  // (numbers.eventsRaised); the list said $0 beside a page that said $45,340.
-  const totalRevenue = thisYear.reduce((s, e) => s + (e.money ? e.money.received : (parseFloat(e.total_revenue) || 0)), 0);
-  const avgRate = (() => {
-    // FIX-59: came of registered, as each event page says it (declined apart)
-    const valid = thisYear.filter(e => parseInt(e.registered_count) > 0);
-    if (!valid.length) return null;
-    return Math.round(valid.reduce((s, e) => s + (parseInt(e.attendee_count) || 0) / (parseInt(e.registered_count) || 1), 0) / valid.length * 100);
-  })();
+  const yearSrc = useMemo(() => {
+    const params = { from: `${currentYear}-01-01`, to: `${currentYear}-12-31` };
+    return Object.fromEntries(["events", "came", "received", "rate"].map(k => [k, { key: "events-year-" + k, params }]));
+  }, [currentYear]);
+  const [yearFig, setYearFig] = useState({});
+  useEffect(() => {
+    let live = true;
+    const qs = p => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    Promise.all(Object.entries(yearSrc).map(([k, src]) =>
+      apiFetch(`/figures/${src.key}/rows?${qs(src.params)}&pageSize=1`).then(r => [k, r]).catch(() => [k, null])))
+      .then(all => { if (live) setYearFig(Object.fromEntries(all)); });
+    return () => { live = false; };
+  }, [yearSrc, events]);
+  const yv = k => (yearFig[k] && !yearFig[k].blank ? yearFig[k].value : null);
+  const yearLoaded = Object.keys(yearFig).length > 0;
 
   if (selectedId) {
     return (
@@ -1888,22 +1896,28 @@ export function Events({ data, isReadOnly }) {
   }
 
   return (
-    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageTitle main="Your" accent="events." />
 
       {/* Stats strip. SWEEP-4: each number says what it counts (a sentence on
           its "?"), in sentence case, and an average with nothing to average is
           said, not drawn as 0%. */}
       <div className="events-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
-        <Figure kind="count" value={thisYear.length} label="Events this year" figureKey="events.thisYear"
+        {yearLoaded ? <>
+        <Figure kind="count" value={yv("events")} label="Events this year" figureKey="events.thisYear" source={yearSrc.events}
           definition={`Every event dated in ${currentYear}, upcoming and past.`} />
-        <Figure kind="count" value={totalAttendees} label="Came, this year" figureKey="events.came"
+        <Figure kind="count" value={yv("came")} label="Came, this year" figureKey="events.came" source={yearSrc.came}
           definition={`Each person marked as having come to an event dated in ${currentYear}, once per event.`} />
-        <Figure kind="money" whole value={totalRevenue} label="Received at events" figureKey="events.received"
+        <Figure kind="money" whole value={yv("received")} label="Received at events" figureKey="events.received" source={yearSrc.received}
           definition={`Every gift received for an event dated in ${currentYear}, the same figure each event's page calls Received. Pledges are not in it.`} />
-        <Figure kind="count" value={avgRate == null ? null : avgRate} suffix="%" label="Came of registered" figureKey="events.rate"
+        <Figure kind="percent" value={yv("rate")} label="Came of registered" figureKey="events.rate" source={yearSrc.rate}
           blank="No event this year has anybody registered yet." blankShort="No guest lists yet"
-          definition="Of the people registered for each event this year, the share who came, averaged across those events." />
+          definition={`Of everyone registered for an event dated in ${currentYear}, the share who came, counted once per event.`} />
+        </> : [0, 1, 2, 3].map(i => (
+          <div key={i} aria-hidden="true" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <SkeletonBar width="55%" /><SkeletonBar width="40%" height={26} />
+          </div>
+        ))}
       </div>
 
       {/* Toolbar */}

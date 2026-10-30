@@ -49,7 +49,7 @@ export function Programs({data}) {
 
   const Inp=({label,k,type="text",ph=""})=>(
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <label style={{fontSize:11,color:T.ink3}}>{label}</label>
       <input type={type} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} placeholder={ph}
         style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
     </div>
@@ -64,7 +64,7 @@ export function Programs({data}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <Inp label="Program Name" k="name" ph="After-School Arts"/>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
+          <label style={{fontSize:11,color:T.ink3}}>Status</label>
           <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13}}>
             {["active","planning","completed","paused"].map(s=><option key={s} value={s}>{s}</option>)}
           </select>
@@ -77,12 +77,12 @@ export function Programs({data}) {
         <Inp label="End Date" k="endDate" type="date"/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Description</label>
+        <label style={{fontSize:11,color:T.ink3}}>Description</label>
         <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Outcomes</label>
+        <label style={{fontSize:11,color:T.ink3}}>Outcomes</label>
         <textarea value={form.outcomes} onChange={e=>setForm(f=>({...f,outcomes:e.target.value}))} rows={2}
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
@@ -126,11 +126,11 @@ export function Programs({data}) {
           </div>
           {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
             {p.outcomes&&<div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Outcomes</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:6}}>Outcomes</div>
               <div style={{fontSize:13,color:T.ink3,lineHeight:1.65}}>{p.outcomes}</div>
             </div>}
             {Object.keys(metrics).length>0&&<div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Metrics</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:6}}>Metrics</div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                 {Object.entries(metrics).map(([k,v])=><div key={k} style={{background:T.bg3,borderRadius:8,padding:"6px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3}}>{k.replace(/_/g," ")}</div>
@@ -139,7 +139,7 @@ export function Programs({data}) {
               </div>
             </div>}
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grant Funding</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:6}}>Grant Funding</div>
               {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12}}>
                 <span style={{color:T.ink}}>{g.funder} · {g.program_name}</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>

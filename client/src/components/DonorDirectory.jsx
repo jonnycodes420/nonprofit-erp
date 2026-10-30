@@ -139,7 +139,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           ["Avg days lapsed",`${avgDays}d`,T.terracotta],
         ].map(([label,val,color])=>(
           <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
-            <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>{label}</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>{label}</div>
             <div style={{fontSize:20,fontWeight:800,color,fontFamily:"'DM Serif Display',serif"}}>{val}</div>
           </div>
         ))}
@@ -185,7 +185,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               <div className="re-col-days" style={{textAlign:"right"}}>
                 {days!=null?<>
                   <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
-                  <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2,textTransform:"uppercase",letterSpacing:".04em"}}>{urgencyLabel}</div>
+                  <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2}}>{urgencyLabel}</div>
                 </>:<div style={{fontSize:11,color:T.ink3}}>no dates on file</div>}
               </div>
               <div className="re-col-score" style={{textAlign:"right"}}>
@@ -659,7 +659,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           nothing (graceful, no empty "assign" clutter). */}
       {showPortfolios&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"11px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:14}}>
-          <span style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
+          <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Officer portfolios</span>
           {/* Chip row shows only officers who actually hold donors — an officer
               with 0 assigned donors is noise here. They remain in Settings → Team
               and in every owner/assign dropdown (those read a different list). */}
@@ -891,13 +891,13 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                       <DriftBadge drift={d.drift}/>
                     </div>
                     {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
-                    <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
+                    <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>
                   </>),
                   stage:()=>(<>
                 <div className="dir-col-stage">
-                  <span style={{...stageChip(stage),borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
+                  <span style={{...stageChip(stage),borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800}}>{stage.label}</span>
                 </div>
                   </>),
                   owner:()=>(<>
@@ -986,7 +986,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 <div style={{flex:1,minWidth:0}}>
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
                     <DonorLink id={d.id} onOpen={e=>selectMode?toggleOne(d.id,e):onSelectDonor(d)}>{d.name}</DonorLink>
-                    <span style={{...stageChip(stage),borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
+                    <span style={{...stageChip(stage),borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
                     <DriftBadge drift={d.drift} style={{marginLeft:6,verticalAlign:"2px"}}/>
                   </div>
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
@@ -1093,7 +1093,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
   const tog=(key,val)=>{const arr=filters[key];set(key,arr.includes(val)?arr.filter(v=>v!==val):[...arr,val]);};
   const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box"};
   const row={display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"};
-  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",whiteSpace:"nowrap",minWidth:90};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,whiteSpace:"nowrap",minWidth:90};
   function setCf(fieldId,val){onCfChange({...cfFilters,[fieldId]:val});}
   function togCfOption(fieldId,opt){const cur=cfFilters[fieldId]||[];onCfChange({...cfFilters,[fieldId]:cur.includes(opt)?cur.filter(v=>v!==opt):[...cur,opt]});}
   return(
@@ -1143,7 +1143,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
       </div>
       {customFields&&customFields.length>0&&(
         <div style={{borderTop:"1px solid "+T.bg3,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
-          <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Custom Fields</span>
+          <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>Custom Fields</span>
           {customFields.map(f=>{
             if(f.type==="select"||f.type==="multi_select"){
               const sel=cfFilters[f.id]||[];

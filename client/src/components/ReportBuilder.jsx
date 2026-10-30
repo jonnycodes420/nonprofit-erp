@@ -72,7 +72,7 @@ export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true
   const showFoot = foot && rows.length > 0 && cols.some(summed);
   const open = r => { const id = personOf && personOf(r); if (id && onOpen) onOpen(id); };
   const align = c => c.align || (["money", "count", "number", "pct", "price"].includes(c.type) ? "right" : "left");
-  const th = { padding: "8px 10px", borderBottom: `2px solid ${T.bg3}`, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, whiteSpace: "nowrap" };
+  const th = { padding: "8px 10px", borderBottom: `2px solid ${T.bg3}`, fontSize: 10, fontWeight: 800, color: T.ink3, whiteSpace: "nowrap" };
   const td = { padding: "9px 10px", borderBottom: `1px solid ${T.bg2}`, whiteSpace: "nowrap", color: T.ink2 };
   // A figure or a date stays on one line; words (a name, an email, a note) may
   // wrap, so a six-column report fits its card at 1440 instead of hiding its

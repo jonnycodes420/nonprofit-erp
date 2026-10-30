@@ -189,7 +189,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
       {/* FIX-31: a task with no day yet is still hers; one tap gives it one. */}
       {data && Array.isArray(data.undated) && data.undated.length > 0 && (
         <div data-testid="cal-undated" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>No date yet</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>No date yet</div>
           {data.undated.map(u => <UndatedRow key={u.taskId} u={u} today={data.today} isReadOnly={isReadOnly} onSaved={(m, undo) => { setNote(m); load(); offerUndo({ message: m, undoAction: async () => { const r = await undo(); load(); return r; } }, u.title); }} />)}
         </div>)}
       {push && push.connected && !isReadOnly && (
@@ -417,7 +417,7 @@ function AgendaView({ items, range, today, narrow, anchor, setAnchor, onOpen }) 
         </div>)}
       {shown.map(d => (
         <div key={d} data-testid="cal-agenda-day">
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: d === today ? T.greenDk : T.ink3, margin: "4px 0 6px" }}>{dayWords(d)}{d === today ? " · today" : ""}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: d === today ? T.greenDk : T.ink3, margin: "4px 0 6px" }}>{dayWords(d)}{d === today ? " · today" : ""}</div>
           {by(d).length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>Nothing on the calendar.</div>
             : by(d).map(it => (
               <div key={it.id + d} style={{ display: "grid", gridTemplateColumns: "64px minmax(0,1fr)", gap: 10, alignItems: "start", padding: "6px 0", borderTop: "1px solid " + T.bg2 }}>
@@ -444,7 +444,7 @@ function Summary({ kind, items, scope, range, onClose, onOpen }) {
   return (
     <div data-testid="cal-summary" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{dayWords(range.from)} to {dayWords(range.to)}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{dayWords(range.from)} to {dayWords(range.to)}</div>
         <button type="button" aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: T.ink3 }}>×</button>
       </div>
       {kind === "week" ? <>
@@ -571,7 +571,7 @@ function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChan
   return (
     <Modal onClose={onClose} width={420} ariaLabel={it.title}>
       <div data-testid="cal-card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{(TYPE_META[it.type] || {}).label}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{(TYPE_META[it.type] || {}).label}</div>
         <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{it.title}</div>
         <div style={{ fontSize: 13.5, color: T.ink2 }}>{when}</div>
         {it.detail && <div style={{ fontSize: 13.5, color: T.ink2 }}>{it.detail}</div>}

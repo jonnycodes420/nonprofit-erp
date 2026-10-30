@@ -17,6 +17,7 @@ import { Zap } from "lucide-react";
 import { apiFetch } from "../api";
 import { T, interactive } from "./shared";
 import { Figure, FigureContext } from "./Figure";
+import { plural } from "../../../shared/countWords.js";
 import { errorMessage } from "../lib/domainError";
 import { SkeletonCards, SkeletonPage } from "./Skeleton";
 import { urlParam, tabHref } from "../lib/appUrls";
@@ -344,7 +345,7 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
           ))}
         </div>
         <div style={{ ...card, marginBottom: 16 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700, marginBottom: 4 }}>Month by month</div>
+          <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, marginBottom: 4 }}>Month by month</div>
           <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 10 }}>{data.monthsSentence}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 6, alignItems: "end", minHeight: 120 }}>
             {data.months.map(m => (
@@ -436,7 +437,7 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
                 </div>
                 <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
                 <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} /> {g.count === 1 ? "person" : "people"}</span>
+                  <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} unit={plural(g.count, "person", "people")} /></span>
                   <RemoveMenu kind="group" id={g.id} disabled={isReadOnly} onDone={load} />
                 </div>
               </div>

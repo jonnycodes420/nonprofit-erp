@@ -264,7 +264,7 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
   const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
   const s = g.sources || {};
   const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, minWidth: 0 };
-  const h = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 };
+  const h = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 10 };
   return (
     <div data-testid="campaign-page" data-campaign-id={g.id} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>{back}</div>
