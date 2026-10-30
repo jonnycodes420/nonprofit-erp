@@ -113,7 +113,7 @@ async function fix60(tok) {
      gusP.status === "fulfilled" && gusAfter.bad.length === 0 && Number(gusAfter.rows[0].paid) === 100075, { gusP, rows: gusAfter.rows });
 
   // the history import, undone: its pledges and their installments go with it
-  const RUN = "imp_fix60sem" + Date.now().toString(36);
+  const RUN = "imp_fix60sem" + require("crypto").randomBytes(5).toString("hex");   // a unique id, not a clock read
   const hist = await api("POST", "/gifts/import-history", tok, { importId: RUN,
     gifts: [{ donorId: P("ivy"), amount: 400, date: "2026-04-01", notes: "Payment on pledge G-90" }] });
   const rec = await api("POST", "/imports", tok, { id: RUN, name: "Fix60 history", shape: "gifts", summary: {} });

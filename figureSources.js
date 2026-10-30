@@ -3039,28 +3039,41 @@ function shapeRow(r, dd) {
     date, dateLabel: date ? dd(date) : (r.type === "gift" ? "No date" : ""), amount: num(r.amount), detail: r.detail || null,
   };
 }
+// FIX-60: a TOTAL is not a gift. money.toCents refuses anything over the
+// largest single gift ($100,000,000), so a lifetime total above that read $0
+// (found by the units rule: "a total of 0.00 over rows that add to
+// 902408740.33"). A sum from the database is parsed exactly from its digits.
+function sumCents(v) {
+  const m = /^(-)?(\d*)(?:\.(\d+))?$/.exec(String(v ?? "0").trim());
+  if (!m) return money.toCents(String(v ?? "0")) ?? 0;
+  const frac = ((m[3] || "") + "00").slice(0, 2), rest = (m[3] || "").slice(2);
+  let c = Number(m[2] || "0") * 100 + Number(frac);
+  if (rest && Number(rest[0]) >= 5) c += 1;   // half up, as money.toCents does
+  return m[1] ? -c : c;
+}
+
 function valueOf(measure, agg) {
-  if (measure === "sum") { const c = money.toCents(String(agg.s ?? "0")) ?? 0; return { value: money.toDollars(c), cents: c }; }
+  if (measure === "sum") { const c = sumCents(agg.s); return { value: money.toDollars(c), cents: c }; }
   if (measure === "avg") return { value: agg.n > 0 ? Math.round(Number(agg.a) || 0) : 0, cents: null };
   // PARITY-1 — an average of MONEY, to the cent: the rows' own sum in cents
   // divided by their count, so the drawer's total over its count is the figure.
   // POLISH-1: per gift = the rows' total (refunds included, as negatives)
   // over the number of rows that are gifts (amount above zero).
   if (measure === "per_gift") {
-    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const c = sumCents(agg.s);
     const g = Number(agg.g) || 0;
     const m = g > 0 ? Math.round(c / g) : 0;
     return { value: money.toDollars(m), cents: m };
   }
   if (measure === "mean") {
-    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const c = sumCents(agg.s);
     const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
     return { value: money.toDollars(m), cents: m };
   }
   // REPORTS-4: the middle gift: half the rows are at or below it, half at or
   // above. It does not add up; it is checked against the sorted rows instead.
   if (measure === "median") {
-    const c = money.toCents(String(agg.m ?? "0")) ?? 0;
+    const c = sumCents(agg.m);
     return { value: agg.n > 0 ? money.toDollars(c) : 0, cents: agg.n > 0 ? c : 0 };
   }
   return { value: Number(agg.n) || 0, cents: null };
