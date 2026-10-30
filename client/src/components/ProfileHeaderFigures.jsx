@@ -101,14 +101,27 @@ function lastContact(F, today) {
     under: `Email ${u.direction === "replied" ? "replied" : u.direction === "sent" ? "sent" : "logged"} ${displayDateShort(u.date, today)}` };
 }
 
+// PROFILE-2 · the fiscal year the number counts, said with its dates:
+// "Jul 2026 to Jun 2027". From the figure's own source, so it cannot be a
+// different year from the money in it.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function fiscalYearWords(from) {
+  const m = /^(\d{4})-(\d{2})-\d{2}/.exec(String(from || ""));
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]);
+  const endMo = (mo + 10) % 12, endY = mo === 1 ? y : y + 1;
+  return `${MON[mo - 1]} ${y} to ${MON[endMo]} ${endY}`;
+}
+
 export function ProfileHeaderFigures({ figures }) {
   const F = figures || {};
   const today = new Date();
   const lg = F.lastGift && F.lastGift.under;
   const lc = lastContact(F, today);
+  const fy = fiscalYearWords(F.thisYear && F.thisYear.source && F.thisYear.source.params && F.thisYear.source.params.from);
   return (
     <div className="dph-figures" data-testid="dp-header-figures" style={{ flexBasis: "100%", display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))",
-      borderTop: "1px solid " + T.bg3, margin: "6px -24px -12px", padding: "0 8px 10px" }}>
+      borderTop: "1px solid " + T.bg3, padding: "4px 8px 12px" }}>
       <Cell first label="Lifetime" def={censusById("profile.lifetime").sentence} testid="dp-fig-lifetime"
         under={(F.imported || (F.softCredit && F.softCredit.value)) ? <>
           {F.imported && <span data-testid="dp-fig-lifetime-imported" title={`From ${F.imported.source}${F.imported.on ? `, imported ${displayDate(F.imported.on)}` : ""}. Gifts in Steward dated after it are added to it; gifts dated before are already inside it.`}>{F.imported.words}</span>}
@@ -118,12 +131,12 @@ export function ProfileHeaderFigures({ figures }) {
         </> : null}>
         <One f={F.lifetime} kind="money" label="Lifetime" def={censusById("profile.lifetime").sentence} figureKey="profile.lifetime" />
       </Cell>
-      <Cell label="This year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear"
-        under={F.undated && F.undated.count ? <UndatedNote u={F.undated} /> : null}>
-        <One f={F.thisYear} kind="money" label="This year" def={censusById("profile.thisYear").sentence} figureKey="profile.thisYear" />
+      <Cell label="This fiscal year" def={censusById("profile.thisYear").sentence} testid="dp-fig-thisYear"
+        under={<>{fy && <span data-testid="dp-fig-fiscal-dates" style={{ display: "block" }}>{fy}</span>}{F.undated && F.undated.count ? <UndatedNote u={F.undated} /> : null}</>}>
+        <One f={F.thisYear} kind="money" label="This fiscal year" def={censusById("profile.thisYear").sentence} figureKey="profile.thisYear" />
       </Cell>
       <Cell label="Last gift" def={censusById("profile.lastGift").sentence} testid="dp-fig-lastGift"
-        under={lg && lg.date ? displayDate(lg.date) : null}>
+        under={lg && lg.date ? `${displayDate(lg.date)} · ${lg.method || "method not on file"}` : null}>
         <One f={F.lastGift} kind="money" label="Last gift" def={censusById("profile.lastGift").sentence} figureKey="profile.lastGift" />
       </Cell>
       <Cell label="Last contact" def={lc.def} testid="dp-fig-lastContact" under={lc.under} oneLine>

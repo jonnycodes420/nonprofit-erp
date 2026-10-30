@@ -57,7 +57,7 @@ async function closeness(orgId, d, today, w) {
   const ytd = { key: "donor-gifts-between", params: { donor: d.id, from: w.cyFrom, to: today } };
   const [ytdRows] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`,
     [orgId, d.id, w.cyFrom, today]);
-  if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this year`, source: ytd });
+  if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this fiscal year`, source: ytd });
   // WIRE-1 addendum: their own rhythm, said by drift.js's rule, so "gave once
   // this year" reads as the pattern it is for a once-a-year donor.
   if (key === "on_track") {
@@ -106,10 +106,19 @@ async function highlights(orgId, d, today, w) {
   if (!pos.length) return [];
   const out = [];
   const between = (from, to) => ({ key: "donor-gifts-between", params: { donor: d.id, from, to } });
-  const thisY = Number(today.slice(0, 4));
+  // PROFILE-2 Part 4: years are the org's fiscal years (w.cyFrom is where this
+  // one starts), named by the calendar year they start in. With a January
+  // start that is the calendar year, as before.
+  const sm = Number(w.cyFrom.slice(5, 7));
+  const fyOf = date => { const y = Number(String(date).slice(0, 4)), m = Number(String(date).slice(5, 7)); return y ? (m >= sm ? y : y - 1) : 0; };
+  const p2 = n => String(n).padStart(2, "0");
+  const fyFrom = y => `${y}-${p2(sm)}-01`, fyTo = y => orgTime.addDays(fyFrom(y + 1), -1);
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const fyName = y => sm === 1 ? String(y) : `the year to ${MON[(sm + 10) % 12]} ${y + 1}`;
+  const thisY = fyOf(today);
   const byYear = new Map();
   for (const g of gifts) {
-    const y = Number(String(g.date).slice(0, 4));
+    const y = fyOf(g.date);
     if (!y) continue;
     byYear.set(y, (byYear.get(y) || 0) + Math.round(Number(g.amount) * 100));
   }
@@ -118,16 +127,16 @@ async function highlights(orgId, d, today, w) {
   const cmp = [[thisY - 1, thisY], [thisY - 2, thisY - 1]].find(([a, b]) => (byYear.get(a) || 0) > 0 && (byYear.get(b) || 0) > (byYear.get(a) || 0));
   if (cmp) {
     const [a, b] = cmp;
-    out.push({ key: "upgraded", text: `Upgraded from ${DS.dollars(byYear.get(a))} in ${a} to ${DS.dollars(byYear.get(b))}${b === thisY ? " so far this year" : ` in ${b}`}`,
-      source: between(`${a}-01-01`, b === thisY ? today : `${b}-12-31`) });
+    out.push({ key: "upgraded", text: `Upgraded from ${DS.dollars(byYear.get(a))} in ${fyName(a)} to ${DS.dollars(byYear.get(b))}${b === thisY ? (sm === 1 ? " so far this year" : " so far this fiscal year") : ` in ${fyName(b)}`}`,
+      source: between(fyFrom(a), b === thisY ? today : fyTo(b)) });
   }
   // Years in a row, ending this year or last.
-  const gaveIn = new Set(pos.map(g => Number(String(g.date || "").slice(0, 4))));
+  const gaveIn = new Set(pos.map(g => fyOf(g.date)));
   let end = gaveIn.has(thisY) ? thisY : gaveIn.has(thisY - 1) ? thisY - 1 : null;
   if (end) {
     let n = 0;
     while (gaveIn.has(end - n)) n++;
-    if (n >= 2) out.push({ key: "streak", text: `Has given ${n} years in a row`, source: between(`${end - n + 1}-01-01`, end === thisY ? today : `${end}-12-31`) });
+    if (n >= 2) out.push({ key: "streak", text: `Has given ${n} ${sm === 1 ? "years" : "fiscal years"} in a row`, source: between(fyFrom(end - n + 1), end === thisY ? today : fyTo(end)) });
   }
   // Where the first gift came from.
   const first = pos[0];
@@ -208,7 +217,11 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const [d] = await query(`SELECT id, name, created_at FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = await DS.todayFor(orgId);
-  const w = DS.windowsFor(today);
+  // PROFILE-2 Part 4: the org's fiscal year, the year the header's "This
+  // fiscal year" number counts. Without the cuts windowsFor fell back to the
+  // calendar year, and a May gift read "gave once this year" beside a fiscal
+  // year (from July) that said nothing yet.
+  const w = DS.windowsFor(today, await DS.cutsFor(orgId));
   // SCALE-2: the reads below do not depend on each other, so they go side by
   // side; one after another, each waited its turn for a connection under load.
   // At a glance. Each value is the figure's own, from its source. NUMBERS-1:
