@@ -4,13 +4,13 @@ import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
-import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
+import { MicGlyph, openTellSteward } from "./components/TellStewardOpen";   // VOICE-1; the window loads on first open (SWEEP-6)
 import { CheckSnapHost, openCheckSnap } from "./components/CheckSnap";   // CHECK-2
 import IdleGuard from "./components/IdleGuard";   // SECURE-2 item 7
 import { Camera } from "lucide-react";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
-import { CAPTURE_CHANGED } from "./components/CaptureInbox";
+import { CAPTURE_CHANGED } from "./components/CheckSnap";   // SWEEP-6: the same event, without To confirm in the shell
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -20,7 +20,6 @@ import { confirmIfDirty } from "./lib/dirtyGuard";
 import { SkeletonPage } from "./components/Skeleton";
 import { bootRead } from "./lib/bootReads";
 import { useStewardTold } from "./lib/stewardTold";
-import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import SupportBanner from "./components/SupportBanner";   // FIX-57
 import { errorMessage } from "./lib/domainError";
@@ -32,7 +31,6 @@ import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS, leg
 // "More" fold they described.
 import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
-import { CustomizeNav } from "./components/CustomizeNav";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
@@ -42,6 +40,10 @@ const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overf
 // FIX-56: a chunk that will not load is asked for once more, then says "Steward was updated".
 const named = (load, name) => lazy(() => retryImport(load).then(m => ({ default: m[name] })));
 const Donors = named(() => import("./components/Donors"), "Donors");
+// SWEEP-6 (PERF-1): windows the shell opens on a click, not on Home's first look.
+const TellSteward = lazy(() => retryImport(() => import("./components/TellSteward")));
+const PlanPicker = lazy(() => retryImport(() => import("./components/PlanPicker")));
+const CustomizeNav = named(() => import("./components/CustomizeNav"), "CustomizeNav");
 const Grants = named(() => import("./components/Grants"), "Grants");
 const Communications = named(() => import("./components/Communications"), "Communications");
 const Reports = named(() => import("./components/Reports"), "Reports");
@@ -715,7 +717,7 @@ function AppShell() {
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       line={welcome.line} nextStep={welcome.nextStep} logo={welcome.logo} funds={welcome.funds||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
+    <div className="app-root no-caps" style={{...BASE,background:tab==="dashboard"?T.ground:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
       /* FIX-6 item 6 — the sidebar's CURRENT width, published so a full-screen
          takeover can start where the content starts instead of at x=0. The
          donor profile is a fixed z-200 layer and the sidebar is z-120, so a
@@ -803,13 +805,13 @@ function AppShell() {
       </div>
     </div>
 
-    {navCustomizeOpen&&<CustomizeNav groups={navEdit} labelOf={navLabelOf} error={navError}
+    {navCustomizeOpen&&<Suspense fallback={null}><CustomizeNav groups={navEdit} labelOf={navLabelOf} error={navError}
       onMove={(groupId,id,delta)=>{
         const shown=moveNavItem(navEdit,groupId,id,delta).find(g=>g.id===groupId);
         saveNav(reorderWithin(navFull,groupId,shown.items.map(i=>i.id)));
       }}
       onToggle={(id,visible)=>saveNav(setNavVisible(navFull,id,visible))}
-      onReset={resetNav} onClose={()=>setNavCustomizeOpen(false)}/>}
+      onReset={resetNav} onClose={()=>setNavCustomizeOpen(false)}/></Suspense>}
 
     {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
         (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
@@ -1060,7 +1062,7 @@ function AppShell() {
     </ErrorBoundary>
     </div>
     </div>{/* /app-main */}
-    <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
+    {showPlanPicker&&<Suspense fallback={null}><PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/></Suspense>}
     {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
         Code intact, re-enable by uncommenting.
     {showVoiceMemo&&<VoiceMemoModal donors onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
@@ -1144,7 +1146,7 @@ function AppShell() {
       onClick={()=>openTellSteward(null)}><MicGlyph size={24}/></button>}
     <CheckSnapHost isReadOnly={isReadOnly||isPortalTier} onNavigate={navigateTo}/>
     <IdleGuard/>
-    {tell&&<TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
+    {tell&&<Suspense fallback={null}><TellSteward donor={tell.donor} initialText={tell.text} autoSend={tell.send} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/></Suspense>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>

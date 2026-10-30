@@ -221,8 +221,8 @@ async function eventsAndPledgesSayNothingWrong(browser) {
       await page.goto(APP + url, { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
       if (tab) await page.getByRole("button", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
       await page.waitForTimeout(500);
-      // the screen's own area (FIX-60 retired SWEEP-5's .no-caps root class)
-      const text = await page.evaluate(() => (document.querySelector(".app-content") || document.body).innerText);
+      // the app root wears .no-caps (SWEEP-6), so this is every screen, rail included
+      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps")).map(n => n.innerText).join("\n"));
       const said = SAYS.filter(([re]) => re.test(text)).map(([, w]) => w);
       const caps = [...new Set(text.split("\n").map(l => l.trim()).filter(l => /^[A-Z][A-Z0-9 ·&'’,\-\/()]{3,}$/.test(l) && /[A-Z]{4}/.test(l)))].slice(0, 6);
       const where = `${name} (${what}, ${width})`;
@@ -906,7 +906,9 @@ async function commsScreensSayNothingWrong(browser) {
       await page.waitForFunction(() => !/Loading|Counting who/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
       const r = await page.evaluate(() => {
-        const roots = [...document.querySelectorAll(".no-caps")];
+        // Outermost only: SWEEP-6 put .no-caps on the app root too, and a
+        // nested root would read every line twice.
+        const roots = [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps"));
         const caps = [];
         for (const root of roots) for (const el of root.querySelectorAll("*")) {
           if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
@@ -1096,8 +1098,104 @@ async function moneyScreensSayNothingWrong(browser) {
   }
 }
 
+// SWEEP-6 · THE GIVING SIDE AND THE PHONE SAY NOTHING WRONG. A donor's pages
+// (the org's form, a giving page, memberships, an event, each thank-you) at a
+// phone's 390 and at 1440, and Allie's phone (Home, a profile, To confirm,
+// Recurring, Giving pages, Memberships) at 390, on an org that is connected to
+// Stripe and does not email receipts. Each screen fails on what the bar names
+// mechanically: "Not set", undefined, NaN, null, a hole or a [placeholder], an
+// ALL-CAPS label, a sideways scroll, a console error or a 4xx/5xx, and on a
+// phone a tab or a giving-page button under 44px. Two promises are checked by
+// what they say: after a monthly checkout the thank-you does not promise a
+// receipt the org will not send, and a membership comes back to a welcome, not
+// to "your gift". Red on main (see the SWEEP-6 PR).
+async function givingSideAndPhoneSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q, civilPlusDays } = require("./helpers");
+  const ORG = "org_sweep6_give", SLUG = "sweep6-give";
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_account_id,stripe_connected,receipts_enabled,legal_name,ein,receipt_address)
+           VALUES ($1,'Sweep6 Harbor Place',$2,1,'active','team','America/New_York','acct_sweep6give',true,false,'Sweep6 Harbor Place, Inc.','12-3456789','4 Pier Road, Salem, MA 01970')`, [ORG, SLUG]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + ORG, ORG, `${ORG}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+  for (let i = 1; i <= 6; i++) {
+    await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`, [`d_${ORG}_${i}`, ORG, `Walk Giver ${i}`, i % 2 ? `giver${i}@example.org` : null]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'Check','system:test','test')`,
+      [`g_${ORG}_${i}`, ORG, `d_${ORG}_${i}`, 50 * i, civilPlusDays(-40 * i)]);
+  }
+  await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,stripe_customer_id,amount,interval,status)
+           VALUES ('rsub_sweep6',$1,$2,'sub_sweep6give','cus_sweep6give',25,'month','past_due')`, [ORG, `d_${ORG}_1`]);
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,term,created_by,created_by_name) VALUES ('ml_sweep6',$1,'Friend',60,'12_months','system:test','test')`, [ORG]);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,location,public_slug,status,created_by,created_by_name) VALUES ('ev_sweep6',$1,'Lantern Supper','gala',$2,'The hall','sweep6-supper','upcoming','system:test','test')`, [ORG, civilPlusDays(30)]);
+  await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,capacity,position,created_by,created_by_name) VALUES ('el_sweep6',$1,'ev_sweep6','ticket','Supper seat',75,40,120,0,'system:test','test')`, [ORG]);
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,story,status,created_by,created_by_name) VALUES ('gp_sweep6',$1,'year-end','Close the year with us','A gift before December 31 carries the work into the new year.','active','system:test','test')`, [ORG]);
+  const a = (await api("POST", "/auth/login", null, { email: `${ORG}@test.local`, password: "loadtest1234" })).body;
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"], [/\[object Object\]/, "an object"],
+    [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"], [/\bInvalid Date\b/, "Invalid Date"]];
+  const PUBLIC = [["the org's form", `/give/${SLUG}`], ["a giving page", `/give/${SLUG}/year-end`], ["memberships", `/give/${SLUG}?memberships`],
+    ["an event", `/e/sweep6-supper`], ["thank-you, one-time", `/give/${SLUG}?donated=true`], ["thank-you, monthly", `/give/${SLUG}?donated=true&r=1`],
+    ["welcome, membership", `/give/${SLUG}?joined=1&r=1`], ["card updated", `/give/${SLUG}?card_updated=true`]];
+  const PHONE = [["Home", "/dashboard"], ["a profile", `/donors/d_${ORG}_1`], ["To confirm", "/app/fundraising?fr=toconfirm"],
+    ["Recurring", "/app/fundraising?fr=recurring"], ["Giving pages", "/app/fundraising?fr=pages"], ["Memberships", "/app/fundraising?fr=members"]];
+  const walk = async (screens, width, signedIn) => {
+    const ctx = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1000 }, isMobile: width < 500, hasTouch: width < 500, serviceWorkers: "block" });
+    if (signedIn) await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    const out = {};
+    for (const [name, url] of screens) {
+      await page.goto(APP + url, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(([SAYS_SRC, phone]) => {
+        const m = document.querySelector(".app-content") || document.body;
+        const says = SAYS_SRC.map(([src, n]) => [new RegExp(src), n]);
+        const bad = [];
+        for (const line of (m.innerText || "").split("\n")) for (const [re, n] of says) if (re.test(line)) bad.push(`${n}: ${line.trim().slice(0, 100)}`);
+        const caps = [];
+        for (const el of document.body.querySelectorAll("*")) {
+          if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+          if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+        }
+        const small = !phone ? [] : [...document.querySelectorAll("[role=tab],[data-fr-part],.g3 button,[data-testid=membership-join]")]
+          .filter(el => el.offsetParent).map(el => [((el.innerText || el.getAttribute("aria-label") || "").trim().split("\n")[0]).slice(0, 30), Math.round(el.getBoundingClientRect().height)])
+          .filter(([, h]) => h > 0 && h < 44);
+        return { bad: bad.slice(0, 4), caps: caps.slice(0, 4), small: small.slice(0, 4), sideways: document.documentElement.scrollWidth - innerWidth,
+                 text: (m.innerText || "").trim(), title: document.title };
+      }, [SAYS.map(([re, n]) => [re.source, n]), width < 500]);
+      ok(`§sweep6 ${name} at ${width}: draws, says nothing the bar names, no ALL-CAPS label, no sideways scroll${width < 500 ? ", 44px taps" : ""}, nothing on fire`,
+         r.text.length > 0 && !r.bad.length && !r.caps.length && r.sideways <= 0 && !r.small.length && !trouble.length,
+         { bad: r.bad, caps: r.caps, small: r.small, sideways: r.sideways, trouble: trouble.slice(0, 3) });
+      trouble = [];
+      out[name] = r.text;
+    }
+    await ctx.close();
+    return out;
+  };
+  for (const w of [390, 1440]) {
+    const said = await walk(PUBLIC, w, false);
+    if (w === 390) {
+      ok("§sweep6 after a monthly checkout, an org that does not email receipts is not made to promise one", !/receipt/i.test(said["thank-you, monthly"] || ""), (said["thank-you, monthly"] || "").slice(0, 200));
+      ok("§sweep6 after a one-time gift the thank-you still says a receipt is coming (Stripe sends one)", /receipt/i.test(said["thank-you, one-time"] || ""), (said["thank-you, one-time"] || "").slice(0, 200));
+      ok("§sweep6 a membership checkout comes back to a welcome to membership, not to \"your gift\"",
+         /You are a member of/.test(said["welcome, membership"] || "") && !/Your gift to/i.test(said["welcome, membership"] || "") && !/receipt/i.test(said["welcome, membership"] || ""), (said["welcome, membership"] || "").slice(0, 200));
+    }
+  }
+  await walk(PHONE, 390, true);
+}
+
 (async () => {
   console.log("smoke-walk");
+  // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
+  const LEGS = { givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
+  if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
     ok("the demo org is on this database (run scripts/seed-demo.js)", false, login.status);
@@ -1579,6 +1677,7 @@ async function moneyScreensSayNothingWrong(browser) {
   await everyPageScrolls(PW_ALL, auth);
   await profileLayout(PW_ALL, auth);
   await moneyScreensSayNothingWrong(browser);
+  await givingSideAndPhoneSayNothingWrong(browser);
   await commsScreensSayNothingWrong(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means

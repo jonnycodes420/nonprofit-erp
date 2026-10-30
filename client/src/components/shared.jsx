@@ -391,13 +391,14 @@ export function GlobalStyles() {
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
-    /* FIX-60 · ONE EYEBROW, AND EVERY OTHER LABEL IN SENTENCE CASE. SWEEP-5's
-       .no-caps class is retired: no label, column head, badge, tile or
-       section title sets text-transform any more. The one ALL-CAPS style left
-       is the eyebrow: at most 11px, letter-spaced, a one- or two-word group
-       name over a list of navigation (the rail's groups, the search's result
-       groups). smoke-walk fails on uppercase anywhere else. */
-    .eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;line-height:1.3;}
+    /* FIX-60 + SWEEP-6 · EVERY LABEL IN SENTENCE CASE. No label, column
+       head, badge, tile or section title sets text-transform (FIX-60 took
+       the inline uppercase out), and the app root wears .no-caps (SWEEP-6),
+       which undoes any that comes back. .eyebrow is the small group label over
+       the rail's lists and the search's result groups: small and bold, not
+       capitals, since SWEEP-6 put the rail's group names in sentence case. */
+    .eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.01em;line-height:1.3;}
+    .no-caps [style*="text-transform: uppercase"],.no-caps th{text-transform:none!important;letter-spacing:.01em!important;}
     /* ── FIX-8 Part A · THE STRAY BRASS BAR WAS A SCROLLBAR ────────────────
        The thumb was painted gold500, the brand's brass, so on a Mac set to
        "Show scroll bars: Always" every region that overflowed by a rounding
@@ -655,6 +656,13 @@ export function GlobalStyles() {
       /* No hover on touch, delete icon stays visible (small target, guarded
          by the confirm dialog) */
       .tp-del-btn{opacity:1!important;}
+
+      /* SWEEP-6: a finger needs 44px. Every tab strip (SectionTabs and the
+         Fundraising and Finance part rows) reaches it on a phone, and the
+         phone header's controls are 44 square. Small inline icons (a figure's
+         "?", a profile chip) are left as drawn; docs/defects.md has them. */
+      .app-header button,.app-header a,[role=tab],[data-fr-part],[data-fr-section],[data-fin-part],[data-fin-section]{min-height:44px!important;}
+      .app-header button,.app-header a{min-width:44px!important;}
 
       /* Root overflow kill, nothing bleeds past viewport */
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}

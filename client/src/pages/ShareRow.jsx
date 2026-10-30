@@ -29,7 +29,7 @@ export default function ShareRow({ url, orgName, th, text: textIn, heading = "",
       navigator.clipboard.writeText(copyUrl).then(() => setCopied(true), () => setCopied(false));
     } catch { setCopied(false); }
   }
-  const pill = { display: "inline-block", padding: "8px 14px", borderRadius: 99, border: `1px solid ${T.bg3}`,
+  const pill = { display: "inline-flex", alignItems: "center", minHeight: 44, padding: "8px 16px", borderRadius: 99, border: `1px solid ${T.bg3}`,
                  background: T.white, color: T.ink, fontSize: 13, fontWeight: 600, textDecoration: "none",
                  cursor: "pointer", fontFamily: th.sans };
   return (

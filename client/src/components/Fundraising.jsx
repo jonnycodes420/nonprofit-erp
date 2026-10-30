@@ -1178,7 +1178,7 @@ function NewGivingPage({ onClose }) {
     } catch (e) { setErr(errorMessage(e, "Could not start the page.")); setBusy(""); }
   };
   return (
-    <Modal onClose={onClose} title="New giving page" subtitle="Pick a starting point. Every word stays yours to change, and nothing changes for donors until you publish." width={520}
+    <Modal onClose={onClose} title="New giving page" subtitle="Pick a starting point. Every word stays yours to change. The page has its own link from the start, and your edits reach donors when you publish." width={520}
       footer={<button type="button" onClick={onClose} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>}>
       <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 6 }}>Name it (optional)</label>
       <input data-testid="new-page-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="The template's own name is used if you leave this blank"

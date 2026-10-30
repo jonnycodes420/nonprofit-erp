@@ -532,7 +532,7 @@ function RecentDonors({ rows, sentence, card }) {
   if (!rows || !rows.length) return null;
   return (
     <div data-testid="p2p-recent-donors" style={{ ...card, padding: "14px 18px", marginTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Recent donors</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 8 }}>Recent donors</div>
       {rows.map((r, i) => (
         <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", fontSize: 13 }}>
           <span style={{ flex: 1, color: T.ink, fontWeight: 600 }}>{r.who}</span>
@@ -566,7 +566,7 @@ function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
       <div data-testid="p2p-team-page" style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 14 }}>
         <a href={`/give/${orgSlug}/${pageSlug}`} style={{ fontSize: 12, fontWeight: 700, color: th.primary, textDecoration: "none" }}>← Part of {data.givingPage.title}</a>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>A team fundraising for {data.orgName}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>A team fundraising for {data.orgName}</div>
           <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif }}>{t.name}</h1>
           {t.captain && <div style={{ fontSize: 13, color: T.ink2, marginTop: 6 }}>Captain: <a href={`/give/${orgSlug}/${pageSlug}/${t.captain.slug}`} style={{ color: th.primary, fontWeight: 700 }}>{t.captain.name}</a></div>}
         </div>
@@ -579,7 +579,7 @@ function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
           <div style={{ fontSize: 12, color: T.ink3, marginTop: 8, lineHeight: 1.55 }}>{t.sentence}</div>
         </div>
         <div style={{ ...card, padding: "14px 18px" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{t.members.length} {t.members.length === 1 ? "member" : "members"}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 8 }}>{t.members.length} {t.members.length === 1 ? "member" : "members"}</div>
           {t.members.map((m, i) => (
             <a key={m.slug} href={`/give/${orgSlug}/${pageSlug}/${m.slug}`} data-testid="p2p-team-member"
               style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", textDecoration: "none" }}>
@@ -608,6 +608,7 @@ function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
 const G3_CSS = `
 .g3{container-type:inline-size;width:100%;min-height:100vh;background:var(--g3-bg);color:var(--g3-ink);font-family:var(--g3-sans)}
 .g3 *{box-sizing:border-box}
+.g3 button,.g3 select{min-height:44px}
 .g3-bar{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--g3-white);border-bottom:1px solid var(--g3-hair)}
 .g3-bar img{display:block;height:40px;width:auto;max-width:200px;object-fit:contain}
 .g3-bar-name{font-family:var(--g3-serif);font-size:18px;font-weight:700}
@@ -618,7 +619,7 @@ const G3_CSS = `
 .g3-fill{width:100%;aspect-ratio:16 / 8;border-radius:16px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
 .g3-fill img{max-height:64px;max-width:60%;object-fit:contain}
 .g3-h1{margin:18px 0 0;font-family:var(--g3-serif);font-size:30px;line-height:1.12;letter-spacing:-0.02em;font-weight:800}
-.g3-org{font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--g3-muted);margin-top:14px}
+.g3-org{font-size:13px;font-weight:700;color:var(--g3-muted);margin-top:14px}
 .g3-story p{font-size:16px;line-height:1.7;margin:0 0 14px}
 .g3-more{background:none;border:none;padding:0;font:inherit;font-size:15px;font-weight:700;color:var(--g3-button);cursor:pointer;text-decoration:underline}
 .g3-impact{margin:18px 0 0;padding:0;list-style:none}
@@ -631,7 +632,7 @@ const G3_CSS = `
 .g3-trust-line::before{content:"";flex:0 0 8px;height:8px;margin-top:6px;border-radius:50%;background:var(--g3-primary)}
 .g3-trust a{color:var(--g3-ink2)}
 .g3-ways{margin-top:14px;padding:14px 16px}
-.g3-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--g3-muted);margin-bottom:8px}
+.g3-label{font-size:13px;font-weight:700;color:var(--g3-muted);margin-bottom:8px}
 .g3-ways p{font-size:13.5px;line-height:1.55;margin:0 0 8px}
 .g3-band{height:140px;background:var(--g3-primary);display:flex;align-items:center;justify-content:center}
 .g3-band img{max-height:72px;max-width:70%;object-fit:contain}
@@ -675,6 +676,8 @@ export default function Donate({ preview = null }) {
   const [pageNotOpen, setPageNotOpen] = useState(false);   // FUNDRAISING-2: a draft page, not a missing one
   const [donated, setDonated] = useState(false);
   const [cardUpdated, setCardUpdated] = useState(false);
+  const [joined, setJoined] = useState(false);   // SWEEP-6: back from a membership checkout
+  const [recurringBack, setRecurringBack] = useState(false);   // SWEEP-6: back from a recurring checkout (r=1)
   const [showStartFundraiser, setShowStartFundraiser] = useState(false);
   // PARITY-2 Part 2: the peer-to-peer block of the page payload (null on a
   // page that is not peer-to-peer), and which team "Join a team" picked.
@@ -797,7 +800,10 @@ export default function Donate({ preview = null }) {
   const giveSpec = givingPage?.form || null;
   // BUILD-102 Part 5 — the thank-you, from the ONE shared function so the editor's
   // preview and the screen a donor actually reaches cannot say different things.
-  const thanks = thankYouText(giveSpec ? { thankYou: giveSpec.thankYou } : {}, { orgName: org?.name || "" });
+  // SWEEP-6: Stripe emails a one-time payment's receipt; a recurring one has a
+  // receipt only when the org emails its own.
+  const receiptComing = !recurringBack || org?.receiptsEmailed !== false;
+  const thanks = thankYouText(giveSpec ? { thankYou: giveSpec.thankYou } : {}, { orgName: org?.name || "", receiptsEmailed: receiptComing });
 
   // BUILD-102 Part 5 — an optional redirect to the org's own page. THREE SECONDS
   // rather than instantly: a redirect that fires on load means the thank-you is
@@ -860,8 +866,10 @@ export default function Donate({ preview = null }) {
   useEffect(() => {
     if (preview) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("donated") === "true") {
+    if (params.get("donated") === "true" || params.get("joined") === "1") {
       setDonated(true);
+      setJoined(params.get("joined") === "1");
+      setRecurringBack(params.get("r") === "1");
       window.history.replaceState({}, "", basePath);
     }
     if (params.get("card_updated") === "true") {
@@ -1203,14 +1211,19 @@ export default function Donate({ preview = null }) {
         <span style={{ fontSize: 28, color: th.primaryFg }}>✓</span>
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color: T.ink, marginBottom: 10, fontFamily: th.serif }}>
-        Thank you!
+        {joined ? "Welcome" : "Thank you!"}
       </div>
       {/* BUILD-102 Part 5 — THE ORG'S OWN WORDS WHEN THEY WROTE ANY. A form's
           thank-you message is the one place a donor hears the organisation rather
           than the software, so it replaces Steward's sentence rather than sitting
           under it. With nothing written, the fallback says the one thing a donor
           wants to know next: that a receipt is coming. */}
-      {thanks.fromTheOrg ? (
+      {joined ? (
+        <div className="thanks-joined" style={{ fontSize: 16, color: T.ink2, maxWidth: 420, lineHeight: 1.6 }}>
+          You are a member of <strong>{org.name}</strong>. Thank you for joining.
+          {receiptComing ? " Your receipt is on its way to your email, and it says how much of the membership is tax-deductible." : ""}
+        </div>
+      ) : thanks.fromTheOrg ? (
         <div className="thanks-own-words" style={{ fontSize: 16, color: T.ink2, maxWidth: 420, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
           {thanks.message}
         </div>
@@ -1220,7 +1233,7 @@ export default function Donate({ preview = null }) {
             Your gift to <strong>{org.name}</strong> has been received.
           </div>
           <div className="thanks-fallback" style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
-            A receipt will be sent to your email. Thank you for your generosity, it makes a real difference.
+            {receiptComing ? "A receipt will be sent to your email. " : ""}Thank you for your generosity, it makes a real difference.
           </div>
         </>
       )}
@@ -1229,7 +1242,7 @@ export default function Donate({ preview = null }) {
           Taking you back to <a href={thanks.redirectUrl} style={{ color: T.greenDk }}>{new URL(thanks.redirectUrl).hostname}</a> in a moment.
         </div>
       ) : null}
-      <ShareRow url={`${window.location.origin}${basePath}`} orgName={org.name} th={th} />
+      <ShareRow url={`${window.location.origin}${basePath}${joined ? "?memberships" : ""}`} orgName={org.name} th={th} heading={joined ? "Ask a friend to join" : undefined} />
       {/* ── GIVE-2 §8 · DOES YOUR EMPLOYER MATCH? ─────────────────────────
           The employers THIS organisation knows match, each with the company's
           own form link. Typed by staff: no vendor, no lookup service, no
@@ -1295,7 +1308,7 @@ export default function Donate({ preview = null }) {
       style={{
         background: selected ? th.button : T.bg,
         border: `1.5px solid ${selected ? th.button : T.bg3}`,
-        borderRadius: 10, padding: "12px 4px",
+        borderRadius: 10, padding: "12px 4px", minHeight: 44,
         color: selected ? th.buttonFg : T.ink2,
         fontSize: 15, fontWeight: 700, cursor: "pointer", transition: "all 0.12s",
       }}>
@@ -1383,7 +1396,7 @@ export default function Donate({ preview = null }) {
         {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}
         <div style={card}>
           <DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>How often</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 12 }}>How often</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[["monthly", "Monthly"], ["one-time", "One-time"], ["annual", "Annual"]].map(([v, l]) => (
               <button key={v} type="button" onClick={() => switchFrequency(v)}
@@ -1412,7 +1425,7 @@ export default function Donate({ preview = null }) {
 
         {/* Amount — the per-frequency ladder, second tier pre-selected. */}
         <div style={card}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 12 }}>
             {frequency === "monthly" ? "Monthly amount" : frequency === "annual" ? "Annual amount" : "Donation amount"}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(activeLadder.length, 5)}, 1fr)`, gap: 8, marginBottom: 12 }}>
@@ -1479,7 +1492,7 @@ export default function Donate({ preview = null }) {
         {/* Fund selector — hidden when the page already designates a fund. */}
         {funds.length > 0 && !givingPage?.fundId && (
           <div style={card}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Designate My Gift (optional)</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 12 }}>Where your gift goes (optional)</div>
             <select value={fundId} onChange={e => setFundId(e.target.value)} style={{ ...inp, cursor: "pointer" }}>
               <option value="">Where it's needed most</option>
               {funds.map(f => (
@@ -1491,7 +1504,7 @@ export default function Donate({ preview = null }) {
 
         {/* Contact info */}
         <div style={card}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14 }}>Your Information</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 14 }}>About you</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} style={inp} required />
             <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} required />
@@ -1652,7 +1665,7 @@ export default function Donate({ preview = null }) {
     const tools = preview && preview.photoTools ? preview.photoTools(!!cover) : null;
     const photo = cover ? (
       <div className="g3-photo" data-edit="photo" style={tools ? { position: "relative" } : undefined}><Picture value={cover} alt={givingPage.title} ratio="16 / 9" radius={16} width={1280} testid="page-cover" />{tools}</div>
-    ) : headerBanner && !tools ? null : (
+    ) : !tools && (headerBanner || !brandLogo) ? null : (
       <div className="g3-fill" data-edit="photo" style={tools ? { position: "relative" } : undefined}>{brandLogo}{tools}</div>
     );
     const onText = preview && preview.onText;
@@ -1812,7 +1825,7 @@ export default function Donate({ preview = null }) {
               <div style={{ marginBottom: 20 }}><Picture value={peerFundraiser.cover || peerFundraiser.imageUrl} alt={peerFundraiser.name} ratio="16 / 9" radius={16} testid="page-cover" /></div>
             )}
             <div style={{ textAlign: "center", marginBottom: 18 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Fundraising for {org.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>Fundraising for {org.name}</div>
               <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
                 {peerFundraiser.name}'s Fundraiser
               </h1>
@@ -1873,7 +1886,7 @@ export default function Donate({ preview = null }) {
             <div data-testid="campaign-top" style={{ width: "100%", maxWidth: 480, marginBottom: 20, order: 0 }}>
               {builtHero || (
                 <div style={{ textAlign: "center", marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>{org.name}</div>
                   <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>{givingPage.title}</h1>
                 </div>
               )}
@@ -1907,7 +1920,7 @@ export default function Donate({ preview = null }) {
             {!builtPage && (
               <div style={{ textAlign: "center", marginBottom: 18 }}>
                 {!isCampaignPage && <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>{org.name}</div>
                 <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
                   {givingPage.title}
                 </h1>
@@ -2012,7 +2025,7 @@ export default function Donate({ preview = null }) {
           or a fundraiser's page is about that one thing. */}
       {!pageSlug && !isEmbed && Array.isArray(org.ways) && org.ways.length > 0 && (
         <div data-testid="ways-to-give" style={{ width: "100%", maxWidth: 480, marginTop: 28, order: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>More ways to give</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink2, marginBottom: 10 }}>More ways to give</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {org.ways.map(w => (
               <a key={w.kind + w.href} href={w.href} data-kind={w.kind}

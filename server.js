@@ -5696,6 +5696,13 @@ async function coverFeePayload(org) {
     feeRate: { pct: rates.card.pct, flatCents: rates.card.flatCents, capCents: rates.card.capCents },
     feeRateSentence: R.rateSentence(rates.card),
     coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organization.`,
+    // SWEEP-6: whether a receipt from this org would really reach the donor:
+    // receipts on (issueGiftReceipt skips an org with them off) and the same
+    // mail gate the send goes through open for a receipt. A one-time payment
+    // always gets Stripe's receipt (receipt_email); a monthly one does not, so
+    // the thank-you after a recurring checkout promises one only when this is true.
+    receiptsEmailed: !!(org && org.receipts_enabled)
+      && !!(await orgMaySendEmail(org.org_id || org.id, mailPolicy.categoryOf("receipt"), "receipt").catch(() => ({ send: false }))).send,
   };
 }
 

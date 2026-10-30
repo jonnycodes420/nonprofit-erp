@@ -35,9 +35,10 @@ const STATUS_META = {
 };
 
 // FIX-2 finding 10 — the one formatter, never a Date in some timezone.
-const fmtDate = iso => (iso && displayDate(iso)) || "Not set";
+// SWEEP-6: a blank says what is true there ("No date"), never "Not set".
+const fmtDate = iso => (iso && displayDate(iso)) || "No date";
 const per = interval => interval === "year" ? "/yr" : "/mo";
-const money = n => n == null ? "Not set" : fmtFull(n);
+const money = n => n == null ? "No amount" : fmtFull(n);
 
 function StatusPill({ status }) {
   const m = STATUS_META[status] || STATUS_META.active;
@@ -62,7 +63,7 @@ function MovementSummary({ movement }) {
       <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "3px 0" }}>
         <span style={{ fontSize: 12.5, color: T.ink2 }}>{label}{count ? <span style={{ color: T.ink3 }}> · {count}</span> : null}</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: amt ? color : T.ink3, fontVariantNumeric: "tabular-nums" }}>
-          {amt ? `${sign}${fmtFull(amt)}` : "Not set"}
+          {amt ? `${sign}${fmtFull(amt)}` : "None"}
         </span>
       </div>
     );
@@ -86,7 +87,7 @@ function MovementSummary({ movement }) {
         </div>
         <div style={{ fontSize: 34, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.15, margin: "6px 0 2px" }}>{fmtFull(movement.mrr)}</div>
         <div style={{ fontSize: 12, color: T.ink3 }}>
-          {countLabel(movement.healthyCount, "active sustainer")}
+          {countLabel(movement.healthyCount + movement.atRiskCount, "sustainer")}
           {movement.atRiskCount ? <span style={{ color: T.terra700, fontWeight: 700 }}> · {movement.atRiskCount} at risk</span> : null}
           {/* (2026-09-11) The card that has not failed yet. Its own colour and
               its own clause, because it is the half still worth acting on —
@@ -116,7 +117,7 @@ function MovementSummary({ movement }) {
       <div>
         <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Sustainer retention · 12 months</div>
         <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.2, margin: "6px 0 2px" }}>
-          {movement.retention12?.rate != null ? `${movement.retention12.rate}%` : "Not set"}
+          {movement.retention12?.rate != null ? `${movement.retention12.rate}%` : "None yet"}
         </div>
         {movement.retention12?.rate != null ? (
           <div style={{ fontSize: 12, color: T.ink3 }}>{movement.retention12.retained} of {movement.retention12.cohortSize} still giving a year in</div>
@@ -817,10 +818,10 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                   </td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{s.fundName || "General"}</td>
                   <td style={{ padding: "10px 10px" }}><StatusPill status={s.displayStatus} /></td>
-                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" || s.displayStatus === "paused" ? "Not set" : fmtDate(s.nextChargeAt)}</td>
+                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" ? "Stopped" : s.displayStatus === "paused" ? "Paused" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                    {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "Not set"}
+                    {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "No gifts yet"}
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right" }}>
                     <ActionsMenu sub={s} isReadOnly={isReadOnly} onAction={doAction} />
