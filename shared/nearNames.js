@@ -7,14 +7,14 @@
 //   nearDuplicate(a, b)  two names that may be one person, with the reason, or
 //                        null: a letter or two apart ("Allanson"/"Alanson"), a
 //                        nickname ("Fran"/"Frances"), or a couple's form beside
-//                        one of the pair ("Cary Hintz & Coppinger"/"Cary Hintz").
+//                        one of the pair ("Cary Kolbe & Pettibone"/"Cary Kolbe").
 //                        Two different full first names on one surname are a
 //                        family (spouses, a parent and child), never this.
 //   nameAndNotes(raw)    the name as a person would read it, with markup gone
-//                        ("**Bryan May") and parenthetical notes moved off it
-//                        ("Scarlette (send with Tiffany's) Nesbeth"), and
+//                        ("**Duane Fry") and parenthetical notes moved off it
+//                        ("Scarlette (send with Tiffany's) Ashwell"), and
 //                        whether the row is a note rather than a person
-//                        ("1 Medical Gluten").
+//                        ("1 Celiac Diet").
 //
 // The nicknames are CHECK-2's list (donorMatch.js, which is CommonJS and keeps
 // its own synchronous copy) plus the families seen on event lists since.
@@ -89,7 +89,7 @@ const parts = x => {
 export function nearDuplicate(a, b) {
   const A = norm(nameAndNotes(a).name), B = norm(nameAndNotes(b).name);
   if (!A || !B || A === B) return null;
-  // a couple's form beside one of the pair: "Cary Hintz & Coppinger" / "Cary Hintz"
+  // a couple's form beside one of the pair: "Cary Kolbe & Pettibone" / "Cary Kolbe"
   for (const [x, y] of [[A, B], [B, A]]) {
     if (!JOINT.test(x) || JOINT.test(y)) continue;
     const head = x.split(JOINT)[0].trim();

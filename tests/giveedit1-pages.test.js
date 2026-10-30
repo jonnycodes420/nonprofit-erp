@@ -175,7 +175,7 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
   const token = new URL(String(link.body.url || link.body.standing || "http://x/?token=")).searchParams.get("token");
   const [{ n: before }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]);
   const jr = await fetch(`${BASE}/volunteer/join`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ token, name: "Robin Sato", email: "robin.ge1@example.org", phone: "", availability: "Saturdays" }).toString() });
+    body: new URLSearchParams({ token, name: "Robin Ueno", email: "robin.ge1@example.org", phone: "", availability: "Saturdays" }).toString() });
   const [{ n: after }] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]);
   const [appRow] = await q(`SELECT status, answers FROM volunteer_applications WHERE org_id=$1 AND email='robin.ge1@example.org'`, [ORG]);
   ok("§10 the join link answers", jr.status === 200, jr.status);

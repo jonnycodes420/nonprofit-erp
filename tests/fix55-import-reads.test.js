@@ -92,9 +92,9 @@ async function apiLegs() {
   // §1 every question type, answered, leaves the preview ready
   const A = await freshOrg("org_fix55qs", "Questions (test)");
   await q(`INSERT INTO donors (id, org_id, name, email, created_by, created_by_name) VALUES
-             ('d_f55_r1',$1,'Pat Rainwater','pat.r1@test.local','system:test','Test'), ('d_f55_r2',$1,'Pat Rainwater','pat.r2@test.local','system:test','Test')`, [A.id]);
+             ('d_f55_r1',$1,'Pat Merriwell','pat.r1@test.local','system:test','Test'), ('d_f55_r2',$1,'Pat Merriwell','pat.r2@test.local','system:test','Test')`, [A.id]);
   await q(`INSERT INTO donors (id, org_id, name, deleted_at, created_by, created_by_name) VALUES ('d_f55_gone',$1,'Cleo Ashby',NOW(),'system:test','Test')`, [A.id]);
-  const body = { fileName: "questions.csv", sheets: gridOf([["Name", "Date", "Figure"], ["Pat Rainwater", "2026-09-01", "125.50"], ["Cleo Ashby", "2026-09-02", "80.25"], ["Rory Penn", "2026-09-03", "40.75"]]) };
+  const body = { fileName: "questions.csv", sheets: gridOf([["Name", "Date", "Figure"], ["Pat Merriwell", "2026-09-01", "125.50"], ["Cleo Ashby", "2026-09-02", "80.25"], ["Rory Penn", "2026-09-03", "40.75"]]) };
   let u = (await api("POST", "/sheet-import/understand", A.token, body)).body;
   const kinds = new Set((u.questions || []).map(x => x.kind || x.id));
   ok("§1 the file asks which person, about a deleted match, and a column's role", kinds.has("person") && kinds.has("deletedPerson") && kinds.has("column") && u.ready === false,

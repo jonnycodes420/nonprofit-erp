@@ -9,7 +9,7 @@
 //
 // ── THE TRAP THIS MODULE EXISTS TO AVOID ───────────────────────────────────
 // In NPSP every individual donor belongs to a HOUSEHOLD ACCOUNT, and the
-// Contact export carries its name in `Account Name`: "Barnett Household".
+// Contact export carries its name in `Account Name`: "Bramley Household".
 // Mapping `Account Name` → organization, which is the obvious reading and the
 // one the brief's own sentence invites, turns EVERY PERSON IN THE FILE into an
 // organisation called "<Surname> Household" — 400 foundations where there were
@@ -140,7 +140,7 @@ export const NPSP_OPPORTUNITY_COLUMNS = {
 // The opportunity columns Steward reads for a DECISION but does not import as
 // a field, and the ones with no home at all.
 export const NPSP_OPPORTUNITY_NO_TARGET = {
-  "opportunity name":       "a generated label (\"Barnett Household $500 Donation\"); the gift already carries the amount, the date and the person",
+  "opportunity name":       "a generated label (\"Bramley Household $500 Donation\"); the gift already carries the amount, the date and the person",
   "account record type":    "read to decide whether the account is a household or an organisation, not imported as a field",
   "opportunity record type":"read for context; the gift TYPE comes from the stage and the in-kind marker",
   "record type":            "read for context; the gift TYPE comes from the stage and the in-kind marker",
@@ -270,7 +270,7 @@ export function accountIsHousehold(row = {}) {
 
   const acct = get(["account name", "account", "household account", "household name"]);
   if (acct) {
-    // NPSP writes "Barnett Household" and "Barnett and Reyes Household".
+    // NPSP writes "Bramley Household" and "Bramley and Reyes Household".
     if (/\bhouseholds?\b\s*$/i.test(acct)) return true;
     return false;
   }

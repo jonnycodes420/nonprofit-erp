@@ -2983,7 +2983,7 @@ app.post("/sequences/tracked/:id/turn-on", requireAuth, requireAdmin, checkWrite
   // The ACTOR stamp is the email (BUILD-75's convention, and it stays that).
   // `turned_on_by_name` is a DISPLAY string that ends up on a person's
   // timeline — "turned on by allie@justinsplace.org on 3 Oct" is a database
-  // row talking, and "turned on by Allie Barnett" is a person.
+  // row talking, and "turned on by Allie Bramley" is a person.
   const [meRow] = await query("SELECT name, email FROM users WHERE id = ?", [req.user.userId]);
   const display = (meRow && String(meRow.name || "").trim()) || a.name;
   await run(

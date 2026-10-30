@@ -137,5 +137,113 @@ if (offenders.length) {
   }
 }
 
+// ── FIX-60 · NO REAL CUSTOMER NAMES IN THE REPO ───────────────────────────
+// Earlier briefs quoted real people from a customer's file (Justin's Place);
+// they were copied into tests, fixtures, comments and docs. Every example name
+// is fake. This scans EVERY tracked text file, and the cells of every tracked
+// spreadsheet, for those names. The guard holds no name: each is a salted
+// sha256 prefix, so it cannot itself put the names back.
+//   RARE  a surname nobody else uses here: any whole word, any case.
+//   PAIR  two words together ("First Last", a two-word note).
+//   CTX   a surname that is also an ordinary word or a common name: only in a
+//         name's place, after a capitalised word ("Jo X", "Jo, Sam X",
+//         "Jo and Sam X") or before Household/Family. One of them is also a
+//         heading word, so it counts only after a known first name
+//         (shared/givenNames.js).
+// What makes it fail: one of those names typed into any tracked text file or
+// spreadsheet cell, in that shape. Proven below by planting one of each.
+{
+  const crypto = require("crypto");
+  const memo = new Map();
+  const H = s => { let h = memo.get(s); if (h === undefined) { h = crypto.createHash("sha256").update("fix60:" + s).digest("hex").slice(0, 16); memo.set(s, h); } return h; };
+  const RARE = new Set("57d8f393c1a02c9b a0a2136c234bf79e b0ee1c88b0f0629c 4452e4e25dc8d280 a1daa884c9512772 3b1d75dfa19da832 bb75d1823e2519c1 ca10d2f3401eb6a5 f6cf6bf2c02c4845 13f03c6c37657045".split(" "));
+  const PAIR = new Set("2668151324be0362 78395dc0bae4f1fd".split(" "));
+  const PAIR_LAST = new Set("668009e04346a54c 633778894b40f385".split(" "));   // the second word of each pair
+  const CTX = new Set("f5191cacbb797c51 f290a447575d91c3 ffbf30eb9267a821 4fd6996674eceb9a c54df3e82adc8139".split(" "));
+  const CTX_GIVEN_ONLY = new Set(["e626746a3ebe7165"]);
+  const givenSrc = fs.readFileSync(path.join(repoRoot, "shared", "givenNames.js"), "utf8");
+  const GIVEN = new Set(((givenSrc.match(/const LIST = `([\s\S]*?)`/) || [])[1] || "").split(/\s+/).filter(Boolean));
+  ok(GIVEN.size > 200, "the real-name guard read the first-name list");
+  const TITLE = /^[A-Z][a-z]+$/;
+  const scanText = (where, text) => {
+    const hits = [];
+    const lines = text.split("\n");
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      if (line.length > 20000) continue;   // a base64 blob or a minified line is not prose
+      const toks = [...line.matchAll(/[A-Za-z]+/g)];
+      for (let i = 0; i < toks.length; i++) {
+        const w = toks[i][0];
+        if (w.length < 3 || w.length > 12) continue;
+        const prev = i > 0 ? toks[i - 1] : null;
+        const sep = prev ? line.slice(prev.index + prev[0].length, toks[i].index) : "";
+        const next = toks[i + 1] ? toks[i + 1][0] : "";
+        const nextSep = toks[i + 1] ? line.slice(toks[i].index + w.length, toks[i + 1].index) : "";
+        const lw = w.toLowerCase();
+        let hit = RARE.has(H(lw));
+        if (!hit && prev && sep === " " && PAIR_LAST.has(H(lw)) && PAIR.has(H(prev[0].toLowerCase() + " " + lw))) hit = true;
+        if (!hit && TITLE.test(w)) {
+          const h = H(w);
+          const named = prev && TITLE.test(prev[0]) && /^(?:,? | (?:and|or|&) )$/.test(sep);
+          if (CTX.has(h) && (named || (nextSep === " " && /^(Household|Family)$/.test(next)))) hit = true;
+          if (CTX_GIVEN_ONLY.has(h) && named && GIVEN.has(prev[0].toLowerCase())) hit = true;
+        }
+        if (hit) { hits.push(`${where}:${li + 1}  ${line.trim().slice(0, 100)}`); break; }
+      }
+    }
+    return hits;
+  };
+  let XLSX = null;
+  try { XLSX = require(path.join(repoRoot, "client", "node_modules", "xlsx")); } catch { /* reported below */ }
+  ok(!!XLSX, "the spreadsheet reader for the real-name guard is installed (npm ci --prefix client)");
+  const found = [];
+  let scanned = 0, sheets = 0;
+  for (const rel of tracked) {
+    if (rel === "tests/no-emoji.test.js" || /\.(png|jpe?g|webp|gif|ico|pdf|webm|mp4|woff2?|ttf)$/i.test(rel)) continue;
+    let buf;
+    try { buf = fs.readFileSync(path.join(repoRoot, rel)); } catch { continue; }
+    if (/\.(xlsx|xlsm|xls|ods)$/i.test(rel)) {
+      if (!XLSX) continue;
+      const cells = [];
+      if (/\.(xlsx|xlsm)$/i.test(rel)) {
+        // every text run in every part (shared strings, inline strings, comments,
+        // properties) and every sheet name, straight from the zip: a full parse
+        // of the 25k-row fixture alone takes seconds
+        const zip = XLSX.CFB.read(buf, { type: "buffer" });
+        const ent = t => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+        for (const p of zip.FullPaths.filter(x => /\.xml$/i.test(x))) {
+          const xml = Buffer.from(XLSX.CFB.find(zip, p).content).toString("utf8");
+          for (const m of xml.matchAll(/<(?:[a-z]+:)?(?:t|v|title|subject|creator|description|keywords)(?:\s[^>]*)?>(?=[^<]*[A-Za-z])([^<]+)</g)) cells.push(ent(m[1]));
+          for (const m of xml.matchAll(/<sheet\s[^>]*name="([^"]*)"/g)) cells.push(ent(m[1]));
+        }
+      } else {
+        const wb = XLSX.read(buf, { type: "buffer" });
+        for (const sn of wb.SheetNames) {
+          cells.push(sn);
+          const ws = wb.Sheets[sn];
+          for (const k of Object.keys(ws)) if (k[0] !== "!" && ws[k].v != null) cells.push(String(ws[k].v));
+        }
+      }
+      found.push(...scanText(rel, cells.join("\n")));
+      sheets++;
+      continue;
+    }
+    if (buf.length > 30 * 1024 * 1024 || buf.subarray(0, 8000).includes(0)) continue;   // binary: images, PDFs, video
+    found.push(...scanText(rel, buf.toString("utf8")));
+    scanned++;
+  }
+  ok(scanned > 1000 && (!XLSX || sheets > 10), `the real-name guard scanned the tracked files (${scanned} text, ${sheets} spreadsheets)`);
+  ok(found.length === 0, `no real customer name in any tracked file (found ${found.length})`);
+  for (const f of found.slice(0, 40)) console.error("    " + f);
+  // Proven able to fail: each tier catches its planted name; ordinary words pass.
+  const dec = s => Buffer.from(s, "base64").toString("utf8");
+  const planted = ["Q2FyeSBIaW50eg==", "KipCcnlhbiBNYXk=", "MSBNZWRpY2FsIEdsdXRlbg==", "QWxsaWUgQmFybmV0dA==", "QmFybmV0dCBIb3VzZWhvbGQ=", "QmlsbCBDb3VudHM="].map(dec);
+  const caught = planted.filter(p => scanText("planted", p).length === 1);
+  ok(caught.length === planted.length, `the real-name guard catches every planted name (${caught.length} of ${planted.length})`);
+  const plain = ["const counts = {}; // Counts only", "X-Steward-Export-Counts", "Export Counts toward", "the barnett test", "a dormant row", "Shared Counts"];
+  const passed = plain.filter(p => scanText("plain", p).length === 0);
+  ok(passed.length === plain.length, `the real-name guard passes ordinary words (${passed.length} of ${plain.length})`);
+}
+
 console.log(`\nno-emoji: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
