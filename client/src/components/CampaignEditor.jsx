@@ -206,8 +206,13 @@ export default function CampaignEditor({
     </div>
   );
 
+  // Asked only when something here differs from what was opened.
+  // (The group's name, filled in after opening, is a label and not an edit.)
+  const snap = () => JSON.stringify([stripKeys(latest.current.blocks), form.name, form.subject, form.preheader || "", { ...(form.seg || {}), audienceName: undefined }, form.scheduledAt || ""]);
+  const opened = useRef(null);
+  if (opened.current === null) opened.current = snap();
   const goBack = async () => {
-    if (readOnlySent || await askConfirm({ title: "Leave this campaign?", body: "Anything not saved as a draft is lost.", yes: "Leave" })) onBack();
+    if (readOnlySent || snap() === opened.current || await askConfirm({ title: "Leave this campaign?", body: "Your changes are not saved as a draft yet.", yes: "Leave" })) onBack();
   };
   return (
     <div data-testid="campaign-builder" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }}>

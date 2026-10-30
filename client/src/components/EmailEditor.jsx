@@ -240,7 +240,7 @@ export function insertChip(caret, token, label) {
   const { doc, el, range } = caret;
   const chip = doc.createElement("span");
   chip.className = "st-chip"; chip.setAttribute("data-st-token", token); chip.setAttribute("contenteditable", "false");
-  chip.setAttribute("style", `background:${T.green100};color:${T.green};border-radius:4px;padding:0 3px;white-space:nowrap;`);
+  chip.setAttribute("style", `background:${T.green100};color:${T.green};border-radius:4px;padding:0 3px;`);
   chip.textContent = label;
   try {
     range.deleteContents();

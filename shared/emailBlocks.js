@@ -97,7 +97,7 @@ const keysOf = defs => (defs === EMAIL_MERGE_FIELDS ? MERGE_KEYS : new Set(defs.
 // (data-st-token holds it exactly as typed), filled with this person's value,
 // so typing around it never turns a field into somebody's name. The greeting
 // is a chip too: "Dear {{donor_name}}" shows the greeting and saves as typed.
-export const CHIP_STYLE = "background:#edf3ee;color:#0d5c3a;border-radius:4px;padding:0 3px;white-space:nowrap;";
+export const CHIP_STYLE = "background:#edf3ee;color:#0d5c3a;border-radius:4px;padding:0 3px;";
 function chip(name, value) {
   return `<span class="st-chip" data-st-token="${esc(name)}" contenteditable="false" style="${CHIP_STYLE}">${esc(value)}</span>`;
 }

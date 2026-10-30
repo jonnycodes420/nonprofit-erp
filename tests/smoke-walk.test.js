@@ -360,7 +360,7 @@ async function emailEditorEverywhere(browser) {
     return res;
   };
   const backToLibrary = async () => {
-    await page.getByTestId("email-editor-back").click().catch(() => {});
+    await page.getByTestId("editor-back").click().catch(() => {});
     await page.waitForSelector("[data-template-card]", { timeout: 15000 }).catch(() => {});
   };
   const card = id => page.locator(`[data-template-id="${id}"]`).first();
