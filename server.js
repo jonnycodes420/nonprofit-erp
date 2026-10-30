@@ -5282,6 +5282,13 @@ async function resolveSegmentSpec(segment, orgId) {
     const ids = (await query(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND ${c.sql}`, [orgId, ...c.args])).map(x => x.id);
     return { ...r, majorIds: ids };
   }
+  // SWEEP-3: "Lapsed" is the one lapse rule (FIX-51, donorStatus.quietIds),
+  // the same people Audience counts as Lapsing or lapsed. It read the stage
+  // column, which nothing sets, so a campaign to it reached nobody.
+  if (r && r.mode === "lapsed") {
+    const DS = require("./donorStatus");
+    return { ...r, lapsedIds: [...await DS.quietIds(orgId, await DS.todayFor(orgId))] };
+  }
   return r;
 }
 async function resolveSegmentSpecInner(segment, orgId) {
@@ -5314,7 +5321,8 @@ function filterBySegment(allDonors, segment) {
     const ids = new Set(segment.majorIds || []);
     donors = donors.filter(d => ids.has(d.id));
   } else if (mode === "lapsed") {
-    donors = donors.filter(d => d.stage === "lapsed");
+    const ids = segment.lapsedIds ? new Set(segment.lapsedIds) : null;
+    donors = donors.filter(d => ids ? ids.has(d.id) : d.stage === "lapsed");
   // AN EMPTY SELECTION SELECTS NOBODY. Each of these three used to fall
   // THROUGH to the unfiltered list when its list was empty, so a campaign that
   // named no stages, no tiers or no people went to EVERY donor with an email

@@ -467,7 +467,9 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   const [publishing, setPublishing] = useState(false);
   const [device, setDevice] = useState(narrow ? "phone" : "desktop");
   const [dark, setDark] = useState(false);
-  const [as, setAs] = useState(null);
+  // SWEEP-3: undefined is one of her donors (the server picks the newest
+  // giver); null is "Preview as yourself", sent as "me".
+  const [as, setAs] = useState(undefined);
   const [preview, setPreview] = useState({ html: "", problems: [], loading: true, as: null, subject: "" });
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -514,7 +516,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
     const t = setTimeout(() => {
       const cur = latest.current;
       apiFetch(`/email-templates/${template.id}/preview`, { method: "POST",
-        body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, device, dark, editable: !isReadOnly, as: as ? as.id : undefined }) })
+        body: JSON.stringify({ blocks: stripKeys(cur.blocks), subject: cur.subject, preheader: cur.preheader, device, dark, editable: !isReadOnly, as: as === null ? "me" : as ? as.id : undefined }) })
         .then(r => { if (n === seq.current) setPreview({ html: r.html, problems: r.problems || [], loading: false, as: r.as, subject: r.subject || "" }); })
         .catch(e => { if (n === seq.current) setPreview(p => ({ ...p, loading: false, problems: [say(e, "The preview could not be drawn.")] })); });
     }, 300);
@@ -748,7 +750,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onO
   );
 
   return (
-    <div data-testid="email-editor" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }} className="fullscreen-takeover">
+    <div data-testid="email-editor" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }} className="fullscreen-takeover no-caps">
       <StewardEditor kind="email" testid="steward-editor"
         back={{ onClick: goBack, label: backLabel }}
         name={title || name} badge={emailBadge(template)}

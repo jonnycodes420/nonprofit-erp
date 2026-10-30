@@ -215,7 +215,7 @@ export default function CampaignEditor({
     if (readOnlySent || snap() === opened.current || await askConfirm({ title: "Leave this campaign?", body: "Your changes are not saved as a draft yet.", yes: "Leave" })) onBack();
   };
   return (
-    <div data-testid="campaign-builder" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }}>
+    <div data-testid="campaign-builder" className="fullscreen-takeover no-caps" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200 }}>
       <StewardEditor kind="campaign" testid="steward-editor" back={{ onClick: goBack, label: "Back" }}
         name={title} badge={statusBadge || "Campaign"} device={device} onDevice={setDevice}
         toggles={[{ id: "dark", label: "Dark mode", on: dark, onClick: () => setDark(v => !v) }]}

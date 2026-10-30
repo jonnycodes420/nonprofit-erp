@@ -801,6 +801,98 @@ async function profileLayout(pw, auth) {
   await br.close();
 }
 
+// SWEEP-3 · COMMUNICATIONS, AUTOMATIC EMAIL, GOING OUT AND JOURNEYS, EVERY
+// SCREEN, ON TWO ORGS. Every Communications tab (Overview, Campaigns,
+// Templates and its Brand and Media library, Audience, Analytics, Sequences,
+// Your email tool, Drafts to review, Surveys), Settings › Automatic email,
+// Going out (with a held email) and Journeys, at 1440 and 390, on an org with
+// givers, a lapsed donor and a held receipt and on an empty org. Each must say
+// nothing the quality bar names mechanically ("Not set", undefined, NaN, null,
+// a {{placeholder}} or [placeholder], an ALL-CAPS label,
+// a console error, an API 4xx or 5xx), and the walk's own finds stay fixed:
+// one "No sequences yet", not two; no "Trigger now"; Journeys does not say it
+// never sends; a held email says what to do next.
+// HOW IT GOES RED: on main (2b4951a) every tab's labels are ALL-CAPS, the
+// Sequences tab says "No sequences yet" twice with "Trigger now", and Journeys
+// says "It never sends anything". Proven by planting "Not set" in MailTypes.jsx.
+async function commsScreensSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  const make = async (org, filled) => {
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Sweep3 " + org.slice(11), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    if (filled) {
+      const today = require("./clock").civilDay(), past = `${Number(today.slice(0, 4)) - 2}${today.slice(4)}`;
+      for (let i = 1; i <= 5; i++) {
+        await q(`INSERT INTO donors (id,org_id,name,email,person_types,created_by,created_by_name) VALUES ($1,$2,$3,$4,'["donor"]','system:test','test')`,
+          [`d_${org}_${i}`, org, `Walk Giver ${i}`, i === 5 ? null : `giver${i}@example.org`]);
+        await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`,
+          [`g_${org}_${i}`, org, `d_${org}_${i}`, 100 * i, i === 1 ? past : today]);
+      }
+      await q(`INSERT INTO mail_blocked (id,org_id,donor_id,kind,what,subject,payload,dedupe_key,created_by,created_by_name,held_reason,type_key)
+               VALUES ($1,$2,$3,'receipt','A receipt for a $200 gift','Your receipt','{"html":"<p>Thank you</p>"}',$1,'system:test','test','type_off','gift_receipt')`, [`mb_${org}`, org, `d_${org}_2`]);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["givers and a held receipt", await make("org_sweep3_walk", true), true], ["empty", await make("org_sweep3_none", false), false]];
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"], [/\[object Object\]/, "[object Object]"],
+    [/\{\{[^}]*\}\}/, "a {{placeholder}}"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"],
+    [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"]];
+  const screens = [
+    ["Overview", "/app/communications"], ["Campaigns", "/app/communications?subtab=campaigns"], ["Templates", "/app/communications?subtab=templates"],
+    ["Templates › Brand", "/app/communications?subtab=templates", "Brand"], ["Templates › Media library", "/app/communications?subtab=templates", "Media library"],
+    ["Audience", "/app/communications?subtab=audience"], ["Analytics", "/app/communications?subtab=analytics"], ["Sequences", "/app/communications?subtab=sequences"],
+    ["Your email tool", "/app/communications?subtab=emailtool"], ["Drafts to review", "/app/communications?subtab=milestones"], ["Surveys", "/app/communications?subtab=surveys"],
+    ["Automatic email", "/app/settings?section=automatic"], ["Going out", "/app/settings?section=going-out"], ["Journeys", "/app/journeys"],
+  ];
+  for (const [what, a, filled] of cases) for (const width of [1440, 390]) {
+    const ctx = await browser.newContext({ viewport: { width, height: width > 500 ? 1000 : 844 }, serviceWorkers: "block", ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    page.on("dialog", d => { trouble.push("a browser dialog: " + d.message().slice(0, 80)); d.dismiss().catch(() => {}); });
+    for (const [name, url, tab] of screens) {
+      trouble = [];
+      await page.goto(APP + url, { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
+      if (tab) await page.getByRole("tab", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
+      await page.waitForFunction(() => !/Loading|Counting who/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const roots = [...document.querySelectorAll(".no-caps")];
+        const caps = [];
+        for (const root of roots) for (const el of root.querySelectorAll("*")) {
+          if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+          if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+        }
+        return { text: roots.map(n => n.innerText).join("\n"), caps: caps.slice(0, 6) };
+      });
+      const said = [];
+      for (const line of r.text.split("\n")) for (const [re, w] of SAYS) if (re.test(line)) said.push(`${w}: ${line.trim().slice(0, 90)}`);
+      const where = `${name} (${what}, ${width})`;
+      ok(`§sweep3 ${where} draws its screen`, r.text.trim().length > 40, r.text.slice(0, 80));
+      ok(`§sweep3 ${where} says nothing the bar names`, said.length === 0, said.slice(0, 4));
+      ok(`§sweep3 ${where} has no ALL-CAPS label`, r.caps.length === 0, r.caps);
+      ok(`§sweep3 ${where} has no console error, dialog or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
+      if (name === "Sequences") ok(`§sweep3 ${where}: one "No sequences yet", and no "Trigger now"`, (r.text.match(/No sequences yet/g) || []).length <= 1 && !/Trigger now/.test(r.text), r.text.slice(0, 300));
+      if (name === "Journeys") ok(`§sweep3 ${where}: Journeys never says it never sends`, !/never sends anything/i.test(r.text), r.text.slice(0, 300));
+      if (name === "Going out" && filled) {
+        const held = await page.locator('[data-testid="going-out-held-row"]').first().innerText().catch(() => "");
+        ok(`§sweep3 ${where}: the held receipt says why and what to do next`, /Not sent: /.test(held) && /It can go once Steward turns email on|Choose which emails go/.test(held), held);
+      }
+    }
+    await ctx.close();
+  }
+}
+
 // SWEEP-5 · FINANCE, REPORTS AND GRANTS, EVERY PART, ON TWO ORGS. Every
 // Finance section and part (and the year basis both ways), every report in
 // the Reports rail and every Grants tab, at 1440, on an org with imported
@@ -1399,6 +1491,7 @@ async function moneyScreensSayNothingWrong(browser) {
   await everyPageScrolls(PW_ALL, auth);
   await profileLayout(PW_ALL, auth);
   await moneyScreensSayNothingWrong(browser);
+  await commsScreensSayNothingWrong(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg

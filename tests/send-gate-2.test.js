@@ -168,8 +168,8 @@ function staticChecks() {
   ok("§2 the top bar reads 'Automatic email: Off' when nothing is on", st0.status === 200 && st0.body.state === "off" && st0.body.chip === "Automatic email: Off", st0.body);
   const page0 = await api("GET", "/mail-types", staffTok);
   const allTypes = page0.body && page0.body.groups ? page0.body.groups.flatMap(g => g.types) : [];
-  ok("§2 every email starts Off since created, and staff can read the page", page0.status === 200 && allTypes.length === TYPES.TYPES.length
-    && allTypes.every(t => t.on === false && t.since === "Off since created") && page0.body.canChange === false, page0.body);
+  ok("§2 every email starts Off (nobody has turned it on yet), and staff can read the page", page0.status === 200 && allTypes.length === TYPES.TYPES.length
+    && allTypes.every(t => t.on === false && t.since === "Off. Nobody has turned it on yet") && page0.body.canChange === false, page0.body);
   ok("§2 the page lists the sign-in link as always sent, because the donor asked", (page0.body.always || []).some(a => /asked for it/.test(a.sentence)));
 
   // ── §2 every type off ───────────────────────────────────────────────────
