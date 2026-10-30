@@ -391,7 +391,9 @@ export function GlobalStyles() {
     /* SWEEP-5 · NO ALL-CAPS LABELS on Finance, Reports and Grants. The
        eyebrows and table heads set text-transform inline, so the screens that
        have been swept say their labels in sentence case from one rule, the
-       way they are written, and nobody edits forty inline styles by hand. */
+       way they are written, and nobody edits forty inline styles by hand.
+       SWEEP-6 put it on the app root (App.jsx), so every screen of the CRM
+       says its labels this way, the rail's group names and Home included. */
     .no-caps [style*="text-transform: uppercase"],.no-caps th{text-transform:none!important;letter-spacing:.01em!important;}
     /* ── FIX-8 Part A · THE STRAY BRASS BAR WAS A SCROLLBAR ────────────────
        The thumb was painted gold500, the brand's brass, so on a Mac set to
@@ -643,6 +645,13 @@ export function GlobalStyles() {
       /* No hover on touch, delete icon stays visible (small target, guarded
          by the confirm dialog) */
       .tp-del-btn{opacity:1!important;}
+
+      /* SWEEP-6: a finger needs 44px. Every tab strip (SectionTabs and the
+         Fundraising and Finance part rows) reaches it on a phone, and the
+         phone header's controls are 44 square. Small inline icons (a figure's
+         "?", a profile chip) are left as drawn; docs/defects.md has them. */
+      .app-header button,.app-header a,[role=tab],[data-fr-part],[data-fr-section],[data-fin-part],[data-fin-section]{min-height:44px!important;}
+      .app-header button,.app-header a{min-width:44px!important;}
 
       /* Root overflow kill, nothing bleeds past viewport */
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}

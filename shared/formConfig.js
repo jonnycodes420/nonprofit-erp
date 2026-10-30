@@ -547,12 +547,15 @@ export function utmFrom(bag = {}) {
 
 // The sentence the thank-you screen shows. `message` is the org's own words when
 // they wrote any; the fallback is plain and says the one thing a donor wants to
-// know next, which is that a receipt is coming.
-export function thankYouText(config, { orgName = "" } = {}) {
+// know next: that a receipt is coming, when the org emails receipts (SWEEP-6:
+// an org with receipts off is never made to promise one).
+export function thankYouText(config, { orgName = "", receiptsEmailed = true } = {}) {
   const c = normalizeFormConfig(config, { orgFundIds: [] });
   const own = String(c.thankYou.message || "").trim();
   return {
-    message: own || `Thank you. ${orgName || "The organization"} has your gift, and a receipt is on its way to your email.`,
+    message: own || (receiptsEmailed
+      ? `Thank you. ${orgName || "The organization"} has your gift, and a receipt is on its way to your email.`
+      : `Thank you. ${orgName || "The organization"} has your gift.`),
     fromTheOrg: !!own,
     redirectUrl: c.thankYou.redirectUrl || "",
   };

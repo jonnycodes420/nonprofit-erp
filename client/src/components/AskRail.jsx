@@ -12,13 +12,15 @@
 // The rail keeps the thread until it is closed. "Keep this thread" holds the
 // questions (never the answers) so Home can open it again, worked out fresh.
 // At phone width the rail is a full-screen sheet.
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { atlasName } from "../lib/atlas";   // AGENT-5
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
-import { AskAnswer } from "./AskPanel";
-import { WhyAnswerBody } from "./WhyAnswer";
+import { retryImport } from "../lib/lazyRetry";
+// SWEEP-6 (PERF-1): an answer's body loads with the first answer, not with Home.
+const AskAnswer = lazy(() => retryImport(() => import("./AskPanel")).then(m => ({ default: m.AskAnswer })));
+const WhyAnswerBody = lazy(() => retryImport(() => import("./WhyAnswer")).then(m => ({ default: m.WhyAnswerBody })));
 import { errorMessage } from "../lib/domainError";
 import { personIntent } from "../../../shared/askGuide.js";
 
@@ -327,7 +329,7 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
                   {t.err && <div style={{ fontSize: 14, color: T.ink2 }}>{t.err}</div>}
                   {!a && !t.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
                   {a && (a.kind === "answer" || a.refused
-                    ? <AskAnswer answer={a} isReadOnly={isReadOnly} onAsk={x => ask({ text: x, go: { via: "ask", text: x, thread: true } })} onStepTaken={onStepTaken} inRail />
+                    ? <Suspense fallback={null}><AskAnswer answer={a} isReadOnly={isReadOnly} onAsk={x => ask({ text: x, go: { via: "ask", text: x, thread: true } })} onStepTaken={onStepTaken} inRail /></Suspense>
                     : a.kind === "choose"
                       ? <div data-testid="ask-choose" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           <div style={{ fontSize: 15, color: T.ink, lineHeight: 1.55 }}>{a.sentence}</div>
@@ -341,7 +343,7 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
                         </div>
                     : a.answered === false
                       ? <div data-testid="ask-refused" style={{ fontSize: 15, color: T.ink2, lineHeight: 1.55 }}>{a.sentence}</div>
-                      : <WhyAnswerBody answer={a} isReadOnly={isReadOnly} onStepTaken={onStepTaken} />)}
+                      : <Suspense fallback={null}><WhyAnswerBody answer={a} isReadOnly={isReadOnly} onStepTaken={onStepTaken} /></Suspense>)}
                   {isLast && a && (a.followUps || []).length > 0 && (
                     <div data-testid="ask-followups" style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
                       <div style={LABEL}>{a.answered === false ? "Steward can answer these" : "Ask next"}</div>

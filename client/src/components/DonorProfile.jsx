@@ -54,7 +54,7 @@ import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
 import { useDonorStatus, statusTagItems, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
-import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
+import { MicGlyph, openTellSteward } from "./TellStewardOpen";   // VOICE-1
 import BeforeYourMeeting, { useBeforeMeeting } from "./BeforeYourMeeting";   // VOICE-3
 import { told, useStewardTold } from "../lib/stewardTold";
 import { ProfileGroups } from "./Groups";

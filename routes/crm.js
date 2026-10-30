@@ -22841,7 +22841,7 @@ const orgPageSql = where => `SELECT o.id, o.name, o.org_slug, o.mission, o.cover
           o.form_upsell_monthly_cents,
           o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
           o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
-          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.stripe_connected,
+          o.legal_name, o.ein, o.receipt_address, o.stripe_account_id, o.stripe_connected, o.receipts_enabled,
           ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE ${where}`;
 async function orgPagePublicPayload(org, orgSlug, { draftForm = null } = {}) {

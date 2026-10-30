@@ -19,10 +19,12 @@
 //   inline  a number inside a sentence ("We are $800 ahead…")
 //   cell    a row's figure, right-aligned
 //   point   a point on a chart (an SVG circle), for the Board's line
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, lazy, Suspense } from "react";
 import { T, fmtFull, fmtTotal } from "./shared";
 import { apiFetch } from "../api";
-import MetricBreakdownPanel from "./MetricBreakdownPanel";
+import { retryImport } from "../lib/lazyRetry";
+// SWEEP-6 (PERF-1): the rows behind a figure load when it is opened.
+const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
 
 // The screen that draws figures says how a person row opens that person, once.
 export const FigureContext = createContext({ openPerson: null });
@@ -81,8 +83,8 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   const onKey = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } };
   const aria = `${label || "Figure"}. ${definition || ""} Opens the rows behind it.`.trim();
   const panel = open && (
-    <MetricBreakdownPanel open onClose={() => setOpen(false)} title={label} explanation={definition}
-      source={source} figure={{ value, kind, blank }} onSelectDonor={openPerson ? row => { setOpen(false); openPerson(row.donorId); } : undefined} />
+    <Suspense fallback={null}><MetricBreakdownPanel open onClose={() => setOpen(false)} title={label} explanation={definition}
+      source={source} figure={{ value, kind, blank }} onSelectDonor={openPerson ? row => { setOpen(false); openPerson(row.donorId); } : undefined} /></Suspense>
   );
 
   if (variant === "point") {
