@@ -15,6 +15,12 @@
 //   §2 a lock held by a live pid that is not ours is never removed: not by a
 //      waiter, not by lock_release
 //   §3 a lock with no pid yet (between mkdir and the pid write) is not stale
+//   §4 FIX-60 item 6, the battery's other shared thing: client/dist. A dist
+//      built before a merge, a rebase or an uncommitted client edit is STALE
+//      (scripts/dist-fresh.js, run against a throwaway git repo and a fake
+//      dist), and run-all.sh and the pre-push hook rebuild through it instead
+//      of reusing whatever dist is built against the same port. Red on main:
+//      the checker did not exist and run-all.sh's only test was that grep.
 //
 // Red on main's logic (the lock code moved into tests/lib verbatim): §1 saw two
 // holders at once. Run: node tests/battery-lock.test.js
@@ -82,6 +88,82 @@ const done = p => new Promise(r => { let out = ""; p.stdout.on("data", d => out 
     await new Promise(r => setTimeout(r, 1500));
     ok("§3 once its pid is written, the lock stays its owner's", fs.existsSync(marker));
     waiter.kill("SIGTERM");
+  }
+
+  // ── §4 a client/dist from before a merge is stale (FIX-60 item 6) ─────
+  {
+    const root = path.join(__dirname, "..");
+    const CHECK = path.join(root, "scripts", "dist-fresh.js");
+    const repo = path.join(tmp, "s4-repo"), dist = path.join(tmp, "s4-dist");
+    const g = (...a) => execFileSync("git", a, { cwd: repo, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+    const put = (f, body) => { fs.mkdirSync(path.dirname(path.join(repo, f)), { recursive: true }); fs.writeFileSync(path.join(repo, f), body); };
+    const run = (...a) => {
+      try { return { code: 0, out: execFileSync("node", [CHECK, "--repo", repo, "--dist", dist, ...a], { stdio: ["ignore", "pipe", "pipe"] }).toString() }; }
+      catch (e) { return { code: e.status, out: String(e.stdout || "") + String(e.stderr || "") }; }
+    };
+    const fakeDist = (sha, api = "http://localhost:6110") => {
+      fs.rmSync(dist, { recursive: true, force: true });
+      fs.mkdirSync(path.join(dist, "assets"), { recursive: true });
+      fs.writeFileSync(path.join(dist, "index.html"), `<html><head><meta name="build-sha" content="${sha}"></head></html>`);
+      fs.writeFileSync(path.join(dist, "assets", "index-abc.js"), `const API="${api}";`);
+    };
+    const haveChecker = fs.existsSync(CHECK);
+    ok("§4 scripts/dist-fresh.js exists (the one freshness check)", haveChecker);
+    if (haveChecker) {
+      fs.mkdirSync(repo);
+      g("init", "-q"); g("config", "user.email", "t@example.org"); g("config", "user.name", "t");
+      put("client/src/a.js", "export const a = 1;\n"); put("shared/b.js", "module.exports = 2;\n"); put("tests/t.test.js", "// not a client input\n");
+      g("add", "-A"); g("commit", "-qm", "one");
+      const old = g("rev-parse", "HEAD");
+      put("client/src/a.js", "export const a = 2;\n"); g("commit", "-qam", "two (the merge)");
+      const head = g("rev-parse", "HEAD");
+      const api = ["--api", "http://localhost:6110"];
+
+      let r;
+      fs.rmSync(dist, { recursive: true, force: true });
+      r = run(...api); ok("§4 no dist at all is stale", r.code === 1 && /stale: no client build/.test(r.out), r.out);
+      fakeDist(old);
+      r = run(...api); ok("§4 a dist stamped with the commit before the merge is stale, though it is built against the same port", r.code === 1 && /stale: built from/.test(r.out), r.out);
+      fakeDist(head);
+      r = run(...api); ok("§4 a dist stamped with HEAD on a clean tree is fresh", r.code === 0 && /fresh:/.test(r.out), r.out);
+      r = run("--api", "http://localhost:6120"); ok("§4 a dist built against another API port is stale", r.code === 1 && /another API/.test(r.out), r.out);
+      put("tests/t.test.js", "// edited\n");
+      r = run(...api); ok("§4 an uncommitted edit outside the client's inputs leaves it fresh", r.code === 0, r.out);
+      put("client/src/a.js", "export const a = 3;\n");
+      r = run(...api); ok("§4 an uncommitted client edit makes a dist built at HEAD stale", r.code === 1 && /uncommitted/.test(r.out), r.out);
+
+      // The stamp build-local-dist.sh writes: the fingerprint taken before the build.
+      const fp = execFileSync("node", [CHECK, "--repo", repo, "--fingerprint"]).toString().trim();
+      ok("§4 the fingerprint is HEAD plus a hash of the uncommitted edit", fp.startsWith(head + "+") && fp.length > 41, fp);
+      execFileSync("node", [CHECK, "--repo", repo, "--dist", dist, "--stamp", fp, ...api]);
+      r = run(...api); ok("§4 a dist stamped with the fingerprint of these very edits is fresh", r.code === 0, r.out);
+      put("client/src/a.js", "export const a = 4;\n");
+      r = run(...api); ok("§4 another edit after that build makes it stale again", r.code === 1 && /uncommitted/.test(r.out), r.out);
+      put("shared/new.js", "module.exports = 5;\n");
+      g("checkout", "-q", "--", "client/src/a.js");
+      r = run(...api); ok("§4 a new untracked file in shared/ makes it stale", r.code === 1, r.out);
+      fs.rmSync(path.join(repo, "shared", "new.js"));
+      r = run(...api); ok("§4 a stamped dist whose edits were reverted is stale (it holds code that is gone)", r.code === 1, r.out);
+      execFileSync("node", [CHECK, "--repo", repo, "--dist", dist, "--stamp", head, ...api]);
+      r = run(...api); ok("§4 a clean stamp at HEAD on a clean tree is fresh", r.code === 0, r.out);
+      put("client/src/a.js", "export const a = 9;\n"); g("commit", "-qam", "three");
+      r = run(...api); ok("§4 a commit after the build makes the stamped dist stale", r.code === 1 && /stale: built from/.test(r.out), r.out);
+
+      // --rebuild never builds anything but the repo's own client/dist, and
+      // --if-present leaves a dist that is not ours alone.
+      r = run("--rebuild", ...api); ok("§4 --rebuild refuses a dist path it would not build into", r.code === 2, r.out);
+      fs.rmSync(dist, { recursive: true, force: true });
+      r = run("--rebuild", "--if-present", ...api); ok("§4 --rebuild --if-present leaves a missing dist alone", r.code === 0 && /left alone/.test(r.out), r.out);
+    }
+
+    // The two callers ask it, and the port-only reuse is gone.
+    const runAll = fs.readFileSync(path.join(root, "tests", "run-all.sh"), "utf8");
+    const prePush = fs.readFileSync(path.join(root, ".githooks", "pre-push"), "utf8");
+    const bld = fs.readFileSync(path.join(root, "scripts", "build-local-dist.sh"), "utf8");
+    ok("§4 run-all.sh rebuilds the browser shard's dist through dist-fresh.js", /node scripts\/dist-fresh\.js --rebuild --api "http:\/\/localhost:\$bapi"/.test(runAll));
+    ok("§4 run-all.sh no longer reuses any dist built against the same port", !/grep -rqs "localhost:\$bapi" client\/dist/.test(runAll));
+    ok("§4 the pre-push hook checks the dist before running suites on a live server", /node scripts\/dist-fresh\.js --rebuild --if-present --api "\$hbase"/.test(prePush));
+    ok("§4 build-local-dist.sh stamps the fingerprint it took before the build", /FP="\$\(node \.\.\/scripts\/dist-fresh\.js --fingerprint/.test(bld) && /--stamp "\$FP"/.test(bld) && bld.indexOf("--fingerprint") < bld.indexOf("npm run build"));
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });
