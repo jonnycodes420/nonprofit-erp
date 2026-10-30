@@ -4,9 +4,14 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ## Rules
 
-- **Every pledge has its installments (SWEEP-4).** `writePledgeInstallments` is the one schedule writer;
-  with no schedule and no cadence it writes one installment of the whole pledge on its due date. A schedule
-  that does not sum is refused before the pledge is written, never swallowed after.
+- **Every pledge has its installments (SWEEP-4, FIX-60).** A pledge is written only by `writePledges` /
+  `writePledge` (`pledgeWrite.js`), with its installments, from every door: the profile (and API), file import,
+  history import (`import-semantics`), To confirm, proposals, grants, event sponsorships and recordGift's
+  expected match. Add no new `INSERT INTO pledges`. With no schedule and no cadence it is one installment of the
+  whole pledge on its due date; a schedule that does not sum is refused before the pledge is written. Payments
+  linked as it is written become paid installments oldest first, each exactly its gift's amount (a shell's
+  remainder is undated). `writePledgeInstallments` only rewrites the schedule of a pledge that exists. A history
+  import's pledges carry its run id, so Undo import removes them and their installments.
 - **SECURE-1 (2026-10-28): who may delete money.** A gift, pledge or grant is deleted by the
   person who entered it (`created_by`) or by an admin (`mayEditLogged`), never by another staff
   member. An imported gift (a `system:` actor) is an admin's to delete.

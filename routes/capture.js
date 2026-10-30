@@ -9,6 +9,7 @@ const routers = { r0: express.Router() };
 function mount(ctx) {
 const { query, run, wrap, requireAuth, checkWriteAccess, actor, recordGift, openGiftThread, openThreadTx,
   withTransaction, orgTz, orgToday, giftHooks, checkGiftExtras } = ctx;
+const PW = require("../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 const app = routers.r0;
 
 async function whoOf(req) {
@@ -272,27 +273,25 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
 
     let giftId = null, pledgeId = null, duplicateOf = null, sentence = "", later = null;
     if (kind === "pledge") {
-      pledgeId = "pl_" + ctx.uuid().slice(0, 8);
       const due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate || "")) ? b.startDate : date;
-      await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,idempotency_key,created_by,created_by_name)
-                 VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
-        [pledgeId, orgId, donorId, cents / 100, due, "From a pledge form in To confirm.", "capture:" + c.id, who.id, who.name]);
       const freq = String(b.frequency || "").toLowerCase();
       const count = Math.max(0, Math.round(Number(b.installments) || 0));
-      // SWEEP-4: one payment is one installment; every pledge has its installments
-      if (giftHooks.writePledgeInstallments) {
-        await giftHooks.writePledgeInstallments(orgId, pledgeId, count > 1 && freq ? { amountCents: cents, frequency: freq, count, firstDue: due } : { amountCents: cents, firstDue: due });
-      }
+      // FIX-60: the one pledge writer, with its installments (SWEEP-4: one
+      // payment is one installment; every pledge has its installments)
+      const w = await PW.writePledge({ orgId, donorId, amountCents: cents, dueDate: due, notes: "From a pledge form in To confirm.",
+        idempotencyKey: "capture:" + c.id, createdBy: who.id, createdByName: who.name,
+        plan: count > 1 && freq ? { frequency: freq, count, firstDue: due } : { firstDue: due } }, { door: "capture" });
+      pledgeId = w.created ? w.id : ((await query("SELECT id FROM pledges WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]))[0] || {}).id || w.id;
       sentence = `Logged a ${K.cents$(cents)} pledge${count > 1 ? ` in ${count} ${freq} payments` : ""}. No money is recorded until a payment arrives.`;
     } else if (kind === "matching_gift") {
       const matches = b.matchesGiftId ? String(b.matchesGiftId) : null;
       const [g] = matches ? await query("SELECT id FROM gifts WHERE id=? AND org_id=?", [matches, orgId]) : [];
       if (!g) { await release(); return res.status(400).json({ error: "which_gift", sentence: "Which gift does this match? Choose it, then confirm." }); }
-      pledgeId = "pl_" + ctx.uuid().slice(0, 8);
-      await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,idempotency_key,is_match,matches_gift_id,created_by,created_by_name)
-                 VALUES (?,?,?,?,?,?,?,true,?,?,?) ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
-        [pledgeId, orgId, donorId, cents / 100, date, "From a matching-gift letter in To confirm.", "capture:" + c.id, g.id, who.id, who.name]);
-      if (giftHooks.writePledgeInstallments) await giftHooks.writePledgeInstallments(orgId, pledgeId, { amountCents: cents, firstDue: date });
+      // FIX-60: the one pledge writer, one installment of the whole match
+      const w = await PW.writePledge({ orgId, donorId, amountCents: cents, dueDate: date, notes: "From a matching-gift letter in To confirm.",
+        idempotencyKey: "capture:" + c.id, isMatch: true, matchesGiftId: g.id, createdBy: who.id, createdByName: who.name,
+        plan: { firstDue: date } }, { door: "capture" });
+      pledgeId = w.created ? w.id : ((await query("SELECT id FROM pledges WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]))[0] || {}).id || w.id;
       sentence = `Logged a ${K.cents$(cents)} matching gift as a promise from the employer, linked to the gift it matches.`;
     } else {
       // The same check read from QuickBooks first is the same gift: attach the

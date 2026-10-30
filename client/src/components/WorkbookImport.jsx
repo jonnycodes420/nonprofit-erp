@@ -355,6 +355,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         })});
         setProgressText("Routing pledges, merges and the import record…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
+          importId: runId,   // FIX-60: Undo import takes these pledges with the gifts
           pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
           // BUILD-83 FIX — send the fold in the shape the persist path stores:
           // surviving + an ARRAY of folded identities with their source ids and

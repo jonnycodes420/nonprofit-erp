@@ -32,7 +32,7 @@ const ACTOR = { id: "system:after-change", name: "Steward (after a change)" };
 const DOORS = [
   "gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "old_reports_import",
   "giving_source_read", "qbo_read", "event_checkin", "volunteer_hours", "logged_touch", "mail_calendar_sync",
-  "capture",
+  "capture", "pledge",
 ];
 
 // The doors that write gifts: after any of them, an old report's check may move.
