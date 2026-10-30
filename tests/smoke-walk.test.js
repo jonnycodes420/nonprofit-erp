@@ -576,9 +576,16 @@ async function everyPageScrolls(pw, auth) {
           await page.evaluate(() => window.scrollTo(0, 0));
           const x = w < 500 ? Math.round(w / 2) : Math.round(240 + (w - 240) * 0.35);
           await page.mouse.move(x, Math.round(h * 0.55));
-          await page.mouse.wheel(0, 500);
-          await page.waitForTimeout(350);
-          ok(`${tag} — the wheel over the main column moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          // Headless WebKit on Linux (CI) does not scroll for an emulated wheel on
+          // ANY page, Home included (PR #277's first run: every WebKit wheel leg
+          // red, every WebKit Page Down leg green). There the keys below carry
+          // WebKit; the wheel is checked in Chromium everywhere and in WebKit on a Mac.
+          if (engine === "webkit" && process.platform === "linux") console.log(`  SKIP  ${tag} — the wheel (headless WebKit on Linux does not emulate it); Page Down below`);
+          else {
+            await page.mouse.wheel(0, 500);
+            await page.waitForTimeout(350);
+            ok(`${tag} — the wheel over the main column moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          }
           await page.evaluate(() => { window.scrollTo(0, 0); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
           await page.mouse.click(x, 4 + (w < 500 ? 60 : 56)).catch(() => {});   // a click on blank page ground, so the keys go to the page
           await page.evaluate(() => { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); });
