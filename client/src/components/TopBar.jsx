@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
 import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
-import { CHANGELOG, LAST_SEEN_KEY } from "../lib/changelog";
 import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
@@ -10,6 +9,8 @@ import { openRecentChanges } from "./RecentChanges";
 import { AtlasBell } from "./AtlasNote";   // AGENT-5
 import { MailStatusChip } from "./MailTypes";   // SEND-GATE-2
 import { orgsSeenCount } from "../lib/orgBinding"; // HARDEN-1
+
+const LAST_SEEN_KEY = "npe_whats_new_seen";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -346,7 +347,13 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   const [wnHidden,setWnHidden] = useState(null);
   const [wnSeen,setWnSeen] = useState(()=>{ try { return localStorage.getItem(LAST_SEEN_KEY)||""; } catch { return ""; } });
   useEffect(()=>{ apiFetch("/changelog/hidden").then(d=>setWnHidden(new Set(d.hidden||[]))).catch(()=>setWnHidden(new Set())); },[]);
-  const wnEntries = CHANGELOG.filter(e=>!wnHidden||!wnHidden.has(e.id));
+  // SWEEP-6 (PERF-1): the entries are every docs/changelog file, so they load
+  // once the page has drawn, not before Home's first look.
+  const [changelog,setChangelog] = useState([]);
+  const loadChangelog = () => { import("../lib/changelog").then(m=>setChangelog(m.CHANGELOG)).catch(()=>{}); };
+  useEffect(()=>{ const t=setTimeout(()=>{ if(window.requestIdleCallback) window.requestIdleCallback(loadChangelog,{timeout:4000}); else loadChangelog(); },4000); return ()=>clearTimeout(t); },[]);
+  useEffect(()=>{ if(meOpen&&!changelog.length) loadChangelog(); },[meOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const wnEntries = changelog.filter(e=>!wnHidden||!wnHidden.has(e.id));
   const wnUnseen = !!wnEntries[0] && wnEntries[0].id !== wnSeen && wnHidden!==null;
   const openWn = () => { setWnOpen(true); const id=wnEntries[0]?.id||""; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
   const meRef = useRef(null);

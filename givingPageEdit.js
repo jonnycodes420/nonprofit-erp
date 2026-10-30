@@ -33,7 +33,7 @@ const TEMPLATES = {
     title: "Close the year with us",
     story: "This year you helped make real things happen. A gift before December 31 carries that work into the new year, and it counts toward this year's taxes.\n\nThank you for being part of it.",
     form: { amountsCents: [5000, 10000, 25000, 50000], defaultFrequency: "once",
-            thankYou: { message: "Thank you for closing the year with us. Your receipt is on its way to your inbox.", redirectUrl: "" } },
+            thankYou: { message: "Thank you for closing the year with us.", redirectUrl: "" } },
   },
   event: {
     label: "An event",

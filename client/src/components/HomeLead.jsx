@@ -8,7 +8,7 @@ import { apiFetch } from "../api";
 import { useStewardTold, told } from "../lib/stewardTold";
 import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
-import { openTellSteward } from "./TellSteward";
+import { openTellSteward } from "./TellStewardOpen";
 import { atlasName, linkTarget } from "../lib/atlas";   // AGENT-5
 import { beforeLines } from "./BeforeYourMeeting";   // VOICE-3: the one list of what to know before a meeting
 

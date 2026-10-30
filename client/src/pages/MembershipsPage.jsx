@@ -79,7 +79,7 @@ function LevelCard({ l, th, card, orgSlug, prefill, mine, isMember }) {
 
   const inp = { width: "100%", minWidth: 0, boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10,
                 padding: "11px 12px", fontSize: 15, color: T.ink, background: T.pureWhite, fontFamily: th.sans };
-  const btn = { background: th.button, color: th.buttonFg, border: "none", borderRadius: 10, padding: "12px 16px",
+  const btn = { background: th.button, color: th.buttonFg, border: "none", borderRadius: 10, padding: "12px 16px", minHeight: 44,
                 fontSize: 15, fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: th.sans, width: "100%" };
   return (
     <div data-testid="membership-card" data-level={l.id}
@@ -177,7 +177,7 @@ export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, s
             <div style={{ width: 46, height: 46, background: th.primary, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
               <span style={{ fontFamily: th.serif, fontSize: 24, fontWeight: 700, color: th.primaryFg, lineHeight: 1 }}>{monogram}</span>
             </div>)}
-          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{data.orgName}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>{data.orgName}</div>
           <h1 style={{ margin: 0, fontSize: 28, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.01em" }}>Become a member</h1>
           <p style={{ margin: "8px auto 0", maxWidth: 520, fontSize: 15, color: T.ink2, lineHeight: 1.6 }}>
             Choose a level. Membership is paid like a gift, and your receipt says how much of it is tax-deductible.
