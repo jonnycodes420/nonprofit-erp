@@ -125,7 +125,9 @@ const app = routers.r0;
 // FIX-30 · A ONE-PERSON EMAIL'S FIELDS are the brand kit's (COMMS-2): its
 // gift, its year, its tax lines. The fallback is the bracketed name the
 // draft path prints when a person has nothing on file.
-const personFieldDefs = () => BK.MERGE_FIELDS.map(f => ({ key: f.key, label: f.label, sample: f.sample, fallback: `[${f.key.replace(/_/g, " ")}]` }));
+// SWEEP-3: the org's own address is never "[org address]" (FIX-57's rule for
+// letters, now the email editor's too): left out, and the preview says where to add it.
+const personFieldDefs = () => BK.MERGE_FIELDS.map(f => ({ key: f.key, label: f.label, sample: f.sample, fallback: f.key === "org_address" ? "" : `[${f.key.replace(/_/g, " ")}]` }));
 const shape = r => {
   const personKind = LIB.personKindOf(r.starter_key);
   return {
@@ -442,8 +444,8 @@ for (const [path, archived] of [["archive", true], ["restore", false]]) {
 }
 
 // ── PREVIEW ────────────────────────────────────────────────────────────────
-// The email as it will look, with the org's brand read now and the signed-in
-// person as the sample donor. The footer slot gets the real MAIL-1 footer for
+// The email as it will look, with the org's brand read now and one of her donors
+// as the sample (SWEEP-3; the signed-in person only when asked). The footer slot gets the real MAIL-1 footer for
 // the person's own address (it reads; it writes nothing). Dark forces the
 // dark block on, so the person can see it without changing their own settings.
 // EDITOR-1: `as` is a real person of this org to preview as ("Preview as
@@ -457,6 +459,11 @@ async function previewHtml(req, row, { as = null, editable = false } = {}) {
   const personKind = LIB.personKindOf(row.starter_key);
   let fields = personKind ? { ...(await sampleFields(orgId, person, ectx)), ...(await personSample(orgId, person)) } : await sampleFields(orgId, person, ectx);
   let shownAs = null;
+  // SWEEP-3: with nobody chosen the preview is one of her donors (the newest
+  // giver), never the signed-in staff member ("Dear Allie"). "me" is the
+  // explicit Preview as yourself; an org with no donor yet previews as her.
+  if (!as) as = await defaultPreviewDonorId(orgId);
+  if (as === "me") as = null;
   if (as) {
     const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(as), orgId]);
     if (d) {
@@ -473,8 +480,19 @@ async function previewHtml(req, row, { as = null, editable = false } = {}) {
   const footer = await unsubscribeEmailFooterHtml((shownAs && shownAs.email) || person.email || "you@example.org", orgId, "campaign");
   const html = r.html.replace(EB.FOOTER_SLOT, footer);
   const lint = EB.lintEmailHtml(r.html);
-  return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p))], person, fields, ectx, shownAs,
+  const noAddress = personKind && !String(fields.org_address || "").trim() && /\{\{\s*org_address\s*\}\}/.test(JSON.stringify(row.blocks || []))
+    ? ["Your mailing address is not on file yet, so it is left out here. Add it in Settings, Tax Receipts, and it prints under the signature."] : [];
+  return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p)), ...noAddress], person, fields, ectx, shownAs,
     subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null) };
+}
+// The donor a preview shows when nobody is chosen: the newest giver, else any donor.
+async function defaultPreviewDonorId(orgId) {
+  const [d] = await query(`SELECT d.id FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+                            WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.name,'') <> ''
+                            ORDER BY g.date DESC NULLS LAST, g.id LIMIT 1`, [orgId]).catch(() => []);
+  if (d) return d.id;
+  const [any] = await query(`SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(name,'') <> '' ORDER BY created_at, id LIMIT 1`, [orgId]).catch(() => []);
+  return any ? any.id : null;
 }
 // One donor's own fields for an email: first name, the greeting, their last gift.
 async function donorFields(orgId, d, ectx) {
@@ -553,7 +571,7 @@ app.post("/email-templates/:id/test", requireAuth, checkWriteAccess, wrap(async 
   if (!to) return res.status(400).json({ error: "No address to send the test to." });
   if (to.toLowerCase() !== String(person.email || "").toLowerCase()) return res.status(403).json({ error: "test_to_self",
     message: "A test goes to you. Sending to somebody else is a send, and it belongs on a campaign." });
-  const p = await previewHtml(req, row);
+  const p = await previewHtml(req, row, { as: "me" });   // a test is to her, as her
   const gate = await orgMaySendEmail(orgId, mailPolicy.categoryOf("campaign_test"), "campaign_test");
   if (!gate.send) {
     const demo = await demoMailNote(orgId, { what: "this test", to });
