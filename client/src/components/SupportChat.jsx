@@ -19,7 +19,7 @@ import { useState, useRef, useEffect } from "react";
 const C = { ink: "#0f1a12", ink3: "#5a554f", white: "#ffffff", cream: "#f0ede6", line: "#d4cfc6", green: "#0d5c3a", brass: "#c9a84c" };
 const btn = { background: C.white, border: "1px solid " + C.line, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, color: C.ink, cursor: "pointer", fontFamily: "inherit" };
 const primary = { ...btn, background: C.green, borderColor: C.green, color: C.white };
-const label = { fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: C.ink3, fontWeight: 700 };
+const label = { fontSize: 11, color: C.ink3, fontWeight: 700 };
 
 export function SupportChat({ visitor = false, screen = null, send, onOpenRoute, onOpenArticle, page = null }) {
   const [turns, setTurns] = useState([]);        // { role, text, reply? }

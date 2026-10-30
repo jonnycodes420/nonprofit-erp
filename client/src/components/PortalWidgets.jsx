@@ -103,7 +103,7 @@ export function WidgetView({ w, ctx }) {
           {(w.items || []).map((s, i) => (
             <div key={i}>
               <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--pt-serif, Georgia,serif)" }}>{s.value}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted }}>{s.label}</div>
             </div>
           ))}
         </div>

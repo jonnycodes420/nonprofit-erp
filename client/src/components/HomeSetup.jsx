@@ -62,7 +62,7 @@ export function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState, ba
   // HOME-4: the two Home cards draw their own heading and bar, then the steps (bare).
   const head = bare ? null : (<>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Set up Steward</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Set up Steward</div>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.ink2 }}>{doneCount} of {totalCount}</div>
         <div style={{ flex: 1 }} />
         {isAdmin && (

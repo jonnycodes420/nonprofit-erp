@@ -23,7 +23,7 @@ import { countLabel } from "../../../shared/countWords.js";
 
 // Shared styles, above every line that reads them (the TDZ rule).
 const inp = { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "9px 11px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "'DM Sans',sans-serif", width: "100%", boxSizing: "border-box" };
-const lbl = { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.04em" };
+const lbl = { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: T.ink3 };
 const outlineBtn = { background: T.white, border: `1px solid ${T.ink}`, borderRadius: 8, padding: "5px 12px", minHeight: 44, fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" };
 const textBtn = { background: "none", border: "none", padding: "5px 8px", minHeight: 44, minWidth: 44, fontSize: 12, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" };
 // FIX-34 · every tap target on a row is at least 44 by 44 CSS px (a phone thumb).

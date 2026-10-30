@@ -23,7 +23,7 @@ import { countLabel } from "../../../shared/countWords.js";
 const btnPrimary = { display: "inline-block", background: T.gold500, border: "none", borderRadius: 9, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none" };
 const btnSecondary = { ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "24px 28px", marginBottom: 18 };
-const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 };
+const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 6 };
 const inp = { width: "100%", boxSizing: "border-box", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit" };
 
 function EngagementCard() {
@@ -47,7 +47,7 @@ function EngagementCard() {
         {stats.map(([label, n]) => (
           <div key={label}>
             <div style={{ fontSize: 22, fontWeight: 700, color: T.ink }}>{n}</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{label}</div>
           </div>
         ))}
       </div>

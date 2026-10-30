@@ -11,7 +11,7 @@ import { errorMessage } from "../lib/domainError";
 import MediaPicker from "./MediaPicker";
 import { resolveAssetUrl } from "../lib/assetUrl";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6, display: "block" };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 6, display: "block" };
 const field = { width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13.5, fontFamily: "inherit", background: T.white, color: T.ink };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const quiet = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };

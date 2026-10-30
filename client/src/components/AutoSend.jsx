@@ -16,7 +16,7 @@ import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 
-const CAP = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const CAP = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: "1px solid " + (primary ? T.greenDk : T.bg3),
   borderRadius: 10, padding: "8px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", minHeight: 40, fontFamily: "inherit" });
 const said = (e, fallback) => (e && e.sentence) || errorMessage(e, fallback);

@@ -202,7 +202,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
 
   const needsYou = useMemo(() => (plan?.lines || []).filter(l => l.state === "needs_you"), [plan]);
   const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 11px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
-  const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5, display: "block" };
+  const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 5, display: "block" };
 
   if (done) {
     return (

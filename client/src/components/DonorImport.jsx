@@ -862,7 +862,7 @@ function ImportReadout({ readout }) {
   if (!readout || !readout.headline) return null;
   return (
     <div data-testid="import-readout" style={{textAlign:"left",border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,borderRadius:10,padding:"10px 14px",margin:"0 0 14px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
-      <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:2}}>What this told us</div>
+      <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:2}}>What this told us</div>
       {readout.headline}.{" "}
       <RecordLink to={tabHref("agent", { agentView: "changed" })} style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>See who, and what to do</RecordLink>
     </div>
@@ -2113,7 +2113,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   function ownerRoutingUI() {
     if (!isTeam) return null;
     const panel = { background:T.bg, borderRadius:10, padding:"12px 14px", marginBottom:12, border:`1px solid ${T.bg3}` };
-    const eyebrow = { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:T.ink3, marginBottom:6 };
+    const eyebrow = { fontSize:11, fontWeight:700, color:T.ink3, marginBottom:6 };
     if (effectiveOwnerCol && ownerMatches.length) {
       // Collapse the messy spellings onto the people they resolve to
       // ("Jonathan — 2,190 donors, from 4 spellings") — always overridable.
@@ -2226,7 +2226,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           <ImportReadout readout={result.readout}/>
           {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold700,marginBottom:4}}>What's missing before this counts as fully accounted for</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.gold700,marginBottom:4}}>What's missing before this counts as fully accounted for</div>
               {result.summaryHealth.missing.map((m,i)=><div key={i}>· {m}</div>)}
             </div>
           )}
@@ -2267,7 +2267,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               </div>
             );
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?T.gold700:T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?T.gold700:T.ink3,marginBottom:6}}>
                 {(result.summaryHealth&&!result.summaryHealth.greenEarned) ? "The arithmetic, read the gaps above before trusting it" : "Every row and every dollar accounted for"}
               </div>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
@@ -2407,7 +2407,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               the flag is SHOWN rather than silently overridden. */}
           {result.frequencyConflicts?.length > 0 && (
             <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>
                 Frequency flags the gifts contradict
               </div>
               {result.frequencyConflicts.slice(0,10).map((c,i)=>(
@@ -2421,7 +2421,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           {(result.mergeRows?.length > 0 || result.identity?.mergeReview?.length > 0) && (() => {
             const merges = result.mergeRows?.length ? result.mergeRows : (result.identity.mergeReview || []).map(m => ({ ...m, id: null }));
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>
                 Rows we merged into one donor, review these
               </div>
               {merges.slice(0,25).map((m,i)=>(
@@ -2470,7 +2470,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
             ].filter(([, v]) => v && v.rows > 0);
             if (!rows.length) return null;
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>
                 Rows that are not gifts, tracked on their own surfaces
               </div>
               {rows.map(([label, v, hint]) => (
@@ -2501,7 +2501,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               $2,500 rows is a question a human answers in one second. */}
           {result.largestGifts?.length > 0 && (
             <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>
                 The five largest gifts we imported, check these first
               </div>
               {result.largestGifts.map((g,i)=>(
@@ -2542,7 +2542,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
             }
             const shown = byDonor.slice(0, flaggedPage * 50);
             return <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.gold600,marginBottom:6}}>
                 We flagged these, {byDonor.length.toLocaleString()} {byDonor.length===1?"person":"people"} from the notes column, please confirm
               </div>
               {shown.map((f,i)=>(
@@ -2568,7 +2568,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               go out on a column's say-so. */}
           {result.exclusionConflicts?.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,color:T.gold600,marginBottom:6}}>
                 Columns that disagree, we kept the most restrictive
               </div>
               {result.exclusionConflicts.slice(0,20).map((c,i)=>(
@@ -2594,7 +2594,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               [c.refused, "refused"],
             ].filter(([n]) => n > 0);
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Every column accounted for</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Every column accounted for</div>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
                 <span>Columns in your file</span>
                 <span style={{fontVariantNumeric:"tabular-nums"}}>{CA.inFile}</span>
@@ -2638,7 +2638,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               rr.zeroAmountRows > 0 && `${countLabel(rr.zeroAmountRows, "zero-amount row")} not imported`,
             ].filter(Boolean) : [];
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Every column accounted for</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Every column accounted for</div>
               {sections.map(([label, c]) => c && <div key={label} style={{marginBottom:6}}>
                 <strong style={{color:T.ink}}>{label}:</strong>{" "}
                 <span style={{color:T.ink2}}>{c.mapped.map(m => `${m.header} → ${anyFieldLabel(m.field)}`).join(" · ") || "no columns mapped"}</span>
@@ -2772,7 +2772,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
         {/* ── Step 1a: Upload / Paste ── */}
         {!parsed && !xlsxSheets && !workbook && moveAsked && (<>
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Choose your spreadsheet, or drag it here"
               fileMeta={null}
@@ -2808,7 +2808,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           {/* Primary CTA — a Donors + Gift History workbook: import both, linked */}
           {workbookRoles?.isBoth && (
             <div style={{background:`linear-gradient(180deg, ${T.green100}, ${T.white})`,border:`1.5px solid ${T.green600}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.green600,marginBottom:4}}>Donors + gift history detected</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.green600,marginBottom:4}}>Donors + gift history detected</div>
               <div style={{fontSize:13.5,color:T.ink,lineHeight:1.5,marginBottom:10}}>
                 <strong>{workbookRoles.donorSheet.name}</strong> ({workbookRoles.donorSheet.rowCount.toLocaleString()} donors) and{" "}
                 <strong>{workbookRoles.giftSheet.name}</strong> ({workbookRoles.giftSheet.rowCount.toLocaleString()} gifts), we can link the gifts to their donors in one pass.
@@ -2821,7 +2821,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           )}
 
           {workbookRoles?.isBoth && (
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Or import one sheet at a time</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Or import one sheet at a time</div>
           )}
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
             {xlsxSheets.map((s,i) => (
@@ -2880,7 +2880,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           {/* Smart stage preview over the real linked history */}
           {Object.keys(bothStagePreview).length > 0 && (
             <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {Object.entries(bothStagePreview).map(([s,n]) => (
                   <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
@@ -2925,7 +2925,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               windows-1252 repair. */}
           {parseReport && (parseReport.chromeAbove?.length > 0 || parseReport.chromeRows?.length > 0 || parseReport.cp1252Lines?.length > 0) && (
             <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>This looks like a report export, here's what we set aside</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:4}}>This looks like a report export, here's what we set aside</div>
               {parseReport.chromeAbove?.length > 0 && (
                 <div>We skipped {countLabel(parseReport.chromeAbove.length, "line")} above your column headers (found on line {parseReport.headerLine?.line}):{" "}
                   {parseReport.chromeAbove.map(c => c.text ? `“${c.text}”` : "(blank)").join(", ")}.</div>
@@ -3236,7 +3236,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {effectiveShape === "wide" && yearCols.length > 0 && (
                 <div style={{marginTop:10,background:T.bg,borderRadius:10,padding:"10px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em"}}>Gift date per year column</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3}}>Gift date per year column</div>
                     <select value={yearConvention} onChange={e=>onConventionChange(e.target.value)}
                       style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:11,outline:"none"}}>
                       <option value="dec31">End of year (Dec 31)</option>
@@ -3300,7 +3300,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               is a promise about a screen they do not have. */}
           {isTeam && Object.keys(stagePreview).length>0 && (
             <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>{stageBasis.hasGivingData ? "Smart Stage Assignment Preview" : "Starting stage"}</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:6}}>{stageBasis.hasGivingData ? "Smart Stage Assignment Preview" : "Starting stage"}</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {Object.entries(stagePreview).map(([s,n])=>(
                   <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
@@ -3350,7 +3350,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               style={{textAlign:"left",marginBottom:12,...(loading?{pointerEvents:"none",opacity:0.55}:null)}}>
               {flagCols.length>0 && (
                 <div style={{background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:4}}>These columns set safety flags</div>
+                  <div style={{fontSize:10,fontWeight:800,color:T.gold600,marginBottom:4}}>These columns set safety flags</div>
                   {flagCols.map(c=>{
                     const discarded = cfDecisions[c.index]?.action==="discard";
                     return <div key={c.index} style={{marginBottom:6}}>
@@ -3368,7 +3368,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               )}
               {(existingCols.length>0||proposedCols.length>0) && (
                 <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                  <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>
                     Columns without a standard home{cfUndecided>0?`, ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
                   </div>
                   {existingCols.map(c=>{
@@ -4070,7 +4070,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
         {/* Upload */}
         {step === "upload" && !xlsxSheets && !workbook && (<>
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Choose your spreadsheet, or drag it here"
               fileMeta={null}
@@ -4139,7 +4139,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
           {/* Wide config */}
           {effectiveFormat === "wide" && (<>
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Year Date Convention</div>
+              <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Year Date Convention</div>
               <div style={{display:"flex",gap:8}}>
                 {[["dec31","Dec 31 (end of year)"],["first","Jan 1 (start of year)"]].map(([v,l])=>(
                   <button key={v} onClick={()=>onConventionChange(v)}
@@ -4153,7 +4153,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
               {[["Donor Name Column",wideDonorNameCol,setWideDonorNameCol],["Donor Email Column",wideDonorEmailCol,setWideDonorEmailCol]].map(([label,val,setter])=>(
                 <div key={label}>
-                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>{label}</div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>{label}</div>
                   <select value={val} onChange={e=>setter(e.target.value)} style={{...inp,cursor:"pointer"}}>
                     <option value="">Not in file</option>
                     {parsed.headers.filter(h=>!YEAR_HDR_PAT.test(h)).map(h=><option key={h} value={h}>{h}</option>)}
@@ -4162,7 +4162,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
               ))}
             </div>
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+              <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>
                 Gift Year Columns, {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
               </div>
               {yearCols.length===0&&(
@@ -4187,7 +4187,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
           {/* Transactional config */}
           {effectiveFormat === "transactional" && (
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Map Columns</div>
+              <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Map Columns</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {[
                   ["Donor Name","donorName","for matching"],
@@ -4200,7 +4200,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
                   ["Gift / Transaction ID","externalId","dedupes re-imports safely"],
                 ].map(([label,key,hint])=>(
                   <div key={key}>
-                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>
                       {label}{hint&&<span style={{fontSize:10,fontWeight:400,marginLeft:4,textTransform:"none",color:T.ink3}}>· {hint}</span>}
                     </div>
                     <select value={txMap[key]||""} onChange={e=>setTxMap(m=>({...m,[key]:e.target.value}))}
@@ -4263,7 +4263,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
           {stats.low > 0 && (
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.gold700,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.gold700}}>
                   {stats.lowPending} waiting for you to confirm
                 </div>
                 {stats.lowPending>0&&(
@@ -4375,7 +4375,7 @@ function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null
               anything is written. */}
           {stats.unmatched > 0 && (
             <div data-testid="gi-new-donors" style={{marginBottom:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.ink,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:5}}>
                 {wouldCreate.donors.length} {wouldCreate.donors.length===1?"person":"people"} in this file {wouldCreate.donors.length===1?"is":"are"} not on file yet
               </div>
               <div style={{fontSize:12,color:T.ink3,marginBottom:8,lineHeight:1.6,maxWidth:560}}>

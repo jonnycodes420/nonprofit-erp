@@ -76,7 +76,7 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
   }
 
   const fld = { width: "100%", padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 14, color: T.ink, background: T.white, boxSizing: "border-box" };
-  const lbl = { fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: T.ink3, display: "block", marginBottom: 5 };
+  const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, display: "block", marginBottom: 5 };
 
   return (
     <Modal onClose={onClose} width={480} backdrop="rgba(15,26,18,0.5)" blur={false} padding={22}

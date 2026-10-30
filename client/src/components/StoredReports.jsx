@@ -82,7 +82,7 @@ export default function StoredReports({ onNavigate }) {
           <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink }}>{g.year}</div>
           {g.kinds.map(k => (
             <div key={k.kind} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 800 }}>{k.kind}</div>
+              <div style={{ fontSize: 11, color: T.ink3, fontWeight: 800 }}>{k.kind}</div>
               {k.items.map(r => (
                 <div key={r.id} data-testid="stored-report" style={card}>
                   <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>

@@ -22,7 +22,7 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { countLabel } from "../../../shared/countWords.js";
 
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: "1px solid " + (primary ? T.greenDk : T.ink),
   borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: primary ? T.white : T.ink,
   cursor: "pointer", fontFamily: "inherit" });
@@ -67,7 +67,7 @@ function ago(ts) {
 export function SyncHealth({ h, calendar, onRetry, busy }) {
   const cell = (label, value, testid) => (
     <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+      <span style={{ fontSize: 11, color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{value}</span>
     </div>);
   return (
@@ -133,7 +133,7 @@ export function InboxNudge({ firstName, onNavigate }) {
 
 const MAIN = {
   serif: "'DM Serif Display',Georgia,serif",
-  label: { fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase" },
+  label: { fontSize: 12 },
   big: { display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", minHeight: 56, borderRadius: 12,
     font: "600 16px 'DM Sans',sans-serif", cursor: "pointer", textAlign: "left", width: "100%" },
 };
@@ -275,7 +275,7 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
           <div data-testid="inbox-first-sync" style={{ flex: "2 1 520px", minWidth: 0, background: T.ink, color: T.inkInverse, borderRadius: 20, padding: "36px 40px", display: "flex", flexDirection: "column", gap: 24 }} className="inbox-first-sync">
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0, fontFamily: MAIN.serif, fontWeight: 400, fontSize: 32 }}>You're connected{me?.name ? `, ${String(me.name).split(" ")[0]}` : ""}.</h3>
-              <span style={{ fontSize: 13, color: T.gold, letterSpacing: "0.08em", textTransform: "uppercase" }}>{syncedPhrase(mine[0]?.lastSyncedAt)}</span>
+              <span style={{ fontSize: 13, color: T.gold }}>{syncedPhrase(mine[0]?.lastSyncedAt)}</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
               {[[first.emails, "emails with people on file, last 2 years", "Emails logged from your inbox", "Every email with someone on file that your connected inbox logged in the last two years."],

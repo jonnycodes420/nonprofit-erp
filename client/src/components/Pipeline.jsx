@@ -47,12 +47,12 @@ function MoveModal({ card, onClose, onMoved }) {
       <div>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: T.ink }}>Move {card.name}</div>
         <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 16 }}>Currently in <strong style={{ color: T.ink }}>{STAGE_META.find(s => s.id === card.stage)?.label || card.stage}</strong>. Every move is logged with your name and note.</div>
-        <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>Move to stage</label>
+        <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Move to stage</label>
         <select value={toStage} onChange={e => setToStage(e.target.value)} style={{ ...inp, marginTop: 6, marginBottom: 14 }}>
           <option value="">Choose a stage…</option>
           {STAGE_META.filter(s => s.id !== card.stage).map(s => <option key={s.id} value={s.id}>{s.label}: {s.hint}</option>)}
         </select>
-        <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>What happened <span style={{ color: T.terracotta }}>*</span></label>
+        <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>What happened <span style={{ color: T.terracotta }}>*</span></label>
         <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="e.g. Coffee with the board chair, ready to talk about a leadership gift." style={{ ...inp, marginTop: 6, resize: "vertical" }} />
         {err && <div style={{ color: T.terracotta, fontSize: 13, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
@@ -396,7 +396,7 @@ function Stat({ label, value, sub, color, empty, def, testid }) {
   // a figure in display type under a label is a claim.
   return (
     <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>
+      <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>
         {label}
         {def && <span tabIndex={0} title={def} aria-label={def} data-testid={testid}
           style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: T.ink3, border: `1px solid ${T.bg3}`,

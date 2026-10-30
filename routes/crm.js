@@ -25015,7 +25015,9 @@ async function reportDeposits(orgId, p) {
       ({ key, label: f.label, confidence: f.confidence, note: f.note, headers: f.headers })),
     groups: built.groups.map(g => ({ ...g, gross: bkDollars(g.grossCents), feeAmount: bkDollars(g.feeCents), netAmount: bkDollars(g.netCents) })),
     nonCash: built.nonCash.map(r => ({ ...r, amount: bkDollars(r.cents) })),
-    depositCount: built.groups.length,
+    // FIX-60: a day of unmatched gifts is not a deposit
+    depositCount: built.groups.filter(g => g.matched).length,
+    undepositedDays: built.groups.filter(g => !g.matched).length,
     grossCents: built.grossCents, gross: bkDollars(built.grossCents),
     feeCents: built.feeCents, fee: bkDollars(built.feeCents),
     netCents: built.netCents, net: bkDollars(built.netCents),

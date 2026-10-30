@@ -22,7 +22,7 @@ const btnPrimary = { background: T.green, border: "none", borderRadius: 9, paddi
 const btnQuiet = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
 const btnLink = { background: "transparent", border: "none", padding: 0, color: T.green, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const card = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 14, padding: "16px 18px" };
-const eyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 const lbl = { display: "block", fontSize: 12, fontWeight: 700, color: T.ink3, margin: "10px 0 4px" };
 // The editor shows an uploaded image from the API; the stored page keeps the
 // path relative (the sanitizer makes it so), and the public page serves it.

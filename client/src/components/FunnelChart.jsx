@@ -91,7 +91,7 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: s.color }}>
                 {s.label}
               </span>
               <span style={{ fontSize: 11, color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
@@ -122,7 +122,7 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 5 }}>
-            <span style={{ fontWeight: 800, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.06em" }}>◉ Drifting, Still Reachable</span>
+            <span style={{ fontWeight: 800, color: T.gold600 }}>◉ Drifting, Still Reachable</span>
             <span style={{ color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
               {drift.count} · {drift.amount > 0 ? fmt(drift.amount) : "Not set"} at risk
               <Chevron color={T.gold600} show={hovered === "drift"} />
@@ -149,7 +149,7 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
           {/* Demoted whenever the drifting row leads (BUILD-76): lapsed is the
               after-the-window failure state — kept, below, smaller. */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: drift && drift.count > 0 ? 10 : 11, marginBottom: 5 }}>
-            <span style={{ fontWeight: 800, color: lapsedStage.color, textTransform: "uppercase", letterSpacing: "0.06em", opacity: drift && drift.count > 0 ? 0.75 : 1 }}>↘ Lapsed, Window Closed</span>
+            <span style={{ fontWeight: 800, color: lapsedStage.color, opacity: drift && drift.count > 0 ? 0.75 : 1 }}>↘ Lapsed, Window Closed</span>
             <span style={{ color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
               {baseLabel(lapsedStage)}
               <Chevron color={lapsedStage.color} show={hovered === "lapsed"} />

@@ -251,22 +251,32 @@ const nonCashRows = built => built.nonCash.map(r =>
   [r.date, r.donorName, r.type, r.description, amt(r.cents), r.fund]);
 
 // One sentence for the screen, the CSV's companion and anything printed later.
+// FIX-60: A DAY OF UNMATCHED GIFTS IS NOT A DEPOSIT. Gifts no payout or
+// deposit sheet holds are grouped by the day they were recorded so the file
+// still has a line to import, but nothing has been deposited, and month close
+// said "4 deposits, $26,777.61 gross". The matched groups are deposits; the
+// unmatched ones are days of gifts not yet on a deposit, and are said as such.
+const SMALL = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const countWords = (n, one, many) => `${n < 10 ? SMALL[n] : n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+
 function depositsSentence(built) {
   if (!built.groups.length && !built.nonCash.length) return "No money arrived in this month, so there is nothing to deposit.";
   const parts = [];
-  if (built.groups.length) {
-    parts.push(`${built.groups.length} ${built.groups.length === 1 ? "deposit" : "deposits"}, `
-      + `${fmtMoney(built.grossCents)} gross`
-      + (built.feeCents ? ` less ${fmtMoney(built.feeCents)} in fees` : "")
-      + `, ${fmtMoney(built.netCents)} to the bank.`);
+  const sum = (gs, k) => gs.reduce((s, g) => s + (Number(g[k]) || 0), 0);
+  const fees = gs => (sum(gs, "feeCents") ? ` less ${fmtMoney(sum(gs, "feeCents"))} in fees` : "");
+  const matched = built.groups.filter(g => g.matched), waiting = built.groups.filter(g => !g.matched);
+  if (matched.length) {
+    parts.push(`${cap(countWords(matched.length, "deposit", "deposits"))}, ${fmtMoney(sum(matched, "grossCents"))} gross`
+      + `${fees(matched)}, ${fmtMoney(sum(matched, "netCents"))} to the bank.`);
+  }
+  if (waiting.length) {
+    parts.push(`${cap(countWords(waiting.length, "day", "days"))} of gifts not yet on a deposit, ${fmtMoney(sum(waiting, "grossCents"))}${fees(waiting)}. `
+      + `Each day is one line in the file, by the day the gifts were recorded, until a payout or a deposit sheet matches them.`);
   }
   if (built.nonCash.length) {
-    parts.push(`${built.nonCash.length} non-cash ${built.nonCash.length === 1 ? "gift" : "gifts"} worth `
+    parts.push(`${cap(countWords(built.nonCash.length, "non-cash gift", "non-cash gifts"))} worth `
       + `${fmtMoney(built.nonCashCents)}, listed separately because they never reached a bank account.`);
-  }
-  if (built.unmatchedCents) {
-    parts.push(`${fmtMoney(built.unmatchedCents)} is not yet matched to a payout or a deposit sheet, `
-      + `so it is grouped by the day it was recorded.`);
   }
   return parts.join(" ");
 }

@@ -37,7 +37,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
   if (s.noHistory || Number(s.engagement) === 0) return (
     <div data-testid="dp-scores" data-no-history="true" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Engagement</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Engagement</span>
         <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{s.noHistory ? "Nothing logged yet" : "Nothing in 24 months"}</span>
       </div>
       <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginTop: 4 }}>
@@ -61,7 +61,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
   return (
     <div data-testid="dp-scores" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Engagement</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Engagement</span>
         <button type="button" data-testid="dp-score-engagement" onClick={() => setWhy(true)} title="See how this was worked out"
           style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "'DM Serif Display',serif", fontSize: 26, color: T.ink }}>
           {s.engagement}

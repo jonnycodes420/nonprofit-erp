@@ -6,17 +6,13 @@ one deletes its line.
 
 ## Events and pledges (SWEEP-4, 29 Oct 2026; walk in docs/sweeps/sweep-4/walk.md)
 
-- **P2 · The Events list's four numbers do not open.** They are `<Figure>`s with their sentences now, but there is no figure source across events (events this year, came this year, received at events, came of registered), so a click opens nothing. Suggested: EVENTS-3 adds `events-year-*` sources in `figureSources.js` and passes them.
 - **P3 · Two tile looks on After the event.** White figure tiles (Raised … Gave) above cream buttons (Invited … Sponsors) on one card; First-time givers and Sponsors open rows but are not `<Figure>`s with a source. Suggested: EVENTS-3.
 - **P3 · Check-in draws every guest on the event page.** 195 rows under the door search; the search is the door, the list could fold. Suggested: EVENTS-3.
 - **P3 · The open-pledge banner and the Next move repeat each other.** Both list the same installments on the profile. Suggested: the people sweep.
 
 ## Finance, Reports, Grants (SWEEP-5, 29 Oct 2026; walk in docs/sweeps/sweep-5/walk.md)
 
-- **P2 · ALL-CAPS labels outside Finance, Reports and Grants.** SWEEP-5 turned them to sentence case on its three screens with one rule (`.no-caps` in `GlobalStyles`); `SectionLabel`, `StartHere` and the inline eyebrows still set `text-transform: uppercase` on Home, Fundraising, Donors and the rest. Suggested: the sweep that owns each area adds `no-caps` to its root, or one build drops the uppercase from `SectionLabel` app-wide and retires the class. SWEEP-4 added it to Events, the pledge screens, Tickets & sponsors, Auctions, Peer-to-peer and Memberships.
-- **P3 · Month close calls day-groups deposits.** "4 deposits, $26,777.61 gross" when nothing has been deposited: the gift detail groups unmatched gifts by the day they were recorded and the sentence calls each group a deposit. Suggested: FIN-2, "4 days of gifts not yet on a deposit".
 - **P3 · Budgets' revenue variance reads backwards and in red.** Variance is budget − actual for both sections, so revenue ahead of a $0 budget reads "-$1,750" in red and revenue $39,250 short reads "+$39,250"; "over budget" and an over line are red, which is for a destructive confirm only (overdue is brass). Found by FIX-60's walk. Suggested: FIN-2.
 - **P3 · Budgets' projected year-end straight-lines a one-off.** One $1,200 expense in month 3 of a fiscal year projects to $3,600 "over budget". Found by FIX-60's walk. Suggested: FIN-2.
 - **P3 · Grants · Reports: "AWARDED, FY 2026–27" broke across two lines at 1440.** Sentence case shortened it and neither walk org had a grant to draw it after the fix. Suggested: the next Grants build looks with a grant on file.
-- **P3 · Figure "?" sits between a count and its noun** ("0 ? grants") on Grants · Reports and the Board. Suggested: the next Figure pass.
 - **P3 · Phone, Reports: the rail is a select.** Each report opens by its own URL on a phone and costs 0.6 to 1.7 s locally; not throttled to slow 4G in this walk. Suggested: PERF-3 measures Reports at 390 on slow 4G.

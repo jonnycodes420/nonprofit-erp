@@ -21,7 +21,7 @@ import { tabHref } from "../lib/appUrls";
 import { LogConversationModal } from "./LogConversation";
 import { errorMessage } from "../lib/domainError";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const CHIP = { background: T.white, color: T.greenDk, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
@@ -177,7 +177,7 @@ function ShowMeAnswer({ answer, isReadOnly }) {
         <div data-testid="show-me-words" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, marginTop: 2 }}>{(answer.words || []).join(" · ")}</div>
       </div>
       <div data-testid="show-me-count" style={{ fontSize: 17, lineHeight: 1.5, color: T.ink, fontFamily: "'Fraunces', Georgia, serif" }}>
-        {answer.count === 0 && answer.sentence ? answer.sentence : <><Figure value={answer.count} kind="count" label="People who match" definition={answer.countDefinition} source={answer.countSource} variant="inline" /> {answer.count === 1 ? "person matches" : "people match"}.</>}
+        {answer.count === 0 && answer.sentence ? answer.sentence : <><Figure value={answer.count} kind="count" label="People who match" definition={answer.countDefinition} source={answer.countSource} variant="inline" unit={answer.count === 1 ? "person matches" : "people match"} />.</>}
       </div>
       {rows.length > 0 && <div>
         {rows.map(r => (
@@ -257,11 +257,11 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{r.label}</div>
               <div style={{ fontSize: 12, color: T.ink3 }}>
-                <Figure value={r.count} kind="count" label={`${r.label}: ${r.unit || "people"}`} definition={r.definition} source={r.source} variant="inline" /> {r.unit || (r.count === 1 ? "person" : "people")}
+                <Figure value={r.count} kind="count" label={`${r.label}: ${r.unit || "people"}`} definition={r.definition} source={r.source} variant="inline" unit={r.unit || (r.count === 1 ? "person" : "people")} />
               </div>
             </div>
             {r.hours != null
-              ? <span style={{ fontSize: 14, color: T.ink }}><Figure value={r.hours} kind="count" label={`${r.label}: hours`} definition={r.definition} source={r.source} variant="inline" /> {r.hours === 1 ? "hour" : "hours"}</span>
+              ? <span style={{ fontSize: 14, color: T.ink }}><Figure value={r.hours} kind="count" label={`${r.label}: hours`} definition={r.definition} source={r.source} variant="inline" unit={r.hours === 1 ? "hour" : "hours"} /></span>
               : r.measure === "count"
               ? <span />
               : <Figure value={r.cents / 100} kind="money" label={r.label} definition={r.definition} source={r.source} variant="inline" />}

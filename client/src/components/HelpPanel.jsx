@@ -17,7 +17,7 @@ import { SupportChat } from "./SupportChat";
 export const ALL_ARTICLES = [...HELP_ARTICLES, ...HELP_DOCS];
 
 const box = { background: T.white, borderRadius: 14, padding: "14px 16px" };
-const label = { fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 };
+const label = { fontSize: 11, color: T.ink3, fontWeight: 700 };
 const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
 
 // The article written for exactly this screen wins over one that covers it

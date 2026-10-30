@@ -20,7 +20,7 @@ import { DocumentRow } from "./GrantDocuments";
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box" };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 36 };
 const primaryBtn = { background: T.greenDk, border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: T.white, cursor: "pointer", minHeight: 36 };
-const label = { fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 };
+const label = { fontSize: 10, fontWeight: 700, color: T.ink3 };
 
 export function FunderPanel({ donorId, isReadOnly, isTeam, onOpenGrant, onMerge }) {
   const [data, setData] = useState(null);

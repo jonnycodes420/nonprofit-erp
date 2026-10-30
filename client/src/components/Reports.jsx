@@ -93,8 +93,8 @@ const pctStr = v => v === null || v === undefined ? "None yet" : `${v}%`;
 // `figures` (the server computed it through the source that opens it), drawn
 // as a <Figure>: it opens its rows, foots, and has its "?". `fig` is the
 // figures entry; `kind` money | count | percent.
-const RF = ({ f, kind = "count", label, variant = "inline" }) => f
-  ? <Figure variant={variant} kind={kind} value={f.value} blank={f.blank} label={label} definition={f.definition} source={f.source} />
+const RF = ({ f, kind = "count", label, variant = "inline", unit }) => f
+  ? <Figure variant={variant} kind={kind} value={f.value} blank={f.blank} label={label} definition={f.definition} source={f.source} unit={unit} />
   : null;
 // A table cell that opens its rows when the row names a source.
 const cellFig = (kind, label, valueKey = "total") => r => r.source
@@ -233,7 +233,7 @@ function ReportsRail({ groups, active, activeLabel, onPick }) {
             aria-controls={`rail-group-${g.id}`} onClick={() => { if (!searching) toggle(g.id); }}
             style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", background: "transparent",
               border: "none", borderRadius: 8, padding: "6px 10px 6px 13px", margin: "0 0 2px", cursor: searching ? "default" : "pointer",
-              fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, textAlign: "left",
+              fontSize: 11, fontWeight: 800, color: T.ink3, textAlign: "left",
               fontFamily: "'DM Sans',sans-serif" }}>
             <span>{g.question}</span>
             <Chevron open={open} />
@@ -450,7 +450,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   </div>;
 
   const yearOptions = Array.from({ length: 6 }, (_, i) => (yearMode === "fiscal" ? CUR_FY : CUR_CY) - i);
-  const subhead = t => <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, margin: "22px 0 8px" }}>{t}</div>;
+  const subhead = t => <div style={{ fontSize: 12, fontWeight: 800, color: T.ink3, margin: "22px 0 8px" }}>{t}</div>;
 
   // ── Narrative + table per report ──────────────────────────────────────────
   let narrative = null, table = null, empty = false;
@@ -466,14 +466,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // HOME-3: every figure here counts gifts RECEIVED, and says so; what an
       // event raised (received + pledged) is its own line, below.
       narrative = <span data-testid="gs-narrative">You've received <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
-          label="Received this period" definition={RECEIVED_WORDS} source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> {plural(d.giftCount, "gift")}</strong> this period
+          label="Received this period" definition={RECEIVED_WORDS} source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" unit={plural(d.giftCount, "gift")} /></strong> this period
         {c && c.value > 0 && <>, {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year{c.imported ? " (from your old system)" : ""}</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
         {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
         {d.importedThisPeriod && <> Your old system's report said <Figure variant="inline" kind="money" value={d.importedThisPeriod.value} label="This period, from your old system" definition={d.importedThisPeriod.note} source={d.importedThisPeriod.source} /> for this period{d.importedThisPeriod.system ? ` (${d.importedThisPeriod.system})` : ""}, kept beside Steward's number.</>}
-        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> {plural(d.uniqueDonors, "donor")} gave: <RF f={d.figures?.newDonors} label="New donors" /> new and <RF f={d.figures?.returningDonors} label="Returning donors" /> returning; the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
+        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" unit={plural(d.uniqueDonors, "donor")} /></strong> gave: <RF f={d.figures?.newDonors} label="New donors" unit="new" /> and <RF f={d.figures?.returningDonors} label="Returning donors" unit="returning" />; the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {/* WIRE-1: the two cards that are the period's gifts open them. */}
@@ -486,7 +486,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             ["Online", <AmountAndCount total={d.figures?.onlineTotal} count={d.figures?.onlineCount} label="Online" />],
             ["Offline", <AmountAndCount total={d.figures?.offlineTotal} count={d.figures?.offlineCount} label="Offline" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{l}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
           </div>)}
         </div>
@@ -579,7 +579,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
           {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px", minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{y.label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</div>
             <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} {plural(y.donors, "donor")}</div>
             {/* REPORTS-5: what an old system's report said for this year,
@@ -611,7 +611,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up " : "a change of "}<RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> on <RF f={d.figures?.priorTotal} kind="money" label={`${d.priorLabel}, the same days`} /> in {d.priorLabel}</>}
         {d.span?.sentence && <span data-testid="annual-span"> ({running ? "the same days" : "the whole year"}, {d.span.sentence})</span>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
-        {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
+        {" "}<RF f={d.figures?.newDonors} label="New donors" unit="new" />, <RF f={d.figures?.returningDonors} label="Returning donors" unit="returning" />{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Total received", <RF f={d.figures?.total} kind="money" label="Total received" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
@@ -619,7 +619,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             [running ? `Against ${d.priorLabel}, same days` : `Against ${d.priorLabel}`, <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
             ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />], ["Donor retention", <RF f={d.figures?.retentionRate} kind="percent" label="Donor retention" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+            <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{l}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
           </div>)}
         </div>
@@ -666,7 +666,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Open asks", fmtFull(d.forecast.open)], ["Stage-weighted forecast", fmtFull(d.forecast.weighted)]].map(([l, v]) =>
             <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
-              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{l}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
             </div>)}
         </div>
@@ -710,7 +710,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           {[["Asks made", `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}`], ["Moves made", r.movesMade],
             ["Gifts closed", `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}`], ["Portfolio", `${r.portfolioCount} · ${fmtFull(r.portfolioValue)}`]].map(([l, v]) =>
             <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "12px 16px" }}>
-              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{l}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
             </div>)}
         </div>;
@@ -719,7 +719,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         empty = false;
         narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""}, <strong>{fmtFull(tt.giftTotal)}</strong> in {countLabel(tt.giftCount, "gift")}, {countLabel(tt.askCount, "ask")}, {countLabel(tt.moveCount, "move")}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{countLabel(tt.pastDueCount, "past-due task")}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
         const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18, minWidth: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>{title}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.ink3, marginBottom: 8 }}>{title}</div>
           {items.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>{e}</div>
             : <div style={{ border: `1px solid ${T.bg3}`, borderRadius: 10, overflow: "hidden" }}>{items.map((it, i) => <div key={i}
                 onClick={it.donorId ? () => openPerson(it.donorId) : undefined} className={it.donorId ? "rpt-row-click" : undefined}
@@ -740,7 +740,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const label = reportLabel(active, REPORT_DEFS, standard, saved, dashboards, savedDashboards);
   const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
-  return <FigureContext.Provider value={{ openPerson }}><div className="fade-in no-caps">
+  return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
     <style>{REPORTS_CSS}</style>
     <PageTitle main="Your" accent="Reports" />
 

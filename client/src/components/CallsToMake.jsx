@@ -136,7 +136,7 @@ export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson,
         )}
         {goal && (
           <div data-testid="home-annual-goal" style={{ marginTop: 18 }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>Annual goal</div>
+            <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>Annual goal</div>
             <GoalRow r={goal} first />
           </div>
         )}

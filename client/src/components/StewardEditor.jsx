@@ -40,7 +40,7 @@ const primaryBtn = disabled => ({ background: disabled ? T.green650 : T.gold, co
   fontSize: 13, fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: disabled ? 0.75 : 1 });
 
 // Shared bits every rail uses, so the three editors read alike.
-export const railLabel = { display: "block", fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
+export const railLabel = { display: "block", fontSize: 11, fontWeight: 700, color: T.ink3, margin: "10px 0 4px" };
 export const railInput = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + T.bg3, borderRadius: 8, fontFamily: "inherit", color: T.ink, background: T.white };
 export const railQuietBtn = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 export const railNote = { fontSize: 12, color: T.ink3, lineHeight: 1.5 };
