@@ -10,6 +10,11 @@ know exactly what is going out.** Every screen, word and test about donor mail s
 
 ## Rules
 
+- **A preview is one of her donors (SWEEP-3).** With nobody chosen, a template's preview, a card's subject and an
+  Automatic email sample are the org's newest giver (`defaultPreviewDonorId`, `sampleDonor`), with the org's own
+  name; "me" is Preview as yourself, and a test send is always to her, as her. A one-person email leaves out a
+  missing org address and says where to add it, never "[org address]". A campaign segment named Lapsed is the lapse
+  rule (`lapsedIds` from `donorStatus.quietIds`), the people Audience counts as Lapsing or lapsed.
 - **SECURE-2 (2026-10-29): a campaign says what it did.** "Sent to 412 of 500 · 88 not sent" with its
   reasons, "Sent to 500", or "Not sent", from `campaignDelivery.js`, read by every surface that names
   a sent campaign; the truth check (`mailCampaigns`) holds them together.

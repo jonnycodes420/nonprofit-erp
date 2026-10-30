@@ -145,7 +145,7 @@ export function MailTypesSettings({ onNavigate }) {
     catch { setPreview({ title: t.name, subject: "", html: "<p>The preview could not load.</p>" }); }
   };
   return (
-    <div data-testid="mail-types-page" style={{ maxWidth: 760 }}>
+    <div data-testid="mail-types-page" className="no-caps" style={{ maxWidth: 760 }}>
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>What Steward sends automatically</div>
         <div style={{ ...help, fontSize: 13, marginTop: 4 }}>
@@ -209,7 +209,7 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
   };
   const next = data.next || { groups: [] };
   return (
-    <div data-testid="going-out" style={{ maxWidth: 820 }}>
+    <div data-testid="going-out" className="no-caps" style={{ maxWidth: 820 }}>
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Going out</div>
         <div style={{ ...help, fontSize: 13, marginTop: 4 }}>
@@ -283,9 +283,16 @@ export function GoingOut({ onNavigate, isReadOnly, data: given, orgPath = "" }) 
             <span style={{ flex: "2 1 220px", color: T.ink2 }}>{h.what}</span>
             <span style={{ color: T.ink3, flex: "1 1 200px" }}>Not sent: {h.why} · {day(h.at)}
               {/* FIX-57: the one fix for a receipt with no address is a link away */}
-              {h.reason === "no_org_address" && <> · <a data-testid="held-add-address" href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your mailing address in Settings</a></>}</span>
+              {h.reason === "no_org_address" && <> · <a data-testid="held-add-address" href="/app/settings?section=brandkit" style={{ color: T.greenDk, fontWeight: 700 }}>Add your mailing address in Settings</a></>}
+              {/* SWEEP-3: every held row says what to do next, not only why. */}
+              {/* SWEEP-3: every held row says what to do next, not only why. While
+                  the organization's email is off a held one cannot be sent by
+                  hand either (the send route refuses it), so there is no Send. */}
+              {!next.mailOn ? <> · It can go once Steward turns email on with you</>
+                : (h.reason === "type_off" || h.reason === "not_chosen") ? <> · <a data-testid="held-choose" href="/app/settings?section=automatic" style={{ color: T.greenDk, fontWeight: 700 }}>Choose which emails go</a>, or send this one</>
+                : h.reason === "placeholder" ? <> · See it to find the blank</> : null}</span>
             <button type="button" style={linkBtn} onClick={() => show(h.typeName, `${orgPath}/going-out/held/${h.id}`)}>See it</button>
-            {!readOnly && <button type="button" style={linkBtn} data-testid="going-out-held-send" onClick={() => sendHeld(h)}>Send</button>}
+            {!readOnly && next.mailOn && <button type="button" style={linkBtn} data-testid="going-out-held-send" onClick={() => sendHeld(h)}>Send</button>}
           </div>
         ))}
       </div>
@@ -309,7 +316,7 @@ export function MailStatusChip({ onNavigate, narrow = false }) {
         borderRadius: 999, padding: narrow ? "3px 8px" : "4px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0, whiteSpace: "nowrap",
         color: on ? T.inkInverse : "rgba(240,237,230,0.6)", fontSize: 12, fontWeight: 600 }}>
       {(on || waiting) && <span aria-hidden style={{ width: 6, height: 6, borderRadius: 3, background: on ? T.green500 : T.gold500 }} />}
-      <span>{narrow ? (on ? status.short : waiting ? "Waiting" : "Email off") : status.chip}</span>
+      <span>{narrow ? (on ? status.short : waiting ? "Waiting" : "Auto email off") : status.chip}</span>
     </button>
   );
 }

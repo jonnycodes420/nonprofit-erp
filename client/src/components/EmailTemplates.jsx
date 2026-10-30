@@ -217,7 +217,12 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
       onOpen: (isReadOnly && !live.some(x => x.starterKey === "campaign_" + t.key)) || busy ? null : () => openBridged("campaign_" + t.key),
       openLabel: busy === "campaign_" + t.key ? "Opening…" : "Edit in editor" });
   }
+  // SWEEP-3: a designed starter with the same name as a card already listed
+  // ("Thank you" beside "Thank-you", two "Event invitation"s) is not offered twice.
+  const sameName = n => String(n || "").toLowerCase().replace(/[^a-z]/g, "");
+  const listed = new Set(cards.map(c => sameName(c.name)));
   for (const s of (data?.starters || [])) {
+    if (listed.has(sameName(s.name))) continue;
     cards.push({ id: "starter-" + s.starterKey, store: "designed", section: templateSection("designed", s.starterKey, `${s.name} ${s.purpose || ""}`),
       name: s.name, medium: "Email", how: s.purpose, editor: "email",
       review: "Not yet reviewed", reviewed: false,

@@ -217,7 +217,8 @@ async function fixture(org, slug, name, mission) {
     ok("§3 and the store every thank-you draft reads holds them too", !!mt && /We saved you a seat, \{\{first_name\}\}/.test(mt.body), mt && mt.body.slice(-120));
     await open(tid);
     const shown = await page.evaluate(s => document.querySelector(s).contentDocument.body.innerText, FRAME);
-    ok("§3 reopened, the preview shows them, the field filled", /We saved you a seat, Robin/.test(shown), shown.slice(0, 200));
+    // SWEEP-3: the preview is one of her donors (the newest giver, Maria), never the signed-in Robin.
+    ok("§3 reopened, the preview shows them, the field filled", /We saved you a seat, Maria/.test(shown) && !/Robin/.test(shown), shown.slice(0, 200));
     // The receipt: the tax block has no Remove handle.
     await open(rid);
     const handles = await page.evaluate(s => {

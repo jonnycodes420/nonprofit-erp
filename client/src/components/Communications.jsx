@@ -119,7 +119,7 @@ function CampaignBriefing({ campaign }) {
               </div>
               {progress?.donorCount > 0 && <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>{countLabel(progress.donorCount, "donor")} contributed</div>}
               {progress?.daysRemaining !== null && progress?.daysRemaining !== undefined && (
-                <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? T.terracotta : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
+                <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? T.gold700 : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
                   {progress.daysRemaining < 0 ? `Ended ${Math.abs(progress.daysRemaining)} days ago` : progress.daysRemaining === 0 ? "Ends today" : `${progress.daysRemaining} days remaining`}
                 </div>
               )}
@@ -153,7 +153,7 @@ const S = {
 const menuItem = { background: "transparent", border: "none", textAlign: "left", padding: "8px 12px", fontSize: 13, color: T.ink, cursor: "pointer", borderRadius: 6, fontFamily: "inherit" };
 
 // FIX-39 — a subject line as she reads it in a list: merge tags filled with
-// the same sample the preview uses ("Before the year ends, Margaret"), never braces.
+// one of her own donors, as the preview is (SWEEP-3), never braces.
 // It is rendered as text, never as HTML, so React escapes whatever it holds.
 const subjectPreview = subject => renderMergeFields(subject || "", {}, { text: true });
 
@@ -225,7 +225,7 @@ const SEG_MODES  = [
   { id: "staff_board", label: "Staff and board" },
   { id: "donors",      label: "Donors" },
   { id: "major",       label: "Major" },
-  { id: "lapsed",      label: "Lapsed" },
+  { id: "lapsed",      label: "Lapsing or lapsed" },
   { id: "byStage",     label: "By stage" },
   { id: "byTier",      label: "By tier" },
   { id: "manual",      label: "Manual" },
@@ -243,9 +243,11 @@ function segLabel(raw) {
     volunteers:  "Volunteers with an email",
     staff_board: "Staff and board with an email",
     donors:      "Donors with an email",
-    major:   "Major donors (>$10k)",
-    lapsed:  "Lapsed donors",
-    byStage: `Stages: ${(raw?.stages || []).join(", ") || "none"}`,
+    // SWEEP-3: Major is the giving level in Settings, never a fixed $10k; Lapsed
+    // is the lapse rule Audience uses; a stage is its name, not its key.
+    major:   "Major donors",
+    lapsed:  "Lapsing or lapsed donors",
+    byStage: `Stages: ${(raw?.stages || []).map(stageName).join(", ") || "none"}`,
     byTier:  `Tiers: ${(raw?.tiers || []).join(", ") || "none"}`,
     manual:  `${(raw?.donorIds || []).length} manually selected`,
     audience: raw?.audienceName ? `The group ${raw.audienceName}` : "One group",
@@ -282,7 +284,10 @@ function SegmentPicker({ seg, onChange, allDonors }) {
         {/* A CHOSEN SEGMENT IS A STATE, NOT AN ACTION. Filled emerald used to
             say "All Donors" louder than the send button said "Send to 3", and
             one thing on a screen may mean "this is the button". */}
-        {SEG_MODES.map(m => (
+        {/* SWEEP-3: "Donors" is the same people as "All donors" (the server
+            resolves both to every donor), so it is offered only to a campaign
+            that already uses it. */}
+        {SEG_MODES.filter(m => m.id !== "donors" || mode === "donors").map(m => (
           <button key={m.id} onClick={() => upd({ mode: m.id })}
             aria-pressed={mode === m.id}
             style={{
@@ -300,7 +305,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
           {STAGE_OPTS.map(s => (
             <button key={s} onClick={() => tog("stages", s)}
               style={{ background: (seg.stages || []).includes(s) ? T.green100 : T.bg2, border: "1px solid " + ((seg.stages || []).includes(s) ? T.greenDk : T.bg3), borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? T.greenDk : T.ink3, cursor: "pointer" }}>
-              {s}
+              {stageName(s)}
             </button>
           ))}
         </div>
@@ -816,7 +821,7 @@ function SequencesPanel({ data }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => { setView("list"); setEditing(null); }} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.ink }}>{editing ? "Edit Sequence" : "New Sequence"}</h2>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.ink }}>{editing ? "Edit sequence" : "New sequence"}</h2>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, background: T.bg2, borderRadius: 12, padding: 16 }}>
@@ -863,26 +868,22 @@ function SequencesPanel({ data }) {
     </div>
   );
 
-  // List view
+  // List view. SWEEP-3: the sequence builder above is where a sequence is
+  // made now; this list is only the ones made before it, so with none there
+  // is nothing to draw (it was a second "No sequences yet" and a second New
+  // button), and the "Trigger now" control that answered with a browser alert is gone.
+  if (seqLoading || seqList.length === 0) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Sequences</h2>
-        <button onClick={() => openBuilder()} style={S.btn("primary")}>+ New Sequence</button>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Earlier sequences</h2>
       </div>
 
       <div style={{ background: T.bg2, borderRadius: 10, padding: "12px 16px", fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>
-        Sequences automatically send multi-step emails to donors based on triggers (new gift, lapsed, etc.). The engine runs every hour.{" "}
-        <button onClick={async () => { await apiFetch("/sequences/process", { method: "POST" }).catch(() => {}); alert("Processing triggered."); }} style={{ background: "none", border: "none", color: T.green, cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}>Trigger now →</button>
+        Sequences made before the builder above. Each one sends its steps on its own while it is on and Journey emails are on.
       </div>
 
-      {seqLoading ? (
-        <div style={{ color: T.ink3, fontSize: 13, textAlign: "center", padding: 40 }}>Loading…</div>
-      ) : seqList.length === 0 ? (
-        <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          No sequences yet. A good first one: three gentle emails to donors who've gone quiet for 90 days, write it once, and it looks after them from then on.
-        </div>
-      ) : (
+      {(
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {seqList.map(seq => {
             const isActive = seq.status === "active";
@@ -1680,12 +1681,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // in it is the FIRST RECIPIENT's — what she reads on the right of the screen
   // is what the first person on the list will open. "Margaret" only when the
   // segment is still empty.
-  const previewFirst = segPreview?.first || null;
+  // SWEEP-3: before there is a list, one of her donors (the server's newest giver).
+  const previewFirst = segPreview?.first || gallery?.sampleDonor || null;
   const previewOrgName = gallery?.orgName || data?.org?.name || "your organization";
   const renderPreview = (html, opts) => renderMergeFields(html || "", {
     first_name: previewFirst?.firstName || "Margaret",
     donor_name: previewFirst?.name || "Margaret Chen",
     org_name: previewOrgName,
+    // SWEEP-3: the sample donor's own gift and total, so a preview never reads
+    // "your gift of your last gift" or "comes to $0" for somebody who gave.
+    ...(previewFirst?.giftAmount ? { gift_amount: previewFirst.giftAmount } : {}),
+    ...(previewFirst?.totalGiving ? { total_giving: previewFirst.totalGiving } : {}),
   }, opts);
 
   // ── THE SIX — full screen, in the org's own colours ─────────────────────────
@@ -1695,10 +1701,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   if (view === "gallery") {
     const stripTags = h => String(h || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     return (
-      <div data-testid="campaign-gallery" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, background: T.bg, color: T.ink, overflowY: "auto" }}>
+      <div data-testid="campaign-gallery" className="fullscreen-takeover no-caps" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, background: T.bg, color: T.ink, overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", background: T.white, borderBottom: "1px solid " + T.bg3 }}>
           <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
-          <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>New Campaign</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>New campaign</span>
         </div>
 
         <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 20px 64px" }}>
@@ -1716,7 +1722,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <button key={mt.id} type="button" data-testid={"my-template-" + mt.id} onClick={() => startFromMyTemplate(mt)}
                     style={{ ...S.btn("ghost"), textAlign: "left", display: "flex", flexDirection: "column", gap: 2, maxWidth: 260 }}>
                     <span style={{ fontWeight: 700, color: T.ink }}>{mt.name}</span>
-                    {mt.subject && <span style={{ fontSize: 12, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 230 }}>{subjectPreview(mt.subject)}</span>}
+                    {mt.subject && <span style={{ fontSize: 12, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 230 }}>{renderPreview(mt.subject, { text: true })}</span>}
                   </button>
                 ))}
               </div>
@@ -1834,7 +1840,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // ── Main layout ─────────────────────────────────────────────────────────────
   return (
-    <div className="comm-layout" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="comm-layout no-caps" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Section nav — horizontal tabs across the top of the content area */}
       <SectionTabs className="comm-tabbar"
         tabs={NAV.map(n => ({ ...n, badge: n.id === "campaigns" && emailCampaigns.length > 0 ? emailCampaigns.length : undefined }))}
@@ -1847,12 +1853,12 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {/* FIX-40 · a campaign's own page: the email as sent and who it went to. */}
         {asSent && <EmailAsSentPanel path={asSent} onClose={() => setAsSent(null)} />}
 
-        {/* CAN-SPAM postal-address prompt — terracotta = needs-attention */}
+        {/* CAN-SPAM postal-address prompt — brass = needs attention (SWEEP-3: never red) */}
         {orgPostalAddress === null && (
-          <div style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.terracotta, borderRadius: 12, padding: "12px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.gold500, borderRadius: 12, padding: "12px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 320px", fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>
               <span style={{ fontWeight: 800, color: T.ink }}>Add your mailing address. </span>
-              Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically{isAdmin ? "" : " ask an admin to add it"}.
+              Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically.{isAdmin ? "" : " Ask an admin to add it."}
             </div>
             {isAdmin && onNavigate && (
               <button onClick={() => onNavigate("settings", { section: "receipts" })} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -1931,8 +1937,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>Recent sends</span>
                   <button onClick={() => { setNav("campaigns"); openBuilder(); }} disabled={isReadOnly}
                     title={isReadOnly ? "Reactivate your subscription to make changes." : undefined}
-                    style={{ ...S.btn("primary"), background: T.gold500, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.45 : 1 }}>
-                    + New campaign
+                    style={{ ...S.btn("send"), cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.45 : 1 }}>
+                    New campaign
                   </button>
                 </div>
                 {!hub ? (
@@ -2016,7 +2022,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             style={{ marginTop: 6, marginLeft: 15, background: "transparent", border: "none", padding: 0,
                                      fontSize: 11.5, fontWeight: 700, color: a.count > 0 ? T.greenMid : T.ink3,
                                      cursor: "pointer", textAlign: "left" }}>
-                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet, ${a.livesOn.label} →`}
+                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet. They are kept in ${a.livesOn.label} →`}
                           </button>
                         )}
                       </li>
@@ -2073,8 +2079,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 onMouseLeave={() => setNewBtnHover(false)}
                 disabled={isReadOnly}
                 title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                style={{ ...S.btn("primary"), background: newBtnHover && !isReadOnly ? T.gold600 : T.gold500, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
-                + New Campaign
+                style={{ ...S.btn("send"), cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
+                New campaign
               </button>
               </div>
             </div>
@@ -2082,8 +2088,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {/* Stat pills — FIX-6 item 5: real values, and each one opens its rows. */}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {[
-                { key: "sent", label: "Total Sent", value: cstats.totalSentWord, rows: cstats.totalSentRows, sentence: cstats.totalSentSentence },
-                { key: "open", label: "Avg Open Rate", value: cstats.openRateWord, rows: cstats.openRateRows, sentence: cstats.openRateSentence },
+                { key: "sent", label: "Emails sent", value: cstats.totalSentWord, rows: cstats.totalSentRows, sentence: cstats.totalSentSentence },
+                { key: "open", label: "Open rate", value: cstats.openRateWord, rows: cstats.openRateRows, sentence: cstats.openRateSentence },
                 { key: "active", label: "Active", value: cstats.activeWord, rows: cstats.activeRows, sentence: cstats.activeSentence },
               ].map(({ key, label, value, rows, sentence }) => (
                 <button key={label} data-testid={"camp-stat-" + key} title={sentence}
@@ -2147,7 +2153,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               /* First-run signpost (BUILD-08 Phase D) — the gold "start
                  here" pattern from shared.jsx, not a bare "no data" box. */
               <StartHere
-                line="Your first campaign doesn't need to be clever, a plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
+                line="Your first campaign doesn't need to be clever. A plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
                 actionLabel={isReadOnly?undefined:"Write that thank-you →"} onAction={()=>openBuilder()}/>
             ) : (
               <div data-testid="campaigns-table" style={{ border: "1px solid " + T.bg3, borderRadius: 12, background: T.white }}>
@@ -2202,7 +2208,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             onOpen={() => setExpandedId(isOpen ? null : c.id)}
                             style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{c.name}</RecordLink>
                           <div data-testid="camp-subject" style={{ fontSize: 12, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {c.subject ? subjectPreview(c.subject) : "No subject yet"}
+                            {c.subject ? renderPreview(c.subject, { text: true }) : "No subject yet"}
                           </div>
                         </div>
                         <div className="fx39-cell" data-label="Who it goes to" style={{ fontSize: 12.5 }}>{segLabel(raw)}</div>
@@ -2298,7 +2304,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                                   {r.donor_id
                                     ? <DonorLink id={r.donor_id} style={{ color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</DonorLink>
                                     : <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>}
-                                  <span style={{ color: r.opened_at ? T.greenMid : r.failure_reason ? T.terracotta : r.sent_at ? T.ink3 : T.gold600 }}
+                                  <span style={{ color: r.opened_at ? T.greenMid : r.failure_reason ? T.gold700 : r.sent_at ? T.ink3 : T.gold600 }}
                                     title={r.failure_reason || undefined}>
                                     {r.opened_at ? "Opened" : r.failure_reason ? "Failed" : r.sent_at ? "Delivered" : "Pending"}
                                   </span>
