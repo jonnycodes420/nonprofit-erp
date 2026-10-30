@@ -119,7 +119,8 @@ export const EVENT_FIGURES = {
   raised: "Every gift attributed to this event: tickets, sponsorships and anything given on the night. The full amount paid, not the deductible part.",
   goal: "What the event was aiming at. Set when the event was created, and changed by a person.",
   registered: "Each person who said they were coming or came, once. A party of two with one name is one person; someone only invited, or who declined, is not counted.",
-  attended: "People marked as having come. Nobody is counted as attending until somebody says they did.",
+  attended: "People marked as having come, or checked in at the door. Nobody is counted as attending until somebody says they did.",
+  declined: "Everyone on the event's list who said they would not come. Not counted as registered.",
   firstTime: "People whose FIRST gift to you was this event. An event that brings new donors has done something a number on its own cannot show.",
   sponsors: "Sponsorships sold, at any level. A sponsorship that has not been paid yet is a pledge and is counted here as sold.",
 };
@@ -170,7 +171,7 @@ export function seatingChart(guests = [], { perTable = 10, tables: tableRows = n
   const byTable = new Map();
   const unseated = [];
   for (const g of guests) {
-    if (g.status === "cancelled") continue;
+    if (g.status === "cancelled" || g.status === "declined") continue;   // FIX-59: a guest who said no has no seat
     const t = tableLabel(g.table_label ?? g.table);
     if (!t) { unseated.push(g); continue; }
     if (!byTable.has(t)) byTable.set(t, []);
@@ -222,7 +223,10 @@ export function seatingChart(guests = [], { perTable = 10, tables: tableRows = n
       over: Math.max(0, count - seats),
       // "Table 3 · 6 of 8" — the sentence the card shows, built here so the
       // card, the print-out and anything later say the same words.
-      sentence: `${label} · ${count} of ${seats}`,
+      // FIX-59: a table seated over its size says so in words ("13 seated,
+      // 3 over"), never a bare "13 of 10".
+      fill: count > seats ? `${count} seated, ${count - seats} over` : `${count} of ${seats}`,
+      sentence: `${label} · ${count > seats ? `${count} seated at ${seats} seats, ${count - seats} over` : `${count} of ${seats}`}`,
     };
   });
   // `seats` was the guest ARRAY on this shape before Part 2 and three callers

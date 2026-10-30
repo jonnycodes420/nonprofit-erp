@@ -261,6 +261,32 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   "Couples written with a comma" line proposes them (the typed form, or "Brad Hubbard Alex" on an imported record),
   fixes them only on her click (`/data-health/couples/apply`: the record becomes the first person, the second is made
   beside them, one new household, gifts stay put) and undoes the click whole (`name_fixes`).
+- **One person spelled two ways on two lists of one event is a question (FIX-59).** When an event's file brings in more
+  than one list (a guest list and a seating chart), a name on a later list that `nearNames.nearDuplicate` reads as a
+  spelling, a nickname or a couple's form of someone on an earlier list is one grouped question
+  (`answers.nearDuplicates`, keyed `"<earlier name>|<later name>"` in lower case): Same person by default, shown and
+  never holding Import, reads the row into the earlier person and keeps that spelling; Different makes a new person.
+  Within one list the old near-miss rule (kept as two people) stands.
+- **Notes are not people (FIX-59).** Every name cell goes through `nameAndNotes`: markup and parenthetical notes come
+  off the name onto a note on the person ("Neil (husband) Martha (daughter) Lyle" is Neil & Martha Lyle, note
+  "husband; daughter"); a row whose name cell is a note ("1 Medical Gluten") is a note on the person on the row above
+  it, or set aside with the reason when there is none. Notes are timeline notes carrying the run, so Undo takes them.
+- **An event's lists land as the event (FIX-59).** A guest-list row with no reply and no mark is `invited`; a name only
+  on the seating chart is `registered`. An imported attendance mark is a check-in at noon on the event's day in the
+  org's zone (the moment of the import for a "Date not known" event). Each table label becomes one of the event's
+  `event_tables`, sized to the people the file seats there, and its guests are linked (`table_id`); Undo removes the
+  tables it made (`summary_json.tablesCreated`).
+- **Imported gifts are already deposited unless she says No (FIX-59).** `answers.giftsDeposited` (Yes by default,
+  shown): the run's received gifts get `deposited_on` = their date, stock and in-kind excepted, and never a
+  `deposit_ref` (QuickBooks' deposit mode groups by it, and would post a made-up deposit). Finance's "Not yet on a
+  deposit" leaves out a gift with `deposited_on` (`ON_NO_DEPOSIT` in routes/finance.js).
+- **An event's name keeps the file's punctuation (FIX-59).** "Justin_s" from a download is "Justin's"; a copy's "(1)"
+  is not part of the name.
+- **Couples written as one name, all of them (FIX-59).** The comma reader also takes a second first name off the
+  list when nothing else reads ("Josh, Kesi Tanabe": two capitalised words after a known first name that is not a
+  common surname). Data health's couples line takes "Randy or Jessamy Barlow" and "X and Y Last" too ("&" is
+  Steward's own joint name and is left), and a record already in a household: its fix joins that household and
+  makes no second person the household already holds.
 
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make

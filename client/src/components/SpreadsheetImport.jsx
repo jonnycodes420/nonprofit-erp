@@ -327,7 +327,11 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const giftsQ = eventGiftsQ || (typeof answers.useEventDate === "boolean" && answers.eventDate ? giftsAsked : null);
   const pledgeQ = pledgeDueQ || (answers.pledgeDue ? pledgeAsked : null);
   useEffect(() => { const q = u && u.questions.find(x => x.id === "date"); if (q && !dateAsked) setDateAsked(q); }, [u, dateAsked]);
-  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  const otherQs = u ? u.questions.filter(q => !["date", "event", "eventGifts", "pledgeDue", "nearDuplicates", "giftsDeposited"].includes(q.id) && q.kind !== "column" && q.kind !== "deletedPerson") : [];
+  // FIX-59: two defaulted questions, each answered once for the file
+  const nearQ = u ? u.questions.find(q => q.id === "nearDuplicates") : null;
+  const depositQ = u ? u.questions.find(q => q.id === "giftsDeposited") : null;
+  const setNear = patch => setAnswers(a => ({ ...a, nearDuplicates: { ...(a.nearDuplicates || {}), ...patch } }));
   const deletedQs = u ? u.questions.filter(q => q.kind === "deletedPerson") : [];
   const colQs = u ? u.questions.filter(q => q.kind === "column") : [];
   // everyone in the file who matches a person she deleted: blocked, or asked by name
@@ -529,6 +533,59 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
                   )}
                 </div>
                 {answers.pledgeDue === "event" && !answers.eventDate && <div style={{ ...small, marginTop: 6 }}>Give the event's date above first.</div>}
+              </div>
+            )}
+
+            {/* FIX-59: the same person spelled two ways on two lists of the event, one card, Same person unless she says Different */}
+            {nearQ && (
+              <div style={{ ...box, borderColor: T.gold500 }} data-testid="sheet-question-near">
+                <div style={h3}>{nearQ.text}</div>
+                <div style={small}>{nearQ.hint}</div>
+                {nearQ.pairs.length > 1 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    <button type="button" data-testid="sheet-near-all-same" style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
+                      onClick={() => setNear(Object.fromEntries(nearQ.pairs.map(p => [p.key, "same"])))}>All the same person</button>
+                    <button type="button" data-testid="sheet-near-all-different" style={{ ...btn(false), padding: "6px 10px", fontSize: 12 }}
+                      onClick={() => setNear(Object.fromEntries(nearQ.pairs.map(p => [p.key, "different"])))}>All different</button>
+                  </div>
+                )}
+                {nearQ.pairs.map(p => {
+                  const chosen = (answers.nearDuplicates || {})[p.key];
+                  return (
+                    <div key={p.key} data-testid="sheet-near-pair" style={{ borderTop: "1px solid " + T.bg2, padding: "8px 0", marginTop: 6, fontSize: 13, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+                        <div>{p.text}</div>
+                        <div style={small}>{p.sentence.charAt(0).toUpperCase() + p.sentence.slice(1)}. {p.bSheet} row {p.bLine}, {p.aSheet} row {p.aLine}.</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {(nearQ.options || []).map(o => {
+                          // FIX-55: Steward's suggestion is outlined; only her answer is filled
+                          const suggested = !chosen && o.key === nearQ.default;
+                          return <button type="button" key={o.key} data-testid={`sheet-near-${o.key}`} aria-pressed={chosen === o.key} data-suggested={suggested ? "1" : undefined}
+                            style={{ ...btn(chosen === o.key), padding: "6px 10px", fontSize: 12, ...(suggested ? { border: "1px dashed " + T.greenDk } : {}) }}
+                            onClick={() => setNear({ [p.key]: o.key })}>{o.label}</button>;
+                        })}
+                      </div>
+                    </div>);
+                })}
+              </div>
+            )}
+
+            {/* FIX-59: gifts from a file were almost always banked already; Yes unless she says No */}
+            {depositQ && (
+              <div style={box} data-testid="sheet-question-deposited">
+                <div style={h3}>{depositQ.text}</div>
+                <div style={small}>{depositQ.hint}</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
+                  {(depositQ.options || []).map(o => {
+                    const chosen = answers.giftsDeposited;
+                    const suggested = !chosen && o.key === depositQ.default;
+                    return <button type="button" key={o.key} data-testid={`sheet-deposited-${o.key}`} aria-pressed={chosen === o.key} data-suggested={suggested ? "1" : undefined}
+                      style={{ ...btn(chosen === o.key), padding: "6px 12px", fontSize: 12.5, ...(suggested ? { border: "1px dashed " + T.greenDk } : {}) }}
+                      onClick={() => setAnswer({ giftsDeposited: o.key })}>{o.label}</button>;
+                  })}
+                  {!answers.giftsDeposited && <span style={small}>Steward suggests Yes; it stands unless you choose.</span>}
+                </div>
               </div>
             )}
 

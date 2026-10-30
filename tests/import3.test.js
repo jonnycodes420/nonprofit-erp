@@ -91,7 +91,8 @@ async function eventSheet() {
   const roles = Object.fromEntries((U.tables[0].columns || []).map(c => [c.header, c.role]));
   ok("§1 Last and First are a person's name; 3 Yr Total is the pledge total", roles.Last === "last" && roles.First === "first" && roles.Amount === "amount"
      && roles.Method === "method" && roles.Frequency === "frequency" && roles.Completed === "paid" && roles["3 Yr Total"] === "pledgeTotal", JSON.stringify(roles));
-  const qs = (U.questions || []).map(x => x.id);
+  // FIX-59: a defaulted question (already deposited? Yes) is shown but never asked of her
+  const qs = (U.questions || []).filter(x => !x.defaulted).map(x => x.id);
   const evQ = (U.questions || []).find(x => x.id === "event") || {};
   ok("§1 it asks when (no date column), naming the event by the file's name (IMPORT-5: required)", evQ.required === true && evQ.suggestedEventName === "Finding Joy Dinner", JSON.stringify(evQ));
   ok("§1 and the one blank Completed, by row number, the pledges' due date, and nothing else", qs.length === 3 && qs.includes("row:Sheet1:26") && qs.includes("pledgeDue"), JSON.stringify(qs));

@@ -77,6 +77,11 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   General; a blank memo takes `orgs.default_fund_id` only if someone chose one. (BUILD-88b)
 - **The deposit gate is on the server.** `/deposits/plan` writes nothing; `/deposits/commit` re-plans
   and writes from `plan.lines`, never the client's copy; key attachments by line number. (BUILD-88b, BUILD-95)
+- **"On a deposit" is one fragment (FIX-59).** A gift is on a deposit when a deposit run holds it or it has a
+  `deposited_on` (`routes/finance.js ON_NO_DEPOSIT`). Finance's "Imported gifts waiting for a deposit · They were
+  already deposited" sets `deposited_on` to the day given, per run or all, on her click, recorded in
+  `deposit_marks` for its Undo. `deposit_ref` stays empty: QuickBooks' deposit mode groups by it and would post one
+  made-up deposit.
 - **A cheque read proposes and cannot post; a cheque photo never costs the deposit.** Only box and line
   amounts agreeing to the cent fill an amount; a failed photo is reported by line;
   `gifts.cheque_asset_id` must stay in `collectLiveAssetRefs`. (BUILD-95)
