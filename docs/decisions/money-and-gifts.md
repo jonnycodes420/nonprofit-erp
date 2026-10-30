@@ -186,6 +186,15 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 - **Pledges are said one way (FUNDRAISING-2).** Still to come, due this fiscal year and overdue are `numbers.pledgeSummary` (pledges-open, pledges-due to the org's fiscal year end, pledges-overdue before today). Fundraising's Overview and Pledges, Home's "Are we on pace?" and each profile's dueThisYear count to the same day; `assertSurfacesAgree` checks all of them.
 
+- **Finance's Overview says giving and the ledger apart (SWEEP-5).** Giving (the gifts: money in this
+  month, deposits not yet matched, the twelve months, Needs you) comes first under its own heading; The
+  ledger (restricted and unrestricted balances, cash on hand, revenue, expenses, surplus, the monthly
+  breakdown, fund balances) comes second. When nothing has ever posted (`/finance/summary` `ledgerEmpty`)
+  the ledger is ONE card that says why and what fills it, never a row of $0s. Spending is never drawn in
+  an error colour: expenses read ink, a negative surplus or cash on hand reads brass.
+- **A month-close tick is never vacuous (SWEEP-5).** A gift with no payment method ("Needs you") may be
+  a check, so it counts against "Every check is on a deposit", as it does in the bookkeeper's file.
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

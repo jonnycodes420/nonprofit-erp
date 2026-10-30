@@ -64,12 +64,15 @@ export function NoRecentMeetingPanel({ officers = [], onSelectDonor, onClose, in
   );
 }
 
-export function MeetingsByStaffCard() {
+// SWEEP-5: `hideWhenNone` (Reports) draws nothing until somebody has a
+// meeting to count: a table of zeros above every report said nothing.
+export function MeetingsByStaffCard({ hideWhenNone = false, wrapStyle = null } = {}) {
   const [d, setD] = useState(null);
   useEffect(() => { apiFetch("/meetings/by-staff").then(setD).catch(() => setD(null)); }, []);
   if (!d) return null;
+  if (hideWhenNone && !(d.staff || []).some(s => Number(s.total && s.total.value) > 0)) return null;
   const monthLabel = m => new Date(m + "-01T12:00:00").toLocaleDateString("en-US", { month: "short" });
-  return (
+  const drawn = (
     <div data-testid="meetings-by-staff" style={{ ...card, overflowX: "auto" }}>
       <div style={LABEL}>Meetings by staff member, last 12 months</div>
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: "6px 0 12px", maxWidth: 720 }}>{d.sentence}</div>
@@ -90,6 +93,7 @@ export function MeetingsByStaffCard() {
       </table>
     </div>
   );
+  return wrapStyle ? <div style={wrapStyle}>{drawn}</div> : drawn;
 }
 
 // ENGAGE-1 — WARM BUT NOT ASKED THIS YEAR. The same shape as the panel above:

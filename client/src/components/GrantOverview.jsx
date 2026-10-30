@@ -13,7 +13,7 @@
 //   · deadlines in the next 30, 60 and 90 days, and the reports owed
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, EmptyState } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import Figure from "./Figure";
@@ -72,7 +72,7 @@ function GoalEditor({ goal, onSaved }) {
   );
 }
 
-export default function GrantOverview({ onOpenGrant }) {
+export default function GrantOverview({ onOpenGrant, onGoPipeline }) {
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState("");
   const load = () => apiFetch("/grant-overview")
@@ -82,6 +82,14 @@ export default function GrantOverview({ onOpenGrant }) {
 
   if (!data) return <div style={{ padding: 8 }}>{msg ? <p role="alert" style={note}>{msg}</p> : <p style={note}>Loading the grant reports…</p>}</div>;
   const { year, stages, awarded, goal, progress, winRates, deadlines, reportsDue } = data;
+  // SWEEP-5: with no grant on file this screen was twenty zeros and three
+  // blanks. It says what fills it, and goes there.
+  if (!(stages || []).some(s => s.count > 0)) return (
+    <div data-testid="grant-overview" style={card}>
+      <EmptyState title="No grants yet" message="Add a grant on the Pipeline, or bring in a spreadsheet of them, and this page counts what you asked for, what was awarded and what is due."
+        action={onGoPipeline ? "Go to the pipeline" : undefined} onAction={onGoPipeline} />
+    </div>
+  );
 
   return (
     <div data-testid="grant-overview" style={{ display: "flex", flexDirection: "column", gap: 16 }}>

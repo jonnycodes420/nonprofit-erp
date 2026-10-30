@@ -527,7 +527,7 @@ const SOURCES = {
   },
   givers: {
     label: "People who gave",
-    measure: () => "count",
+    measure: p => p.measure || "count",   // SWEEP-5: Top donors asks for the sum; it was drawn as the head count
     // REPORTS-4: the giving summary's filters (fund, campaign), its new and
     // returning split (first: new | returning, by each person's first gift
     // ever), and Top donors (top: the N who gave most, largest first).
