@@ -82,7 +82,7 @@ export function GrantDocuments({ grantId, isReadOnly }) {
   if (!data) return null;
   return (
     <div data-testid="grant-documents" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" }}>
-      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 4 }}>Documents</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>Documents</div>
       {data.sentence && <div style={{ fontSize: 13, color: T.ink3, marginBottom: 4 }}>{data.sentence}</div>}
       {data.documents.map(d => (
         <div key={d.id}>

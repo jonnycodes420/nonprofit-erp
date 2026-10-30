@@ -42,7 +42,7 @@ function Tile({ label, value, sentence, onClick, active, testid }) {
     <div data-testid={testid} {...interactive(onClick, { label: `${label}: ${value}. ${sentence}` })} title={sentence}
       style={{ background: active ? T.gold100 : T.white, border: "1px solid " + (active ? T.gold500 : T.bg3),
                borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05 }}>{value}</span>
       <span style={{ fontSize: 11, color: T.ink3, lineHeight: 1.4 }}>{sentence}</span>
     </div>
@@ -349,7 +349,7 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
       ) : (
         <div data-testid="proposals-table" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1.6fr 110px 96px 110px 120px", gap: 12, padding: "10px 14px", background: T.bg2,
-                        fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+                        fontSize: 10, fontWeight: 800, color: T.ink3 }}>
             <div>Person</div><div>What the ask is for</div><div>Ask</div><div>Probability</div><div>Expected</div><div style={{ textAlign: "right" }}>Stage</div>
           </div>
           {d.proposals.map(p => (
@@ -435,7 +435,7 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   return (
     <div data-testid={testid} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>{title}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3 }}>{title}</div>
         {canWrite && !isReadOnly && (
           <button onClick={() => setAdding(true)}
             style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>{addLabel}</button>
@@ -576,7 +576,7 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
       ) : (
         <div data-testid="portfolio-table" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1.5fr 110px 1.6fr 1.4fr", gap: 12, padding: "10px 14px", background: T.bg2,
-                        fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+                        fontSize: 10, fontWeight: 800, color: T.ink3 }}>
             <div>Person</div><div>Open ask</div><div>Last conversation</div><div>Next step</div>
           </div>
           {d.people.map(p => (
@@ -707,7 +707,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
   return (
     <div data-testid="donor-plan-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Cultivation plan</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3 }}>Cultivation plan</div>
         {active && canWrite && !isReadOnly && (
           <button onClick={stop} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 10px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Stop this plan</button>
         )}
@@ -904,7 +904,7 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
           )}
           {brief.sections.map(sec => (
             <div key={sec.key} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.gold700, marginBottom: 4 }}>{sec.title}</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: T.gold700, marginBottom: 4 }}>{sec.title}</div>
               {sec.sentences.map((s, i) => (
                 <div key={i} style={{ fontSize: 13, color: T.ink, lineHeight: 1.65, marginBottom: 3 }}>
                   {s.text} <span title={`From ${s.cites.join(", ")}`} style={{ fontSize: 10, color: T.ink3 }}>({s.cites.length} {s.cites.length === 1 ? "row" : "rows"})</span>
@@ -1020,7 +1020,7 @@ export function MajorGiftsDashboard({ onNavigate }) {
           ) : (
             <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
               <div style={{ ...row, borderTop: "none", background: T.bg2, fontSize: 10, fontWeight: 800,
-                            letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+                            color: T.ink3 }}>
                 <div>Officer</div><div style={{ textAlign: "right" }}>Open</div><div style={{ textAlign: "right" }}>Overdue</div>
               </div>
               {d.threadBacklog.rows.map(r => (

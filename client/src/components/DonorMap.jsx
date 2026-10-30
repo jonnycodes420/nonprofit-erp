@@ -106,7 +106,7 @@ export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
       {/* Sidebar */}
       <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>Filter by stage</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, marginBottom: 8 }}>Filter by stage</div>
           {STAGES.map(s => (
             <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5, cursor: "pointer", fontSize: 12, color: T.ink }}>
               <input type="checkbox" checked={stageFilters.has(s.id)} onChange={e => {
@@ -131,7 +131,7 @@ export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
 
         {buckets.no_address.length > 0 && (
           <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 12, overflowY: "auto", flex: 1 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>No address on file</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3, marginBottom: 8 }}>No address on file</div>
             {buckets.no_address.slice(0, 200).map(d => (
               <div key={d.id} onClick={() => onSelectDonor(d)} style={{ padding: "6px 0", borderBottom: "1px solid " + T.bg3, cursor: "pointer", fontSize: 12, color: T.greenDk, fontWeight: 500 }}>{d.name}</div>
             ))}

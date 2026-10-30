@@ -33,7 +33,7 @@ function averageSub(a) {
   return bits.join(", ");
 }
 
-const LABEL = { fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 3, whiteSpace: "nowrap" };
+const LABEL = { fontSize: 9.5, fontWeight: 700, color: T.ink3, marginBottom: 3, whiteSpace: "nowrap" };
 const VALUE = { fontSize: 19, fontWeight: 800, fontFamily: "'DM Serif Display',serif", lineHeight: 1.15, color: T.ink };
 const UNDER = { fontSize: 11, color: T.ink3, marginTop: 2, lineHeight: 1.35 };
 const BLANK = { fontSize: 12.5, fontWeight: 400, color: T.ink3, lineHeight: 1.45, fontFamily: "'DM Sans',system-ui,sans-serif" };

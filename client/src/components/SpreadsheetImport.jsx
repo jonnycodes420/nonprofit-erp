@@ -809,7 +809,7 @@ function Layer({ title, main, sub, notes, testId }) {
     <div data-testid={testId} className="sheet-layer" style={{ display: "flex", gap: 10, borderTop: "1px solid " + T.bg2, padding: "9px 0", minWidth: 0, counterIncrement: "layer" }}>
       <div className="sheet-layer-n" style={{ flex: "0 0 22px", height: 22, borderRadius: 11, background: T.bg, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", color: T.ink3 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", color: T.ink3 }}>{title}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{title}</div>
         <div style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>{main}</div>
         <div style={small}>{sub}</div>
         {(notes || []).map((x, i) => <div key={i} style={{ ...small, color: T.ink }}>{x}</div>)}
@@ -856,7 +856,7 @@ function downloadAside(u, fileName) {
 function Fig({ label, value, sub }) {
   return (
     <div style={{ background: T.bg, borderRadius: 9, padding: "10px 12px", minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, overflowWrap: "anywhere" }}>{value}</div>
       <div style={small}>{sub}</div>
     </div>

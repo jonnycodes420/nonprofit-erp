@@ -241,11 +241,13 @@ async function checkOrg(orgId, opts = {}) {
     const quiet = await DS.quietIds(orgId, today);
     // INSIGHTS-1: lapsing respects the person's rhythm (lapseRule.js), so the check reads it too
     const rhythms = new Map((await query(`SELECT donor_id, rhythm, expected_next FROM donor_rhythm WHERE org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
+    // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold), so the check reads pledges too
+    const pledgesOf = await lapseRule.pledgesFor(query, orgId, null, today);
     for (const [donorId, gs] of byDonor) {
       const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
       if (!pos.length) continue;
       const last = pos.map(g => day(g.date)).sort().pop();
-      const want = lapseRule.lapseState(last, today, rhythms.get(donorId) || null);
+      const want = lapseRule.lapseState(last, today, rhythms.get(donorId) || null, pledgesOf.get(donorId) || null);
       const t = tagged.get(donorId);
       const d = donors.find(x => x.id === donorId);
       const imported = d && d.imported_total != null;

@@ -388,11 +388,13 @@ export function GlobalStyles() {
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
-    /* SWEEP-5 · NO ALL-CAPS LABELS on Finance, Reports and Grants. The
-       eyebrows and table heads set text-transform inline, so the screens that
-       have been swept say their labels in sentence case from one rule, the
-       way they are written, and nobody edits forty inline styles by hand. */
-    .no-caps [style*="text-transform: uppercase"],.no-caps th{text-transform:none!important;letter-spacing:.01em!important;}
+    /* FIX-60 · ONE EYEBROW, AND EVERY OTHER LABEL IN SENTENCE CASE. SWEEP-5's
+       .no-caps class is retired: no label, column head, badge, tile or
+       section title sets text-transform any more. The one ALL-CAPS style left
+       is the eyebrow: at most 11px, letter-spaced, a one- or two-word group
+       name over a list of navigation (the rail's groups, the search's result
+       groups). smoke-walk fails on uppercase anywhere else. */
+    .eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;line-height:1.3;}
     /* ── FIX-8 Part A · THE STRAY BRASS BAR WAS A SCROLLBAR ────────────────
        The thumb was painted gold500, the brand's brass, so on a Mac set to
        "Show scroll bars: Always" every region that overflowed by a rounding
@@ -995,7 +997,7 @@ export function Spin({dark}={}) {
   return <span style={{display:"inline-block",width:11,height:11,border:"2px solid "+(dark?T.ink:T.white)+"30",borderTopColor:dark?T.ink:T.white,borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
 export function Pill({label,color}) {
-  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
+  return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
 }
 // FIX-9 Part A.7 — A CARD FORWARDS ITS data-* PROPS.
 // `<Card data-testid="connection-card">` silently dropped the attribute,
@@ -1061,7 +1063,7 @@ export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripP
   </div>;
 }
 export function SectionLabel({children}) {
-  return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
+  return <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:12}}>{children}</div>;
 }
 // FIX-2 C — the AI button is BRASS: brass is what the agent is doing, and
 // emerald is the one primary action on the screen, which a "Suggest" never is.
@@ -1074,14 +1076,14 @@ export function AIPanel({text,onClose}) {
   if(!text) return null;
   // FIX-2 C — what the agent suggests is BRASS on white, not an ink room.
   return <div className="fade-in modal-anim" style={{background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold700,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
+    <div style={{fontSize:10,fontWeight:800,color:T.gold700,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
     <div style={{fontSize:13,color:T.ink,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
     {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.white,border:"1px solid "+T.bg3,borderRadius:6,color:T.ink3,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
 export function MetricCard({label,value,sub,color,trend}) {
   return <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||T.bg3}`,boxShadow:T.shadow}}>
-    <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3}}>{label}</span>
+    <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>{label}</span>
     <span style={{fontSize:28,fontWeight:800,color:color||T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
     {sub&&<span style={{fontSize:11,color:T.ink3}}>{sub}</span>}
     {trend!==undefined&&(
@@ -1115,8 +1117,8 @@ export function DriftBadge({drift,style}) {
     <span title={drift.reason} style={{
       display:"inline-flex",alignItems:"center",gap:4,flexShrink:0,
       background:T.gold100,border:"1px solid "+T.gold500+"55",borderRadius:99,
-      padding:"1px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.07em",
-      textTransform:"uppercase",color:T.gold600,lineHeight:1.6,whiteSpace:"nowrap",...style,
+      padding:"1px 8px",fontSize:9.5,fontWeight:800,
+      color:T.gold600,lineHeight:1.6,whiteSpace:"nowrap",...style,
     }}>
       <span aria-hidden style={{fontSize:8,lineHeight:1}}>◉</span>
       {/* FIX-10 Part A — the words come from shared/driftWords.js, the one
@@ -1165,7 +1167,7 @@ export function StartHere({line,actionLabel,onAction,dismissKey}) {
   return (
     <div className="fade-in" style={{background:T.gold50,border:"1px solid "+T.gold500+"55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       <div style={{flex:"1 1 280px",minWidth:0}}>
-        <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold600,marginBottom:4}}>Start here</div>
+        <div style={{fontSize:10,fontWeight:800,color:T.gold600,marginBottom:4}}>Start here</div>
         <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.6}}>{line}</div>
       </div>
       <div style={{display:"flex",gap:10,alignItems:"center",flexShrink:0}}>
@@ -1307,7 +1309,7 @@ export function GivingByYearChart({gifts, onOpenYear, currency=fmtFull}) {
 // ── Touchpoint helpers (module-level to avoid focus-loss on re-render) ──────
 export function TpField({label,children}){
   return <div style={{display:"flex",flexDirection:"column",gap:4}}>
-    <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>{label}</span>
+    <span style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5,display:"block"}}>{label}</span>
     {children}
   </div>;
 }
@@ -1575,13 +1577,13 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
 
             {(phase==="review"||phase==="saving")&&(
               <div>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Transcript</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Transcript</div>
                 <textarea value={transcript} onChange={e=>setTranscript(e.target.value)} rows={4}
                   style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none",marginBottom:14,resize:"vertical",fontFamily:"inherit",lineHeight:1.55}}/>
 
                 {(suggestedDetail||suggestedAction)&&(
                   <div style={{background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                    <div style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
+                    <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Worth saving? (your call)</div>
                     {suggestedDetail&&(
                       <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:suggestedAction?8:0}}>
                         <input type="checkbox" checked={includeDetail} onChange={e=>setIncludeDetail(e.target.checked)} style={{marginTop:3,width:15,height:15,cursor:"pointer",flexShrink:0}}/>
@@ -1790,7 +1792,7 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
         )}
         {orgName && (
           <div className="fr-eyebrow" style={{
-            fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase",
+            fontSize: 11, fontWeight: 800, 
             color: T.gold500, marginBottom: 18,
           }}>{orgName}</div>
         )}
@@ -1824,7 +1826,7 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
         {words.length > 0 && (
           <div className="fr-words" style={{
             display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginBottom: 26,
-            fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold300,
+            fontSize: 12, fontWeight: 700, color: T.gold300,
           }}>
             {words.map((w, i) => <span key={w}>{i > 0 && <span style={{ opacity: 0.5, marginRight: 14 }}>·</span>}{w}</span>)}
           </div>
@@ -1861,7 +1863,7 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
             background: "rgba(201,168,76,0.07)", maxWidth: 460, marginLeft: "auto", marginRight: "auto",
           }}>
             <span aria-hidden="true" style={{
-              fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase",
+              fontSize: 10, fontWeight: 800, 
               color: T.gold500, paddingTop: 3, whiteSpace: "nowrap",
             }}>Next</span>
             <span style={{ fontSize: 14, lineHeight: 1.6, color: T.bg }}>{nextStep}</span>

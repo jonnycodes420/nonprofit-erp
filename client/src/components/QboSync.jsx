@@ -24,7 +24,7 @@ import { askConfirm } from "./ConfirmDialog";
 import QboRead from "./QboRead";
 import { displayDate } from "../../../shared/displayDate.js";
 
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, color: primary ? T.white : T.ink,
   cursor: "pointer", fontFamily: "inherit" });
@@ -172,8 +172,8 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
     <Card data-testid="qbo-sync" style={{ padding: "14px 16px", marginTop: 12 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
         <strong style={{ fontSize: 15, color: T.ink }}>QuickBooks Online sync</strong>
-        {d.environment === "sandbox" && <span data-testid="qbo-sandbox" style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em",
-          textTransform: "uppercase", color: T.gold700 }}>Intuit sandbox</span>}
+        {d.environment === "sandbox" && <span data-testid="qbo-sandbox" style={{ fontSize: 11, fontWeight: 800, 
+          color: T.gold700 }}>Intuit sandbox</span>}
         {can && <button type="button" data-testid="qbo-auto" disabled={busy === "auto" || d.demo || (!d.autoSync && d.mappingReady === false)}
           title={!d.autoSync && d.mappingReady === false ? "Map every fund first" : ""} onClick={toggleAuto}
           style={{ ...btn(false), marginLeft: "auto", ...(!d.autoSync && d.mappingReady === false ? { opacity: 0.5, cursor: "not-allowed" } : {}) }}>{d.autoSync ? "Turn auto-sync off" : "Turn auto-sync on"}</button>}

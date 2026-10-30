@@ -22,10 +22,16 @@ if ! printf '%s' "$API" | grep -Eq '^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?
   echo "REFUSED: API=$API is not loopback. This builds a LOCAL dist only." >&2
   exit 1
 fi
+# FIX-60 item 6: the fingerprint of the code this build is made from (HEAD
+# plus any uncommitted change to the client's inputs) is taken BEFORE the
+# build and stamped into dist after it, so scripts/dist-fresh.js can tell a
+# dist built before a merge, a rebase or an edit from one built from now.
+FP="$(node ../scripts/dist-fresh.js --fingerprint 2>/dev/null || true)"
 VITE_API_URL="$API" \
 VITE_ASSET_ORIGIN="$API" \
 VITE_PORTAL_API="$API/portal" \
 VITE_ACCOUNT_API="$API/account" \
 VITE_NETWORK_API="$API/network" \
 npm run build
+[ -n "$FP" ] && node ../scripts/dist-fresh.js --stamp "$FP" --api "$API"
 echo "local dist built against $API — serve with: API=$API PORT=<port> node scripts/local-preview.js"

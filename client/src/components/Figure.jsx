@@ -63,7 +63,7 @@ export function FigureWhy({ definition, label, source, tile = false }) {
 }
 
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
-                         figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color, why = true, whole = false }) {
+                         figureKey, abs = false, suffix = "", unit, sub, cx, cy, r = 5, color, why = true, whole = false }) {
   const [open, setOpen] = useState(false);
   const { openPerson } = useContext(FigureContext);
   const isBlank = value === null || value === undefined;
@@ -73,6 +73,10 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     "data-figure": figureKey || label || "",
     "data-figure-key": figureKey || undefined,
     "data-source-key": openable ? source.key : undefined,
+    // FIX-60: what the figure is drawn as and what it opens, so the truth
+    // check can ask the source whether a money figure is money (tests/lib/units.js).
+    "data-kind": kind,
+    "data-source-params": openable && source.params ? JSON.stringify(source.params) : undefined,
     "data-no-source": openable ? undefined : "",
     "data-cents": kind === "money" && !isBlank ? String(centsOf(value)) : undefined,
     "data-value": isBlank ? "" : String(value),
@@ -102,6 +106,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     : kind === "money" ? (whole ? fmtTotal(shown) : fmtFull(shown))   // FUNDRAISING-2: `whole` drops cents on a big total
     : kind === "percent" ? `${shown}%`
     : Number(shown).toLocaleString("en-US") + suffix;
+  data["data-shown"] = text;   // FIX-60: the words drawn, for the units check
 
   if (variant === "inline" || variant === "cell") {
     return (
@@ -121,6 +126,10 @@ export function Figure({ value, kind = "count", label, definition, source, blank
                    fontWeight: variant === "cell" ? 700 : "inherit", whiteSpace: "nowrap" }}>
           {text}
         </button>
+        {/* FIX-60: the noun a count counts ("3 grants") is `unit`, drawn between
+            the number and its "?", so the "?" sits after what it explains and
+            never splits "0 ? grants". Plain text, outside the button. */}
+        {unit ? <span data-figure-unit="">{" " + unit}</span> : null}
         {/* POLISH-3: why={false} when the label above already carries the "?". */}
         {variant === "inline" && why && <FigureWhy definition={definition} label={label} source={source} />}
         {panel}
@@ -139,7 +148,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
                  padding: "16px 18px 12px", cursor: openable ? "pointer" : "default", minWidth: 0,
                  display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
         {/* SWEEP-4: room for the "?" pinned top-right: "Pledged · first year" ran into it */}
-        <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700, paddingRight: 22 }}>{label}</span>
+        <span style={{ fontSize: 11, color: T.ink3, fontWeight: 700, paddingRight: 22 }}>{label}</span>
         {/* Sized to the TILE (a container query), never broken across lines: a
             figure split as "$1,575.7 / 5" is a different number. */}
         <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: "clamp(22px, 14cqi, 34px)", lineHeight: 1.1, color: T.ink, whiteSpace: "nowrap" }}>{text}</span>

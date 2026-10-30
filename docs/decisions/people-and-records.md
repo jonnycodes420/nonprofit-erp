@@ -20,6 +20,14 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **"Gone quiet" is Lapsing plus Lapsed, and nothing else.** No screen keeps its own day count for quiet:
   Communications' "Lapsing or lapsed" reads `donorStatus.quietIds`, the going-quiet move suggestion and
   Home's re-engage list read `lapseRule.js`, and a gap of 365 days or more is a lapse everywhere. (FIX-51)
+- **A pledge is giving activity.** A pledge made in the last 12 months (open or fulfilled), or an open pledge
+  on schedule however old, holds a person off Lapsed and Lapsing; "made" is the earliest of the day it was
+  recorded, its due date and its first installment's due, so an old system's pledge imported today is not fresh.
+  An open pledge with an installment past due and unpaid is its own tag, Pledge payment overdue, never lapsing.
+  One rule in `lapseRule.js` (`pledgeHold`, `pledgeHoldSql`), read by the tags, list filters, closeness (a held
+  person is On track, not Cooling), the ladder, Home's lapsing card, the sweep and journeys. An automatic Lapsed a
+  pledge outlived goes back to Stewardship, logged; a Lapsed placed by hand stays. Drift already left out open
+  pledges. `tests/real-shaped.test.js` §D: nobody who pledged at the dinner reads Lapsed or Lapsing. (FIX-60)
 - **A machine flag in `donors.tags` is never shown as a tag.** `donorTags.js` lists the internal flags
   (`has-refused-rows:N`); every read the API returns (list, summaries, profile, CSV export) passes through
   `visibleTags`, and `PUT /donors/:id` keeps the flags the client never saw (`keepInternal`). The unread

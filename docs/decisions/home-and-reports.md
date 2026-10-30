@@ -203,6 +203,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   `samePointLastYearSource` (routes/crm.js).** The Board and the giving summary both call it, so they agree in cents.
   A running period is cut at today and compared day for day, and a finished one with the same dates a year earlier.
   Reports read the org's fiscal start month too (`reportYearBounds(year, mode, startMonth)`). (FIX-3 E)
+- **A comparison of years counts the same days in every year, and says which (FIX-60).** The 3-year
+  comparison and the annual report cut a running year at today and every earlier year to the same stretch
+  through `orgTime.equalYearSpans` (samePointLastYear step by step, so a report's "same days last year" is the
+  Board's to the day), and return `span.sentence` ("Jul 1 to Oct 30, each year"; across a Feb 29 it names the
+  column that ends a day off). A finished year compares whole years. Every figure keeps its source, and the
+  annual report's last-year figure is a `priorTotal` source of its own. `assertSurfacesAgree` holds the annual
+  report's difference to the Board's. Four months against twelve once read "a change of -69%".
 - **Results draw through `ReportTable` (ReportBuilder.jsx) and `reportFormat.js`.** Dates go through `shared/displayDate.js`,
   money is whole dollars unless it has cents, the totals row is the sum of the rows in integer cents, and a person row
   opens the person (`_pid` on builder rows, never a column). The CSV and PDF keep ISO dates and full values. (FIX-2 B)

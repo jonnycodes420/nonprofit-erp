@@ -76,6 +76,14 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **Never write Postgres's `?` jsonb operator in a query.** db.js turns every `?` into a parameter; use
   `jsonb_exists(col, ?)`. `availability ? ?` was a syntax error on prod for weeks. (FIX-27)
 
+- **The truth check knows units (FIX-60).** `tests/lib/units.js` holds the rules: a figure drawn as money
+  opens a source that adds up money and shows a currency sign, a count never does; a total foots to its rows
+  (money to the cent, a count to its rows); a fee is less than its gift and net is gross less fee.
+  `assertSurfacesAgree` runs them over every report's figures and the bookkeeper's rows (`skip: ["units"]` to
+  leave out), and smoke-walk over every `<Figure>` on every screen (it reads `data-kind`, `data-source-params`
+  and `data-shown`, which Figure.jsx writes for it) and every fee column. Both of SWEEP-5's bugs, planted back,
+  go red.
+
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
   not even to describe the error digest. A squash merge copies every commit message into one, GitHub honours
@@ -90,9 +98,10 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)
-- **A rebased branch still has the `client/dist` built before the rebase, and the battery reuses it.**
-  Smoke-walk then walks the old screens and passes. Rebuild dist after every rebase or merge that
-  touches `client/`, before the battery. (PARITY-2)
+- **A `client/dist` built before a rebase, a merge or an uncommitted client edit is stale, and is rebuilt.**
+  `scripts/dist-fresh.js` is the one check: built against this API, from HEAD, with no change to the
+  client's inputs since (the stamp `build-local-dist.sh` writes). The sharded battery and the pre-push
+  hook both rebuild through it; a hand-run `SHARDS=1` battery does not, so run it first. (PARITY-2, FIX-60)
 - **For a browser leg, build dist with `scripts/build-local-dist.sh` and serve it with
   `scripts/local-preview.js` on :4173.** A dist with only `VITE_API_URL` breaks the portal paths.
   `vite preview` has no rewrites, whatever that script's closing echo says. (BUILD-75, BUILD-89S)

@@ -58,10 +58,10 @@ const _REASON_LABELS_MOVED_TO_MODULE_SCOPE = true;
 
 // BUILD-87 Part 2 — the three numbers that matter, large.
 const headNum = { fontSize: 34, fontWeight: 700, color: T.ink, lineHeight: 1.1 };
-const headNumLabel = { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, marginBottom: 2 };
+const headNumLabel = { fontSize: 10.5, fontWeight: 700, color: T.ink3, marginBottom: 2 };
 
 const SectionHead = ({ children }) => (
-  <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, margin: "18px 0 8px" }}>{children}</div>
+  <div style={{ fontSize: 10.5, fontWeight: 700, color: T.ink3, margin: "18px 0 8px" }}>{children}</div>
 );
 
 export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose, onImported, onOpenHome, vocabulary }) {
@@ -355,6 +355,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         })});
         setProgressText("Routing pledges, merges and the import record…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
+          importId: runId,   // FIX-60: Undo import takes these pledges with the gifts
           pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
           // BUILD-83 FIX — send the fold in the shape the persist path stores:
           // surviving + an ARRAY of folded identities with their source ids and
@@ -401,7 +402,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         </div>
         {legend.length > 0 && (
           <div style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.gold600, marginBottom: 4 }}>The file's own legend</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.gold600, marginBottom: 4 }}>The file's own legend</div>
             {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>from {l.sheet}</span></div>)}
           </div>
         )}
@@ -516,7 +517,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
                         {col.header}
-                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.terracotta, marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column, not auto-mapped</span>}
+                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.terracotta, marginLeft: 8 }}>hidden column, not auto-mapped</span>}
                         <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 8 }}>e.g. “{String(col.sample ?? "").slice(0, 28)}”</span>
                       </div>
                       {/* FIX (2026-09-09) — the ONE column-target dropdown. This
@@ -588,7 +589,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {/* BUILD-87 Part 1 — name this run. It is what the Imports list will
             call it in six months, so the file's own name is the default. */}
         <div style={{ marginBottom: 12 }}>
-          <label htmlFor="wb-import-name" style={{ display: "block", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 4 }}>
+          <label htmlFor="wb-import-name" style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>
             Name this import
           </label>
           <input id="wb-import-name" data-testid="wb-import-name" value={importName}
@@ -799,7 +800,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         )}
         {checks.length > 0 && (
           <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? T.terra100 : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? T.terra200 : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? T.terra700 : T.ink3, marginBottom: 6 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: (mismatches.length || notReadBack.length) ? T.terra700 : T.ink3, marginBottom: 6 }}>
               {mismatches.length ? "What we showed you does NOT match what was written"
                 : notReadBack.length ? "Checked against the database, some figures could not be read back"
                 : "Checked against the database after writing"}
@@ -824,7 +825,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             chase. */}
         {Object.keys(refusalsByReason).length > 0 && (
           <div data-testid="wb-result-refusals" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 6 }}>Set aside, by reason, every row has its sheet, row number and reason</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>Set aside, by reason, every row has its sheet, row number and reason</div>
             {Object.entries(refusalsByReason).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
               <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
                 <span>{REASON_LABEL_RESULT[reason] || reason}: <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>

@@ -44,7 +44,7 @@ export function AnnualFund({data}) {
 
     {editGoal&&isAdmin&&<Card style={{display:"flex",gap:10,alignItems:"flex-end"}}>
       <div style={{display:"flex",flexDirection:"column",gap:4,flex:1}}>
-        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Annual Fund Goal {year}</label>
+        <label style={{fontSize:11,color:T.ink3}}>Annual Fund Goal {year}</label>
         <input type="number" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="250000"
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
       </div>
@@ -58,7 +58,7 @@ export function AnnualFund({data}) {
       <Card>
         <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>{year} Annual Fund</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>{year} Annual Fund</div>
             <div style={{fontSize:38,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(fund.totalRaised)}</div>
             {fund.goal>0&&<div style={{fontSize:13,color:T.ink3,marginTop:4}}>of {fmtFull(fund.goal)} goal · {fund.goalPct}% raised</div>}
             {fund.projectedTotal>0&&year===currentYear&&fund.projectedTotal!==fund.totalRaised&&

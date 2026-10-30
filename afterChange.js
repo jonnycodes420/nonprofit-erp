@@ -32,7 +32,7 @@ const ACTOR = { id: "system:after-change", name: "Steward (after a change)" };
 const DOORS = [
   "gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "old_reports_import",
   "giving_source_read", "qbo_read", "event_checkin", "volunteer_hours", "logged_touch", "mail_calendar_sync",
-  "capture",
+  "capture", "pledge",
 ];
 
 // The doors that write gifts: after any of them, an old report's check may move.
@@ -167,6 +167,8 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
   const today = deps.orgToday(await deps.orgTz(orgId));   // ORG_TZ_SEAM_OK
   try {
     if (recalc) await recalcDonorSummaryBatch(deps.query, ids, orgId);
+    // FIX-60: a pledge is giving activity; an automatic Lapsed it outlived goes.
+    if (deps.unlapseHeldByPledge) await deps.unlapseHeldByPledge(orgId, ids);
     const r = await rhythmFor(orgId, ids, { door: stamp, today });
     result.becameLate = r.becameLate;
     result.crossings = await groupCrossings(orgId, ids, { door: stamp, today, fire: history ? null : fire });

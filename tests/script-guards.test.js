@@ -399,6 +399,7 @@ const EXEMPT = {
   "shard-plan": "CHORE-2 — pure scheduling: reads audit/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
   "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is audit/suite-timings.json. No BASE, no DB, no network",
   "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only write is that baseline file. No BASE, no DB, no app calls",
+  "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
