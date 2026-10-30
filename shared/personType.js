@@ -1,6 +1,6 @@
 // shared/personType.js — BUILD-94 Part 2. PEOPLE WHO ARE NOT DONORS.
 //
-// Until this build, every person in Steward was a donor. Allie Barnett pays
+// Until this build, every person in Steward was a donor. Allie Bramley pays
 // Mailchimp over $100 a month and cannot leave it, because her volunteers,
 // staff and board live only there. They have to live here, beside her donors,
 // in one list — and they must be invisible to every number that means money.

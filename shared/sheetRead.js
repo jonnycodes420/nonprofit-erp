@@ -214,9 +214,9 @@ function commaIsLastFirst(before, after) {
   if (before.split(/\s+/).filter(w => !/^(van|von|de|del|der|da|di|la|le|st\.?|mac|mc|o')$/i.test(w)).length >= 3) return false;
   return true;
 }
-// IMPORT-5 · A COUPLE WRITTEN WITH A COMMA. "Alex, Brad Hubbard": one first
+// IMPORT-5 · A COUPLE WRITTEN WITH A COMMA. "Alex, Brad Hollins": one first
 // name before the comma, a first name and a surname after it, is two people of
-// one household ("Alex & Brad Hubbard"), never "Last, First". The last word must
+// one household ("Alex & Brad Hollins"), never "Last, First". The last word must
 // not itself be a first name ("Thomas, Paul James" stays Paul James Thomas).
 // FIX-59: the second first name need not be on the list ("Josh, Kesi Tanabe"):
 // a known first name before the comma, then exactly two capitalised words, the
@@ -237,7 +237,7 @@ function commaCouple(before, after) {
   return { first: `${b[0]} & ${a.slice(0, -1).join(" ")}`, last: a[a.length - 1] };
 }
 // The same couple on a record already here, for Data health's review: written
-// as typed ("Alex, Brad Hubbard"), or as the old reading left it ("Brad Hubbard
+// as typed ("Alex, Brad Hollins"), or as the old reading left it ("Brad Hollins
 // Alex", only on a record an import made). Never applied without her click.
 export function commaCoupleFix(name, { imported = false } = {}) {
   const n = s(name);
@@ -694,7 +694,7 @@ export function applyOverrides(cols, overrides = {}) {
 // "Suzanna & Walt" + "Arnold" → two people, one household. "Arnold, Suzanna
 // & Walt", "Mr. and Mrs. Walt Arnold", "Walt and Suzanna Arnold" too. An
 // organisation's name stays whole.
-const JOINT_RE = /\s*(?:&|\band\b|\bor\b|\+)\s*/i;   // FIX-59: "Randolph or Joenell Barnett" is a couple too
+const JOINT_RE = /\s*(?:&|\band\b|\bor\b|\+)\s*/i;   // FIX-59: "Randolph or Joenell Bramley" is a couple too
 function titleCase(w) { return w && (w === w.toUpperCase() || w === w.toLowerCase()) ? w.replace(/[A-Za-zÀ-ÿ][^\s-]*/g, x => x[0].toUpperCase() + x.slice(1).toLowerCase()) : w; }
 function cleanPart(x) { return titleCase(s(x).replace(/^[,.\s]+|[,.\s]+$/g, "")); }
 
@@ -1074,8 +1074,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const nearWord = w => s(w).toLowerCase().replace(/[^a-z]/g, "");
   const nearIndex = { first: new Map(), last: new Map() };
   const nearAdd = (map, k, p) => { if (!k) return; if (!map.has(k)) map.set(k, []); map.get(k).push(p); };
-  // FIX-59 · NOTES ARE NOT PEOPLE. A row whose name cell is a note ("1 Medical
-  // Gluten") is a note on the person on the row above it; a note in a name
+  // FIX-59 · NOTES ARE NOT PEOPLE. A row whose name cell is a note ("1 Celiac
+  // Diet") is a note on the person on the row above it; a note in a name
   // ("Ivy (send with Harlan's) Brooks", "**Gideon Pratt") is moved off it.
   const noteRows = [], namesCleaned = [];
   const merged = [];   // IMPORT-5 (7c): rows read into a person already on the list

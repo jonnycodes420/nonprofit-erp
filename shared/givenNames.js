@@ -1,6 +1,6 @@
 // shared/givenNames.js · IMPORT-5. Common first names, lower case, for one
 // question only: is this word a first name? It tells a couple written with a
-// comma ("Alex, Brad Hubbard": two first names and a surname) from "Last,
+// comma ("Alex, Brad Hollins": two first names and a surname) from "Last,
 // First". A name missing here only means Steward keeps reading "Last, First"
 // as before; it never makes a couple of a name it does not know.
 const LIST = `
