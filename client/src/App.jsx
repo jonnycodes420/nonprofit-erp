@@ -492,6 +492,7 @@ function AppShell() {
   // and when its job ends) re-reads the app's own data too, not only the page
   // that opened the window.
   useStewardTold(d=>{if(d&&d.import)loadData({quiet:true});});
+  useStewardTold(d=>{if(d&&d.task)loadData({quiet:true});});   // SWEEP-4: a task drafted from a profile counts at once
 
   // HOME-4: clip, not hidden, where the browser has it. Both stop a sideways
   // bleed; hidden also makes this a scroll container that never scrolls, which

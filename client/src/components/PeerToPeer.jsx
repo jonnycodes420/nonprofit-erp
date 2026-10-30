@@ -359,7 +359,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
 
   if (!pages) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   if (!pages.length) return (
-    <div data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
+    <div className="no-caps" data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
       <div style={{ fontSize: 13, color: T.ink3, maxWidth: 520 }}>
         No peer-to-peer campaigns yet. Make one and supporters can start their own fundraisers under it.
       </div>
@@ -369,7 +369,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
 
   const t = d?.totals;
   return (
-    <div data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="no-caps" data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <MailTypeSwitches keys={["p2p_link"]} from="peer_to_peer" />
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <select value={pageId} onChange={e => setPageId(e.target.value)} style={inp} aria-label="Campaign" data-testid="p2p-campaign">

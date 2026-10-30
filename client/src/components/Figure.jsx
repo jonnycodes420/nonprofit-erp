@@ -138,7 +138,8 @@ export function Figure({ value, kind = "count", label, definition, source, blank
         style={{ textAlign: "left", background: "transparent", border: "none", borderRadius: 12, width: "100%",
                  padding: "16px 18px 12px", cursor: openable ? "pointer" : "default", minWidth: 0,
                  display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
-        <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>{label}</span>
+        {/* SWEEP-4: room for the "?" pinned top-right: "Pledged · first year" ran into it */}
+        <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700, paddingRight: 22 }}>{label}</span>
         {/* Sized to the TILE (a container query), never broken across lines: a
             figure split as "$1,575.7 / 5" is a different number. */}
         <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: "clamp(22px, 14cqi, 34px)", lineHeight: 1.1, color: T.ink, whiteSpace: "nowrap" }}>{text}</span>

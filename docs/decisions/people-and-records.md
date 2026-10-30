@@ -47,6 +47,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   each rule key reads the Reports, Home or Ask definition (`reportHooks.buntPredicate`, `yearWindows`,
   `thanksSince`), never a copy. A starter meant for asking carries `solicitable` and says how many it
   leaves out. A new starter needs a rule key that reuses a definition, not a new one. (GROUPS-2)
+- **An event's figures are people, live, and its after-the-night tools are counted first (SWEEP-4).** No
+  figure on the event page counts a deleted person; a past event's seating chart is who came; follow-up
+  tasks say how many before they are made, never duplicate an open one, and have Undo; the public event
+  page reads Not open yet until payments are connected.
 - **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
   night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
   registration sets. Before this the only link was the campaign NAME, so a renamed event lost its
