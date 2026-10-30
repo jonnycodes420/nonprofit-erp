@@ -181,7 +181,7 @@ async function eventsAndPledgesSayNothingWrong(browser) {
       if (tab) await page.getByRole("button", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
       await page.waitForTimeout(500);
       // only the swept screens: each wears .no-caps at its root
-      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].map(n => n.innerText).join("\n"));
+      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps")).map(n => n.innerText).join("\n"));
       const said = SAYS.filter(([re]) => re.test(text)).map(([, w]) => w);
       const caps = [...new Set(text.split("\n").map(l => l.trim()).filter(l => /^[A-Z][A-Z0-9 ·&'’,\-\/()]{3,}$/.test(l) && /[A-Z]{4}/.test(l)))].slice(0, 6);
       const where = `${name} (${what}, ${width})`;
@@ -677,7 +677,9 @@ async function commsScreensSayNothingWrong(browser) {
       await page.waitForFunction(() => !/Loading|Counting who/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
       const r = await page.evaluate(() => {
-        const roots = [...document.querySelectorAll(".no-caps")];
+        // Outermost only: SWEEP-6 put .no-caps on the app root too, and a
+        // nested root would read every line twice.
+        const roots = [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps"));
         const caps = [];
         for (const root of roots) for (const el of root.querySelectorAll("*")) {
           if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
@@ -949,8 +951,9 @@ async function givingSideAndPhoneSayNothingWrong(browser) {
 
 (async () => {
   console.log("smoke-walk");
-  // SWEEP-6: SMOKE_LEG=sweep6 runs that one leg (how its red on main was watched).
-  if (process.env.SMOKE_LEG === "sweep6") { const b = await chromium.launch(); await givingSideAndPhoneSayNothingWrong(b); await b.close(); await closeDb(); return summary("smoke-walk"); }
+  // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
+  const LEGS = { givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
+  if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
     ok("the demo org is on this database (run scripts/seed-demo.js)", false, login.status);
