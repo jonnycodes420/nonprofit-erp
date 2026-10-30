@@ -497,7 +497,7 @@ async function moneyScreensSayNothingWrong(browser) {
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
     // Imported history: gifts this month, last fiscal year and two years back,
     // a check with a processing fee, people without an email; no ledger rows.
-    const today = new Date().toISOString().slice(0, 10), ym = today.slice(0, 7);
+    const today = require("./clock").civilDay(), ym = today.slice(0, 7);   // the org's New York day, through the test clock
     for (let i = 1; i <= people; i++) {
       await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`,
         [`d_${org}_${i}`, org, `Walk Person ${i}`, i % 3 ? null : `walk${i}@example.org`]);
