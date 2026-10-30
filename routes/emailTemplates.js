@@ -446,17 +446,47 @@ for (const [path, archived] of [["archive", true], ["restore", false]]) {
 // person as the sample donor. The footer slot gets the real MAIL-1 footer for
 // the person's own address (it reads; it writes nothing). Dark forces the
 // dark block on, so the person can see it without changing their own settings.
-async function previewHtml(req, row) {
+// EDITOR-1: `as` is a real person of this org to preview as ("Preview as
+// Margaret"): their own name, last gift and, for a one-person email, the facts
+// their draft would carry. Reading only. `editable` marks the words and
+// fields so the editor can be typed in where they show.
+async function previewHtml(req, row, { as = null, editable = false } = {}) {
   const orgId = req.user.orgId;
   const person = await me(req);
   const ectx = await buildEmailContext(orgId);
   const personKind = LIB.personKindOf(row.starter_key);
-  const fields = personKind ? { ...(await sampleFields(orgId, person, ectx)), ...(await personSample(orgId, person)) } : await sampleFields(orgId, person, ectx);
-  const r = renderFor(row, ectx, fields, "preview", personKind ? personFieldDefs() : null);
-  const footer = await unsubscribeEmailFooterHtml(person.email || "you@example.org", orgId, "campaign");
+  let fields = personKind ? { ...(await sampleFields(orgId, person, ectx)), ...(await personSample(orgId, person)) } : await sampleFields(orgId, person, ectx);
+  let shownAs = null;
+  if (as) {
+    const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(as), orgId]);
+    if (d) {
+      shownAs = { id: d.id, name: d.name, email: d.email || "" };
+      fields = { ...fields, ...(await donorFields(orgId, d, ectx)) };
+      if (personKind) {
+        const f = await require("./templates").personFacts(orgId, d.id, req.user.userId);
+        if (f) for (const [k, v] of Object.entries(f.values)) if (v != null && String(v) !== "") fields[k] = v;
+      }
+    }
+  }
+  const r = EB.renderEmail({ blocks: row.blocks || [], brand: ectx.brand, fields, links: ectx.links, subject: row.subject || "", preheader: row.preheader || "",
+    mode: "preview", extraFields: personKind ? personFieldDefs() : null, editable });
+  const footer = await unsubscribeEmailFooterHtml((shownAs && shownAs.email) || person.email || "you@example.org", orgId, "campaign");
   const html = r.html.replace(EB.FOOTER_SLOT, footer);
   const lint = EB.lintEmailHtml(r.html);
-  return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p))], person, fields, ectx };
+  return { html, problems: [...r.problems, ...lint.filter(p => !r.problems.includes(p))], person, fields, ectx, shownAs,
+    subject: EB.renderSubject(row.subject || "", fields, personKind ? personFieldDefs() : null) };
+}
+// One donor's own fields for an email: first name, the greeting, their last gift.
+async function donorFields(orgId, d, ectx) {
+  const GR = await import("../shared/greeting.js");
+  const [g] = await query(`SELECT amount, date FROM gifts WHERE org_id=? AND donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, d.id]).catch(() => []);
+  const out = { first_name: GR.firstNames(d) || firstName(d.name) || "", greeting: GR.greetingName(d) || firstName(d.name) || "", full_name: d.name || "", give_link: ectx.giveLink, org_name: ectx.orgName };
+  if (g) {
+    out.last_gift_amount = "$" + Number(g.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
+    const day = g.date instanceof Date ? require("../orgTime").civilOf(g.date).slice(0, 10) : String(g.date || "").slice(0, 10);
+    if (day) out.last_gift_date = new Date(day + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  } else { out.last_gift_amount = ""; out.last_gift_date = ""; }
+  return out;
 }
 
 app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
@@ -473,10 +503,39 @@ app.post("/email-templates/:id/preview", requireAuth, wrap(async (req, res) => {
   }
   if (b.subject != null) draft.subject = clip(b.subject, 200);
   if (b.preheader != null) draft.preheader = clip(b.preheader, 200);
-  const p = await previewHtml(req, draft);
+  const p = await previewHtml(req, draft, { as: b.as || null, editable: b.editable === true });
   let html = p.html;
   if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
-  res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600 });
+  res.json({ html, problems: p.problems, device: b.device === "phone" ? "phone" : "desktop", width: b.device === "phone" ? 375 : 600,
+    as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject });
+}));
+
+// EDITOR-1 · A CAMPAIGN'S EMAIL, PREVIEWED AS IT IS TYPED. The same render as
+// a template's preview, for blocks that are not saved anywhere yet (a new
+// campaign, or one being edited), with the campaign's fields. Reading only.
+app.post("/email-preview", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const b = req.body || {};
+  const v = EB.validateEmailBlocks(b.blocks || [], PW.typesForSurface("email"));
+  if (!v.ok) return res.status(400).json({ error: "invalid_blocks", sentence: v.error });
+  const row = { blocks: v.blocks, subject: clip(b.subject || "", 200), preheader: clip(b.preheader || "", 200), starter_key: null };
+  const p = await previewHtml(req, row, { as: b.as || null, editable: b.editable === true });
+  if (b.campaignName) p.fields.campaign = clip(b.campaignName, 120);
+  let html = p.html;
+  if (b.dark === true) html = html.split(EB.DARK_MEDIA).join("@media all");
+  res.json({ html, problems: p.problems, as: p.shownAs || { id: null, name: p.person.name || "" }, subject: p.subject });
+}));
+
+// EDITOR-1 · HISTORY. Every save, publish and discard of this template, from
+// the one audit trail (middleware/auditTrail.js), newest first. Reading only.
+app.get("/email-templates/:id/history", requireAuth, wrap(async (req, res) => {
+  const row = await templateRow(req.user.orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Template not found" });
+  const rows = await query(`SELECT id, created_at, user_name, actor_kind, action, request_method, request_path FROM fin_audit_log
+                             WHERE org_id=? AND entity_type='email_template' AND entity_id=? ORDER BY created_at DESC LIMIT 50`, [req.user.orgId, row.id]).catch(() => []);
+  const what = r => /\/publish$/.test(r.request_path || "") ? "Published" : /\/discard-draft$/.test(r.request_path || "") ? "Draft thrown away"
+    : /\/archive$/.test(r.request_path || "") ? "Archived" : /\/restore$/.test(r.request_path || "") ? "Restored" : r.request_method === "POST" ? "Started" : "Saved";
+  res.json({ versions: rows.map(r => ({ id: r.id, at: r.created_at, byName: r.user_name || (r.actor_kind === "system" ? "Steward" : "someone on your team"), what: what(r) })) });
 }));
 
 // ── SEND ME A TEST ─────────────────────────────────────────────────────────

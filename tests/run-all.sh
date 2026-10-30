@@ -261,6 +261,7 @@ CORE=(
   campaign2-goal-bar
   giveedit1-pages
   give3-pages
+  editor1
   trial-end
   upgrade-checkout
   close-link

@@ -15,16 +15,15 @@
 //     an explicit Publish; Revert restores the last published page.
 //   • Device toggle: phone and desktop, PHONE DEFAULT (donors arrive from
 //     email on a phone).
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { WIDGETS, typesForSurface, defaultWidget } from "../../../shared/pageWidgets";
-import { apiFetch, API } from "../api";
+import { apiFetch } from "../api";
 import { PageRenderer } from "../components/PortalWidgets";
 import { resolvePairing, resolveCardStyle, TYPE_PAIRINGS, CARD_STYLES } from "../lib/portalTheme";
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
 import PhotoField from "../components/PhotoField";
-import Picture from "../components/Picture";
 import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "../components/ConfirmDialog";
@@ -35,6 +34,13 @@ import { safeBack } from "../lib/appUrls";
 // drawn from the draft's payload, so the two cannot drift apart again.
 import Donate from "./Donate";
 import { LAYOUTS, TRUST_KEYS, TRUST_LABELS, normalizeDesign, wayNeeds } from "../../../shared/givingPageDesign.js";
+// EDITOR-1 — the one editor shell every donor-facing thing opens in.
+import StewardEditor, { RailSection, DeviceFrame, RailPhoto, PhotoTools, useNarrow, stockPhotoForBlock } from "../components/StewardEditor";
+import InlineText, { INLINE_CSS } from "../components/InlineText";
+import { retryImport } from "../lib/lazyRetry";
+
+// Part 3: Steward's photos, opened from the cover and from a photo block.
+const LazyStockPicker = lazy(() => retryImport(() => import("../components/StockPhotoPicker")));
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -74,7 +80,6 @@ const E = {
   editLine: "#e0dcd0",
   body: "#1c1c1a",
 };
-const btn = { background: E.gold, color: E.ink, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
 const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid " + E.line, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
 const inp = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + E.bg3, borderRadius: 8, fontFamily: "inherit" };
 const lbl = { fontSize: 11, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
@@ -155,11 +160,21 @@ function overlayPreview(pv, ds, ps, widgets, orgForm = false) {
     if (!gp.campaignId && ds.goalAmount !== undefined) gp.goalAmount = ds.goalAmount;
     gp.design = normalizeDesign(ds.design);
   }
-  if (gp && Array.isArray(gp.page) && Array.isArray(widgets)) {
-    gp.page = gp.page.map(w => {
-      const mine = w && widgets.find(x => x.id === w.id);
-      return mine && w.type === "hero" ? { ...w, heading: mine.heading, sub: mine.sub } : w;
-    });
+  // EDITOR-1: the blocks in the editor's order, as she arranges them: the
+  // server's resolved block where it has one, her own (just added, not yet
+  // saved) where it does not, so a block shows the moment it is added.
+  if (gp && Array.isArray(widgets)) {
+    const server = Array.isArray(gp.page) ? gp.page : [];
+    // A block the server left out of the page (one with nothing to show) stays
+    // out; only one added here and not saved yet ("new_…") is drawn from here.
+    gp.page = widgets.map(mine => {
+      const w = server.find(x => x && x.id === mine.id);
+      if (!w) return String(mine.id || "").startsWith("new_") ? mine : null;
+      if (w.type === "hero") return { ...w, heading: mine.heading, sub: mine.sub };
+      if (w.type === "richtext") return { ...w, blocks: mine.blocks };
+      if (w.type === "quote") return { ...w, text: mine.text, attribution: mine.attribution };
+      return w;
+    }).filter(Boolean);
   }
   const theme = { ...((pv.org && pv.org.theme) || {}) };
   if (ps) {
@@ -212,9 +227,16 @@ export default function PortalEditor() {
   const givingPageId = editorParams.get("page") || "";
   const isOrgForm = !givingPageId && editorParams.get("form") === "org";
   const isPageEditor = !!givingPageId || isOrgForm;
-  // A giving page opens on its Details, side by side at desktop and phone.
-  const [device, setDevice] = useState(isPageEditor ? "both" : "phone");     // §4: phone DEFAULT for the portal
-  const [mode, setMode] = useState(isPageEditor ? "details" : "page");       // "details" | "page" (widgets) | "design" (theme)
+  // EDITOR-1: one preview at a time. A giving page opens at desktop width on a
+  // wide screen; the portal and every page on a phone open on the phone.
+  const narrowAtOpen = typeof window !== "undefined" && window.innerWidth < 900;
+  const [device, setDevice] = useState(isPageEditor && !narrowAtOpen ? "desktop" : "phone");     // §4: phone DEFAULT for the portal
+  // Which rail section a click in the preview asked for, and a bump to open it.
+  const [focusAsk, setFocusAsk] = useState({ id: "", n: 0 });
+  const askSection = useCallback(id => setFocusAsk(f => ({ id, n: f.n + 1 })), []);
+  const [stockOpen, setStockOpen] = useState(null);   // { onPick } while Steward's photo library is open
+  const [addAfter, setAddAfter] = useState(null);     // the block a "+" was pressed under
+  const narrow = useNarrow();
   const [ds, setDs] = useState(null);                 // GIVE-EDIT-1: the draft settings
   const [dsErrors, setDsErrors] = useState([]);
   const [dsSave, setDsSave] = useState("idle");
@@ -231,7 +253,6 @@ export default function PortalEditor() {
   const isVolunteer = surface === "volunteer";
   const apiBase = isOrgForm ? "/org-form/page" : givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
   const [formPosition, setFormPosition] = useState("top");
-  const [libOpen, setLibOpen] = useState(false);      // widget library — collapsed by default (BUILD-55)
   const [selected, setSelected] = useState(null);
   const [saveState, setSaveState] = useState("idle"); // idle|dirty|saving|saved|error
   const [publishing, setPublishing] = useState(false);
@@ -264,8 +285,8 @@ export default function PortalEditor() {
       setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); if (d.formPosition) setFormPosition(d.formPosition);
       const s0 = d.draftSettings || d.settings || null;
       dsRef.current = s0; setDs(s0);
-      // A volunteer page has no Details rail and keeps the phone first.
-      if (d.surface === "volunteer") { setMode(m => m === "details" ? "page" : m); setDevice(v => v === "both" ? "phone" : v); }
+      // A volunteer page keeps the phone first.
+      if (d.surface === "volunteer") setDevice("phone");
       // The preview draws the real programme (org content, never a person's data).
       if (d.surface === "volunteer" && givingPageId) {
         apiFetch(`/giving-pages/${givingPageId}/volunteer-data`).then(setVolData).catch(() => setVolData({}));
@@ -419,10 +440,24 @@ export default function PortalEditor() {
     [next[i], next[j]] = [next[j], next[i]];
     update(next);
   };
-  const addWidget = (type) => {
+  // EDITOR-1: a block lands where its "+" was pressed (else at the end), and
+  // a duplicate lands under the one it copies.
+  const addWidget = async (type, afterId = null) => {
     const w = { ...defaultWidget(type), id: "new_" + Math.random().toString(36).slice(2, 10) };
-    update([...widgets, w]);
-    setSelected(w.id);
+    // Part 3: a new photo block starts with one of Steward's photos, never an empty box.
+    if ((type === "hero" || type === "image") && !w.image) { const p = await stockPhotoForBlock(); if (p) { w.image = p.src; w.alt = p.alt; } }
+    const at = afterId ? widgets.findIndex(x => x.id === afterId) + 1 : widgets.length;
+    const next = widgets.slice(); next.splice(at > 0 ? at : widgets.length, 0, w);
+    update(next);
+    setSelected(w.id); setAddAfter(null);
+    askSection("block");
+  };
+  const duplicateWidget = (id) => {
+    const i = widgets.findIndex(w => w.id === id);
+    if (i < 0) return;
+    const copy = { ...JSON.parse(JSON.stringify(widgets[i])), id: "new_" + Math.random().toString(36).slice(2, 10) };
+    const next = widgets.slice(); next.splice(i + 1, 0, copy);
+    update(next); setSelected(copy.id);
   };
   // Drag reorder — BUILD-34's midpoint rule.
   const onDragOverWidget = (e, overId) => {
@@ -480,19 +515,12 @@ export default function PortalEditor() {
   // What the preview draws this instant: the server's payload with the fields
   // being typed laid over it, so a keystroke shows before its save lands.
   const livePayload = useMemo(() => overlayPreview(pv, ds, ps, widgets, isOrgForm), [pv, ds, ps, widgets, isOrgForm]);
+  // A click on a part of the preview opens the rail section that sets it.
+  // The headline and the story are typed where they show, so they ask nothing.
   const pickField = useCallback((field) => {
-    if (field === "blocks") { setMode("page"); return; }
-    if (field === "header") { setMode("design"); setTimeout(() => { const el = document.querySelector("[data-field=header-image]"); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); }, 60); return; }
-    if (field === "photo") { const el = document.querySelector("[data-testid=editor-cover]"); if (el) el.scrollIntoView({ block: "nearest" }); return; }
-    setMode("details");
-    setTimeout(() => {
-      const el = document.querySelector(`[data-field="${field}"]`);
-      if (!el) return;
-      el.scrollIntoView({ block: "start", behavior: "smooth" });
-      const input = el.matches("input,textarea") ? el : (el.nextElementSibling && el.nextElementSibling.querySelector ? (el.nextElementSibling.matches("input,textarea,select") ? el.nextElementSibling : el.nextElementSibling.querySelector("input,textarea,select")) : null);
-      if (input) input.focus({ preventScroll: true });
-    }, 60);
-  }, []);
+    const to = { header: "design", photo: "cover", amounts: "gift", goal: "goal", trust: "trust", ways: "ways", blocks: "blocks" }[field];
+    if (to) askSection(to);
+  }, [askSection]);
 
   if (err && widgets === null) {
     return <div style={{ padding: 40, fontFamily: "system-ui" }}>
@@ -525,123 +553,225 @@ export default function PortalEditor() {
     return w;
   });
 
-  // ── BUILD-55 Part 2 layout ──────────────────────────────────────────────
-  // Phone = a real phone frame (390px, its own scroll), centered in the
-  // canvas. Desktop = the REAL full-width portal render — one PageRenderer
-  // over all widgets so the published .pt-widgets two-track grid and the
-  // wrap ladder (860 → 1140 ≥1280 → 1360 ≥1720, mirrored from Portal.jsx's
-  // PortalStyles) actually apply — with the edit chrome layered per widget
-  // via PageRenderer's decorate seam. The widget library is no longer a
-  // permanent rail: "+ Add widget" opens it; the selected widget's options
-  // panel appears beside the canvas only while something is selected.
-
-  // Per-widget edit chrome, injected INSIDE the widget's grid cell so the
-  // desktop grid placement is untouched.
-  const decorateWidget = (w, node) => (
-    <div draggable
-      onDragStart={() => setDragId(w.id)}
-      onDragEnd={() => { setDragId(null); scheduleSave(widgets); }}
-      onDragOver={e => onDragOverWidget(e, w.id)}
-      onClick={() => setSelected(w.id)}
-      onDrop={["hero", "image"].includes(w.type) ? (e) => {
-        // §4 — in-place image drop: a photo dropped ON the hero IS the hero.
-        e.preventDefault(); e.stopPropagation();
-        readImageFile(e.dataTransfer?.files?.[0], dataUrl => updateWidget(w.id, { image: dataUrl }));
-      } : undefined}
-      style={{ position: "relative", outline: selected === w.id ? `2px solid ${E.gold}` : "1px dashed transparent", borderRadius: 8, cursor: "grab" }}
-      onMouseEnter={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed "+E.gold; }}
-      onMouseLeave={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed transparent"; }}>
-      {/* floating widget controls — keyboard path first-class */}
-      <div style={{ position: "absolute", top: -10, right: 6, zIndex: 5, display: "flex", gap: 4 }}>
-        <span style={{ background: E.ink, color: E.cream, fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "3px 8px" }}>{WIDGET_META[w.type]?.label}</span>
-        <button aria-label="Move up" onClick={e => { e.stopPropagation(); move(w.id, -1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↑</button>
-        <button aria-label="Move down" onClick={e => { e.stopPropagation(); move(w.id, +1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↓</button>
-        <button aria-label="Remove widget" onClick={e => { e.stopPropagation(); removeWidget(w.id); }} style={{ background: E.terra, color: E.white, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>✕</button>
+  // ── EDITOR-1 · THE PREVIEW IS WHERE IT IS EDITED ─────────────────────────
+  // One shell (StewardEditor): the settings in the left rail, the page in the
+  // middle at one width at a time, History on the right when it is open. A
+  // block shows its handles when the pointer is on it (move up, move down,
+  // duplicate, remove, and a "+" under it to add one there); a text block is
+  // typed in where it shows once it is picked; the headline and the story of
+  // a giving page are typed in the page; the photo is clicked for its focus.
+  const typeLabel = isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal";
+  const libraryTypes = (Array.isArray(meta?.widgetTypes) && givingPageId ? meta.widgetTypes : widgetTypesHere(surface)).filter(t => WIDGET_META[t]);
+  const blockMenu = (afterId) => (
+    <div className="se-menu" data-editor-only="" data-testid="editor-block-menu" onClick={e => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 4px 6px" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: E.body }}>Add a block here</span>
+        <button type="button" onClick={() => setAddAfter(null)} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: E.muted, fontSize: 13 }}>✕</button>
       </div>
-      <div style={{ pointerEvents: "none" }}>{node}</div>
+      {libraryTypes.map(t => (
+        <button key={t} type="button" data-testid={"add-block-" + t} onClick={() => addWidget(t, afterId)}
+          style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid " + E.editLine, borderRadius: 8, padding: "7px 10px", marginBottom: 4, cursor: "pointer", fontFamily: "inherit" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: E.body }}>{WIDGET_META[t].label}</span>
+          <span style={{ display: "block", fontSize: 11.5, color: E.muted }}>{WIDGET_META[t].hint}</span>
+        </button>
+      ))}
     </div>
   );
+  const inPlace = (w) => {
+    if (w.type === "richtext") return (
+      <div style={{ fontFamily: "var(--pt-sans, inherit)", fontSize: 16, lineHeight: 1.6, color: E.body, padding: "6px 4px" }}>
+        <InlineText as="div" multiline field="richtext" testid="inline-richtext" value={storyToText(w.blocks)} label="The block's words"
+          placeholder="Write something in your own words." onChange={t => updateWidget(w.id, { blocks: textToStory(t) })} />
+        <div style={{ fontSize: 11.5, color: E.muted, marginTop: 6 }}>A blank line starts a new paragraph, "## " a heading, "- " a list.</div>
+      </div>
+    );
+    if (w.type === "quote") return (
+      <div style={{ padding: "8px 4px", fontFamily: "var(--pt-serif, Georgia, serif)", fontSize: 19, lineHeight: 1.5, color: E.body }}>
+        <InlineText as="div" multiline field="quote" testid="inline-quote" value={w.text || ""} label="The quote" placeholder="The words" onChange={t => updateWidget(w.id, { text: t })} />
+        <InlineText as="div" field="attribution" value={w.attribution || ""} label="Who said it" placeholder="Who said it"
+          style={{ fontFamily: "var(--pt-sans, inherit)", fontSize: 13, color: E.muted, marginTop: 6 }} onChange={t => updateWidget(w.id, { attribution: t })} />
+      </div>
+    );
+    return null;
+  };
+  const decorateWidget = (w, node) => {
+    const on = selected === w.id;
+    const typed = on ? inPlace(w) : null;
+    return (
+      <div className={"se-block" + (on ? " se-on" : "")} data-testid="editor-block" data-block-type={w.type} tabIndex={0} data-editor-wrap=""
+        draggable={!typed}
+        onDragStart={() => setDragId(w.id)}
+        onDragEnd={() => { setDragId(null); scheduleSave(widgets); }}
+        onDragOver={e => onDragOverWidget(e, w.id)}
+        onClick={() => { if (!on) { setSelected(w.id); askSection("block"); } }}
+        onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) { setSelected(w.id); askSection("block"); } }}
+        onDrop={["hero", "image"].includes(w.type) ? (e) => {
+          // §4 — in-place image drop: a photo dropped ON the hero IS the hero.
+          e.preventDefault(); e.stopPropagation();
+          readImageFile(e.dataTransfer?.files?.[0], dataUrl => updateWidget(w.id, { image: dataUrl }));
+        } : undefined}>
+        <div className="se-handles" data-editor-only="" onClick={e => e.stopPropagation()}>
+          <span className="se-tag">{WIDGET_META[w.type]?.label}</span>
+          <button type="button" aria-label="Move up" onClick={() => move(w.id, -1)}>↑</button>
+          <button type="button" aria-label="Move down" onClick={() => move(w.id, +1)}>↓</button>
+          <button type="button" aria-label="Duplicate block" data-testid="block-duplicate" onClick={() => duplicateWidget(w.id)}>Duplicate</button>
+          <button type="button" aria-label="Remove widget" data-testid="block-remove" onClick={() => removeWidget(w.id)}>✕</button>
+        </div>
+        {typed || <div data-editor-node="" style={{ pointerEvents: "none" }}>{node}</div>}
+        <button type="button" className="se-add" data-editor-only="" aria-label="Add a block here" data-testid="block-add-here" onClick={e => { e.stopPropagation(); setAddAfter(a => a === w.id ? null : w.id); }}>+</button>
+        {addAfter === w.id && blockMenu(w.id)}
+      </div>
+    );
+  };
+  const blockCss = `
+.se-block{position:relative;border-radius:8px;outline:1px dashed transparent;outline-offset:3px;cursor:grab;margin-bottom:6px}
+.se-block:hover,.se-block:focus-visible{outline-color:${E.gold}}
+.se-block.se-on{outline:2px solid ${E.gold};cursor:default}
+.se-handles{position:absolute;top:-13px;right:6px;z-index:6;display:flex;gap:4px;opacity:0;transition:opacity .12s}
+.se-block:hover>.se-handles,.se-block.se-on>.se-handles,.se-block:focus-within>.se-handles{opacity:1}
+.se-handles button,.se-tag{background:${E.ink};color:${E.cream};border:none;border-radius:6px;height:22px;min-width:24px;font-size:11px;font-weight:700;cursor:pointer;padding:0 7px;font-family:'DM Sans',system-ui,sans-serif;line-height:22px}
+.se-tag{cursor:default}
+.se-block>[data-editor-node]:empty{min-height:44px;border:1px dashed ${E.bg3};border-radius:8px}
+.se-block>[data-editor-node]:empty::after{content:"Empty block: click it to type, or remove it";display:block;padding:12px 14px;font-size:13px;color:${E.muted};font-family:'DM Sans',system-ui,sans-serif}
+.se-add{position:absolute;left:50%;bottom:-14px;transform:translateX(-50%);z-index:6;width:26px;height:26px;border-radius:50%;border:none;background:${E.green};color:${E.white};font-size:17px;line-height:26px;cursor:pointer;opacity:0;padding:0}
+.se-block:hover>.se-add,.se-block:focus-within>.se-add{opacity:1}
+.se-menu{position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + 16px);z-index:9;background:${E.white};border:1px solid ${E.bg3};border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:8px;width:260px;max-height:320px;overflow:auto;cursor:default}
+.se-photo-tools{opacity:.0;transition:opacity .12s}
+[data-edit="photo"]:hover .se-photo-tools,.se-photo-tools:focus-within{opacity:1}
+${INLINE_CSS}`;
 
   const pageHeader = (
     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "6px 0 18px" }}>
       {(ps.logo_data || ps.logo_url) && (
         <img src={ps.logo_data || resolveAssetUrl(ps.logo_url)} alt="" style={{ height: 28, maxWidth: 90, objectFit: "contain" }} />
       )}
-      {/* An unbuilt giving page shows its own headline just below; one is enough. */}
-      {!(surface === "give" && widgets.length === 0 && ds) && <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface !== "portal" ? (meta?.pageTitle || (isVolunteer ? "Your volunteer page" : "Your giving page")) : (ps.display_name || "Your portal")}</div>}
+      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface !== "portal" ? (meta?.pageTitle || (isVolunteer ? "Your volunteer page" : "Your giving page")) : (ps.display_name || "Your portal")}</div>
     </div>
   );
-  // BUILD-95 §5B — the ONE control a giving page adds. The form is not a
-  // widget and cannot be removed; only the side of the page it leads from is
-  // hers, so this is a choice between two layouts that both always work.
-  const formPositionControl = surface !== "give" ? null : (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: E.cream, marginLeft: 8 }}>
-      <span style={{ opacity: 0.75 }}>Form</span>
-      <select value={formPosition} aria-label="Where the donation form sits"
-        onChange={e => { setFormPosition(e.target.value); scheduleSave(widgets, e.target.value); }}
-        style={{ background: E.panel, color: E.cream, border: "1px solid " + E.line, borderRadius: 8, padding: "5px 8px", fontSize: 12 }}>
-        <option value="top">leads the page</option>
-        <option value="bottom">follows the story</option>
-      </select>
-    </label>
-  );
-
-  // GIVE-EDIT-1 — the form as the draft says a donor will meet it.
-  const formBlock = (surface !== "give" && surface !== "orgform") || !ds ? null : (
-    <FormPreview ds={ds} camps={camps} surface={surface} />
-  );
-  const heroWidget = widgets.find(w => w.type === "hero") || null;
-  const draftPhoto = ds ? (ds.imageData || resolveAssetUrl(ds.imageUrl || "")) : "";
-  // An unbuilt giving page shows its title, story and photo, as it does live.
-  const unbuiltPage = surface === "give" && ds ? (
-    <div data-testid="unbuilt-preview">
-      {draftPhoto && <div style={{ marginBottom: 14 }}><Picture value={ds.imageData ? draftPhoto : { url: ds.imageUrl, ...(ds.imageMeta || {}) }} alt={ds.title} ratio="16 / 9" radius={12} /></div>}
-      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 28, lineHeight: 1.2, marginBottom: 10 }}>{ds.title}</div>
-      {String(ds.story || "").split(/\n{2,}/).filter(Boolean).map((t, i) => <p key={i} style={{ fontSize: 15, lineHeight: 1.6, margin: "0 0 10px" }}>{t}</p>)}
-    </div>
-  ) : null;
-
-  // GIVE-3 — outside the block arranger, a giving page's preview is the page.
-  const useRealPage = (surface === "give" || surface === "orgform") && mode !== "page" && !!livePayload;
-  const realPage = useRealPage ? (
-    <div data-testid="real-preview">
-      <Donate preview={{ payload: livePayload, orgSlug: ps.org_slug, pageSlug: meta?.pageSlug, onPick: pickField }} />
-    </div>
-  ) : null;
-  const pageBody = surface === "orgform" ? formBlock : widgets.length === 0 ? (
-    <div style={{ padding: "10px 0 30px" }}>
-      {unbuiltPage}
-      {unbuiltPage && formBlock}
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, marginTop: unbuiltPage ? 18 : 0 }}>{unbuiltPage ? "Or start from a layout" : "Start with a layout"}</div>
-      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point, everything stays editable, and nothing is visible to {isVolunteer ? "anyone" : "donors"} until you publish.</div>
+  const starterList = (meta?.starters || []).length > 0 && (
+    <div data-testid="editor-starters">
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 8 }}>Pick a starting point. Everything stays editable, and nothing is visible to {isVolunteer ? "anyone" : "donors"} until you publish.</div>
       {(meta?.starters || []).map(s => (
-        <button key={s.key} onClick={() => applyStarter(s.key)}
-          style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.hair, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+        <button key={s.key} type="button" onClick={() => applyStarter(s.key)}
+          style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid " + E.hair, borderRadius: 10, padding: "10px 12px", marginBottom: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
           {s.label}
         </button>
       ))}
     </div>
-  ) : (
+  );
+  // A page with no blocks yet: one "+" opens the same menu every block's "+" does.
+  const addBlockRow = (
+    <div data-editor-only="" style={{ position: "relative", margin: "14px 0 6px", textAlign: "center" }}>
+      <button type="button" data-testid="editor-add-block" onClick={() => setAddAfter(a => a === "__end" ? null : "__end")}
+        style={{ background: "transparent", border: "1px dashed " + E.bg3, borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, color: E.body, cursor: "pointer", fontFamily: "inherit", width: "100%" }}>
+        + Add a block
+      </button>
+      {addAfter === "__end" && blockMenu(null)}
+    </div>
+  );
+  const pageBody = surface === "orgform" ? null : (
     <>
-      {formPosition === "top" && formBlock}
       {isVolunteer ? (
         <VolunteerProvider data={volData || {}} orgSlug={ps.org_slug} pageSlug={meta?.pageSlug} preview
           hasGroup={widgets.some(w => w.type === "groupsignup")}>
-          <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={{ ...publicPreviewCtx, volData: volData || {} }}
-            decorate={mode === "page" ? decorateWidget : undefined} />
+          <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={{ ...publicPreviewCtx, volData: volData || {} }} decorate={decorateWidget} />
         </VolunteerProvider>
       ) : (
-        <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx}
-          decorate={mode === "page" ? decorateWidget : undefined} />
+        <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx} decorate={decorateWidget} />
       )}
-      {formPosition === "bottom" && formBlock}
+      {addBlockRow}
     </>
   );
 
+  // The giving page's photo, worked on where it shows.
+  const cover = ds && ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) } : null;
+  const setCover = p => setSettings(p ? { imageUrl: p.url, imageMeta: { alt: p.alt || "", fx: p.fx ?? 0.5, fy: p.fy ?? 0.5, ...(p.stock ? { stock: true } : {}) } }
+    : { imageUrl: "", imageMeta: { alt: "", fx: 0.5, fy: 0.5 } });
+  const choosePhoto = (onPick) => { if (LazyStockPicker) setStockOpen({ onPick }); else askSection("cover"); };
+  const photoTools = (has) => (
+    <PhotoTools has={has && !!cover} focus={cover ? { fx: Number(cover.fx ?? 0.5), fy: Number(cover.fy ?? 0.5) } : null}
+      onFocus={(fx, fy) => setSettings({ imageMeta: { ...(ds.imageMeta || {}), fx, fy } })}
+      onReplace={() => choosePhoto(setCover)} onRemove={() => setCover(null)} />
+  );
+  const heroWidget = widgets.find(w => w.type === "hero") || null;
+  const onPreviewText = (field, t) => {
+    if (field === "headline") { if (heroWidget) updateWidget(heroWidget.id, { heading: t }); else setSetting("title", t); }
+    if (field === "story") setSetting("story", t);
+  };
+
+  // GIVE-3 — a giving page's preview is the page: Donate.jsx from the draft's payload.
+  const useRealPage = (surface === "give" || surface === "orgform") && !!livePayload;
+  const realPage = useRealPage ? (
+    <div data-testid="real-preview">
+      <Donate preview={{ payload: livePayload, orgSlug: ps.org_slug, pageSlug: meta?.pageSlug, onPick: pickField,
+        ...(surface === "give" ? { onText: onPreviewText, photoTools, decorate: decorateWidget, afterBlocks: addBlockRow } : {}) }} />
+    </div>
+  ) : null;
+  const canvasInner = useRealPage
+    ? (device === "desktop" && !narrow ? <ScaledDesktop>{realPage}</ScaledDesktop> : realPage)
+    : (
+      <div className={device === "desktop" ? "pe-desktop" : ""} style={{ ...themeVars, background: "var(--pt-bg," + E.paper + ")", flex: 1 }}>
+        <div className={device === "desktop" ? "pe-wrap" : ""} style={{ color: E.body, fontFamily: "var(--pt-sans)", padding: device === "desktop" ? undefined : "18px 20px 60px" }}>
+          {pageHeader}
+          {pageBody}
+        </div>
+      </div>
+    );
+
+  // ── The rail ──────────────────────────────────────────────────────────────
+  const at = id => (focusAsk.id === id ? focusAsk.n : 0);
+  const sections = [];
+  if (selectedWidget) sections.push(
+    <RailSection key={"block-" + selectedWidget.id} id="block" testid="rail-block" title={"This block: " + (WIDGET_META[selectedWidget.type]?.label || "Block")} focus={at("block")}>
+      <WidgetOptions w={selectedWidget} funds={funds} camps={camps} volData={volData}
+        onChange={patch => updateWidget(selectedWidget.id, patch)}
+        onClose={() => setSelected(null)} />
+    </RailSection>
+  );
+  if (surface === "give" && ds) sections.push(...giftSections({ ds, onSet: setSetting, onSetForm: setFormSetting, errors: dsErrors, saveState: dsSave, at,
+    funds: Array.isArray(meta?.funds) && meta.funds.length ? meta.funds : funds, camps: Array.isArray(meta?.campaigns) && meta.campaigns.length ? meta.campaigns : camps,
+    facts: (livePayload && livePayload.org && livePayload.org.facts) || {}, formPosition,
+    onFormPosition: v => { setFormPosition(v); scheduleSave(widgets, v); },
+    coverSection: (
+      <RailSection key="cover" id="cover" testid="rail-cover" title="Cover photo" focus={at("cover")}>
+        <RailPhoto value={cover} name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo" onChange={setCover}
+          onLibrary={LazyStockPicker ? () => choosePhoto(setCover) : undefined} />
+      </RailSection>
+    ) }));
+  if (surface === "orgform" && ds) sections.push(
+    <RailSection key="details" id="details" title="Details" focus={at("details")}><OrgFormRail ds={ds} onSet={setSetting} errors={dsErrors} saveState={dsSave} /></RailSection>
+  );
+  if (isVolunteer && ds) sections.push(
+    <RailSection key="cover" id="cover" testid="rail-cover" title="Cover photo" focus={at("cover")}>
+      <RailPhoto value={cover} name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo" onChange={setCover}
+        onLibrary={LazyStockPicker ? () => choosePhoto(setCover) : undefined} />
+    </RailSection>
+  );
+  if (surface !== "orgform") sections.push(
+    <RailSection key="blocks" id="blocks" title="Blocks" focus={at("blocks")} defaultOpen={widgets.length === 0}
+      hint={widgets.length ? "Point at a block in the preview for its handles. The + under a block adds one there." : null}>
+      {widgets.length === 0 && starterList}
+      <div style={{ fontSize: 11, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 6px" }}>Add a block at the end</div>
+      {libraryTypes.map(type => (
+        <button key={type} type="button" onClick={() => addWidget(type)}
+          style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid " + E.editLine, borderRadius: 10, padding: "8px 12px", marginBottom: 6, cursor: "pointer", fontFamily: "inherit" }}>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{WIDGET_META[type].label}</div>
+          <div style={{ fontSize: 11.5, color: E.muted }}>{WIDGET_META[type].hint}</div>
+        </button>
+      ))}
+    </RailSection>
+  );
+  sections.push(
+    <RailSection key="design" id="design" title="Design" focus={at("design")} defaultOpen={surface === "portal"}
+      hint="Your brand: the same logo, colors and type on every page and email. Changes autosave and show in the preview.">
+      <DesignRail ps={ps} onSet={setDesign} note={designNote} />
+    </RailSection>
+  );
+
+  const status = saveState === "saving" || dsSave === "saving" ? "Saving draft…" : saveState === "dirty" || dsSave === "dirty" ? "Unsaved edits…"
+    : saveState === "error" || dsSave === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves";
   return (
-    <div style={{ height: "100vh", background: E.editInk, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column" }}>
-      {/* Desktop preview = the published page's own layout rules, scoped to the
-          editor canvas (mirrors Portal.jsx PortalStyles — keep in lock-step). */}
+    <div style={{ height: "100vh" }}>
       <style>{`
         .pe-wrap { max-width: 860px; margin: 0 auto; padding: 18px 20px 64px; }
         @media (min-width: 1280px) {
@@ -651,170 +781,31 @@ export default function PortalEditor() {
         }
         @media (min-width: 1720px) { .pe-wrap { max-width: 1360px; } }
       `}</style>
-      {/* ── Top chrome ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
-        <a data-testid="editor-back" href={backHref} style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{hasBack ? "← Back" : "← Steward"}</a>
-        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal editor"}</span>
-        {surface !== "portal"
-          ? <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>{meta?.pageTitle || "Page"}</span>
-          : <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>}
-        {/* Mode toggle — "Page" edits the widgets; "Design" edits the theme +
-            page details (the old Settings portal form, moved here so you edit
-            what you see, where you see it). */}
-        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
-          {(surface === "give" ? ["details", "page", "design"] : surface === "orgform" ? ["details", "design"] : ["page", "design"]).map(m => (
-            <button key={m} data-testid={"editor-mode-" + m} onClick={() => { setMode(m); if (m !== "page") { setSelected(null); setLibOpen(false); } }}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? E.editPanel2 : "transparent", borderColor: mode === m ? E.gold : E.line }}>
-              {m === "page" ? "Page" : m === "details" ? "Details" : "Design"}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
-          {(isPageEditor ? ["both", "phone", "desktop"] : ["phone", "desktop"]).map(d => (
-            <button key={d} data-testid={"editor-device-" + d} onClick={() => setDevice(d)}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? E.editPanel2 : "transparent", borderColor: device === d ? E.gold : E.line }}>
-              {d === "phone" ? "Phone" : d === "desktop" ? "Desktop" : "Side by side"}
-            </button>
-          ))}
-        </div>
-        {mode === "page" && (
-          <>
-          {formPositionControl}
-          <button onClick={() => setLibOpen(o => !o)} style={{ ...btnQuiet, borderColor: libOpen ? E.gold : E.line, background: libOpen ? E.editPanel2 : "transparent", marginLeft: 8 }}>
-            + Add widget
-          </button>
-          </>
-        )}
-        <span style={{ marginLeft: "auto", fontSize: 12, color: E.sage }}>
-          {saveState === "saving" ? "Saving draft…" : saveState === "dirty" ? "Unsaved edits…" : saveState === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves"}
-        </span>
-        {isPageEditor && <button data-testid="editor-history" onClick={() => { setHistoryOpen(o => !o); setSelected(null); }} style={{ ...btnQuiet, borderColor: historyOpen ? E.gold : E.line }}>History</button>}
-        {(meta?.publishedAt || meta?.draftSettings) && <button onClick={revert} style={btnQuiet}>Revert to published</button>}
-        <button data-testid="editor-publish" onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
-      </div>
-      {err && <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
-      {/* FIX-41 · THE COVER PHOTO, AT THE TOP OF THE EDITOR, in every mode. The
-          one picture control; it drafts like every other field and goes live
-          on Publish. */}
-      {(surface === "give" || isVolunteer) && ds && (
-        <div data-testid="editor-cover" style={{ background: E.cream, color: E.ink, padding: "10px 16px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid " + E.line }}>
-          <div style={{ flex: "0 1 220px", minWidth: 160 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>Cover photo</div>
-            <div style={{ fontSize: 11.5, lineHeight: 1.45, opacity: 0.8 }}>The picture at the top of the page. People give more to a page they can see.</div>
-          </div>
-          <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
-            <PhotoField variant="cover" name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo"
-              value={ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) } : null}
-              onChange={p => setSettings(p ? { imageUrl: p.url, imageMeta: { alt: p.alt, fx: p.fx, fy: p.fy } } : { imageUrl: "", imageMeta: { alt: "", fx: 0.5, fy: 0.5 } })} />
-          </div>
-        </div>
+      <style>{blockCss}</style>
+      <StewardEditor kind={surface} testid="portal-editor"
+        back={{ href: backHref, label: hasBack ? "Back" : "Steward" }}
+        name={surface === "portal" ? "Portal editor" : (meta?.pageTitle || typeLabel)}
+        badge={surface === "portal" ? "SAMPLE DONOR DATA" : typeLabel}
+        device={device} onDevice={setDevice} status={status}
+        actions={[
+          isPageEditor && { id: "history", label: "History", active: historyOpen, onClick: () => { setHistoryOpen(o => !o); } },
+          (meta?.publishedAt || meta?.draftSettings) && { id: "revert", label: "Revert to published", onClick: revert },
+        ]}
+        primary={{ label: publishing ? "Publishing…" : "Publish", onClick: publish, disabled: publishing, testid: "editor-publish" }}
+        notice={err ? <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div> : null}
+        left={<div data-testid={surface === "give" || surface === "orgform" ? "details-rail" : "editor-rail"}>{sections}</div>}
+        right={historyOpen && isPageEditor ? <div style={{ padding: "16px 16px 40px" }}><HistoryPanel apiBase={apiBase} onClose={() => setHistoryOpen(false)} onRestored={reloadMeta} /></div> : null}
+        rightTitle="History">
+        <DeviceFrame device={device} narrow={narrow}
+          label={device === "phone" ? (isVolunteer ? "Phone · 390px, how people arriving from a flyer or a text see it" : "Phone · 390px, how donors arriving from email see it") : null}>
+          {canvasInner}
+        </DeviceFrame>
+      </StewardEditor>
+      {stockOpen && LazyStockPicker && (
+        <Suspense fallback={null}>
+          <LazyStockPicker onClose={() => setStockOpen(null)} onPick={p => { const f = stockOpen.onPick; setStockOpen(null); f(p); }} />
+        </Suspense>
       )}
-
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* ── Left rail: Design mode — the theme + page-detail controls (the
-            old Settings PortalManager form, one home now). The preview to the
-            right updates immediately from local ps state. ── */}
-        {/* On a phone the history takes the rail's place rather than squeezing beside it. */}
-        {mode === "details" && ds && !(historyOpen && typeof window !== "undefined" && window.innerWidth < 900) && (
-          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            {surface === "orgform"
-              ? <OrgFormRail ds={ds} onSet={setSetting} errors={dsErrors} saveState={dsSave} />
-              : <DetailsRail ds={ds} onSet={setSetting} onSetForm={setFormSetting} errors={dsErrors} saveState={dsSave}
-                  funds={Array.isArray(meta?.funds) && meta.funds.length ? meta.funds : funds} camps={Array.isArray(meta?.campaigns) && meta.campaigns.length ? meta.campaigns : camps}
-                  hero={heroWidget} onHeroHeading={v => heroWidget && updateWidget(heroWidget.id, { heading: v })} facts={(livePayload && livePayload.org && livePayload.org.facts) || {}} />}
-          </div>
-        )}
-        {mode === "design" && (
-          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            <DesignRail ps={ps} onSet={setDesign} note={designNote} />
-          </div>
-        )}
-        {/* ── Widget library — collapsible, not a permanent rail ── */}
-        {mode === "page" && libOpen && (
-          <div style={{ width: 280, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>Add a widget</div>
-              <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>✕</button>
-            </div>
-            {(Array.isArray(meta?.widgetTypes) && givingPageId ? meta.widgetTypes : widgetTypesHere(surface)).filter(t => WIDGET_META[t]).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
-              <button key={type} onClick={() => { addWidget(type); setLibOpen(false); }}
-                style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.editLine, borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>
-                <div style={{ fontSize: 11.5, color: E.muted }}>{m.hint}</div>
-              </button>
-            ))}
-            <div style={{ fontSize: 12, color: E.muted, marginTop: 12, lineHeight: 1.5 }}>
-              The new widget lands at the end of the page, already selected, its options open beside the preview.
-            </div>
-          </div>
-        )}
-
-        {/* ── Canvas ── GIVE-EDIT-1: "Side by side" draws the desktop page and
-            the 390px phone next to each other, from the same draft. */}
-        {device === "both" ? (
-          <div data-testid="preview-side-by-side" style={{ flex: 1, minWidth: 0, display: "flex", gap: 0, overflow: "hidden" }}>
-            <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
-              <div style={{ textAlign: "center", fontSize: 11, color: E.muted, padding: "8px 0 0" }}>Desktop</div>
-              {useRealPage ? <ScaledDesktop>{realPage}</ScaledDesktop> : (
-
-              <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
-                {pageHeader}
-                {pageBody}
-              </div>)}
-            </div>
-            <div style={{ flexShrink: 0, overflow: "auto", padding: "16px 18px", borderLeft: "1px solid " + E.editPanel2 }}>
-              <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
-                <div style={{ width: 390, height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
-                  <div style={{ flex: 1, overflowY: "auto", padding: useRealPage ? 0 : "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
-                    {useRealPage ? realPage : <>{pageHeader}{pageBody}</>}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px</div>
-            </div>
-          </div>
-        ) : device === "phone" ? (
-          <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex" }}>
-            {/* margin:auto centers the frame both ways and never clips when the
-                viewport is shorter than the frame (flex centering would). */}
-            <div style={{ margin: "auto", padding: 24 }}>
-              <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
-                <div style={{ width: 390, maxWidth: "calc(100vw - 120px)", height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
-                  <div style={{ flex: 1, overflowY: "auto", padding: useRealPage ? 0 : "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
-                    {useRealPage ? realPage : <>{pageHeader}{pageBody}</>}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>{isVolunteer ? "Phone · 390px, how people arriving from a flyer or a text see it" : "Phone · 390px, how donors arriving from email see it"}</div>
-            </div>
-          </div>
-        ) : (
-          <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
-            {/* The real page: full canvas width, the published wrap ladder
-                centers the column and the ≥1280 two-track grid applies. */}
-            {useRealPage ? <ScaledDesktop>{realPage}</ScaledDesktop> : (
-
-            <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
-              {pageHeader}
-              {pageBody}
-            </div>)}
-          </div>
-        )}
-
-        {/* ── Options panel — beside the canvas, only while a widget is selected ── */}
-        {historyOpen && isPageEditor && (
-          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            <HistoryPanel apiBase={apiBase} onClose={() => setHistoryOpen(false)} onRestored={reloadMeta} />
-          </div>
-        )}
-        {!historyOpen && mode === "page" && selectedWidget && (
-          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            <WidgetOptions w={selectedWidget} funds={funds} camps={camps} volData={volData}
-              onChange={patch => updateWidget(selectedWidget.id, patch)}
-              onClose={() => setSelected(null)} />
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -847,10 +838,6 @@ function DesignRail({ ps, onSet, note }) {
   const headerSrc = ps.header_image_data || resolveAssetUrl(ps.header_image_url);
   return (
     <>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Design</div>
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
-        Your portal's look and page details. Changes autosave and show in the preview immediately, colors may be adjusted slightly on save so text stays readable.
-      </div>
       {note && <div style={{ fontSize: 12, color: E.green, fontWeight: 600, marginTop: 8, lineHeight: 1.4 }}>{note}</div>}
 
       {group("Identity")}
@@ -993,9 +980,9 @@ function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
       {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
       {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
       {w.image && altField()}</>;
+    // EDITOR-1: a text block's words are typed in the preview, where they show.
     case "richtext": return <>{head}
-      <div style={lbl}>Text <span style={{ fontWeight: 400, textTransform: "none" }}>(blank line = paragraph, "## " heading, "- " list)</span></div>
-      <textarea style={{ ...inp, resize: "vertical" }} rows={8} value={storyToText(w.blocks)} onChange={e => onChange({ blocks: textToStory(e.target.value) })} /></>;
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>Type in the block in the preview. A blank line starts a new paragraph, "## " a heading, "- " a list.</div></>;
     case "image": return <>{head}
       {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
       {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
@@ -1086,8 +1073,7 @@ function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
     case "impact": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} /></>;
     case "quote": return <>{head}
-      <div style={lbl}>Quote</div><textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} onChange={e => onChange({ text: e.target.value })} />
-      <div style={lbl}>Attribution</div><input style={inp} value={w.attribution || ""} onChange={e => onChange({ attribution: e.target.value })} /></>;
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>Type the quote and who said it in the preview.</div></>;
     case "staff": return <>{head}
       {(w.members || []).map((m, i) => (
         <div key={i} style={{ border: "1px solid "+E.editLine, borderRadius: 8, padding: 8, marginTop: 8 }}>
@@ -1238,13 +1224,16 @@ function AmountList({ valueDollars, onChange, min = 0, max = 8, whole = false, t
   );
 }
 
-function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroHeading, saveState, facts = {} }) {
+// EDITOR-1 — the giving page's settings as the rail's folding sections. The
+// headline and the story are typed in the preview, so they are not here; the
+// cover photo is its own section (passed in), and a click on a part of the
+// preview opens the section that sets it (`at`).
+function giftSections({ ds, onSet, onSetForm, errors, funds, camps, saveState, facts = {}, at, formPosition, onFormPosition, coverSection }) {
   const f = ds.form || {};
   // GIVE-3 — the page's design, one field at a time onto the draft.
   const design = normalizeDesign(ds.design);
   const setDesign = patch => onSet("design", { ...design, ...patch });
   const needs = wayNeeds(facts, design);
-  const photo = ds.imageData || resolveAssetUrl(ds.imageUrl || "");
   const des = f.designation || { mode: "none", fundId: null, fundIds: [] };
   const choosing = des.mode === "choice";
   const freq = f.defaultFrequency || "once";
@@ -1255,11 +1244,10 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
   };
   const setChoosing = on => onSetForm({ designation: on ? { mode: "choice", fundId: null, fundIds: funds.map(x => x.id) }
     : ds.fundId ? { mode: "fixed", fundId: ds.fundId, fundIds: [] } : { mode: "none", fundId: null, fundIds: [] } });
-  return (
-    <div data-testid="details-rail">
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Details</div>
+  return [
+    <RailSection key="details" id="details" title="Details" focus={at("details")}>
       <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
-        Every change saves as a draft. Donors keep seeing the live page until you press Publish, and the link never changes.
+        Type the headline and the story in the page. Every change saves as a draft; donors keep seeing the live page until you press Publish, and the link never changes.
       </div>
       <div style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>{saveState === "saving" ? "Saving draft…" : saveState === "error" ? "Not saved yet. Check the notes below." : saveState === "saved" ? "Draft saved" : ""}</div>
       {errors && errors.length > 0 && (
@@ -1267,8 +1255,11 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
           {errors.map((e, i) => <div key={i}>{e.message}</div>)}
         </div>
       )}
-
-      {railGroup("Layout")}
+      <FieldError errors={errors} prefix="title" />
+      <FieldError errors={errors} prefix="story" />
+      <FieldError errors={errors} prefix="image" />
+    </RailSection>,
+    <RailSection key="layout" id="layout" title="Layout" focus={at("layout")}>
       <div data-field="layout" role="radiogroup" aria-label="Page layout" style={{ display: "grid", gap: 6 }}>
         {LAYOUTS.map(l => (
           <label key={l.key} data-testid={"details-layout-" + l.key} style={{ ...checkRow, marginTop: 0, border: "1px solid " + (design.layout === l.key ? E.green : E.bg3), borderRadius: 8, padding: "7px 10px", background: design.layout === l.key ? E.white : "transparent" }}>
@@ -1279,28 +1270,15 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       </div>
       {!design.layout && <div style={{ fontSize: 11.5, color: E.muted, marginTop: 4 }}>Not picked yet: the page chooses for you from what it has.</div>}
       <FieldError errors={errors} prefix="design.layout" />
-
-      {railGroup("The page")}
-      <div style={lbl} data-field="headline">Headline</div>
-      {hero ? (
-        <>
-          <input data-testid="details-headline" style={inp} value={hero.heading || ""} placeholder={ds.title || "Your headline"} onChange={e => onHeroHeading(e.target.value)} />
-          <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>This page opens with a picture block, so the headline is the one on that block.</div>
-        </>
-      ) : (
-        <input data-testid="details-headline" style={inp} value={ds.title || ""} onChange={e => onSet("title", e.target.value)} />
-      )}
-      <FieldError errors={errors} prefix="title" />
-      <div style={lbl} data-field="story">The story</div>
-      <textarea data-testid="details-story" style={{ ...inp, minHeight: 120, resize: "vertical", lineHeight: 1.5 }} value={ds.story || ""} onChange={e => onSet("story", e.target.value)} placeholder="What this gift makes possible, in your own words." />
-      <FieldError errors={errors} prefix="story" />
-      <div style={lbl}>Photo</div>
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.45 }}>{photo ? "The cover photo is set at the top of the editor." : "Add a cover photo at the top of the editor."}</div>
-      <FieldError errors={errors} prefix="image" />
-      <div style={{ fontSize: 11.5, color: E.muted, marginTop: 8, lineHeight: 1.45 }}>Colors and logo come from your brand, in the Design tab, so every page looks like yours.</div>
-
-      {railGroup("The gift")}
-      <div style={lbl} data-field="amounts">Suggested amounts</div>
+      <div style={lbl}>The donation form</div>
+      <select style={inp} value={formPosition} aria-label="Where the donation form sits" onChange={e => onFormPosition(e.target.value)}>
+        <option value="top">leads the page</option>
+        <option value="bottom">follows the story</option>
+      </select>
+    </RailSection>,
+    coverSection,
+    <RailSection key="gift" id="gift" title="The gift" focus={at("gift")} defaultOpen={false}>
+      <div style={{ ...lbl, marginTop: 0 }} data-field="amounts">Suggested amounts</div>
       <AmountList testid="details-amounts" valueDollars={(f.amountsCents || []).map(c => c / 100)} max={8}
         onChange={nums => onSetForm({ amountsCents: nums.map(n => Math.round(n * 100)) })} />
       <FieldError errors={errors} prefix="form.amountsCents" />
@@ -1337,9 +1315,9 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
         <span>Show the box that lets donors cover the fee
           <span style={{ display: "block", fontSize: 11, color: E.muted }}>Your organization's own fee setting in Settings still decides whether it can show at all.</span></span>
       </label>
-
-      {railGroup("Where the gift goes")}
-      <div style={lbl}>Fund</div>
+    </RailSection>,
+    <RailSection key="where" id="where" title="Where the gift goes" focus={at("where")} defaultOpen={false}>
+      <div style={{ ...lbl, marginTop: 0 }}>Fund</div>
       <select style={inp} value={ds.fundId || ""} onChange={e => setFund(e.target.value)} disabled={choosing}>
         <option value="">No fund named</option>
         {funds.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
@@ -1353,10 +1331,10 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
         {camps.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
       <FieldError errors={errors} prefix="campaign" />
-
+    </RailSection>,
+    <RailSection key="goal" id="goal" title="Goal" focus={at("goal")} defaultOpen={false}>
       <div data-field="goal" />
-      {railGroup("Goal")}
-      <label style={checkRow}><input data-testid="details-show-goal" type="checkbox" checked={ds.showGoal !== false} onChange={e => onSet("showGoal", e.target.checked)} style={{ marginTop: 2 }} />Show the goal and progress bar</label>
+      <label style={{ ...checkRow, marginTop: 0 }}><input data-testid="details-show-goal" type="checkbox" checked={ds.showGoal !== false} onChange={e => onSet("showGoal", e.target.checked)} style={{ marginTop: 2 }} />Show the goal and progress bar</label>
       {ds.showGoal !== false && !ds.campaignId && (
         <>
           <div style={lbl}>Goal ($)</div>
@@ -1366,8 +1344,8 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       )}
       {ds.showGoal !== false && ds.campaignId && <div style={{ fontSize: 11.5, color: E.muted, marginTop: 6 }}>The bar shows the campaign's own goal and what it has raised.</div>}
       <FieldError errors={errors} prefix="goal" />
-
-      {railGroup("Trust panel")}
+    </RailSection>,
+    <RailSection key="trust" id="trust" title="Trust panel" focus={at("trust")} defaultOpen={false}>
       <div data-field="trust" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45 }}>Under the form. Each line shows only what your records hold; untick any to hide it.</div>
       {TRUST_KEYS.map(k => (
         <label key={k} style={checkRow}>
@@ -1387,8 +1365,8 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       <div style={lbl}>Phone (optional)</div>
       <input data-testid="details-phone" style={inp} value={design.phone} placeholder="(978) 555-0100" onChange={e => setDesign({ phone: e.target.value })} />
       <FieldError errors={errors} prefix="design.phone" />
-
-      {railGroup("Other ways to give")}
+    </RailSection>,
+    <RailSection key="ways" id="ways" title="Other ways to give" focus={at("ways")} defaultOpen={false}>
       <div data-field="ways" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45 }}>One line each, under the trust panel.</div>
       {[["check", "Mail a check"], ["phone", "By phone"], ["daf", "Donor-advised fund"], ["stock", "Stock"]].map(([k, label]) => (
         <label key={k} style={checkRow}>
@@ -1400,15 +1378,15 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       <div data-testid="details-connections" style={{ fontSize: 11.5, color: E.muted, lineHeight: 1.45, marginTop: 10 }}>
         Take gifts on Zeffy, Givebutter or PayPal too? Keep them there: Steward reads those gifts in (Donorbox from its export file). <a href="/app/settings?section=connections" style={{ color: E.green }}>Connections</a>
       </div>
-
-      {railGroup("After they give")}
-      <div style={lbl}>Thank-you message</div>
+    </RailSection>,
+    <RailSection key="after" id="after" title="After they give" focus={at("after")} defaultOpen={false}>
+      <div style={{ ...lbl, marginTop: 0 }}>Thank-you message</div>
       <textarea data-testid="details-thanks" style={{ ...inp, minHeight: 90, resize: "vertical", lineHeight: 1.5 }} value={(f.thankYou && f.thankYou.message) || ""}
         placeholder="Leave it empty and donors read a short thank-you in your name."
         onChange={e => onSetForm({ thankYou: { ...(f.thankYou || {}), message: e.target.value } })} />
       <FieldError errors={errors} prefix="form.thankYou" />
-    </div>
-  );
+    </RailSection>,
+  ];
 }
 
 function OrgFormRail({ ds, onSet, errors, saveState }) {
@@ -1427,63 +1405,6 @@ function OrgFormRail({ ds, onSet, errors, saveState }) {
       {railGroup("Monthly amounts")}
       <AmountList testid="orgform-monthly" valueDollars={ds.monthlyAmounts || []} min={3} max={6} whole onChange={v => onSet("monthlyAmounts", v)} />
       <div style={{ fontSize: 11.5, color: E.muted, marginTop: 10, lineHeight: 1.45 }}>Three to six whole-dollar amounts for each.</div>
-    </div>
-  );
-}
-
-// The draft form as a donor will meet it. A picture of the form, not the form:
-// nothing here can take a card.
-function FormPreview({ ds, camps, surface }) {
-  const pill = on => ({ border: "1px solid " + (on ? "var(--pt-primary," + E.preview + ")" : E.bg3), background: on ? "var(--pt-primary," + E.preview + ")" : E.white,
-    color: on ? E.white : E.body, borderRadius: 8, padding: "8px 12px", fontSize: 14, fontWeight: 600 });
-  const box = { background: E.white, border: "var(--pt-card-border,1px solid " + E.hair + ")", borderRadius: "var(--pt-card-radius,14px)", padding: "16px 16px", margin: "14px 0" };
-  if (surface === "orgform") {
-    return (
-      <div data-testid="form-preview" style={box}>
-        {[["One-time", ds.onetimeAmounts], ["Monthly", ds.monthlyAmounts]].map(([label, list]) => (
-          <div key={label} style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(list || []).map(a => <span key={a} style={pill(false)}>{money0(a)}</span>)}</div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  const f = ds.form || {};
-  const freqs = ["once", ...(f.offerMonthly !== false ? ["monthly"] : []), ...(f.offerAnnual === true ? ["annual"] : [])];
-  const first = freqs.includes(f.defaultFrequency) ? f.defaultFrequency : "once";
-  const camp = ds.campaignId ? camps.find(c => c.id === ds.campaignId) : null;
-  const goal = camp ? Number(camp.goalAmount || 0) : Number(ds.goalAmount || 0);
-  const raised = camp ? Number(camp.raised || 0) : null;
-  const pct = goal > 0 && raised != null ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
-  return (
-    <div data-testid="form-preview" style={box}>
-      {ds.showGoal !== false && goal > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ height: 10, borderRadius: 99, background: E.hair, overflow: "hidden" }}>
-            <div style={{ width: pct + "%", height: "100%", background: "var(--pt-primary," + E.preview + ")" }} />
-          </div>
-          <div style={{ fontSize: 12.5, color: E.muted, marginTop: 6 }}>
-            {raised != null ? `${money0(raised)} raised of ${money0(goal)}` : `Goal ${money0(goal)}. The bar fills from real gifts once the page is live.`}
-          </div>
-        </div>
-      )}
-      {freqs.length > 1 && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{freqs.map(v => <span key={v} style={pill(v === first)}>{FREQ_LABEL[v]}</span>)}</div>
-      )}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {(f.amountsCents || []).map(c => <span key={c} style={pill(false)}>{money0(c / 100)}{first === "monthly" ? "/mo" : first === "annual" ? "/yr" : ""}</span>)}
-        {f.allowOther !== false && <span style={{ ...pill(false), color: E.muted }}>Other</span>}
-      </div>
-      {f.showCoverFee !== false && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: E.body, marginTop: 12 }}>
-          <span style={{ width: 14, height: 14, border: "1px solid " + E.muted, borderRadius: 3, display: "inline-block" }} /> Cover the processing fee so all of my gift goes to the work
-        </div>
-      )}
-      <div style={{ marginTop: 14, ...pill(true), textAlign: "center", background: "var(--pt-button,var(--pt-primary," + E.preview + "))" }}>Give</div>
-      {f.thankYou && f.thankYou.message ? (
-        <div style={{ fontSize: 12, color: E.muted, marginTop: 12, lineHeight: 1.5 }}><strong>After they give:</strong> {f.thankYou.message}</div>
-      ) : null}
     </div>
   );
 }

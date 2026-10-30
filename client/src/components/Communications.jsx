@@ -11,12 +11,15 @@ import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
 import { errorMessage } from "../lib/domainError";
+// EDITOR-1: a campaign is edited in the one editor (CampaignEditor, on StewardEditor).
+import CampaignEditor from "./CampaignEditor";
+import { htmlToBlocks, blocksToHtml } from "./EmailEditor";
+import { campaignBlocksFromHtml } from "../../../shared/emailTemplateLibrary.js";
 // BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
 // live preview and the send all read ONE copy of the words. The server route
 // adds the org's colours, logo and vocabulary on top; this import is what keeps
 // the box from ever being blank if that call fails.
-import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited, escapeMergeValue } from "../../../shared/emailTemplates";
-import { safeHtml } from "../lib/safeHtml";
+import { renderMergeFields, normalizeMergeFields, templatesFor } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
@@ -249,65 +252,9 @@ function segLabel(raw) {
   }[mode] || "All donors with email";
 }
 
-// FIX-26: WHO THE SEGMENT HOLDS AND THIS SEND WILL NOT REACH. The builder
-// used to count the segment here, from /donors/summaries, which carries no
-// person types, so every volunteer and guest with an email counted as a donor.
-// There is one count now and it is the server's: the send's own decision for
-// each person. This is the other half of that answer, opened by its reasons.
-const LEFT_OUT_REASONS = {
-  no_email:        "No email address",
-  deceased:        "Deceased",
-  do_not_contact:  "Do not contact",
-  unsubscribed:    "Unsubscribed",
-  unsubscribe:     "Unsubscribed",
-  bounced:         "Email bounced",
-  complained:      "Marked a past email as spam",
-  blocked_address: "Address Steward never mails",
-  sample_donor:    "Sample record, not a real person",
-};
-const ORG_NO_MAIL = {
-  demo_org: "This is the demonstration organization, so nothing is sent from it. In a real organization, these people would get it.",
-  org_emails_disabled: "Email is switched off for this organization, so nothing will be sent until it is switched back on.",
-  not_onboarded: "Email turns on once your donor file is in.",   // MAIL-1
-};
-function LeftOut({ preview }) {
-  const [open, setOpen] = useState(false);
-  if (!preview) return null;
-  const n = preview.leftOutCount || 0;
-  return (
-    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-      {n > 0 && (
-        <button type="button" data-testid="segment-left-out" aria-expanded={open} onClick={() => setOpen(o => !o)}
-          style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontSize: 12.5, color: T.green, fontWeight: 600, cursor: "pointer" }}>
-          {n.toLocaleString()} left out {open ? "\u25B4" : "\u25BE"}
-        </button>
-      )}
-      {open && n > 0 && (
-        <div data-testid="segment-left-out-reasons" style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", background: T.white }}>
-          {(preview.leftOut || []).map(g => (
-            <div key={g.reason} style={{ padding: "6px 0", borderBottom: "1px solid " + T.bg2 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: T.ink }}>
-                <span>{LEFT_OUT_REASONS[g.reason] || g.reason}</span>
-                <span style={{ fontWeight: 700 }}>{g.count.toLocaleString()}</span>
-              </div>
-              {g.people && g.people.length > 0 && (
-                <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2, lineHeight: 1.5 }}>
-                  {g.people.slice(0, 6).map(x => x.name).join(", ")}{g.count > 6 ? ` and ${(g.count - 6).toLocaleString()} more` : ""}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {preview.orgSends === false && (
-        <div data-testid="segment-org-no-mail" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
-          {ORG_NO_MAIL[preview.orgReason] || "This organization is not sending email right now, so nothing will be sent."}
-        </div>
-      )}
-    </div>
-  );
-}
-
+// FIX-26 / EDITOR-1: who the segment holds and this send will not reach is
+// the server's one answer (segment-preview `audience`), shown by CampaignEditor's
+// AudienceLine as one line whose counts add up to the segment.
 // ── SegmentPicker (module-level) ──────────────────────────────────────────────
 function SegmentPicker({ seg, onChange, allDonors }) {
   const mode = seg.mode || "all";
@@ -394,56 +341,6 @@ function SegmentPicker({ seg, onChange, allDonors }) {
   );
 }
 
-// ── RichEditor (module-level) ─────────────────────────────────────────────────
-function RichEditor({ editorRef, initialHtml, onInput, readOnly }) {
-  useEffect(() => {
-    const clean = safeHtml(initialHtml || "");
-    if (editorRef.current) editorRef.current.innerHTML = clean;
-    if (onInput) onInput(clean);
-  }, []);
-
-  const exec = (cmd, val) => { editorRef.current?.focus(); document.execCommand(cmd, false, val ?? undefined); };
-
-  // ONE list, and it is the renderer's. `{{last_name}}` used to be offered here
-  // and renderMergeFields has never replaced it — every email that used the chip
-  // went out with the braces still in it.
-  const TAGS = MERGE_FIELDS.map(f => [f.token, f.label]);
-
-  const TB = ({ cmd, val, children }) => (
-    <button onMouseDown={e => { e.preventDefault(); exec(cmd, val); }}
-      style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 5, padding: "3px 8px", color: T.ink2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-      {children}
-    </button>
-  );
-
-  return (
-    <div style={{ border: "1px solid " + T.bg3, borderRadius: 8, overflow: "hidden" }}>
-      <div style={{ display: "flex", gap: 4, padding: "7px 10px", background: T.bg2, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid " + T.bg3 }}>
-        <TB cmd="bold"><b>B</b></TB>
-        <TB cmd="italic"><em>I</em></TB>
-        <TB cmd="underline"><u>U</u></TB>
-        <TB cmd="formatBlock" val="h2">H2</TB>
-        <TB cmd="formatBlock" val="p">¶</TB>
-        <button onMouseDown={e => { e.preventDefault(); const u = window.prompt("URL:"); if (u) exec("createLink", u); }}
-          style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 5, padding: "3px 8px", color: T.ink2, fontSize: 12, cursor: "pointer" }}>Link</button>
-        <div style={{ width: 1, height: 14, background: T.bg3, margin: "0 4px" }} />
-        <span style={{ fontSize: 10, color: T.ink3 }}>Insert:</span>
-        {TAGS.map(([tag, lbl]) => (
-          <button key={tag} title={tag}
-            onMouseDown={e => { e.preventDefault(); editorRef.current?.focus(); document.execCommand("insertText", false, tag); if (onInput) onInput(editorRef.current?.innerHTML || ""); }}
-            style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.greenDk, cursor: "pointer" }}>
-            {lbl}
-          </button>
-        ))}
-      </div>
-      <div ref={editorRef} contentEditable={!readOnly} suppressContentEditableWarning
-        data-testid="campaign-editor"
-        onInput={e => onInput && onInput(e.currentTarget.innerHTML)}
-        style={{ minHeight: 260, padding: "14px 16px", background: T.bg, color: T.ink, fontSize: 14, lineHeight: 1.8, outline: "none" }} />
-    </div>
-  );
-}
-
 // ── Mini bar chart (Analytics) ────────────────────────────────────────────────
 // ── Campaign donation link copy button ────────────────────────────────────────
 function CampaignLinkBtn({ campaignId, campaignName }) {
@@ -474,7 +371,7 @@ function CampaignLinkBtn({ campaignId, campaignName }) {
 }
 
 // ── BLANK form ────────────────────────────────────────────────────────────────
-const BLANK = { name: "", subject: "", bodyHtml: "", seg: { mode: "all" }, scheduledAt: "" };
+const BLANK = { name: "", subject: "", preheader: "", bodyHtml: "", seg: { mode: "all" }, scheduledAt: "" };
 
 // ── Sequence trigger labels ───────────────────────────────────────────────────
 const SEQ_TRIGGERS = [
@@ -1483,12 +1380,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [form, setForm]               = useState(BLANK);
   const [editingId, setEditingId]     = useState(null);
   const [sending, setSending]         = useState(false);
-  const [aiLoading, setAiLoading]     = useState(false);
-  const [aiDraft, setAiDraft]         = useState("");
-  const [aiNote, setAiNote]           = useState("");
-  const [linkLoading, setLinkLoading] = useState(false);
-  const editorRef                     = useRef(null);
+  // EDITOR-1: the blocks a builder session opens on, and its key, so each
+  // campaign opened is a fresh editor.
+  const [cInit, setCInit]             = useState([]);
   const [editorKey, setEditorKey]     = useState(0);
+  const [emailMeta, setEmailMeta]     = useState(null);   // { blockTypes, mergeFields } for the editor
 
   // Donors (loaded lazily)
   const [allDonors, setAllDonors]     = useState([]);
@@ -1503,8 +1399,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [gallery, setGallery]       = useState(null);  // server: the six + brand
   const [segPreview, setSegPreview] = useState(null);  // the segment, as people
   const [testState, setTestState]   = useState(null);  // send-me-a-test result
-  const [liveHtml, setLiveHtml]     = useState("");    // what the editor holds, now
-  const [showSchedule, setShowSchedule] = useState(false);
   // EMAIL-1 — the org's own email templates, offered first in New Campaign.
   // null while loading; [] when there are none or the route is not there.
   const [myTemplates, setMyTemplates] = useState(null);
@@ -1602,24 +1496,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     return () => { dead = true; clearTimeout(tid); };
   }, [view, segKey]);
 
-  // POLISH-3 · A TEMPLATE CAMPAIGN'S PREVIEW IS THE SEND'S RENDER, for the
-  // first person on the list (the server's /campaigns/:id/preview). It used to
-  // read campaigns.body, a snapshot the seeded Year-end appeal never had.
-  const [campPreview, setCampPreview] = useState(null);
-  const firstId = segPreview?.first?.id || "";
-  const fromBlocks = !!(form.fromTemplate && !form.detach);
+  // EDITOR-1 · the block types and personal fields the campaign editor offers,
+  // the same ones every email in Templates has.
   useEffect(() => {
-    if (view !== "builder" || !fromBlocks || !editingId) { setCampPreview(null); return; }
-    let dead = false;
-    apiFetch(`/campaigns/${editingId}/preview`, { method: "POST", body: JSON.stringify({ donorId: firstId || undefined, segment: JSON.parse(segKey) }) })
-      .then(r => { if (!dead) setCampPreview(r); })
-      .catch(() => { if (!dead) setCampPreview({ html: "", problems: ["The preview could not be drawn."] }); });
-    return () => { dead = true; };
-  }, [view, fromBlocks, editingId, firstId, form.source]);   // eslint-disable-line react-hooks/exhaustive-deps
+    if (view !== "builder" || emailMeta) return;
+    apiFetch("/email-templates").then(r => setEmailMeta({ blockTypes: r.blockTypes || [], mergeFields: r.mergeFields || [] }))
+      .catch(() => setEmailMeta({ blockTypes: [], mergeFields: [] }));
+  }, [view, emailMeta]);
 
   // ── Builder actions ─────────────────────────────────────────────────────────
   const openBuilder = (campaign = null) => {
-    setTestState(null); setSegPreview(null); setShowSchedule(false);
+    setTestState(null); setSegPreview(null);
     // NEVER A BLANK BOX. A new campaign starts at the six, not at a cursor —
     // writing an appeal from nothing is the hardest thing on the screen and it
     // is not what Steward should ask for first.
@@ -1627,32 +1514,34 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const raw = typeof campaign.segment === "string" ? JSON.parse(campaign.segment || "{}") : (campaign.segment || {});
     const mode = raw.mode || "all";
     const body = normalizeMergeFields(campaign.body || "");
-    setForm({ name: campaign.name || "", subject: campaign.subject || "", bodyHtml: body,
+    setForm({ name: campaign.name || "", subject: campaign.subject || "", preheader: campaign.preheader || "", bodyHtml: body,
       seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [],
              ...(raw.audienceId ? { audienceId: raw.audienceId, audienceName: raw.audienceName || undefined } : {}) },
-      scheduledAt: campaign.scheduled_at ? new Date(campaign.scheduled_at).toISOString().slice(0, 16) : "",
-      // EMAIL-1 — a campaign from a template: its words are the template's
-      // blocks, rendered for each person at send. `detach` lets them go.
-      fromTemplate: Array.isArray(campaign.email_blocks) && campaign.email_blocks.length > 0, detach: false,
+      // EDITOR-1: an empty time stays empty; a scheduled one shows in this browser's own clock.
+      scheduledAt: campaign.scheduled_at ? (() => { const d = new Date(campaign.scheduled_at); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); })() : "",
       status: campaign.status || "draft", templateId: campaign.template_id || null, source: campaign });
+    // EDITOR-1: a campaign's words are blocks. One written in the old plain
+    // editor is converted here, on open, and saved as blocks only when she saves.
+    const own = Array.isArray(campaign.email_blocks) && campaign.email_blocks.length ? campaign.email_blocks : null;
+    setCInit(own || htmlToBlocks(body));
     setApprovalNote("");
     setEditingId(campaign.id);
-    setShowSchedule(!!campaign.scheduled_at);
-    setLiveHtml(body);
-    setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
+    setEditorKey(k => k + 1); setView("builder");
   };
 
   // One of the six, opened as a campaign. The words arrive already written and
   // already in the org's name; what is left is the part that is hers.
   const openTemplate = (tpl) => {
     const body = normalizeMergeFields(tpl.body || "");
-    setForm({ name: tpl.label || tpl.name || "", subject: tpl.subject || "", bodyHtml: body,
+    setForm({ name: tpl.label || tpl.name || "", subject: tpl.subject || "", preheader: "", bodyHtml: body,
       seg: presetSeg ? { ...presetSeg } : { mode: "all" }, scheduledAt: "",
       // PARITY-1 E — which starter this came from, so a save can say whether
       // its words were changed (the server decides).
       starterKey: tpl.key || "", starterReviewed: !!tpl.reviewed, starterBody: body });
-    setEditingId(null); setLiveHtml(body); setTestState(null); setShowSchedule(false);
-    setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
+    // The same blocks the starter opens as in Templates (shared/emailTemplateLibrary.js).
+    setCInit(campaignBlocksFromHtml(tpl.key || "", body));
+    setEditingId(null); setTestState(null);
+    setEditorKey(k => k + 1); setView("builder");
   };
 
   // FIX-39: returns the copy, so "Duplicate to edit" can open it. A campaign
@@ -1670,11 +1559,12 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     } catch (e) { alert(errorMessage(e)); return null; }
   };
 
-  // EMAIL-1 — a template campaign has no editor on screen, so its body is the
-  // preview it arrived with; letting the template go sends `emailBlocks: null`.
-  const templateMode = !!(form.fromTemplate && !form.detach);
-  const currentBody = () => (templateMode ? form.bodyHtml : (editorRef.current?.innerHTML || ""));
-  const templateExtras = () => (form.fromTemplate && form.detach ? { emailBlocks: null } : {});
+  // EDITOR-1 · ONE PAYLOAD for every save: the blocks are the campaign's words,
+  // and `body` is their plain HTML for the lists and the starter check.
+  const payloadOf = (email, status, extra = {}) => ({
+    name: form.name || "Untitled", subject: form.subject, body: blocksToHtml(email.blocks), segment: form.seg, status,
+    emailBlocks: email.blocks, preheader: email.preheader || "", starterKey: form.starterKey || undefined, ...extra,
+  });
 
   // A template of her own, opened as a draft campaign. Undo deletes the draft.
   const startFromMyTemplate = async (tpl) => {
@@ -1690,11 +1580,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // Approval: somebody who is not an admin asks; an admin approves. Each has
   // its Undo.
-  const requestApproval = async () => {
+  const requestApproval = async (email) => {
     if (!form.name.trim()) return alert("Campaign name is required.");
     try {
-      const payload = { name: form.name, subject: form.subject, body: currentBody(), segment: form.seg, status: "draft",
-        scheduledAt: form.scheduledAt || undefined, starterKey: form.starterKey || undefined, ...templateExtras() };
+      const payload = payloadOf(email, "draft", { scheduledAt: form.scheduledAt || undefined });
       let id = editingId;
       if (id) await apiFetch(`/campaigns/${id}`, { method: "PUT", body: JSON.stringify(payload) });
       else { const sv = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = sv.id; setEditingId(id); }
@@ -1711,10 +1600,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     } catch (e) { alert(errorMessage(e)); }
   };
 
-  const saveDraft = async () => {
+  const saveDraft = async (email) => {
     if (!form.name.trim()) return alert("Campaign name is required.");
-    const body = currentBody();
-    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined, ...templateExtras() };
+    const payload = payloadOf(email, "draft");
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
@@ -1722,12 +1610,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     } catch (e) { alert(errorMessage(e)); }
   };
 
-  const scheduleIt = async () => {
+  const scheduleIt = async (email) => {
     if (!form.scheduledAt) return alert("Select a date and time to schedule.");
-    if (new Date(form.scheduledAt) <= new Date()) return alert("Scheduled time must be in the future.");
+    if (new Date(form.scheduledAt) <= new Date()) return alert("That time has already gone. Pick a time from now on.");
     if (!form.name.trim()) return alert("Campaign name is required.");
-    const body = currentBody();
-    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "scheduled", scheduledAt: form.scheduledAt, starterKey: form.starterKey || undefined, ...templateExtras() };
+    const payload = payloadOf(email, "scheduled", { scheduledAt: form.scheduledAt });
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
@@ -1735,15 +1622,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     } catch (e) { alert(errorMessage(e)); }
   };
 
-  const sendNow = async (directId) => {
+  const sendNow = async (directId, email = null) => {
     let id = directId;
     if (!id) {
       if (!form.name.trim()) return alert("Campaign name is required.");
-      const body = currentBody();
-      const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined, ...templateExtras() };
+      const payload = payloadOf(email, "draft");
       try {
         if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); id = editingId; }
-        else { const s = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = s.id; }
+        else { const sv = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = sv.id; setEditingId(id); }
       } catch (e) { alert(errorMessage(e)); return; }
     }
     if (!(await askConfirm({ title: "Send this campaign now?", body: "This sends real emails to everyone on the list.", yes: "Send campaign" }))) return;
@@ -1757,9 +1643,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // One save path for the two things that need a campaign id — the test and the
   // send — so a test never creates a second draft beside the one on screen.
-  const saveForSend = async () => {
-    const body = currentBody() || form.bodyHtml || "";
-    const payload = { name: form.name || "Untitled", subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined, ...templateExtras() };
+  const saveForSend = async (email) => {
+    const payload = payloadOf(email, "draft");
     if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); return editingId; }
     const saved = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
     setEditingId(saved.id);
@@ -1769,10 +1654,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // SEND ME A TEST. One copy, to her, under whatever sending identity is in
   // force — and it is not a recipient: nobody's record gets an email on it and
   // the campaign's count does not move.
-  const sendTest = async () => {
+  const sendTest = async (email) => {
     setTestState({ state: "sending" });
     try {
-      const id = await saveForSend();
+      const id = await saveForSend(email);
       const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({}) });
       // FIX-15 Part 3: a 200 with sent:false (no mail key configured) is not a send.
       if (r && r.sent === false) setTestState({ state: "error", message: r.message || r.error || "The test was not sent: email is not set up on this server." });
@@ -1791,50 +1676,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // FIX-27 Part 7: the server writes the draft and checks every claim in it
   // against the record (no invented video, link, amount, date, meeting or
   // event); a draft that fails comes back as the plain template instead.
-  const draftAI = async () => {
-    setAiLoading(true); setAiDraft("");
-    try {
-      const r = await apiFetch("/ai/draft-email", { method: "POST",
-        body: JSON.stringify({ purpose: "campaign", segment: form.seg, subjectHint: form.subject || "" }) });
-      setAiDraft(`Subject: ${r.subject}\n\n${r.body}`);
-      if (r.aiOff && r.reasons && r.reasons[0]) setAiNote(r.reasons[0]); else setAiNote("");
-    } catch (e) { setAiNote(errorMessage(e, "The draft could not be written just now.")); }
-    setAiLoading(false);
-  };
-
-  const addDonationLink = async () => {
-    setLinkLoading(true);
-    try {
-      const r = await apiFetch("/stripe/campaign-link", {
-        method: "POST",
-        body: JSON.stringify({ campaignId: editingId || "", campaignName: form.name }),
-      });
-      if (editorRef.current) {
-        editorRef.current.focus();
-        const linkHtml = `<p><a href="${r.url}" style="background:${T.greenDk};color:${T.white};padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
-        document.execCommand("insertHTML", false, linkHtml);
-        setLiveHtml(editorRef.current.innerHTML);
-      }
-    } catch (e) {
-      alert(errorMessage(e, "Could not generate donation link. Make sure Stripe is connected in Settings."));
-    }
-    setLinkLoading(false);
-  };
-
-  const applyAIDraft = () => {
-    const lines = aiDraft.split("\n");
-    const subjLine = lines.find(l => l.startsWith("Subject:"));
-    const bodyText = lines.filter(l => !l.startsWith("Subject:")).join("\n").trim();
-    if (subjLine) setForm(f => ({ ...f, subject: subjLine.replace("Subject:", "").trim() }));
-    if (editorRef.current) {
-      const html = bodyText.startsWith("<") ? safeHtml(bodyText)
-        : bodyText.split(/\n\n+/).map(p => `<p>${escapeMergeValue(p).replace(/\n/g, "<br>")}</p>`).join("");
-      editorRef.current.innerHTML = html;
-      setLiveHtml(html);
-    }
-    setAiDraft("");
-  };
-
   // THE PREVIEW IS THE EMAIL. Same renderer as the server's send, and the name
   // in it is the FIRST RECIPIENT's — what she reads on the right of the screen
   // is what the first person on the list will open. "Margaret" only when the
@@ -1846,7 +1687,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     donor_name: previewFirst?.name || "Margaret Chen",
     org_name: previewOrgName,
   }, opts);
-  const getPreviewHtml = () => safeHtml(renderPreview(liveHtml || editorRef.current?.innerHTML || form.bodyHtml || ""));
 
   // ── THE SIX — full screen, in the org's own colours ─────────────────────────
   // This is what "New Campaign" is now. Six emails that could go out today,
@@ -1914,13 +1754,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   }
 
   // ── Builder full-screen ─────────────────────────────────────────────────────
+  // EDITOR-1: the campaign opens in the one editor. Its email is typed in the
+  // preview; the audience line adds up to the segment; Send is never live
+  // while Donor mail is off.
   if (view === "builder") {
-    // The count comes from the side that does the sending, and only from it.
-    // Until it has answered, the button waits rather than guessing (FIX-26).
-    const recipCount = segPreview ? segPreview.count : null;
-    const subjLen = form.subject.length;
-    const segSentence = segPreview?.sentence || "";
-    const previewName = previewFirst?.firstName || "Margaret";
     // FIX-39 — a campaign that has gone out opens read-only. Its words are
     // what people received; the way to change them is a copy.
     const readOnlySent = !!editingId && ["sent", "sending", "failed"].includes(form.status);
@@ -1928,253 +1765,31 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       const copy = await duplicateCampaign(form.source || { id: editingId, name: form.name, subject: form.subject, body: form.bodyHtml, segment: form.seg, template_id: form.templateId });
       if (copy && copy.id) openBuilder(copy);
     };
+    if (!emailMeta) return <div data-testid="campaign-builder" style={{ padding: 40 }}><Spin /></div>;
+    const segSentence = segPreview?.sentence || "";
     return (
-      // FIX-25: under the app's top bar (z 250), never behind it. At inset 0
-      // the bar covered this header, Save draft with it, so no draft could be
-      // saved. The takeover class starts it beside the sidebar on desktop and
-      // full screen on a phone, like the donor profile.
-      <div data-testid="campaign-builder" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
-        {/* Header */}
-        <div className="cb-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
-            <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{readOnlySent ? form.name : editingId ? "Edit campaign" : "New campaign"}</span>
-            {readOnlySent && <StatusBadge status={form.status} campaign={form.source} />}
-          </div>
-          {/* ONE action, and it is emerald. Everything else here is a way back
-              to the draft; scheduling is a link, because a campaign that is
-              scheduled is still a campaign that was sent on purpose. */}
-          {readOnlySent ? (
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }} data-testid="campaign-read-only">
-            <span style={{ fontSize: 12.5, color: T.ink2 }}>This campaign has gone out, so it can&rsquo;t change.</span>
-            <button type="button" onClick={duplicateToEdit} disabled={isReadOnly} data-testid="duplicate-to-edit" style={S.btn("send")}>Duplicate to edit</button>
-          </div>
-          ) : (
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <button onClick={saveDraft} style={S.btn("ghost")}>Save draft</button>
-            {!isAdmin && form.status !== "awaiting_approval" && (
-              <button onClick={requestApproval} data-testid="campaign-request-approval" style={S.btn("send")}>Ask an admin to approve</button>
-            )}
-            {!isAdmin && form.status === "awaiting_approval" && (
-              <span style={{ fontSize: 12.5, color: T.ink2 }}>Waiting for an admin to approve it.</span>
-            )}
-            {isAdmin && ((showSchedule || form.scheduledAt)
-              ? <button onClick={scheduleIt} style={S.btn("send")}>Schedule</button>
-              : <button type="button" data-commit onClick={() => sendNow(null)} disabled={sending || recipCount == null} data-testid="campaign-send"
-                  style={{ ...S.btn("send"), opacity: (sending || recipCount == null) ? 0.6 : 1, cursor: (sending || recipCount == null) ? "not-allowed" : "pointer" }}>
-                  {sending ? <><Spin /> Sending…</> : recipCount == null ? "Counting…" : `↑ Send to ${recipCount.toLocaleString()}`}
-                </button>)}
-          </div>
+      <CampaignEditor key={editorKey} isAdmin={isAdmin} isReadOnly={isReadOnly} readOnlySent={readOnlySent} campaignId={editingId}
+        title={readOnlySent ? form.name : form.name || (editingId ? "Edit campaign" : "New campaign")}
+        statusBadge={readOnlySent ? statusWord(form.source || { status: form.status }) || "Sent" : "Campaign"}
+        form={form} setForm={setForm} initialBlocks={cInit} blockTypes={emailMeta.blockTypes} mergeFields={emailMeta.mergeFields}
+        segPreview={segPreview} orgTimezone={orgTimezone} sending={sending} testState={testState} sendingIdentity={sendingIdentity}
+        approvalNote={approvalNote}
+        notReviewed={!!(form.starterKey && !form.starterReviewed)}
+        audiencePicker={<>
+          <SegmentPicker seg={form.seg} onChange={seg => { setForm(f => ({ ...f, seg })); if (seg.mode === "manual") loadDonors(); }} allDonors={allDonors} />
+          {/* THE SEGMENT, AS PEOPLE. Nobody notices that 17 is too many;
+              everybody notices a name that should not be on the list. */}
+          {/* EDITOR-1: with nobody in reach the audience line says why; the
+              old "Nobody yet. Widen the segment" beside it said the opposite. */}
+          {segSentence && segPreview && segPreview.count > 0 && <div data-testid="segment-sentence" style={{ marginTop: 10, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>{segSentence}</div>}
+          {Array.isArray(segPreview?.names) && segPreview.names.length > 0 && (
+            <div data-testid="segment-faces" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {segPreview.names.map(n => <PersonMark key={n.id} id={n.id} name={n.name} size={24} title={n.name} />)}
+            </div>
           )}
-        </div>
-
-        {/* Two-panel body. FIX-26: on a phone the three columns stack and the
-            body scrolls as one page (.cb-body in GlobalStyles). */}
-        <div className="cb-body" style={{ display: "flex", flex: 1, minHeight: 0 }}>
-          {/* FIX-39: a sent campaign's fields are shown, never editable. */}
-          <fieldset disabled={readOnlySent} style={{ display: "contents" }}>
-          {/* Left: settings */}
-          <div className="cb-col cb-settings" style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
-
-            {form.starterKey && !form.starterReviewed && !starterEdited({ body: form.starterBody }, liveHtml || form.bodyHtml) ? (
-              <div data-testid="builder-not-reviewed" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <NotReviewedPill />
-                <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
-                  These are Steward&rsquo;s starter words. Read them and make them yours before anyone receives them.
-                </span>
-              </div>
-            ) : null}
-            <div>
-              <label style={S.label}>Campaign Name</label>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="Spring Appeal 2026" style={S.input} />
-            </div>
-
-            <div>
-              <label style={S.label}>
-                Subject Line
-                <span style={{ float: "right", color: subjLen > 60 ? T.terracotta : T.ink3 }}>{subjLen}/60</span>
-              </label>
-              <input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
-                placeholder="A message from {{org_name}}" style={S.input} />
-            </div>
-
-            <div>
-              <label style={S.label}>Audience Segment</label>
-              <SegmentPicker seg={form.seg}
-                onChange={seg => { setForm(f => ({ ...f, seg })); if (seg.mode === "manual") loadDonors(); }}
-                allDonors={allDonors} />
-              {/* THE SEGMENT, AS PEOPLE. Nobody notices that 17 is too many;
-                  everybody notices a name that should not be on the list. */}
-              {segSentence && (
-                <div data-testid="segment-sentence" style={{ marginTop: 10, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
-                  {segSentence}
-                </div>
-              )}
-              <LeftOut preview={segPreview} />
-              {/* BUILD-94 Part 1 — and now the first few of them have faces.
-                  The sentence already named two; a row of marks is the fastest
-                  read there is of "who is actually on this list". */}
-              {Array.isArray(segPreview?.names) && segPreview.names.length > 0 && (
-                <div data-testid="segment-faces" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {segPreview.names.map(n => (
-                    <PersonMark key={n.id} id={n.id} name={n.name} size={24} title={n.name} />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* BUILD-94 Part 4 — SCHEDULING IS A REAL CONTROL, not a link you
-                have to know is there. It is the thing Mailchimp does that she
-                will look for first, and the time she types is a wall-clock
-                time IN HER OWN ZONE — the server converts it, so 9:00 means
-                9:00 where she is and not 4 in the morning. */}
-            <div>
-              <label style={S.label}>Send it later</label>
-              <input type="datetime-local" value={form.scheduledAt} data-testid="campaign-schedule-at"
-                onChange={e => { setForm(f => ({ ...f, scheduledAt: e.target.value })); if (e.target.value) setShowSchedule(true); }}
-                style={{ ...S.input, width: "100%" }} />
-              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
-                {form.scheduledAt
-                  ? <>Goes out at that time in {orgTimezone || "your organization's timezone"}.</>
-                  : <>Leave it empty to send it yourself.</>}
-              </div>
-            </div>
-
-            {aiDraft && (
-              <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: T.gold700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
-                <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiDraft}</div>
-                {aiNote && <div data-testid="ai-draft-note" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{aiNote}</div>}
-                <button onClick={applyAIDraft} style={{ ...S.btn("primary"), padding: "7px 12px", fontSize: 12 }}>Apply to editor</button>
-              </div>
-            )}
-          </div>
-
-          {/* Middle: the editor */}
-          <div className="cb-col cb-editor" style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto", background: T.white, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <label style={{ ...S.label, marginBottom: 0 }}>Email Body</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={draftAI} disabled={aiLoading}
-                  style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 8, padding: "6px 12px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 12, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                  {aiLoading ? <><Spin /> Drafting…</> : "✦ Draft copy"}
-                </button>
-                <button onClick={addDonationLink} disabled={linkLoading}
-                  style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", color: linkLoading ? T.ink3 : T.ink2, fontSize: 12, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                  {linkLoading ? <><Spin /> Generating…</> : "Donation link"}
-                </button>
-              </div>
-            </div>
-            {approvalNote && <div style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.55 }}>{approvalNote}</div>}
-            {templateMode ? (
-              <div data-testid="campaign-from-template" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6 }}>
-                  This email is built from a template. Each person&rsquo;s copy is made from it when it goes, with their own name and last gift in it.
-                  Change its words in the template.
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {/* FIX-39: the template opens in the email editor, and its Back comes here. */}
-                  {form.templateId && !readOnlySent && (
-                    <button type="button" data-testid="edit-in-editor" onClick={() => {
-                      const cid = editingId, src = form.source, name = form.name || (src && src.name) || "this campaign";
-                      const kept = form;   // what she had typed here and not saved yet comes back with her
-                      // Back takes the template's words into this campaign (it keeps its own
-                      // copy), then reopens it, so its preview shows the change.
-                      openTemplateEditor(form.templateId, async () => {
-                        setNav("campaigns");
-                        let fresh = src;
-                        if (cid) {
-                          await apiFetch(`/campaigns/${cid}/take-template`, { method: "POST", body: "{}" }).catch(() => null);
-                          fresh = await apiFetch(`/campaigns/${cid}`).catch(() => src);
-                          loadCampaigns();
-                        }
-                        if (fresh) {
-                          openBuilder(fresh);
-                          // The template owns the words; the name, the audience and the
-                          // schedule are the campaign's, so her unsaved edits to them stay.
-                          // The subject stays hers unless the template changed it.
-                          const tplSubject = fresh.subject !== (src && src.subject);
-                          setForm(f => ({ ...f, name: kept.name, seg: kept.seg, scheduledAt: kept.scheduledAt, ...(tplSubject ? {} : { subject: kept.subject }) }));
-                        }
-                      }, { title: `Editing the email for ${name}`, backLabel: "Back to campaign" });
-                    }}
-                      style={{ ...S.btn("ghost") }}>Edit in editor</button>
-                  )}
-                  <button type="button" onClick={() => { setForm(f => ({ ...f, detach: true })); setEditorKey(k => k + 1); }}
-                    style={{ ...S.btn("ghost"), alignSelf: "flex-start" }}>Write it as a plain email instead</button>
-                </div>
-              </div>
-            ) : (
-              <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} onInput={setLiveHtml} readOnly={readOnlySent} />
-            )}
-          </div>
-
-          </fieldset>
-
-          {/* Right: THE EMAIL, at the width it will be read at. Not a preview
-              of the markup — the same renderer the send uses, with the first
-              recipient's own first name in it. */}
-          <div className="comm-preview cb-col" style={{ width: 390, flexShrink: 0, borderLeft: "1px solid " + T.bg3, background: T.bg, padding: "20px 20px 32px", overflowY: "auto" }}>
-            <div style={{ ...S.label, marginBottom: 12 }}>What {previewName} will see</div>
-            {templateMode ? (
-              <>
-                {campPreview?.subject && <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8, lineHeight: 1.45 }}><b style={{ color: T.ink }}>Subject:</b> {campPreview.subject}</div>}
-                {!!campPreview?.problems?.length && (
-                  <div data-testid="campaign-preview-problems" style={{ fontSize: 12.5, color: T.ink2, background: T.white, border: "1px solid " + T.gold300, borderRadius: 10, padding: "8px 12px", marginBottom: 8, lineHeight: 1.5 }}>
-                    {campPreview.sentence || campPreview.problems[0]}
-                  </div>
-                )}
-                <iframe data-testid="campaign-preview" title="The email" sandbox=""
-                  srcDoc={campPreview ? (campPreview.html || "") : ""}
-                  style={{ width: "100%", height: 640, border: "1px solid " + T.bg3, borderRadius: 16, background: T.white }} />
-                {!campPreview && <div style={{ marginTop: 8 }}><Spin /></div>}
-              </>
-            ) : (
-            <div data-testid="campaign-preview" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, overflow: "hidden" }}>
-              <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10, minHeight: 22 }}>
-                {brand?.logo
-                  ? <img src={brand.logo} alt="" style={{ height: 24, maxWidth: 120, objectFit: "contain" }} />
-                  : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 16 }}>{brand?.displayName || previewOrgName}</span>}
-              </div>
-              <div style={{ padding: "18px 18px 26px" }}>
-                <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>
-                  From {brand?.displayName || previewOrgName}{sendingIdentity?.verified && sendingIdentity.fromEmail ? ` · ${sendingIdentity.fromEmail}` : ""}
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, lineHeight: 1.35, marginBottom: 14 }}>
-                  {renderPreview(form.subject, { text: true }) || "No subject yet"}
-                </div>
-                <hr style={{ border: "none", borderTop: "1px solid " + T.bg3, margin: "0 0 14px" }} />
-                <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.8 }}
-                  dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
-              </div>
-            </div>
-            )}
-
-            {/* SEND ME A TEST — one copy, to her, and it counts against nothing. */}
-            {!readOnlySent && <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-              <button onClick={sendTest} disabled={testState?.state === "sending"} data-testid="send-me-a-test"
-                style={{ ...S.btn("ghost"), fontWeight: 700, color: T.ink, cursor: testState?.state === "sending" ? "not-allowed" : "pointer" }}>
-                {testState?.state === "sending" ? <><Spin /> Sending…</> : "Send me a test"}
-              </button>
-              {testState?.state === "sent" && (
-                <div data-testid="test-result" style={{ fontSize: 12, color: T.ink2, lineHeight: 1.55 }}>
-                  Sent to {testState.to}. It went out from {testState.from} and is not counted against this campaign.
-                </div>
-              )}
-              {testState?.state === "error" && (
-                <div style={{ fontSize: 12, color: T.terracotta, lineHeight: 1.55 }}>{testState.message}</div>
-              )}
-              {sendingIdentity?.sentence && (
-                <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.55 }}>{sendingIdentity.sentence}</div>
-              )}
-            </div>}
-          </div>
-        </div>
-
-        {/* The preview used to be a modal you had to ask for. It is the right
-            half of the screen now, and it is live. */}
-      </div>
+        </>}
+        onBack={() => setView("list")} onSaveDraft={saveDraft} onSend={email => sendNow(null, email)} onSchedule={scheduleIt}
+        onRequestApproval={requestApproval} onTest={sendTest} onDuplicate={duplicateToEdit} />
     );
   }
 

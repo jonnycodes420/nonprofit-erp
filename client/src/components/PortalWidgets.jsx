@@ -230,6 +230,7 @@ export function WidgetView({ w, ctx }) {
       );
     }
     case "quote":
+      if (!String(w.text || "").trim()) return null;   // EDITOR-1: no words yet, nothing to show
       return (
         <blockquote style={{ ...cardStyle, margin: "0 0 18px", borderLeft: "4px solid var(--pt-accent)" }}>
           <div style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 18, lineHeight: 1.6 }}>“{w.text}”</div>

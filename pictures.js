@@ -36,7 +36,8 @@ function readPicture(v) {
   if (typeof v !== "object") return null;
   const url = String(v.url || v.src || "").trim();
   if (!url) return null;
-  return { url, alt: String(v.alt || "").slice(0, ALT_MAX), fx: clamp01(v.fx ?? 0.5), fy: clamp01(v.fy ?? 0.5) };
+  // EDITOR-1: one of Steward's stock photos says so until it is replaced.
+  return { url, alt: String(v.alt || "").slice(0, ALT_MAX), fx: clamp01(v.fx ?? 0.5), fy: clamp01(v.fy ?? 0.5), ...(v.stock === true ? { stock: true } : {}) };
 }
 
 // A picture as a person sent it. The url must already be stored (an asset
@@ -195,12 +196,14 @@ function mount(ctx) {
     if (c.error) return res.status(400).json({ error: "bad_image", message: c.error });
     const before = row ? (s.meta ? (row.v || null) : (readPicture(row.v) || {}).url || null) : null;
     const p = c.picture;
+    // EDITOR-1: "stock" is believed only of a photo that IS one of Steward's.
+    if (p && p.stock && !(await require("./routes/stockPhotos").isStockUrl(orgId, p.url))) delete p.stock;
     if (s.byOrg) {
       if (!row) await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [orgId]);
       await run(`UPDATE portal_settings SET ${s.col} = ?::jsonb WHERE org_id = ?`, [p ? JSON.stringify(p) : null, orgId]);
     } else if (s.meta) {
       await run(`UPDATE ${s.table} SET ${s.col} = ?, ${s.meta} = ?::jsonb WHERE id = ? AND org_id = ?`,
-        [p ? p.url : null, p ? JSON.stringify({ alt: p.alt, fx: p.fx, fy: p.fy }) : null, req.params.id, orgId]);
+        [p ? p.url : null, p ? JSON.stringify({ alt: p.alt, fx: p.fx, fy: p.fy, ...(p.stock ? { stock: true } : {}) }) : null, req.params.id, orgId]);
     } else {
       await run(`UPDATE ${s.table} SET ${s.col} = ?::jsonb WHERE id = ? AND org_id = ?`, [p ? JSON.stringify(p) : null, req.params.id, orgId]);
     }

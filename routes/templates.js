@@ -13,6 +13,7 @@
 // Nothing here sends anything.
 const express = require("express");
 const routers = { r0: express.Router() };
+let factsForImpl = null;
 
 function mount(ctx) {
 const { actor, checkWriteAccess, money, orgTime, query, requireAdmin, requireAuth, run, uuid, volunteerSummary, wrap } = ctx;
@@ -87,6 +88,13 @@ async function signerFor(req) {
 
 // ── FACTS FOR A PERSON ─────────────────────────────────────────────────────
 // Every merge field's value for one donor, from their own record.
+// EDITOR-1: the email editor's "Preview as" fills a one-person email with
+// this same person's facts, so what it shows is what their draft would say.
+factsForImpl = async (orgId, donorId, signerUserId) => {
+  const org = await orgOf(orgId);
+  const [signer] = signerUserId ? await query(`SELECT ${B.SIGN_COLUMNS} FROM users WHERE id=? AND org_id=?`, [signerUserId, orgId]).catch(() => []) : [];
+  return factsFor(org, donorId, signer || null);
+};
 async function factsFor(org, donorId, signer = null) {
   const [d] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, org.id]);
   if (!d) return null;
@@ -228,4 +236,4 @@ app.post("/templates/:kind/letter.pdf", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, personFacts: (...a) => (factsForImpl ? factsForImpl(...a) : null) };

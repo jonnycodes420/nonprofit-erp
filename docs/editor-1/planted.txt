@@ -1,0 +1,11 @@
+  FAIL  §2 a field is a chip that keeps its field and shows her value — []
+  FAIL  §2 her own last gift fills the gift field
+  FAIL  §2 a campaign's unsaved blocks preview the same way, for the person chosen — {"s":200,"subject":"Hello Ben"}
+  FAIL  §4 the reasons add up to the segment: total = can get it + every reason — {"au":{"total":3,"sendable":0,"wouldReach":3,"blocked":"Donor mail i
+  FAIL  §4 the people it would reach are one reason, named, with its count
+  FAIL  §4 the line reads as one sentence — "3 donors · 0 can get this email: 2 have no email address, 1 has automatic email off."
+  FAIL  §5 a time that has gone is refused on create — {"id":"cmp_795803d4","org_id":"org_editor1","name":"Late","type":"appeal","subject":"x","body":
+  FAIL  §5 a time that has gone is refused when scheduling — {"id":"cmp_0fad7575","org_id":"org_editor1","name":"Spring barn","type":"appeal","subject
+  FAIL  §3 the field stayed a field: no person's name in the template — "glad you are part of it. We saved you a seat, {{first_name}}\nWe will write n
+  FAIL  §4 the line on screen adds up — "3 donors · 0 can get this email: 2 have no email address, 1 has automatic email off."
+30 passed, 10 failed

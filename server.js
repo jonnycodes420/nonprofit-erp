@@ -4443,6 +4443,7 @@ app.use(require("./routes/support").routers.r0);      // SUPPORT-1 the support a
 app.use(require("./routes/supportAccess").routers.r0);   // FIX-57 open as support, and the org's off switch
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
+app.use(require("./routes/stockPhotos").routers.r0);   // EDITOR-1 the bundled stock photos
 app.use(require("./routes/homeLead").routers.r0);      // HOME-2 the lead slot at the top of Home
 app.use(require("./routes/insights").routers.r0);      // INSIGHTS-1 the ladder and the cards
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
@@ -12427,6 +12428,7 @@ const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, norm
   unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter, donorFacingOrgName };
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
+require("./routes/stockPhotos").mount(EMAIL1_CTX);
 require("./routes/donorLookups").mount({ query, requireAuth, wrap });
 require("./routes/donorList").mount({ query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor });
 require("./routes/mailTypes").mount({ query, run, uuid, requireAuth, requireAdmin, requireSuperAdmin, checkWriteAccess, wrap, actor, resend, orgToday, orgTz,

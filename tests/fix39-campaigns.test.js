@@ -180,17 +180,14 @@ async function main() {
           await yearEnd.locator('[data-testid="edit-in-editor"]').click();
           await page.locator('[data-testid="campaign-builder"]').waitFor({ timeout: 8000 }).catch(() => {});
           ok("§editor Edit in editor opens the campaign", await page.locator('[data-testid="campaign-builder"]').isVisible());
-          const tplBtn = page.locator('[data-testid="campaign-builder"] [data-testid="edit-in-editor"]');
-          ok("§editor …which offers its template's editor", (await tplBtn.count()) === 1);
-          if (await tplBtn.count()) {
-            await tplBtn.click(); await settle(page);
-            const inEditor = await page.locator('[data-testid="email-editor"]').waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
-            ok("§editor the template opens in the email editor", inEditor && !(await page.locator('[data-testid="campaign-builder"]').isVisible()));
-            ok("§editor POLISH-3: it says whose email it is, and Back names the campaign", /^Editing the email for /.test(await page.locator('[data-testid="email-editor-title"]').innerText().catch(() => ""))
-              && (await page.getByRole("button", { name: /^Back to campaign$/ }).count()) === 1);
-            await page.getByRole("button", { name: /^Back/ }).first().click(); await settle(page);
-            ok("§editor Back returns to the campaign", await page.locator('[data-testid="campaign-builder"]').isVisible());
-          }
+          // EDITOR-1: the campaign's email is written in the campaign's own
+          // editor (the one shell), typed in its preview: there is no detour
+          // to a template editor and back.
+          await page.locator('[data-testid="campaign-preview"]').waitFor({ timeout: 15000 }).catch(() => {});
+          await page.waitForFunction(() => { const f = document.querySelector('[data-testid="campaign-preview"]'); try { return f && f.contentDocument.querySelector("[data-st-edit]"); } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
+          ok("§editor EDITOR-1: the campaign opens in the one editor, its email typed in the preview",
+            await page.evaluate(() => { const f = document.querySelector('[data-testid="campaign-builder"] [data-testid="steward-editor"] [data-testid="campaign-preview"]'); try { return !!(f && f.contentDocument.querySelector("[data-st-edit]")); } catch { return false; } }));
+          ok("§editor …with no Edit in editor detour", (await page.locator('[data-testid="campaign-builder"] [data-testid="edit-in-editor"]').count()) === 0);
           await page.locator('[data-testid="campaign-builder"] button', { hasText: "Back" }).first().click(); await settle(page);
           ok("§editor Back returns to the campaigns", (await page.locator('[data-testid="campaigns-table"]').count()) === 1);
 
