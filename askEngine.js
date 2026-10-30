@@ -267,7 +267,15 @@ async function runPlan(orgId, plan, ctx, deps = {}) {
     const [d] = await query("SELECT name FROM donors WHERE org_id = ? AND id = ?", [orgId, plan.filters.donor]);
     out.donorName = d ? d.name : null;
   }
-  if (plan.metric === "event_revenue") out.eventName = ((ctx.events || []).find(e => e.id === (plan.filters || {}).event) || {}).name;
+  if (plan.metric === "event_revenue") {
+    out.eventName = ((ctx.events || []).find(e => e.id === (plan.filters || {}).event) || {}).name;
+    // SWEEP-4: what was pledged there, beside what came in, from the function
+    // the event page reads (numbers.eventsRaised). Ask said the dinner "brought
+    // in $45,340" while its page said $124,290 raised.
+    const [m] = await require("./numbers").eventsRaised(orgId, { ids: [plan.filters.event] });
+    if (m && m.pledgedCents > 0) out.alsoFig = { label: `${out.eventName || "The event"}, pledged`, value: m.pledgedCents / 100, cents: m.pledgedCents,
+      kind: "money", definition: m.definitions && m.definitions.pledged, source: m.sources && m.sources.pledged };
+  }
   out.counted = countedLine(plan, cur, ctx, C);
   // REPORTS-5: a stretch with no gifts in Steward that an old system's report
   // covers: the answer cites it, says where it came from, and keeps it beside

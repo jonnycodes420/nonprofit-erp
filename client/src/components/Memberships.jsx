@@ -206,7 +206,7 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
   if (!levels || !list) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   const by = list.byStatus || {};
   return (
-    <div data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <div className="no-caps" data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* SEND-GATE-2: renewals send nothing on their own; a renewal note is a journey step. */}
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Steward doesn't email renewals on its own. A renewal note goes as a journey step, or as a draft you send.
         <MailTypeSwitches keys={["journey_steps"]} from="memberships" /></div>
@@ -387,7 +387,7 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
                   <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>
                   <td style={{ padding: "8px" }}><StatusPill status={m.status} /></td>
                   <td style={{ padding: "8px", color: T.ink3 }}>{displayDate(m.joined_on)}</td>
-                  <td style={{ padding: "8px", color: T.ink3 }}>{m.expires_on || "Lifetime"}</td>
+                  <td style={{ padding: "8px", color: T.ink3 }}>{m.expires_on ? displayDate(m.expires_on) : "Lifetime"}</td>
                   <td style={{ padding: "8px", color: T.ink3 }} data-testid="member-page-state">
                     {m.yourPageOpenedAt ? `Opened ${displayDate(String(m.yourPageOpenedAt).slice(0, 10))}`
                       : m.yourPageSentAt ? `Sent ${displayDate(String(m.yourPageSentAt).slice(0, 10))}, not opened`

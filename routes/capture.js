@@ -279,8 +279,9 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
         [pledgeId, orgId, donorId, cents / 100, due, "From a pledge form in To confirm.", "capture:" + c.id, who.id, who.name]);
       const freq = String(b.frequency || "").toLowerCase();
       const count = Math.max(0, Math.round(Number(b.installments) || 0));
-      if (freq && count > 1 && giftHooks.writePledgeInstallments) {
-        await giftHooks.writePledgeInstallments(orgId, pledgeId, { amountCents: cents, frequency: freq, count, firstDue: due });
+      // SWEEP-4: one payment is one installment; every pledge has its installments
+      if (giftHooks.writePledgeInstallments) {
+        await giftHooks.writePledgeInstallments(orgId, pledgeId, count > 1 && freq ? { amountCents: cents, frequency: freq, count, firstDue: due } : { amountCents: cents, firstDue: due });
       }
       sentence = `Logged a ${K.cents$(cents)} pledge${count > 1 ? ` in ${count} ${freq} payments` : ""}. No money is recorded until a payment arrives.`;
     } else if (kind === "matching_gift") {
@@ -291,6 +292,7 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
       await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,idempotency_key,is_match,matches_gift_id,created_by,created_by_name)
                  VALUES (?,?,?,?,?,?,?,true,?,?,?) ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
         [pledgeId, orgId, donorId, cents / 100, date, "From a matching-gift letter in To confirm.", "capture:" + c.id, g.id, who.id, who.name]);
+      if (giftHooks.writePledgeInstallments) await giftHooks.writePledgeInstallments(orgId, pledgeId, { amountCents: cents, firstDue: date });
       sentence = `Logged a ${K.cents$(cents)} matching gift as a promise from the employer, linked to the gift it matches.`;
     } else {
       // The same check read from QuickBooks first is the same gift: attach the

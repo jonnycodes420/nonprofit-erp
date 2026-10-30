@@ -163,6 +163,7 @@ CORE=(
   org-bound-writes
   real-shaped
   fix59-event-import
+  sweep4-events-pledges
   insights
   fundraising2-screens
   int4-mailbox

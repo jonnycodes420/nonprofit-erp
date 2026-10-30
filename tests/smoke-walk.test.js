@@ -114,6 +114,105 @@ const IGNORABLE_URL = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
 const IGNORABLE_TEXT = /Download the React DevTools|Unexpected token '<'/;
 const EXPECTED_5XX = /\/ai\/stream/;
 
+// SWEEP-4 · EVENTS AND PLEDGES, EVERY SCREEN, ON TWO ORGS. The Events list
+// (Upcoming, Past, All), a past event's page with its follow-up count, the
+// Pledges view, Tickets & sponsors, Auctions, Peer-to-peer and Memberships, at
+// 1440 and 390, on an org with a past dinner, guests and pledges and on an
+// empty org, and the public event page while payments aren't connected. Each
+// must say nothing the quality bar names mechanically ("Not set", undefined,
+// NaN, null, a {{placeholder}}, an ALL-CAPS label, a console error, an API 4xx
+// or 5xx), and the four things the walk found wrong stay fixed: a past event's
+// seating speaks only of who came; the follow-up modal counts before it makes;
+// "Pledged · first year" clears its "?"; the public page reads Not open yet.
+// HOW IT GOES RED: on main (199d99d) the attendee table says "Not set", every
+// label is ALL-CAPS, the chart says "1 still without a seat" about a guest who
+// never came, the modal has no count, the label runs under the "?", and the
+// public page offers Register. Proven by planting "Not set" back in Events.jsx.
+async function eventsAndPledgesSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  const EV = "ev_sweep4_walk", SLUG = "sweep4-walk-dinner";
+  const make = async (org, filled) => {
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Sweep4 " + org.slice(11), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    if (filled) {
+      const today = require("./clock").civilDay();
+      const past = `${Number(today.slice(0, 4)) - 1}-10-17`, due = `${Number(today.slice(0, 4)) + 1}-03-01`;
+      await q(`INSERT INTO events (id,org_id,name,event_type,date,status,public_slug,created_by,created_by_name) VALUES ($1,$2,'Walk Dinner','gala',$3,'completed',$4,'system:test','test')`, [EV, org, past, SLUG]);
+      await q(`INSERT INTO event_tables (id,org_id,event_id,label,seats) VALUES ('evt_sweep4_w1',$1,$2,'Table 1',8)`, [org, EV]);
+      for (let i = 1; i <= 6; i++) {
+        await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`,
+          [`d_${org}_${i}`, org, `Walk Guest ${i}`, i === 2 ? null : `walk${i}@example.org`]);
+        // 1-4 came and sat; 5 said yes and never came (no seat); 6 declined
+        await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,table_label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [`ea_${org}_${i}`, EV, org, `d_${org}_${i}`, `Walk Guest ${i}`, i === 2 ? null : `walk${i}@example.org`, i <= 4 ? "attended" : i === 5 ? "registered" : "declined", i <= 4 ? "Table 1" : null]);
+      }
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,event_id,created_by,created_by_name) VALUES ($1,$2,$3,500,$4,$5,'system:test','test')`, [`g_${org}_1`, org, `d_${org}_1`, past, EV]);
+      await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,event_id,created_by,created_by_name) VALUES ($1,$2,$3,3000,$4,'open',$5,'system:test','test')`, [`pl_${org}_1`, org, `d_${org}_3`, due, EV]);
+      for (let k = 0; k < 3; k++)
+        await q(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES ($1,$2,$3,$4,$5,1000)`, [`pli_${org}_${k}`, org, `pl_${org}_1`, k + 1, `${Number(due.slice(0, 4)) + k}-03-01`]);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["a past dinner with guests and pledges", await make("org_sweep4_walk", true), true], ["empty", await make("org_sweep4_none", false), false]];
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"],
+    [/\{\{[^}]*\}\}/, "a {{placeholder}}"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"], [/\b20\d\d-\d\d-\d\d\b/, "an ISO date"]];
+  const screens = filled => [
+    ["Events · Upcoming", "/app/events", null], ["Events · Past", "/app/events", "Past"], ["Events · All", "/app/events", "All"],
+    ...(filled ? [["the event page", `/app/events?event=${EV}`, null]] : []),
+    ["Pledges", "/app/fundraising?fr=pledges", null], ["Tickets & sponsors", "/app/fundraising?fr=events", null],
+    ["Auctions", "/app/fundraising?fr=auctions", null], ["Peer-to-peer", "/app/fundraising?fr=p2p", null], ["Memberships", "/app/fundraising?fr=members", null],
+  ];
+  for (const [what, a, filled] of cases) for (const width of [1440, 390]) {
+    const ctx = await browser.newContext({ viewport: { width, height: width > 500 ? 1000 : 844 }, serviceWorkers: "block", ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    for (const [name, url, tab] of screens(filled)) {
+      trouble = [];
+      await page.goto(APP + url, { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
+      if (tab) await page.getByRole("button", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
+      await page.waitForTimeout(500);
+      // only the swept screens: each wears .no-caps at its root
+      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].map(n => n.innerText).join("\n"));
+      const said = SAYS.filter(([re]) => re.test(text)).map(([, w]) => w);
+      const caps = [...new Set(text.split("\n").map(l => l.trim()).filter(l => /^[A-Z][A-Z0-9 ·&'’,\-\/()]{3,}$/.test(l) && /[A-Z]{4}/.test(l)))].slice(0, 6);
+      const where = `${name} (${what}, ${width})`;
+      ok(`§sweep4 ${where} draws its screen`, text.trim().length > 40, text.slice(0, 80));
+      ok(`§sweep4 ${where} says nothing the bar names`, said.length === 0, said);
+      ok(`§sweep4 ${where} has no ALL-CAPS label`, caps.length === 0, caps);
+      ok(`§sweep4 ${where} has no console error and no API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
+      if (name === "the event page") {
+        const seating = await page.locator('[data-testid="ev-seating-sentence"]').innerText().catch(() => "");
+        ok(`§sweep4 ${where}: a past event's seating speaks only of who came`, !!seating && !/without a seat/.test(seating), seating);
+        const tile = page.locator('.fig-tile', { hasText: /Pledged · first year/i }).first();
+        if (await tile.count()) {
+          const [lb, qb] = [await tile.locator("button span").first().boundingBox(), await tile.locator('[data-testid="figure-why"]').boundingBox()];
+          const textRight = await tile.locator("button span").first().evaluate(el => { const r = document.createRange(); r.selectNodeContents(el); const rs = [...r.getClientRects()]; return Math.max(...rs.map(x => x.right)); });
+          ok(`§sweep4 ${where}: "Pledged · first year" clears its "?"`, !!lb && !!qb && textRight <= qb.x + 1, { textRight, why: qb });
+        } else ok(`§sweep4 ${where}: the Pledged · first year tile is drawn`, false);
+        await page.getByRole("button", { name: /Plan follow-up tasks|Follow-up tasks/ }).first().click().catch(() => {});
+        await page.waitForFunction(() => { const el = document.querySelector('[data-testid="ev-followup-plan"]'); return el && !/Counting/.test(el.innerText); }, null, { timeout: 8000 }).catch(() => {});
+        const plan = await page.locator('[data-testid="ev-followup-plan"]').innerText({ timeout: 5000 }).catch(() => "");
+        ok(`§sweep4 ${where}: the follow-up modal says how many before it makes any`, /This makes 4 tasks/.test(plan), plan);
+      }
+    }
+    await ctx.close();
+  }
+  const pub = await fetch(`${BASE}/e/${SLUG}`);
+  const html = await pub.text();
+  ok("§sweep4 the public event page reads Not open yet while payments aren't connected, with no form", /Not open yet/.test(html) && !/<form/i.test(html), html.slice(0, 160));
+}
+
 // ── FIX-21 · GROUPS ANSWER IN UNDER HALF A SECOND ─────────────────────────
 // Clicking a group was six seconds of white on prod: the page asked for its
 // 22 figures one at a time, each re-reading the group and re-running its
@@ -1292,6 +1391,7 @@ async function moneyScreensSayNothingWrong(browser) {
     }
   }
 
+  await eventsAndPledgesSayNothingWrong(browser);
   await demoDoor(browser);
   await greetingFirst(browser, auth);
   await emailEditorEverywhere(browser);

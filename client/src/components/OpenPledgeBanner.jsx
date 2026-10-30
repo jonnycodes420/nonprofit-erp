@@ -11,6 +11,7 @@ import { T } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { countLabel } from "../../../shared/countWords.js";
+import { told } from "../lib/stewardTold";
 
 const money = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
@@ -34,6 +35,9 @@ export function openPledgeWords(pl) {
 export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOnly, onRecordPayment }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
+  // SWEEP-4: the drafted reminder, so it can be taken back, and so a second
+  // press does not draft a second one
+  const [drafted, setDrafted] = useState({});   // pledge id -> task id
   const open = (pledges || []).filter(p => p.status === "open" && Number(p.balance) > 0);
   if (!open.length) return null;
   const remind = async (pl, w) => {
@@ -42,10 +46,24 @@ export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOn
     const part = w.next ? `${money(w.next.amount)} due ${longDate(w.next.dueDate)}` : `${money(pl.balance)} still to come`;
     const body = `Hi ${first}, thank you again for your pledge of ${money(pl.amount)}. This is a gentle note that ${part}. Is there a way of giving that's easiest for you?`;
     try {
-      await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: `Send ${donorName} a pledge reminder`.slice(0, 240), due: todayIso(), type: "donor", donorId,
+      const t = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({ title: `Send ${donorName} a pledge reminder`.slice(0, 240), due: todayIso(), type: "donor", donorId,
         priority: "medium", kind: "write", notes: `Drafted reminder (nothing was sent):\n\n${body}` }) });
+      setDrafted(d => ({ ...d, [pl.id]: (t && t.id) || true }));
       setMsg(`A pledge reminder for ${donorName} is on your tasks, with the note drafted in it. Nothing was sent.`);
+      told({ task: true });   // the profile's next step, its Tasks count and Tasks read it at once
     } catch (e) { setMsg(errorMessage(e, "The reminder was not drafted.")); }
+    setBusy("");
+  };
+  const takeBack = async pl => {
+    const id = drafted[pl.id];
+    if (typeof id !== "string") return;
+    setBusy(pl.id);
+    try {
+      await apiFetch(`/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setDrafted(d => { const n = { ...d }; delete n[pl.id]; return n; });
+      setMsg("Taken back. The reminder task is gone.");
+      told({ task: true });
+    } catch (e) { setMsg(errorMessage(e, "The reminder was not taken back.")); }
     setBusy("");
   };
   return (
@@ -64,7 +82,9 @@ export default function OpenPledgeBanner({ pledges, donorName, donorId, isReadOn
               {!isReadOnly && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <button type="button" data-testid="dp-pledge-record" style={btn(true)} onClick={() => onRecordPayment && onRecordPayment(pl, w.next)}>Record a payment</button>
-                  <button type="button" data-testid="dp-pledge-remind" style={btn(false)} disabled={busy === pl.id} onClick={() => remind(pl, w)}>{busy === pl.id ? "Drafting…" : "Send a reminder"}</button>
+                  {drafted[pl.id]
+                    ? <button type="button" data-testid="dp-pledge-remind-undo" style={btn(false)} disabled={busy === pl.id} onClick={() => takeBack(pl)}>{busy === pl.id ? "Taking it back…" : "Undo the reminder"}</button>
+                    : <button type="button" data-testid="dp-pledge-remind" style={btn(false)} disabled={busy === pl.id} onClick={() => remind(pl, w)}>{busy === pl.id ? "Drafting…" : "Send a reminder"}</button>}
                 </div>
               )}
             </div>

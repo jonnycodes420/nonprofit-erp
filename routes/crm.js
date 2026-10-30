@@ -7850,6 +7850,13 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   try { pledgeAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
+  // SWEEP-4: a schedule that does not sum to the pledge is refused BEFORE the
+  // pledge is written. It was written, then the schedule threw into a catch
+  // that only logged, and the pledge answered 201 with no installments.
+  try { await planPledgeInstallments({ amountCents: parseMoneyOrThrow(pledgeAmt, "amount"), schedule: req.body.installments,
+          frequency: req.body.frequency, count: req.body.installmentCount, firstDue: dueDate }); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code || "bad_schedule" }); }
+
   const id = "pl_" + uuid().slice(0, 8);
   const inserted = await query(
     `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key,created_by,created_by_name)
@@ -7877,7 +7884,7 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
     schedule: req.body.installments, frequency: req.body.frequency,
     count: req.body.installmentCount, firstDue: dueDate,
-  }).catch(e => console.error("[pledge] installments:", e.message));
+  });
 
   // WIRE-1: the promise is on the person's timeline the day it is made.
   { const who = await staffWho(req);
@@ -7894,7 +7901,30 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
 // and by the shell-pledge repair in B.2 — so "what a schedule is" is decided
 // once. Never rewrites an instalment that has already been PAID: a payment is
 // a fact and a new schedule is a plan.
-async function writePledgeInstallments(orgId, pledgeId, { amountCents, schedule, frequency, count, firstDue }) {
+async function writePledgeInstallments(orgId, pledgeId, opts) {
+  const rows = await planPledgeInstallments(opts);
+  if (!rows.length) return { installments: 0 };
+  const { frequency } = opts;
+  const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
+  const paidSeqs = new Set(paid.map(p => p.seq));
+  await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NULL", [orgId, pledgeId]);
+  for (const r of rows) {
+    if (paidSeqs.has(r.seq)) continue;
+    await run(
+      `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)
+       VALUES (?,?,?,?,?,?) ON CONFLICT (pledge_id, seq) DO NOTHING`,
+      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
+  }
+  await run("UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
+    [frequency || null, rows.length, pledgeId, orgId]);
+  return { installments: rows.length };
+}
+// What the schedule IS, written nowhere: an explicit schedule (it must sum to
+// the pledge), a cadence, or (SWEEP-4) neither, which is ONE installment of the
+// whole pledge on its due date. A pledge made through the API with no schedule
+// had no installments, so recordGift had nothing to apply a payment to and the
+// Pledges view drew it with no row under it. Every pledge has its installments.
+async function planPledgeInstallments({ amountCents, schedule, frequency, count, firstDue }) {
   const dep = await depositMod();
   let rows = [];
   if (Array.isArray(schedule) && schedule.length) {
@@ -7909,20 +7939,10 @@ async function writePledgeInstallments(orgId, pledgeId, { amountCents, schedule,
   } else if (frequency && count) {
     rows = dep.generateInstallments({ amountCents, frequency, count, firstDue });
   }
-  if (!rows.length) return { installments: 0 };
-  const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
-  const paidSeqs = new Set(paid.map(p => p.seq));
-  await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NULL", [orgId, pledgeId]);
-  for (const r of rows) {
-    if (paidSeqs.has(r.seq)) continue;
-    await run(
-      `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)
-       VALUES (?,?,?,?,?,?) ON CONFLICT (pledge_id, seq) DO NOTHING`,
-      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
+  if (!rows.length && amountCents > 0 && /^\d{4}-\d{2}-\d{2}/.test(String(firstDue || ""))) {
+    rows = [{ seq: 1, dueDate: String(firstDue).slice(0, 10), amountCents }];
   }
-  await run("UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
-    [frequency || null, rows.length, pledgeId, orgId]);
-  return { installments: rows.length };
+  return rows;
 }
 
 // GET /pledges/:id/installments — the schedule, with what has paid each one.
@@ -7945,6 +7965,10 @@ app.get("/pledges/:id/installments", requireAuth, wrap(async (req, res) => {
 app.put("/pledges/:id/installments", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const [p] = await query("SELECT id, amount FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!p) return res.status(404).json({ error: "Pledge not found" });
+  // A schedule EDIT says what the schedule is; the one-installment default is
+  // for a pledge being made, not for an edit that said nothing.
+  if (!(Array.isArray(req.body.installments) && req.body.installments.length) && !(req.body.frequency && req.body.installmentCount))
+    return res.status(400).json({ error: "no_schedule", message: "Give a schedule, or a frequency and a number of installments." });
   try {
     const out = await writePledgeInstallments(req.user.orgId, req.params.id, {
       amountCents: money.toCents(p.amount) ?? 0,
@@ -27955,6 +27979,17 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   // EMBEDDABLE, the same rule the donation form follows.
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", "frame-ancestors *");
+  // SWEEP-4: an event page is not open to the public until the org can take
+  // money through it, the same rule as its giving pages (FUNDRAISING-2). It
+  // offered "Register" and promised somebody would be in touch about paying.
+  // The staff editor's preview (eventPageHtml editable) still draws the page.
+  const [payOrg] = await query("SELECT name, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
+  if (!(payOrg && payOrg.stripe_connected && payOrg.stripe_account_id)) {
+    const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+    const who = String(brand.displayName || "").trim() || payOrg?.name || "This organization";
+    return res.status(404).send(evPage({ title: "Not open yet", brand, body:
+      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${PPG.escapeHtml(who)}'s event page isn't open yet. Please check back soon.</p></div>` }));
+  }
   res.send(await eventPageHtml(e, req.query || {}));
 }));
 
@@ -27971,7 +28006,7 @@ app.get("/events/:id/page/preview", requireAuth, wrap(async (req, res) => {
 
 async function eventPageHtml(e, q = {}, { editable = false } = {}) {
   const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
-  const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
+  const [org] = await query("SELECT name, org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
   const levels = await query(
     `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits, picture
@@ -28338,6 +28373,10 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     [String(req.body?.levelId || ""), e.id, e.org_id]);
   if (!level) return res.status(400).send(evPage({ title: "Almost", brand, body:
     `<div class="card"><div class="err">That option is no longer available.</div>${back}</div>` }));
+  // SWEEP-4: the page is not open until payments are connected, so neither is its form
+  { const [o] = await query("SELECT name, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
+    if (!(o && o.stripe_connected && o.stripe_account_id)) return res.status(404).send(evPage({ title: "Not open yet", brand, body:
+      `<div class="card" data-testid="event-not-open"><h1>Not open yet</h1><p class="muted">${esc(String(brand.displayName || "").trim() || o?.name || "This organization")}'s event page isn't open yet. Please check back soon.</p></div>` })); }
   const qty = Math.min(EV.MAX_QTY, Math.max(1, parseInt(req.body?.quantity, 10) || 1));
 
   // ONE PERSON, ONE RECORD. Matched by email first, exactly as every other
@@ -28404,22 +28443,28 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
 // EVERY NUMBER OPENS. `GET /events/:id/rows?rows=<key>` re-runs the SAME SQL
 // the figure was built from, so a count and its list cannot drift.
 const EVENT_ROW_SQL = {
+  // SWEEP-4: a deleted person is in no figure (the truth check), so none of
+  // these three counts them: First-time givers said 63 with a deleted giver in it.
   raised: `SELECT g.id, g.amount::float AS amount, g.date, d.id AS donor_id, d.name
-             FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+             FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
             WHERE g.org_id=? AND g.event_id=?
             ORDER BY g.amount DESC`,
-  firstTime: `SELECT d.id AS donor_id, d.name, g.amount::float AS amount, g.date
-                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-               WHERE g.org_id=? AND g.event_id=?
+  // each PERSON once: two gifts on their first day were two first-time givers
+  firstTime: `SELECT * FROM (
+              SELECT DISTINCT ON (d.id) d.id AS donor_id, d.name, g.amount::float AS amount, g.date
+                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+               WHERE g.org_id=? AND g.event_id=? AND g.amount > 0
                  AND g.date = (SELECT MIN(x.date) FROM gifts x
                                 WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.amount > 0)
                  AND NOT EXISTS (SELECT 1 FROM gifts y
                                   WHERE y.org_id=g.org_id AND y.donor_id=g.donor_id
                                     AND y.amount > 0 AND y.date < g.date)
-               ORDER BY g.amount DESC`,
+               ORDER BY d.id, g.amount DESC) ft
+             ORDER BY amount DESC, name`,
   sponsors: `SELECT a.id, a.donor_id, a.name, a.recognition, a.sponsor_pledge_id, l.name AS level_name, l.price::float AS price
                FROM event_attendees a JOIN event_levels l ON l.id=a.level_id
-              WHERE a.org_id=? AND a.event_id=? AND l.kind='sponsor' AND a.status <> 'cancelled'
+               LEFT JOIN donors sd ON sd.id=a.donor_id AND sd.org_id=a.org_id
+              WHERE a.org_id=? AND a.event_id=? AND l.kind='sponsor' AND a.status <> 'cancelled' AND (a.donor_id IS NULL OR sd.deleted_at IS NULL)
               ORDER BY l.price DESC, a.name`,
 };
 
@@ -29012,7 +29057,10 @@ app.get("/events/:id", requireAuth, async (req, res) => {
     // PARITY-2 Part 3: the page's address, built on the one public origin.
     const public_page_url = evts[0].public_slug ? `${publicAppUrl()}/e/${encodeURIComponent(evts[0].public_slug)}` : null;
     const [money] = await require("../numbers").eventsRaised(orgId, { ids: [req.params.id] });
+    // SWEEP-4: the public page is "Not open yet" until payments are connected
+    const [pay] = await query("SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=$1", [orgId]);
     res.json({ ...evts[0], attendees, public_page_url, money: money || null,
+      payments_connected: !!(pay && pay.stripe_connected && pay.stripe_account_id),
       givenSource: { key: "event-gave", params: { event: req.params.id } },
       givenSentence: "What each person gave for this event or pledged at it, from the gifts and pledges themselves." });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -29175,31 +29223,76 @@ app.delete("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) =>
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events/:id/follow-up", requireAuth, checkWriteAccess, async (req, res) => {
-  try {
-    const orgId = req.user.orgId;
-    const { taskTitle, dueDate, priority } = req.body;
-    const evts = await query("SELECT name FROM events WHERE id=$1 AND org_id=$2", [req.params.id, orgId]);
-    if (!evts.length) return res.status(404).json({ error: "Event not found" });
-    const eventName = evts[0].name;
-    const attendees = await query(
-      "SELECT * FROM event_attendees WHERE event_id=$1 AND status='attended' AND donor_id IS NOT NULL",
-      [req.params.id]
-    );
-    let count = 0;
-    for (const att of attendees) {
-      const title = (taskTitle || "Follow up with {{event_name}} attendee")
-        .replace("{{event_name}}", eventName);
-      await run(
-        `INSERT INTO tasks (id, org_id, title, due, priority, type, donor_id, created_by, created_by_name)
-         VALUES ($1,$2,$3,$4,$5,'donor',$6,$7,$8)`,
-        ["tsk_" + uuid().slice(0, 8), orgId, title, dueDate || null, priority || 'medium', att.donor_id, actor(req).id, actor(req).name]
-      );
-      count++;
-    }
-    res.json({ count });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+// ── SWEEP-4 · FOLLOW-UP TASKS FOR WHO CAME ─────────────────────────────────
+// One task per person who came (each person once, a deleted person never), and
+// never a second one for somebody who already has an open follow-up for this
+// event, so a second press makes nothing new. The screen asks GET first and
+// says the count before anything is made; POST answers with the batch, and the
+// batch's Undo removes exactly those tasks while nobody has touched them.
+// It made one task per attendee ROW, counted nobody first, made the whole set
+// again on a second press, gave deleted people tasks, and had no Undo.
+const FOLLOW_UP_LINK = "event_follow_up";
+const followUpCameSql = `SELECT DISTINCT a.donor_id FROM event_attendees a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id AND d.deleted_at IS NULL
+                          WHERE a.org_id = ? AND a.event_id = ? AND a.donor_id IS NOT NULL AND ${figureSources.EVENT_CAME("a")}`;
+const followUpOpenSql = `SELECT DISTINCT t.donor_id FROM tasks t WHERE t.org_id = ? AND t.event_id = ? AND t.link_kind = '${FOLLOW_UP_LINK}'
+                          AND COALESCE(t.done, 0) = 0 AND t.voided_at IS NULL`;
+async function followUpCounts(orgId, eventId) {
+  const [c] = await query(`SELECT (SELECT COUNT(*) FROM (${followUpCameSql}) x)::int AS came,
+                                  (SELECT COUNT(*) FROM (${followUpCameSql}) x WHERE x.donor_id IN (${followUpOpenSql}))::int AS already`,
+    [orgId, eventId, orgId, eventId, orgId, eventId]);
+  return { came: c.came, already: c.already, toCreate: c.came - c.already };
+}
+const followUpWords = ({ came, already, toCreate }) => !came
+  ? "Nobody is marked as having come yet, so there is nobody to follow up with."
+  : toCreate === 0
+  ? `All ${came.toLocaleString("en-US")} ${came === 1 ? "person who came has" : "people who came have"} an open follow-up task already. Nothing new will be made.`
+  : `This makes ${toCreate.toLocaleString("en-US")} ${toCreate === 1 ? "task" : "tasks"}, one for each person who came`
+    + (already ? `. ${already.toLocaleString("en-US")} already ${already === 1 ? "has one" : "have one"} and ${already === 1 ? "is" : "are"} left as ${already === 1 ? "it is" : "they are"}.` : ".");
+
+app.get("/events/:id/follow-up", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [e] = await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!e) return res.status(404).json({ error: "Event not found" });
+  const n = await followUpCounts(orgId, e.id);
+  res.json({ ...n, sentence: followUpWords(n), title: `Thank them for coming to ${e.name}` });
+}));
+
+app.post("/events/:id/follow-up", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { taskTitle, dueDate, priority } = req.body || {};
+  const [e] = await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!e) return res.status(404).json({ error: "Event not found" });
+  if (dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(dueDate))) return res.status(400).json({ error: "bad_due", message: "The due date is not a date." });
+  const pr = ["high", "medium", "low"].includes(priority) ? priority : "medium";
+  // {{event_name}} still works for anything that sent the old template
+  const title = (String(taskTitle || "").trim() || `Thank them for coming to ${e.name}`).split("{{event_name}}").join(e.name).slice(0, 240);
+  const who = actor(req);
+  const made = await query(
+    `INSERT INTO tasks (id, org_id, title, due, priority, type, donor_id, event_id, link_kind, created_by, created_by_name)
+     SELECT 'tsk_' || LEFT(REPLACE(gen_random_uuid()::text, '-', ''), 12), ?, ?, ?, ?, 'donor', c.donor_id, ?, '${FOLLOW_UP_LINK}', ?, ?
+       FROM (${followUpCameSql}) c WHERE c.donor_id NOT IN (${followUpOpenSql})
+     RETURNING id, created_at::text AS batch`,
+    [orgId, title, dueDate || null, pr, e.id, who.id, who.name, orgId, e.id, orgId, e.id]);
+  const n = await followUpCounts(orgId, e.id);
+  req.audit.action(`made ${made.length} follow-up tasks for ${e.name}`);
+  res.json({ count: made.length, batch: made.length ? made[0].batch : null, already: n.already - made.length,
+    sentence: made.length
+      ? `${made.length.toLocaleString("en-US")} follow-up ${made.length === 1 ? "task is" : "tasks are"} on Tasks${dueDate ? `, due ${(await import("../shared/displayDate.js")).displayDate(dueDate)}` : ""}.`
+      : "Nothing new was made: everybody who came already has an open follow-up task." });
+}));
+
+app.post("/events/:id/follow-up/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const batch = String((req.body || {}).batch || "");
+  const [e] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!e) return res.status(404).json({ error: "Event not found" });
+  if (!batch) return res.status(400).json({ error: "no_batch", message: "Which set of tasks? Undo answers the batch it was given." });
+  // Only the tasks still as they were made: one somebody ticked off or edited stays.
+  const gone = await query(
+    `DELETE FROM tasks WHERE org_id=? AND event_id=? AND link_kind='${FOLLOW_UP_LINK}' AND created_at = ?::timestamptz
+        AND COALESCE(done, 0) = 0 AND edited_at IS NULL RETURNING id`, [orgId, e.id, batch]);
+  res.json({ removed: gone.length, sentence: `${gone.length.toLocaleString("en-US")} follow-up ${gone.length === 1 ? "task" : "tasks"} taken back off Tasks.` });
+}));
 
 app.get("/donors/:id/events", requireAuth, async (req, res) => {
   try {
