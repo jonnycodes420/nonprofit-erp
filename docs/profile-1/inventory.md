@@ -1,5 +1,11 @@
 # PROFILE-1 · inventory of today's donor profile (origin/main 6216535)
 
+**PROFILE-2 (29 Oct):** the `Now` column follows the rebuilt profile. Seven tabs: Activity (the old
+Overview's meeting, heard and timeline, now the whole timeline by month) and Giving (Gifts & pledges,
+the ask card, Highlights, the asks, About's grid, Funds, Asks & pipeline). Related opens from the rail's
+Household and related (Manage). The header's roles, closeness, drift and refusals lines moved to the
+rail's About; the tags to the header's two-tag row and About.
+
 Every clickable thing on the donor profile before the redesign, where it goes, and how a test finds it.
 "Figure → `key`" means a `<Figure source>` that opens `MetricBreakdownPanel` on that figure source
 (`figureSources.js`) with the params shown. `DP` = `client/src/components/DonorProfile.jsx`.
@@ -20,7 +26,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | hdr-flags | Deceased / Do not contact / Do not solicit / Sustainer · not reconnected (when set) | hover title only | chip text || header · `Do not solicit` · code |
 | hdr-role-add | + (add a role) | menu `role-add-menu` → `PUT /people/:id/roles` (DP `RoleLine`) | `[data-testid=role-add]`, `role-add-<key>` || header · `[data-testid=role-add]` · exists |
 | hdr-role-chip | each role chip (Donor, Volunteer, Staff and board…) | `PUT /people/:id/roles` off (DP `RoleLine`) | `[data-testid=role-line] button` || header · `[data-testid=role-line]` · exists |
-| hdr-tag | each status tag (giving level, lifecycle, Retained) | Figure-like drawer → `donors-by-status` {tag, today} (ProfileStatus `StatusTags`/`Opens`) | `[data-testid=dp-tag-<key>]` || header · `[data-testid=dp-status-tags] button` · source:donors-by-status |
+| hdr-tag | each status tag (giving level, lifecycle, Retained) | Figure-like drawer → `donors-by-status` {tag, today} (ProfileStatus `StatusTags`/`Opens`) | `[data-testid=dp-tag-<key>]` || header · `[data-testid=dp-head-tags] button` · source:donors-by-status |
 | hdr-closeness-fact | each closeness fact ("gave twice this year"…) | drawer → the fact's source (`donor-gifts-between`, `volunteer-hours`, `donor-engagement-part`, `donor-membership`, `donor-fundraising`, `donor-contact-gap`) | `[data-testid=dp-closeness-fact-<i>]` || header · `dp-closeness-fact-` · code |
 | hdr-group-out | × on a group chip (when in a static group) | `POST /groups/:gid/members/remove` (Groups.jsx `ProfileGroups`) | aria-label "Take out of <group>" || header · `Take out of` · code |
 | hdr-group-add | Add to a group (select) + Add | `POST /groups/:gid/members` | `[data-testid=profile-groups] select` || header · `profile-groups` · code |
@@ -54,11 +60,11 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 |---|---|---|---|---|
 | fig-lifetime | Lifetime | Figure → `donor-lifetime` {donor} | `[data-figure-key="profile.lifetime"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lifetime"]` · source:donor-lifetime |
 | fig-last-gift | Last gift | Figure → `donor-last-gift` {donor} | `[data-figure-key="profile.lastGift"]` || header · `[data-testid=dp-header-figures] [data-figure-key="profile.lastGift"]` · source:donor-last-gift |
-| fig-last-met | Last met (days) | Figure → `donor-last-met` {donor, today} | `[data-figure-key="profile.lastMet"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastMet"]` · source:donor-last-met |
-| fig-last-email | Last email (days) | Figure → `donor-last-email` {donor, today} | `[data-figure-key="profile.lastEmail"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastEmail"]` · source:donor-last-email |
-| fig-first | First gift (month under) | Figure → `donor-first-gift` {donor} (ProfileStatus `Tile`) | `[data-figure-key="profile.glance.first-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.first-gift"]` · source:donor-first-gift |
-| fig-largest | Largest gift (month under) | Figure → `donor-largest-gift` {donor} | `[data-figure-key="profile.glance.largest-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.largest-gift"]` · source:donor-largest-gift |
-| fig-average | Average gift ("of N gifts…" under) | Figure → `donor-average-gift` {donor}, measure `per_gift` | `[data-figure-key="profile.glance.average-gift"]` || gifts · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.average-gift"]` · source:donor-average-gift |
+| fig-last-met | Last met (days) | Figure → `donor-last-met` {donor, today} | `[data-figure-key="profile.lastMet"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastMet"]` · source:donor-last-met |
+| fig-last-email | Last email (days) | Figure → `donor-last-email` {donor, today} | `[data-figure-key="profile.lastEmail"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.lastEmail"]` · source:donor-last-email |
+| fig-first | First gift (month under) | Figure → `donor-first-gift` {donor} (ProfileStatus `Tile`) | `[data-figure-key="profile.glance.first-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.first-gift"]` · source:donor-first-gift |
+| fig-largest | Largest gift (month under) | Figure → `donor-largest-gift` {donor} | `[data-figure-key="profile.glance.largest-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.largest-gift"]` · source:donor-largest-gift |
+| fig-average | Average gift ("of N gifts…" under) | Figure → `donor-average-gift` {donor}, measure `per_gift` | `[data-figure-key="profile.glance.average-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.average-gift"]` · source:donor-average-gift |
 | fig-def | "?" beside Lifetime / Last gift / Last met / Last email | hover + keyboard title = census sentence (no click target) | `[data-testid=dp-tile-def-<Label>]` || header · `[data-testid=dp-header-figures] [data-testid="dp-tile-def-Lifetime"]` · exists |
 
 ## 3. Glance lines, Ask, Giving by year
@@ -67,22 +73,22 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 |---|---|---|---|---|
 | gl-birthday | Birthday: … (when set) | text only | `[data-testid=dp-glance-birthday]` || header · `[data-testid=dp-header-birthday]` · exists |
 | gl-volunteer | volunteer line (when hours) | drawer → `volunteer-hours` | `[data-testid=dp-glance-volunteer-open]` || rail · `dp-rail-volunteering` · code |
-| gl-highlight | each Highlight ("Gives every August"…) | drawer → `donor-gifts-between` / `donor-first-gift` / `donor-largest-gift` | `[data-testid=dp-highlight-<key>]` || overview · `dp-highlight-` · code |
-| gl-next-why | Next line + Why? | toggles `dp-next-why-text` (status.next.why + suggested ask) | `[data-testid=dp-next-why]` || overview · `[data-testid=dp-ask-card] [data-testid=dp-next-why]` · exists |
-| ask-why | Ask: Why … giving moved | `AskRail` mode why, scope donor (AskRail.jsx) | `[data-testid=ask-why]` in `donor-ask` || overview · `[data-testid=dp-ask] [data-testid=donor-ask]` · exists |
-| ask-what | Ask: What to do next with … | `AskRail` mode what | `[data-testid=ask-what]` || overview · `[data-testid=dp-ask] [data-testid=donor-ask]` · exists |
-| ask-kept | the kept Ask thread (when one) | `AskRail` replay | `[data-testid=ask-kept]` || overview · `ask-kept` · code |
-| gby-bar | a bar on Giving by year | `MetricBreakdownPanel` → `gifts` {donor, from YYYY-01-01, to YYYY-12-31} | `[data-testid=dp-giving-by-year]` bars || gifts · `[data-testid=dp-giving-by-year]` · exists |
-| gby-add | + Add a gift (no gifts) | switches to Gifts tab + opens the add-gift form | `[data-testid=dp-giving-by-year-add]` || gifts · `dp-giving-by-year-add` · code |
+| gl-highlight | each Highlight ("Gives every August"…) | drawer → `donor-gifts-between` / `donor-first-gift` / `donor-largest-gift` | `[data-testid=dp-highlight-<key>]` || giving · `dp-highlight-` · code |
+| gl-next-why | Next line + Why? | toggles `dp-next-why-text` (status.next.why + suggested ask) | `[data-testid=dp-next-why]` || giving · `[data-testid=dp-ask-card] [data-testid=dp-next-why]` · exists |
+| ask-why | Ask: Why … giving moved | `AskRail` mode why, scope donor (AskRail.jsx) | `[data-testid=ask-why]` in `donor-ask` || giving · `[data-testid=dp-ask] [data-testid=donor-ask]` · exists |
+| ask-what | Ask: What to do next with … | `AskRail` mode what | `[data-testid=ask-what]` || giving · `[data-testid=dp-ask] [data-testid=donor-ask]` · exists |
+| ask-kept | the kept Ask thread (when one) | `AskRail` replay | `[data-testid=ask-kept]` || giving · `ask-kept` · code |
+| gby-bar | a bar on Giving by year | `MetricBreakdownPanel` → `gifts` {donor, from YYYY-01-01, to YYYY-12-31} | `[data-testid=dp-giving-by-year]` bars || giving · `[data-testid=dp-giving-by-year]` · exists |
+| gby-add | + Add a gift (no gifts) | switches to Gifts tab + opens the add-gift form | `[data-testid=dp-giving-by-year-add]` || giving · `dp-giving-by-year-add` · code |
 
 ## 4. Tab row
 
 | id | What | Goes to | How to find it | Now |
 |---|---|---|---|---|
-| tab-overview | Overview | `dpTab=overview` | `.dp-tabs [role=tab]` "Overview" || tabs · `[data-tab=overview]` · tab:overview |
-| tab-gifts | Gifts & Pledges (count) | `dpTab=gifts` | "Gifts & Pledges" || tabs · `[data-tab=gifts]` · tab:gifts |
-| tab-funds | Funds | `dpTab=funds` → `GET /donors/:id/fund-affinity` | "Funds" || tabs · `[data-tab=funds]` · tab:funds |
-| tab-related | Related (count) | `dpTab=related` → `GET /donors/:id/relationships` | "Related" || tabs · `[data-tab=related]` · tab:related |
+| tab-overview | Overview | `dpTab=overview` | `.dp-tabs [role=tab]` "Overview" || tabs · `[data-tab=activity]` · tab:activity |
+| tab-gifts | Gifts & Pledges (count) | `dpTab=gifts` | "Gifts & Pledges" || tabs · `[data-tab=giving]` · tab:giving |
+| tab-funds | Funds | `dpTab=funds` → `GET /donors/:id/fund-affinity` | "Funds" || tabs · `[data-tab=giving]` · tab:giving |
+| tab-related | Related (count) | `dpTab=related` → `GET /donors/:id/relationships` | "Related" || rail · `[data-testid=dp-rail-related-manage]` · dialog |
 | tab-materials | Materials (count) | `dpTab=materials` → `GET /donors/:id/materials` | "Materials" || tabs · `[data-tab=files]` · tab:files |
 | tab-activity | Activity | `dpTab=activity` | "Activity" || tabs · `[data-tab=conversations]` · tab:conversations |
 
@@ -92,8 +98,8 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 |---|---|---|---|---|
 | tl-view-timeline | Timeline | view cards (pref saved) | `[data-view=cards]` || conversations · `[data-view=cards]` · exists |
 | tl-view-list | List | `TimelineListView`; a row opens its card | `[data-view=list]` || conversations · `[data-view=list]` · exists |
-| chip-all | All | filter all | `[data-filter=all]` || overview · `[data-testid=dp-lately]` · exists |
-| chip-gifts | Gifts | bucket gift | `[data-filter=gift]` || tabs · `[data-tab=gifts]` · tab:gifts |
+| chip-all | All | filter all | `[data-filter=all]` || activity · `[data-testid=dp-tab-activity] [data-testid=dp-timeline]` · exists |
+| chip-gifts | Gifts | bucket gift | `[data-filter=gift]` || tabs · `[data-tab=giving]` · tab:giving |
 | chip-conversations | Conversations | bucket conversation (meetings, calls, visits, asks, stewardship, events) | `[data-filter=conversation]` || tabs · `[data-tab=conversations]` · tab:conversations |
 | chip-tasks | Tasks | `GET /donors/:id/tasks` rows | `[data-filter=task]` || tabs · `[data-tab=tasks]` · tab:tasks |
 | chip-notes | Notes | bucket note | `[data-filter=note]` || tabs · `[data-tab=notes]` · tab:notes |
@@ -117,69 +123,69 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 
 | id | What | Goes to | How to find it | Now |
 |---|---|---|---|---|
-| mtg-brief | Open the brief / Close the brief (next meeting) | expands `dp-brief-full` (MeetingPanels `MeetingCard`) | `[data-testid=dp-meeting-card]` "Open the brief" || overview · `Open the brief` · code |
-| mtg-print | Print the brief | `window.print()` | "Print the brief" || overview · `Print the brief` · code |
-| mtg-move | Move it | time form → `POST /calendar/events/:id/move` | "Move it" || overview · `Move it` · code |
-| mtg-cancel | Cancel it | confirm → `POST /calendar/events/:id/cancel` | `[data-testid=dp-meeting-cancel]` || overview · `dp-meeting-cancel` · code |
-| heard-chip | From your note: chip / Not now (within 30 days of a hand-logged note) | `POST /interactions/:id/chips` (MeetingPanels `ConversationChips`) | `[data-testid=dp-heard] [data-chip]` || overview · `[data-testid=dp-heard]` · exists |
-| howdid | How did it go? · Write it down (meeting ended < 7 days, not logged) | `AfterMeetingForm` modal | `[data-testid=dp-how-did-it-go] button` || overview · `dp-how-did-it-go` · code |
-| ask-new | + New ask | `ProposalForm` → `POST /donors/:id/proposals` (MajorGifts `ProposalsPanel`) | `[data-testid=dp-the-ask]` "+ New ask" || asks · `[data-testid=dp-the-ask] button:has-text("+ New ask")` · dialog |
-| ask-stage | Stage buttons (Prospect, Qualify, Cultivate, Solicit, Ongoing care, Lapsed) (team) | `onStageChange(id, stage)` (Donors.jsx → `PUT /donors/:id`, stage) | `[data-testid=dp-move-stage] button[aria-pressed]` || overview · `[data-testid=dp-stage-bar] [data-stage=solicit]` · exists |
-| ask-sug-accept | Accept → stage (smart move) | `onStageChange` + `POST /pipeline/:id/move` | "Accept →" || asks · `Accept →` · code |
-| ask-sug-dismiss | Dismiss (smart move) | local dismiss | "Dismiss" || asks · `dismissSuggestion` · code |
-| ask-row-move | Move (proposal row) | `MoveModal` → `PUT /proposals/:id` | proposal row "Move" || asks · `[data-testid=dp-the-ask] button[title="Move this proposal"]` · dialog |
-| ask-row-edit | Edit (proposal row) | `ProposalForm` → `PUT /proposals/:id` | proposal row "Edit" || asks · `[data-testid=dp-the-ask] button[title="Edit this proposal"]` · dialog |
-| ask-row-status | Asked / stage chip (proposal row) | label only (`StageChip`) | row chip || asks · `StageChip` · code |
-| ask-row-menu | ⋯ (proposal row): Delete | `DELETE /proposals/:id` + Undo | `[data-testid=item-menu]` in row || asks · `[data-testid=dp-the-ask] [data-testid=item-menu]` · exists |
-| ask-prob-line | "1 open proposal, no probability set" | text only (`d.weighted.sentence`) | text || asks · `[data-testid=dp-the-ask]:has-text("probability")` · exists |
-| ask-suggested | Suggested ask line (when scores) | text (`SuggestedAskLine`) | `[data-testid=suggested-ask]` || overview · `SuggestedAskLine` · code |
-| pipe-add | + Add to pipeline (team) | `POST /pipeline/add` | "+ Add to pipeline" || asks · `[data-testid=dp-the-ask] button:has-text("Add to pipeline")` · exists |
-| pipe-ask | + Pipeline ask / Save (team) | `POST /donors/:id/opportunities` | "+ Pipeline ask" || asks · `[data-testid=dp-the-ask] button:has-text("Pipeline ask")` · exists |
-| pipe-won | Won (open opportunity) | `PUT /opportunities/:id` status won | "Won" || asks · `closeAsk(o,"won")` · code |
-| pipe-lost | Lost (open opportunity) | `PUT /opportunities/:id` status lost | "Lost" || asks · `closeAsk(o,"lost")` · code |
-| hh-link | Household name (when in one) | `RecordLink` → `householdHref(id)` = `/donors?household=<id>` | `[data-record-link=household]` || overview · `data-record-link="household"` · code |
+| mtg-brief | Open the brief / Close the brief (next meeting) | expands `dp-brief-full` (MeetingPanels `MeetingCard`) | `[data-testid=dp-meeting-card]` "Open the brief" || activity · `Open the brief` · code |
+| mtg-print | Print the brief | `window.print()` | "Print the brief" || activity · `Print the brief` · code |
+| mtg-move | Move it | time form → `POST /calendar/events/:id/move` | "Move it" || activity · `Move it` · code |
+| mtg-cancel | Cancel it | confirm → `POST /calendar/events/:id/cancel` | `[data-testid=dp-meeting-cancel]` || activity · `dp-meeting-cancel` · code |
+| heard-chip | From your note: chip / Not now (within 30 days of a hand-logged note) | `POST /interactions/:id/chips` (MeetingPanels `ConversationChips`) | `[data-testid=dp-heard] [data-chip]` || activity · `[data-testid=dp-heard]` · exists |
+| howdid | How did it go? · Write it down (meeting ended < 7 days, not logged) | `AfterMeetingForm` modal | `[data-testid=dp-how-did-it-go] button` || activity · `dp-how-did-it-go` · code |
+| ask-new | + New ask | `ProposalForm` → `POST /donors/:id/proposals` (MajorGifts `ProposalsPanel`) | `[data-testid=dp-the-ask]` "+ New ask" || giving · `[data-testid=dp-the-ask] button:has-text("+ New ask")` · dialog |
+| ask-stage | Stage buttons (Prospect, Qualify, Cultivate, Solicit, Ongoing care, Lapsed) (team) | `onStageChange(id, stage)` (Donors.jsx → `PUT /donors/:id`, stage) | `[data-testid=dp-move-stage] button[aria-pressed]` || giving · `[data-testid=dp-stage-bar] [data-stage=solicit]` · exists |
+| ask-sug-accept | Accept → stage (smart move) | `onStageChange` + `POST /pipeline/:id/move` | "Accept →" || giving · `Accept →` · code |
+| ask-sug-dismiss | Dismiss (smart move) | local dismiss | "Dismiss" || giving · `dismissSuggestion` · code |
+| ask-row-move | Move (proposal row) | `MoveModal` → `PUT /proposals/:id` | proposal row "Move" || giving · `[data-testid=dp-the-ask] button[title="Move this proposal"]` · dialog |
+| ask-row-edit | Edit (proposal row) | `ProposalForm` → `PUT /proposals/:id` | proposal row "Edit" || giving · `[data-testid=dp-the-ask] button[title="Edit this proposal"]` · dialog |
+| ask-row-status | Asked / stage chip (proposal row) | label only (`StageChip`) | row chip || giving · `StageChip` · code |
+| ask-row-menu | ⋯ (proposal row): Delete | `DELETE /proposals/:id` + Undo | `[data-testid=item-menu]` in row || giving · `[data-testid=dp-the-ask] [data-testid=item-menu]` · exists |
+| ask-prob-line | "1 open proposal, no probability set" | text only (`d.weighted.sentence`) | text || giving · `[data-testid=dp-the-ask]:has-text("probability")` · exists |
+| ask-suggested | Suggested ask line (when scores) | text (`SuggestedAskLine`) | `[data-testid=suggested-ask]` || giving · `SuggestedAskLine` · code |
+| pipe-add | + Add to pipeline (team) | `POST /pipeline/add` | "+ Add to pipeline" || giving · `[data-testid=dp-the-ask] button:has-text("Add to pipeline")` · exists |
+| pipe-ask | + Pipeline ask / Save (team) | `POST /donors/:id/opportunities` | "+ Pipeline ask" || giving · `[data-testid=dp-the-ask] button:has-text("Pipeline ask")` · exists |
+| pipe-won | Won (open opportunity) | `PUT /opportunities/:id` status won | "Won" || giving · `closeAsk(o,"won")` · code |
+| pipe-lost | Lost (open opportunity) | `PUT /opportunities/:id` status lost | "Lost" || giving · `closeAsk(o,"lost")` · code |
+| hh-link | Household name (when in one) | `RecordLink` → `householdHref(id)` = `/donors?household=<id>` | `[data-record-link=household]` || giving · `data-record-link="household"` · code |
 | hh-rename | Rename (household) | `window.prompt` → `PUT /households/:id` | `[data-testid=dp-household-rename]` || related · `dp-household-rename` · code |
 | hh-remove | Remove (household) | `PUT`/`DELETE /households/:id` | `[data-testid=dp-household]` "Remove" || related · `removeFromHousehold` · code |
-| hh-add | + Group into household | modal → `POST /households` | "+ Group into household" || overview · `[data-testid=dp-household-add]` · dialog |
+| hh-add | + Group into household | modal → `POST /households` | "+ Group into household" || giving · `[data-testid=dp-household-add]` · dialog |
 | hh-member | a member row | `onSelectRelatedDonor(id)` | `[data-testid=dp-household]` rows || related · `onSelectRelatedDonor(m.id)` · code |
 | hh-figs | Hard credit / Soft credit / Household combined / member totals | Figures → `softCredit.householdSources.*`, `household.combined_source`, `m.source` | household figures || related · `householdSources` · code |
-| soft-credit | Soft credit panel (when soft credits) | text, hover titles (census `profile.creditHard` / `creditWithSoft`) | `[data-testid=soft-credit-panel]` || gifts · `[data-testid=soft-credit-panel]` · exists |
-| pg-note | + Note planned giving | opens the designation toggles | `[data-testid=dp-planned-giving]` "+ Note planned giving" || overview · `[data-testid=dp-planned-giving-add]` · exists |
-| pg-toggle | each designation toggle | `POST`/`DELETE /donors/:id/designations[/:kind]` | `[data-designation]` || overview · `data-designation` · code |
-| mem-add | Add a membership | form → `POST /donors/:id/memberships` (Memberships `MembershipPanel`) | `[data-testid=membership-add]` || overview · `membership-add` · code |
-| mem-renew | Renew (member) | `POST /memberships/:id/renew` | `[data-testid=membership-renew]` || overview · `membership-renew` · code |
-| mem-card | Member card (PDF) (member) | `GET /memberships/:id/card.pdf` | `[data-testid=membership-card]` || overview · `membership-card` · code |
-| seq-enroll | + Enroll in sequence → select → Enroll (team, active sequences) | `POST /sequences/:id/enroll` | `[data-testid=dp-sequences]` "+ Enroll in sequence" || overview · `dp-sequence-enroll` · code |
-| vol-panel | Volunteer panel (when hours/record): Add hours, Edit, Remove, Download CSV, Copy their link, qualifications, hours Figures | `POST/PATCH/DELETE` volunteer-hours/shifts; Figure → `volunteer-hours` (VolunteerPanel.jsx) | `[data-testid=volunteer-panel]` || overview · `<VolunteerPanel donor` · code |
-| funder-panel | Funder panel (organisation): Save type/EIN, New grant request, Open grant, merge | `PUT /funders/:id`, `POST /funders/:id/grants`, `onNavigate("grants",{grantId})` (FunderPanel.jsx) | `[data-testid=funder-panel]` || overview · `<FunderPanel` · code |
-| matching | Matching gift note (when employer matches) | hover title only | text || overview · `matchingGift.companyName` · code |
-| tags-notes | tags pills, notes box | text only | `Pill` || header · `[data-testid=dp-header-tags]` · exists |
+| soft-credit | Soft credit panel (when soft credits) | text, hover titles (census `profile.creditHard` / `creditWithSoft`) | `[data-testid=soft-credit-panel]` || giving · `[data-testid=soft-credit-panel]` · exists |
+| pg-note | + Note planned giving | opens the designation toggles | `[data-testid=dp-planned-giving]` "+ Note planned giving" || giving · `[data-testid=dp-planned-giving-add]` · exists |
+| pg-toggle | each designation toggle | `POST`/`DELETE /donors/:id/designations[/:kind]` | `[data-designation]` || giving · `data-designation` · code |
+| mem-add | Add a membership | form → `POST /donors/:id/memberships` (Memberships `MembershipPanel`) | `[data-testid=membership-add]` || giving · `membership-add` · code |
+| mem-renew | Renew (member) | `POST /memberships/:id/renew` | `[data-testid=membership-renew]` || giving · `membership-renew` · code |
+| mem-card | Member card (PDF) (member) | `GET /memberships/:id/card.pdf` | `[data-testid=membership-card]` || giving · `membership-card` · code |
+| seq-enroll | + Enroll in sequence → select → Enroll (team, active sequences) | `POST /sequences/:id/enroll` | `[data-testid=dp-sequences]` "+ Enroll in sequence" || giving · `dp-sequence-enroll` · code |
+| vol-panel | Volunteer panel (when hours/record): Add hours, Edit, Remove, Download CSV, Copy their link, qualifications, hours Figures | `POST/PATCH/DELETE` volunteer-hours/shifts; Figure → `volunteer-hours` (VolunteerPanel.jsx) | `[data-testid=volunteer-panel]` || giving · `<VolunteerPanel donor` · code |
+| funder-panel | Funder panel (organisation): Save type/EIN, New grant request, Open grant, merge | `PUT /funders/:id`, `POST /funders/:id/grants`, `onNavigate("grants",{grantId})` (FunderPanel.jsx) | `[data-testid=funder-panel]` || giving · `<FunderPanel` · code |
+| matching | Matching gift note (when employer matches) | hover title only | text || giving · `matchingGift.companyName` · code |
+| tags-notes | tags pills, notes box | text only | `Pill` || rail · `[data-testid=dp-rail-about]` · exists |
 
 ## 7. Gifts & Pledges tab
 
 | id | What | Goes to | How to find it | Now |
 |---|---|---|---|---|
-| gifts-csv | ↓ CSV | client CSV download (`exportGiftsCSV`) | "↓ CSV" || gifts · `button:has-text("CSV")` · exists |
-| gifts-yearend | Year-end statement → Generate & email (receipts on) | `POST /donors/:id/year-end-statement` | "Year-end statement" || gifts · `Year-end statement` · code |
-| gifts-add | + Add Gift / Record a gift → (empty) → Save | `POST /donors/:id/gifts` (form, More options `gift-more-toggle`) | "+ Add Gift" || gifts · `button:has-text("+ Add Gift")` · exists |
-| gifts-recur-resend | Send card-update link (recurring at risk) | `POST /recurring/:id/resend` | "Send card-update link" || gifts · `Send card-update link` · code |
-| gifts-receipt | Send receipt / receipt PDF | `POST /gifts/:id/receipt` / `GET /receipts/:id/pdf` | gift row receipt cell || gifts · `/receipt` · code |
-| gifts-edit | Edit (gift row) → Save | `PUT /gifts/:id` (+ `/custom-fields`) | gift row "Edit" || gifts · `button:has-text("Edit")` · exists |
-| gifts-delete | Delete (gift row) | `DELETE /gifts/:id` | gift row "Delete" || gifts · `button:has-text("Delete")` · exists |
-| pledge-add | + Add Pledge → Save | `POST /donors/:id/pledges` | "+ Add Pledge" || gifts · `button:has-text("+ Add Pledge")` · exists |
-| pledge-remind | Resend reminder (overdue) | `POST /pledges/:id/resend` | "Resend reminder" || gifts · `Resend reminder` · code |
-| pledge-fulfil | Mark Fulfilled | `PUT /pledges/:id` status fulfilled | "Mark Fulfilled" || gifts · `button:has-text("Mark Fulfilled")` · exists |
-| pledge-writeoff | Write Off | `PUT /pledges/:id` status written_off | "Write Off" || gifts · `button:has-text("Write Off")` · exists |
-| pledge-edit | Edit (pledge) → Save | `PUT /pledges/:id` | `[data-testid=pledge-edit]` || gifts · `pledge-edit` · code |
-| pledge-delete | × (pledge) | `DELETE /pledges/:id` | aria-label "Delete this pledge" || gifts · `[aria-label="Delete this pledge"]` · exists |
-| planned-add | Planned Giving + Add → Save | `POST /donors/:id/planned-gifts` | "+ Add" || gifts · `planned-gifts` · code |
-| planned-delete | × (planned gift) | `DELETE /planned-gifts/:id` | row × || gifts · `/planned-gifts/` · code |
+| gifts-csv | ↓ CSV | client CSV download (`exportGiftsCSV`) | "↓ CSV" || giving · `button:has-text("CSV")` · exists |
+| gifts-yearend | Year-end statement → Generate & email (receipts on) | `POST /donors/:id/year-end-statement` | "Year-end statement" || giving · `Year-end statement` · code |
+| gifts-add | + Add Gift / Record a gift → (empty) → Save | `POST /donors/:id/gifts` (form, More options `gift-more-toggle`) | "+ Add Gift" || giving · `button:has-text("+ Add Gift")` · exists |
+| gifts-recur-resend | Send card-update link (recurring at risk) | `POST /recurring/:id/resend` | "Send card-update link" || giving · `Send card-update link` · code |
+| gifts-receipt | Send receipt / receipt PDF | `POST /gifts/:id/receipt` / `GET /receipts/:id/pdf` | gift row receipt cell || giving · `/receipt` · code |
+| gifts-edit | Edit (gift row) → Save | `PUT /gifts/:id` (+ `/custom-fields`) | gift row "Edit" || giving · `button:has-text("Edit")` · exists |
+| gifts-delete | Delete (gift row) | `DELETE /gifts/:id` | gift row "Delete" || giving · `button:has-text("Delete")` · exists |
+| pledge-add | + Add Pledge → Save | `POST /donors/:id/pledges` | "+ Add Pledge" || giving · `button:has-text("+ Add Pledge")` · exists |
+| pledge-remind | Resend reminder (overdue) | `POST /pledges/:id/resend` | "Resend reminder" || giving · `Resend reminder` · code |
+| pledge-fulfil | Mark Fulfilled | `PUT /pledges/:id` status fulfilled | "Mark Fulfilled" || giving · `button:has-text("Mark Fulfilled")` · exists |
+| pledge-writeoff | Write Off | `PUT /pledges/:id` status written_off | "Write Off" || giving · `button:has-text("Write Off")` · exists |
+| pledge-edit | Edit (pledge) → Save | `PUT /pledges/:id` | `[data-testid=pledge-edit]` || giving · `pledge-edit` · code |
+| pledge-delete | × (pledge) | `DELETE /pledges/:id` | aria-label "Delete this pledge" || giving · `[aria-label="Delete this pledge"]` · exists |
+| planned-add | Planned Giving + Add → Save | `POST /donors/:id/planned-gifts` | "+ Add" || giving · `planned-gifts` · code |
+| planned-delete | × (planned gift) | `DELETE /planned-gifts/:id` | row × || giving · `/planned-gifts/` · code |
 
 ## 8. Funds, Related, Materials, Activity tabs
 
 | id | What | Goes to | How to find it | Now |
 |---|---|---|---|---|
-| funds-view | What they support / Restricted vs Unrestricted / Suggested Asks | text from `GET /donors/:id/fund-affinity` (no click targets) | Funds tab || funds · `text=What they support` · exists |
+| funds-view | What they support / Restricted vs Unrestricted / Suggested Asks | text from `GET /donors/:id/fund-affinity` (no click targets) | Funds tab || giving · `text=What they support` · exists |
 | rel-link | + Link to another donor → type → pick | `POST /donors/:id/relationships` | "+ Link to another donor" || related · `button:has-text("Link to another donor")` · exists |
 | rel-row | a linked donor | `onSelectRelatedDonor(relatedDonorId)` | row name "→" || related · `r.relatedDonorId` · code |
 | rel-type | Relationship select | `PUT /donor-relationships/:id` | aria-label "Relationship" || related · `aria-label="Relationship"` · code |
@@ -225,7 +231,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | rail-journey-setup | Set one up (no journeys) | `onNavigate("journeys")` | `[data-testid=dp-journey-setup]` || rail · `[data-testid=dp-journey-setup]` · exists |
 | rail-journey-all | See all journeys or build your own | `onNavigate("journeys")` | `[data-testid=dp-journey-all]` || rail · `dp-journey-all` · code |
 | rail-contact | Contact: email, phone (tel: via `Phone`), birthday, recurring | phone is a `tel:` link; rest text | `[data-testid=dp-rail-contact]` || rail · `[data-testid=dp-rail-contact] a[href^="tel:"]` · exists |
-| rail-owner | Relationship owner · Reassign → Confirm (admin, team) | `PATCH /donors/:id/assign` + interaction | `[data-testid=dp-rail-owner]` "Reassign" || rail · `[data-testid=dp-rail-owner] button:has-text("Reassign")` · exists |
+| rail-owner | Relationship owner · Reassign → Confirm (admin, team) | `PATCH /donors/:id/assign` + interaction | `[data-testid=dp-rail-owner]` "Reassign" || rail · `[data-testid=dp-rail-owner] h4 button` · exists |
 | rail-cf | Custom fields Show/Hide, Edit → Save (when fields) | `PUT /donors/:id/custom-fields` | `[data-testid=dp-rail-custom-fields]` || rail · `dp-rail-custom-fields` · code |
 | rail-plan | Cultivation plan Show/Hide | `PlanPanel` → `/donors/:id/plan`, `/plan-steps/:id/skip`, `/plans/:id/stop` | `[data-testid=dp-rail-plan]` || rail · `[data-testid=dp-rail-plan]` · exists |
 | rail-events | Events Show n (when registered) | text rows from `GET /donors/:id/events` | `[data-testid=dp-rail-events]` || rail · `dp-rail-events` · code |

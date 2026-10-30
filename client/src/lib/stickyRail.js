@@ -19,3 +19,19 @@ export function useStickyTop(ref, under = 52) {
   }, [ref, under]);
   return top;
 }
+
+// PROFILE-2 Part 3 · true at phone width (the app's 768px breakpoint), so a
+// page can put the same node in a different place rather than draw it twice.
+export function useIsPhone(max = 768) {
+  const q = `(max-width:${max}px)`;
+  const [on, setOn] = useState(() => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia(q).matches);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia(q);
+    const fn = () => setOn(mq.matches);
+    fn();
+    if (mq.addEventListener) mq.addEventListener("change", fn); else mq.addListener(fn);
+    return () => { if (mq.removeEventListener) mq.removeEventListener("change", fn); else mq.removeListener(fn); };
+  }, [q]);
+  return on;
+}

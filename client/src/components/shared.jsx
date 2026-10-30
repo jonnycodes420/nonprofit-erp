@@ -36,6 +36,9 @@ export const T = {
   bgElevated: "#1a2e1f",
   // Ink
   ink:        "#0f1a12",
+  // PROFILE-2: the donor profile's right rail, a deep shade of emerald and ink
+  // that Jonathan approved on 29 Oct for that one surface. Cream text on it.
+  railGreen:  "#12291c",
   ink2:       "#2d2d2d",
   // BUILD-86 design rule — WARM GREY, the stated value. ink3 IS "secondary
   // text on light surfaces"; the rule's #5A554F was nowhere in the codebase.
@@ -427,6 +430,7 @@ export function GlobalStyles() {
        over most of the screen. They sit in the content area now, edge to edge
        (the margins undo .app-content's padding), and the window scrolls. */
     .page-takeover{margin:-20px -32px -28px -32px;min-height:calc(100vh - 52px);}
+    @media (max-width:1365px){.dp2-body{--rail-w:320px;}}
     .app-topbar{user-select:none;}
     /* POLISH-2 - A PLACEHOLDER LOOKS LIKE ONE. "She asked for the impact
        report." in the log-a-call box read as a note already written. Every
@@ -752,7 +756,7 @@ export function GlobalStyles() {
          with the dark rail starting straight through it. The body is now the
          only scroll container; both columns grow to their content. */
       .page-takeover,.fade-in.page-takeover{margin:-20px -16px 0 -16px!important;min-height:0!important;max-width:none!important;}
-      .donor-profile-body{grid-template-columns:1fr!important;overflow-x:hidden!important;overflow-x:clip!important;}
+      .donor-profile-body{grid-template-columns:1fr!important;background-image:none!important;overflow-x:hidden!important;overflow-x:clip!important;}
       .dp-rail-sticky{position:static!important;min-height:0!important;}
       /* min-width:0 matters: with overflow:visible a grid item's auto min
          size is its content's min-content (the 537px tab row), without it
@@ -765,7 +769,25 @@ export function GlobalStyles() {
       .section-tabbar{overflow-x:auto!important;flex-wrap:nowrap!important;}
       /* Header stays ONE row: compact "←" back (word hidden) beside the donor
          name, the full-width Back bar wasted ~60px of a 700px fold. */
-      .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
+      /* PROFILE-2 Part 3: the header grid at 390: the face and the name, the
+         two tags under them, then the actions as one row of 44px buttons. */
+      .donor-profile-header.dp2-head{grid-template-columns:56px minmax(0,1fr)!important;padding:8px 16px 12px!important;column-gap:12px!important;}
+      .dp2-head .dph-name{font-size:28px!important;}
+      .dp2-head .dph-avatar>*{transform:scale(0.78);transform-origin:left center;}
+      .dp2-head .dph-tags{display:flex!important;gap:6px;flex-wrap:wrap;grid-column:1 / -1;grid-row:3;}
+      .dp2-head .dph-tags>div{justify-self:auto!important;}
+      .dp2-head .dph-primary{flex:0 0 auto!important;white-space:nowrap;}
+      .dp2-head .dph-back{min-height:44px!important;}
+      /* a tag is a small chip with a 44px reach around it */
+      .dp2-head .dph-tags button{position:relative;}
+      .dp2-head .dph-tags button::before{content:"";position:absolute;inset:-12px -2px;}
+      .dp2-head .dph-actions{grid-column:1 / -1!important;grid-row:4!important;justify-content:flex-start!important;flex-wrap:wrap!important;}
+      .dp2-head .dph-actions>button,.dp2-head .dph-actions>a{min-height:44px!important;flex-shrink:0;}
+      .dp-tabs-row{position:static!important;padding:0 8px!important;}
+      /* PROFILE-2 Part 3: at 390 the month sits above its cards, not beside them. */
+      .tl-month-row{grid-template-columns:1fr!important;gap:6px!important;}
+      .tl-month{padding-top:6px!important;}
+      .tl-card{padding:14px 16px!important;grid-template-columns:36px minmax(0,1fr) auto!important;gap:12px!important;}
       /* POLISH-1: Back is its own small line above the header, word and all. */
       .dph-back{padding:6px 12px!important;font-size:13px!important;min-height:36px!important;}
       .dph-identity{flex:1 1 auto!important;min-width:0!important;}
@@ -779,7 +801,7 @@ export function GlobalStyles() {
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
       /* PROFILE-1 (header): the header's seven numbers are a two-column grid
          inside the header at 390, each with a hairline above it. */
-      .dph-figures{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin:6px -14px -10px!important;padding:0 0 8px!important;}
+      .dph-figures{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin:0!important;padding:0 0 8px!important;}
       .dph-fig{border-left:none!important;border-top:1px solid ${T.bg3};padding:9px 14px 4px!important;}
       .dph-fig:nth-child(-n+2){border-top:none;}
       .dp-more-numbers{margin:0 0 14px!important;padding:0 0 6px!important;}

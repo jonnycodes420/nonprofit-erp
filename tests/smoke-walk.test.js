@@ -80,7 +80,9 @@ function routes() {
 }
 
 // PROFILE-1 (header): one row of ten tabs, found by data-tab.
-const PROFILE_TABS = ["overview", "gifts", "asks", "conversations", "emails", "tasks", "notes", "funds", "related", "files"];
+// PROFILE-2: seven tabs (Giving holds gifts, asks and funds); "related" is the
+// rail's Household and related, opened from Manage, walked as its own leg.
+const PROFILE_TABS = ["activity", "giving", "conversations", "emails", "tasks", "notes", "files", "related"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
 const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", p2p: "Peer-to-peer" };
@@ -575,6 +577,78 @@ async function everyPageScrolls(pw, auth) {
   }
 }
 
+// ── PROFILE-2 · THE PROFILE'S LAYOUT ──────────────────────────────────────
+// The approved layout, held where a defect would show: at 1440 and 1280 the
+// green rail starts under the top bar and is still in view after a long
+// scroll; the header carries at most two tags and none of the ladder's rung
+// chips (the second tag set that read "Major, New" beside "Major, Steady");
+// the seven tabs sit on one line; a person with no next move gets the one
+// quiet line; at 390 the order is header, numbers, next move, Next step, tabs,
+// timeline, then the rest of the rail.
+// HOW IT GOES RED ON MAIN: the rail starts 540px down, the ladder chips are in
+// the header, and there is no phone order (dp-phone-top does not exist).
+async function profileLayout(pw, auth) {
+  const { q } = require("./helpers");
+  const orgId = auth.org && auth.org.id;
+  const [rich] = await q("SELECT donor_id FROM gifts WHERE org_id=$1 AND donor_id IS NOT NULL GROUP BY donor_id ORDER BY count(*) DESC LIMIT 1", [orgId]);
+  const [none] = await q("SELECT d.id FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id) LIMIT 1", [orgId]);
+  if (!rich) { ok("§layout the org has a donor with gifts", false); return; }
+  const br = await pw.chromium.launch();
+  const open = async (w, h, id) => {
+    const ctx = await br.newContext({ viewport: { width: w, height: h } });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+    const page = await ctx.newPage();
+    await page.goto(`${APP}/donors/${id}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+    await page.locator("[data-testid=dp-band]").waitFor({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    return { ctx, page };
+  };
+  for (const w of [1440, 1280]) {
+    const { ctx, page } = await open(w, 900, rich.donor_id);
+    const r = await page.evaluate(() => {
+      const rail = document.querySelector("[data-testid=dp-right-rail]");
+      const tabs = [...document.querySelectorAll("[data-testid=dp-tabs] [role=tab]")];
+      const prof = document.querySelector("[data-testid=donor-profile]");
+      return { railTop: rail && prof ? Math.round(rail.getBoundingClientRect().top - prof.getBoundingClientRect().top) : null, railBg: rail ? getComputedStyle(rail).backgroundColor : null,
+        headTags: document.querySelectorAll("[data-testid^=dp-head-tag-]").length, rung: document.querySelectorAll("[data-testid=ladder-rung]").length,
+        tabRows: new Set(tabs.map(t => Math.round(t.getBoundingClientRect().top))).size, tabs: tabs.map(t => t.dataset.tab) };
+    });
+    ok(`§layout ${w} the rail starts at the top of the profile`, r.railTop !== null && Math.abs(r.railTop) <= 2, r.railTop);
+    ok(`§layout ${w} the rail is the profile's green`, r.railBg === "rgb(18, 41, 28)", r.railBg);
+    ok(`§layout ${w} the header has at most two tags and no ladder chips`, r.headTags <= 2 && r.rung === 0, r);
+    ok(`§layout ${w} the seven tabs sit on one line`, r.tabRows === 1 && r.tabs.join() === "activity,giving,conversations,emails,tasks,notes,files", r);
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(300);
+    const stuck = await page.evaluate(() => { const b = document.querySelector("[data-testid=dp-right-rail]").getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), vh: innerHeight }; });
+    ok(`§layout ${w} after a long scroll the rail is still in view`, stuck.top < stuck.vh && stuck.bottom > 0, stuck);
+    await ctx.close();
+  }
+  if (none) {
+    const { ctx, page } = await open(1440, 900, none.id);
+    const n = await page.evaluate(() => ({ quiet: !!document.querySelector("[data-testid=dp-next-move-none]"), card: !!document.querySelector("[data-testid=profile-next-move]"),
+      text: (document.querySelector("[data-testid=dp-next-move-none]") || {}).innerText || "" }));
+    ok("§layout a person with no next move gets one quiet line, not a card", n.quiet && !n.card && /^Nothing due for .+ right now\.$/.test(n.text), n);
+    await ctx.close();
+  } else console.log("  SKIP  §layout no next move — every person in this org has a gift");
+  {
+    const { ctx, page } = await open(390, 844, rich.donor_id);
+    const order = await page.evaluate(() => {
+      const y = sel => { const e = document.querySelector(sel); return e ? Math.round(e.getBoundingClientRect().top + scrollY) : null; };
+      return { head: y("[data-testid=dp-head]"), figures: y("[data-testid=dp-header-figures]"), top: y("[data-testid=dp-phone-top]"), next: y("[data-testid=dp-phone-top] [data-testid=dp-next]"),
+        tabs: y("[data-testid=dp-tabs]"), timeline: y("[data-testid=dp-timeline]"), about: y("[data-testid=dp-rail-about]"), wide: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    const seq = ["head", "figures", "top", "next", "tabs", "timeline", "about"].map(k => order[k]);
+    ok("§layout 390 the order is header, numbers, next move, Next step, tabs, timeline, then the rail", seq.every(v => v !== null) && seq.every((v, i) => i === 0 || v > seq[i - 1]), order);
+    ok("§layout 390 no sideways page scroll", !order.wide, order);
+    const small = await page.evaluate(() => [...document.querySelectorAll("[data-testid=dp-head] button, [data-testid=dp-head] a, [data-testid=dp-tabs] [role=tab]")]
+      .filter(e => e.offsetParent && !e.closest(".dph-tags")).map(e => ({ t: (e.innerText || e.getAttribute("aria-label") || "").slice(0, 20), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44 && x.t !== "+"));
+    ok("§layout 390 the header's buttons and the tabs are at least 44px tall", small.length === 0, small);
+    await ctx.close();
+  }
+  await br.close();
+}
+
 (async () => {
   console.log("smoke-walk");
   const login = await api("POST", "/auth/login", null, DEMO);
@@ -945,7 +1019,15 @@ async function everyPageScrolls(pw, auth) {
   for (const d of three) {
     for (const tab of PROFILE_TABS) {
       trouble = [];
-      if (tab === "overview") {
+      if (tab === "related") {
+        const m = page.locator("[data-testid=dp-rail-related-manage]").first();
+        if (await m.count()) { await m.click(); await page.waitForTimeout(700); }
+        else { ok(`donor ${d.id} — Household and related opens from the rail`, false, "no Manage"); continue; }
+        await look(`donor ${d.id} · related`);
+        await page.keyboard.press("Escape").catch(() => {});
+        continue;
+      }
+      if (tab === "activity") {
         await page.goto(`${APP}/donors/${d.id}`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(e => trouble.push("navigation: " + e.message.slice(0, 120)));
         await page.waitForTimeout(1300);
       } else {
@@ -1011,6 +1093,7 @@ async function everyPageScrolls(pw, auth) {
   await emailEditorEverywhere(browser);
   await publicPagesUnderTheCsp(browser);
   await everyPageScrolls(PW_ALL, auth);
+  await profileLayout(PW_ALL, auth);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg
