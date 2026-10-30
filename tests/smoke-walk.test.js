@@ -587,11 +587,13 @@ async function everyPageScrolls(pw, auth) {
             ok(`${tag} — the wheel over the main column moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
           }
           await page.evaluate(() => { window.scrollTo(0, 0); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
-          await page.mouse.click(x, 4 + (w < 500 ? 60 : 56)).catch(() => {});   // a click on blank page ground, so the keys go to the page
-          await page.evaluate(() => { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); });
+          // The keys go to the page itself: the document is focused (a click to
+          // give it focus can land on a control, which then takes the key).
+          await page.evaluate(() => { document.body.setAttribute("tabindex", "-1"); document.body.focus({ preventScroll: true }); });
           await page.keyboard.press("PageDown");
-          await page.waitForTimeout(450);
-          ok(`${tag} — Page Down moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          const moved = await page.waitForFunction(() => window.scrollY > 0, null, { timeout: 2000 }).then(() => true).catch(() => false);
+          await page.evaluate(() => document.body.removeAttribute("tabindex"));
+          ok(`${tag} — Page Down moves the page`, moved);
           await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
           await page.waitForTimeout(300);
           // The lowest thing a person can see: visible, sized, and not inside a
