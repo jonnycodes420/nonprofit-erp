@@ -1266,6 +1266,8 @@ async function homeSaysNothingWrong(browser) {
         await page.getByPlaceholder(/Ask a question/).fill("Who should I call this week?");
         await page.getByRole("button", { name: "Ask", exact: true }).first().click();
         await page.waitForLoadState("networkidle").catch(() => {});
+        // the panel opens before its answer draws; under a loaded battery that is seconds
+        await page.waitForFunction(() => /Answer ready|can't answer/.test((document.querySelector('[role="dialog"]') || {}).innerText || ""), null, { timeout: 20000 }).catch(() => {});
         const ans = await page.locator('[role="dialog"]').first().innerText({ timeout: 8000 }).catch(() => "");
         ok(`§sweep1 ${where}: the Ask box answers "Who should I call this week?" with nothing on fire`, ans.length > 40 && !SAYS.some(([re]) => re.test(ans)) && trouble.length === 0, [ans.slice(0, 120), trouble.slice(0, 3)]);
       }
