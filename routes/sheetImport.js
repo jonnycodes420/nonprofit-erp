@@ -28,6 +28,7 @@ const { query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift
         withAdvisoryLock, aiGate, anthropicFor, recordAiFallback } = ctx;
 const app = routers.r0;
 const R = () => import("../shared/sheetRead.js");
+const PW = require("../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 // CHECK-2's one matcher (email; names against the same last name, with
 // initials and nicknames; household; street or ZIP). A person is made new only
 // when it says "none".
@@ -859,32 +860,34 @@ async function writePlan({ req, body, importId, who, report }) {
   let pledgeOpenMade = 0, pledgeDueMade = 0, pledgeYearsMade = 0, pledgeUndatedMade = 0;
   const yearEndToday = `${String(ctx.orgToday(await ctx.orgTz(orgId).catch(() => null))).slice(0, 4)}-12-31`;
   const pledgeIdByRow = new Map();
-  const PCOLS = ["id", "org_id", "donor_id", "amount", "due_date", "status", "notes", "idempotency_key", "frequency", "installment_count",
-                 "created_by", "created_by_name", "import_id", "event_id", "gift_type"];
   for (let k = 0; k < u.pledges.length; k += JOB_BATCH) {
-    const batch = u.pledges.slice(k, k + JOB_BATCH).map(p => ({ p, pid: "pl_" + uuid().slice(0, 8) }));
-    const rows = batch.map(({ p, pid }) => [pid, orgId, personId.get(p.personKey), p.pledgeCents / 100, p.installments[p.installments.length - 1].dueDate || p.dueDate, "open",
+    const batch = u.pledges.slice(k, k + JOB_BATCH);
+    // FIX-60 · THE ONE PLEDGE WRITER, in batches, inside this run's
+    // transaction: each pledge with the installments the file states (they
+    // sum to it, or nothing is written), the after-change step left to the
+    // end of the run as before.
+    const wrote = await PW.writePledges(batch.map(p => ({
+      orgId, donorId: personId.get(p.personKey), amountCents: p.pledgeCents, status: "open",
+      dueDate: p.installments[p.installments.length - 1].dueDate || p.dueDate || null,
       // HARDEN-1: a pledge has no payment-method column, so how it will be paid ("Stock", "Foundation") rides its note
-      [p.why, p.note, p.methodOriginal && !/Method in your file/.test(p.note || "") ? `Method in your file: ${p.methodOriginal}` : null,
-       eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ").slice(0, 1000), "sheet:" + p.rowId + ":pledge",
-      p.years > 1 ? "annual" : null, p.installments.length, who.id, who.name, importId, eventId,
+      notes: [p.why, p.note, p.methodOriginal && !/Method in your file/.test(p.note || "") ? `Method in your file: ${p.methodOriginal}` : null,
+        eventId && evName ? `Pledged at ${evName}` : null].filter(Boolean).join(". ").slice(0, 1000),
+      idempotencyKey: "sheet:" + p.rowId + ":pledge", frequency: p.years > 1 ? "annual" : null,
+      createdBy: who.id, createdByName: who.name, importId, eventId,
       // INSIGHTS-1: "Stock", "Retirement Dist", "Foundation"… is the pledge's gift type
-      giftTypeOf([p.methodOriginal, p.note].filter(Boolean).join(" "))]);
-    const ins = await query(`INSERT INTO pledges (${PCOLS.join(",")}) VALUES ${rows.map(() => "(" + PCOLS.map(() => "?").join(",") + ")").join(",")}
-                              ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id`, rows.flat());
-    const made = new Set(ins.map(r => r.id));
-    const inst = [];
-    for (const { p, pid } of batch) {
-      if (!made.has(pid)) { duplicates++; duplicateCents += p.pledgeCents; continue; }
-      for (const i of p.installments) inst.push(["pli_" + uuid().slice(0, 10), orgId, pid, i.seq, i.dueDate, i.cents / 100]);
+      giftType: giftTypeOf([p.methodOriginal, p.note].filter(Boolean).join(" ")),
+      plan: { schedule: p.installments.map(i => ({ dueDate: i.dueDate, amountCents: i.cents })), undatedOk: true },
+    })), { afterChange: false });
+    batch.forEach((p, n) => {
+      const pid = wrote[n].id;
+      if (!wrote[n].created) { duplicates++; duplicateCents += p.pledgeCents; return; }
       pledgeIdByRow.set(p.rowId, pid);
       pledgesCreated++; pledgeCents += p.pledgeCents;
       pledgeOpenMade += p.openCents; pledgeYearsMade = Math.max(pledgeYearsMade, p.years || 1);
       pledgeDueMade += p.installments.filter(i => !i.paid && i.dueDate && i.dueDate <= yearEndToday).reduce((a, i) => a + i.cents, 0);
       pledgeUndatedMade += p.installments.filter(i => !i.paid && !i.dueDate).reduce((a, i) => a + i.cents, 0);
       summary.pledges.push(pid);
-    }
-    await insertRows("INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)", ["id", "org_id", "pledge_id", "seq", "due_date", "amount"], inst);
+    });
     done = memberCount + Math.min(k + JOB_BATCH, u.pledges.length);
     await report(`Writing pledges ${Math.min(k + JOB_BATCH, u.pledges.length)} of ${u.pledges.length}`, done, total, true);
   }

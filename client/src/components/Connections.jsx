@@ -27,7 +27,7 @@ import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send,
   KeyRound, Webhook, Zap } from "lucide-react";
 import { PrivacyLine, usePrivacy } from "./PrivacyPanel";
 
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, color: primary ? T.white : T.ink,
   cursor: "pointer", fontFamily: "inherit" });
@@ -202,7 +202,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
           <Card key={c.id} data-testid="bookkeeping-card" style={{ padding: "14px 16px" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
               <strong style={{ fontSize: 15, color: T.ink }}>{c.vendorLabel}</strong>
-              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+              <span style={{ fontSize: 11.5, fontWeight: 800, 
                 color: c.ready ? T.greenDk : T.gold700 }}>{c.sends === false ? "Sending not available yet" : c.ready ? "Ready to send" : "Not sending yet"}</span>
               {c.sends !== false && <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-agreement"
                 onClick={() => openAgreement(c)}>Do the two agree?</button>}
@@ -574,8 +574,8 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: DOT[c.status] || T.ink3, display: "inline-block" }} />
             <strong style={{ fontSize: 15, color: T.ink }}>{c.label}</strong>
-            <span data-testid="connection-status" style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".06em",
-              textTransform: "uppercase", color: DOT[c.status] || T.ink3 }}>{(d.statuses?.[c.status]?.label) || c.status}</span>
+            <span data-testid="connection-status" style={{ fontSize: 11.5, fontWeight: 800, 
+              color: DOT[c.status] || T.ink3 }}>{(d.statuses?.[c.status]?.label) || c.status}</span>
             {!isReadOnly && isAdmin && c.connected && c.kind === "source" && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>History</button>

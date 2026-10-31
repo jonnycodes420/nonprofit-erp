@@ -107,7 +107,8 @@ export function tabHref(tab, opts) {
   if (tab === "donors") {
     // SEARCH-2: `anchor` names one row on the profile (gift-, pledge-, plan-,
     // item-<id>, or "gifts" for the Gifts tab), the way giftHref always has.
-    if (o.selectDonorId) return donorHref(o.selectDonorId) + (o.openConversation ? "?conversation=1" : "")
+    if (o.selectDonorId) return donorHref(o.selectDonorId)
+      + (o.openConversation ? "?conversation=1" : o.openCompose ? "?compose=1" : o.openBrief ? "?brief=1" : "")
       + (o.anchor ? "#" + encodeURIComponent(o.anchor) : "");
     return donorsListHref({ view: o.view, stage: o.stageFilter });
   }
@@ -130,6 +131,8 @@ export function parseAppUrl(pathname, search, hash) {
   if (donor) {
     const opts = { selectDonorId: decodeURIComponent(donor[1]) };
     if (qs.get("conversation") === "1") opts.openConversation = true;
+    if (qs.get("compose") === "1") opts.openCompose = true;   // FIX-60: Home's Draft
+    if (qs.get("brief") === "1") opts.openBrief = true;
     return { tab: "donors", opts };
   }
   if (path === "/donors") {

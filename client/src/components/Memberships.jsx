@@ -79,7 +79,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged, bare = false }) 
   // FIX-14 Part 3 — never a member and nothing being typed: one line and its add button.
   if (!data.memberships.length && !form) return (
     <div data-testid="membership-panel" data-empty="1" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: bare ? 0 : "4px 2px" }}>
-      {!bare && <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>}
+      {!bare && <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>Membership</span>}
       <span style={{ fontSize: bare ? 13 : 12.5, color: T.ink3 }}>Not a member yet.</span>
       {!isReadOnly && levels.length > 0 && <button style={bare ? aboutLink : { ...quietBtn, marginLeft: "auto" }} data-testid="membership-add"
         onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>{bare ? "Add" : "Add a membership"}</button>}
@@ -88,7 +88,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged, bare = false }) 
   );
   return (
     <div data-testid="membership-panel" style={bare ? { display: "flex", flexDirection: "column", gap: 8 } : { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      {!bare && <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>}
+      {!bare && <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>Membership</span>}
       {cur ? (
         <div data-testid="membership-current" title={data.sentence} aria-label={data.sentence} tabIndex={0}>
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{cur.level_name}</span>{" "}
@@ -206,7 +206,7 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
   if (!levels || !list) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   const by = list.byStatus || {};
   return (
-    <div className="no-caps" data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <div data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* SEND-GATE-2: renewals send nothing on their own; a renewal note is a journey step. */}
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Steward doesn't email renewals on its own. A renewal note goes as a journey step, or as a draft you send.
         <MailTypeSwitches keys={["journey_steps"]} from="memberships" /></div>

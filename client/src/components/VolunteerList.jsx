@@ -25,7 +25,7 @@ const btnPrimary = { background: T.green, border: "none", borderRadius: 9, paddi
 const btnQuiet = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 12px", fontSize: 12.5, fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
 const btnLink = { background: "transparent", border: "none", padding: 0, color: T.green, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "left" };
 const card = { background: T.white, border: "1px solid " + T.bg2, borderRadius: 14, padding: "14px 16px" };
-const eyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3 };
 const COLS_KEY = "steward.volunteerList.cols.v1";
 const ALL_COLS = [
   ["email", "Email"], ["phone", "Phone"], ["rangeHours", "Hours in range"], ["lifetimeHours", "Lifetime hours"],

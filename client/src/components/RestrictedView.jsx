@@ -27,7 +27,7 @@ function Figure({ k, value, def, big }) {
   const neg = k === "remaining" && Number(value) < 0;
   return (
     <div title={def || ""} data-testid={"restricted-" + k} style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3 }}>{LABELS[k]}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{LABELS[k]}</div>
       <div style={{ fontSize: big ? 22 : 15, fontWeight: 700, color: neg ? T.terracotta : T.ink, fontFamily: big ? "'DM Serif Display', Georgia, serif" : undefined }}>
         {fmtFull(Number(value))}
       </div>

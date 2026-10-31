@@ -255,10 +255,10 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   applies them before the model is asked, asks nothing they cover, and says "Using your saved mapping from …· Change"
   (`answers.savedMapping: "off"` for one preview). Settings, Imports lists, edits and deletes them (`/import-mappings`).
   The old mapper's rows are `kind='mapper'` and only `/import-shapes/match` reads them.
-- **"Alex, Brad Hubbard" is a couple, not "Last, First" (IMPORT-5).** One first name before the comma, a first name
+- **"Alex, Brad Hollins" is a couple, not "Last, First" (IMPORT-5).** One first name before the comma, a first name
   and a surname after it (the last word not itself a first name, `shared/givenNames.js`) reads as two people in one
   household; "Alex, Brad" in a First Name column too. Records already here never change at deploy: Data health's
-  "Couples written with a comma" line proposes them (the typed form, or "Brad Hubbard Alex" on an imported record),
+  "Couples written with a comma" line proposes them (the typed form, or "Brad Hollins Alex" on an imported record),
   fixes them only on her click (`/data-health/couples/apply`: the record becomes the first person, the second is made
   beside them, one new household, gifts stay put) and undoes the click whole (`name_fixes`).
 - **One person spelled two ways on two lists of one event is a question (FIX-59).** When an event's file brings in more
@@ -269,7 +269,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   Within one list the old near-miss rule (kept as two people) stands.
 - **Notes are not people (FIX-59).** Every name cell goes through `nameAndNotes`: markup and parenthetical notes come
   off the name onto a note on the person ("Neil (husband) Martha (daughter) Lyle" is Neil & Martha Lyle, note
-  "husband; daughter"); a row whose name cell is a note ("1 Medical Gluten") is a note on the person on the row above
+  "husband; daughter"); a row whose name cell is a note ("1 Celiac Diet") is a note on the person on the row above
   it, or set aside with the reason when there is none. Notes are timeline notes carrying the run, so Undo takes them.
 - **An event's lists land as the event (FIX-59).** A guest-list row with no reply and no mark is `invited`; a name only
   on the seating chart is `registered`. An imported attendance mark is a check-in at noon on the event's day in the

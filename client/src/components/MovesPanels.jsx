@@ -10,7 +10,7 @@ import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 
-const LABEL = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 24px" };
 const field = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 13, background: T.white, color: T.ink, fontFamily: "inherit" };
 const isoDaysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };

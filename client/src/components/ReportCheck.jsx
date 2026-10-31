@@ -74,7 +74,7 @@ export default function ReportCheck({ report, onNavigate, onChanged }) {
   return (
     <section data-testid="report-check" aria-label="Checked against Steward" style={{ marginTop: 10, borderTop: "1px solid " + T.bg3, paddingTop: 10, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 800, flex: "1 1 auto" }}>Checked against Steward</div>
+        <div style={{ fontSize: 11, color: T.ink3, fontWeight: 800, flex: "1 1 auto" }}>Checked against Steward</div>
         <span data-testid="report-check-when" style={{ fontSize: 12, color: T.ink3 }}>{c.checkedAt ? `Checked ${day(c.checkedAt)}` : "Not checked yet: this is what Steward sees now"}</span>
         <button type="button" style={btn(false)} disabled={!!busy} onClick={recheck}>Check again</button>
       </div>

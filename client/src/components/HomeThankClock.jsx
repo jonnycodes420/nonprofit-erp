@@ -33,7 +33,7 @@ export function HomeThankClock({ onNavigate }) {
   if (!c.count && !c.waiting) {
     return (
       <div data-testid="home-thank-clock" style={{ border: "1px solid " + T.bg3, borderRadius: 14, padding: "14px 16px", background: T.white }}>
-        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>To confirm</div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>To confirm</div>
         <div style={{ fontSize: 13.5, lineHeight: 1.45, color: T.ink2 }}>A check that arrives can be read from a photo. Nothing is logged until you confirm it.</div>
         {snap}
       </div>
@@ -44,7 +44,7 @@ export function HomeThankClock({ onNavigate }) {
   const openWaiting = () => onNavigate && onNavigate("fundraising", { frSection: "toconfirm" });
   return (
     <div data-testid="home-thank-clock" style={{ border: "1.5px solid " + T.green, borderRadius: 14, padding: "14px 16px", background: T.white }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>Gift to thank-you</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Gift to thank-you</div>
       <div style={{ fontSize: 14.5, lineHeight: 1.45, color: T.ink }}>
         {c.days == null ? `No gifts were thanked in the last 30 days.` : (
           <>Average time from gift to thank-you, last 30 days:{" "}

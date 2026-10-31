@@ -34,7 +34,7 @@ import { countLabel, plural } from "../../../shared/countWords.js";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
-const LABEL = { fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 12, color: T.ink3 };
 const SERIF = "'DM Serif Display',Georgia,serif";
 const btnPrimary = { padding: "12px 18px", minHeight: 44, border: 0, borderRadius: 10, background: T.greenDk, color: T.white,
   font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" };
@@ -96,7 +96,7 @@ function BriefLines({ brief, first, columns = 2, onInk = false }) {
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: "18px 28px", alignContent: "start" }}>
       {items.map(([k, v]) => (
         <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: onInk ? T.sage400 : T.ink3 }}>{k}</span>
+          <span style={{ fontSize: 12, color: onInk ? T.sage400 : T.ink3 }}>{k}</span>
           <span style={{ fontSize: 15, lineHeight: 1.5 }}>{v}</span>
         </div>
       ))}
@@ -169,7 +169,7 @@ export function MeetingCard({ meeting, donor, onReload, before = null }) {
       style={{ background: T.white, borderRadius: 20, padding: "30px 34px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 32 }}
       className="dp-meeting-card">
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{whenLabel(meeting.startsAt)}</div>
+        <div style={{ fontSize: 12, color: DARK_BRASS, fontWeight: 600 }}>{whenLabel(meeting.startsAt)}</div>
         <div style={{ fontFamily: SERIF, fontSize: 30, lineHeight: 1.15 }}>{meeting.title}</div>
         <div style={{ fontSize: 14, color: T.ink3 }}>From {meeting.ownerName ? `${ownerFirst(meeting)}'s` : "a"} {PROVIDER_CAL[meeting.provider] || "calendar"} · {[ownerFirst(meeting), ...(meeting.people || []).map(firstNameOf)].join(" and ")}</div>
         {meeting.location && <div style={{ fontSize: 14, color: T.ink3 }}>{meeting.location}</div>}
@@ -407,9 +407,9 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   const monthOf = it => (it.undated || !it.date ? "No date" : new Date(String(it.date).slice(0, 10) + "T12:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" }));
   return (
     <section aria-label={lately ? "Lately" : "Conversations and meetings"} data-testid={lately ? "dp-lately" : "dp-timeline"} data-fixed={fixed || undefined} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {lately ? <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Lately</h2>
+      {lately ? <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Lately</h2>
       : <div style={{ display: "flex", justifyContent: fixed ? "flex-end" : "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        {!fixed && <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>{heading || `Everything with ${first}`}</h2>}
+        {!fixed && <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{heading || `Everything with ${first}`}</h2>}
         {fixed && subChips && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginRight: "auto" }} role="group" aria-label="Show">
           {TIMELINE_FILTERS.filter(([k]) => subChips.includes(k) && (k === fixed || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
         </div>}
@@ -496,7 +496,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         const mo = monthOf(it), firstOfMonth = ix === 0 || monthOf(arr[ix - 1]) !== mo;
         return (
           <div key={it.id} className="tl-month-row" style={{ display: "grid", gridTemplateColumns: "76px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
-            <div className="tl-month" data-testid={firstOfMonth ? "tl-month" : undefined} style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, paddingTop: 24 }}>{firstOfMonth ? mo : ""}</div>
+            <div className="tl-month" data-testid={firstOfMonth ? "tl-month" : undefined} style={{ fontSize: 11, fontWeight: 700, color: T.ink3, paddingTop: 24 }}>{firstOfMonth ? mo : ""}</div>
             {card}
           </div>
         );
@@ -550,7 +550,7 @@ export function NoteBody({ note }) {
     return (
       <dl data-testid="note-fields" style={{ margin: 0, display: "grid", gridTemplateColumns: "minmax(0, max-content) minmax(0, 1fr)", gap: "4px 14px" }}>
         {rows.map(r => r.label
-          ? [<dt key={r.k + "l"} style={{ fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, paddingTop: 3 }}>{r.label}</dt>,
+          ? [<dt key={r.k + "l"} style={{ fontSize: 12, color: T.ink3, paddingTop: 3 }}>{r.label}</dt>,
              <dd key={r.k + "v"} style={{ margin: 0, color: T.ink, whiteSpace: "pre-wrap" }}>{r.value}</dd>]
           : <dd key={r.k} style={{ margin: 0, gridColumn: "1 / -1", color: T.ink, whiteSpace: "pre-wrap" }}>{r.text}</dd>)}
       </dl>
@@ -634,7 +634,7 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
     } catch (e) { setMsg(e?.sentence || errorMessage(e, "Nothing was added to your calendar.")); }
     setBusy(false);
   };
-  const H = ({ children, gold }) => <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: gold ? T.gold : T.sage400 }}>{children}</div>;
+  const H = ({ children, gold }) => <div style={{ fontSize: 12, color: gold ? T.gold : T.sage400 }}>{children}</div>;
   const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
   return (
     <div data-testid="dp-rail-relationship" style={yearOnly ? { display: "flex", flexDirection: "column", gap: 16, padding: "16px 0", borderTop: "1px solid " + T.green650 } : { display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
@@ -779,18 +779,18 @@ export function AfterMeetingForm({ meeting, onDone }) {
   return (
     <div data-testid="after-meeting" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 12, color: DARK_BRASS, fontWeight: 600 }}>
           {Date.now() - end.getTime() < 3 * 3600e3 ? "Just now" : relDay(meeting.startsAt)} · {hhmm(meeting.startsAt)} to {hhmm(meeting.endsAt)}
         </div>
         <h2 style={{ margin: 0, fontFamily: SERIF, fontWeight: 400, fontSize: 32, lineHeight: 1.12 }}>How did {meetingNoun(meeting.title)} with {first} go?</h2>
       </div>
       <form onSubmit={save} style={{ background: T.white, borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-        <label htmlFor={`note-${meeting.id}`} style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>What happened</label>
+        <label htmlFor={`note-${meeting.id}`} style={{ fontSize: 13, color: T.ink3 }}>What happened</label>
         <textarea id={`note-${meeting.id}`} rows={5} value={note} onChange={e => setNote(e.target.value)}
           style={{ font: "16px/1.5 'DM Sans',sans-serif", color: T.ink, border: "1px solid " + T.bg2, borderRadius: 12, padding: 12, resize: "none" }}/>
         {live.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Steward heard</span>
+            <span style={{ fontSize: 13, color: T.ink3 }}>Steward heard</span>
             {chipNote && <span data-testid="chips-ai-off" style={{ fontSize: 13, color: T.ink3 }}>{chipNote}</span>}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {live.map(c => { const i = chips.indexOf(c); const on = !!confirmed[i]; return (
@@ -808,19 +808,19 @@ export function AfterMeetingForm({ meeting, onDone }) {
         <div data-testid="after-meeting-facts" style={{ fontSize: 14, color: T.ink3, lineHeight: 1.5 }}>
           {civilDayOf(meeting.startsAt)}{meeting.location ? ` · ${meeting.location}` : ""}{(meeting.people || []).length ? ` · with ${(meeting.people || []).map(p => p.name).join(", ")}` : ""}
         </div>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Key takeaways
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: T.ink3 }}>Key takeaways
           <textarea data-testid="after-takeaways" rows={2} value={takeaways} onChange={e => setTakeaways(e.target.value)} style={{ ...input, resize: "none", textTransform: "none", letterSpacing: 0 }}/></label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>What they care about
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: T.ink3 }}>What they care about
           <input data-testid="after-cares" value={cares} onChange={e => setCares(e.target.value)} style={{ ...input, textTransform: "none", letterSpacing: 0 }}/></label>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Ask made
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: T.ink3 }}>Ask made
             <input data-testid="after-ask-amount" type="number" min="0" step="any" placeholder="Amount" value={askAmount} onChange={e => setAskAmount(e.target.value)} style={{ ...input, width: 150, textTransform: "none", letterSpacing: 0 }}/></label>
           <select data-testid="after-ask-outcome" aria-label="What they said" value={askOutcome} onChange={e => setAskOutcome(e.target.value)} style={{ ...input, width: 190 }}>
             <option value="">What they said</option><option value="yes">Yes</option><option value="thinking">Thinking about it</option>
             <option value="no">No</option><option value="not_asked">No ask this time</option>
           </select>
         </div>
-        <label htmlFor={`next-${meeting.id}`} style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Next step</label>
+        <label htmlFor={`next-${meeting.id}`} style={{ fontSize: 13, color: T.ink3 }}>Next step</label>
         <input id={`next-${meeting.id}`} value={next} onChange={e => { setNext(e.target.value); setNextTouched(true); }} style={input}/>
         {next.trim() && <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>Due
           <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ ...input, width: 170, padding: 8 }}/></label>}
@@ -910,7 +910,7 @@ export function MorningBrief({ userName, onOpenPerson, compact = false, skipMeet
             ? { background: T.ground, border: "1px solid " + T.bg2, borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }
             : { background: T.white, borderRadius: 20, padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: compact ? 10.5 : 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{relDay(m.startsAt)} · {m.title}</div>
+              <div style={{ fontSize: compact ? 10.5 : 12, color: DARK_BRASS, fontWeight: 600 }}>{relDay(m.startsAt)} · {m.title}</div>
               <div style={{ fontFamily: SERIF, fontSize: compact ? 19 : 24, lineHeight: 1.2, marginTop: 4 }}>How did {meetingNoun(m.title)} with {firstNameOf(m.people?.[0]?.name) || "them"} go?</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
@@ -920,7 +920,7 @@ export function MorningBrief({ userName, onOpenPerson, compact = false, skipMeet
           </div>)}
       {lead && (
         <section data-testid="today-meeting" style={{ background: T.ink, color: T.inkInverse, borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ fontSize: 12, letterSpacing: "0.12em", color: T.gold, textTransform: "uppercase" }}>{inLabel(lead.startsAt)}{lead.location ? ` · ${lead.location}` : ""}</div>
+          <div style={{ fontSize: 12, color: T.gold }}>{inLabel(lead.startsAt)}{lead.location ? ` · ${lead.location}` : ""}</div>
           <div style={{ fontFamily: SERIF, fontSize: 28, lineHeight: 1.15 }}>{lead.title}{lead.people?.[0] && !lead.title.includes(lead.people[0].name) ? ` with ${lead.people[0].name}` : ""}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 15, lineHeight: 1.45 }}>
             {b?.giving && <div><span style={{ opacity: 0.6 }}>Gave</span> {b.giving.text}</div>}

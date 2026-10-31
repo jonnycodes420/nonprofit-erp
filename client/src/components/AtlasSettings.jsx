@@ -27,7 +27,7 @@ export function AtlasSettings({ isReadOnly, isAdmin, onNavigate }) {
     setBusy(false);
   };
   const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 26px", marginBottom: 14 };
-  const label = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 };
+  const label = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 10 };
   return (
     <div data-testid="settings-atlas">
       <div style={{ ...card, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", borderLeft: "4px solid " + (paused ? "#C9A84C" : T.greenDk) }}>

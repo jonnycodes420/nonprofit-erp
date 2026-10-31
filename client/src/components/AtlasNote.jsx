@@ -96,7 +96,7 @@ export function AtlasBell({ onNavigate }) {
         <div data-testid="atlas-bell-list" role="dialog" aria-label={`What ${name} did`}
           style={{ position: "fixed", right: 16, top: 58, zIndex: 391, width: "min(380px, calc(100vw - 32px))", maxHeight: "70vh", overflowY: "auto",
             background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 12, boxShadow: "0 12px 32px rgba(15,26,18,0.18)", padding: "12px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 }}>
             {name}{n ? ` · ${n} waiting for you` : ""}</div>
           {!data.items.length && <div style={{ fontSize: 13.5, color: T.ink3 }}>Nothing yet. Tell {name} what happened and it shows here.</div>}
           {data.items.map(it => (

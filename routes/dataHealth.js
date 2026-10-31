@@ -235,8 +235,8 @@ function unreachableRows(people) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// IMPORT-5 · couples written with a comma ("Alex, Brad Hubbard", or the old
-// reading "Brad Hubbard Alex" on a record an import made), and FIX-59 with
+// IMPORT-5 · couples written with a comma ("Alex, Brad Hollins", or the old
+// reading "Brad Hollins Alex" on a record an import made), and FIX-59 with
 // "or" and "and" ("Randy or Jessamy Barlow"). Proposed only. FIX-59: a
 // record already in a household is proposed too (an import puts people at one
 // address in one); its fix joins that household instead of making one.
@@ -377,10 +377,24 @@ async function healthCounts(orgId) {
     eventDuplicates: eventPairs.length,
     eventDuplicatesByEvent: eventPairCounts(eventPairs),
     pledgesOnEventDay: pledgeDays.length,
-    _pairs: pairs, _people: people,
+    _pairs: pairs, _people: people, _couples: couples, _names: names, _eventPairs: eventPairs,
   };
 }
-const publicCounts = c => { const { _pairs, _people, ...rest } = c; return rest; };
+const publicCounts = c => { const { _pairs, _people, _couples, _names, _eventPairs, ...rest } = c; return rest; };
+// FIX-60 · A LINE'S EXAMPLES ARE THE ORG'S OWN ROWS. The sentence on a line
+// quotes up to two names from the rows that line opens, as they are written on
+// file, or quotes none. Never a name typed into the copy: a made-up example
+// reads as a person this org doesn't have (and a real one is someone else's).
+// Kept off the stored counts: a run row holds numbers, not names.
+function healthExamples(c) {
+  const eventPairs = {};
+  for (const p of c._eventPairs) if (!eventPairs[p.eventId]) eventPairs[p.eventId] = [p.left.name, p.right.name];
+  return {
+    couples: c._couples.slice(0, 2).map(r => r.name),
+    namesWithNotes: c._names.slice(0, 2).map(r => r.before),
+    eventPairs,
+  };
+}
 
 // After an import, once a night, or by hand. Stores the counts as they stood
 // and how many possible duplicates involve people the import created.
@@ -463,7 +477,7 @@ app.get("/data-health", requireAuth, wrap(async (req, res) => {
   const c = await healthCounts(req.user.orgId);
   const [last] = await query("SELECT trigger, created_at FROM data_health_runs WHERE org_id=? ORDER BY created_at DESC LIMIT 1", [req.user.orgId]);
   const [org] = await query("SELECT id, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
-  res.json({ counts: publicCounts(c), lastRun: last || null, demo: require("../twoFactor").isDemoOrg(org),
+  res.json({ counts: publicCounts(c), examples: healthExamples(c), lastRun: last || null, demo: require("../twoFactor").isDemoOrg(org),
     ncoaNote: "Steward does not run the change-of-address check itself yet. The file it prepares works with any USPS-licensed NCOA provider." });
 }));
 app.post("/data-health/run", requireAuth, checkWriteAccess, wrap(async (req, res) => {

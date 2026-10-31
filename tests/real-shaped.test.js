@@ -38,6 +38,12 @@
 //      received against the same days last year and splits the pledges; the
 //      Offline box has no "?" inside parentheses; closing the import window
 //      tells the pages behind it.
+//   §FJ FIX-60: the combined Finding Joy workbook (jp-finding-joy-combined-443,
+//      its guest list and gifts in one file) into its own fresh org, against
+//      Jonathan's key (expected-finding-joy.json): 443 rows, 172 attended, 104
+//      gave, 77 attended and gave, 95 without a gift, $124,290 = $45,340
+//      received + $78,950 pledged, on the event page, Home, Fundraising and
+//      Ask; the truth check; Undo.
 //
 // assertSurfacesAgree(orgId, ctx) (tests/lib/surfacesAgree.js, another HARDEN-1
 // item) is called after each import and each undo when it exists.
@@ -310,6 +316,29 @@ async function main() {
   const drc = (await api("GET", `/imports/${D_RUN}`, tok)).body.import || {};
   ok("§D the receipt reconciles (gifts + pledges = rows) and offers Undo", drc.reconciled === true && drc.canUndo === true && drc.rowsIn === DK.personRows, JSON.stringify([drc.reconciled, drc.rowsIn, drc.findings]));
   await surfaces(ORG, { step: "after dinner", importId: D_RUN });
+  // §D FIX-60 · A FRESH PLEDGE IS ACTIVITY. A $15,000 pledger with no gift in
+  // a year read Lapsed: the rule read gifts only. Nobody who pledged at the
+  // dinner reads Lapsed or Lapsing: not the tags under their name, the list's
+  // filters, the ladder, nor Home's lapsing card. Red on main: the dinner's
+  // pledgers who last gave in 2024 or 2025 were tagged Lapsed.
+  {
+    const pledgers = (await q("SELECT DISTINCT donor_id FROM pledges WHERE org_id=$1 AND import_id=$2", [ORG, D_RUN])).map(r => r.donor_id);
+    const quietTags = [];
+    for (const id of pledgers) {
+      const st = (await api("GET", `/donors/${id}/status`, tok)).body || {};
+      for (const t of st.tags || []) if (t.key === "lapsed" || t.key === "lapsing") quietTags.push(`${id}:${t.key}`);
+    }
+    const listed = async qs => ((await api("GET", `/donors?${qs}&limit=500`, tok)).body.donors || []).map(d => d.id);
+    const inLists = [...await listed("lifecycle=lapsed"), ...await listed("lapsing=1")].filter(id => pledgers.includes(id));
+    const ins = (await api("GET", "/insights", tok)).body || {};
+    const lapsingCard = (ins.cards || []).filter(c => c.kind === "lapsing").flatMap(c => (c.items || []).flatMap(i => i.ids || [i.donorId || i.lead])).filter(id => pledgers.includes(id));
+    const hist = (await q("SELECT COUNT(DISTINCT p.donor_id)::int AS n FROM pledges p WHERE p.org_id=$1 AND p.import_id=$2 AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=p.donor_id AND g.amount > 0 AND g.date < $3)",
+      [ORG, D_RUN, require("../lapseRule").bounds(require("../orgTime").orgToday({})).lapsedOnOrBefore]))[0].n;
+    console.log(`  [real-shaped] ${pledgers.length} dinner pledgers, ${hist} with a gift more than a year ago`);
+    ok(`§D FIX-60 no dinner pledger (${pledgers.length}) reads Lapsed or Lapsing: tags, list filters, Home's lapsing card`,
+       pledgers.length > 0 && hist > 0 && quietTags.length === 0 && inLists.length === 0 && lapsingCard.length === 0,
+       JSON.stringify({ quietTags: quietTags.slice(0, 8), inLists: inLists.slice(0, 8), lapsingCard }));
+  }
   const S2 = await snapshot(ORG);
   const C2 = await counts(ORG);
 
@@ -531,6 +560,9 @@ async function main() {
   // answered as the Finding Joy Dinner on Oct 22, into a fresh org.
   await homeThree();
 
+  // §FJ FIX-60: the combined Finding Joy workbook against Jonathan's key.
+  await findingJoy();
+
   await closeDb();
   summary();
 }
@@ -624,5 +656,138 @@ async function homeThree() {
   ok("§10d closing the window after (or during) an import tells the pages behind it (told), and Donors and the App listen",
      /told\(/.test(fin) && /tellWhenDone\(job\.id\)/.test(fin) && /useStewardTold\(\(\)=>\{reloadDonors\(\);\}\)/.test(src("components/Donors.jsx"))
      && /useStewardTold\(d=>\{if\(d&&d\.import\)loadData\(\{quiet:true\}\);\}\)/.test(src("App.jsx")), fin.slice(0, 200));
+}
+// ── §FJ FIX-60 · THE FINDING JOY WORKBOOK, AGAINST JONATHAN'S KEY ─────────
+// jp-finding-joy-combined-443.xlsx is the dinner's guest list and its gifts in
+// one workbook (People, Gifts); expected-finding-joy.json is Jonathan's key and
+// the source of every number here. The key counts the guest list's rows: a
+// couple's row ("Cleo & Lyle Underhill") is one entry. Steward makes a couple
+// two people and one household (§D), so each surface's people figure is opened
+// and its people counted by their row (their household, or themselves): the
+// 252 people who came are the key's 172 rows. Money is compared as it is.
+// Into a fresh org, the dinner dated Oct 22, 2026 (the import's date answer);
+// Home is asked as of that day through the insights test seam (asOf, honoured
+// only in TEST_MODE), so the battery's clock is not pinned.
+// HOW IT GOES RED ON MAIN: the 21 givers the file marks not invited (Invited No,
+// RSVP No) went onto the event as Declined, so its invited list was every row
+// (443 rows, 558 people) instead of the key's 422.
+async function findingJoy() {
+  const FJ = "jp-finding-joy-combined-443.xlsx";
+  const K = JSON.parse(fs.readFileSync(path.join(FX, "expected-finding-joy.json"), "utf8"));
+  const D = n => n.toLocaleString("en-US");
+  const ORG = "org_hs1fjoy";
+  const tok = await freshOrg(ORG, "Finding Joy (test)");
+  const wb = XLSX.read(fs.readFileSync(path.join(FX, FJ)), { type: "buffer", cellDates: true });
+  const P = XLSX.utils.sheet_to_json(wb.Sheets.People, { defval: null }), G = XLSX.utils.sheet_to_json(wb.Sheets.Gifts, { defval: null });
+  // the key is the file's own cells, row by row (never the reader)
+  const gaveIds = new Set(G.map(g => g.ID)), yes = v => /^yes$/i.test(String(v || "").trim());
+  const rows = f => P.filter(f).length;
+  const cells = { people: P.length, invited: rows(r => yes(r.Invited)), rsvp_yes: rows(r => yes(r.RSVP)), attended: rows(r => yes(r.Attended)),
+    gave: rows(r => gaveIds.has(r.ID)), attended_and_gave: rows(r => yes(r.Attended) && gaveIds.has(r.ID)), attended_no_gift: rows(r => yes(r.Attended) && !gaveIds.has(r.ID)),
+    gave_not_invited: rows(r => gaveIds.has(r.ID) && !yes(r.Invited)), gift_rows: G.length, dinner_total: G.reduce((n, g) => n + centsOf(g.Amount), 0) / 100,
+    received: G.filter(g => g.Status === "Received").reduce((n, g) => n + centsOf(g.Amount), 0) / 100,
+    not_yet_received: G.filter(g => g.Status === "Not yet received").reduce((n, g) => n + centsOf(g.Amount), 0) / 100,
+    three_year_total: G.reduce((n, g) => n + centsOf(g["3-year total"]), 0) / 100 };
+  ok("§FJ the key is the file's cells: 443 rows, 172 attended, 104 gave, 77 attended and gave, 95 without a gift, $124,290 = $45,340 + $78,950",
+     Object.keys(K).every(k => cells[k] === K[k]) && K.attended_and_gave + K.attended_no_gift === K.attended && K.received + K.not_yet_received === K.dinner_total,
+     JSON.stringify({ cells, key: K }));
+  const S0 = await snapshot(ORG);
+  const sheets = await sheetsOf(FJ);
+  const body = { fileName: FJ, sheets, answers: { eventName: "Finding Joy Dinner", eventDate: "2026-10-22", useEventDate: true, pledgeDue: "event" } };
+  const u = (await api("POST", "/sheet-import/understand", tok, body)).body || {}, c = u.counts || {};
+  ok("§FJ the preview is ready once the dinner's name and date are answered", u.ready === true, JSON.stringify((u.questions || []).filter(x => !x.optional)).slice(0, 300));
+  ok(`§FJ the preview's rows are the key's: ${K.people} rows, ${K.invited} invited, ${K.rsvp_yes} RSVP'd, ${K.attended} attended`,
+     c.records === K.people && c.invitedRecords === K.invited && c.rsvpRecords === K.rsvp_yes && c.attendedRecords === K.attended,
+     JSON.stringify([c.records, c.invitedRecords, c.rsvpRecords, c.attendedRecords]));
+  ok(`§FJ the preview's money is the key's: ${K.gift_rows} gift rows, $${D(K.received)} received, $${D(K.not_yet_received)} pledged this year, $${D(K.dinner_total)} in all`,
+     c.gifts + c.pledges === K.gift_rows && c.giftCents === K.received * 100 && c.pledgeThisYearCents === K.not_yet_received * 100 && c.rowCents === K.dinner_total * 100,
+     JSON.stringify([c.gifts, c.pledges, c.giftCents, c.pledgeThisYearCents, c.rowCents]));
+  ok(`§FJ the 3-year total column ($${D(K.three_year_total)}) is never money: "Reccuring" is one $100 gift, not $3,600`,
+     c.pledgeCents === G.filter(g => g.Status === "Not yet received").reduce((n, g) => n + (/x\s*3\s*years/i.test(g.Frequency) ? 3 : 1) * centsOf(g.Amount), 0)
+     && c.rowCents !== K.three_year_total * 100 && c.monthly === 1, JSON.stringify([c.pledgeCents, c.rowCents, c.monthly]));
+  const imp = await importJob(tok, body);
+  ok("§FJ the import ends done", imp.end && imp.end.status === "done", JSON.stringify(imp.end || imp.start.body).slice(0, 300));
+  const [ev] = await q("SELECT id, LEFT(date::text,10) AS date FROM events WHERE org_id=$1 AND name='Finding Joy Dinner'", [ORG]);
+  ok("§FJ one event, the Finding Joy Dinner on Oct 22, 2026", !!ev && ev.date === "2026-10-22" && (await q("SELECT id FROM events WHERE org_id=$1", [ORG])).length === 1, ev);
+  const evId = ev && ev.id;
+  // a person's row on the guest list: their household (a couple's row), or themselves
+  const rowsOf = async ids => (await one(`SELECT COUNT(DISTINCT COALESCE(household_id, id))::int AS n FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, [...new Set(ids)]])).n;
+  const opened = async (key, params) => {
+    const qs = Object.entries({ ...params, event: evId }).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    const ids = []; let page = 1, r, value;
+    do { r = (await api("GET", `/figures/${key}/rows?${qs}&page=${page}&pageSize=200`, tok)).body || {}; value = r.value; ids.push(...(r.rows || []).map(x => x.donorId).filter(Boolean)); page++; }
+    while (r.rows && r.rows.length === 200);
+    return { value: Number(value), people: new Set(ids).size, rows: await rowsOf(ids), ids };
+  };
+  const everyone = (await q("SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL", [ORG])).map(r => r.id);
+  ok(`§FJ ${K.people} rows came in, each person once (a couple two people, one household)`, await rowsOf(everyone) === K.people, everyone.length);
+  const dg = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, imp.importId]);
+  const dp = await one("SELECT COUNT(*)::int AS n FROM pledges WHERE org_id=$1 AND import_id=$2", [ORG, imp.importId]);
+  ok(`§FJ ${K.gift_rows} gift rows: the received gifts are $${D(K.received)} to the cent, the rest pledges`, dg.n + dp.n === K.gift_rows && centsOf(dg.s) === K.received * 100, JSON.stringify([dg, dp]));
+
+  // the event page
+  const rep = (await api("GET", `/events/${evId}/report`, tok)).body || {}, st = rep.story || {};
+  const fig = k => ((rep.figures || []).find(f => f.key === k) || {}).value;
+  const pm = rep.money || {};
+  ok(`§FJ the event page: $${D(K.dinner_total)} raised = $${D(K.received)} received + $${D(K.not_yet_received)} pledged`,
+     centsOf(fig("raised")) === K.dinner_total * 100 && pm.raisedCents === K.dinner_total * 100 && pm.receivedCents === K.received * 100 && pm.pledgedCents === K.not_yet_received * 100,
+     JSON.stringify([fig("raised"), pm.words]));
+  const S = st.sources || {};
+  const L = {
+    invited: await opened(S.invited.key, S.invited.params), attended: await opened(S.attended.key, S.attended.params),
+    gave: await opened(S.gave.key, S.gave.params), cameGave: await opened(S.cameGave.key, S.cameGave.params),
+    cameNoGift: await opened(S.cameDidntGive.key, S.cameDidntGive.params),
+  };
+  const raisedRows = await opened(S.raised.key, S.raised.params);
+  for (const [k, kk, f] of [["invited", "invited", "invited"], ["attended", "attended", "attended"], ["gave", "gave", "gave"], ["cameGave", "attended_and_gave", "cameGave"], ["cameNoGift", "attended_no_gift", "cameNoGift"]]) {
+    ok(`§FJ the event page's ${f} (${fig(f)} people) opens its people, and they are the key's ${K[kk]} rows`,
+       L[k].value === fig(f) && L[k].people === fig(f) && L[k].rows === K[kk], JSON.stringify({ figure: fig(f), opened: L[k].value, people: L[k].people, rows: L[k].rows, key: K[kk] }));
+  }
+  ok("§FJ the page's story says the same: came = came and gave + came and didn't", st.attended === fig("attended") && st.cameGave + st.cameDidntGive === st.attended && st.gave === fig("gave"),
+     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave]));
+  const notInvited = P.filter(r => gaveIds.has(r.ID) && !yes(r.Invited)).map(r => `${String(r.First).trim()} ${String(r.Last).trim()}`);
+  const listed = new Set(L.invited.ids);
+  const strays = (await q("SELECT id, name FROM donors WHERE org_id=$1 AND name = ANY($2)", [ORG, notInvited])).filter(d => listed.has(d.id));
+  ok(`§FJ the ${K.gave_not_invited} givers the file marks not invited are on no list (never Invited or Declined), and still gave`,
+     notInvited.length === K.gave_not_invited && strays.length === 0 && L.gave.rows - L.cameGave.rows === K.gave - K.attended_and_gave, JSON.stringify(strays.slice(0, 5)));
+  ok(`§FJ raised opens its ${K.gift_rows} gift rows`, raisedRows.value === K.dinner_total && (await q(`SELECT 1 FROM gifts WHERE org_id=$1 UNION ALL SELECT 1 FROM pledges WHERE org_id=$1`, [ORG])).length === K.gift_rows, raisedRows.value);
+
+  // Home, as of the dinner's day: the first look's line and the Grow moves
+  const fl = (await api("GET", "/insights?asOf=2026-10-22&view=first", tok)).body || {};
+  const line = (fl.events || []).find(e => e.id === evId) || {};
+  ok(`§FJ Home's first look: "$${K.dinner_total.toLocaleString("en-US")} raised ($${K.received.toLocaleString("en-US")} received, $${K.not_yet_received.toLocaleString("en-US")} pledged)"`,
+     (line.words || "").includes(`$${K.dinner_total.toLocaleString("en-US")} raised ($${K.received.toLocaleString("en-US")} received, $${K.not_yet_received.toLocaleString("en-US")} pledged)`), line.words);
+  const deck = (await api("GET", "/insights?view=deck&asOf=2026-10-22", tok)).body || {};
+  const grow = (((deck.deck || deck).tabs) || []).flatMap(t => t.moves || []).find(m => m.kind === "came_no_gift" && m.group && m.group.eventId === evId);
+  ok(`§FJ Home's Grow: "Came to the Finding Joy Dinner, didn't give" counts the page's ${fig("cameNoGift")} people (the key's ${K.attended_no_gift} rows)`,
+     !!grow && grow.group.count === fig("cameNoGift") && L.cameNoGift.rows === K.attended_no_gift, JSON.stringify(grow && grow.group));
+
+  // Fundraising: the lead card is the dinner, as its page tells it; the answer leads with received
+  const fo = (await api("GET", "/fundraising/overview", tok)).body || {}, le = fo.leadEvent || {};
+  ok("§FJ Fundraising's lead card is the dinner: the same money and the same people as its page",
+     le.id === evId && le.raisedCents === K.dinner_total * 100 && le.receivedCents === K.received * 100 && le.pledgedCents === K.not_yet_received * 100
+     && le.attended === fig("attended") && le.cameGave === fig("cameGave") && le.cameDidntGive === fig("cameNoGift") && le.gave === fig("gave"),
+     JSON.stringify([le.id, le.raisedCents, le.receivedCents, le.attended, le.cameGave, le.cameDidntGive, le.gave]));
+  const fr = (await api("GET", "/dashboards/fundraising", tok)).body || {};
+  ok(`§FJ Fundraising's answer: received $${K.received.toLocaleString("en-US")}, $${K.not_yet_received.toLocaleString("en-US")} pledged due this year`,
+     (fr.answer && fr.answer.text || "").startsWith(`Received since the fiscal year began: $${K.received.toLocaleString("en-US")}.`)
+     && (fr.answer.text || "").includes(`$${K.not_yet_received.toLocaleString("en-US")} due this year`), fr.answer && fr.answer.text);
+
+  // Ask
+  const a1 = (await api("POST", "/ask", tok, { text: "How much did the Finding Joy Dinner raise?" })).body || {};
+  const af = a1.figures || {};
+  ok(`§FJ Ask, "How much did the Finding Joy Dinner raise?": $${D(K.received)} received + $${D(K.not_yet_received)} pledged = $${D(K.dinner_total)}`,
+     af.value && af.value.value === K.received && af.also && af.also.value === K.not_yet_received && af.value.value + af.also.value === K.dinner_total, a1.sentence);
+  const a2 = (await api("POST", "/ask", tok, { text: "Who came to the Finding Joy Dinner and didn't give?" })).body || {};
+  const v2 = a2.figures && a2.figures.value;
+  ok(`§FJ Ask, "Who came … and didn't give?": the page's ${fig("cameNoGift")} people, the key's ${K.attended_no_gift} rows`,
+     !!v2 && v2.value === fig("cameNoGift") && v2.source && v2.source.params.event === evId && (await opened(v2.source.key, v2.source.params)).rows === K.attended_no_gift, a2.sentence);
+
+  // the truth check, then Undo leaves the org as it was
+  await surfaces(ORG, { step: "after the Finding Joy workbook", token: tok });
+  const un = await api("POST", `/imports/${imp.importId}/reverse`, tok, {});
+  const d = snapDiff(S0, await snapshot(ORG));
+  ok("§FJ Undo leaves the org exactly as it was", un.status === 200 && d.length === 0, un.status + " " + d.join("\n"));
+  await surfaces(ORG, { step: "after the Finding Joy undo", token: tok });
 }
 main().catch(async e => { console.error(e); await closeDb().catch(() => {}); process.exit(1); });

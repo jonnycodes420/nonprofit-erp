@@ -11,7 +11,7 @@ import { DonorLink } from "./RecordLink";
 import { displayDate } from "../../../shared/displayDate";
 
 const row = { display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.4fr) repeat(3, minmax(90px,1fr))", gap: 12, alignItems: "center", padding: "11px 18px", fontSize: 13, color: T.ink };
-const head = { fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, background: T.bg };
+const head = { fontSize: 10, fontWeight: 800, color: T.ink3, background: T.bg };
 const num = { textAlign: "right", fontVariantNumeric: "tabular-nums" };
 const linkBtn = { background: "none", border: "none", padding: 0, font: "inherit", color: T.greenDk, cursor: "pointer", textAlign: "left" };
 // On a phone the five columns become two: who and what is left, then the rest.
@@ -29,7 +29,7 @@ export function PledgesView({ onNavigate }) {
     ? <button onClick={() => onNavigate && onNavigate("events", { eventId: m.id })} style={linkBtn}>{m.name}</button>
     : <span>{m.name}</span>;
   return (
-    <div className="no-caps" data-testid="pledges-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div data-testid="pledges-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
         {[["open", "Still to come, all years"], ["dueThisYear", "Due this fiscal year"], ["overdue", "Overdue"]].map(([k, label]) => (
           <Figure key={k} kind="money" whole value={d[k]} label={label} definition={d.definitions[k]} source={d.sources[k]} figureKey={"pledges." + k} />

@@ -4,9 +4,14 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ## Rules
 
-- **Every pledge has its installments (SWEEP-4).** `writePledgeInstallments` is the one schedule writer;
-  with no schedule and no cadence it writes one installment of the whole pledge on its due date. A schedule
-  that does not sum is refused before the pledge is written, never swallowed after.
+- **Every pledge has its installments (SWEEP-4, FIX-60).** A pledge is written only by `writePledges` /
+  `writePledge` (`pledgeWrite.js`), with its installments, from every door: the profile (and API), file import,
+  history import (`import-semantics`), To confirm, proposals, grants, event sponsorships and recordGift's
+  expected match. Add no new `INSERT INTO pledges`. With no schedule and no cadence it is one installment of the
+  whole pledge on its due date; a schedule that does not sum is refused before the pledge is written. Payments
+  linked as it is written become paid installments oldest first, each exactly its gift's amount (a shell's
+  remainder is undated). `writePledgeInstallments` only rewrites the schedule of a pledge that exists. A history
+  import's pledges carry its run id, so Undo import removes them and their installments.
 - **SECURE-1 (2026-10-28): who may delete money.** A gift, pledge or grant is deleted by the
   person who entered it (`created_by`) or by an admin (`mayEditLogged`), never by another staff
   member. An imported gift (a `system:` actor) is an admin's to delete.
@@ -134,6 +139,26 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   separate); say "giving", never "revenue"; optional other income is never summed into giving. (BUILD-26, BUILD-32, BUILD-88a)
 - **Read the fiscal year through `orgPeriodBounds`/`finPeriodBounds`, never string arithmetic.** The
   boundary comes from `fiscal_year_start_month` (July default); receipts use the calendar year. (BUILD-86, BUILD-88a)
+- **A budget says which kind of year it is, and follows the page's year basis (FIX-60).** Decision:
+  `budgets.basis` ('calendar' | 'fiscal') is a nullable column, every new write stamps the basis of the page
+  it was set on (Finance's Fiscal Year / Calendar Year switch), and **no row is rewritten at deploy**. A row
+  with no basis is a calendar budget and reads as one until somebody sets it again: every old row was set on a
+  page that sent no basis and measured it against the calendar year, so that is what it was. The one-slot rule
+  is `budgets_account_year_fund_basis` (org, account, year, fund, `COALESCE(basis,'calendar')`), so a fiscal
+  and a calendar budget for the same account sit side by side and one never overwrites the other. A fiscal
+  budget's `year` is the year the fiscal year ends in (FY 2026–27 is 2027), its window `budgetYearBounds`. An
+  org whose year starts in January has one kind of year, so 'fiscal' is stored and read as 'calendar' there.
+  The page names its year in the picker ("Fiscal year: FY 2026–27") and, when lines exist on the other kind
+  of year, says how many and where (`GET /finance/budgets?shape=page` → `otherBasis`), so an old budget is
+  never lost and never compared with the wrong months. Fundraising's budget-as-goal reads only the basis it
+  is showing, and the quarterly board PDF only calendar lines. Projections count the budget year's own months
+  (`budgetMonthsElapsed`). A zero variance reads "on budget" (`budgetVarianceText`), never "+$0".
+- **Every comparison of periods counts the same days, and says which (FIX-60).** A running year is cut at today
+  and each earlier year to the same stretch (`orgTime.equalYearSpans`, the same point last year, step by step);
+  the sentence names it: "Jul 1 to Oct 30, each year". The 3-year comparison, the annual report, Finance's
+  Revenue caption ("vs Jul 1 to Oct 30 last FY", `samePointRevenue`) and the board PDF's quarter (the same
+  number of days of the prior quarter) all follow it. Retention keeps last year whole: it asks who of last
+  year's donors came back.
 - **A gift goes to QuickBooks once, and only where a person mapped it.** `gift_bookkeeping_syncs` is unique on
   (org, gift, vendor, realm_id) and claimed before the call. The sent list belongs to a QuickBooks COMPANY: a
   connection moved to a different company starts empty there, and a mapping chosen in another company is not
@@ -250,6 +275,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - fin_accounts — id, org_id, name, type (checking/savings/credit), balance, institution
 - fin_funds — id, org_id, name, balance, target, restricted (boolean), description
 - fin_budgets — id, org_id, category, amount, period (monthly/annual), fund_id
+- budgets — id, org_id, account_id, year, amount, fund_id, basis (FIX-60: NULL reads 'calendar'; unique on org, account, year, fund, basis)
 - fin_audit_log — id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values
 - LEGACY (do not use for new Finance UI): `financials` (monthly pre-aggregated rows) + `funds` (old fund balances), served by `GET /financials`. `Finance.jsx`'s Overview subtab used to read fund balances + monthly breakdown from this legacy pair via the `data.financials.*` prop, which had diverged from the live `fin_*` data shown on every other Finance subtab. Fixed: Overview now derives from the same `/finance/funds` + `/finance/transactions` state (`fundBalances`, computed client-side as income − expense per fund) that the rest of Finance already uses — including the 6-Month Forecast / Risk Analysis AI prompts. The `financials`/`funds` tables and `GET /financials` route still exist but should be treated as legacy/unused going forward.
 

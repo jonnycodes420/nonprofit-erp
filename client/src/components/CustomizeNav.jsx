@@ -65,7 +65,7 @@ export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClo
       fontSize: 12.5, marginBottom: 12 }}>{error}</div>}
     <div data-testid="customize-nav">
       {groups.map(g => g.items.length === 0 ? null : <div key={g.id} style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase",
+        <div style={{ fontSize: 9.5, fontWeight: 800, 
           color: T.ink3, marginBottom: 6 }}>{g.label || (g.bottom ? "Bottom of the sidebar" : "Top of the sidebar")}</div>
         {g.items.map((it, idx) => {
           const pinned = NEVER_HIDDEN.has(it.id);

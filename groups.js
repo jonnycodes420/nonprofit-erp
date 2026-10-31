@@ -491,8 +491,11 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     || (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
   // arguments ahead of the WHERE's.
-  let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`;
-  const selectArgs = [...cl.args];
+  // FIX-60: pledge_hold says a pledge keeps them off Lapsed (lapseRule.js),
+  // so the list's Lapsed filter on the client reads the same rule.
+  const ph = require("./lapseRule").pledgeHoldSql("donors.id", today);
+  let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness, ${ph.sql} AS pledge_hold`;
+  const selectArgs = [...cl.args, ...ph.args];
   // FIX-22 · Room to give, sorted on the server across the whole list: the
   // word is decided once (shared/roomToGive.js, via prospect.roomToGive), and
   // its rank rides along as a column joined from two arrays, so the page is

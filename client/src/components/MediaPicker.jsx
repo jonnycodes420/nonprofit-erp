@@ -22,7 +22,7 @@ export const mediaPrimaryBtn = { background: T.greenDk, border: "none", borderRa
 // The picker also opens inside the page editor, which sits outside the app
 // shell and its global type, so it names its own.
 const PICKER_FONT = "'DM Sans', system-ui, -apple-system, sans-serif";
-const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
+const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, margin: "10px 0 4px" };
 const post = (path, body) => apiFetch(path, { method: "POST", body: JSON.stringify(body || {}) });
 
 // The server says why in a sentence; show that sentence, not its code.

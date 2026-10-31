@@ -50,7 +50,7 @@ const isoDate = s => {
   return "";
 };
 
-const label = { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 };
+const label = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const input = { width: "100%", boxSizing: "border-box", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 14, color: T.ink, fontFamily: "inherit" };
 const attention = { border: "2px solid " + T.gold, background: T.gold50 };
 const linkBtn = { background: "none", border: "none", padding: 0, color: T.green, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" };
@@ -267,7 +267,7 @@ export function CaptureCard({ card, funds, isReadOnly, onChanged, onOpenThanks }
         <div className="capture-card-doc"><DocumentPane card={card} /></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>
               {what}{card.source === "email" ? " · from email" : card.source === "forward" ? " · forwarded" : card.source === "photo" ? " · photo" : ""}
             </div>
             <div data-testid="capture-headline" style={{ fontSize: 17, fontWeight: 700, color: T.ink, lineHeight: 1.35 }}>{card.headline}</div>

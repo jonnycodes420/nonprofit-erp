@@ -1,0 +1,15 @@
+{
+  "people": 443,
+  "invited": 422,
+  "rsvp_yes": 219,
+  "attended": 172,
+  "gave": 104,
+  "attended_and_gave": 77,
+  "attended_no_gift": 95,
+  "gave_not_invited": 21,
+  "gift_rows": 106,
+  "dinner_total": 124290,
+  "received": 45340,
+  "not_yet_received": 78950,
+  "three_year_total": 152890
+}

@@ -16,21 +16,17 @@ one deletes its line.
 
 ## Events and pledges (SWEEP-4, 29 Oct 2026; walk in docs/sweeps/sweep-4/walk.md)
 
-- **P2 · The Events list's four numbers do not open.** They are `<Figure>`s with their sentences now, but there is no figure source across events (events this year, came this year, received at events, came of registered), so a click opens nothing. Suggested: EVENTS-3 adds `events-year-*` sources in `figureSources.js` and passes them.
-- **P2 · Pledges from the history import route have no installments.** `POST /donors/import-semantics` (the bulk route for other systems' exports) writes pledges with no schedule, and shell pledges link payments that no installment knows about. Writing installments there changes what Undo and the shell repair see, so it needs the real-shaped check. Suggested: IMPORT-6.
-- **P2 · A fresh pledge does not count as activity.** Somebody who pledged $15,000 at the dinner twelve days ago reads Lapsed and Cooling on their profile: status reads gifts only. Suggested: the people sweep.
 - **P3 · Two tile looks on After the event.** White figure tiles (Raised … Gave) above cream buttons (Invited … Sponsors) on one card; First-time givers and Sponsors open rows but are not `<Figure>`s with a source. Suggested: EVENTS-3.
 - **P3 · Check-in draws every guest on the event page.** 195 rows under the door search; the search is the door, the list could fold. Suggested: EVENTS-3.
 - **P3 · The open-pledge banner and the Next move repeat each other.** Both list the same installments on the profile. Suggested: the people sweep.
 
+- **P2 · An event's people figures count persons; the Finding Joy key counts guest-list rows.** The combined workbook's key says 443 people, 172 attended, 104 gave, 77 came and gave, 95 came without a gift; Steward makes a couple's row two people, so the event page, Home's Grow card, Fundraising and Ask say 252 came, 149 gave, 122 came and gave, 130 came without a gift (each opens to exactly the key's rows; money matches the key). Decided in FIX-60: an event's people figures count giving units (a household once), as the ladder does; not built in FIX-60's time. The plan is in FIX-60's report: `numbers.eventGuests` groups by `COALESCE(household_id, donor id)`, the four `event-*` sources open one row per unit, the Events list counts, the truth check's event truth, and the suites built on couples as two (fix59-event-import, fundraising2-screens, import5 §6, sweep4, real-shaped §FJ asserts the key directly). Suggested: EVENTS-3.
+
 ## Finance, Reports, Grants (SWEEP-5, 29 Oct 2026; walk in docs/sweeps/sweep-5/walk.md)
 
-- **P2 · Annual report and 3-year comparison compare a running year with a whole one.** The annual report now says "so far" and "against the whole of FY 2025–26", and points at the Giving summary; the 3-year comparison still prints "a change of -69% year over year" for four months against twelve. Suggested: REPORTS-6, the same-point source the Giving summary uses (`samePointLastYearSource`) for the newest column.
-- **P3 · Month close calls day-groups deposits.** "4 deposits, $26,777.61 gross" when nothing has been deposited: the gift detail groups unmatched gifts by the day they were recorded and the sentence calls each group a deposit. Suggested: FIN-2, "4 days of gifts not yet on a deposit".
-- **P3 · Budgets are calendar years on a fiscal page.** The picker says "Calendar year" now and is no longer hard-coded to 2023–2026, but a fiscal-year org budgets on the calendar. `/finance/budgets?basis=fiscal` exists on the server; moving to it reinterprets every stored budget row, so it needs a decision and a migration note. Suggested: FIN-2.
-- **P3 · Budgets' variance reads "+$0".** A zero variance carries a sign. Suggested: FIN-2.
+- **P3 · Budgets' revenue variance reads backwards and in red.** Variance is budget − actual for both sections, so revenue ahead of a $0 budget reads "-$1,750" in red and revenue $39,250 short reads "+$39,250"; "over budget" and an over line are red, which is for a destructive confirm only (overdue is brass). Found by FIX-60's walk. Suggested: FIN-2.
+- **P3 · Budgets' projected year-end straight-lines a one-off.** One $1,200 expense in month 3 of a fiscal year projects to $3,600 "over budget". Found by FIX-60's walk. Suggested: FIN-2.
 - **P3 · Grants · Reports: "AWARDED, FY 2026–27" broke across two lines at 1440.** Sentence case shortened it and neither walk org had a grant to draw it after the fix. Suggested: the next Grants build looks with a grant on file.
-- **P3 · Figure "?" sits between a count and its noun** ("0 ? grants") on Grants · Reports and the Board. Suggested: the next Figure pass.
 - **P3 · Phone, Reports: the rail is a select.** Each report opens by its own URL on a phone and costs 0.6 to 1.7 s locally; not throttled to slow 4G in this walk. Suggested: PERF-3 measures Reports at 390 on slow 4G.
 
 ## Giving pages, the donor side and the phone (SWEEP-6, 30 Oct 2026; walk in docs/sweeps/sweep-6/walk.md)

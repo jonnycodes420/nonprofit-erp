@@ -21,7 +21,7 @@ import { suggestEventSlug, parseEventVideo, galleryShows, civil, VIDEO_HOSTS_SEN
 
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
-const head = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
+const head = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const FRAME_CSS = `
 [data-st-edit]{outline:none;border-radius:4px;cursor:text;transition:box-shadow .12s}
 [data-st-edit]:hover{box-shadow:0 0 0 1px ${T.green500}}

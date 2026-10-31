@@ -16,7 +16,7 @@ import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, color: primary ? T.white : T.ink,
   cursor: "pointer", fontFamily: "inherit" });

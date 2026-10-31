@@ -11,7 +11,7 @@ import { Figure } from "./Figure";
 import { askWhy, WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const cell = { padding: "8px 10px", borderTop: "1px solid " + T.bg2, fontSize: 13.5 };
 
 export function HowDidItDo({ campaignId, isReadOnly }) {

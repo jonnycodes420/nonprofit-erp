@@ -483,16 +483,16 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   # when it was not. So the dist is built ONCE, for that shard's API port, and
   # only when there is no usable one already. Without this the browser legs
   # skip and the run is green with the browser coverage missing.
+  #
+  # FIX-60 item 6: "usable" used to mean only "built against this port", so a
+  # dist from before a merge passed and the legs walked the old screens. It is
+  # now scripts/dist-fresh.js: built against this port AND from HEAD AND with
+  # no uncommitted change to the client's inputs since. Stale means rebuild.
   BSHARD=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.browserShard||""))' "$SHARD_OUT/plan.json")
   if [ -n "$BSHARD" ] && [ "${SHARD_BUILD_DIST:-1}" = "1" ]; then
     bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * BSHARD ))
-    if ! grep -rqs "localhost:$bapi" client/dist/assets 2>/dev/null; then
-      echo "[run-all] building client/dist against shard $BSHARD's API (:$bapi) for the browser legs"
-      ( cd client && VITE_API_URL="http://localhost:$bapi" VITE_ASSET_ORIGIN="http://localhost:$bapi" \
-        VITE_PORTAL_API="http://localhost:$bapi/portal" VITE_ACCOUNT_API="http://localhost:$bapi/account" \
-        VITE_NETWORK_API="http://localhost:$bapi/network" npm run build >/dev/null 2>&1 ) \
-        || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
-    fi
+    node scripts/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
+      || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
   fi
 
   echo "[run-all] $SHARDS shards · ${#RUN[@]} suites · plan $SHARD_OUT/plan.json"

@@ -19,7 +19,7 @@ const money = c => {
   const v = Math.abs(Number(c) || 0) / 100;
   return (c < 0 ? "-$" : "$") + (v % 1 ? v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v.toLocaleString("en-US"));
 };
-const EYEBROW = { fontSize: 11, letterSpacing: "0.1em", fontWeight: 700, textTransform: "uppercase", color: T.ink3 };
+const EYEBROW = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const B1 = { background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" };
 const B2 = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 13px", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" };
 const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontFamily: "inherit" };
@@ -713,7 +713,7 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn 
   const copy = () => { try { navigator.clipboard.writeText(how.say || ""); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard refused */ } };
   return (
     <section data-testid="profile-next-move" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold700 }}>Next move · {m.title}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.gold700 }}>Next move · {m.title}</div>
       <div data-testid="dp-next-move-sentence" style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.3, color: T.ink }}>{sentence}</div>
       {m.why && <div data-testid="dp-next-move-why" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}><b>Why:</b> {m.why}</div>}
       {how.say && <div data-testid="dp-next-move-draft" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", fontSize: 14, lineHeight: 1.55, color: T.ink }}>“{how.say}”</div>}

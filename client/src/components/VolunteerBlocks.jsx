@@ -323,12 +323,12 @@ function Impact({ w, ctx }) {
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 160px" }}>
           <div style={{ fontSize: 30, fontWeight: 700, fontFamily: "var(--pt-serif, Georgia,serif)" }}>{hoursText(im.hours)}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Hours served in {year}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted }}>Hours served in {year}</div>
           <div style={{ ...muted, fontSize: 12, marginTop: 4 }}>Every volunteer shift logged from January 1 to today, added up.</div>
         </div>
         <div style={{ flex: "1 1 160px" }}>
           <div style={{ fontSize: 30, fontWeight: 700, fontFamily: "var(--pt-serif, Georgia,serif)" }}>{Number(im.roster || 0).toLocaleString("en-US")}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Volunteers</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted }}>Volunteers</div>
           <div style={{ ...muted, fontSize: 12, marginTop: 4 }}>Everyone on the volunteer roster today.</div>
         </div>
       </div>

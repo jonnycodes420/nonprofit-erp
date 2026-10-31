@@ -107,7 +107,7 @@ export function WhatChanged({ isReadOnly, onNavigate, wide }) {
 
       {whatWorked && whatWorked.sentence && (
         <section style={{ ...CARD, borderLeft: "3px solid " + T.greenDk }} data-testid="what-worked">
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>What worked</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>What worked</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", alignItems: "baseline", marginTop: 6 }}>
             <div style={{ fontFamily: SERIF, fontSize: wide ? 20 : 18, color: T.ink, flex: "1 1 280px" }}>{whatWorked.sentence}</div>
             <WhyToggle text={whatWorked.why} testid="what-worked-why"/>

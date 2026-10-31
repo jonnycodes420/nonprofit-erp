@@ -144,7 +144,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const tzKnown = !!(org && (org.timezone_confirmed_at || org.timezoneConfirmedAt));
 
   const inp = { width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "10px 12px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
-  const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5, display: "block" };
+  const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 5, display: "block" };
 
   return (
     <Modal onClose={onClose} width={460} zIndex={300} padding={24}

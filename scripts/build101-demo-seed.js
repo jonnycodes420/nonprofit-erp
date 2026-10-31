@@ -69,7 +69,7 @@ const addDays = (d, n) => { const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t
     ["Elena Ruiz", "Individual", { startedDaysAgo: 200 }],
     ["Farah Nadeem", "Family", { startedDaysAgo: 100 }],
     ["Gus Lindqvist", "Patron", { startedDaysAgo: 30 }],
-    ["Hana Sato", "Family", { startedDaysAgo: 375 }],        // expired 10 days ago → Grace
+    ["Hana Ueno", "Family", { startedDaysAgo: 375 }],        // expired 10 days ago → Grace
     ["Ian Brooks", "Individual", { startedDaysAgo: 380 }],   // expired 15 days ago → Grace
     ["Jo Whitfield", "Family", { startedDaysAgo: 420 }],     // expired 55 days ago → Lapsed
     ["Kai Moreno", "Individual", { startedDaysAgo: 600 }],   // Lapsed

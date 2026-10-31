@@ -24,7 +24,7 @@ const COLOR_FIELDS = [
   ["button_color", "buttonColor", "Button color", "Left empty, buttons use your main color."],
 ];
 const inp = { boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit" };
-const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "14px 0 4px" };
+const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, margin: "14px 0 4px" };
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 const put = body => apiFetch("/portal-settings", { method: "PUT", body: JSON.stringify(body) });
 

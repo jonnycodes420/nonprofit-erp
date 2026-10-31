@@ -20,6 +20,10 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   through `assetStore` on first use and carries `stock: true` in its picture meta until it is replaced; the
   server believes `stock` only of a real stock asset. Every file has a row in `assets/stock/LICENSES.md`
   (Unsplash or Pexels licence, photographer, source); `tests/editor1.test.js` §9 holds the two together.
+  A row is one photo checked on its own page, never copied from a search page (FIX-60): its Photo ID is
+  the end of its Source URL, its Checked date is the day the page named that photographer under the
+  Unsplash License (not Unsplash+), and its Fingerprint is the image that ID served, which the file and
+  its thumbnail must still match.
   Removing a photo leaves the layout's photo-free version.
 - **Anything you can add, you can remove, through the one Remove** (FIX-41). `removal.js` is the
   registry: each kind names its table, what is attached, and whether removing it retires, archives,

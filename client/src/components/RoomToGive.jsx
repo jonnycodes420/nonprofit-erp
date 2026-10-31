@@ -14,7 +14,7 @@ import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { errorMessage } from "../lib/domainError";
 import { postDownload, rangeOf, dollarsOf, dateWords, ROOM_LABEL } from "../lib/majorGifts";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const LINK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" };
 const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const GHOST = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
