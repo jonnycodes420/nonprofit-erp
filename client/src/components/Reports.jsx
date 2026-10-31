@@ -632,7 +632,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
-      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} {plural(d.giftCount, "gift")} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" unit={plural(d.giftCount, "gift")} /> : `${d.giftCount} ${plural(d.giftCount, "gift")}`} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
       // SWEEP-5: the two ids are for the bookkeeper's file, not for reading.
       const BK_FILE_ONLY = new Set(["donorId", "giftId"]);
       const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";

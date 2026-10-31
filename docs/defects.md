@@ -6,7 +6,7 @@ one deletes its line.
 
 ## Donors, Data health and imports (SWEEP-2, 31 Oct 2026; walk in docs/sweeps/sweep-2/walk.md)
 
-- **P2 · CI-only red: smoke-walk "§fix60 the bookkeeper's year (0 rows)".** On SWEEP-2's first CI run (41249592761) `units.feeTablesOnPage` read 0 rows from the bookkeeper's table that the very next check (§sweep5, the $4.50 fee) read drawn; locally the leg is 3 of 3 green with 9 rows, and main's last CI was green. A read racing the "This CY" re-render is the likely cause. Suggested: the next tests build waits for the year's rows before both reads, and proves it by planting a delay.
+- **P3 · smoke-walk's bookkeeper reads race the report's figures.** On SWEEP-2's CI, `units.feeTablesOnPage` once read 0 rows from a drawn table (run 41249592761), and on the next run the "?"-between-a-count-and-its-noun check caught a real miss ("9 ? gifts between", fixed in SWEEP-2) only because the figures had arrived; locally they arrive after the read and both pass. Suggested: the next tests build waits for the bookkeeper's figures and rows before reading, and proves it by planting the old line back.
 - **P3 · On a phone the Donors toolbar fills the first screen.** Two chips, search, four view tabs, Log a call, + Add, Import & tools, five selects and three buttons come before the first donor at 390, and "Re-engage" breaks as "Re- / engage". Suggested: the people sweep folds the selects behind one Filters button on a phone, as Team and Data health already do.
 
 ## Staff mail (STAFF-MAIL-1, 30 Oct 2026; walk of Settings → My email and the morning email)
