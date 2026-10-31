@@ -148,7 +148,8 @@ function eventCards(f) {
     card("event", "event:" + e.id, [{ name: "time", n: Math.max(5, 30 - 3 * e.daysAway) }, { name: "stakes", n: Math.round(10 * rel(e.unpaidAmount, f.line)) + (e.unpaid ? 10 : 0) }], {
       eyebrow: e.daysAway === 0 ? "Today" : e.daysAway === 1 ? "Tomorrow" : `This week · ${e.dayName}`,
       title: e.name,
-      why: `${plural(e.guests, "guest", "guests")}${e.capacity ? ` of ${e.capacity} places` : ""}${e.unpaid ? `, ${e.unpaid} not paid yet` : ""}.`,
+      // SWEEP-1: Registered, as the event page counts it; places are the event's capacity, said apart
+      why: `${plural(e.registered != null ? e.registered : e.guests, "person", "people")} registered${e.capacity ? `, for ${e.capacity} places` : ""}${e.unpaid ? `; ${e.unpaid} not paid yet` : ""}.`,
       eventId: e.id,
     }));
 }
@@ -229,7 +230,8 @@ export function doors(f) {
 
 export function tries(f) {
   if (f.season) return ["Who gave last December but not this one?", "How much is left on the year-end goal?", "Who should I call today?"];
-  const t = ["Who should I call this week?", "How is the Annual Fund doing?"];
+  // SWEEP-1: a question every org can ask (the Annual Fund was offered to orgs without one)
+  const t = ["Who should I call this week?", "How much have we raised this year?"];
   const m = (f.meetings || []).find(x => x.person);
   if (m) t.push(`What did ${first(m.person.name)} give last year?`);
   else if ((f.gifts || [])[0]) t.push("Who hasn't been thanked yet?");

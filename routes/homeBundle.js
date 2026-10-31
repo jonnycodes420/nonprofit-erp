@@ -26,6 +26,7 @@ const HOME_READS = new Set([
   "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins", "/donors/birthdays-near", "/donors/counts",
   "/dashboard/today", "/metrics/stewardship-summary", "/dashboard/home", "/thank-yous",
   "/dashboard/stewardship-debt/breakdown", "/dashboard/retention/breakdown", "/home/lead",
+  "/home/owners",   // SWEEP-1: the rail's owners card
   // HARDEN-2 item 2: the shell's own reads on every app page (the top bar,
   // the rail's badges, Atlas), asked for in one request while the app's code
   // downloads (client/src/lib/bootReads.js SHELL_READS). All plain GETs.

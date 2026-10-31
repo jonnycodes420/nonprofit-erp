@@ -13,6 +13,7 @@ import { T } from "./shared";
 import { DonorLink } from "./RecordLink";
 import EventRaised from "./EventRaised";   // HOME-3: the first look's events
 import { countLabel } from "../../../shared/countWords.js";
+import { displayDate } from "../../../shared/displayDate.js";   // SWEEP-1: a written date, never "2025-12-19"
 
 const SERIF = "'DM Serif Display', Georgia, serif";
 const money = c => {
@@ -183,7 +184,7 @@ function ReviewRows({ card, onChanged, isReadOnly }) {
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 8, marginBottom: 8 }}>{err}</div>}
       {card.items.map(it => (
         <div key={it.key} data-testid="review-row" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
-          <div style={{ fontSize: 14, color: T.ink }}><b>{money(it.cents)}</b> · {it.name} · {it.date || "no date"}</div>
+          <div style={{ fontSize: 14, color: T.ink }}><b>{money(it.cents)}</b> · {it.name} · {it.date ? displayDate(it.date) : "no date"}</div>
           <div style={{ fontSize: 13, color: T.ink3 }}>“{it.memo}”. {it.reason}.</div>
           {!isReadOnly && <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
             <button type="button" style={B2} onClick={() => decide(it, "keep")}>Keep as gift</button>
@@ -377,6 +378,10 @@ const MOVE_CHIP = { display: "inline-flex", alignItems: "center", gap: 6, backgr
   fontSize: 13, fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit", minHeight: 36 };
 // FIX-59: Grow's count says its split ("85 second gifts · 112 more"), less
 // any move she has finished here.
+// SWEEP-1: a person is one move, under their highest, so a tab can say "74
+// second gifts" above a card that is "one of 86"; the server counts how many
+// of the group lead with another move.
+const elsewhere = (t, m) => (m.group && m.group.elsewhere) || 0;
 function tabCountWords(t, gone) {
   const n = t.left.length + Math.max(0, t.count - t.moves.length);
   if (!t.split) return n.toLocaleString("en-US");
@@ -525,7 +530,8 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
               aria-selected={t.key === cur.key} onClick={() => pick(t.key)} title={deck.sentence}>
               <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {tabCountWords(t, gone)}</span>
               <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
-                {t.key === "planned" ? `${(t.left.length).toLocaleString("en-US")} ${t.left.length === 1 ? "person" : "people"}` : `${money(t.left.reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
+                {/* SWEEP-1: the tab's own total (every move, not the first 150 the deck carries), less what was acted on here */}
+                {t.key === "planned" ? `${(t.left.length).toLocaleString("en-US")} ${t.left.length === 1 ? "person" : "people"}` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
             </button>
           ))}
         </div>
@@ -581,7 +587,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
             </div>
             {m.group && m.group.count > 1 && (
               <div style={{ fontSize: 13, color: T.ink3 }}>
-                One of {m.group.count} in {m.group.title.toLowerCase()} · <button type="button" style={LNK} data-testid="move-see-all"
+                One of {m.group.count} in {m.group.title.toLowerCase()}{elsewhere(cur, m) > 0 ? `; ${elsewhere(cur, m).toLocaleString("en-US")} of them ${elsewhere(cur, m) === 1 ? "is" : "are"} under a bigger move` : ""} · <button type="button" style={LNK} data-testid="move-see-all"
                   onClick={() => (m.group.eventId && onNavigate ? onNavigate("events", { eventId: m.group.eventId }) : setPanel(m.kind))}>See all {m.group.count}</button>
               </div>
             )}
@@ -648,7 +654,7 @@ export function ProfileLadder({ donorId, onNavigate, isReadOnly }) {
       </div>
       {u.undatedNote && <div style={{ fontSize: 13, color: T.ink, marginTop: 4, borderLeft: "3px solid " + T.gold, paddingLeft: 8 }}>{u.undatedNote}</div>}
       {(d.notGifts || []).length > 0 && <div data-testid="profile-not-gifts" style={{ fontSize: 13, color: T.ink3, marginTop: 4 }} title="Marked Not a gift in Review: in Finance as revenue, not in their giving.">
-        Also paid, not gifts: {d.notGifts.map(x => `${x.label} ${money(x.cents)}${x.date ? ` (${x.date})` : ""}`).join(", ")}.</div>}
+        Also paid, not gifts: {d.notGifts.map(x => `${x.label} ${money(x.cents)}${x.date ? ` (${displayDate(x.date)})` : ""}`).join(", ")}.</div>}
       {d.combined && <div style={{ fontSize: 13, color: T.ink, marginTop: 4 }} title={d.combined.sentence}>With {d.combined.names.join(", ")}: {money(d.combined.cents)} together.</div>}
       {m && m.item && (
         <div data-testid="profile-next-move" style={{ background: T.bg, borderRadius: 10, padding: "10px 12px", marginTop: 8 }}>

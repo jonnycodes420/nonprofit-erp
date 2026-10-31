@@ -4,6 +4,14 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## Home and Atlas (SWEEP-1, 31 Oct 2026; walk in docs/sweeps/sweep-1/walk.md)
+
+- **P2 · A business with no business word in its name is greeted by a first name.** "Redshaw Holville Wine Spirits" (kept as a person) reads "Hi Redshaw,"; `isPersonUnit` (insights.js) and `shared/greeting.js` know a business by its record's kind or a word like Inc, LLC, Bank, Club. Suggested: the people sweep offers "this looks like an organisation" on import and in Data health, so the kind is right at the source.
+- **P3 · Home's right rail is mostly empty at 1440.** Today, Owners, Snap a check and one sentence beside a 2,000 px main column. Suggested: the next Home build moves the thank-yous or the chips into the rail.
+- **P3 · An empty org is offered Import three times above the fold** (the setup card's Next, its Import row, Your moves' Import a spreadsheet). Suggested: the next Home build lets Your moves' empty card stand alone while the setup card is open.
+- **P3 · Phone: the mic button sits over the setup card's "Set up →".** Suggested: the next phone build gives the floating button a gutter Home's cards respect.
+- **P3 · "Answer ready" sits above a refusal** ("There's no fund … called …", "Steward can't answer that one yet."). Suggested: the next Ask build labels a refusal as one.
+
 ## Staff mail (STAFF-MAIL-1, 30 Oct 2026; walk of Settings → My email and the morning email)
 
 - **P2 · The morning email's date line reads "2026-10-31".** `renderMorningBriefBody` (server.js) prints `today` as the raw ISO string beside the person's name ("Wren Walker · 2026-10-31"), where every other screen shows a written date. Seen on the walk's 9 AM send. Suggested: the next staff-mail or Settings sweep, through `shared/displayDate.js`.

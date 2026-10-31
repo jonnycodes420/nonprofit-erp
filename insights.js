@@ -434,7 +434,10 @@ function computeInsights(input) {
   }
 
   const stats = orgStats(U, gifts, asOf, dataEnd, reviewed, lastDated);
-  const ctx = { asOf, dataEnd, thisYear, line, coverage, stats, importName, reviewed, outcomes: indexOutcomes(input.outcomes, asOf), linksDismissed: input.linksDismissed || new Set() };
+  // SWEEP-1: the org's fiscal year began on fyStart (orgTime's month, default July).
+  const fsm = Number(input.org && input.org.fiscalStartMonth) || 7;
+  const fyStart = `${+asOf.slice(5, 7) >= fsm ? thisYear : thisYear - 1}-${String(fsm).padStart(2, "0")}-01`;
+  const ctx = { asOf, dataEnd, thisYear, fyStart, line, coverage, stats, importName, reviewed, outcomes: indexOutcomes(input.outcomes, asOf), linksDismissed: input.linksDismissed || new Set() };
   const cards = [];
   for (const make of LIBRARY) {
     const c = make(U, ctx, { gifts, people, units, unitOf });
@@ -574,17 +577,24 @@ function numbersOk(words, facts) {
 }
 
 const whoFor = (x, rung) => (rung === "major" ? "The director" : x.owner || "You");
-const firstName = x => {
-  const n = String(x.name || "").replace(/^(the|mr\.?|mrs\.?|ms\.?|dr\.?)\s+/i, "");
-  if (x.kind === "organisation" || x.kind === "organization" || /foundation|farm|club|inc|llc|company|fund/i.test(n)) return null;
-  return n.split(/\s+/)[0];
-};
-// "Hi Selin and Orlie" for a couple, "Hi Alin" for one person, "Hello" for an organisation
+// SWEEP-1 · WHAT A MOVE'S NOTE CALLS SOMEBODY is shared/greeting.js, the
+// one rule every other draft reads (FIX-45, FIX-56): the salutation, an
+// organisation's named contact or "friends at" it, both people of a couple.
+// This file had its own, which said "Hello" to every foundation and "Hi &" to
+// "Mr & Mrs. Dunwell". greeting.js is an ES module; insightsData awaits
+// `greetReady` before it runs the engine.
+let GREET = null;
+const greetReady = import("./shared/greeting.js").then(m => { GREET = m; return m; });
 const hello = x => {
-  const f = firstName(x);
-  if (!f) return "Hello";
-  const two = String(x.name || "").match(/^([A-Z][\w'-]+)\s+(?:&|and)\s+([A-Z][\w'-]+)\s/);
-  return two ? `Hi ${two[1]} and ${two[2]}` : `Hi ${f}`;
+  const u = x.unit || { people: [] };
+  const solo = u.people.length === 1 ? u.people[0] : null;
+  const org = u.people.length > 0 && !isPersonUnit(u);
+  const name = String(x.name || "").trim();
+  const g = GREET ? GREET.greetingName({ name, kind: org ? "organisation" : (solo && solo.kind), salutation: solo && solo.salutation,
+    contactName: solo && solo.contact_name, spouseName: solo && solo.spouse_name }) : "";
+  // no first name to use ("K Valon Lane", one word, a bare "&"): the whole name, formally
+  if (!g || /^[A-Za-z]\.?$/.test(g.split(/\s+/)[0]) || /^[&+]/.test(g) || !/\s/.test(name)) return `Dear ${g && !/^[&+]/.test(g) && /\s/.test(g) ? g : name}`;
+  return solo && solo.salutation || /^friends at /.test(g) || g === name ? `Dear ${g}` : `Hi ${g}`;
 };
 const yearsLine = x => Object.keys(x.byYear).sort().map(y => `${money(x.byYear[y])} (${y})`).join(", ");
 const windowWords = (from, to) => ({ from, to, words: from === to ? `on ${longDate(from)}` : `between ${longDate(from)} and ${longDate(to)}` });
@@ -620,16 +630,26 @@ const LIBRARY = [
     const y1 = ctx.thisYear - 1, from = `${y1}-12-01`, to = `${y1}-12-31`, season = `${ctx.thisYear}-11-01`;
     const xs = U.filter(x => reachable(x) && x.dated.some(g => g.date >= from && g.date <= to) && !x.dated.some(g => g.date >= season));
     if (!xs.length) return null;
+    // SWEEP-1: what they already gave this fiscal year is said, and the ask is
+    // last December's gift less it. A foundation that gave $25,000 in September
+    // was asked for last December's $50,000 on top. Given as much already: no move.
     const items = xs.map(x => {
       const dec = x.dated.filter(g => g.date >= from && g.date <= to).reduce((n, g) => n + g.amount_cents, 0);
+      const fy = x.dated.filter(g => g.date >= ctx.fyStart && g.date <= ctx.asOf).reduce((n, g) => n + g.amount_cents, 0);
+      if (fy >= dec) return null;
+      const ask = wholeDollars(dec - fy);
+      const since = longDate(ctx.fyStart).replace(/, \d{4}$/, "");
       const when = ctx.asOf <= `${ctx.thisYear}-11-15` ? windowWords(ctx.asOf > season ? ctx.asOf : season, `${ctx.thisYear}-11-15`) : windowWords(ctx.asOf, `${ctx.thisYear}-12-15`);
-      return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: dec,
-        what: `Gave ${money(dec)} in December ${y1}. Nothing yet this year-end.`,
-        facts: [[`December ${y1}`, money(dec)]],
+      return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: dec - fy,
+        what: fy > 0 ? `Gave ${money(dec)} in December ${y1}, and ${money(fy)} since ${since}. Nothing yet this year-end.` : `Gave ${money(dec)} in December ${y1}. Nothing yet this year-end.`,
+        facts: [[`December ${y1}`, money(dec)], ...(fy > 0 ? [[`since ${since}`, money(fy)], ["ask", money(ask)]] : [])],
         how: { who: whoFor(x, x.rung), channel: dec >= 100000 ? "Call" : "Note", when,
           say: `${hello(x)}, thank you for your gift last December. It mattered. We're planning this year's year-end and hoped we could count on you again.`,
-          ask: x.noAsk ? null : { cents: wholeDollars(dec), words: `Ask ${money(wholeDollars(dec))}: last December's gift.`, rule: "Retain asks last year's amount." } } };
-    });
+          ask: x.noAsk ? null : fy > 0
+            ? { cents: ask, words: `Ask ${money(ask)}: last December's ${money(dec)}, less the ${money(fy)} given since ${since}.`, rule: "Retain asks last year's amount, less what they have given this fiscal year." }
+            : { cents: wholeDollars(dec), words: `Ask ${money(wholeDollars(dec))}: last December's gift.`, rule: "Retain asks last year's amount." } } };
+    }).filter(Boolean);
+    if (!items.length) return null;
     return {
       kind: "year_end", rung: "retain", title: "Year-end givers due",
       what: c => `${plural(c.items.length, "giver")} gave ${money(c.items.reduce((n, i) => n + i.cents, 0))} in December ${y1} and haven't given this year-end yet.`,
@@ -990,6 +1010,11 @@ function buildDeck(cards) {
     for (const r of rest) m.facts.push(...r.facts);
     tabs.get(m.tab).moves.push(m);
   }
+  // SWEEP-1: how many of each group lead with this move; the rest are under a
+  // bigger one, and the card says so ("one of 86" under "74 second gifts").
+  const leads = {};
+  for (const t of tabs.values()) for (const m of t.moves) leads[m.kind] = (leads[m.kind] || 0) + 1;
+  for (const t of tabs.values()) for (const m of t.moves) m.group.elsewhere = Math.max(0, m.group.count - (leads[m.kind] || 0));
   const out = [];
   for (const t of tabs.values()) {
     t.moves.sort(t.key === "grow" ? byGrow : (a, b) => b.cents - a.cents || a.n - b.n);
@@ -1122,5 +1147,5 @@ function nextMoveFor(result, donorId) {
 
 module.exports = {
   RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
-  computeInsights, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
+  computeInsights, greetReady, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

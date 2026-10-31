@@ -254,7 +254,10 @@ export function validatePlan(raw, ctx = {}) {
 // "Amount raised · September 2026 · compared with September 2025 · by fund"
 export function planWords(plan, ctx = {}) {
   const m = METRICS[plan.metric];
-  const parts = [plan.kind === "who" ? `The people behind ${m.label.toLowerCase()}` : m.label];
+  // SWEEP-1: a list's heading says who it is ("The people behind donors" read like code)
+  const WHO = { raised: "Who gave the most", donor_count: "Who gave", new_donor_count: "Who gave for the first time", recaptured_count: "Who came back",
+    lapsed_count: "Who lapsed", recurring_donors: "Who gives monthly", volunteer_count: "Who volunteers", gift_count: "Who gave", largest_gift: "Who gave the largest gifts" };
+  const parts = [plan.kind === "who" ? (WHO[plan.metric] || `Who is in ${m.label.toLowerCase()}`) : m.label];
   const cur = plan.period && plan.period.kind !== "today" ? resolvePeriod(plan.period, ctx) : null;
   if (cur) parts.push(cur.label);
   else if (plan.period && plan.period.kind === "today" && plan.metric !== "campaign_progress") parts.push("today");
@@ -325,6 +328,7 @@ export function templatePlan(text, ctx = {}) {
   let putBack = "";
   const take = (re, fn) => { re.lastIndex = 0; const hit = re.test(s); re.lastIndex = 0; if (hit) { s = s.replace(re, (...a) => { fn(...a); return " "; }); s += putBack; putBack = ""; } return hit; };
   let saidByName = false;
+  const M0 = v => { if (!out.metric) out.metric = v; };
   const say = w => { saidByName = true; unsupported = unsupported ? `${unsupported}, ${w}` : w; };
 
   // Things the catalog cannot do, said by name.
@@ -358,6 +362,8 @@ export function templatePlan(text, ctx = {}) {
   take(/\b(?:in|from|zip(?: code)?|zipcode) (\d{5})\b/g, (m, z) => { rules.zip = z; });
   // The people: "top 20 donors", "who gave for the first time".
   take(/\b(my |our |the )?top (\d{1,3}) (donors|givers|supporters)\b/g, (m, a, n) => { out.top = Number(n); out.kind = "who"; out.metric = "raised"; });
+  // SWEEP-1: "who are our top donors?" with no number is the top ten
+  take(/\b(my |our |the )?(top|biggest|largest|best) (donors|givers|supporters)\b/g, () => { out.top = out.top || 10; out.kind = "who"; out.metric = "raised"; });
   take(/\bwho gave for the first time\b|\bgave for the first time\b/g, () => { out.kind = /\bwho\b/.test(String(text).toLowerCase()) ? "who" : "metric"; out.metric = "new_donor_count"; });
   take(/\bwhich (campaign|appeal|fund|event)s? (raised|brought in|did) (the )?(most|best)\b/g, (m, w) => { out.groupBy = w === "appeal" ? "campaign" : w; out.metric = "raised"; });
   // FIX-45 1.6: every way of asking who came back is the same count: "who came
@@ -420,6 +426,17 @@ export function templatePlan(text, ctx = {}) {
     if (ev && /\b(do|bring|revenue|night)\b/.test(String(text).toLowerCase())) { out.filters.event = ev.id; delete out.filters.campaign; }
   }
 
+  // SWEEP-1: "how is the Annual Fund doing?" names something. A fund, appeal
+  // or event on file was read above and taken out of the question; a name
+  // still here is one Steward doesn't have, and it is said, never dropped
+  // (it was answered with all giving under the Annual Fund's question).
+  take(/\bhow (?:is|did|was|are) (?:the |our )([a-z0-9' -]{3,40}?) (?:do|doing|going)\b/g, (m, w) => {
+    if (/^(year|month|quarter|week|fiscal year|giving|fundraising|money)$/.test(w.trim())) M0("raised");
+    else say(`nothing called ${w.trim()}`);
+  });
+  // the fund, appeal or event was read above, which leaves "how is   doing"
+  take(/\bhow (?:is|did|was|are)\s+(?:do|doing|going)\b/g, () => M0("raised"));
+
   // Periods. FIX-49: one reader (periodTakes), which a question about one
   // person ("how much has Margaret given this year?") reads too.
   const P = v => { if (!out.period) { out.period = v; out._periodSaid = true; } };
@@ -462,6 +479,8 @@ export function templatePlan(text, ctx = {}) {
   take(/\b(largest|biggest|top) (single )?(gift|donation)\b/g, () => M("largest_gift"));
   take(/\bhow many (gifts|donations)\b|\bnumber of (gifts|donations)\b|\bgift count\b/g, () => M("gift_count"));
   take(/^\s*gifts\b/g, () => M("gift_count"));
+  // SWEEP-1: "how many donors do we have?" is everyone who has given, not this year's givers
+  take(/\bhow many (donors|givers|supporters) (do|have) (we|i) (have|got)\b/g, () => { M("donor_count"); if (!out.period) out.period = { kind: "all_time" }; });
   take(/\bhow many (people|donors|givers|supporters)( gave)?\b|\bnumber of donors\b|\bdonor count\b|\bhow many gave\b/g, () => M("donor_count"));
   take(/\bhow much (did we |have we |has |was |is )?(raise|raised|come in|came in|bring in|brought in|make|made|give|given)\b|\bhow much\b|\b(total )?(amount )?raised\b|\btotal giving\b|\b(revenue|income|giving|donations)\b|\bhow (did|is|was) (it|the [a-z0-9 -]+?) do(ing)?\b|\bhow did (it|we) do\b|\bbring in\b|\bcame in\b|\bcome in\b/g, () => M("raised"));
   if (out._who === "monthly" && /\bhow many\b/.test(String(text).toLowerCase()) && (!out.metric || out.metric === "donor_count")) { out.metric = "recurring_donors"; delete rules.monthly; }
@@ -597,6 +616,9 @@ export function readPlanTool(content) {
 export function refusalSentence(what) {
   const w = String(what || "").trim();
   if (!w || w === "that question") return "Steward can't answer that one yet. We've noted it.";
+  // SWEEP-1: a fund, appeal or event the question named and the org doesn't have
+  const none = w.match(/^nothing called (.+)$/);
+  if (none) return `There's no fund, appeal or event called "${none[1].replace(/\b[a-z]/g, c => c.toUpperCase())}" in Steward. Ask about one you have, or how much you've raised this year.`;
   return `Steward can't answer ${/^(breaking|comparing|filtering|naming|the |that |a |an )/.test(w) ? w : `"${w}"`} yet. We've noted the question.`;
 }
 
