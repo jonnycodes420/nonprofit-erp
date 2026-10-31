@@ -6,8 +6,10 @@
 // only the screen could rebuild (lib/recentUndo.js). Each Undo runs against
 // the row as it is NOW on the server, never against what a screen drew before,
 // and every screen that listens for UNDONE reloads afterwards.
-import { WhatChanged } from "./WhatChanged";   // AGENT-5: the Agent page's What changed
-import { useEffect, useState } from "react";
+import { retryImport } from "../lib/lazyRetry";
+// AGENT-5: the Agent page's What changed. SWEEP-6: loaded when it is shown.
+const WhatChanged = lazy(() => retryImport(() => import("./WhatChanged")).then(m => ({ default: m.WhatChanged })));
+import { useEffect, useState, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
@@ -91,8 +93,8 @@ export function RecentChangesPanel({ onClose }) {
         <div style={{ borderTop: "1px solid " + T.bg3, marginTop: 10, paddingTop: 10 }}>
           <button type="button" data-testid="recent-what-changed" onClick={() => setShowChanged(v => !v)} style={{ ...linkBtn, color: T.greenDk, fontWeight: 800, fontSize: 13 }}>
             {showChanged ? "Hide" : "Show"} what your imports changed</button>
-          {showChanged && <div style={{ marginTop: 10 }}><WhatChanged isReadOnly={false} wide={false}
-            onNavigate={(t, o) => { onClose(); window.dispatchEvent(new CustomEvent("steward:go", { detail: { tab: t, opts: o } })); }} /></div>}
+          {showChanged && <div style={{ marginTop: 10 }}><Suspense fallback={null}><WhatChanged isReadOnly={false} wide={false}
+            onNavigate={(t, o) => { onClose(); window.dispatchEvent(new CustomEvent("steward:go", { detail: { tab: t, opts: o } })); }} /></Suspense></div>}
         </div>
       </div>
     </Modal>

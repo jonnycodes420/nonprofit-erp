@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, useMemo } from "react";
+import { useState, useEffect, Fragment, useMemo, lazy, Suspense } from "react";
 import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
 import { apiFetch, adaptDonor, prefetch } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
@@ -7,7 +7,6 @@ import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, loadContextPeople, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
-import { PinnedAnswers } from "./AskPanel";
 import { SkeletonBar } from "./Skeleton";
 import { HOME_FIRST_READS, RAIL_READS, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
@@ -19,15 +18,12 @@ import { rowFigure } from "../../../shared/threadFigures";
 import { Figure } from "./Figure";
 import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
-import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
-import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import { SuggestedAskLine } from "./ScoreWhy";
 
-import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
 import { MorningBrief } from "./MeetingPanels";
@@ -40,12 +36,27 @@ import { Linked, RefLink } from "./Linked";
 import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
 import { AskHero } from "./AskRail";
-import { openTellSteward } from "./TellSteward";   // AGENT-5: one input, Atlas over the page
+import { retryImport } from "../lib/lazyRetry";
+
+// SWEEP-6 (PERF-1): what Home opens on a click loads on that click, so a
+// phone's first look downloads Home and not its panels.
+const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
+const YourWords = lazy(() => retryImport(() => import("./YourWords")).then(m => ({ default: m.YourWords })));
+const PlanFollowUpModal = lazy(() => retryImport(() => import("./PlanFollowUp")).then(m => ({ default: m.PlanFollowUpModal })));
+const PinnedAnswers = lazy(() => retryImport(() => import("./AskPanel")).then(m => ({ default: m.PinnedAnswers })));
+const Breakdown = p => p.open ? <Suspense fallback={null}><MetricBreakdownPanel {...p}/></Suspense> : null;
+// Most orgs pin nothing: the pins' code loads only when there is a pin to draw.
+function PinsIfAny({ isReadOnly }) {
+  const [n, setN] = useState(0);
+  useEffect(() => { apiFetch("/ask/pins").then(r => setN(((r && r.pins) || []).length)).catch(() => {}); }, []);
+  return n ? <PinsIfAny isReadOnly={isReadOnly}/> : null;
+}
+import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
 import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
-import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads } from "./HomeRail";   // HOME-4
+import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn } from "./HomeRail";   // HOME-4, PROFILE-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 import { countLabel, countWords, plural } from "../../../shared/countWords";
 
@@ -2270,7 +2281,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 rail of questions the org's own records can answer. An
                 answer's step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <PinnedAnswers isReadOnly={isReadOnly}/>
+              <Suspense fallback={null}><PinnedAnswers isReadOnly={isReadOnly}/></Suspense>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
             {threadsData&&!threadsData.failed&&threadList.length===0&&(
@@ -2863,7 +2874,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     );
   })();
   // HOME-4: the rail column stretches beside the work; what is in it stays in view (sticky) on a wide screen.
-  const todayRail=<div className="home-rail"><div className="home-rail-inner">{railBody}</div></div>;
+  const todayRail=<HomeRailColumn>{railBody}</HomeRailColumn>;
 
   const impactVisible=!!impact&&((impact.atRiskAmount||0)>0||(impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
@@ -3294,7 +3305,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 
-      <MetricBreakdownPanel
+      <Breakdown
         open={debtBreakdownOpen}
         onClose={()=>setDebtBreakdownOpen(false)}
         title="Stewardship Debt"
@@ -3313,7 +3324,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         onSelectDonor={goToDonorFromBreakdown}
       />
 
-      <MetricBreakdownPanel
+      <Breakdown
         open={retentionBreakdownOpen}
         onClose={()=>setRetentionBreakdownOpen(false)}
         title="Donor Retention Rate"
@@ -3331,7 +3342,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         onSelectDonor={goToDonorFromBreakdown}
       />
 
-      <MetricBreakdownPanel
+      <Breakdown
         open={reengBreakdownOpen}
         onClose={()=>setReengBreakdownOpen(false)}
         title="Money at risk"
@@ -3349,7 +3360,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         onSelectDonor={goToDonorFromBreakdown}
       />
 
-      <MetricBreakdownPanel
+      <Breakdown
         open={portfolioBreakdown.open}
         onClose={closePortfolioBreakdown}
         title={PORTFOLIO_BREAKDOWNS[portfolioBreakdown.key]?.title||""}
@@ -3364,10 +3375,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
       {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
-      {wordsOpen&&<YourWords mode="first-run" onClose={()=>setWordsOpen(false)}
-        onDone={()=>{setWordsOpen(false);setWordsDone(true);if(setData)setData(d=>({...d,org:{...d.org,vocabularySetAt:new Date().toISOString()}}));}}/>}
-      {planFor&&<PlanFollowUpModal donor={planFor.donor}
-        onSaved={()=>{loadThreads();}} onClose={()=>setPlanFor(null)}/>}
+      {wordsOpen&&<Suspense fallback={null}><YourWords mode="first-run" onClose={()=>setWordsOpen(false)}
+        onDone={()=>{setWordsOpen(false);setWordsDone(true);if(setData)setData(d=>({...d,org:{...d.org,vocabularySetAt:new Date().toISOString()}}));}}/></Suspense>}
+      {planFor&&<Suspense fallback={null}><PlanFollowUpModal donor={planFor.donor}
+        onSaved={()=>{loadThreads();}} onClose={()=>setPlanFor(null)}/></Suspense>}
     </div>
   );
 }

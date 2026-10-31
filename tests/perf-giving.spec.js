@@ -4,7 +4,7 @@
 //
 //   · Largest Contentful Paint under 2.5 s
 //   · usable (the form is on the screen and the main thread has gone quiet)
-//     under 3 s
+//     under 2.5 s (SWEEP-6 lowered it from 3 s; every page measured 2.2 s)
 //   · under 200 KB of JavaScript over the wire
 //
 // THE PHONE. Lighthouse's mobile profile (Moto G Power), as tests/lib/phone.js
@@ -39,7 +39,7 @@ const DIST = path.join(ROOT, "client", "dist");
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const ORG = "org_perfgive", SLUG = "perf-give-harbor";
-const BUDGET = { lcp: 2500, usable: 3000, jsBytes: 200 * 1024 };
+const BUDGET = { lcp: 2500, usable: 2500, jsBytes: 200 * 1024 };
 const { PHONE, SLOW_4G: NET, cpuRate } = require("./lib/phone");
 let CPU = 4;   // set from cpuRate() before the first page
 
@@ -167,7 +167,7 @@ async function measure(browser, p) {
   for (const r of results) {
     ok(`${r.name}: the page draws and can be used (${r.url})`, r.ready && !r.errors.length, { ready: r.ready, errors: r.errors });
     ok(`${r.name}: Largest Contentful Paint under 2.5 s on a phone (${r.lcp} ms)`, r.lcp > 0 && r.lcp < BUDGET.lcp, r.lcp);
-    ok(`${r.name}: usable under 3 s on a phone (${r.usable} ms)`, r.usable > 0 && r.usable < BUDGET.usable, r.usable);
+    ok(`${r.name}: usable under 2.5 s on a phone (${r.usable} ms)`, r.usable > 0 && r.usable < BUDGET.usable, r.usable);
     ok(`${r.name}: under 200 KB of JavaScript (${r.jsKB} KB)`, r.jsKB * 1024 < BUDGET.jsBytes, r.jsKB);
   }
   summary();

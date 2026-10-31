@@ -55,8 +55,8 @@ const assetDir = path.join(DIST, "assets");
 const distJs = fs.existsSync(assetDir) ? fs.readdirSync(assetDir).filter(f => f.endsWith(".js")) : [];
 if (!distJs.some(f => fs.readFileSync(path.join(assetDir, f), "utf8").includes(API_ORIGIN)))
   skip("client/dist not built against the local API");
-let chromium;
-try { ({ chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); }
+let chromium, PW_ALL;
+try { ({ chromium } = PW_ALL = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); }
 catch { skip("Playwright not found (set PLAYWRIGHT_DIR)"); }
 
 // ── the routes, read from the registry rather than listed here ────────────
@@ -80,7 +80,9 @@ function routes() {
 }
 
 // PROFILE-1 (header): one row of ten tabs, found by data-tab.
-const PROFILE_TABS = ["overview", "gifts", "asks", "conversations", "emails", "tasks", "notes", "funds", "related", "files"];
+// PROFILE-2: seven tabs (Giving holds gifts, asks and funds); "related" is the
+// rail's Household and related, opened from Manage, walked as its own leg.
+const PROFILE_TABS = ["activity", "giving", "conversations", "emails", "tasks", "notes", "files", "related"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
 const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", p2p: "Peer-to-peer" };
@@ -181,7 +183,7 @@ async function eventsAndPledgesSayNothingWrong(browser) {
       if (tab) await page.getByRole("button", { name: tab, exact: true }).first().click().catch(e => trouble.push(`the ${tab} tab: ${e.message.slice(0, 60)}`));
       await page.waitForTimeout(500);
       // only the swept screens: each wears .no-caps at its root
-      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].map(n => n.innerText).join("\n"));
+      const text = await page.evaluate(() => [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps")).map(n => n.innerText).join("\n"));
       const said = SAYS.filter(([re]) => re.test(text)).map(([, w]) => w);
       const caps = [...new Set(text.split("\n").map(l => l.trim()).filter(l => /^[A-Z][A-Z0-9 ·&'’,\-\/()]{3,}$/.test(l) && /[A-Z]{4}/.test(l)))].slice(0, 6);
       const where = `${name} (${what}, ${width})`;
@@ -611,6 +613,194 @@ async function publicPagesUnderTheCsp(browser) {
   await ctx.close();
 }
 
+// ── PROFILE-2 Part 1 · EVERY PAGE SCROLLS AS ONE PAGE ─────────────────────
+// Justin's Place, 29 Oct: the donor profile was a fixed panel with overflow
+// hidden, its 540px header scrolled nowhere and the two columns under it each
+// had their own scrollbar, so the wheel did nothing over most of the screen
+// (HOTFIX-1 e4c1dfe made it fixed; INSIGHTS-1 ff4302b and IMPORT-5 58cc062 grew
+// the header). The event page and the grant profile had the same shape. Here,
+// in Chromium AND WebKit, at 1440x900 and 390x844, on each page:
+//   · a wheel turn over the main column moves the window (when the page is
+//     taller than the screen, which the profile and the event page must be);
+//   · Page Down moves it too, and at the very bottom the last element is on screen;
+//   · nothing has its own vertical scrollbar except the allowed: the app's nav
+//     sidebar, a select/textarea/pre, a listbox, and a pick-list marked
+//     data-own-scroll (the event's 195-guest seating list and its people picker).
+// HOW IT GOES RED ON MAIN: the profile's window never moves (it is position
+// fixed) and dp-main-column / dp-right-rail / donor-profile-body scroll alone;
+// the event page's event-detail-body does the same.
+async function everyPageScrolls(pw, auth) {
+  const { q } = require("./helpers");
+  const orgId = auth.org && auth.org.id;
+  const [rich] = await q("SELECT donor_id FROM gifts WHERE org_id=$1 AND donor_id IS NOT NULL GROUP BY donor_id ORDER BY count(*) DESC LIMIT 1", [orgId]);
+  const [ev] = await q("SELECT id FROM events WHERE org_id=$1 ORDER BY date DESC NULLS LAST LIMIT 1", [orgId]);
+  const [gr] = await q("SELECT id FROM grants WHERE org_id=$1 LIMIT 1", [orgId]).catch(() => []);
+  ok("§scroll the walked org has a donor with gifts and an event", !!rich && !!ev, { rich, ev });
+  const pages = ["/dashboard", "/donors", rich && `/donors/${rich.donor_id}`, "/app/fundraising", "/app/events", "event", "/app/communications", "/app/finance", "/app/reports", "/app/settings", gr && "grant"].filter(Boolean);
+  const MUST_BE_LONG = new Set([rich && `/donors/${rich.donor_id}`, "event"]);
+  for (const engine of ["chromium", "webkit"]) {
+    if (!pw[engine]) { ok(`§scroll ${engine} is installed`, false, "no " + engine + " in Playwright"); continue; }
+    const br = await pw[engine].launch();
+    for (const [w, h] of [[1440, 900], [390, 844]]) {
+      const ctx = await br.newContext({ viewport: { width: w, height: h } });
+      await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+        [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+      const page = await ctx.newPage();
+      for (const where of pages) {
+        const tag = `§scroll ${engine} ${w} ${where}`;
+        if (where === "event" || where === "grant") {
+          const tab = where === "event" ? "events" : "grants";
+          await page.goto(`${APP}/app/${tab}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+          if (where === "event") {
+            const all = page.getByRole("button", { name: "All", exact: true });
+            if (await all.count()) await all.first().click();
+            await page.waitForTimeout(400);
+            const m = page.getByRole("button", { name: /Manage/ });
+            if (!(await m.count())) { ok(`${tag} — an event opens`, false, "no Manage button"); continue; }
+            await m.first().click();
+            await page.locator("[data-testid=event-detail]").waitFor({ timeout: 8000 }).catch(() => {});
+          } else {
+            const g = page.locator("[data-testid^=grant-card], [data-testid=grant-row]").first();
+            if (!(await g.count())) { console.log(`  SKIP  ${tag} — no grant card to open`); continue; }
+            await g.click();
+            await page.locator("[data-testid=grant-profile]").waitFor({ timeout: 8000 }).catch(() => {});
+          }
+        } else {
+          await page.goto(APP + where, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+        }
+        await page.waitForTimeout(700);
+        const docH = await page.evaluate(() => document.documentElement.scrollHeight);
+        if (MUST_BE_LONG.has(where)) ok(`${tag} — the page is taller than the screen (it is one page)`, docH > h + 50, { docH, h });
+        if (docH > h + 50) {
+          await page.evaluate(() => window.scrollTo(0, 0));
+          const x = w < 500 ? Math.round(w / 2) : Math.round(240 + (w - 240) * 0.35);
+          await page.mouse.move(x, Math.round(h * 0.55));
+          // Headless WebKit on Linux (CI) does not scroll for an emulated wheel on
+          // ANY page, Home included (PR #277's first run: every WebKit wheel leg
+          // red, every WebKit Page Down leg green). There the keys below carry
+          // WebKit; the wheel is checked in Chromium everywhere and in WebKit on a Mac.
+          if (engine === "webkit" && process.platform === "linux") console.log(`  SKIP  ${tag} — the wheel (headless WebKit on Linux does not emulate it); Page Down below`);
+          else {
+            await page.mouse.wheel(0, 500);
+            await page.waitForTimeout(350);
+            ok(`${tag} — the wheel over the main column moves the page`, (await page.evaluate(() => window.scrollY)) > 0);
+          }
+          await page.evaluate(() => { window.scrollTo(0, 0); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); });
+          // The keys go to the page itself: the document is focused (a click to
+          // give it focus can land on a control, which then takes the key).
+          await page.evaluate(() => { document.body.setAttribute("tabindex", "-1"); document.body.focus({ preventScroll: true }); });
+          await page.keyboard.press("PageDown");
+          const moved = await page.waitForFunction(() => window.scrollY > 0, null, { timeout: 2000 }).then(() => true).catch(() => false);
+          await page.evaluate(() => document.body.removeAttribute("tabindex"));
+          ok(`${tag} — Page Down moves the page`, moved);
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+          await page.waitForTimeout(300);
+          // The lowest thing a person can see: visible, sized, and not inside a
+          // closed fold or a box that scrolls on its own (the allowed ones).
+          const last = await page.evaluate(() => {
+            const root = document.querySelector(".app-content") || document.body;
+            let low = { bottom: 0, what: "" };
+            for (const el of root.querySelectorAll("*")) {
+              const r = el.getBoundingClientRect();
+              if (!r.width || !r.height) continue;
+              if (el.checkVisibility && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+              if (el.closest("details:not([open]) > :not(summary)")) continue;
+              let p = el.parentElement, boxed = false;
+              while (p && p !== root) { const s = getComputedStyle(p); if (/(auto|scroll|hidden|clip)/.test(s.overflowY) && p.scrollHeight > p.clientHeight + 2) { boxed = true; break; } p = p.parentElement; }
+              if (boxed) continue;
+              if (r.bottom > low.bottom) low = { bottom: Math.round(r.bottom), what: (el.innerText || el.tagName).slice(0, 40) };
+            }
+            return { ...low, vh: innerHeight };
+          });
+          ok(`${tag} — at the bottom, the last element is on screen`, last.bottom <= last.vh + 2, last);
+        }
+        const stray = await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => {
+          const s = getComputedStyle(el);
+          if (!/(auto|scroll)/.test(s.overflowY) || el.scrollHeight <= el.clientHeight + 2 || el.clientHeight < 30) return false;
+          if (["SELECT", "TEXTAREA", "PRE", "CODE"].includes(el.tagName)) return false;
+          if (el.closest(".app-sidebar,[role=listbox],[role=dialog],[aria-modal=true],[data-own-scroll]")) return false;
+          return true;
+        }).map(el => (el.dataset.testid || (typeof el.className === "string" && el.className) || el.tagName).slice(0, 40)));
+        ok(`${tag} — no section has its own scrollbar`, stray.length === 0, stray);
+      }
+      await ctx.close();
+    }
+    await br.close();
+  }
+}
+
+// ── PROFILE-2 · THE PROFILE'S LAYOUT ──────────────────────────────────────
+// The approved layout, held where a defect would show: at 1440 and 1280 the
+// green rail starts under the top bar and is still in view after a long
+// scroll; the header carries at most two tags and none of the ladder's rung
+// chips (the second tag set that read "Major, New" beside "Major, Steady");
+// the seven tabs sit on one line; a person with no next move gets the one
+// quiet line; at 390 the order is header, numbers, next move, Next step, tabs,
+// timeline, then the rest of the rail.
+// HOW IT GOES RED ON MAIN: the rail starts 540px down, the ladder chips are in
+// the header, and there is no phone order (dp-phone-top does not exist).
+async function profileLayout(pw, auth) {
+  const { q } = require("./helpers");
+  const orgId = auth.org && auth.org.id;
+  const [rich] = await q("SELECT donor_id FROM gifts WHERE org_id=$1 AND donor_id IS NOT NULL GROUP BY donor_id ORDER BY count(*) DESC LIMIT 1", [orgId]);
+  const [none] = await q("SELECT d.id FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id) LIMIT 1", [orgId]);
+  if (!rich) { ok("§layout the org has a donor with gifts", false); return; }
+  const br = await pw.chromium.launch();
+  const open = async (w, h, id) => {
+    const ctx = await br.newContext({ viewport: { width: w, height: h } });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
+    const page = await ctx.newPage();
+    await page.goto(`${APP}/donors/${id}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
+    await page.locator("[data-testid=dp-band]").waitFor({ timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    return { ctx, page };
+  };
+  for (const w of [1440, 1280]) {
+    const { ctx, page } = await open(w, 900, rich.donor_id);
+    const r = await page.evaluate(() => {
+      const rail = document.querySelector("[data-testid=dp-right-rail]");
+      const tabs = [...document.querySelectorAll("[data-testid=dp-tabs] [role=tab]")];
+      const prof = document.querySelector("[data-testid=donor-profile]");
+      return { railTop: rail && prof ? Math.round(rail.getBoundingClientRect().top - prof.getBoundingClientRect().top) : null, railBg: rail ? getComputedStyle(rail).backgroundColor : null,
+        headTags: document.querySelectorAll("[data-testid^=dp-head-tag-]").length, rung: document.querySelectorAll("[data-testid=ladder-rung]").length,
+        tabRows: new Set(tabs.map(t => Math.round(t.getBoundingClientRect().top))).size, tabs: tabs.map(t => t.dataset.tab) };
+    });
+    ok(`§layout ${w} the rail starts at the top of the profile`, r.railTop !== null && Math.abs(r.railTop) <= 2, r.railTop);
+    ok(`§layout ${w} the rail is the profile's green`, r.railBg === "rgb(18, 41, 28)", r.railBg);
+    ok(`§layout ${w} the header has at most two tags and no ladder chips`, r.headTags <= 2 && r.rung === 0, r);
+    ok(`§layout ${w} the seven tabs sit on one line`, r.tabRows === 1 && r.tabs.join() === "activity,giving,conversations,emails,tasks,notes,files", r);
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(300);
+    const stuck = await page.evaluate(() => { const b = document.querySelector("[data-testid=dp-right-rail]").getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), vh: innerHeight }; });
+    ok(`§layout ${w} after a long scroll the rail is still in view`, stuck.top < stuck.vh && stuck.bottom > 0, stuck);
+    await ctx.close();
+  }
+  if (none) {
+    const { ctx, page } = await open(1440, 900, none.id);
+    const n = await page.evaluate(() => ({ quiet: !!document.querySelector("[data-testid=dp-next-move-none]"), card: !!document.querySelector("[data-testid=profile-next-move]"),
+      text: (document.querySelector("[data-testid=dp-next-move-none]") || {}).innerText || "" }));
+    ok("§layout a person with no next move gets one quiet line, not a card", n.quiet && !n.card && /^Nothing due for .+ right now\.$/.test(n.text), n);
+    await ctx.close();
+  } else console.log("  SKIP  §layout no next move — every person in this org has a gift");
+  {
+    const { ctx, page } = await open(390, 844, rich.donor_id);
+    const order = await page.evaluate(() => {
+      const y = sel => { const e = document.querySelector(sel); return e ? Math.round(e.getBoundingClientRect().top + scrollY) : null; };
+      return { head: y("[data-testid=dp-head]"), figures: y("[data-testid=dp-header-figures]"), top: y("[data-testid=dp-phone-top]"), next: y("[data-testid=dp-phone-top] [data-testid=dp-next]"),
+        tabs: y("[data-testid=dp-tabs]"), timeline: y("[data-testid=dp-timeline]"), about: y("[data-testid=dp-rail-about]"), wide: document.documentElement.scrollWidth > innerWidth + 1 };
+    });
+    const seq = ["head", "figures", "top", "next", "tabs", "timeline", "about"].map(k => order[k]);
+    ok("§layout 390 the order is header, numbers, next move, Next step, tabs, timeline, then the rail", seq.every(v => v !== null) && seq.every((v, i) => i === 0 || v > seq[i - 1]), order);
+    ok("§layout 390 no sideways page scroll", !order.wide, order);
+    const small = await page.evaluate(() => [...document.querySelectorAll("[data-testid=dp-head] button, [data-testid=dp-head] a, [data-testid=dp-tabs] [role=tab]")]
+      .filter(e => e.offsetParent && !e.closest(".dph-tags")).map(e => ({ t: (e.innerText || e.getAttribute("aria-label") || "").slice(0, 20), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44 && x.t !== "+"));
+    ok("§layout 390 the header's buttons and the tabs are at least 44px tall", small.length === 0, small);
+    await ctx.close();
+  }
+  await br.close();
+}
+
 // SWEEP-3 · COMMUNICATIONS, AUTOMATIC EMAIL, GOING OUT AND JOURNEYS, EVERY
 // SCREEN, ON TWO ORGS. Every Communications tab (Overview, Campaigns,
 // Templates and its Brand and Media library, Audience, Analytics, Sequences,
@@ -677,7 +867,9 @@ async function commsScreensSayNothingWrong(browser) {
       await page.waitForFunction(() => !/Loading|Counting who/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(400);
       const r = await page.evaluate(() => {
-        const roots = [...document.querySelectorAll(".no-caps")];
+        // Outermost only: SWEEP-6 put .no-caps on the app root too, and a
+        // nested root would read every line twice.
+        const roots = [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps"));
         const caps = [];
         for (const root of roots) for (const el of root.querySelectorAll("*")) {
           if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
@@ -854,8 +1046,104 @@ async function moneyScreensSayNothingWrong(browser) {
   }
 }
 
+// SWEEP-6 · THE GIVING SIDE AND THE PHONE SAY NOTHING WRONG. A donor's pages
+// (the org's form, a giving page, memberships, an event, each thank-you) at a
+// phone's 390 and at 1440, and Allie's phone (Home, a profile, To confirm,
+// Recurring, Giving pages, Memberships) at 390, on an org that is connected to
+// Stripe and does not email receipts. Each screen fails on what the bar names
+// mechanically: "Not set", undefined, NaN, null, a hole or a [placeholder], an
+// ALL-CAPS label, a sideways scroll, a console error or a 4xx/5xx, and on a
+// phone a tab or a giving-page button under 44px. Two promises are checked by
+// what they say: after a monthly checkout the thank-you does not promise a
+// receipt the org will not send, and a membership comes back to a welcome, not
+// to "your gift". Red on main (see the SWEEP-6 PR).
+async function givingSideAndPhoneSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q, civilPlusDays } = require("./helpers");
+  const ORG = "org_sweep6_give", SLUG = "sweep6-give";
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_account_id,stripe_connected,receipts_enabled,legal_name,ein,receipt_address)
+           VALUES ($1,'Sweep6 Harbor Place',$2,1,'active','team','America/New_York','acct_sweep6give',true,false,'Sweep6 Harbor Place, Inc.','12-3456789','4 Pier Road, Salem, MA 01970')`, [ORG, SLUG]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + ORG, ORG, `${ORG}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+  for (let i = 1; i <= 6; i++) {
+    await q(`INSERT INTO donors (id,org_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,$4,'system:test','test')`, [`d_${ORG}_${i}`, ORG, `Walk Giver ${i}`, i % 2 ? `giver${i}@example.org` : null]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'Check','system:test','test')`,
+      [`g_${ORG}_${i}`, ORG, `d_${ORG}_${i}`, 50 * i, civilPlusDays(-40 * i)]);
+  }
+  await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,stripe_customer_id,amount,interval,status)
+           VALUES ('rsub_sweep6',$1,$2,'sub_sweep6give','cus_sweep6give',25,'month','past_due')`, [ORG, `d_${ORG}_1`]);
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,term,created_by,created_by_name) VALUES ('ml_sweep6',$1,'Friend',60,'12_months','system:test','test')`, [ORG]);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,location,public_slug,status,created_by,created_by_name) VALUES ('ev_sweep6',$1,'Lantern Supper','gala',$2,'The hall','sweep6-supper','upcoming','system:test','test')`, [ORG, civilPlusDays(30)]);
+  await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,capacity,position,created_by,created_by_name) VALUES ('el_sweep6',$1,'ev_sweep6','ticket','Supper seat',75,40,120,0,'system:test','test')`, [ORG]);
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,story,status,created_by,created_by_name) VALUES ('gp_sweep6',$1,'year-end','Close the year with us','A gift before December 31 carries the work into the new year.','active','system:test','test')`, [ORG]);
+  const a = (await api("POST", "/auth/login", null, { email: `${ORG}@test.local`, password: "loadtest1234" })).body;
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"], [/\[object Object\]/, "an object"],
+    [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"], [/\bInvalid Date\b/, "Invalid Date"]];
+  const PUBLIC = [["the org's form", `/give/${SLUG}`], ["a giving page", `/give/${SLUG}/year-end`], ["memberships", `/give/${SLUG}?memberships`],
+    ["an event", `/e/sweep6-supper`], ["thank-you, one-time", `/give/${SLUG}?donated=true`], ["thank-you, monthly", `/give/${SLUG}?donated=true&r=1`],
+    ["welcome, membership", `/give/${SLUG}?joined=1&r=1`], ["card updated", `/give/${SLUG}?card_updated=true`]];
+  const PHONE = [["Home", "/dashboard"], ["a profile", `/donors/d_${ORG}_1`], ["To confirm", "/app/fundraising?fr=toconfirm"],
+    ["Recurring", "/app/fundraising?fr=recurring"], ["Giving pages", "/app/fundraising?fr=pages"], ["Memberships", "/app/fundraising?fr=members"]];
+  const walk = async (screens, width, signedIn) => {
+    const ctx = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1000 }, isMobile: width < 500, hasTouch: width < 500, serviceWorkers: "block" });
+    if (signedIn) await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    const out = {};
+    for (const [name, url] of screens) {
+      await page.goto(APP + url, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(([SAYS_SRC, phone]) => {
+        const m = document.querySelector(".app-content") || document.body;
+        const says = SAYS_SRC.map(([src, n]) => [new RegExp(src), n]);
+        const bad = [];
+        for (const line of (m.innerText || "").split("\n")) for (const [re, n] of says) if (re.test(line)) bad.push(`${n}: ${line.trim().slice(0, 100)}`);
+        const caps = [];
+        for (const el of document.body.querySelectorAll("*")) {
+          if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+          if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+        }
+        const small = !phone ? [] : [...document.querySelectorAll("[role=tab],[data-fr-part],.g3 button,[data-testid=membership-join]")]
+          .filter(el => el.offsetParent).map(el => [((el.innerText || el.getAttribute("aria-label") || "").trim().split("\n")[0]).slice(0, 30), Math.round(el.getBoundingClientRect().height)])
+          .filter(([, h]) => h > 0 && h < 44);
+        return { bad: bad.slice(0, 4), caps: caps.slice(0, 4), small: small.slice(0, 4), sideways: document.documentElement.scrollWidth - innerWidth,
+                 text: (m.innerText || "").trim(), title: document.title };
+      }, [SAYS.map(([re, n]) => [re.source, n]), width < 500]);
+      ok(`§sweep6 ${name} at ${width}: draws, says nothing the bar names, no ALL-CAPS label, no sideways scroll${width < 500 ? ", 44px taps" : ""}, nothing on fire`,
+         r.text.length > 0 && !r.bad.length && !r.caps.length && r.sideways <= 0 && !r.small.length && !trouble.length,
+         { bad: r.bad, caps: r.caps, small: r.small, sideways: r.sideways, trouble: trouble.slice(0, 3) });
+      trouble = [];
+      out[name] = r.text;
+    }
+    await ctx.close();
+    return out;
+  };
+  for (const w of [390, 1440]) {
+    const said = await walk(PUBLIC, w, false);
+    if (w === 390) {
+      ok("§sweep6 after a monthly checkout, an org that does not email receipts is not made to promise one", !/receipt/i.test(said["thank-you, monthly"] || ""), (said["thank-you, monthly"] || "").slice(0, 200));
+      ok("§sweep6 after a one-time gift the thank-you still says a receipt is coming (Stripe sends one)", /receipt/i.test(said["thank-you, one-time"] || ""), (said["thank-you, one-time"] || "").slice(0, 200));
+      ok("§sweep6 a membership checkout comes back to a welcome to membership, not to \"your gift\"",
+         /You are a member of/.test(said["welcome, membership"] || "") && !/Your gift to/i.test(said["welcome, membership"] || "") && !/receipt/i.test(said["welcome, membership"] || ""), (said["welcome, membership"] || "").slice(0, 200));
+    }
+  }
+  await walk(PHONE, 390, true);
+}
+
 (async () => {
   console.log("smoke-walk");
+  // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
+  const LEGS = { givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
+  if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
     ok("the demo org is on this database (run scripts/seed-demo.js)", false, login.status);
@@ -1224,7 +1512,15 @@ async function moneyScreensSayNothingWrong(browser) {
   for (const d of three) {
     for (const tab of PROFILE_TABS) {
       trouble = [];
-      if (tab === "overview") {
+      if (tab === "related") {
+        const m = page.locator("[data-testid=dp-rail-related-manage]").first();
+        if (await m.count()) { await m.click(); await page.waitForTimeout(700); }
+        else { ok(`donor ${d.id} — Household and related opens from the rail`, false, "no Manage"); continue; }
+        await look(`donor ${d.id} · related`);
+        await page.keyboard.press("Escape").catch(() => {});
+        continue;
+      }
+      if (tab === "activity") {
         await page.goto(`${APP}/donors/${d.id}`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(e => trouble.push("navigation: " + e.message.slice(0, 120)));
         await page.waitForTimeout(1300);
       } else {
@@ -1290,7 +1586,10 @@ async function moneyScreensSayNothingWrong(browser) {
   await greetingFirst(browser, auth);
   await emailEditorEverywhere(browser);
   await publicPagesUnderTheCsp(browser);
+  await everyPageScrolls(PW_ALL, auth);
+  await profileLayout(PW_ALL, auth);
   await moneyScreensSayNothingWrong(browser);
+  await givingSideAndPhoneSayNothingWrong(browser);
   await commsScreensSayNothingWrong(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means

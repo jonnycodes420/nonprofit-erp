@@ -680,7 +680,7 @@ export const HELP_DOCS = [
      "Change in monthly giving: monthly gifts started since the date shown, at what each adds a month, less those that ended in the same time.",
      "Cards updated automatically: monthly gifts still giving whose card the bank updated by itself since the date shown.",
      "Months on file: every monthly gift charging successfully today, with how many months it has been giving.",
-     "Sustainer retention, 12 months: of the sustainers who started at least a year ago, how many are still giving a year in. It shows \"Not set\" until a subscription is a year old."
+     "Sustainer retention, 12 months: of the sustainers who started at least a year ago, how many are still giving a year in. It shows \"None yet\" until a subscription is a year old."
     ]
    },
    {

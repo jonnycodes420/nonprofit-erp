@@ -324,7 +324,7 @@ async function caseClicks() {
 
   // 1g · Save on a new gift, three times; then Save on its edit, three times
   await page.goto(`${APP}/donors/d_brk_c6`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.getByRole("tab", { name: /Gifts & pledges/ }).first().click({ timeout: 30000 }).catch(() => page.locator('[data-tab="gifts"]').first().click());
+  await page.getByRole("tab", { name: /^Giving/ }).first().click({ timeout: 30000 }).catch(() => page.locator('[data-tab="giving"]').first().click());
   await page.getByRole("button", { name: /\+ Add Gift/ }).first().click({ timeout: 15000 });
   await page.locator('input[placeholder="Amount ($)"]').first().fill("77");
   await page.getByRole("button", { name: /^Save$/ }).first().click({ clickCount: 3 });
@@ -334,7 +334,7 @@ async function caseClicks() {
   ok(`${L} §1 Save on a new gift pressed three times: one gift`, g6.length === 1 && Number(g6[0].amount) === 77, g6);
   if (g6.length) {
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByRole("tab", { name: /Gifts & pledges/ }).first().click({ timeout: 30000 }).catch(() => page.locator('[data-tab="gifts"]').first().click());
+    await page.getByRole("tab", { name: /^Giving/ }).first().click({ timeout: 30000 }).catch(() => page.locator('[data-tab="giving"]').first().click());
     await page.getByRole("button", { name: /^Edit$/ }).first().click({ timeout: 15000 });
     await page.locator('input[placeholder="Amount"]').first().fill("78");
     await page.getByRole("button", { name: /^Save$/ }).first().click({ clickCount: 3 });
@@ -526,7 +526,7 @@ async function caseTwoTabs() {
   const profile = await newPage(ctx);
   await profile.goto(`${APP}/donors/d_brk_ta1`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await profile.waitForSelector('[data-testid="dp-more"]', { timeout: 30000 });
-  await profile.getByRole("tab", { name: /Gifts & pledges/ }).first().click({ timeout: 30000 }).catch(() => profile.locator('[data-tab="gifts"]').first().click());
+  await profile.getByRole("tab", { name: /^Giving/ }).first().click({ timeout: 30000 }).catch(() => profile.locator('[data-tab="giving"]').first().click());
   const importer = await newPage(ctx);
   await openSheetImport(importer);
   await chooseFile(importer, giftsFile("twotabs.csv", 5, i => `Tess Twotab${i}`));

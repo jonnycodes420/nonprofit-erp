@@ -35,6 +35,7 @@ import { told } from "../lib/stewardTold";
 import { atlasStatus, atlasName, linkTarget } from "../lib/atlas";
 import { Camera } from "lucide-react";
 import { openCheckSnap } from "./CheckSnap";   // CHECK-2
+import { MicGlyph } from "./TellStewardOpen";   // SWEEP-6
 
 const SR = typeof window !== "undefined" ? (window.SpeechRecognition || window.webkitSpeechRecognition || null) : null;
 // VOICE-4: ONE recognizer for the page. A new one per press (and per opening
@@ -60,20 +61,7 @@ const btn = (primary) => ({ background: primary ? T.greenDk : T.white, color: pr
   borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", minHeight: 44 });
 const said = e => (e && (e.sentence || (typeof e.error === "string" && e.error.length > 14 ? e.error : null))) || errorMessage(e, "That didn't go through. I did nothing.");
 
-// Open Atlas from anywhere. `text` arrives typed; `send` asks at once (Home's box).
-export function openTellSteward(donor, { text = "", send = false } = {}) {
-  window.dispatchEvent(new CustomEvent("steward:tell", { detail: { donor: donor ? { id: donor.id, name: donor.name } : null, text, send } }));
-}
-export const openAtlas = openTellSteward;
-
-// The large button, for Home and the profile.
-export function MicGlyph({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" />
-    </svg>
-  );
-}
+export { openTellSteward, openAtlas, MicGlyph } from "./TellStewardOpen";
 
 
 const STATE_MARK = { done: "✓", waiting: "●", refused: "–", failed: "!", undone: "↺", discarded: "–", running: "" };

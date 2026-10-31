@@ -3,8 +3,10 @@
 // seeder, scripts/load/seed-many.js, for one org), on a desktop and on a phone.
 //
 //   · Home, the first look after sign-in, its right rail included (HOME-4):
-//     usable under 1 s on a desktop, under 5 s on a phone (HOME-4 asked for
-//     4 s; the phone is now the app's own code over slow 4G, see HISTORY);
+//     usable under 1 s on a desktop, under 4.8 s on a phone (HOME-4 asked for
+//     4 s; the phone is now the app's own code over slow 4G, see HISTORY.
+//     SWEEP-6 took the click-only panels out of Home's code and measured
+//     4.5 s; the 3 s the bar asks is docs/defects.md's, with the plan);
 //     and no read the rail needs starts after Home's first paint
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
@@ -38,7 +40,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
-const BUDGET = { homeDesktop: 1000, homePhone: 5000, listServer: 1000, listDraw: 2000, profile: 2000 };
+const BUDGET = { homeDesktop: 1000, homePhone: 4800, listServer: 1000, listDraw: 2000, profile: 2000 };
 const DESKTOP = {
   ctx: { viewport: { width: 1350, height: 940 }, deviceScaleFactor: 1 },
   net: { offline: false, latency: 40, downloadThroughput: (10240 * 1024) / 8, uploadThroughput: (10240 * 1024) / 8 }, cpu: 1,
@@ -212,7 +214,7 @@ async function previewLeg() {
   for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
   ok(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, homeD.usable > 0 && homeD.usable < BUDGET.homeDesktop, homeD.usable);
-  ok(`Home, its rail included, usable under 5 s on a phone (${homeP.usable} ms)`, homeP.usable > 0 && homeP.usable < BUDGET.homePhone, homeP.usable);
+  ok(`Home, its rail included, usable under 4.8 s on a phone (${homeP.usable} ms)`, homeP.usable > 0 && homeP.usable < BUDGET.homePhone, homeP.usable);
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
   ok(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, listServer < BUDGET.listServer, { listServer, listUrl });

@@ -2880,7 +2880,7 @@
    "link": "/help/recurring-gifts",
    "route": "/app/fundraising?fr=recurring",
    "screen": "fundraising:recurring",
-   "text": "Monthly giving: every monthly gift charging successfully today, at what it brings in each month. A yearly gift counts as a twelfth of its amount.\nChange in monthly giving: monthly gifts started since the date shown, at what each adds a month, less those that ended in the same time.\nCards updated automatically: monthly gifts still giving whose card the bank updated by itself since the date shown.\nMonths on file: every monthly gift charging successfully today, with how many months it has been giving.\nSustainer retention, 12 months: of the sustainers who started at least a year ago, how many are still giving a year in. It shows \"Not set\" until a subscription is a year old."
+   "text": "Monthly giving: every monthly gift charging successfully today, at what it brings in each month. A yearly gift counts as a twelfth of its amount.\nChange in monthly giving: monthly gifts started since the date shown, at what each adds a month, less those that ended in the same time.\nCards updated automatically: monthly gifts still giving whose card the bank updated by itself since the date shown.\nMonths on file: every monthly gift charging successfully today, with how many months it has been giving.\nSustainer retention, 12 months: of the sustainers who started at least a year ago, how many are still giving a year in. It shows \"None yet\" until a subscription is a year old."
   },
   {
    "id": "helpdoc:recurring-gifts:6",

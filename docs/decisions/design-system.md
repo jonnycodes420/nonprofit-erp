@@ -3,6 +3,8 @@
 Read this when you touch anything that reaches a screen: colours, tokens, modals, mobile layout, vocabulary, empty states, org branding or emoji.
 
 ## Rules
+- **PROFILE-2 (2026-10-29): `T.railGreen` `#12291C` is the donor profile's rail and nothing else.** Jonathan
+  approved it for that one surface (a deep shade of emerald and ink, cream text, brass labels).
 
 - **SECURE-1 (2026-10-28): no SVG is stored.** An SVG can carry script and our files are served
   from the app's own domain, so the browser draws an SVG as a PNG before it uploads

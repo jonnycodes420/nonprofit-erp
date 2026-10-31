@@ -2199,7 +2199,7 @@ app.put("/giving-pages/:id/ab-test", requireAuth, requireAdmin, checkWriteAccess
 app.get("/forms/:id/public", wrap(async (req, res) => {
   const F = await formConfigMod();
   const [page] = await query(
-    `SELECT gp.*, o.id AS org_id, o.name AS org_name, o.org_slug, o.cover_fees_enabled,
+    `SELECT gp.*, o.id AS org_id, o.name AS org_name, o.org_slug, o.cover_fees_enabled, o.receipts_enabled,
             o.form_upsell_threshold_cents, o.form_upsell_monthly_cents,
             o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
             o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
@@ -3649,7 +3649,11 @@ const donateHandler = async (req, res) => {
       ? `${frontendUrl}${returnPath}/thanks?s={CHECKOUT_SESSION_ID}`
       : eventGift
       ? `${frontendUrl}${returnPath}?gave=1`
-      : `${frontendUrl}${returnPath}?donated=true`,
+      // SWEEP-6: a membership comes back to a welcome, not to "your gift",
+      // and a recurring checkout says so (it has no Stripe receipt_email).
+      : memLevel
+      ? `${frontendUrl}${returnPath}?joined=1${isRecurring ? "&r=1" : ""}`
+      : `${frontendUrl}${returnPath}?donated=true${isRecurring ? "&r=1" : ""}`,
     cancel_url: `${frontendUrl}${returnPath}`,
     ...(isRecurring
       ? { subscription_data: { metadata } }

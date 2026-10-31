@@ -7,7 +7,8 @@
 // all back the rail draws placeholders in its final shape, so nothing jumps.
 // Then: Today as one card with no zeros, the calls with the top three, To
 // confirm as one line, and the automatic email line as SEND-GATE-2 placed it.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useStickyTop } from "../lib/stickyRail";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { SkeletonBar } from "./Skeleton";
@@ -89,4 +90,13 @@ export function HomeRailSkeleton() {
       {line("90%")}
     </div>
   );
+}
+
+// PROFILE-2 Part 1 · the rail stays in view with no scrollbar of its own. HOME-4
+// capped it at the window's height with overflow auto, so a tall rail scrolled
+// inside the page; now a tall rail scrolls with the page until its foot shows.
+export function HomeRailColumn({ children }) {
+  const ref = useRef(null);
+  const top = useStickyTop(ref, 68);
+  return <div className="home-rail"><div ref={ref} className="home-rail-inner" style={{ top }}>{children}</div></div>;
 }
