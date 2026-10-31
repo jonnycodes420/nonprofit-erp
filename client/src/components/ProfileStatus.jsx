@@ -158,7 +158,7 @@ export function ClosenessLine({ status, onOpenDonor }) {
 function Tile({ label, figure, kind = "money", sub }) {
   return (
     <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px", minWidth: 0 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 9, fontWeight: 700, color: T.ink3, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'DM Serif Display',serif", lineHeight: 1.1, color: T.ink }}>
         {figure.value === null || figure.value === undefined
           ? <span data-blank="" style={{ fontSize: 12.5, fontWeight: 400, color: T.ink3, fontFamily: "'DM Sans',system-ui,sans-serif" }}>No gifts yet</span>
@@ -211,7 +211,7 @@ export function ProfileGlance({ status, onOpenDonor, birthday }) {
       )}
       {status.highlights && status.highlights.length > 0 && (
         <div data-testid="dp-highlights" style={{ marginTop: 10, background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "10px 14px" }}>
-          <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>Highlights</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>Highlights</div>
           <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
             {status.highlights.map(h => (
               <li key={h.key} style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>
@@ -248,7 +248,7 @@ export function Highlights({ status, onOpenDonor }) {
   if (!status || !status.highlights || !status.highlights.length) return null;
   return (
     <div data-testid="dp-highlights" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>Highlights</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Highlights</div>
       <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
         {status.highlights.map(h => (
           <li key={h.key} style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>

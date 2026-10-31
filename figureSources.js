@@ -1189,8 +1189,10 @@ const SOURCES = {
   // or lapsed), the same JOIN GET /portfolio/officers counts with.
   "officer-portfolio": {
     label: "Portfolio",
-    measure: () => "sum",
-    params: { officer: "id:required" },
+    // FIX-60: the Directory draws two figures from it, how many people (count)
+    // and what they gave (sum); the count was opening a sum.
+    measure: p => p.measure || "sum",
+    params: { officer: "id:required", measure: "measure" },
     sentence: () => "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total.",
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
@@ -1499,7 +1501,7 @@ const SOURCES = {
       if (!DS.TAG_KEYS.includes(p.tag)) throw new FigureParamError("tag is not a tag Steward knows.");
       const cuts = await DS.cutsFor(orgId);
       const st = DS.statusSql(orgId, p.today, cuts);
-      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : p.tag === "lapsing" ? "s.lapsing" : "s.retained";
+      const col = DS.tagColumn(p.tag);
       return {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
                      'Given in the last 12 months' AS detail
@@ -2252,6 +2254,81 @@ const SOURCES = {
       order: "name ASC, id",
     }),
   },
+  // FIX-60 · THE EVENTS LIST'S FOUR NUMBERS OPEN. Each is across the events
+  // dated in the window (the list's "this year"), and each is the same
+  // predicate the event's own page counts with, so the list's figure is the
+  // sum of what every event page says: Came is event-attended's people, once
+  // per event; Received is event-received's gifts, per event; Came of
+  // registered is everyone who came over everyone registered.
+  "events-year-events": {
+    label: "Events this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every event dated ${dd(p.from)} to ${dd(p.to)}, upcoming and past.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT e.id, 'event' AS type, NULL::text AS donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
+                   COALESCE(NULLIF(e.status, ''), 'upcoming') AS detail
+              FROM events e WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, id",
+    }),
+  },
+  "events-year-came": {
+    label: "Came, this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Each person marked as having come to an event dated ${dd(p.from)} to ${dd(p.to)}, or checked in at its door, once per event.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (e.id, COALESCE(d.id, a.id)) e.id || ':' || COALESCE(d.id, a.id) AS id, 'person' AS type, d.id AS donor_id,
+                   COALESCE(d.name, a.name) AS name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND ${EVENT_CAME("a")}
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ? AND ${EVENT_GUEST_LIVE("a")}`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, name ASC, id",
+    }),
+  },
+  "events-year-registered": {
+    label: "Registered, this year",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Each person who said they were coming to an event dated ${dd(p.from)} to ${dd(p.to)}, or came, once per event. Declined and no reply are not counted.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (e.id, COALESCE(a.donor_id, a.id)) e.id || ':' || COALESCE(a.donor_id, a.id) AS id, 'person' AS type, a.donor_id,
+                   COALESCE(d.name, a.name) AS name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount, e.name AS detail
+              FROM events e JOIN event_attendees a ON a.event_id = e.id AND a.org_id = e.org_id AND ${EVENT_REGISTERED("a")}
+              LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ? AND (a.donor_id IS NULL OR d.deleted_at IS NULL)`,
+      args: [orgId, p.from, p.to],
+      order: "date ASC, name ASC, id",
+    }),
+  },
+  "events-year-received": {
+    label: "Received at events",
+    measure: () => "sum",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every gift received for an event dated ${dd(p.from)} to ${dd(p.to)}, at its full amount: the figure each event's page calls Received. Pledges are not in it, soft and matching credits are not counted, and a refund comes off.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT e.id || ':' || g.id AS id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, e.name AS detail
+              FROM events e JOIN gifts g ON g.org_id = e.org_id AND ${EVENT_GIFT_MATCH("g", "e")}
+              LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE e.org_id = ? AND LEFT(e.date::text, 10) BETWEEN ? AND ?`,
+      args: [orgId, p.from, p.to],
+      order: "amount DESC, id",
+    }),
+  },
+  "events-year-rate": {
+    label: "Came of registered",
+    ratio: "share",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Of everyone registered for an event dated ${dd(p.from)} to ${dd(p.to)}, the share who came, counted once per event.`,
+    parts: p => [
+      { role: "numerator", label: "Came", key: "events-year-came", params: { from: p.from, to: p.to } },
+      { role: "denominator", label: "Registered", key: "events-year-registered", params: { from: p.from, to: p.to } },
+    ],
+    blank: async (orgId, p, deps, parts) => (parts[1] && parts[1].totalRows ? null
+      : "No event this year has anybody registered yet."),
+  },
   // HOME-3 · "Are we on pace?": the pledged money due by a day (the end of the
   // fiscal year), beside the open balance over all years (pledges-open).
   "pledges-due": {
@@ -2962,28 +3039,41 @@ function shapeRow(r, dd) {
     date, dateLabel: date ? dd(date) : (r.type === "gift" ? "No date" : ""), amount: num(r.amount), detail: r.detail || null,
   };
 }
+// FIX-60: a TOTAL is not a gift. money.toCents refuses anything over the
+// largest single gift ($100,000,000), so a lifetime total above that read $0
+// (found by the units rule: "a total of 0.00 over rows that add to
+// 902408740.33"). A sum from the database is parsed exactly from its digits.
+function sumCents(v) {
+  const m = /^(-)?(\d*)(?:\.(\d+))?$/.exec(String(v ?? "0").trim());
+  if (!m) return money.toCents(String(v ?? "0")) ?? 0;
+  const frac = ((m[3] || "") + "00").slice(0, 2), rest = (m[3] || "").slice(2);
+  let c = Number(m[2] || "0") * 100 + Number(frac);
+  if (rest && Number(rest[0]) >= 5) c += 1;   // half up, as money.toCents does
+  return m[1] ? -c : c;
+}
+
 function valueOf(measure, agg) {
-  if (measure === "sum") { const c = money.toCents(String(agg.s ?? "0")) ?? 0; return { value: money.toDollars(c), cents: c }; }
+  if (measure === "sum") { const c = sumCents(agg.s); return { value: money.toDollars(c), cents: c }; }
   if (measure === "avg") return { value: agg.n > 0 ? Math.round(Number(agg.a) || 0) : 0, cents: null };
   // PARITY-1 — an average of MONEY, to the cent: the rows' own sum in cents
   // divided by their count, so the drawer's total over its count is the figure.
   // POLISH-1: per gift = the rows' total (refunds included, as negatives)
   // over the number of rows that are gifts (amount above zero).
   if (measure === "per_gift") {
-    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const c = sumCents(agg.s);
     const g = Number(agg.g) || 0;
     const m = g > 0 ? Math.round(c / g) : 0;
     return { value: money.toDollars(m), cents: m };
   }
   if (measure === "mean") {
-    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const c = sumCents(agg.s);
     const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
     return { value: money.toDollars(m), cents: m };
   }
   // REPORTS-4: the middle gift: half the rows are at or below it, half at or
   // above. It does not add up; it is checked against the sorted rows instead.
   if (measure === "median") {
-    const c = money.toCents(String(agg.m ?? "0")) ?? 0;
+    const c = sumCents(agg.m);
     return { value: agg.n > 0 ? money.toDollars(c) : 0, cents: agg.n > 0 ? c : 0 };
   }
   return { value: Number(agg.n) || 0, cents: null };

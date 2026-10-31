@@ -9,7 +9,7 @@ import { displayDate } from "../../../shared/displayDate";
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 const day = d => d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : null;
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, marginBottom: 4 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 4 };
 const VALUE = { fontSize: 14, fontWeight: 600, color: T.ink };
 const NOTE = { fontSize: 13, color: T.ink, lineHeight: 1.55, background: T.bg, border: `1px solid ${T.bg2}`, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" };
 const BTN = { background: T.greenMid, border: "none", borderRadius: 8, padding: "8px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" };

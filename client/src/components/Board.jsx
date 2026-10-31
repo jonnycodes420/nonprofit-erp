@@ -225,23 +225,23 @@ export function Board({data, setData, isReadOnly}) {
               <div style={{fontSize:11,color:T.ink3,marginBottom:10}}>Generated {genDate}{r.generated_by_name ? ` by ${r.generated_by_name}` : ""}</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
                 {m.ytdRevenue != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>YTD Revenue</div>
+                  <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>YTD Revenue</div>
                   <div style={{fontSize:14,fontWeight:800,color:T.greenDk,marginTop:2}}>{fmtFull(m.ytdRevenue)}</div>
                 </div>}
                 {m.ytdExpenses != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>YTD Expenses</div>
+                  <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>YTD Expenses</div>
                   <div style={{fontSize:14,fontWeight:800,color:T.ink,marginTop:2}}>{fmtFull(m.ytdExpenses)}</div>
                 </div>}
                 {m.totalDonors != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Total Donors</div>
+                  <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>Total Donors</div>
                   <div style={{fontSize:14,fontWeight:800,color:T.greenDk,marginTop:2}}>{m.totalDonors.toLocaleString()}</div>
                 </div>}
                 {m.activeGrants != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Active Grants</div>
+                  <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>Active Grants</div>
                   <div style={{fontSize:14,fontWeight:800,color:T.greenDk,marginTop:2}}>{m.activeGrants}</div>
                 </div>}
                 {m.pipelineValue != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
-                  <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Grant Pipeline</div>
+                  <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>Grant Pipeline</div>
                   <div style={{fontSize:14,fontWeight:800,color:T.greenDk,marginTop:2}}>{fmtFull(m.pipelineValue)}</div>
                 </div>}
               </div>

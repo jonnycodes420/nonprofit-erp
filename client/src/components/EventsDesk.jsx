@@ -48,7 +48,7 @@ const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8
 // SWEEP-4: emerald is the one action colour; the primary here was brass
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
   padding: "8px 14px", fontSize: 13, fontWeight: 700, color: primary ? T.white : T.ink, cursor: "pointer" });
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 
 function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const [levels, setLevels] = useState([]);
@@ -96,7 +96,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const publicUrl = `${window.location.origin}/give/${orgSlug}?event=${event.id}`;
   const ticketLevels = levels.filter(l => l.kind === "ticket");
   return (
-    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 16 }} data-testid="event-detail">
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }} data-testid="event-detail">
       {/* FIX-26: at 390 the address ran under the title broken mid-word
           ("…/give/harb / orlight?event="). It is one line now, cut with an
           ellipsis, with a button that copies the whole of it. */}
@@ -254,7 +254,7 @@ export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
   };
   if (open) return <EventDetail event={open} orgSlug={orgSlug} donors={donors} isReadOnly={isReadOnly} onBack={() => { setOpen(null); load(); }} />;
   return (
-    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="events-desk">
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="events-desk">
       <div style={{ fontSize: 13, color: T.ink3, maxWidth: 620, lineHeight: 1.6 }}>
         The donor side of an event: tickets and sponsorships, the guest list and tables, and who came. A ticket's receipt states the part that is deductible.
       </div>

@@ -82,7 +82,7 @@ export function AudienceTab({ onEmailSegment }) {
         <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>Nobody is in this audience today.</div>
       ) : (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-          <div className="aud-grid" style={{ display: "grid", gridTemplateColumns: cols, padding: "9px 16px", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+          <div className="aud-grid" style={{ display: "grid", gridTemplateColumns: cols, padding: "9px 16px", fontSize: 10, fontWeight: 700, color: T.ink3, gap: 8 }}>
             <span>Name</span><span className="aud-email">Email</span><span className="aud-stage">Stage</span>{giving && <span>Given in total</span>}
           </div>
           {shown.map(p => (

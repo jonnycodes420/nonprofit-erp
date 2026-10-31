@@ -322,8 +322,30 @@ function samePointLastYear(from, to, today) {
   return { from: prevFrom, to: prevTo, through: end };
 }
 
+// FIX-60 — EQUAL SPANS ACROSS YEARS. A row of whole years (newest first, each
+// { from, to }) compared side by side: when the newest is still running, every
+// year is cut to the same stretch, each one a year before the next through
+// samePointLastYear (THE one window, so a Report's "same days last year" is
+// the Board's to the day), and four months are never set against twelve. That
+// window counts days, so across a Feb 29 a column ends a day off the newest
+// one's date; the caller names it (routes/crm.js yearSpans). A finished newest
+// year keeps every year whole. `cut` says which happened.
+function equalYearSpans(years, today) {
+  const list = (years || []).map(y => ({ from: y.from, to: y.to }));
+  if (!list.length || !parseCivil(today)) return { years: list, cut: false };
+  const newest = list[0];
+  const running = compareCivil(newest.to, today) > 0 && compareCivil(newest.from, today) <= 0;
+  if (!running) return { years: list, cut: false };
+  const out = [{ from: newest.from, to: today }];
+  for (let i = 1; i < list.length; i++) {
+    const sp = samePointLastYear(list[i - 1].from, list[i - 1].to, out[i - 1].to);
+    out.push(sp ? { from: sp.from, to: sp.to } : list[i]);
+  }
+  return { years: out, cut: true };
+}
+
 module.exports = {
-  samePointLastYear,
+  samePointLastYear, equalYearSpans,
   DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,

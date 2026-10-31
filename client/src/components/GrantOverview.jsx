@@ -17,6 +17,7 @@ import { T, EmptyState } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
 import Figure from "./Figure";
+import { plural } from "../../../shared/countWords.js";
 
 const card = { background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" };
 const h2 = { fontSize: 15, fontWeight: 700, color: T.ink, margin: "0 0 4px" };
@@ -102,7 +103,7 @@ export default function GrantOverview({ onOpenGrant, onGoPipeline }) {
           {stages.map(s => (
             <Figure key={s.status} figureKey={`grant-stage-${s.status}`} kind="money" value={s.value} label={s.label}
               definition={s.sentence} source={s.source}
-              sub={<><Figure variant="inline" kind="count" value={s.count} label={`Grants at ${s.label}`} definition={s.sentence} source={s.source} />{s.count === 1 ? " grant" : " grants"}</>} />
+              sub={<><Figure variant="inline" kind="count" value={s.count} label={`Grants at ${s.label}`} definition={s.sentence} source={s.source} unit={plural(s.count, "grant")} /></>} />
           ))}
         </div>
       </section>
@@ -113,7 +114,7 @@ export default function GrantOverview({ onOpenGrant, onGoPipeline }) {
         <div style={grid}>
           <Figure figureKey="grant-awarded-year" kind="money" value={awarded.value} label={`Awarded, ${year.label}`}
             definition={awarded.sentence} source={awarded.source}
-            sub={<><Figure variant="inline" kind="count" value={awarded.count} label="Grants awarded this year" definition={awarded.sentence} source={awarded.source} />{awarded.count === 1 ? " grant" : " grants"}</>} />
+            sub={<><Figure variant="inline" kind="count" value={awarded.count} label="Grants awarded this year" definition={awarded.sentence} source={awarded.source} unit={plural(awarded.count, "grant")} /></>} />
           <Figure figureKey="grant-goal" kind="money" value={goal.set ? goal.value : null} label="Grant goal"
             definition={goal.sentence} source={goal.source} blank={goal.set ? null : "No goal is set yet."} />
           <Figure figureKey="grant-goal-progress" kind="percent" value={progress.value} label="Toward the goal"
@@ -134,8 +135,7 @@ export default function GrantOverview({ onOpenGrant, onGoPipeline }) {
               <span role="cell" style={{ fontSize: 13, color: T.ink3 }}>
                 <Figure variant="inline" kind="count" value={w.won.value} label={`Awarded, ${w.label}`} definition={w.won.sentence} source={w.won.source} />
                 {" of "}
-                <Figure variant="inline" kind="count" value={w.decided.value} label={`Decided, ${w.label}`} definition={w.decided.sentence} source={w.decided.source} />
-                {" decided"}
+                <Figure variant="inline" kind="count" value={w.decided.value} label={`Decided, ${w.label}`} definition={w.decided.sentence} source={w.decided.source} unit="decided" />
               </span>
               <span role="cell" style={{ minWidth: 64, textAlign: "right", fontSize: 15, color: T.ink }}>
                 <Figure variant="cell" kind="percent" value={w.value} label={`Win rate, ${w.label}`} definition={w.blank || w.sentence} source={w.source} blank={w.blank} />

@@ -10,7 +10,7 @@ import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { errorMessage } from "../lib/domainError";
 import { QUESTION_TYPES, CHOICE_TYPES, privacySentence } from "../../../shared/surveyShape.js";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "16px 18px" };
 const field = { width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13.5, fontFamily: "inherit", background: T.white, color: T.ink };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -58,7 +58,7 @@ export function SurveysPanel({ isReadOnly, orgName, onOpenDrafts }) {
             </div>
           </div>
           <div style={{ fontSize: 13, color: T.ink2 }}>
-            <Figure value={s.responses} kind="count" label={`${s.title}: responses`} source={{ key: "survey-answers", params: { survey: s.id } }} variant="inline" /> responses
+            <Figure value={s.responses} kind="count" label={`${s.title}: responses`} source={{ key: "survey-answers", params: { survey: s.id } }} variant="inline" unit="responses" />
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button style={quiet} data-testid="survey-results" onClick={() => setResults(s.id)}>Results</button>
@@ -188,7 +188,7 @@ function SurveyResults({ id, onBack }) {
         <button style={quiet} data-testid="survey-export" onClick={exportCsv}>Export CSV</button>
       </div>
       <div style={{ ...card, fontSize: 13, color: T.ink2 }}>
-        <Figure value={d.total} kind="count" label="Responses" source={d.totalSource} variant="inline" /> responses · {d.survey.mode === "anonymous" ? "Anonymous" : "Named"}. <span style={{ color: T.ink3 }}>{d.privacy}</span>
+        <Figure value={d.total} kind="count" label="Responses" source={d.totalSource} variant="inline" unit="responses" /> · {d.survey.mode === "anonymous" ? "Anonymous" : "Named"}. <span style={{ color: T.ink3 }}>{d.privacy}</span>
       </div>
       {d.questions.map(q => {
         const max = Math.max(1, ...q.buckets.map(b => b.count));
@@ -197,7 +197,7 @@ function SurveyResults({ id, onBack }) {
           <div key={q.id} data-result-question={q.id} style={card}>
             <div style={{ fontSize: 14.5, fontWeight: 700, color: T.ink }}>{q.label}</div>
             <div style={{ fontSize: 12, color: T.ink3, margin: "2px 0 10px" }}>
-              <Figure value={q.answered} kind="count" label={`${q.label}: answered`} source={q.answeredSource} variant="inline" /> answered{text ? ". Open the number to read every answer." : ""}
+              <Figure value={q.answered} kind="count" label={`${q.label}: answered`} source={q.answeredSource} variant="inline" unit="answered" />{text ? ". Open the number to read every answer." : ""}
             </div>
             {!text && q.buckets.map(b => (
               <div key={b.key} style={{ display: "grid", gridTemplateColumns: "minmax(80px,180px) 1fr 44px", gap: 10, alignItems: "center", padding: "3px 0" }}>

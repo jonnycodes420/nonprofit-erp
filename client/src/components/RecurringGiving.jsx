@@ -77,7 +77,7 @@ function MovementSummary({ movement }) {
             COMPOSITION; it never said what the number means, and a yearly gift
             counted as a twelfth is exactly the sort of thing a director is
             asked about in a board meeting. */}
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>
           Monthly recurring revenue
           <span tabIndex={0} data-testid="rec-def-mrr"
             title={censusById("recurring.mrr").sentence} aria-label={censusById("recurring.mrr").sentence}
@@ -99,7 +99,7 @@ function MovementSummary({ movement }) {
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, marginBottom: 4 }}>Change this month</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3, marginBottom: 4 }}>Change this month</div>
         {row("New", w.new, "+", T.greenDk)}
         {row("Upgraded", w.upgraded, "+", T.greenDk)}
         {row("Resumed", w.resumed, "+", T.greenDk)}
@@ -115,7 +115,7 @@ function MovementSummary({ movement }) {
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Sustainer retention · 12 months</div>
+        <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Sustainer retention · 12 months</div>
         <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.2, margin: "6px 0 2px" }}>
           {movement.retention12?.rate != null ? `${movement.retention12.rate}%` : "None yet"}
         </div>
@@ -195,7 +195,7 @@ function ActionsMenu({ sub, isReadOnly, onAction }) {
 // that lesson applied once, for everybody. The call signature is unchanged.
 
 const inputStyle = { width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.bg3}`, fontSize: 13.5, color: T.ink, background: T.white };
-const labelStyle = { display: "block", fontSize: 11.5, fontWeight: 700, color: T.ink3, margin: "12px 0 5px", letterSpacing: "0.04em", textTransform: "uppercase" };
+const labelStyle = { display: "block", fontSize: 11.5, fontWeight: 700, color: T.ink3, margin: "12px 0 5px" };
 const primaryBtnStyle = { background: T.gold500, border: "none", borderRadius: 10, padding: "11px 20px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" };
 const quietBtnStyle = { background: "transparent", border: "none", padding: "11px 8px", color: T.ink3, fontSize: 13, fontWeight: 600, cursor: "pointer" };
 
@@ -383,7 +383,7 @@ function AtRiskQueue({ subs, isReadOnly, onAction }) {
   return (
     <div style={{ background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 12, padding: "16px 18px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.terra700 }}>Needs recovery</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: T.terra700 }}>Needs recovery</span>
         <span style={{ fontSize: 12, color: T.terra700 }}>{countLabel(subs.length, "failing card")} · {fmtFull(subs.reduce((s, x) => s + (x.interval === "year" ? (x.amount || 0) / 12 : (x.amount || 0)), 0))}/mo at risk</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -472,7 +472,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
               connected-to-a-payment-method-here are separate axes: this read
               "0 giving · 160 stopped · 600 not yet connected" for a file whose
               own sheet says 440 are giving and which Steward had detected. */}
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Sustainers from your file</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>Sustainers from your file</div>
           <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>
             <strong style={{ color: T.ink }}>{(counts.fromFile != null ? counts.fromFile : counts.unlinked)}</strong> {plural(counts.fromFile != null ? counts.fromFile : counts.unlinked, "sustainer")} from your file · <strong style={{ color: T.ink }}>{counts.givingFromFile != null ? counts.givingFromFile : counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> stopped · <strong style={{ color: T.ink }}>{counts.connectedFromFile || "none"}</strong>{counts.connectedFromFile ? " connected to a payment method here" : " connected to a payment method here yet"}
           </div>
@@ -544,7 +544,7 @@ function RecoveryPanel({ onNavigate }) {
       style={{ flex: "1 1 170px", textAlign: "left", background: "transparent",
                border: `1px solid ${open === key ? T.ink : T.bg3}`, borderRadius: 10,
                padding: "12px 14px", cursor: "pointer", font: "inherit" }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
       <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{def}</div>
     </button>
@@ -580,7 +580,7 @@ function RecoveryPanel({ onNavigate }) {
           </div>
         </FigureContext.Provider>
       )}
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.ink3, marginBottom: 10 }}>
         Cards that failed in {data.year}
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -718,7 +718,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
   }, [subs, statusFilter, search, sort]);
 
   const header = (key, label, align = "left") => (
-    <th style={{ textAlign: align, padding: "8px 10px", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, whiteSpace: "nowrap" }}>
+    <th style={{ textAlign: align, padding: "8px 10px", fontSize: 10.5, fontWeight: 800, color: T.ink3, whiteSpace: "nowrap" }}>
       <button onClick={() => setSort(s => ({ key, dir: s.key === key ? -s.dir : 1 }))}
         style={{ background: "transparent", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer", letterSpacing: "inherit", textTransform: "inherit" }}>
         {label}{sort.key === key ? (sort.dir === 1 ? " ↓" : " ↑") : ""}
@@ -750,7 +750,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
 
       {invitations.length > 0 && (
         <div style={{ background: T.gold50, border: `1px solid ${T.gold300}`, borderRadius: 12, padding: "14px 18px" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.gold700, marginBottom: 8 }}>Invitations awaiting the donor</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: T.gold700, marginBottom: 8 }}>Invitations awaiting the donor</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {invitations.map(inv => (
               <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, flexWrap: "wrap" }}>
@@ -796,7 +796,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
               <tr style={{ borderBottom: `1px solid ${T.bg3}`, background: T.bg2 }}>
                 {header("donor", "Donor")}
                 {header("amount", "Amount", "right")}
-                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Fund</th>
+                <th style={{ textAlign: "left", padding: "8px 10px", fontSize: 10.5, fontWeight: 800, color: T.ink3 }}>Fund</th>
                 {header("status", "Status")}
                 {header("next", "Next charge")}
                 {header("started", "Started")}
@@ -888,7 +888,7 @@ export function DashboardRecurring({ onNavigate }) {
     <div style={{ background: T.bgCard, border: `1px solid ${count ? accent : T.bg3}`, borderRadius: 12, padding: "14px 14px 10px", minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 10px 6px" }}>
         <span style={{ fontSize: 22, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: count ? T.ink : T.ink3 }}>{count}</span>
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{title}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.ink3 }}>{title}</span>
       </div>
       {rows.length ? rows : <div style={{ padding: "0 10px 6px", fontSize: 12, color: T.ink3 }}>None right now.</div>}
     </div>

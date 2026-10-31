@@ -130,7 +130,7 @@ export default function OldReportsImport({ onClose, onDone }) {
     setBusy(false);
   };
 
-  const head = (n, t) => <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 800 }}>Step {n} of 3 · {t}</div>;
+  const head = (n, t) => <div style={{ fontSize: 11, color: T.ink3, fontWeight: 800 }}>Step {n} of 3 · {t}</div>;
   const table = (t, max = 5) => t && (
     <div style={{ overflowX: "auto", border: "1px solid " + T.bg3, borderRadius: 8, maxWidth: "100%" }}>
       <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>

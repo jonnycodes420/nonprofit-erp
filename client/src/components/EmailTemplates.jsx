@@ -85,7 +85,7 @@ export function templateSection(store, key, words) {
 
 const tplCard = { ...card, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
 const openArea = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4, color: T.ink, width: "100%" };
-const mediumStyle = { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 };
+const mediumStyle = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.greenDk : T.gold700 });
 
 // ── THE LIBRARY ─────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ export function RailSection({ title, actionNode, children, fold = false, foldOpe
   return (
     <section data-testid={testid} data-rail-section={fold ? (open ? "open" : "folded") : "plain"}
       style={{ borderTop: first ? "none" : "1px solid " + RAIL.line, padding: first ? "0 0 16px" : "16px 0" }}>
-      <h4 style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold500, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+      <h4 style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 800, color: T.gold500, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span>{title}</span>
         {fold
           ? <button onClick={() => setOpen(o => !o)} aria-expanded={open} style={btn}>{open ? foldOpenLabel : foldShutLabel}</button>

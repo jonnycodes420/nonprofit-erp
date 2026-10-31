@@ -249,8 +249,8 @@ export function MoveHowTo({ howTo, printable = true }) {
 function Section({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase",
-                    letterSpacing: "0.08em", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, 
+                    marginBottom: 6 }}>{label}</div>
       {children}
     </div>
   );

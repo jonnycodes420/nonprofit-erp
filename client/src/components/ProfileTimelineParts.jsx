@@ -234,7 +234,7 @@ export function AttachFileField({ file, setFile, labelStyle }) {
   );
 }
 
-const TH = { textAlign: "left", fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3,
+const TH = { textAlign: "left", fontSize: 12, color: T.ink3,
   fontWeight: 600, padding: "10px 12px", borderBottom: "1px solid " + T.bg3, whiteSpace: "nowrap" };
 const TD = { fontSize: 14, padding: "10px 12px", borderBottom: "1px solid " + T.bg2, verticalAlign: "top" };
 

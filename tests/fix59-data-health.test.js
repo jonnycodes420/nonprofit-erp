@@ -19,6 +19,8 @@
 //   §6 Finance: imported gifts waiting for a deposit, marked deposited, Undo.
 //   §7 Data health is current: the last check moves after an import and after
 //      its undo, and says why.
+//   §8 FIX-60: a line's example names are the org's own matching rows, or
+//      none; no name is typed into the copy.
 //
 // HOW IT GOES RED ON THE BASE (1c0bf5f): Grow sorts by dollars alone (§1);
 // the spouses and the shared phone are pairs and nothing is a family, the
@@ -100,8 +102,8 @@ async function main() {
   // near-duplicates by name alone
   await person("allanby", "Mark Allanby");
   await person("alanby", "Mark Alanby");
-  await person("wiggant", "Stan Wiggant");
-  await person("wiggand", "Stan Wiggand");
+  await person("ferrant", "Stan Ferrant");
+  await person("ferrand", "Stan Ferrand");
   await person("steve", "Steve Littleford");
   await person("stephen", "Stephen Littleford");
   // couples written as one name; one already in a household with an address-mate
@@ -116,8 +118,8 @@ async function main() {
   await person("bryant", "**Bryant Mayfield", { notes: "Board alum." });
   await person("scarla", "Scarla (send with Tess's) Nesbitt");
   // one event's list with two spellings of one person
-  await person("fran", "Fran Rohlwing");
-  await person("frances", "Frances Rohlwing");
+  await person("fran", "Fran Ostrander");
+  await person("frances", "Frances Ostrander");
   await person("guest", "Odile Pemberton");
   await q(`INSERT INTO events (id,org_id,name,event_type,date) VALUES ($1,$2,'Marigold Test Supper','dinner',CURRENT_DATE - 20)`, [P("ev"), ORG]);
   for (const g of ["fran", "frances", "guest"]) await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'attended')`,
@@ -131,7 +133,7 @@ async function main() {
   ok("§2 a shared phone with two different names is not a duplicate", !pairOf(dups, "mari", "oswald"), pairOf(dups, "mari", "oswald"));
   const jy = pairOf(dups, "jeffrey", "jeff"), pn = pairOf(dups, "patrick", "pat"), ap2 = pairOf(dups, "anna", "ann");
   ok("§2 real near-duplicates still show (Jeffrey/Jeff at one address, Patrick/Pat on one phone, Anna/Ann on one email)", !!jy && !!pn && !!ap2, [jy, pn, ap2]);
-  const nameOnly = [["allanby", "alanby"], ["wiggant", "wiggand"], ["steve", "stephen"]].map(([a, b]) => pairOf(dups, a, b));
+  const nameOnly = [["allanby", "alanby"], ["ferrant", "ferrand"], ["steve", "stephen"]].map(([a, b]) => pairOf(dups, a, b));
   ok("§2 near-duplicates by name alone show as low confidence, with the reason",
      nameOnly.every(p => p && p.confidence === "low" && p.reasons.some(r => /^name only: .+no address, phone or email in common$/.test(r))), nameOnly);
   const fam = ((await api("GET", "/data-health/families", tok)).body || {}).rows || [];
@@ -139,6 +141,29 @@ async function main() {
      spouses.every(([a, b]) => { const f = pairOf(fam, a, b); return f && f.reasons.length; }) && !pairOf(fam, "mari", "oswald"), fam.map(f => [f.left && f.left.name, f.right && f.right.name, f.reasons]));
   const h0 = (await api("GET", "/data-health", tok)).body || {};
   ok("§2 the page's counts are the rows: families and duplicates", h0.counts && h0.counts.families === fam.length && h0.counts.duplicates === dups.length, h0.counts);
+
+  // ── §8 FIX-60: a line's examples are this org's own rows, or none ───────
+  // HOW IT GOES RED ON MAIN (2b4951a): GET /data-health has no `examples`, and
+  // DataHealth.jsx types example names into the sentences ("Alex, Brad ...",
+  // "Fran" and "Frances", "**Bryn ..."), so an org with no such row reads them.
+  const own = new Set((await q(`SELECT name FROM donors WHERE org_id=$1`, [ORG])).map(r => r.name));
+  const ex0 = h0.examples || {};
+  ok("§8 the couples line quotes the org's own couples (the first two, as written)",
+     JSON.stringify(ex0.couples) === JSON.stringify(["Alec, Brad Hubbardson", "Christopher and Cynthia Hornby"]) && ex0.couples.every(n => own.has(n)), ex0);
+  ok("§8 the names-with-notes line quotes the org's own names, as written",
+     JSON.stringify(ex0.namesWithNotes) === JSON.stringify(["**Bryant Mayfield", "Scarla (send with Tess's) Nesbitt"]) && ex0.namesWithNotes.every(n => own.has(n)), ex0);
+  ok("§8 the event line quotes the event's own pair",
+     JSON.stringify((ex0.eventPairs || {})[P("ev")]) === JSON.stringify(["Fran Ostrander", "Frances Ostrander"]), ex0);
+  const ORG_E = ORG + "_plain";
+  const tokE = await freshOrg(ORG_E, "FIX-60 data health, nothing to quote (test)");
+  await q(`INSERT INTO donors (id,org_id,name,created_by,created_by_name) VALUES ($1,$2,'Odile Plainfield','system:test/fix60','FIX-60 test')`, [ORG_E + "_odile", ORG_E]);
+  const hE = (await api("GET", "/data-health", tokE)).body || {};
+  ok("§8 an org with no couple, no marked-up name and no event pair gets no examples",
+     hE.examples && JSON.stringify(hE.examples) === JSON.stringify({ couples: [], namesWithNotes: [], eventPairs: {} }), hE.examples);
+  // the page builds every sentence from those examples: no quoted name is typed into its copy
+  const dhSrc = require("fs").readFileSync(require("path").join(__dirname, "../client/src/components/DataHealth.jsx"), "utf8");
+  const typed = dhSrc.split("\n").filter(l => /sentence:/.test(l) && /\(\s*\\?"\**[A-Z][a-z]+/.test(l));
+  ok("§8 Data health's sentences type no example name (they come from the org's rows)", typed.length === 0, typed.map(l => l.trim().slice(0, 140)));
 
   // ── §3 couples written as one name ──────────────────────────────────────
   const cp = ((await api("GET", "/data-health/couples", tok)).body || {}).rows || [];
@@ -187,7 +212,7 @@ async function main() {
   const evLine = ((h1.counts && h1.counts.eventDuplicatesByEvent) || []).find(e => e.eventId === P("ev"));
   ok("§5 the page has one line for the event: 1 possible duplicate within Marigold Test Supper", evLine && evLine.count === 1 && evLine.eventName === "Marigold Test Supper", h1.counts && h1.counts.eventDuplicatesByEvent);
   const ep = ((await api("GET", `/data-health/event-pairs?eventId=${P("ev")}`, tok)).body || {}).rows || [];
-  ok("§5 the question is the import's: \"Is Fran Rohlwing the same as Frances Rohlwing?\"", ep.length === 1 && ep[0].question === "Is Fran Rohlwing the same as Frances Rohlwing?" && ep[0].why === "nickname", ep);
+  ok("§5 the question is the import's: \"Is Fran Ostrander the same as Frances Ostrander?\"", ep.length === 1 && ep[0].question === "Is Fran Ostrander the same as Frances Ostrander?" && ep[0].why === "nickname", ep);
   const d1 = await api("POST", "/data-health/event-pairs/answer", tok, { a: P("fran"), b: P("frances"), answer: "different" });
   const epAfterDiff = ((await api("GET", `/data-health/event-pairs?eventId=${P("ev")}`, tok)).body || {}).rows || [];
   const dupsAfterDiff = ((await api("GET", "/data-health/duplicates", tok)).body || {}).pairs || [];

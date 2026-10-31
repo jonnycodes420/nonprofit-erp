@@ -87,7 +87,7 @@ export function EditedMarker({ item }) {
       </button>
       {open && (
         <div style={{ position: "absolute", right: 0, top: "100%", zIndex: 20, marginTop: 4, width: 320, maxWidth: "80vw", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 14px", boxShadow: "0 6px 18px rgba(15,26,18,0.12)", cursor: "default" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Previous versions</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 6 }}>Previous versions</div>
           {rows === null && <div style={{ fontSize: 12, color: T.ink3 }}>Loading…</div>}
           {rows && rows.length === 0 && <div style={{ fontSize: 12, color: T.ink3 }}>No earlier versions are on record.</div>}
           {rows && rows.filter(r => r.action === "updated" && r.before).map(r => (

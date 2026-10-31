@@ -8,7 +8,7 @@ import { pickPeople, usePeoplePicker } from "../lib/people";
 import { T, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "16px 18px" };
 const field = { width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 10px", fontSize: 13.5, fontFamily: "inherit", background: T.white, color: T.ink };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };

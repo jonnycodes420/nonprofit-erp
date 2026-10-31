@@ -82,7 +82,7 @@ function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
   return (
     <div {...interactive(onClick, { label: ariaLabel || label })}
       style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: `3px solid ${accent || T.bg3}`, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{value}</span>
       {sub && <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{sub}</span>}
     </div>
@@ -355,7 +355,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
   // showing a different total is not a figure that opens.
   const openRows = (from, to) => () => onNavigate && onNavigate("reports", { report: "giving-summary", from, to });
   const top = overview.campaigns.top && overview.campaigns.top.lifecycle === "active" ? overview.campaigns.top : null;
-  const label = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+  const label = { fontSize: 10, fontWeight: 800, color: T.ink3 };
   const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow };
 
   return (
@@ -409,7 +409,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           are exactly those goals. One "Start a campaign" on the page. */}
       {rollup ? (
         <div data-testid="fr-rollup" data-active-count={rollup.activeGoalCount} {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns" })} style={{ background: T.white, borderRadius: 18, padding: "26px 28px", color: T.ink, position: "relative", overflow: "hidden", border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.gold500 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold700, marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: T.gold700, marginBottom: 10 }}>
             {rollup.activeGoalCount === 1 ? "Active goal" : `Active goals · ${rollup.activeGoalCount}`}
           </div>
           <RollupThermometer rollup={rollup} />
@@ -541,7 +541,7 @@ function PledgeTile({ p, onOpen }) {
   const fig = (k, label) => <Figure variant="inline" kind="money" whole value={p[k]} label={label} definition={p.definitions[k]} source={p.sources[k]} figureKey={"fundraising.pledges." + k} why={false} />;
   return (
     <div data-testid="fr-pledges" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: "3px solid " + T.bg3, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Pledged, still to come</span>
+      <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>Pledged, still to come</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{fig("open", "Pledged, still to come")}</span>
       <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>
         {fig("dueThisYear", "Pledged, due this fiscal year")} due this fiscal year · {fig("overdue", "Pledged, overdue")} overdue
@@ -671,7 +671,7 @@ function GoalCard({ g, allGoals, onClick }) {
       )}
       {g.lifecycle === "upcoming" ? null : g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {countLabel(g.childCount, "goal")}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>Rolls up {countLabel(g.childCount, "goal")}</div>
           {children.map(c => (
             <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: T.ink2 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
@@ -745,7 +745,7 @@ function CampaignTemplates({ data, reload, isReadOnly, onCreated, onOpenCampaign
 
   return (
     <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>
         Start from a plan
       </div>
       <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>{data.definition}</div>
@@ -843,7 +843,7 @@ function CampaignPlanPanel({ campaignId, isReadOnly }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {plan.steps.length ? (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 }}>
             The plan
           </div>
           <ul className="camp-plan" style={{ margin: 0, padding: 0, listStyle: "none" }}>
@@ -864,7 +864,7 @@ function CampaignPlanPanel({ campaignId, isReadOnly }) {
       ) : null}
 
       <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 }}>
           Matching challenge
         </div>
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 12 }}>
@@ -1269,7 +1269,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                     <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>
                       {p[sk] ? <Figure variant="inline" kind="count" value={Number(p[k] || 0)} label={`${label} · ${p.title}`} source={p[sk]} /> : Number(p[k] || 0).toLocaleString("en-US")}
                     </div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{label}</div>
                   </div>
                 ))}
               </div>
@@ -1301,7 +1301,7 @@ function PagesView({ pages, orgSlug, onNavigate, isReadOnly = false, onChanged, 
                 {stats.map(([label, node]) => (
                   <div key={label}>
                     <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>{node}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{label}</div>
                   </div>
                 ))}
               </div>
@@ -1358,7 +1358,7 @@ function DepositsView({ isReadOnly, roTip }) {
     apiFetch("/dashboard/home?scope=mine").then(r => setToday(r?.today || "")).catch(() => {});
   };
   useEffect(() => { load(); }, []);
-  const th = { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, textAlign: "left", padding: "0 12px 8px 0" };
+  const th = { fontSize: 10.5, fontWeight: 700, color: T.ink3, textAlign: "left", padding: "0 12px 8px 0" };
   const td = { fontSize: 13, color: T.ink, padding: "10px 12px 10px 0", borderTop: "1px solid " + T.bg3 };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

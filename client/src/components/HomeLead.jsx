@@ -16,7 +16,7 @@ const SERIF = "'DM Serif Display', Georgia, serif";
 const money = n => "$" + Math.round(Number(n) || 0).toLocaleString("en-US");
 const first = n => String(n || "").trim().split(/\s+/)[0] || "them";
 
-const EYEBROW = { fontSize: 11, letterSpacing: "0.1em", fontWeight: 700, textTransform: "uppercase" };
+const EYEBROW = { fontSize: 11, fontWeight: 700 };
 const B1 = { background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "10px 16px", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" };
 const B2 = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 9, padding: "9px 15px", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" };
 const LNK = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 14, textDecoration: "underline", textUnderlineOffset: 3, cursor: "pointer", fontFamily: "inherit" };

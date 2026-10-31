@@ -24,7 +24,7 @@ import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
 import { UNDONE } from "../lib/recentUndo";
 import { countLabel } from "../../../shared/countWords.js";
 
-const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
+const h = { fontSize: 11, fontWeight: 800, color: T.ink3, marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
   borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: primary ? T.white : T.ink,
   cursor: "pointer", fontFamily: "inherit" });
@@ -347,7 +347,7 @@ export function AuctionsView({ donors = [], isReadOnly, onNavigate }) {
     } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
   };
   return (
-    <div className="no-caps" style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="auctions-view">
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="auctions-view">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: T.ink3, maxWidth: 560 }}>An online auction with its own page: items people donated, bidding that opens and closes on time, and winners who pay through your own Stripe account.
           <MailTypeSwitches keys={["auction_signin"]} from="auctions" /></div>

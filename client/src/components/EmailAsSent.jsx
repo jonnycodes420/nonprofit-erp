@@ -38,7 +38,7 @@ export function EmailAsSentPanel({ path, onClose, onSelectDonor }) {
   const from = data && data.from && (data.from.name ? `${data.from.name} <${data.from.email}>` : data.from.email);
   const count = (key, label) => (
     <div data-testid={`eas-count-${key}`} style={{ flex: "1 1 90px", border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 12px" }}>
-      <div style={{ fontSize: 10.5, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: T.ink3 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{Number(data.counts[key] || 0).toLocaleString()}</div>
     </div>
   );
@@ -112,7 +112,7 @@ export function EmailsReceived({ donorId, firstName }) {
   if (rows === null) return null;
   return (
     <section data-testid="dp-emails-received" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
-      <h2 style={{ margin: "0 0 8px", fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase", color: T.ink }}>
+      <h2 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: T.ink }}>
         Emails sent to {firstName || "them"}
       </h2>
       {rows.length === 0

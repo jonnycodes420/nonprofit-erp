@@ -4415,10 +4415,27 @@ function budgetYearBounds(year, basis, org) {
   return { start: `${year}-01-01`, end: `${year}-12-31` };
 }
 
+// FIX-60 — WHICH YEAR A BUDGET IS. A budget row stores its `basis`; an old
+// row with none was set on the calendar page and reads as 'calendar' until
+// somebody sets it again (no row is rewritten at deploy). An org whose fiscal
+// year starts in January has one kind of year, so 'fiscal' is 'calendar' there.
+const BUDGET_BASIS_SQL = "COALESCE(b.basis, 'calendar')";
+function budgetBasis(asked, org) {
+  if (asked !== "fiscal") return "calendar";
+  return orgTime.orgFiscalStartMonth(org || {}) === 1 ? "calendar" : "fiscal";
+}
+async function budgetYearName(year, basis, org) {
+  if (basis !== "fiscal") return String(year);
+  const FPm = await import("../shared/fiscalPeriod.js");
+  return FPm.fyLabelFromEnd(year, orgTime.orgFiscalStartMonth(org || {}));
+}
+
 app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
   const _bTz = await orgTz(req.user.orgId);                       // ORG_TZ_SEAM_OK
-  const basis = req.query.basis === "fiscal" ? "fiscal" : "calendar";
-  const year = parseInt(req.query.year) || Number(orgToday(_bTz).slice(0, 4));
+  const basis = budgetBasis(req.query.basis, _bTz);
+  const year = parseInt(req.query.year) || (basis === "fiscal"
+    ? Number(String(orgTime.orgPeriodBounds(_bTz, "fiscal_year", 0).end).slice(0, 4))
+    : Number(orgToday(_bTz).slice(0, 4)));
   const bounds = budgetYearBounds(year, basis, _bTz);
   const accounts = await query(
     "SELECT * FROM accounts WHERE org_id = ? AND active = TRUE AND type IN ('revenue','expense') ORDER BY code ASC",
@@ -4427,9 +4444,9 @@ app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
   const budgets = await query(
     `SELECT b.*, f.name AS fund_name FROM budgets b
        LEFT JOIN fin_funds f ON f.id = b.fund_id AND f.org_id = b.org_id
-      WHERE b.org_id = ? AND b.year = ?
+      WHERE b.org_id = ? AND b.year = ? AND ${BUDGET_BASIS_SQL} = ?
       ORDER BY b.account_id, f.name NULLS FIRST`,
-    [req.user.orgId, year]
+    [req.user.orgId, year, basis]
   );
   // A.3 — actuals are grouped BY FUND too, so a per-fund budget is compared
   // against the money that actually landed in that fund rather than against
@@ -4469,7 +4486,23 @@ app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
                  budget: amt, actual: act, variance: amt - act });
     }
   }
-  res.json(out);
+  // FIX-60: `?shape=page` answers with what the page says around the rows:
+  // which year this is, and the lines set on the OTHER kind of year that
+  // overlap it (an old calendar budget on a fiscal page), so the page can say
+  // where they are instead of letting them look lost. Bare, the array.
+  if (req.query.shape !== "page") return res.json(out);
+  const other = basis === "fiscal" ? "calendar" : "fiscal";
+  const otherYears = basis === "fiscal" ? [year - 1, year] : [year, year + 1];
+  const otherRows = await query(
+    `SELECT b.year, COUNT(*)::int AS n FROM budgets b WHERE b.org_id = ? AND ${BUDGET_BASIS_SQL} = ? AND b.year IN (?, ?) GROUP BY b.year ORDER BY b.year`,
+    [req.user.orgId, other, otherYears[0], otherYears[1]]);
+  const fiscalYearOrg = orgTime.orgFiscalStartMonth(_bTz) !== 1;
+  res.json({
+    rows: out, basis, year, yearName: await budgetYearName(year, basis, _bTz),
+    periodStart: bounds.start, periodEnd: bounds.end, fiscalYearOrg, fiscalStartMonth: orgTime.orgFiscalStartMonth(_bTz),
+    otherBasis: fiscalYearOrg ? { basis: other, lines: otherRows.reduce((n, r) => n + r.n, 0),
+      years: await Promise.all(otherRows.map(r => budgetYearName(r.year, other, _bTz))) } : null,
+  });
 }));
 
 app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -4486,21 +4519,26 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
   if (cents < 0) return res.status(400).json({ error: "A budget cannot be negative." });
   const amt = toDollars(cents);
+  // FIX-60: the budget is for the kind of year the page was showing.
+  const _bTz = await orgTz(req.user.orgId);                       // ORG_TZ_SEAM_OK
+  const basis = budgetBasis(req.body.basis, _bTz);
+  const yearName = await budgetYearName(parseInt(year), basis, _bTz);
   const id = "bgt_" + uuid().slice(0, 8);
   const [row] = await query(
-    `INSERT INTO budgets (id,org_id,account_id,year,amount,fund_id)
-     VALUES (?,?,?,?,?,?)
-     ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, '')) DO UPDATE SET amount=EXCLUDED.amount
+    `INSERT INTO budgets (id,org_id,account_id,year,amount,fund_id,basis)
+     VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, ''), COALESCE(basis, 'calendar'))
+     DO UPDATE SET amount=EXCLUDED.amount, basis=EXCLUDED.basis
      RETURNING id`,
-    [id, req.user.orgId, accountId, parseInt(year), amt, fundId]
+    [id, req.user.orgId, accountId, parseInt(year), amt, fundId, basis]
   );
   const [acctRow] = await query("SELECT code, name FROM accounts WHERE id = ?", [accountId]);
   const [fundRow] = fundId ? await query("SELECT name FROM fin_funds WHERE id = ?", [fundId]) : [];
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "budget", `${accountId}_${year}_${fundId || ""}`, {
-    description: `Set ${year} budget for ${acctRow?.code || ""} ${acctRow?.name || accountId}${fundRow ? ` (${fundRow.name})` : ""} to $${amt.toLocaleString()}`,
-    new: { account: acctRow?.name || accountId, fund: fundRow?.name || null, year: parseInt(year), amount: amt }
+    description: `Set ${yearName} budget for ${acctRow?.code || ""} ${acctRow?.name || accountId}${fundRow ? ` (${fundRow.name})` : ""} to $${amt.toLocaleString()}`,
+    new: { account: acctRow?.name || accountId, fund: fundRow?.name || null, year: parseInt(year), basis, amount: amt }
   }).catch(() => {});
-  res.json({ success: true, id: row?.id || id, accountId, fundId, year: parseInt(year), amount: amt });
+  res.json({ success: true, id: row?.id || id, accountId, fundId, year: parseInt(year), basis, amount: amt });
 }));
 
 // A.3 — a budget can be REMOVED, which is what makes "editable" true for the
@@ -4511,7 +4549,7 @@ app.delete("/finance/budgets/:id", requireAuth, requireAdmin, checkWriteAccess, 
   if (!b) return res.status(404).json({ error: "Budget not found" });
   await run("DELETE FROM budgets WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "budget", req.params.id, {
-    description: `Removed the ${b.year} budget line`, old: { year: b.year, amount: parseFloat(b.amount) || 0, fundId: b.fund_id || null },
+    description: `Removed the ${await budgetYearName(b.year, b.basis || "calendar", await orgTz(req.user.orgId))} budget line`, old: { year: b.year, basis: b.basis || "calendar", amount: parseFloat(b.amount) || 0, fundId: b.fund_id || null },
   }).catch(() => {});
   res.json({ deleted: 1 });
 }));
@@ -4541,8 +4579,15 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
   const cur = finPeriodBounds(yearMode, 0, _fpTz);
   const prior = finPeriodBounds(yearMode, -1, _fpTz);
+  // FIX-60 — THE COMPARISON IS THE SAME DAYS. The Revenue card set this year
+  // so far against ALL of last year ("↓ $X vs last FY" every October). It now
+  // compares with the same stretch a year back (orgTime.samePointLastYear,
+  // the window the Board and the giving summary use) and names the days.
+  const sp = orgTime.samePointLastYear(cur.start, cur.end, orgToday(_fpTz)) || { from: prior.start, to: prior.end, through: cur.end };
 
-  const [ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows, giftHistRows, ledgerGiftRows] = await Promise.all([
+  const [samePointRows, ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows, giftHistRows, ledgerGiftRows] = await Promise.all([
+    query(`SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions
+           WHERE org_id = ? AND type = 'income' AND date >= ? AND date <= ?`, [orgId, sp.from, sp.to]),
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, cur.start, cur.end]),
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
@@ -4609,6 +4654,9 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     cashOnHand,
     ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses,
     priorRevenue, priorExpenses, priorNet: priorRevenue - priorExpenses,
+    // FIX-60: income over the same days last year, and those days.
+    samePointRevenue: parseFloat(samePointRows[0]?.total) || 0,
+    samePoint: { from: sp.from, to: sp.to, through: sp.through },
     yearMode,
     periodLabel: cur.periodLabel,
     monthlyLabel: cur.chartLabel,

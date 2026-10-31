@@ -24,7 +24,7 @@ const WhyAnswerBody = lazy(() => retryImport(() => import("./WhyAnswer")).then(m
 import { errorMessage } from "../lib/domainError";
 import { personIntent } from "../../../shared/askGuide.js";
 
-const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const LABEL = { fontSize: 11, fontWeight: 700, color: T.ink3 };
 const CHIP = { background: T.white, color: T.greenDk, border: "1px solid " + T.bg3, borderRadius: 999, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "left", lineHeight: 1.35 };
 const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const INPUT = { flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "9px 14px", fontSize: 14, fontFamily: "inherit", background: T.white, color: T.ink };

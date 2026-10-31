@@ -216,7 +216,7 @@ ugly("u03-names-every-way.csv", f => fs.writeFileSync(f, toCsv([["Name", "Amount
   ["Smith, John", 100, "2026-04-01"], ["Mr. & Mrs. Paul Abbott", 200, "2026-04-02"], ["Sherry & Mike Akers", 300, "2026-04-03"],
   ["DR. JANE DOE", 400, "2026-04-04"], ["  mary   o'neil ", 50, "2026-04-05"],
   // IMPORT-5: couples written with a comma (scrubbed from Justin's Place's dinner list)
-  ["Alex, Brad Hubbard", 150, "2026-04-06"], ["Leslie, Kelly Dorman", 75, "2026-04-07"]])),
+  ["Alex, Brad Hollins", 150, "2026-04-06"], ["Leslie, Kelly Dunlop", 75, "2026-04-07"]])),
 { persons: 1 + 1 + 2 + 1 + 1 + 2 + 2, households: 4, gifts: 7, giftCents: c(1275), undatedGifts: 0, asideCents: 0, fileCents: c(1275),
   columns: { total: 3, mapped: 3, kept: 0, skipped: 0 } });
 

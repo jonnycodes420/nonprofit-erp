@@ -416,8 +416,11 @@ function computeInsights(input) {
     // year-end giver in October) has not come yet
     const y0 = +dataEnd.slice(0, 4), lastYr = x.byYear[y0 - 1] || 0;
     x.yearBehind = lastYr > 0 && (x.byYear[y0] || 0) < lastYr * 0.5 && r.kind !== "year_end" && !x.undated.length && !x.openPledges.length;
+    // FIX-60: a pledge is giving activity (lapseRule.js): an open pledge, or
+    // one made in the last 12 months, keeps a giver off "slipping" entirely.
+    x.pledgeActive = x.openPledges.length > 0 || x.pledges.some(p => p.status !== "cancelled" && p.status !== "written_off" && p.made_on && ymd(p.made_on) >= L12from);
     x.status = x.grew || x.movedToFoundation ? "up"
-      : (x.timeQuiet || (x.shrank && !x.undated.length && !inWindow) || (x.yearBehind && (x.L12 >= line.cents || x.largest >= line.cents)) ? "slipping" : "steady");
+      : !x.pledgeActive && (x.timeQuiet || (x.shrank && !x.undated.length && !inWindow) || (x.yearBehind && (x.L12 >= line.cents || x.largest >= line.cents))) ? "slipping" : "steady";
 
     x.signals = [];
     if (r.words) x.signals.push(r.words);

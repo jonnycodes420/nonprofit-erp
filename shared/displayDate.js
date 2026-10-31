@@ -68,6 +68,19 @@ export function displayDateLong(value) {
   return p ? `${MONTH[p.mo - 1]} ${p.d}, ${p.y}` : "";
 }
 
+// FIX-60 · "Jul 1": a day of the year with no year, for a span that repeats
+// ("Jul 1 to Oct 30, each year").
+export function displayMonthDay(value) {
+  const p = parts(value);
+  return p ? `${MON[p.mo - 1]} ${p.d}` : "";
+}
+
+// FIX-60 · the sentence that names the span a comparison of years shares.
+export function eachYearSpan(from, to) {
+  const a = displayMonthDay(from), b = displayMonthDay(to);
+  return a && b ? `${a} to ${b}, each year` : "";
+}
+
 // "Sep 2026" — a month, for a chart axis or a period heading.
 export function displayMonth(value) {
   const p = parts(/^\d{4}-\d{2}$/.test(String(value)) ? value + "-01" : value);

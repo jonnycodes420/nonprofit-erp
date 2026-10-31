@@ -90,6 +90,15 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
   a donor puts its action button beside the anchor as a sibling, never nested inside it. (BUILD-81, BUILD-45 D-1)
 - **The rail is `PRIMARY_NAV` (five) plus a `MORE_NAV` disclosure.** More opens itself when the current
   surface lives inside it, a portal-tier org keeps Portal on the rail, and every `TABS` id must be reachable. (BUILD-87 F.3.5)
+- **Labels are sentence case; the eyebrow is the one ALL-CAPS style (FIX-60).** No label, column head,
+  badge, tile, field or section title sets `text-transform: uppercase`, and none is typed in capitals. The
+  eyebrow is `.eyebrow` (GlobalStyles): 10px, 800, letter-spaced, a one- or two-word group name over a list
+  of navigation (the rail's groups, the search's result groups), never over content. SWEEP-5's `.no-caps`
+  is retired. `tests/smoke-walk.test.js` fails on computed uppercase outside `.eyebrow` at 11px or less, and
+  on a literal ALL-CAPS run of two words, on every tab and every profile tab.
+- **A count's noun sits before its "?" (FIX-60).** An inline `<Figure>` takes `unit` ("3 grants ?"), so the
+  "?" explains the whole phrase and never splits "0 ? grants"; the Board's answer lifts the noun from the
+  text part after a count. The smoke walk checks every "?" after a count.
 - **One voice (POLISH-2).** American spelling in every sentence a person reads (stored values like
   `'cheque'` stay). One date style, "Oct 8, 2026", through `shared/displayDate.js`; never an ISO date in
   text. "Log a call" is the only label for logging a conversation. A machine tag (`donorTags.js`) never

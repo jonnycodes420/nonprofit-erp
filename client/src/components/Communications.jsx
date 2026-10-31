@@ -73,7 +73,7 @@ function CampaignBriefing({ campaign }) {
 
   return (
     <div style={{ borderTop: "1px solid " + T.bg3, background: T.bg, padding: "16px" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 12 }}>Campaign Briefing</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 12 }}>Campaign Briefing</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
         {/* Left: briefing text + timeline */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -137,7 +137,7 @@ const S = {
     background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8,
     padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box",
   },
-  label: { fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 },
+  label: { fontSize: 11, color: T.ink3, display: "block", marginBottom: 4 },
   btn: (variant = "ghost") => ({
     ghost:   { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink2, fontSize: 13, cursor: "pointer" },
     primary: { background: T.gold500, border: "none", borderRadius: 8, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" },
@@ -406,16 +406,16 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10 }}>
         <div>
-          <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Delay (days)</div>
+          <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Delay (days)</div>
           <input type="number" min="0" value={step.delayDays} onChange={e => onChange({ delayDays: parseInt(e.target.value) || 0 })} style={inp}/>
         </div>
         <div>
-          <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
+          <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Subject</div>
           <input value={step.subject} onChange={e => onChange({ subject: e.target.value })} placeholder="Subject line…" style={inp}/>
         </div>
       </div>
       <div>
-        <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Body, supports <code style={{ fontSize: 9 }}>{"{{donor_name}}"}</code> and <code style={{ fontSize: 9 }}>{"{{org_name}}"}</code></div>
+        <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Body, supports <code style={{ fontSize: 9 }}>{"{{donor_name}}"}</code> and <code style={{ fontSize: 9 }}>{"{{org_name}}"}</code></div>
         <textarea value={step.body} onChange={e => onChange({ body: e.target.value })} placeholder="Write your email body here, or click ✦ Write with AI…" rows={5} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}/>
         {preview && <div style={{ fontSize: 11, color: T.ink3, marginTop: 5, fontStyle: "italic" }}>Preview: {preview}</div>}
       </div>
@@ -895,7 +895,7 @@ function SequencesPanel({ data }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
-                        <span data-testid="legacy-seq-status" style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive && !tzPaused ? T.green100 : T.bg2, color: isActive && !tzPaused ? T.greenDk : T.ink3, letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? (tzPaused ? PAUSED_FOR_TZ : "Active") : "Paused"}</span>
+                        <span data-testid="legacy-seq-status" style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive && !tzPaused ? T.green100 : T.bg2, color: isActive && !tzPaused ? T.greenDk : T.ink3 }}>{isActive ? (tzPaused ? PAUSED_FOR_TZ : "Active") : "Paused"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
                         {trigLabel(seq.trigger)} · <span style={{ color: T.gold700, fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
@@ -920,7 +920,7 @@ function SequencesPanel({ data }) {
                       <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
                     ) : (
                       <div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid " + T.bg3, marginBottom: 4 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: T.ink3, borderBottom: "1px solid " + T.bg3, marginBottom: 4 }}>
                           <span>Donor</span><span>Email</span><span>Step</span><span>Next Send</span><span>Status</span><span></span>
                         </div>
                         {enrList.map(e => (
@@ -1919,7 +1919,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   ].map(({ label, id, value, source, n, go }) => {
                     const inner = (
                       <>
-                        <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+                        <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.ink3 }}>{label}</span>
                         <span style={{ display: "block", fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</span>
                       </>
                     );
@@ -1967,7 +1967,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           {c.status === "sent" && rate !== null && (
                             <div style={{ textAlign: "right", flexShrink: 0 }}>
                               <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>{rate}%</div>
-                              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: T.ink3 }}>opened</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: T.ink3 }}>opened</div>
                             </div>
                           )}
                         </li>
@@ -2262,7 +2262,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                               {[["Sent", sentCt, T.ink], ["Opened", openCt, T.greenMid], ["Open rate", openRate + "%", openRate >= 25 ? T.greenMid : T.gold600], ["Unsubscribed", sr ? sr.unsubscribed : 0, T.ink], ["Failed", sr ? sr.failed : recs.filter(r => r.failure_reason).length, T.ink]].map(([lbl, val, col]) => (
                                 <div key={lbl} style={{ background: T.bg2, borderRadius: 8, padding: "10px 14px", flex: 1 }}>
-                                  <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div>
+                                  <div style={{ fontSize: 10, color: T.ink3 }}>{lbl}</div>
                                   <div style={{ fontSize: 20, fontWeight: 800, color: col, marginTop: 2 }}>{val}</div>
                                 </div>
                               ))}
@@ -2296,7 +2296,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           )}
                           {recs.length > 0 && (
                             <div style={{ border: "1px solid " + T.bg3, borderRadius: 8, overflow: "hidden" }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "7px 12px", background: T.bg2, fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "7px 12px", background: T.bg2, fontSize: 10, color: T.ink3, gap: 8 }}>
                                 <span>Recipient</span><span>Status</span><span>Time</span>
                               </div>
                               {(failedOnly === c.id ? recs.filter(r => r.failure_reason) : recs.slice(0, 30)).map(r => (
@@ -2361,7 +2361,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 <button type="button" data-testid="analytics-open-rate" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}
                   aria-label="Overall open rate. Opens the sent campaigns, each with its own rate."
                   style={{ textAlign: "left", background: "transparent", border: "none", width: "100%", padding: "16px 18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
-                  <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>Overall open rate</span>
+                  <span style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>Overall open rate</span>
                   <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, lineHeight: 1.1 }}>{allTimeSent > 0 ? overallRate + "%" : "Not sent yet"}</span>
                 </button>
               </div>
@@ -2369,7 +2369,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 <button type="button" data-testid="analytics-campaigns-sent" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}
                   aria-label="Campaigns sent. Opens those campaigns."
                   style={{ textAlign: "left", background: "transparent", border: "none", width: "100%", padding: "16px 18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
-                  <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>Campaigns sent</span>
+                  <span style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>Campaigns sent</span>
                   <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, lineHeight: 1.1 }}>{sentCampaigns.length.toLocaleString("en-US")}</span>
                 </button>
               </div>
@@ -2378,7 +2378,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {bestCampaign && (
               <button type="button" data-testid="analytics-best" onClick={() => setAsSent(`/campaigns/${bestCampaign.id}/as-sent`)}
                 style={{ textAlign: "left", font: "inherit", cursor: "pointer", background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 16 }}>
-                <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best campaign</div>
+                <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700 }}>Best campaign</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2, textDecoration: "underline" }}>{bestCampaign.name}</div>
                 <div style={{ fontSize: 12, color: T.ink3 }}>{bestCampaign.rate}% open rate, {Number(bestCampaign.recipient_count).toLocaleString("en-US")} sent</div>
               </button>

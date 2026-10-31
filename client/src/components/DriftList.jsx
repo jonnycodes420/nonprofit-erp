@@ -43,7 +43,7 @@ export function DriftList({ onSelectDonor, onBack }) {
         </p>
         {high.length > 0 && <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{high.map(row)}</ul>}
         {early.length > 0 && <>
-          <div style={{ marginTop: 16, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", color: T.ink3 }}>{EARLY_SIGNS_HEADING}</div>
+          <div style={{ marginTop: 16, fontSize: 11, fontWeight: 800, color: T.ink3 }}>{EARLY_SIGNS_HEADING}</div>
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>{early.map(row)}</ul>
         </>}
       </>}

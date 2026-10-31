@@ -24,6 +24,29 @@ import { displayDate } from "../../../shared/displayDate";
 import { Figure, FigureContext } from "./Figure";
 import { DonorLink } from "./RecordLink";
 
+// FIX-60 · "0 ? grants". A count in the Board's answer is followed by a text
+// part that starts with its noun; the noun moves into the figure's `unit`, so
+// the "?" comes after "0 grants", never between them. A joining word ("of",
+// "and", "·") is not a noun and stays where it was.
+const JOINING = /^(?:of|and|or|to|in|at|from|for|with|by|on|than|out|over|under|per|vs|is|are|was|were)$/;
+function answerParts(parts) {
+  const out = [];
+  (parts || []).forEach((p, i) => {
+    const prev = out[out.length - 1];
+    if (!p.figure && prev && prev.figure && prev.figure.kind === "count" && !prev.unit && i > 0) {
+      const m = /^\s*([A-Za-z][A-Za-z-]*)/.exec(p.text || "");
+      if (m && !JOINING.test(m[1].toLowerCase())) {
+        prev.unit = m[1];
+        const rest = (p.text || "").slice(m[0].length);
+        if (rest) out.push({ ...p, text: rest });
+        return;
+      }
+    }
+    out.push(p.figure ? { ...p } : p);
+  });
+  return out;
+}
+
 const DASH_CSS = `
 .dash-page{display:flex;gap:24px;align-items:flex-start}
 .dash-rail{flex:0 0 200px;display:flex;flex-direction:column;gap:2px}
@@ -51,7 +74,7 @@ export function Def({ text }) {
 }
 
 export const Eyebrow = ({ children }) => (
-  <div style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 700, marginBottom: 10 }}>{children}</div>
+  <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, marginBottom: 10 }}>{children}</div>
 );
 
 // A headline figure: a tile that opens.
@@ -156,7 +179,7 @@ export function BoardBody({ get }) {
       <Figure variant="inline" figureKey="retention-retained" value={retained.value} kind="count" label={retained.label}
         definition={retained.definition} source={retained.source} /> of the{" "}
       <Figure variant="inline" figureKey="retention-prior" value={prior.value} kind="count" label={prior.label}
-        definition={prior.definition} source={prior.source} /> people who gave last year have given again.
+        definition={prior.definition} source={prior.source} unit="people" /> who gave last year have given again.
     </>
   ) : null;
   const des = get("byDesignation");
@@ -293,7 +316,7 @@ export function RetentionChoice({ m }) {
               <Figure variant="inline" figureKey={"ret-kept-" + cur.key} value={kept.value} kind="count" label={kept.label}
                 definition={kept.definition} source={kept.source} /> of the{" "}
               <Figure variant="inline" figureKey={"ret-prior-" + cur.key} value={prior.value} kind="count" label={prior.label}
-                definition={prior.definition} source={prior.source} /> people gave again.
+                definition={prior.definition} source={prior.source} unit="people" /> gave again.
             </>
           ) : null} />
       </div>
@@ -446,14 +469,14 @@ export function Dashboards({ data, onNavigate, dashKey }) {
         <div className="dash-main" data-dashboard={!loading && board ? board.key : undefined}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
             <div style={{ minWidth: 0, flex: "1 1 420px" }}>
-              <div style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>
+              <div style={{ fontSize: 12, color: T.ink3, fontWeight: 700 }}>
                 {board?.label || ""}{board?.question ? " · " + board.question : ""}
               </div>
               {/* THE ANSWER, in a sentence. A number in it is a figure too. */}
               <h1 className="dash-answer" data-dash-answer>
-                {(board?.answer?.parts || []).map((p, i) => p.figure
+                {answerParts(board?.answer?.parts).map((p, i) => p.figure
                   ? <Figure key={i} variant="inline" abs figureKey={p.figure.key} value={p.figure.value} kind={p.figure.kind}
-                      label={p.figure.label} definition={p.figure.definition} source={p.figure.source} />
+                      label={p.figure.label} definition={p.figure.definition} source={p.figure.source} unit={p.unit} />
                   : <span key={i}>{p.text}</span>)}
               </h1>
               <div style={{ fontSize: 12.5, color: T.ink3 }}>

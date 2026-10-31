@@ -62,7 +62,7 @@ class ErrorBoundary extends Component {
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,initialOpenConversation,onIntentConsumed}){
+export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,initialOpenConversation,initialOpenCompose,initialOpenBrief,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   // FIX-58: the screening tools, under Import & tools. PROSPECT-1's rule holds:
@@ -300,7 +300,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(filters.pattern==="one-time"&&d.gifts!==1)return false;
     if(filters.pattern==="recurring"&&d.gifts<2)return false;
     if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||isLapsed(d.lastGift,orgTodayCivil())))return false;
+    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(!d.pledgeHold&&isLapsed(d.lastGift,orgTodayCivil()))))return false;
     if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
     if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
     if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
@@ -776,6 +776,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
         initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
+        initialOpenCompose={!!initialOpenCompose&&selected.id===initialSelectDonorId}
+        initialOpenBrief={!!initialOpenBrief&&selected.id===initialSelectDonorId}
         initialAddGift={giftHandoff&&giftHandoff.donorId===selected.id?giftHandoff:null}
         isReadOnly={isReadOnly} onSelectRelatedDonor={openIfOnFile}/></ErrorBoundary>
       ) : (<>
@@ -830,7 +832,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 <button key={i} role="menuitem" data-testid={it.testid} onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{it.label}</span>
-                    {it.badge&&<span style={{background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"1px 8px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{it.badge}</span>}
+                    {it.badge&&<span style={{background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"1px 8px",fontSize:10,fontWeight:800}}>{it.badge}</span>}
                   </div>
                   <div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{it.hint}</div>
                 </button>

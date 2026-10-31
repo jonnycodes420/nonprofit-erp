@@ -342,7 +342,7 @@ function AppShell() {
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
-    setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport||opts?.openConversation?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport,openConversation:opts.openConversation}:null);
+    setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport||opts?.openConversation?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport,openConversation:opts.openConversation,openCompose:opts.openCompose,openBrief:opts.openBrief}:null);
     setGrantsIntent(opts?.grantId||opts?.grantsSection?{grantId:opts.grantId,section:opts.grantsSection}:null);
     // FIX (2026-09-10) — `focus` names ONE card inside the section, so a deep
     // link that exists to fix a specific setting lands ON it instead of at the
@@ -755,7 +755,7 @@ function AppShell() {
             return <div key={g.id} data-nav-group={g.id}>
               {g.label&&(sidebarCollapsed
                 ? <div aria-hidden="true" style={{height:1,background:T.bgElevated,margin:"9px 10px 9px 0"}}/>
-                : <div style={{color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"12px 12px 4px 16px"}}>{g.label}</div>)}
+                : <div className="eyebrow" style={{color:T.sage600,padding:"12px 12px 4px 16px"}}>{g.label}</div>)}
               {items.map(navItem)}
             </div>;
           });
@@ -980,7 +980,7 @@ function AppShell() {
     {/* BUILD-58 W-2 — portal-tier application status: a quiet, honest line,
         never an error screen. Approved renders nothing. */}
     {isPortalTier&&networkApp&&networkApp.status!=="approved"&&<div style={{background:T.gold100,borderBottom:"1px solid "+T.gold300,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.ink}}>
-      <span style={{fontWeight:800,color:T.gold700,letterSpacing:"0.04em",textTransform:"uppercase",fontSize:11}}>
+      <span style={{fontWeight:800,color:T.gold700,fontSize:11}}>
         {networkApp.status==="pending"?"Application under review":networkApp.status==="held"?"Application on hold":networkApp.status==="dispute"?"EIN under review":"Application not approved"}
       </span>
       <span style={{color:T.ink2}}>
@@ -1018,7 +1018,7 @@ function AppShell() {
           (0.6 — the first became "Gifts not yet thanked" with a definition and
           a start date, on People; the second measured the IMPORT DATE, not the
           donor, and is removed). */}
-      {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
+      {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} initialOpenCompose={donorsIntent?.openCompose} initialOpenBrief={donorsIntent?.openBrief} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<AtlasNote place="communications" onNavigate={navigateTo}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
@@ -1101,7 +1101,7 @@ function AppShell() {
              gets the rail's own separator so Settings does not read as the
              last thing under MONEY. */
           style={g.bottom?{borderTop:"1px solid "+T.bg3,marginTop:6,paddingTop:4}:undefined}>
-          {g.label&&<div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:T.ink3,padding:"10px 16px 4px"}}>{g.label}</div>}
+          {g.label&&<div className="eyebrow" style={{color:T.ink3,padding:"10px 16px 4px"}}>{g.label}</div>}
           {g.items.map(i=>navById[i.id]).filter(Boolean).map(t=>{
             const active=navCurrent===t.id;
             return(

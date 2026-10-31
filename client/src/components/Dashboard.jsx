@@ -198,7 +198,7 @@ function ImpactLine({ impact }) {
             "You process donations on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)"
           )}
           {online > 0 && row(
-            <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.05em" }}>· estimate</span></>,
+            <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600 }}>· estimate</span></>,
             "~" + fmt(impact.estimatedFeesElsewhere),
             `Estimate, assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`
           )}
@@ -858,7 +858,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-88d — 16px below a section header, and the hairline under it is the
   // card's own. Spread AFTER cPad at every header.
   const sHdrPad=onPanel?{paddingBottom:16}:{paddingBottom:16,borderBottom:"1px solid "+T.bg2};
-  const sTitle={fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3};
+  const sTitle={fontSize:10,fontWeight:700,color:T.ink3};
   // BUILD-87 F.3.2 — A SECTION TITLE IS A PLAIN SERIF WORD WITH THE BRASS
   // UNDERLINE the page titles already use ("Your fundraising."). The ProductMark
   // pills are gone from Home: a badge introduces a product to someone who has
@@ -949,7 +949,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const GoalStat=({label,value,valueColor,sub,onClick})=>(
     <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined})}
       style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"8px 12px"}}>
-      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:3}}>{label}</div>
+      <div style={{fontSize:9,fontWeight:800,color:T.ink3,marginBottom:3}}>{label}</div>
       <div style={{fontSize:14,fontWeight:700,color:valueColor||T.inkInverse,lineHeight:1.25}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>{sub}</div>}
     </div>
@@ -1170,7 +1170,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{many?"Fundraising, All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:4}}>{many?"Fundraising, All Active Goals":"Fundraising Goal"}</div>
                 <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
@@ -1211,7 +1211,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Fundraising Goal</div>
+                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:4}}>Fundraising Goal</div>
                 <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
                   <span>{goal.label}</span>
                   {isAdmin&&(
@@ -1276,8 +1276,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
                     style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${over?T.gold:m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
                     {over
-                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
-                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
+                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
+                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
                     <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
                     <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
                     <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
@@ -1286,7 +1286,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
                     {over&&(
                       <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
-                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {countLabel(g.childCount, "goal")}</span>
+                        <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Rolls up {countLabel(g.childCount, "goal")}</span>
                         {kids.map(c=>(
                           <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
                             <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
@@ -1344,7 +1344,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,background:T.bg2,padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:9,fontWeight:800,color:T.ink3,background:T.bg2,padding:"3px 8px",borderRadius:99}}>My portfolio</span>
               <span data-testid="home-year-range" style={{fontSize:12,color:T.ink3}}>{(myStats&&myStats.yearLabel)||"This year"}</span>
             </div>
             <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
@@ -1372,7 +1372,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
                       <StatIcon name={m.icon} color={m.warn?T.terracotta:T.greenDk}/>
-                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
+                      <span style={{fontSize:9,fontWeight:700,color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
                     </div>
                     <div style={{fontSize:20,fontWeight:800,color:m.warn?T.terracotta:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
                     <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
@@ -1405,7 +1405,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           {heroIsDrift&&(
             <div onClick={()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
               className="card-click" style={{cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>At Risk From Drift</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>At Risk From Drift</div>
               <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{fmtFull(driftData.atRiskAmount)}</div>
                 <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{countLabel(driftData.counts.driftingHigh,"donor")} drifting</span>
@@ -1430,7 +1430,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <div style={heroIsDrift?{borderTop:"1px solid "+T.bg3,paddingTop:14}:undefined}>
             <div onClick={openRetentionBreakdown} className="card-click" style={{display:"flex",flexWrap:"wrap",gap:20,alignItems:"center",cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
               <div style={{flex:"1 1 220px",minWidth:0}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
+                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:retentionThin?17:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1.2}}>
                     {retentionTooEarly?"Not set":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
@@ -1512,14 +1512,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <button onClick={()=>setFirstTouchOpen(v=>!v)}
               aria-expanded={firstTouchOpen} aria-label="First-touch delay detail"
               style={{display:"flex",alignItems:"baseline",gap:7,background:firstTouchOpen?T.bg2:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>First-touch delay</span>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>First-touch delay</span>
               <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"Not set"}</span>
               <span style={{fontSize:11,color:T.ink3}}>{firstTouchOpen?"▲":"▼"}</span>
             </button>
             <button onClick={openDebtBreakdown}
               aria-label="Stewardship debt detail"
               style={{display:"flex",alignItems:"baseline",gap:7,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>Stewardship debt</span>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>Stewardship debt</span>
               <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
               {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&stewardMetrics.stewardshipDebt.deltaVsTrendStart!==0&&(
                 <span style={{fontSize:11,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:T.greenDk}}>
@@ -1699,7 +1699,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   medium row, never when there are none. */}
               {i===driftEarlyStart&&(
                 <li style={{borderTop:"1px solid "+T.bg3,padding:"11px 20px",background:T.bg2}}>
-                  <span style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3}}>{EARLY_SIGNS_HEADING}</span>
+                  <span style={{fontSize:11,fontWeight:800,color:T.ink3}}>{EARLY_SIGNS_HEADING}</span>
                   {" "}
                   <span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{EARLY_SIGNS_MEANING}</span>
                 </li>
@@ -1727,7 +1727,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                           so a medium row may not label its dollars "at risk":
                           that money is not in the number above it. It says
                           what the figure actually is. */}
-                      <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>{r.confidence==="medium"?"usually gives":"at risk"}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>{r.confidence==="medium"?"usually gives":"at risk"}</div>
                     </div>
                   </a>
                   {!lineOpen&&(
@@ -1766,7 +1766,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       saves the line with no next step at all. */}
                   {driftStep&&(
                     <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
-                      <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ink3,whiteSpace:"nowrap"}}>Next step</span>
+                      <span style={{fontSize:11,fontWeight:700,color:T.ink3,whiteSpace:"nowrap"}}>Next step</span>
                       <input className="drift-step-input" value={driftStep.label} maxLength={NEXT_STEP_LABEL_MAX}
                         onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,label:e.target.value}));}}
                         aria-label="Next step" placeholder="Leave blank for no next step"
@@ -1922,7 +1922,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         // OVERDUE starts thirteen pixels left of every face it labels. (A JSX
         // comment here is inside a function CALL, not inside JSX.)
         <li key={"band-"+t.band} className="attn-band" style={{padding:"22px 0 8px 13px",borderLeft:"3px solid transparent"}}>
-          <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.09em",textTransform:"uppercase",color:b.color}}>{b.label}</span>
+          <span style={{fontSize:11,fontWeight:700,color:b.color}}>{b.label}</span>
           <span style={{fontSize:11,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
         </li>);
     }
@@ -2028,7 +2028,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 how long it has waited, and the label says so. */}
             {t.overdue?`${rowFigure(t)} ${plural(rowFigure(t), "day")}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
           </div>
-          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
+          <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>
             {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
           </div>
         </div>
@@ -2091,7 +2091,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
                 {age>=1?`${countLabel(age, "day")}`:age===0?"Today":""}
               </div>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>
                 stopped
               </div>
             </div>
@@ -2135,7 +2135,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
           <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
             <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{displayDateShort(ro.forDate,new Date())}</div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>readout</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>readout</div>
           </div>
         </a>
         <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
@@ -2820,7 +2820,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
           {th&&(
             <div style={{marginBottom:18}}>
-              <div style={{fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Next step</div>
+              <div style={{fontSize:11,color:T.ink3,marginBottom:6}}>Next step</div>
               <div style={{fontSize:14,fontWeight:600,color:th.overdue?T.gold700:T.ink,lineHeight:1.4}}>
                 {th.nextStep.label}{th.overdue?" \u00b7 overdue":` \u00b7 due ${displayDateShort(th.nextStep.due,new Date())}`}
               </div>
@@ -3008,7 +3008,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
           {editMode&&hiddenRows.length>0&&(
             <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden, not shown on your Home</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Hidden, not shown on your Home</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                 {hiddenRows.map(r=>{
                   const m=sectionMeta(r.id);
@@ -3236,11 +3236,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           dialogStyle={{border:"1px solid "+T.bg3}}>
           <div>
             <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>{goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}</div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Label</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Label</div>
             <input value={goalForm.label} onChange={e=>setGoalForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Win back $50,000 in lapsed giving" style={inp}/>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Target amount ($)</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Target amount ($)</div>
             <input type="number" value={goalForm.goalAmount} onChange={e=>setGoalForm(f=>({...f,goalAmount:e.target.value}))} placeholder="25000" style={inp}/>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Goal type</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Goal type</div>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
               {[["total_raised","Total raised"],["lapsed_recovery","Lapsed recovery"]].map(([v,l])=>(
                 <button key={v} aria-pressed={goalForm.goalType===v} onClick={()=>setGoalForm(f=>({...f,goalType:v}))} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(goalForm.goalType===v,"bottom")}}>{l}</button>
@@ -3248,11 +3248,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Period start</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period start</div>
                 <input type="date" value={goalForm.periodStart} onChange={e=>setGoalForm(f=>({...f,periodStart:e.target.value}))} style={{...inp,marginBottom:0}}/>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Period end</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period end</div>
                 <input type="date" value={goalForm.periodEnd} onChange={e=>setGoalForm(f=>({...f,periodEnd:e.target.value}))} style={{...inp,marginBottom:0}}/>
               </div>
             </div>

@@ -41,7 +41,7 @@ const ATTENDED = [
   { name: "Hugo Ramsey", persons: 1, seat: "Hugo Ramsey", table: 2, note: "2 Vegan" },
   { name: "Iris Pemberton", persons: 1, seat: "Iris Pemberton", table: 2 },
   { name: "Jonas Wilde", persons: 1, seat: "Jonas Wilde", table: 2 },
-  { name: "Kerry Lusk", persons: 1, seat: "Kerry Lusk", table: 1, note: "1 Medical Gluten" },
+  { name: "Kerry Lusk", persons: 1, seat: "Kerry Lusk", table: 1, note: "1 Celiac Diet" },
   { name: "Lionel Achebe", persons: 1, seat: "Lionel Achebe", table: 3 },
   { name: "Maeve Darrow", persons: 1, seat: "Maeve Darrow", table: 3 },
   { name: "Nadia Fenwick", persons: 1, seat: "Nadia Fenwick", table: 3 },

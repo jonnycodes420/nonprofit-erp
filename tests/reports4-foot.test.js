@@ -98,6 +98,22 @@ async function buildFixture() {
   await mem("m_r4_2", "d_r4_cy", "lapsed", `${y(2)}-01-01`, `${y(1)}-01-01`);
   await mem("m_r4_3", "d_r4_dee", "cancelled", `${y(1)}-01-01`, `${y(0)}-01-01`);
   await mem("m_r4_4", "d_r4_gone", "lapsed", `${y(2)}-01-01`, `${y(1)}-01-01`);
+  // FIX-60: two events this year and one last year, with guests and gifts,
+  // so the Events list's four numbers have rows to open.
+  const ev = (id, name, date) => q(`INSERT INTO events (id,org_id,name,event_type,date,status,created_by,created_by_name) VALUES ($1,$2,$3,'gala',$4,'completed','system:test','test')`, [id, ORG, name, date]);
+  await ev("ev_r4_a", "Spring dinner", `${y(0)}-01-03`);
+  await ev("ev_r4_b", "Open studio", `${y(0)}-01-04`);
+  await ev("ev_r4_old", "Last year's dinner", `${y(1)}-05-05`);
+  const guest = (id, event, donor, status) => q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,$6)`, [id, event, ORG, donor, donor || "Walk-in", status]);
+  await guest("ea_r4_1", "ev_r4_a", "d_r4_ada", "attended");
+  await guest("ea_r4_2", "ev_r4_a", "d_r4_ben", "attended");
+  await guest("ea_r4_3", "ev_r4_a", "d_r4_cy", "registered");
+  await guest("ea_r4_4", "ev_r4_a", "d_r4_dee", "declined");
+  await guest("ea_r4_5", "ev_r4_b", "d_r4_ada", "attended");
+  await guest("ea_r4_6", "ev_r4_b", "d_r4_eli", "confirmed");
+  await guest("ea_r4_7", "ev_r4_old", "d_r4_hal", "attended");
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,event_id) VALUES ('g_r4_ev1',$1,'d_r4_dee',250.25,$2,'cash','ev_r4_a'), ('g_r4_ev2',$1,'d_r4_eli',99.99,$2,'cash','ev_r4_a'), ('g_r4_ev3',$1,'d_r4_gus',40.01,$3,'cash','ev_r4_b'), ('g_r4_ev4',$1,'d_r4_hal',500,$4,'cash','ev_r4_old')`,
+    [ORG, `${y(0)}-01-03`, `${y(0)}-01-04`, `${y(1)}-05-05`]);
   await q(`UPDATE donors SET deleted_at = NOW() WHERE id = 'd_r4_gone'`);
 }
 
@@ -204,6 +220,33 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
        ["amount", "fee", "net"].map(k => bookkeeperCell({ key: k, money: true }, row)));
   }
 
+  // FIX-60 · THE EVENTS LIST'S FOUR NUMBERS OPEN, AND FOOT. Each events-year-*
+  // source foots to its rows, and each is what the events' own pages add up
+  // to (the /events list carries every event's came, registered and received).
+  // HOW IT GOES RED: on main (2b4951a) there is no events-year-* source, so
+  // none of the four opens.
+  {
+    const efrom = `${Y}-01-01`, eto = `${Y}-12-31`;
+    const list = (await api("GET", "/events", tok)).body || [];
+    const mine = list.filter(e => String(e.date || "").slice(0, 4) === String(Y));
+    const add = f => mine.reduce((n, e) => n + f(e), 0);
+    const want = { events: mine.length, came: add(e => Number(e.attendee_count) || 0), registered: add(e => Number(e.registered_count) || 0),
+      received: Math.round(add(e => Math.round(Number(e.money ? e.money.received : 0) * 100))) / 100 };
+    want.rate = want.registered ? Math.round(want.came / want.registered * 100) : null;
+    for (const k of ["events", "came", "registered", "received", "rate"]) {
+      const src = { key: "events-year-" + k, params: { from: efrom, to: eto } };
+      let f;
+      try { f = await FS.footCheck(orgId, src); } catch (e) { f = { error: e.message }; }
+      if (!f || f.error) { ok(`§fix60 events-year-${k} opens rows`, false, f); continue; }
+      ok(`§fix60 events-year-${k} foots: ${f.measure} ${f.value} = rows ${f.rowsFoot}`, f.foots, f);
+      ok(`§fix60 events-year-${k} is what the events' own pages add up to (${want[k]})`, same(f.value, want[k]), { source: f.value, pages: want[k] });
+    }
+    if (own) ok("§fix60 …and on the fixture that is 2 events, 3 came of 5 registered (60%), $390.25 received",
+      want.events === 2 && want.came === 3 && want.registered === 5 && want.rate === 60 && want.received === 390.25, want);
+    const shown = await api("GET", `/figures/events-year-received/rows?from=${efrom}&to=${eto}&pageSize=1`, tok);
+    ok("§fix60 the endpoint the Events list reads hands it the same value", shown.status === 200 && same(shown.body.value, want.received), { status: shown.status, value: shown.body && shown.body.value });
+  }
+
   if (own) {
     // The wrong figure: a deleted spouse's giving was in the household total.
     const rel = await api("GET", "/donors/d_r4_ada/relationships", tok);
@@ -220,6 +263,47 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
     const ppl = await api("GET", `/figures/givers/people?from=${from}&to=${to}`, tok);
     const giv = await FS.footCheck(ORG, { key: "givers", params: { from, to } });
     ok("the people behind a figure are the people it counts", ppl.status === 200 && ppl.body.donorIds.length === giv.value, { people: ppl.body, givers: giv.value });
+
+    // FIX-60 · EQUAL SPANS. In October the 3-year comparison set four months
+    // of this year against three whole years ("a change of -69% year over
+    // year") and the annual report did the same against all of last year.
+    // While the year runs, every year counts the same days, and says which.
+    // Red on main: the columns' sources run to Dec 31 and there is no span.
+    {
+      const today = require("./helpers").civilToday();
+      const md = today.slice(5);
+      const running = md !== "12-31";
+      const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      // The same number of days from Jan 1 in each year (the Board's one
+      // window); across a Feb 29 a column ends a day off, and the page says so.
+      const dayN = (Date.parse(today) - Date.parse(`${Y}-01-01`)) / 86400000;
+      const endOf = k => running ? new Date(Date.parse(`${Y - k}-01-01`) + dayN * 86400000).toISOString().slice(0, 10) : `${Y - k}-12-31`;
+      const mdOf = d => `${MON[+d.slice(5, 7) - 1]} ${+d.slice(8)}`;
+      const offs = [1, 2].filter(k => endOf(k).slice(5) !== endOf(0).slice(5));
+      const sentence = `Jan 1 to ${mdOf(endOf(0))}, each year` + (offs.length ? ` (${offs.map(k => `to ${mdOf(endOf(k))} in ${Y - k}`).join(", ")}, the same number of days across a February 29)` : "");
+      const ty = await api("GET", `/reports/three-year?year=${Y}&yearMode=calendar`, tok);
+      const cols = (ty.body.years || []).slice().reverse();   // newest first
+      ok(`§fix60 3-year: every column counts Jan 1 to ${endOf(0).slice(5)} of its year`,
+         cols.length === 3 && cols.every((c, k) => c.source && c.source.params.from === `${Y - k}-01-01` && c.source.params.to === endOf(k)),
+         cols.map(c => c.source && c.source.params));
+      ok("§fix60 3-year: the change compares the same days", ty.body.figures?.growth?.source?.params?.prevTo === endOf(1), ty.body.figures?.growth?.source?.params);
+      ok(`§fix60 3-year: the page names the span ("${sentence}")`, ty.body.span && ty.body.span.sentence === sentence && ty.body.span.cut === running, ty.body.span);
+      const [lastYearSameDays] = await q(`SELECT COALESCE(SUM(g.amount),0)::numeric AS s FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND d.deleted_at IS NULL AND g.date >= $2 AND g.date <= $3`,
+        [ORG, `${Y - 1}-01-01`, endOf(1)]);
+      ok(`§fix60 3-year: last year's column is the same days' gifts (${lastYearSameDays.s})`, same(cols[1] && cols[1].total, lastYearSameDays.s), { column: cols[1] && cols[1].total });
+      const rowsY1 = Math.round((ty.body.rows || []).reduce((n, r) => n + Number(r.y1) * 100, 0));
+      ok("§fix60 3-year: the donor rows foot to last year's column", same(rowsY1 / 100, cols[1] && cols[1].total), { rows: rowsY1 / 100 });
+      const an = await api("GET", `/reports/annual?year=${Y}&yearMode=calendar`, tok);
+      const gp = an.body.figures?.growthPct?.source?.params || {};
+      ok("§fix60 annual: this year so far against the same days of last year", gp.to === endOf(0) && gp.prevFrom === `${Y - 1}-01-01` && gp.prevTo === endOf(1), gp);
+      ok("§fix60 annual: the page names the span", an.body.span && an.body.span.sentence && an.body.span.sentence.startsWith(`Jan 1 to ${mdOf(endOf(0))}, each year`), an.body.span);
+      for (const k of ["growthPct", "priorTotal"]) {
+        const f = an.body.figures?.[k];
+        const fc = f && f.source ? await FS.footCheck(ORG, f.source) : null;
+        ok(`§fix60 annual: ${k} opens rows and foots`, !!(fc && fc.foots) && same(fc.value, f.value), { f, fc });
+      }
+      ok("§fix60 annual: last year's figure is the same days' gifts", same(an.body.priorTotal, lastYearSameDays.s), { priorTotal: an.body.priorTotal });
+    }
     await clear(ORG);
   }
   await closeDb();

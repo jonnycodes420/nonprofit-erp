@@ -16,7 +16,7 @@ import { openCheckSnap } from "./CheckSnap";
 import { reloadMailTypes } from "../lib/mailTypes";
 
 const card = { border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white };
-const eyebrow = { fontSize: 10, fontWeight: 800, letterSpacing: "0.11em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 };
+const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 };
 const link = { background: "none", border: "none", padding: 0, fontFamily: "inherit", fontSize: 13.5, color: T.greenDk, fontWeight: 700, cursor: "pointer", textAlign: "left" };
 
 // The rail's own reads: the calls, the goal under them, the To confirm count

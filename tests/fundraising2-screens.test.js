@@ -4,9 +4,10 @@
 // three years) is read on Fundraising, Pledges, the event page, Home and each
 // profile, and they must say one thing.
 //
-// Into one fresh org: the real-shaped dinner file linked to its event, the
-// scrubbed guest list for who came, and three goals (running, not started,
-// ended) with gifts and a pledge.
+// Into one fresh org: the real-shaped Finding Joy workbook (its guest list and
+// its gifts in one file, jp-finding-joy-combined-443.xlsx, Jonathan's key in
+// expected-finding-joy.json) linked to its event, and three goals (running,
+// not started, ended) with gifts and a pledge.
 //   §1 a goal before its start says "Starts <day>", has no pace, and shows
 //      what is already pledged to it
 //   §2 "Active goals" counts only goals running today, and the cards under it
@@ -39,7 +40,14 @@ const { testNow } = require("./clock");
 
 const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
 const FX = path.join(__dirname, "fixtures", "import");
-const KEY = JSON.parse(fs.readFileSync(path.join(FX, "real-shaped", "expected.json"), "utf8"))["jp-dinner-gifts-106.xlsx"];
+// FIX-60: the dinner's guest list and gifts in one workbook, so who came and
+// who gave are the same people (the old pair's guest list belonged to another
+// gift sheet, so on it nobody who came also gave). The key counts rows: a
+// couple's row is one entry, two people in Steward.
+const FJ_FILE = "real-shaped/jp-finding-joy-combined-443.xlsx";
+const KEY = JSON.parse(fs.readFileSync(path.join(FX, "real-shaped", "expected-finding-joy.json"), "utf8"));
+const FJ_GIFTS = XLSX.utils.sheet_to_json(XLSX.read(fs.readFileSync(path.join(FX, FJ_FILE)), { type: "buffer" }).Sheets.Gifts, { defval: null });
+const RECEIVED_ROWS = FJ_GIFTS.filter(g => g.Status === "Received").length, PLEDGE_ROWS = FJ_GIFTS.filter(g => g.Status === "Not yet received").length;
 const ORG = "org_fr2screens", EMAIL = "admin@fr2screens.local", PASSWORD = "loadtest1234";
 const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: civilPlusDays(-12), useEventDate: true, pledgeDue: "event" };
 const APP = process.env.APP_URL || "http://localhost:4173";
@@ -73,9 +81,8 @@ async function importFile(tok, file, answers) {
 
 async function main() {
   const tok = await freshOrg();
-  const d1 = await importFile(tok, "real-shaped/jp-dinner-gifts-106.xlsx", DINNER);
-  const d2 = await importFile(tok, "event-guest-list-scrubbed.xlsx", { eventName: DINNER.eventName, eventDate: DINNER.eventDate });
-  ok("the dinner and the guest list import", d1.status === "done" && d2.status === "done", [d1.status, d2.status]);
+  const d1 = await importFile(tok, FJ_FILE, DINNER);
+  ok("the Finding Joy workbook (guest list and gifts) imports", d1.status === "done", [d1.status]);
   const [ev] = await q(`SELECT id FROM events WHERE org_id=$1 AND name=$2`, [ORG, DINNER.eventName]);
   const [giver] = await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 1`, [ORG]);
 
@@ -123,20 +130,22 @@ async function main() {
   // §4 the dinner
   const rep = (await api("GET", `/events/${ev.id}/report`, tok)).body || {};
   const st = rep.story || {};
-  const pledgedAll = Math.round(KEY.not_yet_received.dollars * 100) + 0;   // first year
-  ok(`§4 the event page: $${KEY.received.dollars} received, $${KEY.not_yet_received.dollars} pledged for its year`,
-     st.receivedCents === Math.round(KEY.received.dollars * 100) && st.pledgedCents === pledgedAll, JSON.stringify([st.receivedCents, st.pledgedCents]));
-  ok("§4 the event page: $124,290 raised, $104,050 pledged over all years, 165 came",
-     st.raisedCents === 12429000 && st.pledgedAllCents === 10405000 && st.attended === 165, JSON.stringify([st.raisedCents, st.pledgedAllCents, st.attended]));
+  ok(`§4 the event page: $${KEY.received} received, $${KEY.not_yet_received} pledged for its year`,
+     st.receivedCents === KEY.received * 100 && st.pledgedCents === KEY.not_yet_received * 100, JSON.stringify([st.receivedCents, st.pledgedCents]));
+  // who came, by the guest list's row (a couple's row is two people, one household)
+  const cameRows = (await q(`SELECT COUNT(*)::int AS people, COUNT(DISTINCT COALESCE(d.household_id, d.id))::int AS rows FROM event_attendees a JOIN donors d ON d.id = a.donor_id
+                               WHERE a.org_id=$1 AND a.event_id=$2 AND a.status='attended' AND d.deleted_at IS NULL`, [ORG, ev.id]))[0];
+  ok(`§4 the event page: $${KEY.dinner_total.toLocaleString("en-US")} raised, $104,050 pledged over all years, the key's ${KEY.attended} rows came`,
+     st.raisedCents === KEY.dinner_total * 100 && st.pledgedAllCents === 10405000 && st.attended === cameRows.people && cameRows.rows === KEY.attended, JSON.stringify([st.raisedCents, st.pledgedAllCents, st.attended, cameRows]));
   ok("§4 gave + came-and-didn't-give never exceeds the people involved; every count opens its people",
      st.cameDidntGive <= st.attended && st.sources && st.sources.attended && st.sources.gave && st.sources.cameDidntGive && st.sources.pledgedAll, JSON.stringify(st.sources || {}).slice(0, 300));
   const pl = (await api("GET", "/fundraising/pledges", tok));
-  ok("§4 Pledges answers, with every open pledge and its installments", pl.status === 200 && Array.isArray(pl.body.pledges) && pl.body.pledges.length === KEY.not_yet_received.rows + 1
+  ok("§4 Pledges answers, with every open pledge and its installments", pl.status === 200 && Array.isArray(pl.body.pledges) && pl.body.pledges.length === PLEDGE_ROWS + 1
      && pl.body.pledges.every(p => Array.isArray(p.installments)), [pl.status, pl.body && pl.body.pledges && pl.body.pledges.length]);
   ok("§4 the Overview's pledges are Pledges' totals", ov.pledges && ["open", "dueThisYear", "overdue"].every(k => cents(ov.pledges[k]) === cents(pl.body[k])),
      JSON.stringify([ov.pledges && [ov.pledges.open, ov.pledges.dueThisYear, ov.pledges.overdue], pl.body && [pl.body.open, pl.body.dueThisYear, pl.body.overdue]]));
   ok("§4 the dinner's pledges in Pledges: $104,050 still to come", ((pl.body || {}).pledges || []).filter(p => p.madeAt && p.madeAt.id === ev.id).reduce((n, p) => n + cents(p.balance), 0) === 10405000, "");
-  ok("§4 every dinner gift carries the event (63)", (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND event_id=$2`, [ORG, ev.id]))[0].n === KEY.received.rows, "");
+  ok(`§4 every dinner gift carries the event (${RECEIVED_ROWS})`, (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND event_id=$2`, [ORG, ev.id]))[0].n === RECEIVED_ROWS, "");
   let agreeErr = null;
   if (assertSurfacesAgree) {
     // PLANTED, to prove the pledge check can go red: Fundraising says $1 more is overdue.

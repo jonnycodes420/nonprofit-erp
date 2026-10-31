@@ -46,11 +46,11 @@ function GrantLogModal({grant,onSave,onClose}){
           {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
         <div style={{marginBottom:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Date</div>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Date</div>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
         </div>
         <div style={{marginBottom:20}}>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Notes</div>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Notes</div>
           <textarea value={note} onChange={e=>setNote(e.target.value)} rows={4} placeholder="What happened? Key takeaways, next steps…" style={{...inp,resize:"vertical",lineHeight:1.55}}/>
         </div>
         <div style={{display:"flex",gap:8}}>
@@ -229,7 +229,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"Not set",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
+                <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>{l}</div>
                 <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
               </div>
             ))}
@@ -237,7 +237,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           {grant.amount>0&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Funding Progress</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>Funding Progress</div>
               <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
             </div>
             <div style={{height:8,background:T.bg3,borderRadius:99}}>
@@ -247,26 +247,26 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
+              <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>Application Deadline</div>
               <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?fmtDayLong(grant.deadline):"Not set"}</div>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Program Officer</div>
+              <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>Program Officer</div>
               <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{grant.officer||"Not set"}</div>
             </div>
             {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
+              <div style={{fontSize:9,fontWeight:700,color:T.ink3,marginBottom:4}}>Report Due</div>
               <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?T.terracotta:reportDays!==null&&reportDays<30?T.gold600:T.ink}}>{fmtDayLong(grant.reportDue)}</div>
             </div>}
           </div>
 
           {grant.description&&<div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Description</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:8}}>Description</div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",fontSize:13,color:T.ink2,lineHeight:1.65}}>{grant.description}</div>
           </div>}
 
           {grant.requirements&&<div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Requirements & Eligibility</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:8}}>Requirements & Eligibility</div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",fontSize:13,color:T.ink2,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{grant.requirements}</div>
           </div>}
 
@@ -278,7 +278,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           <GrantDocuments grantId={grant.id} isReadOnly={isReadOnly}/>
 
           {grant.history&&grant.history.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Prior Awards</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:8}}>Prior Awards</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {grant.history.map((h,i)=><Pill key={i} label={h} color={T.greenMid}/>)}
             </div>
@@ -288,7 +288,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         {/* RIGHT */}
         <div style={{minWidth:0,padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {statuses.map(s=>(
                 <button key={s} onClick={()=>changeStatus(s)} disabled={isReadOnly||s==="declined"&&curStatus!=="declined"}
@@ -302,7 +302,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           {/* FIX-55 item 6: these four are AI only; with AI off they hung on "Thinking…". */}
           {org?.capabilities?.ai&&<div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Grant Strategy</div>
+            <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Grant Strategy</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
               {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
@@ -314,7 +314,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3}}>Notes</div>
               {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:T.gold500,border:"none",borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
             </div>
             <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
@@ -322,7 +322,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Activity Timeline</div>
+              <div style={{fontSize:10,fontWeight:800,color:T.ink3}}>Activity Timeline</div>
               <button onClick={()=>setLogOpen(true)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,
@@ -463,7 +463,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     setSelected(null);
   };
 
-  return <div className="no-caps" style={{display:"flex",flexDirection:"column",gap:16}}>
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected ? (
     <GrantProfile grant={selected} onClose={()=>{setSelected(null);setBoardKey(k=>k+1);}} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org} isReadOnly={isReadOnly} onOpenFunder={openFunder}/>
     ) : (<>
@@ -556,12 +556,12 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
     <Card>
       <SectionLabel>Your Organization Profile</SectionLabel>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Mission</div>
+        <div><div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Mission</div>
           <div style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{data.org.mission||"Not set"}</div></div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Annual Budget</div>
+          <div><div style={{fontSize:11,color:T.ink3,marginBottom:2}}>Annual Budget</div>
             <div style={{fontSize:13,color:T.ink}}>{budgetLabel}</div></div>
-          <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Current Funders</div>
+          <div><div style={{fontSize:11,color:T.ink3,marginBottom:2}}>Current Funders</div>
             <div style={{fontSize:13,color:T.ink}}>{activeGrants}</div></div>
         </div>
       </div>
@@ -571,7 +571,7 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
     </Card>
 
     {(loading||results)&&<Card style={{background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500}}>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold700,marginBottom:14}}>✦ Grant Matches, Ranked by Alignment</div>
+      <div style={{fontSize:11,fontWeight:700,color:T.gold700,marginBottom:14}}>✦ Grant Matches, Ranked by Alignment</div>
       {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin dark/>Analyzing your org and searching grant landscape…</div>}
       {results&&<div style={{fontSize:13,color:T.ink,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
     </Card>}

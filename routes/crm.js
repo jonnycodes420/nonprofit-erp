@@ -61,6 +61,7 @@ const routers = {
   r1: express.Router(),
 };
 const giftHooks = {};
+const PW = require("../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 // FIX-2 D — the one way another module runs a report: the SAME handler and
 // params GET /reports/:key uses, so Agent's count is the report's count.
 const reportHooks = {};
@@ -974,7 +975,8 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null) : null;
+  // FIX-60: ctx.pledges (lapseRule.pledgesFor) holds a pledger off lapsing.
+  const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null, ctx.pledges || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
     out.push({ signal: "first_gift", toStage: "qualify",
@@ -4293,6 +4295,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   // that wants everyone pages through (client/src/lib/pages.js).
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  // FIX-60: a pledge keeps a person off Lapsed (lapseRule.js), on every list.
+  const _sumHold = lapseRule.pledgeHoldSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -4303,8 +4307,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
-                  birth_month, birth_day, birth_year
-           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [req.user.orgId, limit, offset]),
+                  birth_month, birth_day, birth_year, ${_sumHold.sql} AS pledge_hold
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`, [..._sumHold.args, req.user.orgId, limit, offset]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
@@ -6363,7 +6367,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // timezone alongside the server's and UTC, so a donor could cross the
       // 365-day lapsed line on a different day than their own calendar says.
       const _stageToday = orgToday(await orgTz(orgId));
-      const stageParams = [_stageToday, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
+      // FIX-60: a pledge holds a person off Lapsed (lapseRule.js pledgeHold).
+      const stageParams = [_stageToday, ...lapseRule.pledgeHoldSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
@@ -6376,7 +6381,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
+                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _stageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -7889,41 +7895,29 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   try { pledgeAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
   catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
-  // SWEEP-4: a schedule that does not sum to the pledge is refused BEFORE the
-  // pledge is written. It was written, then the schedule threw into a catch
-  // that only logged, and the pledge answered 201 with no installments.
-  try { await planPledgeInstallments({ amountCents: parseMoneyOrThrow(pledgeAmt, "amount"), schedule: req.body.installments,
-          frequency: req.body.frequency, count: req.body.installmentCount, firstDue: dueDate }); }
-  catch (e) { return res.status(400).json({ error: e.message, code: e.code || "bad_schedule" }); }
-
+  // SWEEP-4 / FIX-60: the pledge and its installments are written by the one
+  // writer (pledgeWrite.js). A schedule that does not sum to the pledge is
+  // refused BEFORE the pledge is written. An explicit schedule is honoured; a
+  // stated cadence (frequency + count) generates one, the remainder on the
+  // first installment so it SUMS to the pledge; neither is one installment of
+  // the whole on its due date.
   const id = "pl_" + uuid().slice(0, 8);
-  const inserted = await query(
-    `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-     RETURNING id`,
-    [id, req.user.orgId, req.params.id, pledgeAmt, dueDate, notes || "", campaignId, idemKey,
-     actor(req).id, actor(req).name]
-  );
-  if (!inserted.length && idemKey) {
+  let wrote;
+  try {
+    wrote = await PW.writePledge({ id, orgId: req.user.orgId, donorId: req.params.id, amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
+      dueDate, notes: notes || "", campaignId, idempotencyKey: idemKey, createdBy: actor(req).id, createdByName: actor(req).name,
+      plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: dueDate } },
+      { door: "pledge" });
+  } catch (e) {
+    if (e.code === "schedule_does_not_sum") return res.status(400).json({ error: e.message, code: e.code });
+    throw e;
+  }
+  if (!wrote.created && idemKey) {
     // A replay. Return the ORIGINAL pledge with 200 — never a second row, and
     // never an error the user has to interpret mid-demo.
     const dup = await query("SELECT * FROM pledges WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
     if (dup.length) return res.status(200).json({ ...dup[0], duplicate: true });
   }
-  // ── BUILD-88b B.1/B.2 — A PLEDGE STORES ITS INSTALMENTS ──────────────────
-  // A pledge was one amount and one due date, so "the March instalment
-  // arrived" had nowhere to land and a twelve-month pledge could only ever be
-  // all or nothing. An explicit schedule is honoured; a stated CADENCE
-  // (frequency + count) generates one, with the remainder on the first
-  // instalment so the schedule SUMS to the pledge; neither given leaves the
-  // pledge with no schedule, which B.2 surfaces as "Needs you: amount and
-  // schedule" rather than treating as late.
-  await writePledgeInstallments(req.user.orgId, id, {
-    amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
-    schedule: req.body.installments, frequency: req.body.frequency,
-    count: req.body.installmentCount, firstDue: dueDate,
-  });
 
   // WIRE-1: the promise is on the person's timeline the day it is made.
   { const who = await staffWho(req);
@@ -7936,12 +7930,13 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   res.status(201).json({ ...rows[0], installments: insts });
 }));
 
-// The ONE writer of a pledge's schedule. Called on create, on a schedule edit,
-// and by the shell-pledge repair in B.2 — so "what a schedule is" is decided
+// A pledge's schedule, REWRITTEN: a schedule edit and the shell-pledge repair
+// in B.2. A new pledge is written with its schedule by pledgeWrite.js (FIX-60);
+// both plan through the same planner, so "what a schedule is" is decided
 // once. Never rewrites an instalment that has already been PAID: a payment is
 // a fact and a new schedule is a plan.
 async function writePledgeInstallments(orgId, pledgeId, opts) {
-  const rows = await planPledgeInstallments(opts);
+  const rows = await PW.planInstallments(opts);
   if (!rows.length) return { installments: 0 };
   const { frequency } = opts;
   const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
@@ -7958,32 +7953,6 @@ async function writePledgeInstallments(orgId, pledgeId, opts) {
     [frequency || null, rows.length, pledgeId, orgId]);
   return { installments: rows.length };
 }
-// What the schedule IS, written nowhere: an explicit schedule (it must sum to
-// the pledge), a cadence, or (SWEEP-4) neither, which is ONE installment of the
-// whole pledge on its due date. A pledge made through the API with no schedule
-// had no installments, so recordGift had nothing to apply a payment to and the
-// Pledges view drew it with no row under it. Every pledge has its installments.
-async function planPledgeInstallments({ amountCents, schedule, frequency, count, firstDue }) {
-  const dep = await depositMod();
-  let rows = [];
-  if (Array.isArray(schedule) && schedule.length) {
-    rows = schedule.map((r, i) => ({ seq: i + 1, dueDate: String(r.dueDate || r.due_date || ""),
-                                     amountCents: money.toCents(r.amount != null ? r.amount : r.amountCents / 100) ?? 0 }))
-      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) && r.amountCents > 0);
-    const sum = rows.reduce((s, r) => s + r.amountCents, 0);
-    if (rows.length && amountCents && sum !== amountCents) {
-      const e = new Error(`a schedule must sum to the pledge: ${money.formatCents(sum)} of ${money.formatCents(amountCents)}`);
-      e.code = "schedule_does_not_sum"; throw e;
-    }
-  } else if (frequency && count) {
-    rows = dep.generateInstallments({ amountCents, frequency, count, firstDue });
-  }
-  if (!rows.length && amountCents > 0 && /^\d{4}-\d{2}-\d{2}/.test(String(firstDue || ""))) {
-    rows = [{ seq: 1, dueDate: String(firstDue).slice(0, 10), amountCents }];
-  }
-  return rows;
-}
-
 // GET /pledges/:id/installments — the schedule, with what has paid each one.
 app.get("/pledges/:id/installments", requireAuth, wrap(async (req, res) => {
   const [p] = await query("SELECT id, amount::float AS amount, status, is_shell FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -8572,27 +8541,30 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     return r.length > 0;
   };
 
+  // FIX-60: the run this history file is (the client mints it before the
+  // gifts are written), so Undo import takes these pledges with its gifts.
+  const semRunId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
   for (const p of pledges) {
     const donor = await findDonor(p.donorEmail, p.donorName, p.donorExternalId);
     if (!donor) { counts.unresolved.push({ kind: "pledge", name: p.donorName }); continue; }
     const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
     const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
-    const ins = await query(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key,created_by,created_by_name,import_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
-       ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-       RETURNING id`,
-      [importId("pl_"), orgId, donor.id, p.amount, due, p.status === "fulfilled" ? "fulfilled" : "open",
-       (p.notes || "").slice(0, 500) || null, idem, actor(req).id, actor(req).name,
-       "semantics:" + idem.slice(0, 120)]);   // SEND-GATE-1: an imported pledge is never reminded
-    if (ins.length) {
-      counts.pledges++;
-      // link the payments that name this pledge in their notes
+    let amountCents;
+    try { amountCents = parseMoneyOrThrow(p.amount, "amount"); } catch { amountCents = 0; }
+    if (!(amountCents > 0)) { counts.unresolved.push({ kind: "pledge", name: p.donorName, reason: "no_amount" }); continue; }
+    // FIX-60 · THE ONE PLEDGE WRITER, with its installments. The payments that
+    // name this pledge are linked once it is written, and each becomes a paid
+    // installment of exactly its amount, oldest first; what is left is one
+    // installment due on the pledge's date. A SHELL states no schedule anybody
+    // wrote down, so what is left of it has no date (never late, never chased).
+    const link = async pledgeId => {
       if (p.externalId) {
-        await run(
-          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ?`,
-          [ins[0].id, orgId, `%on pledge ${p.externalId}%`]);
-      } else if (p.shell) {
+        // link the payments that name this pledge in their notes
+        return (await query(
+          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ? RETURNING id`,
+          [pledgeId, orgId, `%on pledge ${p.externalId}%`])).map(r => r.id);
+      }
+      if (p.shell) {
         // BUILD-88a A.7 — a SHELL pledge: the export carried the payments and
         // no commitment row. Its payments are this donor's gifts whose notes
         // are in the pledge-payment family (the same BUILD-80 vocabulary that
@@ -8601,13 +8573,24 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
         const linked = await query(
           `UPDATE gifts SET pledge_id=? WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
              AND notes ~* 'pledge[[:space:]]+(payment|installment)' RETURNING id`,
-          [ins[0].id, orgId, donor.id]);
+          [pledgeId, orgId, donor.id]);
         counts.pledgePaymentsLinked = (counts.pledgePaymentsLinked || 0) + linked.length;
+        return linked.map(r => r.id);
       }
+      return [];
+    };
+    const wrote = await PW.writePledge({ orgId, donorId: donor.id, amountCents, dueDate: due,
+      status: p.status === "fulfilled" ? "fulfilled" : "open", notes: (p.notes || "").slice(0, 500) || null,
+      idempotencyKey: idem, createdBy: actor(req).id, createdByName: actor(req).name,
+      importId: semRunId || "semantics:" + idem.slice(0, 120),   // SEND-GATE-1: an imported pledge is never reminded
+      plan: p.shell ? { firstDue: null, undatedOk: true } : { firstDue: due }, link },
+      { door: "history_import", history: true });
+    if (wrote.created) {
+      counts.pledges++;
       // NUMBERS-2: the linked payments decide the pledge's status (fulfilled,
       // surplus), the same as a payment recorded by hand.
       // A pledge the file called fulfilled stays so (its payments may be in no file).
-      if (p.status !== "fulfilled") await recalcPledgePayment(ins[0].id, orgId);
+      if (p.status !== "fulfilled") await recalcPledgePayment(wrote.id, orgId);
     }
   }
 
@@ -10164,15 +10147,22 @@ async function reverseImport(req, res) {
   // IMPORT-3: a spreadsheet import also made pledges, households and perhaps
   // the event its gifts were given at. Each goes, and what it changed on a
   // person who was already here (a household, the monthly-giver flag) is put back.
+  // FIX-60: a history file's pledges (import-semantics) carry the run too, so
+  // every shape takes the pledges its run wrote, and their installments go
+  // with them (ON DELETE CASCADE): nothing is left scheduled for a pledge that
+  // no longer exists, and a payment it linked that stays is unlinked.
   let pledgesRemoved = 0;
-  if (imp.shape === "sheet") {
+  {
     const pl = await query("SELECT id, donor_id FROM pledges WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
     if (pl.length) {
       await run("UPDATE gifts SET pledge_id=NULL WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
+      await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id = ANY(?)", [orgId, pl.map(p => p.id)]);
       await run("DELETE FROM pledges WHERE org_id=? AND id = ANY(?)", [orgId, pl.map(p => p.id)]);
       for (const p of pl) if (!donorIds.includes(p.donor_id)) donorIds.push(p.donor_id);
     }
     pledgesRemoved = pl.length;
+  }
+  if (imp.shape === "sheet") {
     for (const id of (sj.householdAssigned || [])) await run("UPDATE donors SET household_id=NULL WHERE org_id=? AND id=?", [orgId, id]);
     for (const id of (sj.sustainerFlagged || [])) await run("UPDATE donors SET imported_sustainer=false, imported_sustainer_amount=NULL WHERE org_id=? AND id=?", [orgId, id]);
     // IMPORT-4: attendance, communication choices, kept columns and the
@@ -10576,7 +10566,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS} THEN 'lapsed'
+                AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
+                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -10591,7 +10582,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            AND stage IS NULL
            AND deleted_at IS NULL`,
         // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
-        [_giftStageToday, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
+        [_giftStageToday, ...lapseRule.pledgeHoldSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
@@ -11840,7 +11831,8 @@ app.post("/pipeline/:donorId/move", requireAuth, requireCrm, checkWriteAccess, w
 app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
-  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: orgToday(await orgTz(req.user.orgId)) }) });
+  const _msToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await lapseRule.pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
@@ -12254,24 +12246,21 @@ app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async 
             : askCents;
           if (!(committedCents > 0)) return res.status(400).json({ error: "A positive committed amount is required." });
           const due = req.body.pledgeDueDate || existing.expected_close_civil || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-          const pid = "pl_" + uuid().slice(0, 8);
-          await run(
-            `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
-             VALUES (?,?,?,?,?,'open',?,?,?)`,
-            [pid, orgId, existing.donor_id, toDollars(committedCents), String(due).slice(0, 10),
-             `Committed from the proposal: ${existing.name || "Ask"}`, actor(req).id, actor(req).name]);
-          // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give a
-          // real schedule; neither given leaves one instalment for the whole
-          // commitment, so the existing rule in recordGift applies her cheque to
-          // it from any door, to the cent.
-          await writePledgeInstallments(orgId, pid, {
-            amountCents: committedCents, schedule: req.body.installments,
-            frequency: req.body.frequency, count: req.body.installmentCount,
-            firstDue: String(due).slice(0, 10),
-          }).catch(e => console.error("[proposal] installments:", e.message));
-          const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pid]);
-          if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-            ["pli_" + uuid().slice(0, 10), orgId, pid, String(due).slice(0, 10), toDollars(committedCents)]);
+          // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
+          // count give a real schedule; neither given is one installment for the
+          // whole commitment, so the existing rule in recordGift applies her
+          // cheque to it from any door, to the cent. A schedule that does not
+          // sum is refused before anything is written.
+          let pid;
+          try {
+            ({ id: pid } = await PW.writePledge({ orgId, donorId: existing.donor_id, amountCents: committedCents, dueDate: String(due).slice(0, 10),
+              notes: `Committed from the proposal: ${existing.name || "Ask"}`, createdBy: actor(req).id, createdByName: actor(req).name,
+              plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: String(due).slice(0, 10) } },
+              { door: "pledge" }));
+          } catch (e) {
+            if (e.code === "schedule_does_not_sum") return res.status(400).json({ error: e.message, code: e.code });
+            throw e;
+          }
           put("pledge_id", pid); put("commit_kind", P.COMMIT_PLEDGE); put("gift_id", null); put("gift_amount", null);
           wrote = { kind: P.COMMIT_PLEDGE, id: pid };
         }
@@ -16374,24 +16363,20 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   // total the funder appears in.
   let pledgeId = g.award_pledge_id || null;
   if (!pledgeId) {
-    pledgeId = "pl_" + uuid().slice(0, 8);
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
-    await run(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
-       VALUES (?,?,?,?,?,'open',?,?,?)`,
-      [pledgeId, orgId, g.funder_donor_id, toDollars(awardedCents), due,
-       `Grant award: ${g.program || "grant"}`, actor(req).id, actor(req).name]);
-    // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give the
-    // funder's real payment schedule; neither given leaves one instalment for
-    // the whole award, so recordGift applies their cheque to it to the cent from
-    // whichever door it arrives through.
-    await writePledgeInstallments(orgId, pledgeId, {
-      amountCents: awardedCents, schedule: req.body.installments,
-      frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due,
-    }).catch(e => console.error("[grant] installments:", e.message));
-    const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
-    if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
-      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, due, toDollars(awardedCents)]);
+    // THE ONE PLEDGE WRITER (FIX-60), with its schedule. A frequency and a
+    // count give the funder's real payment schedule; neither given is one
+    // installment for the whole award, so recordGift applies their cheque to it
+    // to the cent from whichever door it arrives through.
+    try {
+      ({ id: pledgeId } = await PW.writePledge({ orgId, donorId: g.funder_donor_id, amountCents: awardedCents, dueDate: due,
+        notes: `Grant award: ${g.program || "grant"}`, createdBy: actor(req).id, createdByName: actor(req).name,
+        plan: { schedule: req.body.installments, frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due } },
+        { door: "pledge" }));
+    } catch (e) {
+      if (e.code === "schedule_does_not_sum" || e.code === "bad_amount") return res.status(400).json({ error: e.message, code: e.code });
+      throw e;
+    }
   }
 
   await run(
@@ -21488,7 +21473,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     [orgId]
   );
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
-  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
   const lapsedDonors = await query(
     `SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count, 0) > 0
         AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsedRule.sql} ORDER BY last_gift_date ASC LIMIT 5`,
@@ -22111,8 +22096,13 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
     const [bud] = await query(
       `SELECT COALESCE(SUM(b.amount),0) AS v FROM budgets b
          JOIN accounts a ON a.id = b.account_id AND a.org_id = b.org_id
-        WHERE b.org_id = ? AND b.year = ? AND a.type = 'revenue' AND a.subtype = 'contributions'`,
-      [orgId, yearMode === "fiscal" ? fyLabel : Number(String(cur.start).slice(0, 4))]);
+        WHERE b.org_id = ? AND b.year = ? AND a.type = 'revenue' AND a.subtype = 'contributions'
+          AND COALESCE(b.basis, 'calendar') = ?`,
+      // FIX-60: a budget is read on the kind of year it was set for (an old
+      // row with no basis is a calendar budget), never a calendar budget
+      // under a fiscal year's name.
+      [orgId, yearMode === "fiscal" ? fyLabel : Number(String(cur.start).slice(0, 4)),
+       yearMode === "fiscal" && orgTime.orgFiscalStartMonth(_fpTz) !== 1 ? "fiscal" : "calendar"]);
     const budgeted = parseFloat(bud?.v) || 0;
     if (budgeted > 0) {
       const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end);
@@ -23773,7 +23763,14 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const yr = orgTime.parseCivil(today).y;
   const q = Math.floor((orgTime.parseCivil(today).m - 1) / 3) + 1;
   const qMs = qb.start, qMe = qb.end;
-  const pqMs = pqb.start, pqMe = pqb.end;
+  const pqMs = pqb.start;
+  // FIX-60: a quarter still running is compared with the SAME number of days
+  // of the quarter before, never with all of it.
+  const qThrough = orgTime.compareCivil(qMe, today) > 0 ? today : qMe;
+  const qRunning = qThrough !== qMe;
+  const qDays = orgTime.daysBetween(qMs, qThrough) + 1;
+  let pqMe = orgTime.addDays(pqMs, qDays - 1);
+  if (orgTime.compareCivil(pqMe, pqb.end) > 0) pqMe = pqb.end;
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
   const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
@@ -23806,7 +23803,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     query(
       `SELECT a.name, COALESCE(b.amount, 0) as budget, COALESCE(SUM(ft.amount), 0) as actual
        FROM accounts a
-       LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ?
+       LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ? AND COALESCE(b.basis, 'calendar') = 'calendar'
        LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
        WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
        GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
@@ -23893,7 +23890,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
 
 Paragraph 1, Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
 
-Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} last quarter. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
+Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of last quarter` : "last quarter"}. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
 
 Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
@@ -23908,7 +23905,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   } catch(e) {
     console.error("[board-report] step 7: Claude FAILED (using fallback) —", e.message);
     recordAiFallback(orgId, "board_report.summary", e);
-    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} in the prior quarter. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
+    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} ${qRunning ? `in the first ${qDays} days of the prior quarter` : "in the prior quarter"}. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
   }
 
   // Generate PDF
@@ -24031,7 +24028,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.rect(50, y, PW - 100, 44).fill(BG);
     doc.font("Helvetica").fontSize(8).fillColor(INK3).text("RAISED THIS QUARTER", 62, y + 9);
     doc.font("Helvetica-Bold").fontSize(20).fillColor(GREEN).text(fmtD(raisedThisQ), 62, y + 22);
-    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`vs ${fmtD(raisedLastQ)} prior quarter`, 215, y + 26);
+    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(qRunning ? `vs ${fmtD(raisedLastQ)}, the first ${qDays} days of last quarter` : `vs ${fmtD(raisedLastQ)} prior quarter`, 215, y + 26);
     if (qChange !== null) {
       const dir = parseFloat(qChange) >= 0 ? "▲" : "▼";
       doc.font("Helvetica-Bold").fontSize(12)
@@ -24575,10 +24572,28 @@ async function reportTopDonors(orgId, p) {
 // 3-year donor giving comparison [Core]: per-donor giving this year vs last
 // vs prior (YoYoY), plus the org-level 3-year trend. Reuses reportYearBounds /
 // yearMode — one FY definition with the rest of Reports/Finance.
+// FIX-60 — EQUAL SPANS. The three years were three whole years, so in
+// October the newest column was four months against twelve and the page said
+// "a change of -69% year over year". When the selected year is still running,
+// every year is cut to the same stretch (orgTime.equalYearSpans, the same
+// point last year twice over) and `span` says which days, e.g. "Jul 1 to Oct
+// 30, each year". A finished year keeps all three whole, and says that too.
+async function yearSpans(p, bounds) {
+  const DD = await import("../shared/displayDate.js");
+  const today = p.today || orgToday(p.org || {});
+  const { years, cut } = orgTime.equalYearSpans(bounds, today);
+  // "Jan 1 to Oct 30, each year", and where a Feb 29 moved a column's last
+  // day (the window counts days), the sentence says so rather than pretend.
+  const md = s => DD.displayMonthDay(s);
+  const off = years.slice(1).filter(y => md(y.to) !== md(years[0].to));
+  const sentence = DD.eachYearSpan(years[0].from, years[0].to)
+    + (off.length ? ` (${off.map(y => `to ${md(y.to)} in ${DD.civilYear(y.to)}`).join(", ")}, the same number of days across a February 29)` : "");
+  return { years, cut, through: cut ? today : null, sentence };
+}
+
 async function reportThreeYear(orgId, p) {
-  const y0 = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);       // most recent (selected) year
-  const y1 = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
-  const y2 = reportYearBounds(p.year - 2, p.yearMode, p.fiscalStartMonth);   // oldest
+  const sp = await yearSpans(p, [0, 1, 2].map(k => reportYearBounds(p.year - k, p.yearMode, p.fiscalStartMonth)));
+  const [y0, y1, y2] = sp.years;   // most recent (selected) year first, each cut to the same span
   await FP_READY;
   const label = y => reportYearLabel(y, p);
   const rows = await query(
@@ -24614,11 +24629,12 @@ async function reportThreeYear(orgId, p) {
   return {
     figures,
     yearMode: p.yearMode,
+    span: { cut: sp.cut, through: sp.through, sentence: sp.sentence },
     // Each year's total and givers are the sources' values, and open them.
     // REPORTS-5: and what an old system's report said for that year, when one
     // was imported: beside Steward's total, never added into it.
     years: await Promise.all([[p.year - 2, y2, "t2", "d2"], [p.year - 1, y1, "t1", "d1"], [p.year, y0, "t0", "d0"]].map(async ([yy, b, t, d]) => ({
-      year: yy, label: label(yy), total: figures[t].value, donors: figures[d].value, source: figures[t].source, donorsSource: figures[d].source,
+      year: yy, label: label(yy), from: b.from, to: b.to, total: figures[t].value, donors: figures[d].value, source: figures[t].source, donorsSource: figures[d].source,
       imported: await figureSources.historicalGiving(orgId, b.from, b.to) }))),
     orgGrowthPct: figures.growth.value,
     labels: { y0: label(p.year), y1: label(p.year - 1), y2: label(p.year - 2) },
@@ -24630,8 +24646,12 @@ async function reportThreeYear(orgId, p) {
 // new vs returning, growth vs prior year, donor retention for the year, and
 // the by-fund / by-campaign breakdown — one page a board wants at year end.
 async function reportAnnual(orgId, p) {
-  const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
+  // FIX-60: a year still running is cut at today and compared with the same
+  // stretch of the year before (`priorSpan`), never with all of it. Retention
+  // keeps the whole prior year: it asks who of LAST year's donors came back.
   const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
+  const sp = await yearSpans(p, [reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior]);
+  const [cur, priorSpan] = sp.years;
   const [totals] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors,
@@ -24644,7 +24664,7 @@ async function reportAnnual(orgId, p) {
             COUNT(DISTINCT g.donor_id)::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
-    [orgId, prior.from, prior.to]);
+    [orgId, priorSpan.from, priorSpan.to]);
   const [split] = await query(
     `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?),
@@ -24677,7 +24697,8 @@ async function reportAnnual(orgId, p) {
   const figures = await reportFigures(orgId, {
     total: { key: "gifts", params: yw }, giftCount: { key: "gifts", params: { ...yw, measure: "count" } },
     uniqueDonors: { key: "givers", params: yw }, avgGift: { key: "gifts", params: { ...yw, measure: "mean" } },
-    growthPct: { key: "giving-change", params: { ...yw, prevFrom: prior.from, prevTo: prior.to } },
+    growthPct: { key: "giving-change", params: { ...yw, prevFrom: priorSpan.from, prevTo: priorSpan.to } },
+    priorTotal: { key: "gifts", params: { from: priorSpan.from, to: priorSpan.to } },
     newDonors: { key: "givers", params: { ...yw, first: "new" } }, returningDonors: { key: "givers", params: { ...yw, first: "returning" } },
     retentionRate: { key: "retention-window", params: { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to } },
   });
@@ -24688,6 +24709,7 @@ async function reportAnnual(orgId, p) {
   return {
     year: p.year, yearMode: p.yearMode, label: reportYearLabel(p.year, p),
     priorLabel: reportYearLabel(p.year - 1, p),
+    span: { cut: sp.cut, through: sp.through, sentence: sp.sentence, from: cur.from, to: cur.to, priorFrom: priorSpan.from, priorTo: priorSpan.to },
     total, giftCount: totals.gift_count, uniqueDonors: totals.unique_donors,
     avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
     priorTotal, priorGiftCount: priorT.gift_count, priorUniqueDonors: priorT.unique_donors,
@@ -25050,7 +25072,9 @@ async function reportDeposits(orgId, p) {
       ({ key, label: f.label, confidence: f.confidence, note: f.note, headers: f.headers })),
     groups: built.groups.map(g => ({ ...g, gross: bkDollars(g.grossCents), feeAmount: bkDollars(g.feeCents), netAmount: bkDollars(g.netCents) })),
     nonCash: built.nonCash.map(r => ({ ...r, amount: bkDollars(r.cents) })),
-    depositCount: built.groups.length,
+    // FIX-60: a day of unmatched gifts is not a deposit
+    depositCount: built.groups.filter(g => g.matched).length,
+    undepositedDays: built.groups.filter(g => !g.matched).length,
     grossCents: built.grossCents, gross: bkDollars(built.grossCents),
     feeCents: built.feeCents, fee: bkDollars(built.feeCents),
     netCents: built.netCents, net: bkDollars(built.netCents),
@@ -25120,7 +25144,9 @@ function reportToCsv(key, data, opts = {}) {
       };
     case "three-year":
       return {
-        headers: ["Donor", "Email", "Assigned to", data.labels.y2, data.labels.y1, data.labels.y0, "YoY change %"],
+        // FIX-60: the file says which days every column counts.
+        headers: ["Donor", "Email", "Assigned to", data.labels.y2, data.labels.y1, data.labels.y0,
+          data.span && data.span.sentence ? `YoY change % (${data.span.sentence})` : "YoY change %"],
         rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.y2, r.y1, r.y0, r.changePct === null ? "new" : r.changePct]),
       };
     case "annual": {
@@ -25128,6 +25154,7 @@ function reportToCsv(key, data, opts = {}) {
         ["Total giving", data.total], ["Gifts", data.giftCount], ["Unique donors", data.uniqueDonors],
         ["Average gift", data.avgGift], ["New donors", data.newDonors], ["Returning donors", data.returningDonors],
         ["Growth vs prior year %", data.growthPct === null ? "n/a" : data.growthPct],
+        ["Prior year, same days", data.priorTotal], ["Compared over", data.span ? data.span.sentence : ""],
         ["Donor retention %", data.retentionRate === null ? "n/a" : data.retentionRate],
         ["", ""], ["BY FUND", ""],
         ...data.byFund.map(f => [f.name, f.total]),
@@ -26842,6 +26869,7 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
   const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
+  const _quietPledge = lapseRule.pledgeHoldSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
@@ -26857,9 +26885,10 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
         AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
         -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
         AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
+        AND NOT ${_quietPledge.sql}
       ORDER BY d.total_giving DESC
       LIMIT 50`,
-    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args]
+    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args, ..._quietPledge.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 
@@ -30181,8 +30210,6 @@ const namedOrGivingSql = (a = "d") =>
 // other doors that record one (Agent → confirm). Filled once, here, when the
 // functions exist; the gift form above calls them directly.
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
-// CAPTURE-1: a pledge confirmed from a card gets its schedule from the one writer.
-giftHooks.writePledgeInstallments = writePledgeInstallments;
 giftHooks.calcWealthScore = calcWealthScore;
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
 // FIX-9 Part B.4 — `sendReportCsv` is THE csv writer: the injection guard and

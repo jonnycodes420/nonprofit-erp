@@ -103,11 +103,11 @@ const NEW_STEP = { type: "follow_up", label: "New step", offsetDays: 7, note: ""
                    ownerMode: "relationship_owner", timing: { from: "trigger", value: 7, unit: "days" } };
 
 // ── SHARED STYLE OBJECTS, in one block under the imports (the TDZ rule) ───
-const LBL = { display: "block", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 5 };
+const LBL = { display: "block", fontSize: 10, fontWeight: 700, color: T.ink3, marginBottom: 5 };
 const INP = { width: "100%", padding: "8px 10px", fontSize: 13.5, borderRadius: 8, border: "1.5px solid " + T.bg3, background: T.white, color: T.ink, fontFamily: "inherit" };
 const BTN = { font: "inherit", fontSize: 13, fontWeight: 600, borderRadius: 9, padding: "9px 15px", cursor: "pointer", border: "1px solid " + T.bg3, background: "transparent", color: T.ink };
 const BTN_GO = { ...BTN, background: T.greenDk, borderColor: T.greenDk, color: T.white, fontWeight: 700 };
-const CAP = { fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
+const CAP = { fontSize: 10.5, fontWeight: 700, color: T.ink3 };
 
 // ── THE CHAIN ─────────────────────────────────────────────────────────────
 // One line, edge to edge, through the node centres. Four grid rows shared by

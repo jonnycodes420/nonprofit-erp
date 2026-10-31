@@ -82,6 +82,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
   if (err) return <Card><div style={{ color: T.ink2, fontSize: 14 }}>Data health couldn't load. {err}</div><button style={{ ...btn(false), marginTop: 10 }} onClick={() => { setErr(null); load(); }}>Try again</button></Card>;
   if (!health) return <Card><div style={{ color: T.ink3, fontSize: 13 }}>Checking your file…</div></Card>;
   const c = health.counts;
+  // FIX-60: a line's examples are names from this org's own rows for that
+  // line (GET /data-health `examples`), or there are none. Never typed here.
+  const ex = health.examples || {};
+  const quoted = names => (names && names.length ? ` (${names.map(n => `"${n}"`).join(", ")})` : "");
   const lines = [
     { id: "duplicates", label: "Possible duplicates", count: c.duplicates,
       sentence: c.duplicates ? `${plural(c.duplicates, "pair")} that may be the same person: ${c.duplicatesByConfidence.high} high, ${c.duplicatesByConfidence.medium} medium, ${c.duplicatesByConfidence.low} low confidence.` : "No two people on file look like the same person.",
@@ -97,7 +101,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       action: c.emails ? "Review emails" : null },
     // IMPORT-5: only shown when there is something to fix
     ...(c.couples ? [{ id: "couples", label: "Couples written as one name", count: c.couples,
-      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written as one person ("Alex, Brad Hubbard", "Randy or Jessamy Barlow").`,
+      sentence: `${c.couples === 1 ? "1 name looks like a couple" : `${c.couples.toLocaleString("en-US")} names look like couples`} written as one person${quoted(ex.couples)}.`,
       action: "Fix them" }] : []),
     // FIX-58: pledges an import dated from the event's own day
     ...(c.pledgesOnEventDay ? [{ id: "pledgeDates", label: "Pledges due the day of the event", count: c.pledgesOnEventDay,
@@ -105,9 +109,9 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       action: "Move to Dec 31" }] : []),
     // FIX-59: each only when there is something in it
     ...(c.eventDuplicatesByEvent || []).map(e => ({ id: `event:${e.eventId}`, label: `Possible duplicates within ${e.eventName}`, count: e.count,
-      sentence: `Two spellings of one name on this event's list ("Fran" and "Frances"). Answer Same person or Different for each.`, action: "Review" })),
+      sentence: `${e.count === 1 ? "Two spellings of one name" : "Names spelled two ways"} on this event's list${(ex.eventPairs || {})[e.eventId] ? ` (${ex.eventPairs[e.eventId].map(n => `"${n}"`).join(" and ")})` : ""}. Answer Same person or Different for each.`, action: "Review" })),
     ...(c.namesWithNotes ? [{ id: "names", label: "Names with markup or a note in them", count: c.namesWithNotes,
-      sentence: `${c.namesWithNotes === 1 ? "1 name has" : `${c.namesWithNotes.toLocaleString("en-US")} names have`} stars, underscores or a note in brackets typed into ${c.namesWithNotes === 1 ? "it" : "them"} ("**Bryn Maylor", "Sadie (send with Tess's) Norwood").`,
+      sentence: `${c.namesWithNotes === 1 ? "1 name has" : `${c.namesWithNotes.toLocaleString("en-US")} names have`} stars, underscores or a note in brackets typed into ${c.namesWithNotes === 1 ? "it" : "them"}${quoted(ex.namesWithNotes)}.`,
       action: "Clean them" }] : []),
     ...(c.families ? [{ id: "families", label: "Possible families", count: c.families,
       sentence: `${plural(c.families, "pair")} with one surname and two different first names share an address, phone or email: likely spouses or a parent and child, not duplicates.`,

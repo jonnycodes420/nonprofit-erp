@@ -286,7 +286,7 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
         {empty && <div data-testid="search-hint" style={{padding:"8px 14px 4px",fontSize:12.5,color:"rgba(240,237,230,0.7)"}}>Type a name, a gift, a note or a meeting.</div>}
         {!empty && flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
         {groups.map(gr=><div key={gr.name}>
-          <div style={{padding:"6px 14px 3px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
+          <div className="eyebrow" style={{padding:"6px 14px 3px",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
           {gr.items.map(item=>{
             flatIdx++;
             const active = flatIdx===sel && (!empty || movedRef.current);
@@ -466,7 +466,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
           <button onClick={()=>setWnOpen(false)} aria-label="Close" style={{background:"none",border:"none",fontSize:20,color:T.ink3,cursor:"pointer"}}>×</button>
         </div>
         {wnEntries.map(e=><div key={e.id} style={{background:T.white,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
-          <div style={{fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3}}>{PRODUCT_WORDS[e.product]||"New"} · {new Date(e.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</div>
+          <div style={{fontSize:11,color:T.ink3}}>{PRODUCT_WORDS[e.product]||"New"} · {new Date(e.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</div>
           <div style={{fontSize:15,fontWeight:700,color:T.ink,margin:"4px 0"}}>{e.title}</div>
           <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.55}}>{e.body}</div>
         </div>)}

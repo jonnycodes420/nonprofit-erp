@@ -187,15 +187,15 @@ function FollowUpTaskModal({donor,onSave,onClose}){
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>For {donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Task Title</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Task Title</div>
             <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="What happens next? e.g. Send the impact report" style={inp}/>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Due Date</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Due Date</div>
             <input type="date" value={due} onChange={e=>setDue(e.target.value)} style={inp}/>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Priority</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Priority</div>
             <div style={{display:"flex",gap:6}}>
               {["high","medium","low"].map(p=>(
                 <button key={p} onClick={()=>setPriority(p)} style={{flex:1,background:priority===p?SC[p]:T.bg,border:`1px solid ${priority===p?SC[p]:T.bg3}`,borderRadius:8,padding:"8px",color:priority===p?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{p}</button>
@@ -354,7 +354,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
           {(editing?TYPES.filter(([v])=>v!=="gift"&&(!fromCalendar&&plain===null||v===type)):TYPES).map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 13px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
-        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={fromCalendar} style={inp}/>
+        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={fromCalendar} style={inp}/>
           {fromCalendar&&<div style={{fontSize:12,color:T.ink3,marginTop:6}}>The time and place come from your calendar. <a href={`https://${editMeta.provider==="google"?"calendar.google.com/calendar/r/day/":"outlook.office.com/calendar/view/day/"}${String(editing.date||"").slice(0,10).replace(/-/g,"/")}`} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontWeight:700}}>Change it in your calendar</a>.</div>}</div>
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
           {plain!==null&&<TpField label="Note"><textarea value={plain} onChange={e=>setPlain(e.target.value)} rows={6} style={ta}/></TpField>}
@@ -426,7 +426,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
         </div>
-        {!editing&&type!=="gift"&&<AttachFileField file={file} setFile={setFile} labelStyle={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}/>}
+        {!editing&&type!=="gift"&&<AttachFileField file={file} setFile={setFile} labelStyle={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5,display:"block"}}/>}
         <div style={{display:"flex",gap:8}}>
           {type!=="gift"&&<button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":editing?"Save changes":"Save Touchpoint"}</button>}
           <button onClick={onClose} style={{flex:type==="gift"?1:undefined,background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -486,7 +486,7 @@ function EditDonorModal({donor,onSave,onClose}){
           </div>
           {/* PARITY-3 6a — month and day; the year is optional. */}
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Birthday</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Birthday</div>
             <div style={{display:"flex",gap:8}}>
               <select aria-label="Birthday month" data-testid="edit-birth-month" value={form.bMonth} onChange={set("bMonth")} style={{...inp,flex:2}}>
                 <option value="">Month</option>
@@ -497,7 +497,7 @@ function EditDonorModal({donor,onSave,onClose}){
             </div>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:8}}>Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>setForm(p=>({...p,stage:s.id}))}
@@ -508,11 +508,11 @@ function EditDonorModal({donor,onSave,onClose}){
             </div>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
             <input value={form.tags} onChange={set("tags")} placeholder="e.g. board-adjacent, recurring, arts" style={inp}/>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Notes</div>
             <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
           </div>
           {err&&<div style={{color:T.terracotta,fontSize:12}}>{err}</div>}
@@ -626,11 +626,11 @@ function GiftLinkModal({donor,orgName,onClose}){
               <>
                 <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Subject</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Subject</div>
                     <input value={emailSubject} onChange={e=>setEmailSubject(e.target.value)} style={inp}/>
                   </div>
                   <div>
-                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Message</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:5}}>Message</div>
                     <textarea value={emailBody} onChange={e=>setEmailBody(e.target.value)} rows={8}
                       style={{...inp,resize:"vertical",lineHeight:1.55,fontSize:12}}/>
                   </div>
@@ -1038,7 +1038,7 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
   if(!open.length&&!ahead.length)return null;
   const today=orgTodayCivil();
   return <section data-testid="dp-coming-up" style={{display:"flex",flexDirection:"column",gap:8}}>
-    <h2 style={{margin:0,fontSize:11,letterSpacing:"0.12em",fontWeight:700,textTransform:"uppercase",color:T.ink3}}>Coming up</h2>
+    <h2 style={{margin:0,fontSize:11,fontWeight:700,color:T.ink3}}>Coming up</h2>
     {ahead.map(m=><div key={"m:"+m.id} data-testid="dp-coming-meeting" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",gap:12,alignItems:"center"}}>
       <span style={{fontSize:14,fontWeight:600,color:T.ink}}>{m.title||"Meeting"}</span>
       <span style={{fontSize:13,color:T.ink3,whiteSpace:"nowrap"}}>{displayDateShort(String(m.date||m.startsAt||"").slice(0,10),today)}</span>
@@ -1051,7 +1051,7 @@ function ComingUpMain({tasks=[],meetings=[],onTaskToggle,isReadOnly,onAddTask}){
   </section>;
 }
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   // FIX-45 1.5: the record's one read (GET /donors/:id) carries the gifts and
@@ -1130,6 +1130,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [dpThread,setDpThread]=useState(null);
   const [dpItems,setDpItems]=useState([]);
   const [convoOpen,setConvoOpen]=useState(initialOpenConversation);
+  // FIX-60: Home's "Draft" opens the draft (More › Draft an email), and its
+  // "Build a visit briefing" opens Brief me, once the record has loaded.
+  // The intent is read at mount: Donors clears it before the record arrives.
+  const intent=useRef(initialOpenCompose?"compose":initialOpenBrief?"brief":null);
+  if(!intent.current&&(initialOpenCompose||initialOpenBrief))intent.current=initialOpenCompose?"compose":"brief";
+  useEffect(()=>{
+    if(!intent.current||intent.current==="done"||!donor||!donor.name)return;
+    if(intent.current==="compose"&&getAI){setSuggestOpen(true);getAI(donor,"email");}
+    else if(intent.current==="brief")setBriefOpen(true);
+    intent.current="done";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[initialOpenCompose,initialOpenBrief,donor&&donor.name]);
   // FIX-14 Part 2 — the entry being edited (opens the form it was made with),
   // and the ten-second Undo after a delete.
   const [editingInt,setEditingInt]=useState(null);
@@ -2156,7 +2168,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // ── PROFILE-2 Part 3 · three nodes that move on a phone: the next move and
   // the rail's Next step and Open pledge sit above the tabs at 390.
   const railNextNode=<div data-testid="dp-next" style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold}}>Next step</div>
+              <div style={{fontSize:12,color:T.gold}}>Next step</div>
               {dpItems.length>0?(
                 <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
                   {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
@@ -2579,7 +2591,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               const curStage=donor.stage||"cultivate";
               return <section data-testid="dp-ask-card" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12}}>
-                  <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>The ask</div>
+                  <div style={{fontSize:10,fontWeight:800,color:T.ink3}}>The ask</div>
                   <button type="button" data-testid="dp-ask-open-tab" onClick={()=>setDpTab("giving")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Open Asks &amp; pipeline</button>
                 </div>
                 <div role="radiogroup" aria-label="Stage" data-testid="dp-stage-bar" style={{display:"grid",gridTemplateColumns:`repeat(${STAGES.length},minmax(0,1fr))`,gap:3}}>
@@ -2609,11 +2621,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 Membership and Sequence, each with its value and one link. */}
             {(()=>{
               const cell={minWidth:0,display:"flex",flexDirection:"column",gap:6,padding:"12px 14px"};
-              const head={fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3};
+              const head={fontSize:10,fontWeight:800,color:T.ink3};
               const link={background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",alignSelf:"flex-start"};
               const anyPg=DESIGNATION_OPTS.some(([k])=>hasDesignation(k));
               return <section data-testid="dp-about" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
-                <div style={{padding:"12px 14px 0",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>{String(donor.name||"").trim()?`About ${firstNameOf(donor.name)||donor.name}`:"About"}</div>
+                <div style={{padding:"12px 14px 0",fontSize:10,fontWeight:800,color:T.ink3}}>{String(donor.name||"").trim()?`About ${firstNameOf(donor.name)||donor.name}`:"About"}</div>
                 <div className="dp-about-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))"}}>
                   <div data-testid="dp-household" style={cell}>
                     <span style={head}>Household</span>
@@ -2703,13 +2715,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               other empty sections (FIX-14 Part 3), instead of an empty chart. */}
           {!giftLoading&&!giftReadErr&&!(giftsFull.length||gifts.length)
           ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
+            <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Giving by year</span>
             <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
             {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>setAddGiftOpen(true)}
               style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
           </div>
           :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginBottom:12}}>Giving by year</div>
             {giftLoading
               ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
               :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
@@ -2732,12 +2744,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 from listed so the number can be checked. */}
             {softCredit?.giftSoftCredits?.length>0&&(
               <div data-testid="soft-credit-panel" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Soft credit</span>
+                <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Soft credit</span>
                 <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
                   {[["Their own giving",softCredit.ownGiving??softCredit.hardCredit,T.ink,censusById("profile.creditHard")],
                     ["With soft credit",softCredit.hardPlusGiftSoft,T.gold600,censusById("profile.creditWithSoft")]].map(([l,v,c,e])=>(
                     <div key={l} data-testid={e.testid} title={e.sentence} aria-label={e.sentence} tabIndex={0}>
-                      <div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>{l}</div>
+                      <div style={{fontSize:10,color:T.ink3}}>{l}</div>
                       <div style={{fontSize:16,fontWeight:800,color:c}}>{fmtFull(v||0)}</div>
                     </div>))}
                 </div>
@@ -2930,7 +2942,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:T.bg2}}>
-                      {["Date","Amount","Type","Method","Ack","Receipt","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
+                      {["Date","Amount","Type","Method","Ack","Receipt","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -3208,7 +3220,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {lockMajor(
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Moves and pipeline asks</div>
+                    <div style={{fontSize:10,fontWeight:800,color:T.ink3}}>Moves and pipeline asks</div>
                     <div style={{display:"flex",gap:6}}>
                       {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
                       {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Pipeline ask"}</button>}
@@ -3234,7 +3246,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                               <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
                               <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
                             </>}
-                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
+                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3}}>{o.status}</span>}
                           </span>
                         </div>
                       ))}
@@ -3303,7 +3315,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
             <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household and relationships</span>
+                <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Household and relationships</span>
                 {household
                   ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:12,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
                   :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
@@ -3321,9 +3333,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {household&&(
                 <>
                   <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.hardCredit||0} label="Hard credit" definition="This person's own lifetime giving: the gifts credited to them." source={softCredit.householdSources.hardCredit}/>:fmtFull(softCredit?.hardCredit||0)}</div></div>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.softCredit||0} label="Soft credit" definition="The lifetime giving of everyone else in this household, credited to this person through the household." source={softCredit.householdSources.softCredit}/>:fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{household.combined_source?<Figure variant="inline" kind="money" value={household.combined_giving} label="Household combined" definition="Each person in this household, with their lifetime giving. Someone who was deleted is not counted." source={household.combined_source}/>:fmtFull(household.combined_giving)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.hardCredit||0} label="Hard credit" definition="This person's own lifetime giving: the gifts credited to them." source={softCredit.householdSources.hardCredit}/>:fmtFull(softCredit?.hardCredit||0)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.softCredit||0} label="Soft credit" definition="The lifetime giving of everyone else in this household, credited to this person through the household." source={softCredit.householdSources.softCredit}/>:fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{household.combined_source?<Figure variant="inline" kind="money" value={household.combined_giving} label="Household combined" definition="Each person in this household, with their lifetime giving. Someone who was deleted is not counted." source={household.combined_source}/>:fmtFull(household.combined_giving)}</div></div>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
@@ -3333,7 +3345,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             tell them apart at a glance. */}
                         <PersonMark id={m.id} name={m.name} size={22}/>
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
-                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
+                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800}}>Primary</span>}
                         <span style={{marginLeft:"auto",color:T.ink3}} onClick={e=>e.stopPropagation()}>{m.source?<Figure variant="cell" kind="money" value={m.total_giving} label={`${m.name}: lifetime giving`} source={m.source}/>:fmtFull(m.total_giving)}</span>
                       </div>
                     ))}
@@ -3455,7 +3467,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {dpTab==="emails"&&<><ThankYouDrafts donorId={donor.id} hideWhenEmpty testid="dp-ty-drafts"/><EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/></>}
             {rel?<ProfileTimeline key={dpTab} search={tlSearch} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
             {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
-              <h2 style={{margin:0,fontSize:13,letterSpacing:"0.12em",fontWeight:600,textTransform:"uppercase"}}>History</h2>
+              <h2 style={{margin:0,fontSize:13,fontWeight:600}}>History</h2>
               <HistoryList donorId={donor.id}/>
             </section>}
           </div>}
@@ -3524,7 +3536,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             // strip is gone from the profile (the timeline is where touch
             // history lives); this panel is the plan for the next touches.
             const rhythmNode=<div data-testid="dp-rail-journey-panel" style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:T.gold500}}>Journeys</div>
+              <div style={{fontSize:10.5,fontWeight:800,color:T.gold500}}>Journeys</div>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
               "Step 3 of 7 · Impact report · due Jan 3" and a small
               done / today / upcoming timeline, exactly as the direction
@@ -3552,7 +3564,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <span aria-hidden="true" style={{color:RAIL.dim}}>→</span>
               </button>
               <div style={{background:RAIL.panel,borderRadius:10,padding:"11px 12px"}}>
-                <div data-testid="dp-journey-position" style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>
+                <div data-testid="dp-journey-position" style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
                   Step {pos} of {steps.length}
                 </div>
                 <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{cur?cur.label:"Finished"}</div>
@@ -3734,7 +3746,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>}
               {journeySuggest&&!(journey&&journey.status==="active")&&(
                 <div data-testid="dp-journey-suggest" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px",marginBottom:10}}>
-                  <div style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>Suggested</div>
+                  <div style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>Suggested</div>
                   <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{journeySuggest.name}</div>
                   <div style={{fontSize:12,color:RAIL.dim,marginTop:2,lineHeight:1.45}}>{journeySuggest.why}</div>
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
@@ -3782,7 +3794,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   {addPreview&&(
                     <div data-testid="dp-journey-preview"
                       style={{marginTop:9,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
-                      <div style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>
+                      <div style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
                         First step
                       </div>
                       <div style={{fontSize:14,fontWeight:700,color:T.white,marginTop:3}}>
