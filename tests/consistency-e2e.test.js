@@ -53,7 +53,8 @@ async function seedOrg(org, slug, acct) {
            VALUES ($1,$2,$3,1,'active','growth',$4,false,true,NULL)`, [org, "CE2E " + slug, slug, acct]);
   // MAIL-1: an org that has onboarded (its donor file is in), so its digest may send.
   await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [org]);
-  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Admin','admin')`,
+  // STAFF-MAIL-1: Week in Review is a switch the person turns on; the digest leg reads one.
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,notify_week_in_review) VALUES ($1,$2,$3,$4,'Admin','admin',true)`,
     [`u_${org}`, org, `${slug}@ce2e.local`, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO accounts (id,org_id,code,name,type,active) VALUES ($1,$2,'4010','Contributions','revenue',true)`, [`acc_${org}`, org]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ($1,$2,'General Operating',false)`, [`ff_${org}`, org]);

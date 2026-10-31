@@ -84,6 +84,8 @@ const BLANK = /(^|\s)(null|undefined|unknown|untitled)(\s|$)/i;
      ('u_t2_admin',$1,'t2-admin@thread2.example',$3,'Dana Reyes','admin'),
      ('u_t2_off',$1,'t2-officer@thread2.example',$3,'Sam Ortiz','member'),
      ('u_t2b_admin',$2,'t2b-admin@thread2.example',$3,'Lee Park','admin')`, [ORG, OTHER, pw]);
+  // STAFF-MAIL-1: a task-assignment email is one a person turns on; §4 reads one.
+  await q(`UPDATE users SET notify_task_assignments=true WHERE id IN ('u_t2_admin','u_t2_off')`);
 
   // People. Nadia has a real name; the second was saved with a blank name
   // before this build (a legacy row), and must show her email instead.

@@ -5,8 +5,10 @@
 // family may do. `orgMaySendEmail` (routes/email.js) and the Resend client
 // proxy (server.js top) both ask it; nothing else restates these rules.
 //
-//   staff       Steward to an org's own staff: digests, Week in Review, "Your
-//               meetings today", reminders, alerts, task notices.
+//   staff       Steward to an org's own staff: the morning email (on unless a
+//               person turns it off), and digests, Week in Review, "Your
+//               meetings today", reminders, alerts and task notices, each off
+//               until that person turns it on (STAFF-MAIL-1).
 //   donor       an org to its own donors and volunteers: receipts, campaigns,
 //               thank-yous, sequences she turned on, statements, event,
 //               auction, volunteer and pledge mail.
@@ -136,7 +138,7 @@ function mailSwitches(org) {
 
 // FIX-53 · what turning a switch on allows, read in the confirm before it is.
 const TURN_ON_SENTENCE = {
-  staff: "Steward can now send this org's team digests and alerts.",
+  staff: "Steward can now send this org's team their morning email, and any other email a person turned on for themselves.",
   donor: "Steward can now send the automatic emails this organization turned on, to the people it chose.",
 };
 // Who turned each switch on and when, or "Off since created". Read from the

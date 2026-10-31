@@ -95,6 +95,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
   const m1Tok = m1.token, m1Org = m1.org.id;
   await q(`UPDATE orgs SET emails_enabled=true, staff_mail_enabled=true, receipts_enabled=true, legal_name='MAIL-1 Org, Inc.', ein='12-3456789',
            receipt_address='1 Test Way, Testville, TS 00000' WHERE id=$1`, [m1Org]);
+  // STAFF-MAIL-1: Week in Review is a switch the person turns on. §9 and §11
+  // are about the org's gate, so its admin has turned it on.
+  await api("PUT", "/me/notification-prefs", m1Tok, { weekInReview: true });
   // §9's demo org: every switch on and even stamped onboarded. It still sends only sign-in mail.
   const demoAdmin = `mail1-demo-${uniq()}@test.local`;
   const dm = await fetch(BASE + "/auth/register-org", {
@@ -593,6 +596,62 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
       MP.orgMailDecision({ id: "x", emails_enabled: false, onboarded_at: new Date(testNow()) }, "staff").reason === "org_emails_disabled"
       && MP.orgMailDecision({ id: "x", emails_enabled: true, onboarded_at: new Date(testNow()) }, "staff").send === true, null);
     await api("POST", `/admin/orgs/${m1Org}/mail-switches`, supTok, { donor: true, confirm: true });
+  }
+
+  // ── §12 STAFF-MAIL-1 · THE MORNING EMAIL IS THE ONLY ONE THAT SENDS UNASKED ──
+  // Every other staff email is off until the person turns it on, and the
+  // morning email comes at her hour, on her days, with her sections. Red on
+  // main: /me reads gift and task alerts on for a new person, the Week in
+  // Review reaches an admin who never asked for it, there is no hour or day
+  // to pick, and the portal alert's prefKind names no switch (so it always sent).
+  console.log("\n§12 STAFF-MAIL-1: one email unasked, the rest a switch");
+  {
+    const EM = require("../routes/email");
+    const me = await api("GET", "/me", tok);
+    const n = me.body?.notifications || {};
+    ok("§12a a new person: the morning email on, every other staff email off",
+      n.morningEmail === true && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => n[k] === false), n);
+    ok("§12a …at 6 AM on weekdays with every section in, until she changes it",
+      n.brief?.hour === 6 && n.brief?.days === "weekdays" && Object.values(n.brief?.sections || {}).every(v => v === true), n.brief);
+
+    const monday = (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 21); return d.toISOString().slice(0, 10); })();
+    state.captured.length = 0;
+    const dg = await api("POST", "/digests/run", tok, { type: "weekly", weekStart: monday });
+    await settle();
+    ok("§12b Week in Review does not reach an admin who never turned it on",
+      to(email).length === 0 && (dg.body?.weekly?.skipped || []).some(s => s.reason === "opted_out"), { n: to(email).length, b: dg.body?.weekly });
+
+    // A weekday and a Saturday after the test clock, and the person's hour.
+    const day = dow => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7 || 7)); return d.toISOString().slice(0, 10); };
+    const wed = day(3), sat = day(6);
+    const why = r => ((r.body?.skipped || []).find(x => x.recipientUserId === reg.user?.id || x.recipientUserId === me.body?.user?.id) || {}).reason || null;
+    const set = await api("PUT", "/me/notification-prefs", tok, { brief: { hour: 9 } });
+    ok("§12c she picks 9 AM, and it is kept", set.status === 200 && set.body?.notifications?.brief?.hour === 9, set.body);
+    ok("§12c at 7 AM it has not come yet", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 7, dryRun: true })) === "not_yet");
+    ok("§12c at 9 AM it is due", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 9, dryRun: true })) !== "not_yet");
+    ok("§12c on a Saturday, weekdays only, it does not come", why(await api("POST", "/nudges/run", tok, { today: sat, hour: 9, dryRun: true })) === "not_today");
+    await api("PUT", "/me/notification-prefs", tok, { brief: { days: "every_day" } });
+    ok("§12c …and with every day, it does", why(await api("POST", "/nudges/run", tok, { today: sat, hour: 9, dryRun: true })) !== "not_today");
+    const secs = await api("PUT", "/me/notification-prefs", tok, { brief: { sections: { readouts: false, team: false } } });
+    ok("§12c a section she turns off stays off, and the others stay in",
+      secs.body?.notifications?.brief?.sections?.readouts === false && secs.body.notifications.brief.sections.team === false && secs.body.notifications.brief.sections.steps === true, secs.body?.notifications?.brief);
+    const bad = await api("PUT", "/me/notification-prefs", tok, { brief: { hour: 24 } });
+    ok("§12c an hour that is not on the clock is refused", bad.status === 400, { s: bad.status });
+    await api("PUT", "/me/notification-prefs", tok, { morningEmail: false });
+    ok("§12c turned off, nothing comes on any day", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 9, dryRun: true })) === "opted_out");
+    await api("PUT", "/me/notification-prefs", tok, { morningEmail: true, brief: { hour: 6, days: "weekdays", sections: { readouts: true, team: true } } });
+
+    // Every staff alert names a switch that exists. A prefKind that names none
+    // is refused, never sent (the portal-change alert named a column, not a
+    // kind, and so went to everyone whatever they had chosen).
+    const kinds = [];
+    for (const f of ["server.js", ...fs.readdirSync(path.join(__dirname, "../routes")).filter(x => x.endsWith(".js")).map(x => "routes/" + x)]) {
+      const src = f === "server.js" ? readSource("server.js") : fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+      for (const m of src.matchAll(/prefKind:\s*("[^"]*"|null)/g)) kinds.push(f + " " + m[1]);
+    }
+    const bad2 = kinds.filter(k => !EM.NOTIFY_PREF_COLUMN[JSON.parse(k.split(" ")[1])]);
+    ok("§12d every staff alert names a switch that exists", kinds.length >= 4 && bad2.length === 0, { bad: bad2, n: kinds.length });
+    ok("§12d a staff email kind with no switch is not sent", (await EM.userWantsEmail("u_none", "notify_portfolio_gifts")) === false, null);
   }
 
   sink.srv.close();

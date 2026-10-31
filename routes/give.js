@@ -5695,7 +5695,7 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
     await notifyUserOnce({
       org, userId: officer.id, email: officer.email,
       eventKey: `portal:${action}:${sub.id}`, channel: "portal_drift",
-      prefKind: "notify_portfolio_gifts", subject: subj, bodyHtml: body,
+      prefKind: "portfolio_gifts", subject: subj, bodyHtml: body,
     });
   } catch (e) { console.error("[portal] drift alert:", e.message); }
 }
