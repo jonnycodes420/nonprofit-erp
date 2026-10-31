@@ -5440,7 +5440,7 @@ async function runSchemaInit(pool) {
   // (CLAUDE.md: only seed-demo.js writes org_b72demo; org_creo is never written).
   {
     const NOT_FIXTURE = "org_id NOT IN ('org_creo','org_b72demo')";
-    const c = await pool.connect();
+    const c = pool;   // runSchemaInit's one DDL session (ddlSession): the transaction runs on it
     try {
       await c.query("BEGIN");
       await c.query("SELECT pg_advisory_xact_lock(hashtext('staff_mail_1_opt_in'))");   // two replicas booting together run it once
@@ -5458,7 +5458,7 @@ async function runSchemaInit(pool) {
     } catch (e) {
       await c.query("ROLLBACK").catch(() => {});
       console.error("[staff-mail-1] CRITICAL: the opt-in migration failed and changed nothing:", e.message);
-    } finally { c.release(); }
+    }
   }
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS source TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS workflow_run_id TEXT`);
