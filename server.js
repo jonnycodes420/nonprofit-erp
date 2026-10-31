@@ -6908,7 +6908,7 @@ async function composeWeeklyOrgPart(orgId, monday) {
         AND i.due_date >= ? AND i.due_date <= ?
       ORDER BY i.due_date, i.amount DESC`, [orgId, monday, sunday]);
   const events = await query(
-    `SELECT id, name, date FROM events WHERE org_id = ? AND date >= ?::date AND date <= ?::date
+    `SELECT id, name, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM events WHERE org_id = ? AND date >= ?::date AND date <= ?::date
         AND COALESCE(status, 'upcoming') NOT IN ('cancelled', 'canceled')
       ORDER BY date, name`, [orgId, monday, sunday]);
   return {
@@ -6917,7 +6917,7 @@ async function composeWeeklyOrgPart(orgId, monday) {
     unthanked: Number(unthanked.value) || 0,
     lapsed: lapsed.map(r => ({ id: r.id, name: displayNameCase(r.name || ""), email: r.email })),
     pledges: pledges.map(r => ({ id: r.id, due: String(r.due_date).slice(0, 10), amount: Number(r.amount) || 0, donorId: r.donor_id, donorName: displayNameCase(r.donor_name || ""), donorEmail: r.donor_email })),
-    events: events.map(e => ({ id: e.id, name: e.name, date: String(e.date instanceof Date ? e.date.toISOString() : e.date).slice(0, 10) })),
+    events: events.map(e => ({ id: e.id, name: e.name, date: e.date })),
     sources: { gifts: giftsSrc, unthanked: unthankedSrc },
   };
 }
