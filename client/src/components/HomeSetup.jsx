@@ -169,8 +169,12 @@ export function SetupFirstCard({ status, onNavigate, isAdmin, onSetCardState }) 
 }
 
 // The rail's card: the count, the next step, a bar, and every step in place.
+// The steps show unless this person clicked "Hide the steps" (Jonathan, 31 Oct
+// 2026); that click is kept in this browser.
+const RAIL_HIDDEN_KEY = "steward.setupRail.hidden";
 export function SetupRailCard({ status, onNavigate, isAdmin, onSetCardState }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(() => { try { return localStorage.getItem(RAIL_HIDDEN_KEY) !== "1"; } catch { return true; } });
+  const setOpen = f => setOpenState(o => { const next = f(o); try { if (next) localStorage.removeItem(RAIL_HIDDEN_KEY); else localStorage.setItem(RAIL_HIDDEN_KEY, "1"); } catch { /* still toggles, just isn't kept */ } return next; });
   const next = nextStep(status);
   return (
     <div data-testid="home-setup-rail" style={{ border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white, display: "flex", flexDirection: "column", gap: 8 }}>

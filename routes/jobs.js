@@ -21,7 +21,7 @@ const {
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDigestsForOrg, runSavedReportScheduleForOrg,
-  runStepRemindersForOrg, runThreadNudgesForOrg, snapshotMetricsForOrg, syncGmail,
+  runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, snapshotMetricsForOrg, syncGmail,
   weekBounds, recomputeAllScores,
 } = ctx;
 
@@ -271,6 +271,8 @@ async function processThreadNudges(now = new Date()) {
     for (const org of orgs) {
       const clock = orgTime.orgClock(org, now);
       await runThreadNudgesForOrg(org, { today: clock.date, nowHour: clock.hour }).catch(e => console.error("[thread-nudge]", org.id, e.message));
+      // STAFF-MAIL-2 · the weekly email rides the same tick: Monday, from 7 AM, once a week.
+      await runWeeklyEmailForOrg(org, { today: clock.date, nowHour: clock.hour }).catch(e => console.error("[weekly-email]", org.id, e.message));
     }
   } catch (e) { console.error("[thread-nudge] processThreadNudges:", e.message); }
 }

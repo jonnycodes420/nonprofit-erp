@@ -2016,9 +2016,19 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS threads_one_open ON threads (org_id, donor_id) WHERE closed_at IS NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_threads_org_open ON threads (org_id, due_date) WHERE closed_at IS NULL`);
-  // Per-user nudge-email switch (default on — NULL is on, BUILD-36 pref
-  // convention) and the org-level weekend toggle (default off: no weekend mail).
+  // Per-user morning-email switch and the org-level weekend toggle (default off:
+  // no weekend mail). STAFF-MAIL-2 (Jonathan, 31 Oct 2026): a new person starts
+  // with the morning email OFF until they turn it on. Only the column default
+  // changes: a person added before this keeps NULL, which still reads as on, so
+  // nobody already getting the email loses it.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_thread_nudge BOOLEAN`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN notify_thread_nudge SET DEFAULT false`);
+  // STAFF-MAIL-2: the weekly email ("Your week", Monday 7 AM) is the one a new
+  // person starts with. The column is ADDED with no default, so every person
+  // who exists today gets NULL (off) and nobody's mail changes at deploy; the
+  // default is set after, so only a row inserted from now on starts ON.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_weekly BOOLEAN`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN notify_weekly SET DEFAULT true`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS thread_nudge_weekends BOOLEAN DEFAULT FALSE`);
 
   // ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ───────

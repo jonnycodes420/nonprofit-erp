@@ -1,6 +1,6 @@
 {
  "note": "Seconds per suite from the last sharded run. Data for scripts/shard-plan.js, never a gate: a stale entry costs seconds, never correctness.",
- "updated": "2026-10-30",
+ "updated": "2026-10-31",
  "suites": {
   "adminclean-metrics": 2,
   "agent2-gift": 0,
@@ -112,7 +112,7 @@
   "list1-columns-filters": 5,
   "live1-alive": 2,
   "mail-block": 4,
-  "mail-suppression": 45,
+  "mail-suppression": 60,
   "mailchimp1-sync": 0,
   "members2-isolation": 0,
   "money-cents": 1,
@@ -157,8 +157,8 @@
   "search2-everything": 2,
   "sec1-two-factor": 1,
   "security": 57,
-  "send-gate": 23,
-  "send-gate-2": 26,
+  "send-gate": 24,
+  "send-gate-2": 27,
   "session-privilege": 15,
   "sheets1-import": 0,
   "smoke-walk": 0,
