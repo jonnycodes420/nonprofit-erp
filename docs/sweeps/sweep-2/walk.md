@@ -91,3 +91,13 @@ per view; slow 4G was not throttled in this walk.
 | 33 | A gift | "$25,000 from Ulis & Verin Cranville Family Foundation · Sep 4, 2026 · Needs you": "Needs you" does not say what it needs (a thank-you). | P3 || fixed (no method is no word) |
 | 34 | A person, nothing found | Meet the bar ("No matches for "zzqx""). | | |
 | 35 | A gift with a check number | Found while fixing #33: the result says "cheque 1042", where Steward says "check" everywhere else. | P2 | fixed |
+
+## After the fixes
+
+Walked again on the same two orgs at 1440 and 390 (`walk-after/`), side by side with the before:
+every Donors view, Data health, Settings → Imports and Home say nothing the bar names and log no
+console error or API 4xx/5xx; each line above marked fixed reads as described. Timings did not
+move (Directory 0.95–1.05 s from a cold load, each other view 0.57–0.75 s). One change of my own
+needed a second pass: the first widening of the score columns trimmed long names at 1440, so the
+two score headings wrap to two lines instead and the names have their room back (only the longest,
+"Ulis & Verin Cranville Family Foundation", still trims by a few letters, as it nearly did before).
