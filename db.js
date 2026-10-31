@@ -5430,26 +5430,35 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE users ALTER COLUMN notify_portfolio_gifts SET DEFAULT false`);
   await pool.query(`ALTER TABLE users ALTER COLUMN notify_task_assignments SET DEFAULT false`);
   await pool.query(`ALTER TABLE users ALTER COLUMN notify_step_reminder SET DEFAULT false`);
-  // One-shot, by flag. The alerts that used to start on are turned off for
-  // everyone (a person turns back on what they want), and the two old
-  // morning-email switches become sections of the one email, so nobody's
-  // morning email changes shape: Thread off and tasks on still means a tasks
-  // email; tasks off means no tasks or meetings in it. An org that had the
-  // Thread email on weekends gives its people "every day".
-  try {
-    const done = await pool.query("SELECT 1 FROM schema_flags WHERE flag='staff_mail_1_opt_in'");
-    if (!done.rows.length) {
-      await pool.query(`UPDATE users SET notify_portfolio_gifts=false, notify_task_assignments=false, notify_step_reminder=false`);
-      await pool.query(`UPDATE users SET notify_thread_nudge=NULL, brief_sections='{"steps":false,"readouts":false}'::jsonb
-                         WHERE notify_thread_nudge=false AND notify_daily_tasks IS DISTINCT FROM false`);
-      await pool.query(`UPDATE users SET brief_sections=COALESCE(brief_sections,'{}'::jsonb) || '{"tasks":false,"meetings":false}'::jsonb
-                         WHERE notify_daily_tasks=false AND notify_thread_nudge IS DISTINCT FROM false`);
-      await pool.query(`UPDATE users u SET brief_days='every_day' FROM orgs o WHERE o.id=u.org_id AND o.thread_nudge_weekends=true AND u.brief_days IS NULL`);
-      await pool.query("INSERT INTO schema_flags (flag) VALUES ('staff_mail_1_opt_in') ON CONFLICT (flag) DO NOTHING");
-      console.log("[staff-mail-1] staff alerts are now opt-in; morning email settings carried over");
-    }
-  } catch (e) {
-    console.error("[staff-mail-1] CRITICAL: the opt-in migration failed:", e.message);
+  // One-shot, by flag, in one transaction, at the first boot of this build.
+  // IT ONLY EVER TURNS THINGS OFF. The alerts that used to start on are set
+  // off (a person turns back on what they want), and a person who had turned
+  // the old "daily task reminder" off gets no tasks or meetings section. Nothing
+  // is set on: a person with the Thread email off stays off (her old tasks-only
+  // email ends with it), and the org weekend toggle is not carried into "every
+  // day" (everyone starts on weekdays). The two fixture orgs are never written
+  // (CLAUDE.md: only seed-demo.js writes org_b72demo; org_creo is never written).
+  {
+    const NOT_FIXTURE = "org_id NOT IN ('org_creo','org_b72demo')";
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      await c.query("SELECT pg_advisory_xact_lock(hashtext('staff_mail_1_opt_in'))");   // two replicas booting together run it once
+      const done = await c.query("SELECT 1 FROM schema_flags WHERE flag='staff_mail_1_opt_in'");
+      if (!done.rows.length) {
+        const a = await c.query(`UPDATE users SET notify_portfolio_gifts=false, notify_task_assignments=false, notify_step_reminder=false
+                                  WHERE ${NOT_FIXTURE} AND (notify_portfolio_gifts IS DISTINCT FROM false
+                                    OR notify_task_assignments IS DISTINCT FROM false OR notify_step_reminder IS DISTINCT FROM false)`);
+        const t = await c.query(`UPDATE users SET brief_sections=COALESCE(brief_sections,'{}'::jsonb) || '{"tasks":false,"meetings":false}'::jsonb
+                                  WHERE ${NOT_FIXTURE} AND notify_daily_tasks=false`);
+        await c.query("INSERT INTO schema_flags (flag) VALUES ('staff_mail_1_opt_in') ON CONFLICT (flag) DO NOTHING");
+        console.log(`[staff-mail-1] staff alerts are now opt-in: ${a.rowCount} user(s) had alerts turned off, ${t.rowCount} kept tasks out of the morning email`);
+      }
+      await c.query("COMMIT");
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {});
+      console.error("[staff-mail-1] CRITICAL: the opt-in migration failed and changed nothing:", e.message);
+    } finally { c.release(); }
   }
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS source TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS workflow_run_id TEXT`);
