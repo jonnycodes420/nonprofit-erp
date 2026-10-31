@@ -8,7 +8,7 @@ import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
-import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
+import { T, interactive, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, donorScoreParts, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { ColumnEditor, FALLBACK_SETUP, NAME_KEY, PAGE_SIZES, MIN_WIDTH, alignFor, cleanColumns, columnTrack, formatCell, gridMinWidth, moveKey } from "./DonorColumns";
 import { FilterBuilder, ViewsMenu } from "./DonorFilters";
@@ -75,6 +75,9 @@ const ENGAGEMENT_LABEL = "Engagement";
 // and it stays: every number has a sentence.
 const HEAD = { fontSize: 10.5, fontWeight: 800, letterSpacing: ".01em" };
 const GIVING_STRENGTH_DEF = censusById("list.givingStrength").sentence;
+// SWEEP-2: most of an imported file shares one stage, so the column says what
+// a stage is and where an import puts people.
+const STAGE_DEF = "Where this person is in your fundraising cycle, set by you: Prospect, Qualify, Cultivate, Solicit (an ask is out), Ongoing care (they have given and you are keeping them close) or Lapsed. An import puts givers in Ongoing care, so most of a new list shares that stage until you move people.";
 
 // The keyboard-reachable definition mark, used by every column header that
 // carries a number somebody could misread. Same affordance BUILD-100 built for
@@ -120,14 +123,17 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     setAiLoading(false);
   };
 
-  if(!lapsed.length)return<EmptyState title="No lapsed donors" message="All your donors are active, great work!"/>;
+  // SWEEP-2: an org with no givers is not "all active"
+  if(!lapsed.length)return donors.some(d=>d.lastGift||d.total>0)
+    ?<EmptyState title="No lapsed donors" message="Nobody on file has gone a year without giving. Anyone who does shows here, ready to call."/>
+    :<EmptyState title="No givers yet" message="Re-engage lists people whose last gift was over a year ago. Import your gift history from Import & tools, and anyone who has gone quiet shows here."/>;
 
   const fmtGiftDate=s=>{
     if(!s)return null;
     return displayMonth(s)||null;   // HARDEN-1: the gift's own month, in every zone
   };
 
-  const cols=["Donor","Lifetime giving","Last gift","Days lapsed",GIVING_STRENGTH_LABEL,""];
+  const cols=["Donor","Lifetime giving","Last gift","Since last gift",GIVING_STRENGTH_LABEL,""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
   return(
@@ -136,16 +142,18 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
         {[
           ["Lapsed donors",lapsed.length,T.ink],
           ["Total lapsed value",fmtFull(totalValue),T.ink],
-          ["Avg days lapsed",`${avgDays}d`,T.terracotta],
+          // SWEEP-2: the days are since the last gift, and the tile is ink (the four colours)
+          ["Avg days since last gift",`${avgDays.toLocaleString("en-US")} days`,T.ink],
         ].map(([label,val,color])=>(
           <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
             <div style={{fontSize:10,fontWeight:700,color:T.ink3}}>{label}</div>
             <div style={{fontSize:20,fontWeight:800,color,fontFamily:"'DM Serif Display',serif"}}>{val}</div>
           </div>
         ))}
-        <div style={{marginLeft:"auto"}}>
-          <AIBtn onClick={getStrategy} loading={aiLoading} label="✦ Re-engage Plan"/>
-        </div>
+        {/* SWEEP-2: offered only when drafting is on, as Call List is */}
+        {org?.capabilities?.ai&&<div style={{marginLeft:"auto"}}>
+          <AIBtn onClick={getStrategy} loading={aiLoading} label="✦ Re-engage plan"/>
+        </div>}
       </div>
       {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
       <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
@@ -153,7 +161,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           <div className="re-col-name" style={{...HEAD,color:T.white}}>Donor</div>
           <div className="re-col-lifetime" style={{...HEAD,color:T.white,textAlign:"right"}}>Lifetime giving</div>
           <div className="re-col-lastgift" style={{...HEAD,color:T.white,textAlign:"right"}}>Last gift</div>
-          <div className="re-col-days" style={{...HEAD,color:T.white,textAlign:"right"}}>Days lapsed</div>
+          <div className="re-col-days" style={{...HEAD,color:T.white,textAlign:"right"}}>Since last gift</div>
           <div className="re-col-score" style={{...HEAD,color:T.white,textAlign:"right"}}>
             {GIVING_STRENGTH_LABEL}<ColDef text={GIVING_STRENGTH_DEF} testid="re-def-giving-strength" dark/>
           </div>
@@ -167,7 +175,8 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           const rowBorderColor=days>730?T.gold+"40":T.gold600+"25";
           // FIX-58: attention is brass, never red; the longest lapse reads darkest.
           const daysColor=days>730?T.gold700:days>365?T.gold600:T.ink3;
-          const urgencyLabel=days>730?"Critical":days>365?"At Risk":"Watch";
+          // SWEEP-2: plain words for how long, not "Critical" and "At Risk"
+          const urgencyLabel=days>730?"Over 2 years":days>365?"Over a year":"Under a year";
           const giftDate=fmtGiftDate(d.lastGift);
           return(
             <div key={d.id} className="reEngage-row" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"13px 18px",background:rowBg,borderBottom:idx<lapsed.length-1?`1px solid ${rowBorderColor}`:"none",alignItems:"center"}}>
@@ -184,14 +193,14 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               </div>
               <div className="re-col-days" style={{textAlign:"right"}}>
                 {days!=null?<>
-                  <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
+                  <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days.toLocaleString("en-US")} days</div>
                   <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2}}>{urgencyLabel}</div>
                 </>:<div style={{fontSize:11,color:T.ink3}}>no dates on file</div>}
               </div>
               <div className="re-col-score" style={{textAlign:"right"}}>
                 {sc!=null
-                  ?<span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
-                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
+                  ?<span title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block",cursor:"help"}}>{sc}</span>
+                  :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11}}>No gifts yet</span>}
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
@@ -573,7 +582,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <option value="">Any tag</option>
           <optgroup label="Giving level">{[["general","General"],["mid","Mid"],["major","Major"]].map(([k,l])=><option key={k} value={"level:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Lifecycle">{[["new","New"],["current","Current"],["recaptured","Recaptured"],["lapsing","Lapsing"],["lapsed","Lapsed"]].map(([k,l])=><option key={k} value={"lifecycle:"+k}>{l}</option>)}<option value="retained:1">Retained</option></optgroup>
-          <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["on_track","On track"],["cooling","Cooling"],["new","New"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
+          <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["on_track","On track"],["cooling","Cooling"],["new","New, no pattern yet"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Giving"><option value="given:never">Has never given</option></optgroup>
         </select>}
         <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
@@ -595,7 +604,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <option value="last_gift_date">Sort: last gift</option>
           <option value="name">Sort: name</option>
           <option value="engagement">Sort: engagement</option>
-          <option value="generosity">Sort: generosity</option>
+          <option value="generosity">Sort: giving strength</option>
           {canMajorGifts&&<option value="room_to_give">Sort: room to give</option>}
         </select>}
         {/* LIST-1: her columns, her saved views, rows per page. */}
@@ -844,10 +853,13 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   onClick={()=>{if(room){setSortBy&&setSortBy(roomSort?"":"room_to_give");return;}if(sortable)headerSort(k);}}
                   title={room?(roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"):sortable?"Sort by this column. Drag to move it.":"Drag to move this column."}
                   className={k==="stage"?"dir-col-stage":k==="owner"?"dir-col-owner":""}
-                  style={{...HEAD,position:"relative",color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,textAlign:align,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",padding:"0 10px 0 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",background:dragCol===k?T.bg2:"transparent"}}>
+                  style={{...HEAD,position:"relative",color:(room&&roomSort)||sortMark(k)?T.greenDk:T.ink3,textAlign:align,cursor:sortable?"pointer":k===NAME_KEY?"default":"grab",userSelect:"none",padding:"0 10px 0 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",
+                    // SWEEP-2: the two score headings wrap to two lines, so their "?" stays in reach without taking the names' room
+                    whiteSpace:k==="engagement"||k==="generosity"?"normal":"nowrap",lineHeight:k==="engagement"||k==="generosity"?1.3:undefined,background:dragCol===k?T.bg2:"transparent"}}>
                   {label}{room?(roomSort?" ↓":""):sortMark(k)}
                   {k==="generosity"&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
                   {k==="engagement"&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
+                  {k==="stage"&&<ColDef text={STAGE_DEF} testid="dir-def-stage"/>}
                   <span role="separator" aria-orientation="vertical" aria-label={`Resize ${label}`} data-testid={`dir-col-resize-${k}`}
                     onMouseDown={startResize(k)} onClick={e=>e.stopPropagation()} draggable={false}
                     style={{position:"absolute",right:0,top:-6,bottom:-6,width:7,cursor:"col-resize",borderRight:"2px solid "+T.bg3}}/>
@@ -937,17 +949,19 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
                   {d.engagement===0
                     // FIX-58: nothing logged is not "0 On track" or "0 Cooling".
-                    ?<span data-testid="dir-closeness" style={{color:T.ink3,fontSize:11}}>{d.lastTouchpoint?"Nothing in 24 months":"Nothing logged yet"}</span>
+                    // SWEEP-2: Engagement counts calls, meetings and events, not gifts, so
+                    // a giver from last month reads "Nothing logged", never "Nothing in 24 months".
+                    ?<span data-testid="dir-closeness" style={{color:T.ink3,fontSize:11}}>{d.lastTouchpoint?"Nothing logged in 24 months":"Nothing logged yet"}</span>
                     :d.engagement!=null
                     ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
-                    :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>Not set</span>}
+                    :<span title="Worked out overnight and after each gift or touch" style={{color:T.ink3,fontSize:11}}>Not scored yet</span>}
                 </div>
                   </>),
                   generosity:()=>(<>
                 <div style={{textAlign:"right"}}>
                   {sc!=null
-                    ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
-                    :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
+                    ?<span data-testid="dir-giving-strength" title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800,cursor:"help"}}>{sc}</span>
+                    :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11}}>No gifts yet</span>}
                 </div>
                   </>),
                   room_to_give:()=>(<>
@@ -995,8 +1009,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   </div>
                 </div>
                 {sc!=null
-                  ?<span style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
-                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>Not set</span>}
+                  ?<span title={donorScoreParts(d).sentence} aria-label={donorScoreParts(d).sentence} style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
+                  :<span title="Giving strength comes from gifts, and there are none on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>No gifts yet</span>}
               </div>
             ];
           })}
@@ -1048,8 +1062,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
 }
 
 // ── Team View ──────────────────────────────────────────────────────────────
-function TeamView({donors,orgTeam,onSelectDonor}){
+function TeamView({donors,orgTeam,onSelectDonor,onOpenDirectory}){
   if(!orgTeam.length)return<EmptyState icon="◆" title="No team members yet" message="Invite team members from Settings to assign and track donor ownership."/>;
+  // SWEEP-2: nobody owns anyone yet, so one sentence says how, not a "0 donors · $0" card each
+  if(!donors.some(d=>d.assignedTo&&orgTeam.some(m=>m.id===d.assignedTo)))return<EmptyState icon="◆" title="Nobody owns a donor yet"
+    message="Give a donor an owner with Assign in the Directory's Owner column, or tick several and assign them together. Each person's donors then gather here with their total."
+    action={onOpenDirectory?"Open the Directory":undefined} onAction={onOpenDirectory}/>;
   return(
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
       {orgTeam.map(member=>{

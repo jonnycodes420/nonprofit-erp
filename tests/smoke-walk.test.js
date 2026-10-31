@@ -1191,10 +1191,164 @@ async function givingSideAndPhoneSayNothingWrong(browser) {
   await walk(PHONE, 390, true);
 }
 
+// SWEEP-2 · DONORS, DATA HEALTH AND IMPORTS, EVERY SCREEN, ON TWO ORGS.
+// Directory, Team, Re-engage, Data health and Settings › Imports at 1440 and
+// 390, on an org with givers, a lapsed giver, a donor whose only giving is a
+// pledge and a near-duplicate pair in one household, and on an empty org. Each
+// must say nothing the quality bar names mechanically ("Not set", undefined,
+// NaN, null, a {{placeholder}} or [placeholder], a hole, an ALL-CAPS label, a
+// console error, an API 4xx or 5xx), and the walk's own finds stay fixed: the
+// Stage, Engagement and Giving strength definitions can be reached at 1440;
+// Re-engage says how long in plain words, offers no plan while drafting is
+// off, and an org with no givers is not "all active"; Team with nobody
+// assigned says how to assign; Data health draws no line at zero and a pair's
+// reason says the name once; after a merge's Undo the pairs list agrees with
+// the line above it; and the reader says "3 people (1 of them an
+// organization)", "When was Finding Joy?" and no "Sheet1" for a CSV.
+// HOW IT GOES RED: on main (37a702b) the giving-strength cell says "Not set"
+// for the pledge-only donor, both definitions are clipped out of their
+// headers, Re-engage says "At Risk" and offers the plan, the empty org's
+// Re-engage says "All your donors are active", Data health draws "0 Emails to
+// look at", the pair reads "same address, …; same household, …", Undo leaves
+// "1 possible duplicate" under a line that says 2, and the reader says
+// "3 people, 1 organization", "When was the Finding Joy?" and "Sheet1".
+async function donorScreensSayNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const FX = path.join(ROOT, "tests", "fixtures", "import");
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  const make = async (org, filled) => {
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Sweep2 " + org.slice(11), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    if (filled) {
+      const today = require("./clock").civilDay(), y = Number(today.slice(0, 4));
+      const person = (id, name, extra = {}) => q(`INSERT INTO donors (id,org_id,name,email,address,city,state,zip,household_id,stage,person_types,created_by,created_by_name)
+        VALUES ($1,$2,$3,$4,$5,$6,'KY',$7,$8,$9,'["donor"]','system:test','test')`,
+        [`d_${org}_${id}`, org, name, extra.email || null, extra.address || null, extra.city || null, extra.zip || null, extra.household || null, extra.stage || "steward"]);
+      // gifts go through the one gift path, so the list's rollups and the lapse rule see them
+      const tok = (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body.token;
+      const gift = async (id, donor, amount, date) => {
+        const r = await api("POST", `/donors/d_${org}_${donor}/gifts`, tok, { amount, date, type: "check" });
+        if (r.status >= 300) throw new Error(`gift ${id}: ${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+      };
+      await q(`INSERT INTO households (id,org_id,name,created_by,created_by_name) VALUES ($1,$2,'The Stangates','system:test','test')`, [`hh_${org}`, org]);
+      for (let i = 1; i <= 3; i++) { await person(i, `Walk Giver ${i}`, { email: `giver${i}@example.org`, address: `${i}0 Elm Street`, city: "Lexington", zip: "40502" }); await gift(i, i, 100 * i, today); }
+      await person("lapsed", "Quiet Giver", { email: "quiet@example.org", address: "5 Oak Street", city: "Lexington", zip: "40502" });
+      await gift("lapsed", "lapsed", 500, `${y - 2}${today.slice(4)}`);
+      await person("pledge", "Pledge Only", { email: "pledge@example.org", address: "7 Pine Street", city: "Lexington", zip: "40502", stage: "solicit" });
+      await q(`INSERT INTO pledges (id,org_id,donor_id,amount,created_by,created_by_name) VALUES ($1,$2,$3,1000,'system:test','test')`, [`pl_${org}`, org, `d_${org}_pledge`]);
+      for (const [id, name, email] of [["wilin", "Wilin Stangate", "wilin@example.org"], ["milin", "Milin Stangate", "milin@example.net"]]) {
+        await person(id, name, { email, address: "12 Willow Road", city: "Lexington", zip: "40502", household: `hh_${org}` });
+      }
+      await gift("wilin", "wilin", 300, today);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["givers, a pledge, a near-duplicate pair", await make("org_sweep2_walk", true), true], ["empty", await make("org_sweep2_none", false), false]];
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"], [/\[object Object\]/, "[object Object]"],
+    [/\{\{[^}]*\}\}/, "a {{placeholder}}"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"],
+    [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"], [/\bCritical\b|\bAt Risk\b/, "an alarm word"]];
+  const screens = [["Directory", "/donors"], ["Team", "/donors?view=team"], ["Re-engage", "/donors?view=reengage"], ["Data health", "/donors?view=health"], ["Imports", "/app/settings?section=imports"]];
+  for (const [what, a, filled] of cases) for (const width of [1440, 390]) {
+    const ctx = await browser.newContext({ viewport: { width, height: width > 500 ? 1000 : 844 }, serviceWorkers: "block", ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
+    await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+      [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+    const page = await ctx.newPage();
+    let trouble = [];
+    page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+    page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+    page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+    page.on("dialog", d => { trouble.push("a browser dialog: " + d.message().slice(0, 80)); d.dismiss().catch(() => {}); });
+    const read = () => page.evaluate(() => {
+      const roots = [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps"));
+      const caps = [];
+      for (const root of roots) for (const el of root.querySelectorAll("*")) {
+        if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+        if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+      }
+      return { text: roots.map(n => n.innerText).join("\n"), caps: caps.slice(0, 6) };
+    });
+    for (const [name, url] of screens) {
+      trouble = [];
+      await page.goto(APP + url, { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
+      await page.waitForFunction(() => !/Loading|Checking your file/.test((document.querySelector(".app-content") || document.body).innerText.slice(0, 3000)), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      const r = await read();
+      const said = [];
+      for (const line of r.text.split("\n")) for (const [re, w] of SAYS) if (re.test(line)) said.push(`${w}: ${line.trim().slice(0, 90)}`);
+      const where = `${name} (${what}, ${width})`;
+      ok(`§sweep2 ${where} draws its screen`, r.text.trim().length > 40, r.text.slice(0, 80));
+      ok(`§sweep2 ${where} says nothing the bar names`, said.length === 0, said.slice(0, 4));
+      ok(`§sweep2 ${where} has no ALL-CAPS label`, r.caps.length === 0, r.caps);
+      ok(`§sweep2 ${where} has no console error, dialog or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
+      if (name === "Directory" && filled && width > 500) {
+        // each definition's "?" sits inside its own header cell, where a person can reach it
+        const reach = await page.evaluate(() => ["stage", "engagement", "giving-strength"].map(k => {
+          const mark = document.querySelector(`[data-testid="dir-def-${k}"]`);
+          const head = mark && mark.closest('[role="columnheader"]');
+          if (!mark || !head) return `${k}: no definition`;
+          const m = mark.getBoundingClientRect(), h = head.getBoundingClientRect();
+          return m.width > 0 && m.right <= h.right + 0.5 && m.left >= h.left - 0.5 ? null : `${k}: clipped (${Math.round(m.right)} > ${Math.round(h.right)})`;
+        }).filter(Boolean));
+        ok(`§sweep2 ${where}: the Stage, Engagement and Giving strength definitions are inside their headers`, reach.length === 0, reach);
+        const why = await page.locator('[data-testid="dir-giving-strength"]').first().getAttribute("title").catch(() => null);
+        ok(`§sweep2 ${where}: a Giving strength number says what it is made of`, /^Giving strength \d+: .*given in all/.test(why || ""), why);
+      }
+      if (name === "Re-engage") {
+        ok(`§sweep2 ${where}: no Re-engage plan while drafting is off`, !/Re-engage plan/i.test(r.text), r.text.slice(0, 200));
+        if (filled) ok(`§sweep2 ${where}: says how long since the last gift in plain words`, /Over 2 years|Over a year/.test(r.text) && /Since last gift/.test(r.text), r.text.slice(0, 400));
+        else ok(`§sweep2 ${where}: an org with no givers is not told everyone is active`, !/active, great work/.test(r.text) && /No givers yet/.test(r.text), r.text.slice(0, 300));
+      }
+      if (name === "Team") ok(`§sweep2 ${where}: nobody assigned says how to assign`, /Nobody owns a donor yet/.test(r.text) && !/0 donors · \$0/.test(r.text), r.text.slice(0, 300));
+      if (name === "Data health") {
+        const zero = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="dh-line-"]')].map(l => (l.querySelector("button") || {}).textContent).filter(t => t === "0"));
+        ok(`§sweep2 ${where}: no line at zero`, zero.length === 0, zero);
+        if (!filled) ok(`§sweep2 ${where}: an empty org is told there is nothing to check yet`, /Nothing to check yet/.test(r.text), r.text.slice(0, 300));
+      }
+    }
+    if (filled && width > 500) {
+      // the pair, merged and undone, from the screen
+      trouble = [];
+      await page.goto(APP + "/donors?view=health", { waitUntil: "networkidle" });
+      await page.getByRole("button", { name: "Review pairs", exact: true }).click();
+      const pair = await page.locator('[data-testid="dh-pair"]').first().innerText().catch(() => "");
+      ok("§sweep2 a pair's reason says the name relation once", (pair.match(/differ by a letter or two/g) || []).length === 1, pair);
+      await page.getByRole("button", { name: "Compare", exact: true }).first().click();
+      await page.getByRole("dialog").getByRole("button", { name: /^Merge into/ }).click();
+      await page.getByRole("button", { name: "Undo", exact: true }).first().click();
+      await page.locator('[data-testid="dh-flash"]', { hasText: "Undone" }).waitFor({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(800);
+      const line = (await page.locator('[data-testid="dh-line-duplicates"] button').first().textContent().catch(() => "")) || "";
+      const head = await page.locator('[data-testid="dh-duplicates"]').first().innerText().catch(() => "");
+      ok("§sweep2 after Undo the pairs list agrees with the line above it", line === "1" && /^1 possible duplicate\b/.test(head) && /Stangate/.test(head), { line, head: head.slice(0, 120) });
+      ok("§sweep2 merge and Undo: no console error or API 4xx/5xx", trouble.length === 0, trouble.slice(0, 4));
+      // the reader, on a fake system export and on the Finding Joy workbook
+      const readerSays = async file => {
+        await page.goto(APP + "/donors", { waitUntil: "networkidle" });
+        await page.getByRole("button", { name: /Import & tools/ }).click();
+        await page.getByText("Import a spreadsheet").click();
+        await page.locator('[role=dialog] input[type=file]').first().setInputFiles(path.join(FX, file));
+        await page.locator('[data-testid="sheet-review"]').waitFor({ timeout: 30000 }).catch(() => {});
+        return page.locator("[role=dialog]").first().innerText().catch(() => "");
+      };
+      const re = await readerSays("systems/raisers-edge-gifts.csv");
+      ok("§sweep2 the reader counts an organization among the people, never beside them", /3 people \(1 of them an organization\)/.test(re) && !/3 people, 1 organization/.test(re), re.slice(0, 400));
+      ok("§sweep2 the reader names no Sheet1 for a CSV, and no sheets for a one-sheet file", !/Sheet1/.test(re) && !/Sheets that list the same people/.test(re), re.slice(0, 400));
+      const fj = await readerSays("real-shaped/jp-finding-joy-combined-443.xlsx");
+      ok("§sweep2 the reader asks \"When was Finding Joy?\", not \"the Finding Joy\"", /When was Finding Joy\?/.test(fj) && !/the Finding Joy\b/.test(fj), (fj.match(/When was[^\n]*/) || [""])[0]);
+    }
+    await ctx.close();
+  }
+}
+
 (async () => {
   console.log("smoke-walk");
   // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
-  const LEGS = { givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
+  const LEGS = { donorScreensSayNothingWrong, givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
   if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
@@ -1679,6 +1833,7 @@ async function givingSideAndPhoneSayNothingWrong(browser) {
   await moneyScreensSayNothingWrong(browser);
   await givingSideAndPhoneSayNothingWrong(browser);
   await commsScreensSayNothingWrong(browser);
+  await donorScreensSayNothingWrong(browser);
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg
