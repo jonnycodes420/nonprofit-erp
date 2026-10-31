@@ -2309,7 +2309,7 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
       if (notify) {
         const r = await notifyUserOnce({
           org: { id: s.org_id }, userId: admin.id, email: admin.email,
-          eventKey: `connection:${s.id}:${incident}`, channel: "email", prefKind: null,
+          eventKey: `connection:${s.id}:${incident}`, channel: "email", prefKind: "connection_alerts",
           subject: a.status === "broken" ? `${label} has stopped working` : `${label} has gone quiet`,
           bodyHtml: `<p>${line}</p><p>Connections shows what Steward last read and when.</p>${(await ItemRefs.links()).buttonHtml(`Open ${label}`, `${publicAppUrl()}/app/settings?section=connections`)}`,
         }).catch(() => ({ sent: false }));
@@ -3927,7 +3927,7 @@ const {
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail, staffUnsubscribeUrl,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
-  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
+  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail, briefSettings,
 } = require("./routes/email");
 
 // Single choke point for issuing a per-gift receipt — used by both the
@@ -6148,6 +6148,9 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
       const teamRollup = isOfficerScope ? orgWide.totals : null;
       const payload = { recipientUserId: u.id, email: u.email, scope, periodKey: wk.key, sections: sec, teamRollup };
       if (!send) { out.weekly.sent.push(payload); continue; }
+      // STAFF-MAIL-1: only to a person who turned it on. Asked before the
+      // period is reserved, so turning it on later still gets this week.
+      if (!(await userWantsEmail(u.id, "week_in_review"))) { out.weekly.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
       // A fully-empty week never sends four "No X this week" sections
       // (BUILD-35 Part 2): if real data offers a nudge (donors due for a
       // touch), send that instead; if there's genuinely nothing actionable,
@@ -6177,6 +6180,7 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
       const rep = await composeOfficerMonthly(org.id, mo, u);
       const payload = { recipientUserId: u.id, email: u.email, periodKey: mo.key, report: rep };
       if (!send) { out.monthly.sent.push(payload); continue; }
+      if (!(await userWantsEmail(u.id, "monthly_report"))) { out.monthly.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
       // An all-zero month must never render "0 asks · 0 moves · 0 gifts" at an
       // officer (BUILD-35 Part 2). If their portfolio offers a real nudge,
       // send that; if nothing is actionable either, reserve the period (no
@@ -6438,7 +6442,7 @@ function threadNudgeDayOk(org, todayStr) {
 // threads ride the ADMIN's list (a backstop, so nothing is orphaned) and
 // nobody else's. Ranked and capped by shared/threadRank.js, so the ten rows
 // an email can carry are the right ten.
-async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false } = {}) {
+async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false, keepTimed = false } = {}) {
   const ownerClause = !userId ? ""
     : (isAdmin ? "AND (t.owner_id = ? OR t.owner_id IS NULL)" : "AND t.owner_id = ?");
   const rows = await query(
@@ -6458,7 +6462,10 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
   // else. No task is ever reported twice on the same day.
   const { digestShouldSkip } = await threadShapeMod();
   const rank = await threadRankMod();
-  const eligible = rows.filter(r => !digestShouldSkip(r, today));
+  // STAFF-MAIL-1: the step's own email is a switch she turns on. Until she
+  // does (`keepTimed`), a step with a time today stays in her morning email,
+  // so no step is ever reported nowhere.
+  const eligible = keepTimed ? rows : rows.filter(r => !digestShouldSkip(r, today));
   if (!eligible.length) return [];
 
   // The same rank signals the queue uses, read in batches for exactly the
@@ -6638,7 +6645,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
       ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${button}${footer}
-      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Account. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
+      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under My email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
 
@@ -6653,9 +6660,9 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
 // brief and the other finds the reservations taken and does nothing. Two
 // timers, one email, and neither idempotency ledger had to be rewritten.
 //
-// BOTH PREFERENCES STILL MEAN SOMETHING. A user opted out of `daily_tasks`
-// gets a brief with no task section; opted out of `thread_nudge`, no thread
-// section; opted out of both, no email at all and nothing reserved.
+// STAFF-MAIL-1: `notify_thread_nudge` is the whole email's switch, and what
+// goes in it is the person's own sections (briefSettings). Every section off,
+// or the switch off, is no email at all and nothing reserved.
 // LIVE-1 · the readouts written since the last weekday morning: yesterday's,
 // or Friday's and the weekend's on a Monday. Their headlines, newest first.
 async function yesterdaysReadouts(orgId, today) {
@@ -6665,10 +6672,28 @@ async function yesterdaysReadouts(orgId, today) {
                   AND for_date >= ? AND for_date < ? ORDER BY created_at DESC LIMIT 5`, [orgId, from, today]).catch(() => []);
 }
 
-async function runMorningBriefForOrg(org, { today, send = true }) {
+// STAFF-MAIL-1 · EACH PERSON'S OWN MORNING. The person picks what goes in it
+// (briefSettings: steps, tasks, meetings, readouts, and the team roll-up for an
+// admin), the hour it comes, and weekdays or every day. `nowHour` is the org's
+// wall-clock hour, passed by the tick: a person is sent to from their hour
+// until six hours after it, and the day's ledger makes it once. Called without
+// `nowHour` (the ops hook and the suites) the hour is not checked; `force`
+// also skips the day check, as the hook always did for the weekday rule.
+const BRIEF_CATCH_UP_HOURS = 6;
+function briefDueNow(b, today, nowHour, force) {
+  if (force) return null;
+  const dow = orgTime.dayOfWeek(today);   // 0=Mon … 6=Sun
+  if (b.days === "weekdays" && (dow === null || dow >= 5)) return "not_today";
+  if (nowHour != null && (nowHour < b.hour || nowHour >= b.hour + BRIEF_CATCH_UP_HOURS)) return "not_yet";
+  return null;
+}
+
+async function runMorningBriefForOrg(org, { today, send = true, nowHour = null, force = false }) {
   await ItemRefs.links();   // THREAD-2: the email's links are ready before it renders
   const out = { sent: [], skipped: [] };
-  const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+  const users = await query(
+    `SELECT id, name, email, role, notify_thread_nudge, brief_sections, brief_hour, brief_days
+       FROM users WHERE org_id=? AND email IS NOT NULL`, [org.id]);
 
   // The team roll-up an ADMIN gets beneath their own list: counts per officer,
   // never everyone's rows. Oversight is a shape, not a longer list.
@@ -6684,33 +6709,30 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
 
   for (const u of users) {
     const isAdmin = u.role === "admin";
-    const wantsThreads = await userWantsEmail(u.id, "thread_nudge");
-    const wantsTasks   = await userWantsEmail(u.id, "daily_tasks");
+    const b = briefSettings(u);
+    if (!b.on) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
+    const notNow = briefDueNow(b, today, nowHour, force);
+    if (notNow) { out.skipped.push({ recipientUserId: u.id, reason: notNow }); continue; }
+    const wantsThreads = b.sections.steps, wantsTasks = b.sections.tasks;
 
-    // THE WEEKEND RULE IS THE THREAD SECTION'S, not the email's. A list of
-    // open threads on a Saturday is an intrusion nobody asked for; a task the
-    // user dated Saturday is a commitment they made. So the brief can still
-    // go out on a weekend carrying tasks, and simply has no thread section.
-    const threadsAllowedToday = threadNudgeDayOk(org, today);
     // Compose FIRST, apply the preference SECOND. Doing it the other way round
     // cannot tell "this person has a clear morning" from "this person turned
     // the notification off and is missing three overdue threads" — and those
     // are the two facts whoever reads this report most needs apart.
-    const tqAll = threadsAllowedToday ? await composeThreadNudgeQueue(org.id, today, { userId: u.id, isAdmin }) : { list: [], more: 0, total: 0 };
+    const keepTimed = !(await userWantsEmail(u.id, "step_reminder"));
+    const tqAll = await composeThreadNudgeQueue(org.id, today, { userId: u.id, isAdmin, keepTimed });
     const taskAll = await composeDailyTaskReminder(org.id, u.id, today);
     const suppressed = (!wantsThreads && tqAll.list.length > 0) || (!wantsTasks && taskAll.count > 0);
     const tq = wantsThreads ? tqAll : { list: [], more: 0, total: 0 };
     const taskDigest = wantsTasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };
-    // FIX-34 · today's meetings ride with the tasks, under the same setting.
+    // FIX-34 · today's meetings, now their own section (STAFF-MAIL-1).
     let meetingsToday = [];
-    if (wantsTasks) {
+    if (b.sections.meetings) {
       try { meetingsToday = (await require("./routes/finance").composeTodayMeetings(org.id, u.id, { withLogged: true })).meetings || []; }
       catch (e) { console.error("[morning-brief] meetings:", e.message); }
     }
-    // LIVE-1 — yesterday's readouts (Friday's and the weekend's on a Monday),
-    // under the Thread's own setting and weekday rule.
-    const readoutsAll = threadsAllowedToday ? await yesterdaysReadouts(org.id, today) : [];
-    let readoutsY = wantsThreads ? readoutsAll : [];
+    // LIVE-1 — yesterday's readouts (Friday's and the weekend's on a Monday).
+    let readoutsY = b.sections.readouts ? await yesterdaysReadouts(org.id, today) : [];
     if (tq.list.length === 0 && taskDigest.count === 0 && meetingsToday.length === 0 && readoutsY.length === 0) {
       // WHY there is no email matters to whoever is reading this report: a
       // person who turned both notifications off is not the same as a person
@@ -6735,12 +6757,12 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     if (threads.length === 0 && tasks.count === 0 && meetings.length === 0 && readoutsY.length === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
 
     const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today, meetings, readouts: readoutsY,
-                                          team: isAdmin && multiOfficer ? teamRows : null });
+                                          team: isAdmin && multiOfficer && b.sections.team ? teamRows : null });
     if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org, meetings.length, readoutsY.length), body)) { out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count, meetings: meetings.length }); if (meetings.length) briefCarriedMeetings.add(u.id); }
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
-  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send, skipUsers: briefCarriedMeetings }); }
+  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send, skipUsers: briefCarriedMeetings, nowHour }); }
   catch (e) { console.error("[meeting-brief]", org.id, e.message); }
   return out;
 }
@@ -6753,12 +6775,14 @@ async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(o
 // composeTodayMeetings), to the staff member's OWN sign-in address and nobody
 // else. Off unless she ticks it in Settings → Account. One a day (the
 // meeting_brief ledger), and none on a day with no meetings.
-async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null }) {
+async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null, nowHour = null }) {
   const out = { sent: [], skipped: [] };
   const users = await query(
-    "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
+    "SELECT id, name, email, brief_hour FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
   const fin = require("./routes/finance");
   for (const u of users) {
+    // STAFF-MAIL-1 · it comes at the hour she picked for her morning email.
+    if (briefDueNow({ ...briefSettings(u), days: "every_day" }, today, nowHour, false)) { out.skipped.push({ recipientUserId: u.id, reason: "not_yet" }); continue; }
     // FIX-34 · the morning email already carried her meetings: one email, not two.
     if (skipUsers && skipUsers.has(u.id)) { out.skipped.push({ recipientUserId: u.id, reason: "in_morning_brief" }); continue; }
     const { meetings } = await fin.composeTodayMeetings(org.id, u.id, { withLogged: true });
@@ -6775,7 +6799,7 @@ async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null
       + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
 <p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
 ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
-      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Account. Untick "Your meetings today" there to stop it.</p>`;
+      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under My email. Untick "Your meetings today" there to stop it.</p>`;
     if (await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body)) out.sent.push({ recipientUserId: u.id, count: meetings.length });
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }

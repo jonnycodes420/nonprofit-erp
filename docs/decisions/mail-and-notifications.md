@@ -8,6 +8,18 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 mail, in super-admin) and from the org's director (the email type, in Steward). Both of them always see and
 know exactly what is going out.** Every screen, word and test about donor mail serves that sentence.
 
+## The staff rule (Jonathan, STAFF-MAIL-1, 30 Oct 2026)
+
+**The morning email is the only email Steward sends a staff member without being asked. Everything else is a
+switch that person flips for themselves.** Each person sets up the morning email in Settings → My email: its
+sections (`users.brief_sections`: steps, tasks, meetings, readouts, team), its hour (`brief_hour`, org-local,
+default 6) and its days (`brief_days`, weekdays or every day); `notify_thread_nudge` is the whole email's switch
+and NULL means on. Every other staff email reads `userWantsEmail(user, kind)` where NULL means OFF, and a
+`prefKind` that names no switch in `NOTIFY_PREF_COLUMN` never sends (`tests/mail-suppression.test.js` §12 scans
+every `prefKind`). A schedule a person set up themselves (a weekly saved report, a board pack) is already that
+switch. The org's Staff mail switch (super-admin) still sits above all of it. A step with a time today stays in
+the morning email unless the person turned on its own reminder, so no step goes unmentioned.
+
 ## Rules
 
 - **A preview is one of her donors (SWEEP-3).** With nobody chosen, a template's preview, a card's subject and an

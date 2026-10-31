@@ -651,21 +651,48 @@ async function sendBoardPackEmail(org, toEmail, subject, bodyHtml, pdf, filename
 }
 
 // ── BUILD-36 A4: internal-notification dedup + per-user email toggles ────────
-// prefKind → the users.notify_* column. NULL / missing column is treated as ON
-// (default true) — a pre-existing user keeps hearing about their donors/tasks.
+// prefKind → the users.notify_* column.
+//
+// STAFF-MAIL-1 (Jonathan, 30 Oct 2026): THE MORNING EMAIL IS THE ONLY STAFF
+// EMAIL STEWARD SENDS WITHOUT BEING ASKED. `thread_nudge` is that email's own
+// switch and NULL means on. Every other kind is a switch the person flips for
+// themselves: NULL means OFF, and a kind with no column here never sends at
+// all (fail closed, so a new alert can't go out before it has a switch).
 const NOTIFY_PREF_COLUMN = {
+  thread_nudge: "notify_thread_nudge",   // the morning email (BUILD-81), on unless she turns it off
   portfolio_gifts: "notify_portfolio_gifts",
   task_assignments: "notify_task_assignments",
-  daily_tasks: "notify_daily_tasks",
-  thread_nudge: "notify_thread_nudge",   // BUILD-81 — the Thread's morning email
   step_reminder: "notify_step_reminder", // BUILD-84 — a step with a time on it
-  meeting_brief: "notify_meeting_brief", // FIX-12 Part 7a — OFF by default (column DEFAULT false)
+  meeting_brief: "notify_meeting_brief", // FIX-12 Part 7a — its own email, apart from the morning one
+  week_in_review: "notify_week_in_review",
+  monthly_report: "notify_monthly_report",
+  connection_alerts: "notify_connection_alerts",
 };
+const NOTIFY_ON_UNLESS_OFF = new Set(["thread_nudge"]);
 async function userWantsEmail(userId, prefKind) {
   const col = NOTIFY_PREF_COLUMN[prefKind];
-  if (!col) return true;
+  if (!col) return false;
   const rows = await query(`SELECT ${col} AS p FROM users WHERE id=?`, [userId]);
-  return rows.length ? rows[0].p !== false : true; // NULL → ON
+  if (!rows.length) return false;
+  return NOTIFY_ON_UNLESS_OFF.has(prefKind) ? rows[0].p !== false : rows[0].p === true;
+}
+
+// STAFF-MAIL-1 · what goes in one person's morning email, and when. NULL in
+// any column is the default: every section in, 6 AM org-local (the hour the
+// old 6-to-noon window opened), weekdays.
+const BRIEF_SECTIONS = ["steps", "tasks", "meetings", "readouts", "team"];
+const BRIEF_DEFAULT_HOUR = 6;
+function briefSettings(row) {
+  const s = (row && row.brief_sections && typeof row.brief_sections === "object") ? row.brief_sections : {};
+  const sections = {};
+  for (const k of BRIEF_SECTIONS) sections[k] = s[k] !== false;
+  const h = row && row.brief_hour != null ? Number(row.brief_hour) : BRIEF_DEFAULT_HOUR;
+  return {
+    on: !row || row.notify_thread_nudge !== false,
+    hour: Number.isInteger(h) && h >= 0 && h <= 23 ? h : BRIEF_DEFAULT_HOUR,
+    days: row && row.brief_days === "every_day" ? "every_day" : "weekdays",
+    sections,
+  };
 }
 // MAIL-1: `tag` ({ orgId, kind }) is passed by every org-to-supporter caller
 // (event ticket, waitlist offer, reconnect, page links) so the client applies
@@ -827,5 +854,5 @@ module.exports = {
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
-  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail, staffUnsubscribeUrl,
+  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail, NOTIFY_PREF_COLUMN, briefSettings, BRIEF_SECTIONS, staffUnsubscribeUrl,
 };

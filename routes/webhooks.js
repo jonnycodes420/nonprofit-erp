@@ -2170,7 +2170,7 @@ function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
   const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organization";
   const message = ok && staff
     ? (done
-      ? `<h1>The morning email is off</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not get the morning email any more. Turn it back on in Settings, under Account.</p>`
+      ? `<h1>The morning email is off</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not get the morning email any more. Turn it back on in Settings, under My email.</p>`
       : `<h1>Stop the morning email?</h1>
          <p>${email ? `<strong>${esc(email)}</strong> ` : "You "}will stop getting Steward's morning email with your tasks, meetings and threads. Nothing else changes.</p>
          <form method="POST" action="/unsubscribe?token=${encodeURIComponent(token || "")}">

@@ -44,6 +44,11 @@ const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by ever
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../orgSummary");
 const lapseRule = require("../lapseRule");   // FIX-49: the one lapse rule
+// STAFF-MAIL-1: one person's morning email (sections, hour, days) and the
+// columns /me and the prefs route read for it.
+const { briefSettings, BRIEF_SECTIONS } = require("./email");
+const NOTIFY_SELECT = "notify_thread_nudge, brief_sections, brief_hour, brief_days, notify_portfolio_gifts, notify_task_assignments, "
+  + "notify_step_reminder, notify_meeting_brief, notify_week_in_review, notify_monthly_report, notify_connection_alerts";
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
 const fileLimiter = rateLimit("fileLimiter", {
@@ -1609,7 +1614,7 @@ app.post("/me/password", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query(`SELECT id, email, name, role, ${NOTIFY_SELECT} FROM users WHERE id = ?`, [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
@@ -1622,19 +1627,40 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-// PUT /me/notification-prefs (BUILD-36 A4) — per-user email toggles: "Email me
-// about: portfolio gifts / task assignments / daily task reminder". Default on.
+// PUT /me/notification-prefs (BUILD-36 A4) — one person's own staff email.
+// STAFF-MAIL-1: `morningEmail` is the one email that is on unless she turns it
+// off; `brief` is what goes in it and when ({sections, hour, days}). Every
+// other key is an email she turns on for herself, off until she does.
+const NOTIFY_PREF_MAP = { morningEmail: "notify_thread_nudge", portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments",
+  stepReminder: "notify_step_reminder", meetingBrief: "notify_meeting_brief", weekInReview: "notify_week_in_review",
+  monthlyReport: "notify_monthly_report", connectionAlerts: "notify_connection_alerts" };
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder", meetingBrief: "notify_meeting_brief" };
   const sets = [], params = [];
-  for (const [k, col] of Object.entries(map)) {
+  for (const [k, col] of Object.entries(NOTIFY_PREF_MAP)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
+  }
+  const brief = b.brief && typeof b.brief === "object" ? b.brief : null;
+  if (brief) {
+    if (brief.sections && typeof brief.sections === "object") {
+      const [cur] = await query("SELECT brief_sections FROM users WHERE id=?", [req.user.userId]);
+      const next = { ...((cur && cur.brief_sections) || {}) };
+      for (const k of BRIEF_SECTIONS) if (typeof brief.sections[k] === "boolean") next[k] = brief.sections[k];
+      sets.push("brief_sections=?::jsonb"); params.push(JSON.stringify(next));
+    }
+    if (brief.hour !== undefined) {
+      if (!Number.isInteger(brief.hour) || brief.hour < 0 || brief.hour > 23) return res.status(400).json({ error: "Pick an hour between midnight and 11 PM." });
+      sets.push("brief_hour=?"); params.push(brief.hour);
+    }
+    if (brief.days !== undefined) {
+      if (!["weekdays", "every_day"].includes(brief.days)) return res.status(400).json({ error: "Pick weekdays or every day." });
+      sets.push("brief_days=?"); params.push(brief.days);
+    }
   }
   if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
-  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id=?", [req.user.userId]);
+  const rows = await query(`SELECT ${NOTIFY_SELECT} FROM users WHERE id=?`, [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
@@ -25808,19 +25834,17 @@ app.get("/geocode/status", requireAuth, wrap(async (req, res) => {
              total: Object.values(counts).reduce((a, b) => a + b, 0) });
 }));
 
-// POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
+// POST /nudges/run (requireAuth + requireAdmin) — drive the morning email for
 // the caller's org NOW (ops/test hook, /digests/run-daily's bar). {today?}
-// pins the date; the WEEKDAY rule still applies to the pinned date (that is
-// how the schedule is testable) unless {force:true}; the wall-clock morning
-// window deliberately does not (it would make the hook time-of-day flaky).
+// pins the date; each person's own days (weekdays or every day) still apply
+// to the pinned date unless {force:true}; {hour?} checks each person's own
+// hour, and without it the hour is not checked (time-of-day flaky otherwise).
 app.post("/nudges/run", requireAuth, requireAdmin, wrap(async (req, res) => {
   const [org] = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE id=?", [req.user.orgId]);
   if (!org) return res.status(404).json({ error: "Org not found" });
   const today = (req.body && req.body.today) || orgToday(org);   // ORG_TZ_SEAM_OK
-  if (!req.body?.force && !threadNudgeDayOk(org, today)) {
-    return res.json({ today, skippedWeekend: true, sent: [], skipped: [] });
-  }
-  const out = await runThreadNudgesForOrg(org, { today, send: !(req.body && req.body.dryRun) });
+  const hour = Number.isInteger(req.body?.hour) ? req.body.hour : null;
+  const out = await runThreadNudgesForOrg(org, { today, send: !(req.body && req.body.dryRun), nowHour: hour, force: !!req.body?.force });
   res.json({ today, ...out });
 }));
 
@@ -26650,14 +26674,20 @@ app.put("/gifts/:id/custom-fields", requireAuth, checkWriteAccess, wrap(async (r
   await cfEvent(req, req.user.orgId, "gift", "values_written", { entityId: req.params.id, detail: { keys: Object.keys(v.values) } });
   res.json({ ok: true, customFields: merged });
 }));
+// STAFF-MAIL-1: the morning email reads on unless turned off; every other
+// staff email reads off unless turned on (routes/email.js userWantsEmail).
 function mapNotifyPrefs(row) {
+  const b = briefSettings(row);
   return {
-    portfolioGifts: row?.notify_portfolio_gifts !== false,
-    taskAssignments: row?.notify_task_assignments !== false,
-    dailyTasks: row?.notify_daily_tasks !== false,
-    threadNudge: row?.notify_thread_nudge !== false,
-    stepReminder: row?.notify_step_reminder !== false,
-    meetingBrief: row?.notify_meeting_brief === true,   // FIX-12 Part 7a: off unless she turns it on
+    morningEmail: b.on,
+    brief: { sections: b.sections, hour: b.hour, days: b.days },
+    portfolioGifts: row?.notify_portfolio_gifts === true,
+    taskAssignments: row?.notify_task_assignments === true,
+    stepReminder: row?.notify_step_reminder === true,
+    meetingBrief: row?.notify_meeting_brief === true,
+    weekInReview: row?.notify_week_in_review === true,
+    monthlyReport: row?.notify_monthly_report === true,
+    connectionAlerts: row?.notify_connection_alerts === true,
   };
 }
 

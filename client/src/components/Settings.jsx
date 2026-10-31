@@ -23,6 +23,7 @@ import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import SupportAccessCard from "./SupportAccessCard";   // FIX-57
 import { PrivacyPanel } from "./PrivacyPanel";
+import { MyEmailPanel } from "./MyEmail";   // STAFF-MAIL-1
 import { MailTypesSettings, GoingOut, MailTypeSwitches } from "./MailTypes";   // SEND-GATE-2
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
@@ -2832,6 +2833,9 @@ const SETTINGS_TABS=[
   // FIX-57 — how each person signs what is drafted for them.
   {id:"profile",label:"My profile"},
   {id:"account",label:"Account"},
+  // STAFF-MAIL-1 — the morning email (what is in it, when) and every other
+  // staff email, each off until the person turns it on.
+  {id:"myemail",label:"My email"},
   // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
   {id:"security",label:"Security"},
 ];
@@ -3223,10 +3227,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [impactOpen,setImpactOpen]=useState(false);
   const [portalLoading,setPortalLoading]=useState(false);
 
-  // BUILD-36 A4 — per-user email notification toggles (default on).
-  const [notifyPrefs,setNotifyPrefs]=useState(null);
-  // BUILD-81 — org-level: send the thread nudge on weekends too (default off).
-  const [nudgeWeekends,setNudgeWeekends]=useState(null);
   // BUILD-88a A.6 — "Other income this year": one figure the org keeps
   // elsewhere, off by default, shown under giving on the board and never added
   // to it.
@@ -3234,7 +3234,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [otherIncome,setOtherIncome]=useState("");
   const [otherIncomeSaved,setOtherIncomeSaved]=useState("");
   useEffect(()=>{apiFetch("/org").then(o=>{
-    setNudgeWeekends(!!(o?.threadNudgeWeekends??o?.thread_nudge_weekends));
     setOtherIncomeOn(!!(o?.otherIncomeEnabled??o?.other_income_enabled));
     const v=o?.otherIncomeThisYear??o?.other_income_this_year;
     setOtherIncome(v==null?"":String(v));
@@ -3299,20 +3298,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
          setOtherIncomeSaved("Saved"); }
     catch(e){ setOtherIncomeSaved(errorMessage(e,"That figure could not be saved.")); }
   }
-  async function toggleNudgeWeekends(){
-    const next=!nudgeWeekends; setNudgeWeekends(next);
-    try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({threadNudgeWeekends:next})}); }
-    catch{ setNudgeWeekends(!next); }
-  }
-  const [notifySaving,setNotifySaving]=useState("");
-  async function toggleNotifyPref(key){
-    if(!notifyPrefs) return;
-    const next={...notifyPrefs,[key]:!notifyPrefs[key]};
-    setNotifyPrefs(next); setNotifySaving(key);
-    try{ const r=await apiFetch("/me/notification-prefs",{method:"PUT",body:JSON.stringify({[key]:next[key]})}); if(r?.notifications) setNotifyPrefs(r.notifications); }
-    catch{ setNotifyPrefs(notifyPrefs); } // rollback
-    finally{ setNotifySaving(""); }
-  }
   const [portalError,setPortalError]=useState("");
   const [portalUrl,setPortalUrl]=useState("");   // fallback link when the pop-up is blocked
   const [upgradeModal,setUpgradeModal]=useState(null);
@@ -3344,7 +3329,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
     apiFetch("/billing/status").then(setBilling).catch(()=>{});
-    apiFetch("/me").then(r=>{ if(r?.notifications) setNotifyPrefs(r.notifications); }).catch(()=>{});
     apiFetch("/impact").then(setImpact).catch(()=>{});
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
@@ -3985,6 +3969,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>)}
 
       {section==="privacy"&&<PrivacyPanel isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {section==="myemail"&&<MyEmailPanel isAdmin={isAdmin}/>}
       {section==="automatic"&&<MailTypesSettings onNavigate={onNavigate}/>}
       {section==="going-out"&&<GoingOut onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
       {section==="atlas"&&<AtlasSettings isAdmin={isAdmin} isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
@@ -4295,46 +4280,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         )}
       </div>
 
-      {/* Email notifications (BUILD-36 A4) — per-user toggles, default on. An
-          officer hears about their donors and tasks without logging in, and can
-          turn any stream off here. */}
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
-        <SectionLabel>Email notifications</SectionLabel>
-        <div style={{fontSize:12.5,color:T.ink3,marginTop:-4,marginBottom:14}}>Email me about:</div>
-        {[
-          {key:"portfolioGifts",label:"Gifts to my donors",hint:"A gift lands for a donor you own, or anywhere in your org."},
-          {key:"taskAssignments",label:"Task assignments",hint:"Someone assigns you a task (or an automation does)."},
-          {key:"dailyTasks",label:"Daily task reminder",hint:"A morning summary of tasks due today and overdue."},
-          {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
-          // BUILD-84 — the timed step reminder lives in the SAME list as the
-          // nudge, per-user, default on. Not a second notification screen.
-          // FIX-12 Part 7a — off by default; to her own address only.
-          {key:"meetingBrief",label:"Your meetings today",hint:"Off unless you tick it. One morning email to you only, with the same meeting briefs Home shows. None on a day with no meetings."},
-          {key:"stepReminder",label:"Next steps with a time",hint:"When you give a next step a time, one email arrives at that time with the donor and a button to log what happened. Steps with no time stay in The Thread email instead."},
-        ].map(row=>(
-          <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
-            <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
-              checked={notifyPrefs?!!notifyPrefs[row.key]:row.key!=="meetingBrief"}
-              onChange={()=>toggleNotifyPref(row.key)}
-              style={{width:16,height:16,marginTop:2,cursor:notifyPrefs?"pointer":"default",accentColor:T.greenMid}}/>
-            <div>
-              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{row.label}</div>
-              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{row.hint}</div>
-            </div>
-          </label>
-        ))}
-        {isAdmin&&nudgeWeekends!==null&&(
-          <label style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0 0",borderTop:"1px solid "+T.bg2,cursor:"pointer"}}>
-            <input type="checkbox" checked={nudgeWeekends} onChange={toggleNudgeWeekends}
-              style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
-            <div>
-              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Send the Thread email on weekends too</div>
-              {/* BUILD-84 — the weekend rule INVERTS for a timed step, and
-                  that is said next to the toggle rather than discovered. */}
-              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday, setting one is a commitment to a moment.</div>
-            </div>
-          </label>
-        )}
+      {/* The organisation's own email settings, admins only. The per-person
+          email list that lived here moved to Settings → My email (STAFF-MAIL-1). */}
+      {isAdmin&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+        <SectionLabel>Your organization's email</SectionLabel>
         {/* ── BUILD-88c C.1 — SEND FROM YOUR OWN ADDRESS ─────────────────────
             Every email has left through Steward's domain with the organisation's
             NAME on it. That closed the "bare unfamiliar domain" trust gap and
@@ -4457,7 +4406,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             )}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* On-brand Account panel (BUILD-31 Part 2.3): plain white/cream section,
           ink label, sign-out as a QUIET terracotta outline (destructive-but-not-

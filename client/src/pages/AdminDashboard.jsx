@@ -761,7 +761,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
                 {/* FIX-48: three switches, each saved per org and audit-logged. Sign-in mail always goes. */}
                 <div data-testid="admin-mail-switches" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {[
-                    ["staff", "Staff mail", "Digests, morning emails, reminders and alerts Steward sends this organization's team on its own."],
+                    ["staff", "Staff mail", "Each person's morning email, the one staff email on by default, and anything else a person turned on for themselves in Settings, under My email."],
                     ["donor", "Donor mail", "Mail this organization sends its donors: receipts, thank-yous, campaigns and sequences it turned on."],
                     ["billing", "Billing mail", "Steward's own billing mail to this organization."],
                   ].map(([k, label, help]) => (

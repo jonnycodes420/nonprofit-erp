@@ -5417,6 +5417,40 @@ async function runSchemaInit(pool) {
   // FIX-12 Part 7a — the optional morning email of today's meetings. OFF by
   // default: a new email nobody asked for is the thing this column prevents.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_meeting_brief BOOLEAN DEFAULT false`);
+  // STAFF-MAIL-1 (Jonathan, 30 Oct 2026) — THE MORNING EMAIL IS THE ONLY STAFF
+  // EMAIL THAT SENDS UNASKED. Every other staff email is a switch the person
+  // turns on (routes/email.js userWantsEmail), so their columns default false,
+  // and the morning email gets the person's own sections, hour and days.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_week_in_review BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_monthly_report BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_connection_alerts BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS brief_sections JSONB`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS brief_hour SMALLINT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS brief_days TEXT`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN notify_portfolio_gifts SET DEFAULT false`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN notify_task_assignments SET DEFAULT false`);
+  await pool.query(`ALTER TABLE users ALTER COLUMN notify_step_reminder SET DEFAULT false`);
+  // One-shot, by flag. The alerts that used to start on are turned off for
+  // everyone (a person turns back on what they want), and the two old
+  // morning-email switches become sections of the one email, so nobody's
+  // morning email changes shape: Thread off and tasks on still means a tasks
+  // email; tasks off means no tasks or meetings in it. An org that had the
+  // Thread email on weekends gives its people "every day".
+  try {
+    const done = await pool.query("SELECT 1 FROM schema_flags WHERE flag='staff_mail_1_opt_in'");
+    if (!done.rows.length) {
+      await pool.query(`UPDATE users SET notify_portfolio_gifts=false, notify_task_assignments=false, notify_step_reminder=false`);
+      await pool.query(`UPDATE users SET notify_thread_nudge=NULL, brief_sections='{"steps":false,"readouts":false}'::jsonb
+                         WHERE notify_thread_nudge=false AND notify_daily_tasks IS DISTINCT FROM false`);
+      await pool.query(`UPDATE users SET brief_sections=COALESCE(brief_sections,'{}'::jsonb) || '{"tasks":false,"meetings":false}'::jsonb
+                         WHERE notify_daily_tasks=false AND notify_thread_nudge IS DISTINCT FROM false`);
+      await pool.query(`UPDATE users u SET brief_days='every_day' FROM orgs o WHERE o.id=u.org_id AND o.thread_nudge_weekends=true AND u.brief_days IS NULL`);
+      await pool.query("INSERT INTO schema_flags (flag) VALUES ('staff_mail_1_opt_in') ON CONFLICT (flag) DO NOTHING");
+      console.log("[staff-mail-1] staff alerts are now opt-in; morning email settings carried over");
+    }
+  } catch (e) {
+    console.error("[staff-mail-1] CRITICAL: the opt-in migration failed:", e.message);
+  }
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS source TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS workflow_run_id TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);

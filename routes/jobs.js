@@ -20,8 +20,8 @@ const {
   processTrackedSequences, processTrialReminders, processRecordBands, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
-  runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,
-  runStepRemindersForOrg, runThreadNudgesForOrg, snapshotMetricsForOrg, syncGmail, threadNudgeDayOk,
+  runDigestsForOrg, runSavedReportScheduleForOrg,
+  runStepRemindersForOrg, runThreadNudgesForOrg, snapshotMetricsForOrg, syncGmail,
   weekBounds, recomputeAllScores,
 } = ctx;
 
@@ -221,46 +221,12 @@ if (!backgroundTicksDisabled()) {
   every("processDigests", 5 * 60 * 1000, () => recordTick("processDigests", processDigests), 30000);
 }
 
-// ── BUILD-36 A3 — the daily due/overdue task reminder ────────────────────────
-// One email per user per day (digest_sends idempotency: digest_type
-// 'daily_tasks', period_key day:YYYY-MM-DD), listing their OPEN tasks due today
-// + overdue, deep-linked. Sends ONLY when non-empty — no tasks, no email, and
-// nothing reserved, so if tasks appear later the same morning it still goes.
-// Gated to a morning window so it reads as a morning brief, not a 2 AM ping.
-// Reuses the existing 5-min tick — NOT a second scheduler.
-const DAILY_REMINDER_WINDOW = [6, 12]; // send when the ORG-local hour is in [6, 12)
-// ORG_TZ_SEAM_OK (BUILD-75 A.2) — the window and the day are the ORGANIZATION's,
-// per org inside the loop. The old form read the PROCESS clock (UTC in prod):
-// the documented "morning window [6,12) local" was 6am-noon UTC, and Phase 0.2
-// measured the result — every daily_tasks send in production had fired at
-// 02:00 America/New_York. One UTC `today` also served as both the task filter
-// and the digest_sends dedup key for every org regardless of timezone.
-// Transition note (recorded in audit/BUILD-75-FINDINGS.md §0.2 before this was
-// written): because every recorded send fired at an hour where the UTC and
-// org-local civil dates agree, the org-local key on the changeover day is
-// string-identical to the UTC key already reserved — no double send, no skipped
-// day, no migration. Policy if a future org's window ever spans a UTC-date
-// disagreement: skip, never double.
-function inDailyReminderWindow(orgClock) {
-  return orgClock.hour >= DAILY_REMINDER_WINDOW[0] && orgClock.hour < DAILY_REMINDER_WINDOW[1];
-}
-
-async function processDailyTaskReminders(now = new Date(), { force = false } = {}) {
-  try {
-    // ORG_TZ_SEAM_OK — window and day are computed PER ORG (see the note on
-    // DAILY_REMINDER_WINDOW above). Two orgs in different timezones are in
-    // their morning at different instants, and "today" differs between them.
-    const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1", []);
-    for (const org of orgs) {
-      const clock = orgTime.orgClock(org, now);
-      if (!force && !inDailyReminderWindow(clock)) continue;
-      await runDailyTaskRemindersForOrg(org, { today: clock.date }).catch(e => console.error("[daily-tasks]", org.id, e.message));
-    }
-  } catch (e) { console.error("[daily-tasks] processDailyTaskReminders:", e.message); }
-}
-if (!backgroundTicksDisabled()) {
-  every("processDailyTaskReminders", 5 * 60 * 1000, () => recordTick("processDailyTaskReminders", processDailyTaskReminders), 45000);
-}
+// ── BUILD-36 A3 / BUILD-85 — THE MORNING EMAIL ───────────────────────────────
+// processDailyTaskReminders and processThreadNudges were two timers calling
+// one sender (runMorningBriefForOrg) inside one [6,12) window. STAFF-MAIL-1
+// keeps the one timer, below, and drops the shared window: each person picks
+// their own hour and days in Settings → My email, and the sender reads them.
+// The day and the hour are the ORGANIZATION's (ORG_TZ_SEAM_OK, BUILD-75 A.2).
 
 if (!backgroundTicksDisabled()) {
   every("processGeocodeQueue", 5 * 60 * 1000, () => processGeocodeQueue(), 55000);
@@ -299,13 +265,12 @@ if (!backgroundTicksDisabled()) {
 
 async function processThreadNudges(now = new Date()) {
   try {
-    // ORG_TZ_SEAM_OK — window, weekday, and "today" are the ORGANIZATION's.
+    // ORG_TZ_SEAM_OK — the hour and "today" are the ORGANIZATION's; whose
+    // hour it is, and whose day, is each person's (STAFF-MAIL-1).
     const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1", []);
     for (const org of orgs) {
       const clock = orgTime.orgClock(org, now);
-      if (!inDailyReminderWindow(clock)) continue;
-      if (!threadNudgeDayOk(org, clock.date)) continue;
-      await runThreadNudgesForOrg(org, { today: clock.date }).catch(e => console.error("[thread-nudge]", org.id, e.message));
+      await runThreadNudgesForOrg(org, { today: clock.date, nowHour: clock.hour }).catch(e => console.error("[thread-nudge]", org.id, e.message));
     }
   } catch (e) { console.error("[thread-nudge] processThreadNudges:", e.message); }
 }
