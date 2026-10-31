@@ -21,7 +21,7 @@ start, not the org's). Every Ask answer drew in 0.54–0.59 s. Phone on slow 4G 
 | # | Screen | Miss | Sev | Status |
 |---|---|---|---|---|
 | 1 | Home · Your moves | Drafts to organisations open "Hello, thank you…": OAKVILLE Foundation, Ulis & Verin Cranville Family Foundation, Halridge Bank and every business sponsor. `insights.js` had its own greeting and said "Hello" for any organisation instead of the one rule in `shared/greeting.js` (FIX-56: the named contact, else "friends at" it). | P2 | fixed: the moves greet through `shared/greeting.js` ("Dear friends at OAKVILLE Foundation,"; a named contact by name) |
-| 2 | Home · Your moves · Keep | Ulis & Verin Cranville Family Foundation gave $25,000 on 4 Sep 2026 (and $577.60 in July), this fiscal year. The card said "Gave $50,000 in December 2025. Nothing yet this year-end." and asked $50,000 on top. | P1 | fixed: "Ask $24,422: last December's $50,000, less the $25,577.60 given since Jul 1."; a giver who already gave as much this fiscal year is not a year-end move (20 → 19) |
+| 2 | Home · Your moves · Keep | Ulis & Verin Cranville Family Foundation gave $25,000 on 4 Sep 2026 (and $577.60 in July), this fiscal year. The card said "Gave $50,000 in December 2025. Nothing yet this year-end." and asked $50,000 on top. | P1 | fixed: "Ask $24,000: last December's $50,000, less the $25,577.60 given since Jul 1, rounded."; a giver who already gave as much this fiscal year is not a year-end move (20 → 19) |
 | 3 | Home | All 1,000-odd people show "No owner"; nothing on Home offers to assign them. | P2 | fixed: an Owners card in the rail for an admin while nobody owns anyone: "Make my top 25 mine", with Undo |
 | 4 | Home · event card | The card counts places taken (`SUM(quantity)`, a party of two is two) against capacity; the event page's Registered is each person once (`numbers.eventGuests`). Two measures under one word. | P2 | fixed: "5 people registered, for 40 places." (five parties of two said 10 before) |
 
@@ -61,4 +61,13 @@ error, no 4xx/5xx, nothing the bar names. Owners: Make my top 25 mine, then Undo
 Timings unchanged: Home idle 0.93–1.16 s, every answer 0.54–0.56 s. The walk caught one defect of
 this build's own before it shipped: the new owners read was not on Home's bundle list, so the whole
 rail bundle answered 400 (fixed; it is on the list).
+
+**Added after the walk (Jonathan, 31 Oct): every suggested ask is a natural amount.** One function,
+`naturalAskCents` in `shared/smartAmounts.js`: under $1,000 to the nearest $25, under $10,000 to the nearest
+$250, from $10,000 to the nearest $1,000, never under $25. Home's moves (year-end, lapsing, second gift,
+upgrade, the major range, drift's usual gift) and the profile's held ask (which rounded up to the next
+rung: $2,700 asked $3,500) read it; a rising donor still steps up one rung, and every rung is natural. An
+ask that rounding moved says "rounded" beside the exact figure ("Ask $4,250: their last gift ($4,200),
+rounded."), so a rounded ask can be a little above the gift it comes from. Left on their own numbers: a
+monthly ask, a sponsor's level, a pledge's balance and the giving form's buttons.
 

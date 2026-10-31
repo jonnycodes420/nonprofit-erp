@@ -65,15 +65,16 @@ const money = c => {
                     : (v / 100).toLocaleString("en-US");
   return (neg ? "-$" : "$") + s;
 };
-// A natural ask: $7,500 not $7,512. Rounded to a quarter of its leading power
-// of ten ($7,512 → $7,500, $37,512 → $37,500, $1,000.03 → $1,000).
+// A natural ask ($24,000, not $24,422) is shared/smartAmounts.js's
+// naturalAskCents, the one rounding every suggested ask reads (SWEEP-1). It is
+// an ES module, loaded with the greeting (`ready`, awaited by insightsData).
+let SA = null;
 function naturalCents(c) {
-  if (c <= 0) return 0;
-  const d = c / 100;
-  const step = Math.max(1, Math.pow(10, Math.floor(Math.log10(d))) / 4);
-  return Math.round(d / step) * step * 100;
+  if (!SA) throw new Error("insights: await insights.ready before computeInsights");
+  return SA.naturalAskCents(c);
 }
-const wholeDollars = c => Math.round(c / 100) * 100;
+// ", rounded" when rounding moved the figure, so the words never claim an exact amount
+const roundedWord = (ask, raw) => (ask === raw ? "" : ", rounded");
 const plural = (n, one, many) => `${n.toLocaleString("en-US")} ${n === 1 ? one : (many || one + "s")}`;
 
 // ── 1. SIGNALS FROM A GIFT'S OWN WORDS ─────────────────────────────────────
@@ -582,9 +583,9 @@ const whoFor = (x, rung) => (rung === "major" ? "The director" : x.owner || "You
 // organisation's named contact or "friends at" it, both people of a couple.
 // This file had its own, which said "Hello" to every foundation and "Hi &" to
 // "Mr & Mrs. Dunwell". greeting.js is an ES module; insightsData awaits
-// `greetReady` before it runs the engine.
+// `ready` before it runs the engine.
 let GREET = null;
-const greetReady = import("./shared/greeting.js").then(m => { GREET = m; return m; });
+const ready = Promise.all([import("./shared/greeting.js"), import("./shared/smartAmounts.js")]).then(([g, a]) => { GREET = g; SA = a; });
 const hello = x => {
   const u = x.unit || { people: [] };
   const solo = u.people.length === 1 ? u.people[0] : null;
@@ -637,7 +638,7 @@ const LIBRARY = [
       const dec = x.dated.filter(g => g.date >= from && g.date <= to).reduce((n, g) => n + g.amount_cents, 0);
       const fy = x.dated.filter(g => g.date >= ctx.fyStart && g.date <= ctx.asOf).reduce((n, g) => n + g.amount_cents, 0);
       if (fy >= dec) return null;
-      const ask = wholeDollars(dec - fy);
+      const ask = naturalCents(dec - fy), askDec = naturalCents(dec);
       const since = longDate(ctx.fyStart).replace(/, \d{4}$/, "");
       const when = ctx.asOf <= `${ctx.thisYear}-11-15` ? windowWords(ctx.asOf > season ? ctx.asOf : season, `${ctx.thisYear}-11-15`) : windowWords(ctx.asOf, `${ctx.thisYear}-12-15`);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: dec - fy,
@@ -646,8 +647,8 @@ const LIBRARY = [
         how: { who: whoFor(x, x.rung), channel: dec >= 100000 ? "Call" : "Note", when,
           say: `${hello(x)}, thank you for your gift last December. It mattered. We're planning this year's year-end and hoped we could count on you again.`,
           ask: x.noAsk ? null : fy > 0
-            ? { cents: ask, words: `Ask ${money(ask)}: last December's ${money(dec)}, less the ${money(fy)} given since ${since}.`, rule: "Retain asks last year's amount, less what they have given this fiscal year." }
-            : { cents: wholeDollars(dec), words: `Ask ${money(wholeDollars(dec))}: last December's gift.`, rule: "Retain asks last year's amount." } } };
+            ? { cents: ask, words: `Ask ${money(ask)}: last December's ${money(dec)}, less the ${money(fy)} given since ${since}${roundedWord(ask, dec - fy)}.`, rule: "Retain asks last year's amount, less what they have given this fiscal year, rounded to a natural amount." }
+            : { cents: askDec, words: askDec === dec ? `Ask ${money(askDec)}: last December's gift.` : `Ask ${money(askDec)}: last December's ${money(dec)}, rounded.`, rule: "Retain asks last year's amount, rounded to a natural amount." } } };
     }).filter(Boolean);
     if (!items.length) return null;
     return {
@@ -719,7 +720,7 @@ const LIBRARY = [
         facts: [["last gift", money(g.amount_cents)], ["last gift date", longDate(g.date)], [`${yr} giving`, money(yearCents)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 100000 ? "Call" : "Note", when: windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
           say: `${hello(x)}, thank you for your gift in ${monthYear(g.date)}. It did real good, and we'd love to have you with us again this year.`,
-          ask: x.noAsk ? null : { cents: wholeDollars(g.amount_cents), words: `Ask ${money(wholeDollars(g.amount_cents))}: their last gift.`, rule: "A lapsing donor is asked their last gift, never more." } } };
+          ask: x.noAsk ? null : (a => ({ cents: a, words: a === g.amount_cents ? `Ask ${money(a)}: their last gift.` : `Ask ${money(a)}: their last gift (${money(g.amount_cents)}), rounded.`, rule: "A lapsing donor is asked their last gift, rounded to a natural amount." }))(naturalCents(g.amount_cents)) } };
     });
     return {
       kind: "lapsing", rung: "retain", title: "Lapsing donors",
@@ -743,7 +744,7 @@ const LIBRARY = [
         facts: [["first gift", money(g.amount_cents)], ["first gift date", longDate(g.date)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 25000 ? "Call" : "Note", when,
           say: `${hello(x)}, your first gift in ${monthYear(g.date)} is already at work. Here's one thing it did. Would you give again before the year is out?`,
-          ask: x.noAsk ? null : { cents: wholeDollars(g.amount_cents), words: `Ask ${money(wholeDollars(g.amount_cents))}: their first gift, within 12 months of it.`, rule: "Second gift asks the first gift's amount within 12 months of it." } } };
+          ask: x.noAsk ? null : (a => ({ cents: a, words: a === g.amount_cents ? `Ask ${money(a)}: their first gift, within 12 months of it.` : `Ask ${money(a)}: their first gift (${money(g.amount_cents)}), rounded, within 12 months of it.`, rule: "Second gift asks the first gift's amount, rounded to a natural amount, within 12 months of it." }))(naturalCents(g.amount_cents)) } };
     });
     return {
       kind: "second_gift", rung: "second", title: "First gift, no second yet",
@@ -774,7 +775,7 @@ const LIBRARY = [
         facts,
         how: { who: whoFor(x, "upgrade"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 30)),
           say: `${hello(x)}, thank you. Your gift${after ? ` of ${money(after.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
-          ask: x.noAsk ? null : { cents: ask, words: `Ask ${money(ask)}: 1.5 times their last 12 months (${money(x.L12)}), rounded.`, rule: "Upgrade asks 1.5 times their last 12 months, rounded to a natural number." } } };
+          ask: x.noAsk ? null : { cents: ask, words: `Ask ${money(ask)}: 1.5 times their last 12 months (${money(x.L12)}), rounded.`, rule: "Upgrade asks 1.5 times their last 12 months, rounded to a natural amount." } } };
     });
     return {
       kind: "upgraded", rung: "upgrade", title: "Upgraded on their own",
@@ -1061,7 +1062,8 @@ function withDrift(deck, rows, { asOf, gone = new Set() } = {}) {
     }
     const call = cents >= 100000;
     const when = windowWords(asOf, addDays(asOf, 14));
-    const ask = cents > 0 ? { words: `Ask ${money(cents)}: their usual gift.`, rule: "A drifting donor is asked their usual gift, never more." } : null;
+    const asked = naturalCents(cents);
+    const ask = cents > 0 ? { words: asked === cents ? `Ask ${money(asked)}: their usual gift.` : `Ask ${money(asked)}: their usual gift (${money(cents)}), rounded.`, rule: "A drifting donor is asked their usual gift, rounded to a natural amount." } : null;
     const act = call ? "calls" : "draft";
     added.push({
       id: `drift:${r.donorId}`, kind: "drift", itemKey: r.donorId, tab: "keep", label: r.confidence === "medium" ? "Keep · Early sign" : "Keep · Drifting",
@@ -1147,5 +1149,5 @@ function nextMoveFor(result, donorId) {
 
 module.exports = {
   RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
-  computeInsights, greetReady, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
+  computeInsights, ready, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

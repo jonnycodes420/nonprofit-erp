@@ -63,6 +63,21 @@ export function toFriendlyCents(cents, { snapDown = false } = {}) {
   return FRIENDLY_CENTS.find(f => f >= c) ?? MAX_SUGGESTION_CENTS;
 }
 
+// SWEEP-1 · THE ONE ROUNDING FOR A SUGGESTED ASK (Jonathan, 31 Oct): an ask
+// a person would say out loud. Under $1,000 to the nearest $25, under $10,000
+// to the nearest $250, from $10,000 to the nearest $1,000: $24,422 asks
+// $24,000, $4,180 asks $4,250, $612 asks $600. Any ask at all is at least $25
+// (a $10 gift would otherwise round to an ask of nothing). Every suggested ask
+// reads this: Home's moves (insights.js), the profile, Atlas and the call
+// list (suggestedAskCents). A monthly amount, a sponsor's level and a pledge's
+// balance are not suggestions and keep their own numbers.
+export function naturalAskCents(cents) {
+  const c = Math.round(Number(cents) || 0);
+  if (!Number.isFinite(c) || c <= 0) return 0;
+  const step = c < 100000 ? 2500 : c < 1000000 ? 25000 : 100000;
+  return Math.max(2500, Math.round(c / step) * step);
+}
+
 // The next rung up, and the one after it. `steps` away.
 function rungAbove(cents, steps = 1) {
   const i = FRIENDLY_CENTS.indexOf(cents);
@@ -195,10 +210,13 @@ export function suggestedAskCents({ largestCents = 0, lastThreeCents = [], stepU
   // product is already in.
   const rising = three.length >= 2 && three[0] > three[three.length - 1];
   const anchor = Math.max(largest, avgThree);
-  const base = toFriendlyCents(anchor);
-  if (!base) return null;
+  const rung = toFriendlyCents(anchor);
+  if (!rung) return null;
   const held = rising && !stepUp;
-  const ask = rising && stepUp ? (rungAbove(base, 1) ?? base) : base;
+  // SWEEP-1: held at their level, the ask is their level, rounded the one way
+  // (naturalAskCents); a step up is the next rung, and every rung is natural.
+  const base = naturalAskCents(anchor);
+  const ask = rising && stepUp ? (rungAbove(rung, 1) ?? base) : base;
   const bits = [];
   if (largest) bits.push(`Largest gift ${dollars(largest)}`);
   if (avgThree) bits.push(`last ${three.length === 1 ? "gift was" : `${three.length} averaged`} ${dollars(avgThree)}${rising ? " and rising" : ""}`);

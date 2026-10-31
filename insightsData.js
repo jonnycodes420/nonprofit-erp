@@ -68,7 +68,7 @@ async function insightsFor(orgId, asOf) {
   const m = MEMO.get(orgId);
   if (m && m.key === key && m.asOf === asOf && Date.now() - m.at < MEMO_MS) return m.result;
   const rows = await rowsFor(orgId);
-  await insights.greetReady;   // SWEEP-1: the drafts greet through shared/greeting.js
+  await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
   const result = insights.computeInsights({ ...rows, asOf });
   MEMO.set(orgId, { key, asOf, result, at: Date.now() });
   return result;

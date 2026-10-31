@@ -20,11 +20,17 @@
 //   §5 Owners: an admin is offered her largest givers while nobody has an
 //      owner; one click assigns them, Undo takes exactly that batch back; a
 //      fundraiser can't.
+//   §6 every suggested ask is a natural amount, by one function
+//      (smartAmounts.naturalAskCents): under $1,000 to the nearest $25, under
+//      $10,000 to the nearest $250, then to the nearest $1,000, never under
+//      $25; $24,422.40 asks $24,000 on Home's card, and the profile's held ask
+//      rounds the same way (it rounded up a rung: $2,700 asked $3,500).
 //
 // HOW IT GOES RED ON MAIN (37a702b): §1 asks $50,000 and keeps the giver who
 // already gave; §2 says "Hello," and "Hi &,"; §3 answers the Annual Fund with
 // a number, refuses "top", counts this year's givers, and the chip is there;
-// §4 says "4 guests" for two couples; §5 has no route (404).
+// §4 says "4 guests" for two couples; §5 has no route (404); §6 has no
+// naturalAskCents, the card asks $24,422 and the held ask is $3,500.
 //
 // Standard scratch stack (tests/README.md). Sends nothing. The clock is not
 // pinned: the engine is read as of a fixed day through TEST_MODE's asOf.
@@ -60,7 +66,7 @@ const gift = (k, amount, date) => q(`INSERT INTO gifts (id,org_id,donor_id,amoun
     const [tok, tokFundraiser] = await freshOrg(ORG, "Lantern House");
     // Year-end givers: each gave last December. The foundation also gave in
     // September (this fiscal year); the trust already gave more than December.
-    await person("found", "Marrow Family Foundation", "organisation", 75000); await gift("found", 50000, "2025-12-16"); await gift("found", 25000, "2026-09-04");
+    await person("found", "Marrow Family Foundation", "organisation", 75577.60); await gift("found", 50000, "2025-12-16"); await gift("found", 25000, "2026-09-04"); await gift("found", 577.60, "2026-07-20");
     await person("trust", "Lindell Trust", "organisation", 9000, { contact: "Ruth Lindell" }); await gift("trust", 3000, "2025-12-10"); await gift("trust", 6000, "2026-08-01");
     await person("bank", "Harbor Savings Bank", "organisation", 400); await gift("bank", 400, "2025-12-12");
     await person("mrs", "Mr & Mrs. Ivo G Dunmore", "person", 250); await gift("mrs", 250, "2025-12-20");
@@ -72,9 +78,11 @@ const gift = (k, amount, date) => q(`INSERT INTO gifts (id,org_id,donor_id,amoun
     const ye = (ins.body.cards || []).find(c => c.kind === "year_end") || { items: [] };
     const item = name => ye.items.find(i => i.name === name);
     const found = item("Marrow Family Foundation");
-    ok("§1 the foundation that gave $25,000 this fiscal year is asked last December's $50,000 less it ($25,000), not $50,000",
-      !!found && found.how.ask && found.how.ask.cents === 2500000 && /less the \$25,000 given since/.test(found.how.ask.words), found && found.how.ask);
-    ok("§1 its card says what it gave this fiscal year", !!found && /\$25,000 since/.test(found.what || found.facts.map(f => f.join(" ")).join(" ")), found && (found.what || found.facts));
+    ok("§1 the foundation that gave $25,577.60 this fiscal year is asked last December's $50,000 less it, not $50,000",
+      !!found && found.how.ask && found.how.ask.cents < 5000000 && /less the \$25,577\.60 given since/.test(found.how.ask.words), found && found.how.ask);
+    ok("§1 its card says what it gave this fiscal year", !!found && /\$25,577\.60 since/.test(found.what || found.facts.map(f => f.join(" ")).join(" ")), found && (found.what || found.facts));
+    ok("§6 $50,000 less $25,577.60 ($24,422.40) asks $24,000, and says it was rounded",
+      !!found && found.how.ask.cents === 2400000 && /^Ask \$24,000: .*, rounded\.$/.test(found.how.ask.words), found && found.how.ask);
     ok("§1 a giver who already gave more than last December this fiscal year is not a year-end move", !item("Lindell Trust") && !item("Pat Okafor") && !!item("Harbor Savings Bank"),
       ye.items.map(i => i.name));
     const say = name => ((item(name) || {}).how || {}).say || "";
@@ -83,6 +91,19 @@ const gift = (k, amount, date) => q(`INSERT INTO gifts (id,org_id,donor_id,amoun
     ok("§2 \"Mr & Mrs.\" is never \"Hi &,\"", !!say("Mr & Mrs. Ivo G Dunmore") && !/^(Hi|Dear) &/.test(say("Mr & Mrs. Ivo G Dunmore")), say("Mr & Mrs. Ivo G Dunmore"));
     const sayAll = (ins.body.cards || []).flatMap(c => c.items.map(i => (i.how && i.how.say) || "")).filter(Boolean);
     ok("§2 no move's note opens \"Hello,\"", sayAll.every(s => !/^Hello,/.test(s)), sayAll.filter(s => /^Hello,/.test(s)).slice(0, 3));
+
+    // §6 · the one rounding, and every ask on the cards is natural by it
+    const SA = await import("../shared/smartAmounts.js");
+    const T6 = [[612, 600], [987.4, 975], [999, 1000], [10, 25], [0.5, 25], [1000.03, 1000], [4180, 4250], [9900, 10000], [24422.4, 24000], [24600, 25000], [137512, 138000]];
+    const got = T6.map(([d]) => SA.naturalAskCents(Math.round(d * 100)) / 100);
+    ok("§6 naturalAskCents: under $1k to $25, under $10k to $250, then $1,000; never under $25", got.every((v, i) => v === T6[i][1]) && SA.naturalAskCents(0) === 0,
+      T6.map(([d, w], i) => `${d}→${got[i]} (want ${w})`).filter((x, i) => got[i] !== T6[i][1]));
+    const asks = (ins.body.cards || []).flatMap(c => c.items.map(i => i.how && i.how.ask && i.how.ask.cents).filter(v => v > 0));
+    ok("§6 every money ask on the cards is a natural amount", asks.length > 0 && asks.every(v => v === SA.naturalAskCents(v)), asks.filter(v => v !== SA.naturalAskCents(v)));
+    const held = SA.suggestedAskCents({ largestCents: 270000, lastThreeCents: [270000] });
+    ok("§6 the profile's ask, held at their level, rounds the same way ($2,700 asks $2,750, not the $3,500 rung)", held && held.askCents === 275000, held);
+    const up = SA.suggestedAskCents({ largestCents: 270000, lastThreeCents: [270000, 200000] });
+    ok("§6 a rising donor still steps up a rung, and the rung is natural", up && up.askCents === 500000 && up.askCents === SA.naturalAskCents(up.askCents), up);
 
     // §3 · Ask
     const askSays = async text => { const r = await api("POST", "/ask", tok, { text }); return r.body || {}; };
