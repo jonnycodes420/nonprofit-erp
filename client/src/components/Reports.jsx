@@ -399,7 +399,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // Tag the payload with the report key it belongs to — between
       // switching reports and the effect firing there's one render where
       // `data` still holds the previous report's shape.
-      .then(d => { if (!dead) { setData({ key: active, d }); setLoading(false); } })
+      .then(d => { if (!dead) { setData({ key: active, params: paramsStr, d }); setLoading(false); } })
       .catch(e => { if (!dead) { setErr(e.message); setLoading(false); } });
     return () => { dead = true; };
   }, [active, isTab, paramsStr, customIncomplete, presetPending]);
@@ -455,6 +455,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   // ── Narrative + table per report ──────────────────────────────────────────
   let narrative = null, table = null, empty = false;
   const d = data && data.key === active ? data.d : null;
+  // ARCH-1: a ready marker for the browser legs, never drawn. "ready" once the
+  // answer for THIS report and THESE settings has come back (or failed), so a
+  // check reads the report's own rows and figures, not the last report's or
+  // nothing; "other" for a report another component fetches for itself.
+  const reportCurrent = !!data && data.key === active && data.params === paramsStr;
+  const reportState = !isTab ? "other" : customIncomplete || (!loading && (reportCurrent || !!err)) ? "ready" : "loading";
 
   if (isTab && !loading && !err && d) {
     if (active === "giving-summary") {
@@ -760,7 +766,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     <div className="reports-layout">
       <ReportsRail groups={groups} active={active} activeLabel={label} onPick={pick} />
 
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0 }} data-report-active={active} data-report-state={reportState}>
         {active === BUILD_ID && <BuilderView onOpen={openPerson} onCancel={() => pick("")}
           onSaved={id => { loadList().then(() => setActive(id)); }} />}
 
