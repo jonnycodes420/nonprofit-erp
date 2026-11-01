@@ -1625,11 +1625,25 @@ async function recordGift(o) {
 // (the nightly recompute, with room to spare). Off the request path: a score
 // that is a few seconds behind is fine, a gift that waits for one is not.
 const engagementMod = require("./engagement");
-async function recomputeScoresForOrg(orgId) {
-  if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
-  const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
-  if (!o) return 0;
-  return engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o));
+// ARCH-1: one recompute per org at a time. The org's rows are replaced as a
+// set (delete, then insert), so two runs at once (the debounced one after an
+// import, and a profile's GET /donors/:id/scores that found no row mid-replace)
+// both inserted, and the second died on donor_scores_pkey: a 500 on the
+// profile, and import2-history §7 in CI. Runs for one org now queue behind
+// each other in this process, and the advisory lock does the same across
+// processes. Every call still runs; nothing is skipped or merged.
+const _scoreRuns = new Map();
+function recomputeScoresForOrg(orgId) {
+  const prev = _scoreRuns.get(orgId) || Promise.resolve();
+  const mine = prev.catch(() => {}).then(async () => {
+    if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
+    const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
+    if (!o) return 0;
+    return withAdvisoryLock(`donor_scores:${orgId}`, () => engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o)));
+  });
+  _scoreRuns.set(orgId, mine);
+  mine.catch(() => {}).then(() => { if (_scoreRuns.get(orgId) === mine) _scoreRuns.delete(orgId); });
+  return mine;
 }
 const _scoreTimers = new Map();
 const SCORE_DEBOUNCE_MS = Number(process.env.SCORE_DEBOUNCE_MS || 3000);
