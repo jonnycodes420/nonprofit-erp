@@ -78,10 +78,7 @@ const SURFACES = [
   "components/PlanPicker.jsx",
   "components/TopBar.jsx",
   "components/ShareBlocks.jsx",
-  "components/ProductMark.jsx",
   "components/YourWords.jsx",
-  "components/Programs.jsx",
-  "components/AnnualFund.jsx",
   "components/DonorPortalHub.jsx",
   "components/PortalWidgets.jsx",
   "components/PortalBanner.jsx",
@@ -115,10 +112,7 @@ const SCANNED_AS_DONORS = [
 
 const OUT_OF_SCOPE = {
   "components/Events.jsx": "hidden from the nav since the 2026-07-12 pivot",
-  "components/Volunteers.jsx": "hidden from the nav since the 2026-07-12 pivot",
-  "components/Board.jsx": "hidden from the nav since the 2026-07-12 pivot",
   "marketing/": "the public marketing site (LANDING-2); its own guards (tests/landing2-marketing.test.js, scripts/ops/landing-prod-verify.js)",
-  "pages/Pricing.jsx": "public marketing page; prices are pinned by tests/one-date.test.js",
   "pages/Donate.jsx": "public white-label donation page on publicTheme.js",
   // BUILD-102 (Steward Give) — the donation form and its embedded twin. OUT OF
   // SCOPE for the same reason Donate.jsx is: these are PUBLIC, white-label
