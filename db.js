@@ -293,13 +293,22 @@ async function initSchema() {
     // hash, so a boot on an unchanged schema still brings them up to date
     // (one read when nothing is missing).
     const s = await ddlSession();
-    try { await require("./orgSummary").installTriggers(s); } finally { await s.release(); }
+    try { await require("./orgSummary").installTriggers(s); await lockDb(s); } finally { await s.release(); }
     return false;
   }
   const ddl = await ddlSession();
-  try { await runSchemaInit(ddl); }
+  try { await runSchemaInit(ddl); await lockDb(ddl); }
   finally { await ddl.release(); }
   return true;
+}
+
+// SECURE-3 · the database's own lock (server/admin/dbLock.js): RLS on every
+// public table, nothing granted to Supabase's API roles. LAST, on every boot,
+// so a table created since the last one is covered. A failure is loud and the
+// server still boots: the API never depended on it, only a leaked key would.
+async function lockDb(session) {
+  try { await require("./server/admin/dbLock").lockPublicSchema(session); }
+  catch (e) { console.error("[db-lock] CRITICAL: the database lock did not run:", e.message); }
 }
 
 // The DDL itself. `pool` here is the init session above, not the module pool.
@@ -2151,6 +2160,8 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_by TEXT`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  // SECURE-3: a synced email's body, sealed (server/mail/sealedMail.js). Schema only; rows are sealed by scripts/ops/seal-synced-mail.js.
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS body_sealed TEXT, ADD COLUMN IF NOT EXISTS body_key_id TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS created_import_id TEXT`);
 
   // ── TRANS-1 Part 0 — THE MOVE. The state of an organisation's migration
@@ -4176,6 +4187,8 @@ async function runSchemaInit(pool) {
   // INT-PROD-1: true only on a row the S3-put catch wrote to Postgres, so the
   // /health fallback alarm counts failures, not the demo seed's own rows.
   await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS s3_fallback BOOLEAN NOT NULL DEFAULT FALSE`);
+  // SECURE-3: a synced email's attachment is stored sealed; the header holds its wrapped data key.
+  await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS sealed_header TEXT, ADD COLUMN IF NOT EXISTS sealed_key_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
   // FIX-20 Part 0: an asset is PRIVATE unless an admin placed it on a public
   // page. /portal-assets/:id serves a public one to anyone and a private one

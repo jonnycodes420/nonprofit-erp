@@ -24,6 +24,7 @@
 // database is skipped; any other failure undoes the whole erasure.
 "use strict";
 const { query, withTransaction } = require("./db");
+const SEALED_MAIL = require("./server/mail/sealedMail");
 
 const ERASED_NAME = "Erased person";
 
@@ -65,7 +66,9 @@ async function exportPerson(orgId, donorId) {
                          FROM gifts g LEFT JOIN fin_funds f ON f.id=g.fund_id WHERE g.org_id=? AND g.donor_id=? ORDER BY g.date`, [orgId, donorId])),
     pledges: await one(`SELECT id, amount, due_date, status, notes FROM pledges WHERE org_id=? AND donor_id=?`, [orgId, donorId]),
     receipts: await one(`SELECT id, created_at, sent_to, snapshot FROM receipts WHERE org_id=? AND donor_id=?`, [orgId, donorId]),
-    notesEmailsAndMeetingsLogged: await one(`SELECT id, type, date, note, metadata FROM interactions WHERE org_id=? AND donor_id=? ORDER BY date`, [orgId, donorId]),
+    // SECURE-3: a person's own export holds what was written to and from them, so a synced email opens here.
+    notesEmailsAndMeetingsLogged: (await one(`SELECT id, org_id, type, date, note, body_sealed, body_key_id, metadata FROM interactions WHERE org_id=? AND donor_id=? ORDER BY date`, [orgId, donorId]))
+      .map(r => { const { org_id, body_unreadable, ...o } = SEALED_MAIL.openInteraction(r); return body_unreadable ? { ...o, unreadable: true } : o; }),
     meetingsFromCalendars: await one(`SELECT id, title, starts_at, ends_at, location, note FROM calendar_events WHERE org_id=? AND ?=ANY(person_ids)`, [orgId, donorId]),
     events: await one(`SELECT a.id, e.name AS event, a.name, a.email, a.dietary, a.notes, a.created_at FROM event_attendees a
                          LEFT JOIN events e ON e.id=a.event_id WHERE a.org_id=? AND a.donor_id=?`, [orgId, donorId]),

@@ -19,6 +19,7 @@ const express = require("express");
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 const NUM = require("../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const SEALED_MAIL = require("../server/mail/sealedMail");   // SECURE-3: a synced email's body opens only through it
 
 const routers = {
   r0: express.Router(),
@@ -1487,9 +1488,10 @@ async function meetingBrief(orgId, donorId, beforeIso) {
     text: `$${(Number(ask.target_amount) || 0).toLocaleString("en-US")} for ${ask.fund_name || ask.name || "an open proposal"}, raised in ${monthName(new Date(ask.created_at).toISOString())}.${ask.notes ? " " + String(ask.notes).trim() : ""}`,
   } : null;
 
-  const [em] = await query(
-    `SELECT note, date FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND metadata->>'direction'='inbound'
-      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1`, [orgId, donorId]);
+  // SECURE-3: the brief shows her a quote from the email, so it opens.
+  const [em] = SEALED_MAIL.openInteractions(await query(
+    `SELECT id, org_id, note, body_sealed, body_key_id, date FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND metadata->>'direction'='inbound'
+      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 1`, [orgId, donorId]));
   const quoteOf = note => { const body = String(note || "").split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim();
     return body.length > 180 ? body.slice(0, 177).replace(/\s\S*$/, "") + "…" : body; };
   const lastEmail = em && quoteOf(em.note) ? { date: em.date, quote: quoteOf(em.note) } : null;
@@ -1626,9 +1628,10 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
 
   // EMAIL THREADS: messages grouped by subject (Re:/Fwd: stripped), newest
   // first, each with its count, attachments and the last reply quoted.
-  const mails = await query(
-    `SELECT id, note, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
-      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 400`, [orgId, donorId]);
+  // SECURE-3: the threads quote the last reply, so they open (one reader).
+  const mails = SEALED_MAIL.openInteractions(await query(
+    `SELECT id, org_id, note, body_sealed, body_key_id, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
+      ORDER BY date DESC NULLS LAST, created_at DESC LIMIT 400`, [orgId, donorId]));
   const threads = new Map();
   // FIX-22 · AN ATTACHMENT THE TIMELINE COUNTS MUST OPEN SOMEWHERE. Mailbox
   // sync counts attachments and never keeps them (shared/mailboxLog.js, and the

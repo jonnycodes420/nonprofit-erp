@@ -187,15 +187,41 @@ const json = v => (typeof v === "string" ? JSON.parse(v) : v) || {};
   ok("§1 the message with the client copied in is read for its addresses only, never fetched whole",
     hitsA.some(h => h.path.endsWith(`m_${A}_mixed`) && h.format === "metadata") && !hitsA.some(h => h.path.endsWith(`m_${A}_mixed`) && h.format === "full"),
     hitsA.filter(h => h.path.includes("mixed")));
-  const ixA = await q(`SELECT donor_id, note, metadata FROM interactions WHERE org_id=$1`, [A]);
+  const ixA = await q(`SELECT id, donor_id, note, metadata, body_sealed, body_key_id FROM interactions WHERE org_id=$1`, [A]);
   ok("§1 nothing about the client is stored: no row on her, no subject, no carpool message",
     !ixA.some(r => r.donor_id === `d_${A}_rosa`) && !JSON.stringify(ixA).includes("Hazel") && !JSON.stringify(ixA).includes("Carpool"), ixA);
 
   console.log("\n§2 a diagnosis is held back, the rest is kept");
   const health = ixA.find(r => json(r.metadata).message_id === `m_${A}_health`);
-  ok("§2 the email to the donor is stored with the rest of its words and the neutral line",
-    !!health && /sponsor a horse this spring/.test(health.note) && /Thank you so much for the barn tour/.test(health.note)
-    && health.note.includes("Mentioned a health matter. Open it in your mailbox.") && json(health.metadata).held_back === "health", health);
+  // SECURE-3: the body is sealed in the table, and the screen (privacy mode's
+  // neutral line, the diagnosis gone) reads back through the profile exactly
+  // as it was stored before sealing. Red on main: the words sit in `note`.
+  ok("SECURE-3 the email's words are not readable in the table: one line in note, the body sealed",
+    !!health && !/sponsor a horse|barn tour|Mentioned a health matter/.test(health.note) && /^m1\.k1\./.test(health.body_sealed || "")
+    && health.body_key_id === "k1" && !/sponsor|horse|health/i.test(health.body_sealed), health);
+  const timelineOf = async (tok, donorId) => ((await api("GET", `/donors/${donorId}`, tok)).body.interactions || []);
+  const healthRead = (await timelineOf(tokA, `d_${A}_marion`)).find(r => json(r.metadata).message_id === `m_${A}_health`);
+  ok("§2 the email to the donor is stored with the rest of its words and the neutral line (read through the profile)",
+    !!healthRead && /sponsor a horse this spring/.test(healthRead.note) && /Thank you so much for the barn tour/.test(healthRead.note)
+    && healthRead.note.includes("Mentioned a health matter. Open it in your mailbox.") && !healthRead.note.includes(SECRET_A)
+    && json(healthRead.metadata).held_back === "health" && !("body_sealed" in healthRead), healthRead);
+  // SECURE-3 (c): a wrong key is an error, said on the row and in the log, never
+  // the bare line passed off as the whole email, and never garbage.
+  const SM = (() => { try { return require("../server/mail/sealedMail"); } catch { return null; } })();
+  let threw = null;
+  try { SM.openText(health.body_sealed, { aad: SM.interactionAad(A, health.id), env: { STEWARD_CREDENTIAL_KEY: "the-wrong-key-the-wrong-key-0123456789" } }); }
+  catch (e) { threw = e.code || e.message; }
+  ok("SECURE-3 opening with the wrong key throws MailOpenFailed", !!health.body_sealed && threw === "MAIL_OPEN_FAILED", threw);
+  const realKey = process.env.STEWARD_CREDENTIAL_KEY;
+  process.env.STEWARD_CREDENTIAL_KEY = "the-wrong-key-the-wrong-key-0123456789";
+  const wrongRead = (await timelineOf(tokA, `d_${A}_marion`)).find(r => json(r.metadata).message_id === `m_${A}_health`);
+  process.env.STEWARD_CREDENTIAL_KEY = realKey;
+  ok("SECURE-3 with the wrong key the profile says the text could not be opened, and shows none of it",
+    !!wrongRead && wrongRead.body_unreadable === true && wrongRead.note.includes("could not open the text of this email")
+    && !/sponsor a horse/.test(wrongRead.note) && LOGS.some(l => l.includes("[sealed-mail] CRITICAL")), wrongRead);
+  let copied = null;
+  try { SM.openText(health.body_sealed, { aad: SM.interactionAad(B, health.id) }); } catch (e) { copied = e.code; }
+  ok("SECURE-3 the sealed body copied into another org's row does not open", !!health.body_sealed && copied === "MAIL_OPEN_FAILED", copied);
   const tables = await q(`SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`);
   const where = [];
   for (const { table_name: t } of tables) {
@@ -251,8 +277,11 @@ const json = v => (typeof v === "string" ? JSON.parse(v) : v) || {};
   const hitsB = HITS.filter(h => h.tok === "tok_" + B);
   ok("§6 the client's message is fetched and logged, as before", sB.status === 200
     && hitsB.some(h => h.path.endsWith(`m_${B}_client`) && h.format === "full") && ixB.some(r => r.donor_id === `d_${B}_rosa` && /Hazel/.test(r.note)), ixB.map(r => r.note));
-  ok("§6 the health sentence is kept, as before, and the model is never asked",
-    ixB.some(r => r.note.includes(SECRET_B)) && !ixB.some(r => r.note.includes("Mentioned a health matter")) && !MODEL.some(b => b.includes(SECRET_B)), ixB.map(r => r.note));
+  const marionB = await timelineOf(tokB, `d_${B}_marion`);
+  ok("§6 the health sentence is kept, as before, and the model is never asked (read through the profile)",
+    marionB.some(r => r.note.includes(SECRET_B)) && !marionB.some(r => r.note.includes("Mentioned a health matter")) && !MODEL.some(b => b.includes(SECRET_B)), marionB.map(r => r.note));
+  ok("SECURE-3 privacy off seals the same way: the kept sentence is not readable in the table",
+    !ixB.some(r => r.note.includes(SECRET_B)), ixB.map(r => r.note));
   const rosaB = ixB.filter(r => r.donor_id === `d_${B}_rosa`).length;
   const rm = await api("POST", `/donors/d_${B}_rosa/client-email/remove`, tokB, {});
   const [left] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND donor_id=$2`, [B, `d_${B}_rosa`]);
@@ -261,6 +290,9 @@ const json = v => (typeof v === "string" ? JSON.parse(v) : v) || {};
   const back = await api("POST", `/privacy/removals/${rm.body.removalId}/undo`, tokB, {});
   const [again] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND donor_id=$2`, [B, `d_${B}_rosa`]);
   ok("§6 Undo puts it back, and only from its own org", crossUndo.status === 404 && back.status === 200 && again.n === rosaB, { crossUndo: crossUndo.status, back: back.body, again });
+  const rosaBack = await timelineOf(tokB, `d_${B}_rosa`);
+  ok("SECURE-3 …and what Undo puts back still opens: her email's words read back through the profile",
+    rosaBack.some(r => /rough week after the seizure/.test(r.note)) && !rosaBack.some(r => r.body_unreadable), rosaBack.map(r => r.note));
 
   // ── §7 the uploaded list ─────────────────────────────────────────────────
   console.log("\n§7 the uploaded list");

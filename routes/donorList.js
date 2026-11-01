@@ -19,6 +19,7 @@ const DL = require("../donorList");
 
 const routers = { r0: express.Router() };
 const IDS_CAP = 25000;
+const IDS_PAGE = 500;    // SECURE-3: ids per answer of /donors/ids
 
 function mount(ctx) {
 const { query, run, uuid, requireAuth, requireCrm, checkWriteAccess, wrap, actor } = ctx;
@@ -109,13 +110,21 @@ app.delete("/donors/list-views/:id", requireAuth, requireCrm, wrap(async (req, r
 }));
 
 // Every id the list's filter matches, in the list's order: "select all N".
+// SECURE-3 item 6: one page at a time (IDS_PAGE ids, `offset` for the next),
+// so no single answer carries a whole org's ids. The selection is still capped
+// at IDS_CAP; `next` is the offset to ask for, or null on the last page.
 app.get("/donors/ids", requireAuth, requireCrm, wrap(async (req, res) => {
   const f = await buildListFilter(req);
   if (f.badFilter) return res.status(400).json({ error: "bad_filter", sentence: f.badFilter });
   if (f.badRole || f.badStatus) return res.status(400).json({ error: "bad_filter", sentence: "One of those choices isn't one Steward knows." });
-  const rows = await query(`SELECT id FROM donors WHERE ${f.whereSql} ORDER BY total_giving DESC, id LIMIT ?`,
-    [...f.params, IDS_CAP + 1]);
-  res.json({ ids: rows.slice(0, IDS_CAP).map(r => r.id), total: rows.length > IDS_CAP ? null : rows.length, capped: rows.length > IDS_CAP });
+  const offset = Math.max(0, Math.min(IDS_CAP, Math.floor(Number(req.query.offset) || 0)));
+  const take = Math.max(0, Math.min(IDS_PAGE, IDS_CAP - offset));
+  const rows = take ? await query(`SELECT id FROM donors WHERE ${f.whereSql} ORDER BY total_giving DESC, id LIMIT ? OFFSET ?`,
+    [...f.params, take + 1, offset]) : [];
+  const more = rows.length > take;
+  const [{ n }] = offset === 0 ? await query(`SELECT COUNT(*)::int AS n FROM donors WHERE ${f.whereSql}`, f.params) : [{ n: null }];
+  res.json({ ids: rows.slice(0, take).map(r => r.id), offset, next: more && offset + take < IDS_CAP ? offset + take : null,
+             total: n == null ? null : (n > IDS_CAP ? null : n), capped: n == null ? undefined : n > IDS_CAP });
 }));
 
 // One tag, added to the people picked (never removed, never duplicated).
