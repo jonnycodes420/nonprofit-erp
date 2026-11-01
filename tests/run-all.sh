@@ -165,6 +165,7 @@ CORE=(
   fix59-event-import
   sweep4-events-pledges
   sweep3-comms
+  sweep1-home
   insights
   fundraising2-screens
   int4-mailbox

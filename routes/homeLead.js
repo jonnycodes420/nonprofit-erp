@@ -199,8 +199,16 @@ async function readFacts(req, nowMs) {
        FROM events e WHERE e.org_id=? AND e.is_sample IS NOT TRUE AND COALESCE(e.status,'') NOT IN ('cancelled','canceled','completed')
         AND e.date >= ? AND e.date <= ? ORDER BY e.date LIMIT 1`, [orgId, today, orgTime.addDays(today, 7)]))
     .map(e => ({ id: e.id, name: e.name, capacity: num(e.capacity) || null, guests: num(e.guests), unpaid: num(e.unpaid), unpaidAmount: num(e.unpaid_amount),
+      // SWEEP-1: Registered is the event page's number (numbers.eventGuests, each
+      // person once); `guests` was places taken, a party of two counted twice.
+      registered: null,
       daysAway: orgTime.daysBetween(today, String(e.date).slice(0, 10)),
       dayName: new Date(String(e.date).slice(0, 10) + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }) }));
+
+  if (events.length) {
+    const [g] = await require("../numbers").eventGuests(orgId, { ids: events.map(e => e.id), asOf: today });
+    events[0].registered = g ? g.registered : 0;
+  }
 
   // ── A quiet day: three people worth a note, the largest givers of the last
   // two years nobody has been in touch with for three months.
@@ -265,6 +273,44 @@ app.post("/home/lead/dismiss", requireAuth, checkWriteAccess, wrap(async (req, r
   await run(`INSERT INTO home_lead_dismissals (id, org_id, user_id, kind, card_key, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
     ["hld_" + uuid().slice(0, 12), req.user.orgId, req.user.userId, kind, key, a.id, a.name]);
   res.json({ ok: true });
+}));
+
+// SWEEP-1 · NOBODY OWNS A DONOR YET. An import leaves every person with "No
+// owner", and the owner is who Home, the calls and the morning email are for.
+// A director is offered her 25 largest givers in one click, with Undo. Only
+// people who gave and have no owner (or held invite) are touched; the stamp is
+// bulk-assign's (who assigned, when), and Undo takes back only that batch
+// while it is still hers.
+const OWNERS_TOP = 25;
+const UNOWNED = `org_id=? AND deleted_at IS NULL AND is_sample IS NOT TRUE AND total_giving > 0
+  AND assigned_to IS NULL AND pending_assignee_invite_id IS NULL`;
+app.get("/home/owners", requireAuth, wrap(async (req, res) => {
+  if (req.user.role !== "admin") return res.json({ offer: false });
+  const [r] = await query(`SELECT COUNT(*) FILTER (WHERE assigned_to IS NULL AND pending_assignee_invite_id IS NULL)::int AS unowned,
+      COUNT(*) FILTER (WHERE assigned_to IS NOT NULL OR pending_assignee_invite_id IS NOT NULL)::int AS owned
+    FROM donors WHERE org_id=? AND deleted_at IS NULL AND is_sample IS NOT TRUE AND total_giving > 0`, [req.user.orgId]);
+  const unowned = num(r && r.unowned), owned = num(r && r.owned);
+  // offered while nobody owns anyone: once owners are being chosen, the Donors list is where
+  res.json({ offer: unowned > 0 && owned === 0, unowned, top: Math.min(OWNERS_TOP, unowned) });
+}));
+app.post("/home/owners/assign", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "admin_only", message: "Only an admin can choose owners." });
+  const [me] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  if (!me) return res.status(403).json({ error: "not_in_org" });
+  const top = (await query(`SELECT id FROM donors WHERE ${UNOWNED} ORDER BY total_giving DESC, id LIMIT ?`, [req.user.orgId, OWNERS_TOP])).map(r => r.id);
+  if (!top.length) return res.json({ ids: [], n: 0, name: me.name });
+  const r = await run(`UPDATE donors SET assigned_to=?, assigned_to_name=?, assigned_by=?, assigned_by_name=?, assigned_at=NOW(), updated_at=NOW()
+     WHERE id = ANY(?) AND ${UNOWNED}`, [me.id, me.name, actor(req).id, me.name, top, req.user.orgId]);
+  if (req.audit) req.audit.summary(`Gave ${r.changes} of the largest givers an owner: ${me.name}`, { count: r.changes });
+  res.json({ ids: top, n: r.changes, name: me.name });
+}));
+app.post("/home/owners/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.map(String).slice(0, OWNERS_TOP) : [];
+  if (!ids.length) return res.status(400).json({ error: "ids_required" });
+  const r = await run(`UPDATE donors SET assigned_to=NULL, assigned_to_name=NULL, assigned_by=NULL, assigned_by_name=NULL, assigned_at=NULL, updated_at=NOW()
+     WHERE id = ANY(?) AND org_id=? AND assigned_to=? AND assigned_by=? AND assigned_at > NOW() - INTERVAL '1 day'`,
+    [ids, req.user.orgId, req.user.userId, actor(req).id]);
+  res.json({ n: r.changes });
 }));
 }
 
