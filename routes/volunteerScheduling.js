@@ -1505,41 +1505,6 @@ app.post("/volunteer-hub/run-reminders", requireAuth, requireAdmin, wrap(async (
     : "Nothing new to draft. A reminder is drafted the day before a shift for each person confirmed on it." });
 }));
 
-// The switch. OFF by default and off on the demo org, and this is the only
-// thing that turns it on: an org deciding that Steward may write to its
-// volunteers is an org's decision, and a default of ON would make it for them.
-app.get("/volunteer-hub/settings", requireAuth, wrap(async (req, res) => {
-  const [o] = await query("SELECT volunteer_reminders_enabled, volunteer_waiver_text, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
-  res.json({
-    remindersEnabled: !!(o && o.volunteer_reminders_enabled),
-    waiverText: (o && o.volunteer_waiver_text) || null,
-    defaultWaiverText: DEFAULT_WAIVER,
-    canSend: !require("../orgKind").isDemoOrg(o),
-    sentence: "The day before a shift, Steward drafts a reminder for each person confirmed on it. "
-      + "Nothing reaches a volunteer until somebody here presses Send.",
-  });
-}));
-
-app.patch("/volunteer-hub/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const b = req.body || {};
-  const sets = [], params = [];
-  if (b.remindersEnabled !== undefined) { sets.push("volunteer_reminders_enabled=?"); params.push(b.remindersEnabled === true); }
-  if (b.waiverText !== undefined) {
-    const t = String(b.waiverText || "").trim().slice(0, 8000);
-    sets.push("volunteer_waiver_text=?"); params.push(t || null);
-  }
-  if (!sets.length) return res.status(400).json({ error: "nothing_to_change" });
-  params.push(req.user.orgId);
-  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
-  const [o] = await query("SELECT volunteer_reminders_enabled, org_kind FROM orgs WHERE id=?", [req.user.orgId]);
-  res.json({ ok: true, remindersEnabled: !!o.volunteer_reminders_enabled,
-    message: o.volunteer_reminders_enabled
-      ? (require("../orgKind").isDemoOrg(o)
-          ? "Turned on, and nothing will be sent: this is the demonstration organization and it never mails anybody."
-          : "Turned on. A reminder goes out the day before a shift, to the people confirmed on it, once each.")
-      : "Turned off. Steward will not write to your volunteers." });
-}));
-
 // PARITY-3 — THE REMINDER IS A DRAFT NOW. It used to send by itself for an
 // org that had turned reminders on. The standing rule is that nothing reaches
 // a volunteer without a person pressing Send, so the hourly sweep writes a
@@ -2523,14 +2488,6 @@ async function draftMissYouFor(orgId, today) {
   }
   return n;
 }
-
-app.post("/volunteer-hub/drafts/miss-you", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await READY;
-  const orgId = req.user.orgId;
-  const n = await draftMissYouFor(orgId, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
-  res.json({ drafted: n, message: n ? `${n} "we miss you" ${n === 1 ? "note" : "notes"} drafted. Nothing is sent until you press Send.`
-    : "Nobody's last shift was 90 days to a year ago, or their notes are already drafted." });
-}));
 
 ctx.registerVolunteerReminders && ctx.registerVolunteerReminders(runVolunteerReminders);
 ctx.registerVolunteerSignUp && ctx.registerVolunteerSignUp(signUp);
