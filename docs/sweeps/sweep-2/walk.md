@@ -92,6 +92,13 @@ per view; slow 4G was not throttled in this walk.
 | 34 | A person, nothing found | Meet the bar ("No matches for "zzqx""). | | |
 | 35 | A gift with a check number | Found while fixing #33: the result says "cheque 1042", where Steward says "check" everywhere else. | P2 | fixed |
 
+## Found by this PR's CI (outside the area, fixed because they turned CI red)
+
+| # | Screen | Miss | Sev | Status |
+|---|---|---|---|---|
+| 36 | Reports › Bookkeeper, Three-year, Lapsed lists, a year's summary | A count drawn as a figure with the noun after its "?": "9 ? gifts between", "8 ? donors". FIX-60's `unit` was missing at four call sites; smoke-walk §fix60 caught it on CI, where the figures arrive before the read. | P2 | fixed |
+| 37 | Finance › Month close | "Last month" came from the browser's clock, not the org's day: a browser in another zone than the org (CI's UTC, or someone travelling) opened October on the evening of 31 Oct and the banner was empty. Red on main in polish1-trust with the browser in UTC; green after. | P2 | fixed |
+
 ## After the fixes
 
 Walked again on the same two orgs at 1440 and 390 (`walk-after/`), side by side with the before:
