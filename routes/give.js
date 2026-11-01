@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const NUMBERS = require("../shared/numbers");   // NUMBERS-3: one core, many faces (the portal's numbers are the profile's)
 const ItemRefs = require("../itemRefs");   // THREAD-2: names in staff email are links
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
@@ -6145,16 +6146,13 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
   // ORG_TZ_SEAM_OK — the portal's lookback windows are civil dates in the
   // ORG's calendar, not the Postgres session zone.
   const _portalToday = orgToday(await orgTz(org.id));
-  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household, impact, accountNudge, , campaignSpotlights, thankYouRows] = await Promise.all([
-    query(
-      `SELECT LEFT(date, 4) AS year, COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS count
-       FROM gifts WHERE org_id = ? AND donor_id = ANY(?) GROUP BY LEFT(date, 4) ORDER BY year DESC`,
-      [org.id, donorIds]),
-    query(
-      `SELECT COALESCE(SUM(amount),0) AS lifetime, COUNT(*)::int AS count,
-              MIN(date) AS first_gift, MAX(amount) AS largest
-       FROM gifts WHERE org_id = ? AND donor_id = ANY(?)`,
-      [org.id, donorIds]),
+  const [totals, , gifts, receipts, recurring, pledges, household, impact, accountNudge, , campaignSpotlights, thankYouRows] = await Promise.all([
+    // NUMBERS-3: one core, many faces (shared/numbers/donorTotals.js). Every
+    // figure here is the one the profile shows: money is hard credit only,
+    // Lifetime carries an imported total, the first gift counts the old
+    // system's, and This year is the org's fiscal year to today.
+    (async () => NUMBERS.donorTotals.donorTotals(query, { ...(await orgTz(org.id)), id: org.id }, donorIds, { byYear: true }))(),
+    null,
     query(
       `SELECT g.id, g.date, g.amount, g.type, COALESCE(c.donor_facing_name, c.name, g.campaign) AS campaign,
               f.name AS fund, g.stripe_payment_id IS NOT NULL AS online,
@@ -6164,7 +6162,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
        LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
        LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
        LEFT JOIN receipts r ON r.gift_id = g.id AND r.org_id = g.org_id AND r.voided_at IS NULL AND r.type = 'gift'
-       WHERE g.org_id = ? AND g.donor_id = ANY(?)
+       WHERE g.org_id = ? AND g.donor_id = ANY(?) AND ${NUMBERS.money.MONEY("g")}
        ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 500`,
       [org.id, donorIds]),
     query(
@@ -6195,7 +6193,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       const [sum] = await query(
         `SELECT COALESCE(SUM(g.amount),0) AS combined
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-         WHERE g.org_id = ? AND d.household_id = ? AND d.deleted_at IS NULL`,
+         WHERE g.org_id = ? AND d.household_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.money.MONEY("g")}`,
         [org.id, hh.id]);
       return { name: hh.name, combined: parseFloat(sum.combined) || 0 };
     })(),
@@ -6276,20 +6274,18 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     };
   }));
 
-  const t = totalsRow[0] || {};
-  const nowYear = String(new Date().getFullYear());
-  const byYear = byYearRows.map(r => ({ year: r.year, total: parseFloat(r.total) || 0, count: r.count }));
+  const byYear = totals.byYear;
   res.json({
     email,
     theme: portalThemePayload(org),
     donorName: displayNameCase(donors[0].name),
     giving: {
-      ytd: byYear.find(y => y.year === nowYear)?.total || 0,
+      ytd: totals.thisYear,
       byYear,
-      lifetime: parseFloat(t.lifetime) || 0,
-      giftCount: t.count || 0,
-      firstGiftDate: t.first_gift || null,
-      largestGift: parseFloat(t.largest) || 0,
+      lifetime: totals.lifetime,
+      giftCount: totals.gifts,
+      firstGiftDate: totals.first,
+      largestGift: totals.largest,
     },
     gifts: gifts.map(g => ({
       id: g.id, date: g.date, amount: parseFloat(g.amount) || 0, type: g.type,
@@ -7747,7 +7743,6 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
      JOIN orgs o ON o.id = l.org_id
      JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true AND ps.network_listed = true
      WHERE l.account_id = ? AND l.unlinked_at IS NULL`, [acct.id]);
-  const nowYear = String(new Date().getFullYear());
   const byOrg = new Map(); // org_id → { donorIds, meta }
   for (const l of links) {
     if (!byOrg.has(l.org_id)) byOrg.set(l.org_id, { donorIds: [], meta: l });
@@ -7764,12 +7759,11 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   const allOrgIds = [...byOrg.keys()];
   const allDonorIds = links.map(l => l.donor_id);
   const [aggRows, recRows, impactPerOrg, followRows] = await Promise.all([
-    allOrgIds.length ? query(
-      `SELECT org_id, COALESCE(SUM(amount),0) AS lifetime,
-              COALESCE(SUM(amount) FILTER (WHERE LEFT(date,4) = ?),0) AS ytd,
-              MAX(date) AS last_gift
-       FROM gifts WHERE org_id = ANY(?) AND donor_id = ANY(?) GROUP BY org_id`,
-      [nowYear, allOrgIds, allDonorIds]) : Promise.resolve([]),
+    // NUMBERS-3: one core, many faces (shared/numbers/donorTotals.js). Each
+    // org's card is the profile's Lifetime and last gift, and This year is
+    // that org's own fiscal year to its today, not the server's calendar year.
+    NUMBERS.donorTotals.totalsByOrg(query, links),
+
     allOrgIds.length ? query(
       `SELECT org_id, COUNT(*)::int n FROM recurring_subscriptions
        WHERE org_id = ANY(?) AND donor_id = ANY(?) AND status IN ('active','past_due','recovering','recovered','paused')
@@ -7788,11 +7782,11 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
          AND NOT EXISTS (SELECT 1 FROM donor_account_links l WHERE l.account_id = f.account_id AND l.org_id = f.org_id)
        ORDER BY f.created_at DESC`, [acct.id]),
   ]);
-  const aggByOrg = new Map(aggRows.map(r => [r.org_id, r]));
+  const aggByOrg = aggRows;
   const recByOrg = new Map(recRows.map(r => [r.org_id, r.n]));
   let orgIdx = 0;
   for (const [orgId, { meta }] of byOrg) {
-    const t = aggByOrg.get(orgId) || { lifetime: 0, ytd: 0, last_gift: null };
+    const t = aggByOrg.get(orgId) || { lifetime: 0, thisYear: 0, last: null };
     const card = {
       orgSlug: meta.org_slug,
       orgName: displayNameCase(meta.display_name || meta.org_name),
@@ -7809,8 +7803,8 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
         einLine: meta.ein_line || null,
         contactEmail: meta.contact_email || null,
       },
-      ytd: parseFloat(t.ytd) || 0, lifetime: parseFloat(t.lifetime) || 0,
-      lastGiftDate: t.last_gift || null, recurringCount: recByOrg.get(orgId) || 0,
+      ytd: t.thisYear, lifetime: t.lifetime,
+      lastGiftDate: t.last, recurringCount: recByOrg.get(orgId) || 0,
     };
     totalYtd += card.ytd; totalLifetime += card.lifetime;
     orgCards.push(card);

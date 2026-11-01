@@ -110,15 +110,16 @@ async function highlights(orgId, d, today, w) {
   // one starts), named by the calendar year they start in. With a January
   // start that is the calendar year, as before.
   const sm = Number(w.cyFrom.slice(5, 7));
-  const fyOf = date => { const y = Number(String(date).slice(0, 4)), m = Number(String(date).slice(5, 7)); return y ? (m >= sm ? y : y - 1) : 0; };
-  const p2 = n => String(n).padStart(2, "0");
-  const fyFrom = y => `${y}-${p2(sm)}-01`, fyTo = y => orgTime.addDays(fyFrom(y + 1), -1);
+  // NUMBERS-3: the year a gift is in, and its days, from shared/numbers/fiscalYear.js.
+  const FYN = require("../shared/numbers/fiscalYear");
+  const yearOf = date => FYN.startYearOf(date, sm) || 0;
+  const fyFrom = y => FYN.yearStarting(y, sm).start, fyTo = y => FYN.yearStarting(y, sm).end;
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const fyName = y => sm === 1 ? String(y) : `the year to ${MON[(sm + 10) % 12]} ${y + 1}`;
-  const thisY = fyOf(today);
+  const thisY = yearOf(today);
   const byYear = new Map();
   for (const g of gifts) {
-    const y = fyOf(g.date);
+    const y = yearOf(g.date);
     if (!y) continue;
     byYear.set(y, (byYear.get(y) || 0) + Math.round(Number(g.amount) * 100));
   }
@@ -131,7 +132,7 @@ async function highlights(orgId, d, today, w) {
       source: between(fyFrom(a), b === thisY ? today : fyTo(b)) });
   }
   // Years in a row, ending this year or last.
-  const gaveIn = new Set(pos.map(g => fyOf(g.date)));
+  const gaveIn = new Set(pos.map(g => yearOf(g.date)));
   let end = gaveIn.has(thisY) ? thisY : gaveIn.has(thisY - 1) ? thisY - 1 : null;
   if (end) {
     let n = 0;

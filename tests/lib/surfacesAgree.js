@@ -290,7 +290,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["Fundraising, all time", fund && fund.allTime ? fund.allTime.giftCount : undefined],
       ["the workbook export", wbGifts ? wbGifts.length : undefined],
       ["the export zip's gifts.csv", zg ? zg.length : undefined],
-    ], String, { "the onboarding card": ["D-7", key.gifts.count + key.credits.rows] });
+    ], String);
     const listed = list && Array.isArray(list.donors) && list.donors.length === list.total ? list.donors : null;
     const summarised = key.importedIds.length > 0;
     agree("total given", [
@@ -352,8 +352,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["Fundraising's Raised tile", fund && fund.period && fund.yearMode === "fiscal" ? cents(fund.period.raised) : undefined],
         ["Atlas, asked how much this year", aY ? cents(num(aY[1])) : undefined],
         ["Ask, asked how much this year", askYm ? cents(num(askYm[1])) : undefined],
-      ], money, (() => { const withCredits = thisYear + key.creditsBetween(key.fiscalYear.from, today).cents;
-        return { "Atlas, asked how much this year": ["D-3", withCredits], "Ask, asked how much this year": ["D-3", withCredits] }; })());
+      ], money);
     }
     if (!skip.has("vsLastYear") && w) {
       // HOME-3: Home says pace once, in the greeting (lead.pace, numbers.vsLastYear).
@@ -408,7 +407,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     agree(`money in, gifts and the rows that were not gifts (${from} to ${to})`, [
       ["the key (hard-credit gifts) + the rows marked Not a gift + the value received on rows marked Partly", fin.c == null ? undefined : Number(fin.c)],
       ["Finance's money in by month", finance.byMonth.reduce((a, m) => a + Number(m.cents || 0), 0)],
-    ], money, fin.c == null ? {} : { "Finance's money in by month": ["D-4", Number(fin.c) + key.creditsBetween(from, to).cents] });
+    ], money);
   }
 
   // ── HOME'S SENTENCES: a count in a sentence equals the list beside it ────
@@ -718,10 +717,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (!skip.has("ask") && askN && askN.answered === false) diffs.push(`Ask could not answer "${ASK_N}": ${askN.sentence}`);
   // TRUTH-1: and the key's people who gave (a hard-credit gift above zero) from the year's first day to today
   const kToday = (board && board.asOf) || key.asOf;
-  const kGave = key.giversBetween(key.fiscalYear.from, kToday).people, kRows = key.rowsBetween(key.fiscalYear.from, kToday).people;
+  const kGave = key.giversBetween(key.fiscalYear.from, kToday).people;
   agree("people who gave this year", [["the key", kGave], ["the Board's People who gave", donorCount],
-    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]], String,
-    { "Ask, asked how many donors": ["D-3", kRows], "Atlas, asked how many donors": ["D-3", kRows] });
+    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]], String);
 
   // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
   // open-pledge rows for that person and Home's pledge move say one number.
@@ -825,10 +823,17 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     const ndIds = nd ? (nd.ids || nd.giftIds || (nd.rows || []).map(r => r.id || r)).filter(Boolean) : [];
     const deposited = new Set(key.deposits.depositedIds);
     const wrong = ndIds.filter(id => deposited.has(id));
-    // D-6 is exactly a deposited gift with no deposit_ref; any other reason is new.
-    const asLogged = wrong.length && !ctx.noKnown && wrong.every(id => key.depositRefOf(id) === "");
-    if (wrong.length) (asLogged ? (l => knownDiff("D-6", l)) : (l => diffs.push(l)))(`deposited: the bookkeeper's file says ${wrong.length} gift${wrong.length === 1 ? " is" : "s are"} not matched to a deposit that the key says ${wrong.length === 1 ? "is" : "are"} on one (Finance agrees with the key); first ${wrong.slice(0, 3).join(", ")}`);
+    // NUMBERS-3 fixed D-6 (shared/numbers/deposited.js): any such gift fails.
+    if (wrong.length) diffs.push(`deposited: the bookkeeper's file says ${wrong.length} gift${wrong.length === 1 ? " is" : "s are"} not matched to a deposit that the key says ${wrong.length === 1 ? "is" : "are"} on one (Finance agrees with the key); first ${wrong.slice(0, 3).join(", ")}`);
     facts.deposits = { key: key.deposits, bookkeeperNoDeposit: ndIds.length };
+  }
+
+  // NUMBERS-3 (D-8): Fundraising's Recent gifts lists gifts, so no row on it
+  // is one the key calls a soft or matching credit.
+  if (fund && Array.isArray(fund.recentGifts)) {
+    const credit = new Set(key.creditIds || []);
+    const bad = fund.recentGifts.filter(g => credit.has(g.id));
+    if (bad.length) diffs.push(`recent gifts: Fundraising lists ${bad.length} credit row${bad.length === 1 ? "" : "s"} as a gift; first ${bad[0].id}`);
   }
 
   // ── FIX-60 · A NUMBER IS THE RIGHT KIND OF NUMBER (tests/lib/units.js) ──

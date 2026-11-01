@@ -36,6 +36,7 @@ const TL = require("../timelineLine");
 const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 const { CAMPAIGN_GIFT_MATCH, NOT_DELETED } = require("../campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
 const NUM = require("../campaignMatch");
+const NUMBERS = require("../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const { NOT_CREDIT } = require("../creditTypes");   // FIX-49: soft and matching credits are not money
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
@@ -83,7 +84,7 @@ const {
   demoMailNote,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
-  filterBySegment, resolveSegmentSpec, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
+  filterBySegment, resolveSegmentSpec, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
   // GIVE-2 — see routes/give.js's note on the same four.
   footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
@@ -3319,8 +3320,9 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
 
   const [donorRow, giftRow, pageRow, threadRow, userRow, inviteRow] = await Promise.all([
     query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
+    // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [orgId]),
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active' AND COALESCE(page_kind,'give') = 'give'`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
@@ -9250,8 +9252,9 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
   // the onboarding card's own two counts (/org/setup-status).
   const [[livePeople], [liveGifts]] = await Promise.all([
     query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [req.user.orgId]),
+    // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [req.user.orgId]),
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [req.user.orgId]),
   ]);
   res.json({
     move: {
@@ -11759,7 +11762,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   }
 
   // Won this quarter (period) — a coarse pipeline health figure.
-  const { start } = finPeriodBounds("fiscal", 0, await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+  const { start } = NUMBERS.fiscalYear.period(await orgTz(req.user.orgId), "fiscal", 0);   // ORG_TZ_SEAM_OK
   const wonAgg = await query(
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND ${inOrgDays("closed_at", "org_id", "?", null)}`, [orgId, start]);
@@ -19378,7 +19381,7 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     madeYtd: parseInt(movesRows[0]?.cnt || 0),
     giftsYtd: toDollars(toCents(giftsRows[0]?.total) || 0),
     // NUMBERS-2: the year these "YTD" figures cover, shown once on Home.
-    yearLabel: finPeriodBounds("fiscal", 0, await orgTz(orgId)).periodLabel,   // ORG_TZ_SEAM_OK
+    yearLabel: NUMBERS.fiscalYear.period(await orgTz(orgId), "fiscal", 0).periodLabel,   // ORG_TZ_SEAM_OK
     pipelineValue: parseInt(pipelineRows[0]?.total || 0),
     lapsedCount: parseInt(lapsedRows[0]?.cnt || 0),
     orgHasInteractions: parseInt(orgInteractionRows[0]?.cnt || 0) > 0,
@@ -22023,7 +22026,7 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
   const { orgId } = req.user;
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
-  const cur = finPeriodBounds(yearMode, 0, _fpTz);
+  const cur = NUMBERS.fiscalYear.period(_fpTz, yearMode, 0);
   const today = orgToday(_fpTz);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
   // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
@@ -22040,6 +22043,10 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
   // the period query above, so both figures foot to Reports.
   const l12Start = orgTime.addDays(orgToday(_fpTz), -364);
   const l12End = orgToday(_fpTz);
+  // Each span's money, gifts and givers: the one computation (shared/numbers),
+  // in the row shape this route has always read.
+  const periodGiving = span => NUMBERS.givingBetween.givingBetween(query, orgId, { ...span, today })
+    .then(r => [{ total: r.cents / 100, gifts: r.rows, donors: r.givers }]);
   const [goalRows, curRows, vsLast, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
     query(
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
@@ -22052,29 +22059,33 @@ app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview-2"
     // Fundraising header must not keep counting them.
     // TRUTH-1: every gift sum on this page is money: a soft or matching credit
     // row is in none of them (the pace beside them, numbers.vsLastYear, leaves them out).
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`, [orgId, cur.start, cur.end]),
+    // NUMBERS-3: Raised is this period TO TODAY (shared/numbers/givingBetween.js):
+    // a gift dated later in the year is not money received yet. It ran to the
+    // period's end, so a future-dated gift counted here and not on the Board.
+    periodGiving({ from: cur.start, to: cur.end }),
     // HARDEN-1: "vs last year" is this period so far against the SAME DAYS
     // last year, read through the one computation Home and the Board read.
     // It was the whole of the prior period ("↓ $210,535.51 vs last period"
     // beside Home's "$63,984 behind last year at this point").
     require("../numbers").vsLastYear(orgId, cur.start, cur.end, today),
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`, [orgId, wk.start, wk.end]),
+    periodGiving({ from: wk.start, to: wk.end }),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.giving_page_id, g.payment_method, g.campaign, g.donor_id, d.name AS donor_name,
               ev.name AS event_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
          LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id
-        WHERE g.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 8`,
+        -- NUMBERS-3 (D-8): a soft credit row is recognition, never a recent gift.
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 8`,
       [orgId]
     ),
     fundraisingCampaignRows(orgId),
     query(
       `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
-              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND ${NOT_DELETED("gifts")}), 0) AS raised
+              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id AND gifts.org_id = gp.org_id AND ${NOT_DELETED("gifts")} AND ${NUMBERS.money.MONEY("gifts")}), 0) AS raised
          FROM giving_pages gp WHERE gp.org_id = ? AND COALESCE(gp.page_kind,'give') = 'give' ORDER BY gp.created_at DESC`,
       [orgId]
     ),
-    query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`, [orgId, l12Start, l12End]),
+    periodGiving({ from: l12Start, to: l12End }),
     query(`SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NOT_CREDIT("g")}`, [orgId]),
   ]);
 
@@ -24849,7 +24860,6 @@ async function reportSolicitations(orgId, p) {
 //
 // It is a READ path on the BUILD-79 report/file layer — `/reports/:key`,
 // `reportToCsv`, `sendReportCsv`. There is no second export path.
-const BOOKKEEPER_EXCLUDED_TYPES = figureSources.BOOKKEEPER_EXCLUDED_TYPES;   // REPORTS-4: one list, in figureSources.js
 
 // The fixed columns, in the fixed order, declared ONCE so the screen and the
 // file cannot disagree about either.
@@ -24891,8 +24901,7 @@ const bkDollars = c => (c / 100).toFixed(2);
 async function reportBookkeeper(orgId, p) {
   const params = [];
   let where = reportGiftWhere(p, orgId, params);
-  where += ` AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])`;
-  params.push(BOOKKEEPER_EXCLUDED_TYPES);
+  where += ` AND ${NUMBERS.money.MONEY("g")}`;
 
   const rows = await query(
     `SELECT LEFT(g.date, 10) AS date,
@@ -24904,7 +24913,10 @@ async function reportBookkeeper(orgId, p) {
             COALESCE(NULLIF(g.external_id, ''), NULLIF(g.stripe_payment_id, ''), '') AS reference,
             COALESCE(g.check_number, '') AS check_number,
             COALESCE(g.processor_fee_amount, 0) AS processor_fee_amount,
-            COALESCE(g.deposit_ref, '') AS deposit_ref,
+            -- NUMBERS-3 (D-6): the deposit's name (shared/numbers/deposited.js). A
+            -- gift on a deposit run or with the day it reached the bank is on a
+            -- deposit even when no payout id names it; only Undo wrote deposit_ref.
+            ${NUMBERS.deposited.DEPOSIT_NAME("g")} AS deposit_ref,
             COALESCE(g.deposited_on, '') AS deposited_on,
             COALESCE(g.type, '') AS gift_type,
             COALESCE(g.notes, '') AS notes,
@@ -24926,8 +24938,7 @@ async function reportBookkeeper(orgId, p) {
   // number that cannot disagree is not a check.
   const tParams = [];
   let tWhere = reportGiftWhere(p, orgId, tParams);
-  tWhere += ` AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])`;
-  tParams.push(BOOKKEEPER_EXCLUDED_TYPES);
+  tWhere += ` AND ${NUMBERS.money.MONEY("g")}`;
   const [tot] = await query(
     `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount * 100), 0)::text AS cents
        ${REPORT_GIFT_FROM} ${tWhere}`, tParams);

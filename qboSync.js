@@ -55,6 +55,12 @@ const RUN_LIMIT = 100;
 // the sent list (Pending, its figure, the claim) asks about the same company.
 const LIVE_REALM_SQL = `(SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_connections bc
      WHERE bc.org_id = g.org_id AND bc.vendor = '${VENDOR}' AND bc.status <> 'disconnected' LIMIT 1)`;
+// NUMBERS-3 (D-6): deposit mode groups by the deposit's name from the one
+// meaning of deposited (shared/numbers/deposited.js): the payout or sheet when
+// deposit_ref names one, else the run or the day it reached the bank. A gift
+// she marked deposited is never "waiting for its payout". Credit rows are not
+// money and are never sent (shared/numbers/money.js).
+const NUMBERS = require("./shared/numbers");
 const NON_CASH_SQL = [...NON_CASH_TYPES].map(t => `'${String(t).replace(/'/g, "''")}'`).join(",");
 
 // ── WHERE INTUIT IS ───────────────────────────────────────────────────────
@@ -193,6 +199,7 @@ function pendingWhere(orgId, since, { giftIds = null } = {}) {
      AND COALESCE(g.is_sample, false) = false AND g.date >= ?
      AND g.read_from_vendor IS NULL
      AND LOWER(TRIM(COALESCE(g.type, ''))) NOT IN (${NON_CASH_SQL})
+     AND ${NUMBERS.money.MONEY("g")}
      AND (s.id IS NULL OR s.status = 'failed'
           OR (s.status = 'sending' AND s.updated_at < NOW() - INTERVAL '${STALE_SENDING_MINUTES} minutes'))`;
   if (giftIds) { where += ` AND g.id = ANY(?)`; args.push(giftIds); }
@@ -212,7 +219,7 @@ function pendingRowsSql(orgId, since, opts = {}) {
                  ROUND(g.amount::numeric, 2) AS amount, ROUND(g.amount::numeric * 100)::bigint AS cents,
                  ROUND(COALESCE(g.processor_fee_amount, 0)::numeric * 100)::bigint AS fee_cents,
                  g.fund_id, f.name AS fund_name, g.campaign_id, c.name AS campaign_name,
-                 g.deposit_ref, g.deposited_on, g.payment_method,
+                 ${NUMBERS.deposited.DEPOSIT_NAME("g")} AS deposit_ref, g.deposited_on, g.payment_method,
                  s.status AS sync_status, s.error AS sync_error, s.error_code AS sync_error_code,
                  s.request_id AS sync_request_id, s.attempts AS sync_attempts, s.updated_at AS sync_updated_at
             FROM ${p.from} WHERE ${p.where}

@@ -227,6 +227,7 @@ const { PRODUCT_ID } = require("./product");
 // for the type discipline (instants vs civil dates) and why it exists.
 const geocode = require("./geocode"); // BUILD-84 P0-4 — the ONE seam an address becomes coordinates through; never called from a read path
 const orgTime = require("./orgTime");
+const NUMBERS = require("./shared/numbers");   // NUMBERS-3 — one home for every giving number
 const HISTORY = require("./historyGifts");   // FIX-36: the one rule for gifts a history read brought in
 const TL = require("./timelineLine");   // WIRE-1 rule 2: every act lands on the timeline
 // BUILD-73 Part 2 — THE MONEY SEAM. Every money value that crosses into or out
@@ -4171,12 +4172,10 @@ async function donorByNameOrCreate(orgId, name, { create = false, kind = null, w
 let ACK = null;
 const ACK_READY = import("./shared/ackLetter.js").then(m => { ACK = m; return m; });
 // FIX-10 Part B — the one fiscal-year label, shared with Reports so the server
-// and the client cannot name the same year two ways. finPeriodBounds is sync
-// and called from everywhere, so it falls back to the identical literal until
-// the module lands: the fallback is byte-for-byte the same string, which is
-// what makes a race unable to move a label or a number.
-let FISCAL = null;
-const FISCAL_READY = import("./shared/fiscalPeriod.js").then(m => { FISCAL = m; return m; });
+// and the client cannot name the same year two ways. (NUMBERS-3: a server
+// year's short name is shared/numbers/fiscalYear.js chartLabel, held equal to
+// fyLabelFromStart by tests/numbers-home.test.js.)
+const FISCAL_READY = import("./shared/fiscalPeriod.js");
 
 
 // ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ───────────
@@ -5739,40 +5738,8 @@ const fundraiserManageLimiter = rateLimit("fundraiserManageLimiter", {
   legacyHeaders: false,
   handler: rateLimitHandler,
 });
-function finPeriodBounds(yearMode, offset = 0, org = null) {
-  // ORG_TZ_SEAM_OK — the fiscal/calendar boundary in the org's own calendar.
-  // (BUILD-75 A.6: the old `now = { getMonth: … }` shim over this value read
-  // like a process clock and hid from the line-level taint scan's accessor
-  // check — read the civil parts directly instead of dressing them as a Date.)
-  const _today = orgTime.parseCivil(orgToday(org || {}));
-  if (yearMode === "fiscal") {
-    // NUMBERS-2: the org's own start month (Settings, "When does your year
-    // start?"), carried by orgTz; July only when the org never said.
-    const sm = orgTime.orgFiscalStartMonth(org || {});
-    const curFyStart = _today.m < sm ? _today.y - 1 : _today.y;
-    const fyStart = curFyStart + offset;
-    const pad = n => String(n).padStart(2, "0");
-    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const endY = sm === 1 ? fyStart : fyStart + 1, endM = sm === 1 ? 12 : sm - 1;
-    const endD = new Date(Date.UTC(endY, endM, 0)).getUTCDate();
-    return {
-      start: `${fyStart}-${pad(sm)}-01`,
-      end: `${endY}-${pad(endM)}-${pad(endD)}`,
-      periodLabel: sm === 1 ? `Jan – Dec ${fyStart}` : `${MON[sm - 1]} ${fyStart} – ${MON[endM - 1]} ${endY}`,
-      chartLabel: FISCAL ? FISCAL.fyLabelFromStart(fyStart, sm) : `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
-      // month buckets in basis order, from the start month
-      months: [...Array(12)].map((_, i) => ({ y: fyStart + Math.floor((sm - 1 + i) / 12), m: (sm - 1 + i) % 12 })),
-    };
-  }
-  const year = _today.y + offset;
-  return {
-    start: `${year}-01-01`,
-    end: `${year}-12-31`,
-    periodLabel: `Jan – Dec ${year}`,
-    chartLabel: `${year}`,
-    months: [...Array(12)].map((_, m) => ({ y: year, m })),
-  };
-}
+// NUMBERS-3: finPeriodBounds (a third copy of the fiscal-year boundary) is
+// gone; a fiscal or calendar year is NUMBERS.fiscalYear.period(org, yearMode, offset).
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first reports — deliberately NOT an
@@ -12472,15 +12439,15 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId, startMo
   const tzOrg = await orgTz(orgId);   // ORG_TZ_SEAM_OK
   const today = orgToday(tzOrg);
   const sm = startMonth || orgTime.orgFiscalStartMonth(tzOrg);
-  const pad = n => String(n).padStart(2, "0");
-  const fyOf = y => { const end = sm === 1 ? `${y}-12-31` : orgTime.addDays(`${y + 1}-${pad(sm)}-01`, -1); return { from: `${y}-${pad(sm)}-01`, to: end }; };
-  if (year == null) { const t = orgTime.parseCivil(today); year = t.m < sm ? t.y - 1 : t.y; }
+  // NUMBERS-3: the year's days come from shared/numbers/fiscalYear.js.
+  const yearDays = y => { const f = NUMBERS.fiscalYear.yearStarting(y, sm); return { from: f.start, to: f.end }; };
+  if (year == null) year = NUMBERS.fiscalYear.startYearOf(today, sm);
   const prevYear = year - 1;
-  const cur = fyOf(year), prev = fyOf(prevYear);
+  const cur = yearDays(year), prev = yearDays(prevYear);
   const curTo = cur.to < today ? cur.to : today;
   const period = { from1: prev.from, to1: prev.to, from0: cur.from, to0: curTo,
-    label: FISCAL ? FISCAL.fyLabelFromStart(year, sm) : `FY ${year}`, prevLabel: FISCAL ? FISCAL.fyLabelFromStart(prevYear, sm) : `FY ${prevYear}`,
-    next: fyOf(year + 1).from, fiscalStartMonth: sm };
+    label: NUMBERS.fiscalYear.yearStarting(year, sm).chartLabel, prevLabel: NUMBERS.fiscalYear.yearStarting(prevYear, sm).chartLabel,
+    next: yearDays(year + 1).from, fiscalStartMonth: sm };
   let assignedIds = null;
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
@@ -12490,7 +12457,7 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId, startMo
   if (!gifts) {
     const [pairs, [first]] = await Promise.all([
       query(`SELECT g.donor_id, (g.date >= ?) AS cur FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0
+              WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.money.GIFT("g")}
                 AND ((g.date >= ? AND g.date <= ?) OR (g.date >= ? AND g.date <= ?))
               GROUP BY 1, 2`, [cur.from, orgId, prev.from, prev.to, cur.from, curTo]),
       query(`SELECT MIN(LEFT(date, 10) COLLATE "C") AS first FROM gifts
@@ -12502,7 +12469,7 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId, startMo
     prevYearDonorIds = new Set(kept.filter(r => !r.cur).map(r => r.donor_id));
     firstGiftDate = first?.first || null;
   } else {
-  let allGifts = gifts.filter(g => Number(g.amount) > 0 && !g.deleted_at);
+  let allGifts = gifts.filter(g => NUMBERS.money.isGift(g) && !g.deleted_at);
   if (assignedIds) allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
   const d10 = g => String(g.date || "").slice(0, 10);
   thisYearDonorIds = new Set(allGifts.filter(g => d10(g) >= cur.from && d10(g) <= curTo).map(g => g.donor_id));
@@ -12665,7 +12632,7 @@ require("./routes/finance").mount({
   recordGift, recalcDonorSummary, recalcPledgePayment,   // QBO-IN — the QuickBooks read   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
   // INT-BUILD-1 — the first sync after a connect, and the calendar.
   syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
-  actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
+  actor, checkWriteAccess, crypto, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
   // INT-3 — the audience resolver the campaign sender already uses. Passed in
@@ -12879,7 +12846,7 @@ require("./routes/crm").mount({
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
-  filterBySegment, resolveSegmentSpec, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
+  filterBySegment, resolveSegmentSpec, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
   ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod, geocode, getOrgAccessState,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,

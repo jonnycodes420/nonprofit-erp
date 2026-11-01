@@ -187,6 +187,7 @@ function computeKey(rows, opts = {}) {
     importedIds: sortIds(people.filter(p => p.imported).map(p => p.id)),
     units: new Set(people.map(p => unitOf(p.id))).size,
     gifts: { count: hard.length, cents: sumC(hard), undated: hard.filter(g => !g.d).length },
+    creditIds: sortIds(credits.map(g => g.id)),
     credits: { rows: credits.length, cents: sumC(credits), pointerCents: pointers.reduce((n, s) => n + (s.cents != null ? Number(s.cents) : cents(s.amount)), 0) },
     thisFiscalYear: { from: fy.from, to: today, cents: sumC(fyGifts), count: fyGifts.length },
     byFiscalYear: byFy,

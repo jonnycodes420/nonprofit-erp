@@ -200,11 +200,12 @@ async function blindSpots() {
   await q(`UPDATE gifts SET giving_page_id=$1 WHERE org_id=$2 AND donor_id = ANY($3) AND date >= $4`, ["gp_hs1d_" + STAMP, ORG_D, [ids["Ivy Hearth"], ids["Oona Credit"]], d(-16)]);
   const f = await agrees("D: every surface agrees with the key (credits, lapsed by person, households, deposits, campaigns, first-time)", ORG_D, tok);
   const k = f.facts.key || {};
-  const knownIds = new Set((f.known || []).map(x => /^KNOWN (D-\d+)/.exec(x)[1]));
-  ok("D: the logged defects (docs/defects.md) are found, each at exactly the value it predicts: D-3, D-4, D-6, D-7",
-     ["D-3", "D-4", "D-6", "D-7"].every(x => knownIds.has(x)) && knownIds.size === 4, [...knownIds]);
+  // NUMBERS-3 fixed the four TRUTH-1 logged here (Ask and Atlas, Finance's
+  // money in, the bookkeeper's deposits, the onboarding count): org D agrees
+  // with the key with nothing marked KNOWN, and stays green when KNOWN is off.
+  ok("D: nothing is logged as KNOWN any more (D-3, D-4, D-6, D-7 fixed)", (f.known || []).length === 0, f.known);
   const strict = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, noKnown: true });
-  ok("D: with the logged defects counted as failures, the check is red (they are found, not hidden)", !strict.ok && strict.diffs.length >= 4, strict.diffs.length);
+  ok("D: with nothing allowed as KNOWN, the check is green", strict.ok && strict.diffs.length === 0, strict.diffs);
   // the key is the reference: a key that says one more lapsed person, or one
   // less household, turns the check red
   const p1 = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, plantKey: K => ({ ...K, lapsed: [...K.lapsed, ids["Moss Pledger"] || "x"].sort() }) });

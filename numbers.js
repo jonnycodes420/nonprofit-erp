@@ -341,7 +341,7 @@ async function eventStory(orgId, eventId) {
 // what of it falls due by the end of the fiscal year, and what is already
 // past due. Fundraising's Overview, its Pledges view and Home read these three
 // figure sources, and a profile's dueThisYear counts to the same day.
-//   yearEnd  the last day of this fiscal year (finPeriodBounds(...).end)
+//   yearEnd  the last day of this fiscal year (shared/numbers/fiscalYear.js period(...).end)
 //   today    the org's today
 async function pledgeSummary(orgId, { yearEnd, today }) {
   const sources = {

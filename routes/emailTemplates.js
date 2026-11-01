@@ -22,6 +22,7 @@
 // is recorded by middleware/auditTrail.js: nothing here writes an audit row.
 // A GET writes nothing, the watch page included.
 "use strict";
+const NUMBERS = require("../shared/numbers");   // NUMBERS-3: a merge field's last gift is the profile's
 const express = require("express");
 const { publicAppUrl } = require("../publicUrl");
 const { aiGate, anthropicFor, recordAiFallback } = require("../aiClient");
@@ -194,7 +195,8 @@ async function sampleFields(orgId, person, ectx) {
   if (person.email) {
     const [g] = await query(
       `SELECT g.amount, g.date FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id=? AND lower(d.email)=lower(?) AND d.deleted_at IS NULL ORDER BY g.date DESC NULLS LAST LIMIT 1`, [orgId, person.email]).catch(() => []);
+        WHERE g.org_id=? AND lower(d.email)=lower(?) AND d.deleted_at IS NULL AND g.date IS NOT NULL AND ${NUMBERS.money.GIFT("g")}
+        ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER} LIMIT 1`, [orgId, person.email]).catch(() => []);
     if (g) {
       lastAmount = "$" + Number(g.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");
       const d = g.date instanceof Date ? require("../orgTime").civilOf(g.date).slice(0, 10) : String(g.date || "").slice(0, 10);
@@ -497,7 +499,11 @@ async function defaultPreviewDonorId(orgId) {
 // One donor's own fields for an email: first name, the greeting, their last gift.
 async function donorFields(orgId, d, ectx) {
   const GR = await import("../shared/greeting.js");
-  const [g] = await query(`SELECT amount, date FROM gifts WHERE org_id=? AND donor_id=? ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, d.id]).catch(() => []);
+  // NUMBERS-3: the one last gift (shared/numbers/lastGift.js): a refund or a
+  // credit row is never it, two on a day pick the one recorded last, and the
+  // old system's last gift stands when nothing on file is as recent.
+  const lg = (await NUMBERS.lastGift.lastGifts(query, orgId, [d.id]).catch(() => new Map())).get(d.id);
+  const g = lg ? { amount: lg.cents / 100, date: lg.date } : null;
   const out = { first_name: GR.firstNames(d) || firstName(d.name) || "", greeting: GR.greetingName(d) || firstName(d.name) || "", full_name: d.name || "", give_link: ectx.giveLink, org_name: ectx.orgName };
   if (g) {
     out.last_gift_amount = "$" + Number(g.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\.00$/, "");

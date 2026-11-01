@@ -673,7 +673,7 @@ const SOURCES = {
                    ROUND(g.amount::numeric, 2) AS amount,
                    CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Gift, fee covered' ELSE 'Gift' END AS detail
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND g.giving_page_id = ?`,
+             WHERE g.org_id = ? AND g.giving_page_id = ? AND (d.id IS NULL OR d.deleted_at IS NULL) AND ${NOT_CREDIT("g")}`,
       args: [orgId, p.page],
     }),
   },

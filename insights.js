@@ -436,8 +436,8 @@ function computeInsights(input) {
 
   const stats = orgStats(U, gifts, asOf, dataEnd, reviewed, lastDated);
   // SWEEP-1: the org's fiscal year began on fyStart (orgTime's month, default July).
-  const fsm = Number(input.org && input.org.fiscalStartMonth) || 7;
-  const fyStart = `${+asOf.slice(5, 7) >= fsm ? thisYear : thisYear - 1}-${String(fsm).padStart(2, "0")}-01`;
+  // NUMBERS-3: the boundary is shared/numbers/fiscalYear.js's.
+  const fyStart = require("./shared/numbers/fiscalYear").thisAndLast(asOf, Number(input.org && input.org.fiscalStartMonth) || 7).cyFrom;
   const ctx = { asOf, dataEnd, thisYear, fyStart, line, coverage, stats, importName, reviewed, outcomes: indexOutcomes(input.outcomes, asOf), linksDismissed: input.linksDismissed || new Set() };
   const cards = [];
   for (const make of LIBRARY) {

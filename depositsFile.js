@@ -31,6 +31,7 @@
 // and in-kind never becomes money at all; both are revenue a bookkeeper
 // records, and neither belongs in a bank deposit. Matched on the gift's type,
 // lower-cased, so "Stock", "stock" and "STOCK" are one case.
+const { depositName } = require("./shared/numbers/deposited");
 const NON_CASH_TYPES = new Set([
   "stock", "securities", "shares", "in kind", "in-kind", "in_kind", "inkind",
   "gift in kind", "gik", "crypto", "cryptocurrency", "property", "vehicle",
@@ -49,7 +50,10 @@ const UNMATCHED_REF = "not matched to a deposit";
 function depositKey(row) {
   const on = String((row && (row.depositedOn || row.deposited_on)) || "").slice(0, 10)
     || String((row && row.date) || "").slice(0, 10);
-  const ref = String((row && (row.depositRef || row.deposit_ref)) || "").trim() || UNMATCHED_REF;
+  // NUMBERS-3 (D-6): the deposit's name from the one meaning of deposited
+  // (shared/numbers/deposited.js): a gift with the day it reached the bank is
+  // on a deposit even when no payout id names it.
+  const ref = depositName(row || {}) || UNMATCHED_REF;
   return on + "|" + ref;
 }
 
