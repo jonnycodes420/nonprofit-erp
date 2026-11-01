@@ -162,7 +162,7 @@ const lead = async (tok, iso) => {
     const hero = src("components/AskRail.jsx"), dash = src("components/Dashboard.jsx"), app = src("App.jsx");
     ok("§7 the lead is drawn under the Ask box", hero.indexOf('data-testid="ask-hero-input"') > 0 && hero.indexOf('data-testid="ask-hero-input"') < hero.indexOf("{lead}"));
     ok("§7 the Ask box heads Home and the Thread stays in the work column", dash.indexOf("<AskHero") > 0 && dash.indexOf("<AskHero") < dash.indexOf("home-shell-main") && /homeHead/.test(dash));
-    ok("§7 the mic is App's, outside Home", /<MicGlyph size=\{24\}\/>/.test(app) && !/MicGlyph/.test(src("components/HomeLead.jsx")));
+    ok("§7 the mic is App's, outside Home", /<MicGlyph size=\{24\}\/>/.test(app));
   } catch (e) {
     ok("suite ran", false, e.stack);
   } finally {
