@@ -33,6 +33,10 @@ const HOME_READS = new Set([
   "/billing/donor-band", "/atlas/status", "/me/nav-layout", "/people/photos", "/capture/count", "/status/summary",
   "/org/sample-data-status", "/org/welcome", "/atlas/activity", "/changelog/hidden", "/thank-yous/clock",
   "/volunteer-hub/crossover", "/atlas/notes",
+  "/me/mfa",   // PERF-2: the idle guard's read (IdleGuard.jsx), in the shell's bundle
+  // PERF-2: the app's boot reads (client/src/lib/bootReads.js BOOT_READS), one
+  // request instead of seven, so a phone does not queue them behind each other.
+  "/org", "/grants", "/volunteers", "/tasks", "/board", "/financials", "/billing/status",
   // HARDEN-2: Home's ladder and cards (INSIGHTS-1), asked for on its own at boot.
   "/insights",
   // HOME-4: the right rail's reads (client/src/lib/homeReads.js RAIL_READS), in their own bundle.
@@ -42,6 +46,8 @@ const MAX_READS = 40;
 // At most this many run at once for one bundle, so one person's Home cannot
 // take every database connection from everybody else's.
 const LANES = 6;
+// PERF-2: the placeholder for Home's scope in a scoped read (see below).
+const SCOPE = "{scope}";
 
 function mount(ctx) {
 const { requireAuth, testMode, wrap } = ctx;
@@ -54,20 +60,47 @@ app.get("/home/bundle", requireAuth, wrap(async (req, res) => {
   if (refused.length) return res.status(400).json({ error: "not_a_home_read", message: "That read is not part of Home.", paths: refused });
   const out = new Array(paths.length);
   const timing = [];   // Server-Timing: how long each read took, for the load harness
+  const read = async (i, path) => {
+    const t0 = Date.now();
+    const r = await inProcess.get(path, { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress });
+    // The route's body is already JSON text; it is placed as-is, never
+    // parsed and re-written, so nothing about it can change on the way.
+    const ok = r.status === 200 && r.body.length > 0 && /json/.test(String(r.headers["content-type"] || ""));
+    timing.push(`r${i};dur=${Date.now() - t0};desc="${path.split("?")[0]}"`);
+    out[i] = JSON.stringify(path) + ":{\"status\":" + r.status + (ok ? ",\"body\":" + r.body : "") + "}";
+    return r;
+  };
+  // PERF-2: a read written with {scope} is Home's scoped read, and the scope is
+  // Home's own first rule (client/src/lib/homeReads.js initialScope): "mine"
+  // when this person has a portfolio (/dashboard/my-stats), else "all". It runs
+  // here once my-stats is in, and answers under the path it resolved to, so a
+  // phone no longer waits a whole round trip to ask for it.
+  const scoped = paths.map((p, i) => i).filter(i => paths[i].includes(SCOPE));
+  const plain = paths.map((p, i) => i).filter(i => !paths[i].includes(SCOPE));
+  const statsAt = paths.indexOf("/dashboard/my-stats");
+  let stats = null, statsIn;
+  const statsReady = new Promise(r => { statsIn = r; });
+  const noteStats = r => { try { stats = r.status === 200 ? JSON.parse(r.body) : null; } catch { stats = null; } statsIn(); };
   let next = 0;
   const lane = async () => {
-    while (next < paths.length) {
-      const i = next++;
-      const t0 = Date.now();
-      const r = await inProcess.get(paths[i], { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress });
-      // The route's body is already JSON text; it is placed as-is, never
-      // parsed and re-written, so nothing about it can change on the way.
-      const ok = r.status === 200 && r.body.length > 0 && /json/.test(String(r.headers["content-type"] || ""));
-      timing.push(`r${i};dur=${Date.now() - t0};desc="${paths[i].split("?")[0]}"`);
-      out[i] = JSON.stringify(paths[i]) + ":{\"status\":" + r.status + (ok ? ",\"body\":" + r.body : "") + "}";
+    while (next < plain.length) {
+      const i = plain[next++];
+      const r = await read(i, paths[i]);
+      if (i === statsAt) noteStats(r);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(LANES, paths.length) }, lane));
+  const scopedReads = async () => {
+    if (!scoped.length) return;
+    if (statsAt < 0) noteStats(await inProcess.get("/dashboard/my-stats", { headers: req.headers, remoteAddress: req.socket && req.socket.remoteAddress }));
+    await statsReady;
+    const scope = ((stats && stats.portfolioCount) || 0) > 0 ? "mine" : "all";
+    await Promise.all(scoped.map(i => read(i, paths[i].split(SCOPE).join(scope))));
+  };
+  // PERF-2: in TEST_MODE the bundle also says how many statements its reads
+  // sent (db.countRoundTrips), so a harness can hold Home to no query per row.
+  const { trips } = await require("../db").countRoundTrips(() => Promise.all([
+    ...Array.from({ length: Math.min(LANES, plain.length) }, lane), scopedReads()]));
+  if (trips != null) timing.push(`trips;desc="${trips}"`);
   res.set("Server-Timing", timing.join(", "));
   res.type("application/json").send("{" + out.join(",") + "}");
 }));

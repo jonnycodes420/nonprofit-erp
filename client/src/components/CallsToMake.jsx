@@ -13,7 +13,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { DonorLink } from "./RecordLink";
-import { GoalRow } from "./Dashboards";
+import { GoalRow } from "./GoalRow";   // PERF-2: not the dashboards
 
 const dollars = c => "$" + (Math.round(Number(c) || 0) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const smallBtn = { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "4px 9px", fontSize: 12,

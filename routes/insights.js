@@ -31,6 +31,9 @@ const { SOFT_CREDIT_RESIZE } = require("../donorSummary");
 const routers = { r0: express.Router() };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATES = new Set(["done", "snoozed", "dismissed"]);
+// PERF-2: how many moves a tab carries in Home's first read of the deck: the
+// card she sees, and the next, so Next is there before the rest arrives.
+const DECK_FIRST = 2;
 // Review: what a row that was not a gift was, its words, and its revenue account.
 const AS_TYPE = { tickets: "ticket", ticket: "ticket", raffle: "ticket", auction: "purchase", purchase: "purchase", reimbursement: "reimbursement", refund: "reimbursement" };
 const TYPE_WORD = { purchase: "a purchase", ticket: "tickets", reimbursement: "a reimbursement" };
@@ -95,9 +98,21 @@ app.get("/insights", requireAuth, wrap(async (req, res) => {
   // HOME-3: the first look says what each recent event raised, the way she
   // says it (received + pledged), from the one function Reports and the event page read.
   const events = first ? await require("../numbers").eventsRaised(req.user.orgId, { withMoney: true, limit: 3 }) : undefined;
+  let deck = first ? undefined : await deckWithDrift(req, r.deck, asOf);
+  // PERF-2: Home's first read of the deck carries what its first card draws:
+  // each tab's own figures, its first DECK_FIRST moves and how many it carries
+  // in all (`carried`), and the moves Home records as shown (`seen`, the same
+  // first 50 a tab that Home always posted). The rest (?view=deck&moves=all)
+  // loads when the deck comes into view or she moves through it. The ladder is
+  // not drawn by the deck, so neither deck read carries it.
+  if (deckOnly && req.query.moves !== "all") deck = {
+    ...deck, partial: true,
+    seen: deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids }))),
+    tabs: deck.tabs.map(t => ({ ...t, carried: t.moves.length, moves: t.moves.slice(0, DECK_FIRST) })),
+  };
   res.json({ events,
-    asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: r.ladder, centsSentence: r.centsSentence,
-    stats: r.stats, cards: deckOnly ? [] : cards.map(cardOut), deck: first ? undefined : await deckWithDrift(req, r.deck, asOf),
+    asOf, coverage: r.coverage, majorLine: r.majorLine, ladder: deckOnly ? undefined : r.ladder, centsSentence: r.centsSentence,
+    stats: r.stats, cards: deckOnly ? [] : cards.map(cardOut), deck,
     sentences: {
       ladder: "Each giving unit (a household, or a person on their own) sits on one rung, from their own giving. Planned sits beside a rung.",
       never: "Steward never sends these notes for you. Every draft waits for your click.",

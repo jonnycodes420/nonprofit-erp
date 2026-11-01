@@ -382,6 +382,9 @@ const MOVE_CHIP = { display: "inline-flex", alignItems: "center", gap: 6, backgr
 // second gifts" above a card that is "one of 86"; the server counts how many
 // of the group lead with another move.
 const elsewhere = (t, m) => (m.group && m.group.elsewhere) || 0;
+// PERF-2: the moves a tab carries, less those acted on here. Home's first read
+// carries a tab's first moves and says how many it carries in all (`carried`).
+const carriedLeft = (t, gone) => Math.max(0, (t.carried != null ? t.carried : t.moves.length) - t.moves.filter(m => gone.has(m.id)).length);
 function tabCountWords(t, gone) {
   const n = t.left.length + Math.max(0, t.count - t.moves.length);
   if (!t.split) return n.toLocaleString("en-US");
@@ -426,7 +429,11 @@ function NoDonorsCard({ onNavigate, sample }) {
 
 export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = false, drift = null }) {
   // HOME-4: the deck alone; the ladder and "See all" panels read the cards when they open.
-  const [data, load, err] = useInsights("deck");
+  // PERF-2: Home's first read carries each tab's first moves (deck.partial);
+  // every move is read when she first reaches for the deck (a touch, a hover,
+  // the keyboard, Next or a tab), not with Home's first look.
+  const [full, setFull] = useState(false);
+  const [data, load, err] = useInsights(full ? "deck&moves=all" : "deck");
   const [tab, setTab] = useState(null);
   const [pos, setPos] = useState({});            // tab -> index
   const [gone, setGone] = useState(() => new Set());   // move ids acted on here
@@ -439,11 +446,12 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   const [panel, setPanel] = useState(null);      // null | "ladder" | a card kind
   const touch = useRef(null);
   const deck = data && data.deck;
+  const rest = () => { if (!full) setFull(true); };
   // posted once per load: the moves she was shown (a GET writes nothing)
   const seenKey = deck ? deck.tabs.map(t => t.key + t.count).join("|") : "";
   useEffect(() => {
     if (!deck) return;
-    const items = deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids })));
+    const items = deck.seen || deck.tabs.flatMap(t => t.moves.slice(0, 50).map(m => ({ kind: m.kind, itemKey: m.itemKey, donorIds: m.ids })));
     if (items.length) apiFetch("/insights/seen", { method: "POST", body: JSON.stringify({ items }) }).catch(() => {});
   }, [seenKey]);
   if (err) return null;
@@ -458,9 +466,12 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
   const total = moves.length + Math.max(0, cur.count - cur.moves.length);
   const go = step => {
     if (moves.length < 2) return;
+    rest();
+    // PERF-2: before every move is in, the deck counts the moves the tab carries
+    const n = deck.partial ? Math.max(moves.length, carriedLeft(cur, gone)) : moves.length;
     setMode(null); setMsg(null);
     setSlide(step > 0 ? "next" : "prev");
-    setPos({ ...pos, [cur.key]: (i + step + moves.length) % moves.length });
+    setPos({ ...pos, [cur.key]: (i + step + n) % n });
   };
   // the move leaves this deck; the next one takes its place
   const advance = () => {
@@ -505,11 +516,11 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
     const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
   };
-  const pick = k => { setTab(k); setMode(null); setMsg(null); setSlide(null); };
+  const pick = k => { rest(); setTab(k); setMode(null); setMsg(null); setSlide(null); };
   const anyMoves = tabs.some(t => t.count > 0);
 
   return (
-    <section aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey}
+    <section aria-label="Your moves" data-testid="home-moves" className="moves-deck" tabIndex={0} onKeyDown={onKey} onPointerEnter={rest} onTouchStart={rest} onFocus={rest}
       style={{ display: "flex", flexDirection: "column", gap: 18, borderRadius: 12 }}>
       <style>{DECK_CSS}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
@@ -531,7 +542,7 @@ export function HomeMoves({ onNavigate, isReadOnly, noDonors = false, sample = f
               <span style={{ display: "block", fontSize: 14.5, fontWeight: 700 }}>{t.label} · {tabCountWords(t, gone)}</span>
               <span className="moves-stake" style={{ display: "block", fontSize: 12.5, marginTop: 2, opacity: 0.85 }}>
                 {/* SWEEP-1: the tab's own total (every move, not the first 150 the deck carries), less what was acted on here */}
-                {t.key === "planned" ? `${(t.left.length).toLocaleString("en-US")} ${t.left.length === 1 ? "person" : "people"}` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
+                {t.key === "planned" ? `${carriedLeft(t, gone).toLocaleString("en-US")} ${carriedLeft(t, gone) === 1 ? "person" : "people"}` : `${money((t.cents || 0) - t.moves.filter(x => gone.has(x.id)).reduce((n, x) => n + (x.cents || 0), 0))} at stake`}</span>
             </button>
           ))}
         </div>

@@ -23,6 +23,8 @@ import { makeT } from "../../../shared/vocabulary";
 import { displayDate } from "../../../shared/displayDate";
 import { Figure, FigureContext } from "./Figure";
 import { DonorLink } from "./RecordLink";
+// PERF-2: Home draws GoalRow too (CallsToMake), so it lives on its own and Home does not load the dashboards.
+import { GoalRow } from "./GoalRow";
 
 // FIX-60 · "0 ? grants". A count in the Board's answer is followed by a text
 // part that starts with its noun; the noun moves into the figure's `unit`, so
@@ -218,30 +220,6 @@ export function BoardBody({ get }) {
         </div>
       </section>
     </>
-  );
-}
-
-export function GoalRow({ r, first }) {
-  const goal = (r.also || []).find(a => a.key === "goal"), pct = (r.also || []).find(a => a.key === "percent");
-  const bar = pct && pct.value != null ? Math.min(100, Math.max(0, pct.value)) : 0;
-  return (
-    <div style={{ padding: "12px 0", borderTop: first ? "none" : "1px solid " + T.bg2 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{r.label}</span>
-        <span style={{ fontSize: 13.5, color: T.ink }}>
-          <Figure variant="cell" figureKey={"raised-" + r.label} value={r.value} kind="money" label={`Raised · ${r.label}`}
-            definition="Every gift given to this goal, less any fee the donor covered, and every grant awarded toward it." source={r.source} />
-          {goal && <> of <Figure variant="cell" figureKey={"goal-" + r.label} value={goal.value} kind="money" label={`${goal.label} · ${r.label}`}
-            definition={goal.definition} source={goal.source} /></>}
-          {pct && <> · <Figure variant="cell" figureKey={"pct-" + r.label} value={pct.value} kind="percent" label={`${pct.label} · ${r.label}`}
-            definition={pct.definition} source={pct.source} /></>}
-        </span>
-      </div>
-      <div style={{ height: 6, background: T.bg2, borderRadius: 99, marginTop: 8, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: bar + "%", background: T.greenDk, borderRadius: 99 }} />
-      </div>
-      {r.pace && <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>{r.pace === "met" ? "Goal met" : r.pace === "behind" ? "Behind an even pace through the period" : "On an even pace through the period"}</div>}
-    </div>
   );
 }
 

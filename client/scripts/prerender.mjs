@@ -25,6 +25,7 @@ const t0 = Date.now();
 process.env.NODE_ENV = "production";
 const CLIENT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(CLIENT, "dist");
+const homeReads = await import(pathToFileURL(path.join(CLIENT, "src", "lib", "homeReads.js")).href);   // PERF-2
 const { render, ROUTES, ARTICLE, TERM } = await import(pathToFileURL(path.join(CLIENT, "dist-prerender", "prerender.mjs")).href);
 const seo = await import(pathToFileURL(path.join(CLIENT, "src", "marketing", "seo.js")).href);
 const { ARTICLES } = await import(pathToFileURL(path.join(CLIENT, "src", "marketing", "articles", "index.js")).href);
@@ -37,15 +38,29 @@ const { GLOSSARY } = await import(pathToFileURL(path.join(CLIENT, "src", "market
 // by hash. Its text is fixed (PRELOAD_JS); what changes per build (the chunks,
 // the font) rides in data attributes, so the hash in vercel.json never moves.
 // Change a byte of PRELOAD_JS and change that hash with it.
+// PERF-2: it also starts the boot's reads itself (the entry used to, once it
+// had downloaded), and api.js prefetch takes those answers. It sits ahead of
+// the entry's scripts and stylesheet (below), and adds its links on the next
+// turn, once the parser has asked for the entry's scripts and stylesheet:
+// added at once, they sometimes took the connections first and the entry waited.
 const PRELOAD_JS = `(function(){try{var s=document.currentScript;if(!s||!/^\\/(app|dashboard|donors)(\\/|$)/.test(location.pathname)||!localStorage.getItem("npe_token"))return;` +
+  `var t=localStorage.getItem("npe_token"),api=s.getAttribute("data-api"),here=location.pathname.replace(/(.)\\/+$/,"$1"),e=window.__stewardEarly={at:Date.now(),reads:{}};` +
+  `JSON.parse(s.getAttribute(here==="/dashboard"?"data-home-reads":"data-reads")||"[]").forEach(function(u){e.reads[u]=fetch(api+u,{headers:{"Content-Type":"application/json",Authorization:"Bearer "+t}}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});});` +
   `var add=function(rel,h){var l=document.createElement("link");l.rel=rel;l.href=h;document.head.appendChild(l);};` +
-  `JSON.parse(s.getAttribute("data-need")||"[]").forEach(function(h){add("modulepreload",h);});` +
-  `var f=s.getAttribute("data-font");if(f)add("stylesheet",f);}catch(e){}})();`;
+  `setTimeout(function(){try{JSON.parse(s.getAttribute("data-need")||"[]").forEach(function(h){add("modulepreload",h);});` +
+  `(s.getAttribute("data-font-files")||"").split(" ").forEach(function(h){if(!h)return;var l=document.createElement("link");l.rel="preload";l.as="font";l.type="font/woff2";l.crossOrigin="anonymous";l.href=h;document.head.appendChild(l);});}catch(e){}},0);}catch(e){}})();`;
 const attr = v => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const SHELL = path.join(DIST, "app.html");
 const PRELOAD = /<!-- app-preload -->[\s\S]*?<!-- \/app-preload -->\n?/;
 const shell = fs.readFileSync(fs.existsSync(SHELL) ? SHELL : path.join(DIST, "index.html"), "utf8").replace(PRELOAD, "");
-fs.writeFileSync(SHELL, shell.replace("</head>", appPreload() + "</head>"));
+// PERF-2: ahead of the entry's scripts and stylesheet, not at the end of the
+// head. An inline script waits for every stylesheet above it, so after the
+// app's CSS it ran only once that had downloaded: 750 ms of a slow phone's
+// time with nothing of the app's code asked for.
+const FIRST_ENTRY = /\n?(\s*)<script type="module"/;
+fs.writeFileSync(SHELL, FIRST_ENTRY.test(shell)
+  ? shell.replace(FIRST_ENTRY, (m, ind) => "\n" + ind + appPreload().trimEnd() + m)
+  : shell.replace("</head>", appPreload() + "</head>"));
 
 // HARDEN-2 item 2: the app's own code (App.jsx's chunk and what it imports)
 // is asked for by the shell itself, on an app path with a session, instead of
@@ -71,9 +86,26 @@ function appPreload() {
   // asked for now, they are in before Home draws, instead of arriving after it
   // and making a slow phone lay the whole page out again. Added by script, so
   // nothing waits on it.
+  // PERF-2: the stylesheet alone did not do it. A browser fetches a font file
+  // only when text first uses it, so the files still left after Home's first
+  // render, from a second host. They are now Steward's own (public/fonts/) and
+  // the latin files (every word Home draws) are preloaded here with the rest.
   const app = fs.readFileSync(path.join(CLIENT, "src", "App.jsx"), "utf8");
-  const font = (app.match(/https:\/\/fonts\.googleapis\.com\/css2\?[^"]+/) || [])[0];
-  return `<!-- app-preload --><script data-need="${attr(JSON.stringify(need))}"${font ? ` data-font="${attr(font.replace(/&amp;/g, "&"))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
+  const font = (app.match(/\/fonts\/app-fonts\.css/) || [])[0];
+  const css = font ? fs.readFileSync(path.join(DIST, font.slice(1)), "utf8") : "";
+  const files = [...css.matchAll(/url\((\/fonts\/[^)]+-latin\.woff2)\)/g)].map(m => m[1]);
+  // PERF-2: the boot's bundles (lib/homeReads.js bootBundles, the lists and the
+  // order main.jsx asks in), started by the preloader itself, and the API they
+  // go to (api.js's own: VITE_API_URL, else its default).
+  const R = homeReads;
+  const reads = home => JSON.stringify(R.bootBundles(home).map(R.bundlePath));
+  const apiSrc = fs.readFileSync(path.join(CLIENT, "src", "api.js"), "utf8");
+  const apiBase = process.env.VITE_API_URL || (/export const API = import\.meta\.env\.VITE_API_URL \|\| "([^"]+)"/.exec(apiSrc) || [])[1] || "";
+  // The faces themselves are written into the shell, not asked for: on a phone
+  // every request waits for a connection. (A face downloads nothing until text
+  // uses it, so a page that draws in other fonts pays nothing for these.)
+  const faces = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s*\n\s*/g, " ").trim();
+  return `<!-- app-preload -->${faces ? `<style data-app-fonts>${faces}</style>` : ""}<script data-need="${attr(JSON.stringify(need))}"${apiBase ? ` data-api="${attr(apiBase)}" data-reads="${attr(reads(false))}" data-home-reads="${attr(reads(true))}"` : ""}${files.length ? ` data-font-files="${attr(files.join(" "))}"` : ""}>${PRELOAD_JS}</script><!-- /app-preload -->\n`;
 }
 
 const base = seo.pageShell(shell);

@@ -3,11 +3,14 @@
 // seeder, scripts/load/seed-many.js, for one org), on a desktop and on a phone.
 //
 //   · Home, the first look after sign-in, its right rail included (HOME-4):
-//     usable under 1 s on a desktop, under 4.8 s on a phone (HOME-4 asked for
-//     4 s; the phone is now the app's own code over slow 4G, see HISTORY.
-//     SWEEP-6 took the click-only panels out of Home's code and measured
-//     4.5 s; the 3 s the bar asks is docs/defects.md's, with the plan);
-//     and no read the rail needs starts after Home's first paint
+//     usable under 1 s on a desktop, under PHONE_MS on a phone (PERF-2: 4.5 s
+//     at SWEEP-6, about 3.5 s now; the 3 s the bar asks is docs/defects.md's);
+//     no read the rail needs starts after Home's first paint; Home's first look
+//     downloads no more than JS_FIRST_KB of JavaScript (PERF-2's after + 5%);
+//     no bundle of Home's reads is asked for twice (app.html's preloader asks
+//     for them and the app takes its answers, PERF-2); and the preloader is
+//     allowed by vercel.json's CSP (a wrong hash is not an error anyone sees:
+//     the browser skips the preloader and Home is a second slower)
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
@@ -39,9 +42,13 @@ const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
+// PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
+// so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
+const PHONE_MS = 3640;   // PERF-2 measured 3,537 ms + 0.1 s, so it cannot regress (4.5 s at SWEEP-6); the bar is 3 s, docs/defects.md
+const JS_FIRST_KB = 225;   // PERF-2 measured 214 KB
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
-const BUDGET = { homeDesktop: 1000, homePhone: 4800, listServer: 1000, listDraw: 2000, profile: 2000 };
+const BUDGET = { homeDesktop: 1000, homePhone: PHONE_MS, listServer: 1000, listDraw: 2000, profile: 2000 };
 const DESKTOP = {
   ctx: { viewport: { width: 1350, height: 940 }, deviceScaleFactor: 1 },
   net: { offline: false, latency: 40, downloadThroughput: (10240 * 1024) / 8, uploadThroughput: (10240 * 1024) / 8 }, cpu: 1,
@@ -87,12 +94,13 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   await cdp.send("Network.emulateNetworkConditions", machine.net);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: machine.cpu });
   let js = 0, bytes = 0, requests = 0;
+  const done = [];   // PERF-2: [type, bytes, ms after navigation] for each response
   const types = new Map(), apiUrls = [], fail5xx = [], sent = [];
   // HOME-4: when each request to the API left, against the page's own clock.
   let navAt = null;
   cdp.on("Network.requestWillBeSent", e => {
     if (navAt == null && e.type === "Document") navAt = e.timestamp;
-    if (e.request.url.startsWith(BASE) && navAt != null) sent.push({ url: e.request.url, at: Math.round((e.timestamp - navAt) * 1000) });
+    if (e.request.url.startsWith(BASE) && navAt != null) sent.push({ url: e.request.url, method: e.request.method, at: Math.round((e.timestamp - navAt) * 1000) });
   });
   cdp.on("Network.responseReceived", e => {
     types.set(e.requestId, e.type);
@@ -103,6 +111,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   });
   cdp.on("Network.loadingFinished", e => {
     requests++; bytes += e.encodedDataLength; if (types.get(e.requestId) === "Script") js += e.encodedDataLength;
+    if (navAt != null) done.push([types.get(e.requestId), e.encodedDataLength, (e.timestamp - navAt) * 1000]);
   });
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
@@ -124,6 +133,9 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
     fcp: Math.round(r.fcp || 0), sent,
+    // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
+    jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
+    twice: sent.filter(x => x.method === "GET" && /\/home\/bundle\?/.test(x.url)).flatMap(x => new URL(x.url).searchParams.getAll("p")).filter((p, i, a) => a.indexOf(p) !== i),
   };
   out.usable = r.readyAt ? Math.max(out.readyAt, out.longEnd, out.lcp, Math.round(r.netQuiet || 0)) : 0;
   await ctx.close();
@@ -134,8 +146,8 @@ async function measureN(browser, machine, auth, url, ready, rows) {
   const runs = [];
   for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows));
   const m = { ...runs[0], ready: runs.every(r => r.ready), errors: runs.flatMap(r => r.errors), fail5xx: runs.flatMap(r => r.fail5xx),
-    lateRail: runs.flatMap(r => lateRailReads(r)) };
-  for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
+    lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice) };
+  for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
   return m;
 }
 
@@ -164,8 +176,21 @@ async function previewLeg() {
   await PREVIEW.previewBudgets({ ok, base: BASE, token, XLSX });
 }
 
+// PERF-2: app.html's inline preloader is allowed by its hash in vercel.json's
+// script CSP. Its text changes with what it does (scripts/prerender.mjs), and
+// a hash left behind is no error anyone sees: the browser skips the script.
+function preloaderAllowed() {
+  const html = fs.readFileSync(path.join(DIST, "app.html"), "utf8");
+  const m = /<script data-need="[^"]*"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+  const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+  const csp = (vj.headers || []).flatMap(h => h.headers || []).filter(h => h.key === "Content-Security-Policy").map(h => h.value).join(" ");
+  const hash = m ? "sha256-" + require("crypto").createHash("sha256").update(m[1]).digest("base64") : null;
+  ok(`app.html's preloader is allowed by vercel.json's script CSP (${hash || "no preloader"})`, !!hash && csp.includes(`'${hash}'`), hash);
+}
+
 (async () => {
   await previewLeg();
+  if (fs.existsSync(path.join(DIST, "app.html"))) preloaderAllowed();
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
@@ -207,15 +232,17 @@ async function previewLeg() {
   const listServer = serverMs.length ? median(serverMs) : Infinity;
 
   {
-    console.log("\n  screen            usable ms  ready ms  LCP ms  long ms  net ms  JS KB  total KB  requests");
+    console.log("\n  screen            usable ms  ready ms  LCP ms  long ms  net ms  JS KB  JS first  total KB  requests");
     for (const [name, r] of [["Home, desktop", homeD], ["Home, phone", homeP], ["Donors, desktop", list], ["Profile, desktop", prof]])
-      console.log(`  ${name.padEnd(17)} ${String(r.usable).padStart(9)} ${String(r.readyAt).padStart(9)} ${String(r.lcp).padStart(7)} ${String(r.longEnd).padStart(8)} ${String(r.net).padStart(7)} ${String(r.jsKB).padStart(6)} ${String(r.totalKB).padStart(9)} ${String(r.requests).padStart(9)}`);
+      console.log(`  ${name.padEnd(17)} ${String(r.usable).padStart(9)} ${String(r.readyAt).padStart(9)} ${String(r.lcp).padStart(7)} ${String(r.longEnd).padStart(8)} ${String(r.net).padStart(7)} ${String(r.jsKB).padStart(6)} ${String(r.jsFirstKB).padStart(9)} ${String(r.totalKB).padStart(9)} ${String(r.requests).padStart(9)}`);
     console.log(`  Donors list, 100 rows, server: ${listServer} ms (median of 5)\n`);
   }
   for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
   timed(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, { ms: homeD.usable, budget: BUDGET.homeDesktop });
-  timed(`Home, its rail included, usable under 4.8 s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
+  timed(`Home, its rail included, usable under ${BUDGET.homePhone / 1000} s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
+  ok(`Home's first look downloads at most ${JS_FIRST_KB} KB of JavaScript on a phone (${homeP.jsFirstKB} KB)`, homeP.jsFirstKB > 0 && homeP.jsFirstKB <= JS_FIRST_KB, homeP.jsFirstKB);
+  ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length, [...homeD.twice, ...homeP.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
   timed(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, { ms: listServer, budget: BUDGET.listServer, extra: { listServer, listUrl } });

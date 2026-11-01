@@ -71,12 +71,17 @@ export function AtlasNote({ place, id = null, onNavigate, style }) {
 }
 
 // ── THE BELL ────────────────────────────────────────────────────────────────
+// PERF-2: two bells are mounted, the desktop bar's and the phone header's (one
+// hidden by CSS), and the read Home parks for them is handed over once. They
+// share the read that is in flight, so a phone does not wait on a second.
+let bellRead = null;
+const readBell = () => bellRead || (bellRead = apiFetch("/atlas/activity").finally(() => { bellRead = null; }));
 export function AtlasBell({ onNavigate }) {
   const name = useAtlasName();
   const [data, setData] = useState({ waiting: 0, items: [] });
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const load = () => apiFetch("/atlas/activity").then(setData).catch(() => {});
+  const load = () => readBell().then(setData).catch(() => {});
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
   useStewardTold(() => load());
   const act = async path => { setBusy(true); try { await apiFetch(path, { method: "POST", body: "{}" }); told(); await load(); } catch { /* unchanged */ } setBusy(false); };

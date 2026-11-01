@@ -5,15 +5,18 @@
 // parallel with the app's code, and App takes each one once. A read nobody
 // took within a minute is dropped, so a stale answer is never used.
 import { apiFetch, prefetch } from "../api";
-import { HOME_FIRST_READS, RAIL_READS, homeScopeReads, initialScope } from "./homeReads";
+import { BOOT_READS, SHELL_READS, bootBundles } from "./homeReads";
 
-export const BOOT_READS = ["/org", "/grants", "/volunteers", "/tasks", "/board", "/financials", "/billing/status"];
+export { BOOT_READS, SHELL_READS };   // PERF-2: the lists live in lib/homeReads.js
 let started = null, at = 0;
 
 export function startBootReads() {
   if (started) return;
   at = Date.now();
   started = {};
+  // PERF-2: the seven ride in one bundle (GET /home/bundle); each apiFetch below
+  // is handed its answer from it, or asks on its own when the bundle could not.
+  prefetch(BOOT_READS).catch(() => {});
   for (const p of BOOT_READS) {
     started[p] = apiFetch(p);
     started[p].catch(() => {});   // App reads the rejection; this only keeps it from being "unhandled"
@@ -21,26 +24,22 @@ export function startBootReads() {
 }
 
 // The shell's own reads (top bar, rail badges, Atlas): one bundle, parked.
-// Every path here is in routes/homeBundle.js HOME_READS.
-export const SHELL_READS = ["/billing/donor-band", "/atlas/status", "/me/nav-layout", "/people/photos", "/capture/count",
-  "/status/summary", "/org/sample-data-status", "/org/welcome", "/atlas/activity", "/changelog/hidden", "/thank-yous/clock",
-  "/volunteer-hub/crossover"];
+// Every path is in routes/homeBundle.js HOME_READS (lists: lib/homeReads.js).
 export function startShellReads(home) {
-  prefetch(home ? [...SHELL_READS, "/atlas/notes?place=home"] : SHELL_READS, { keep: true }).catch(() => {});
+  prefetch(bootBundles(home)[1], { keep: true }).catch(() => {});
 }
 
-// On Home, its two bundles too: the first, then (from /dashboard/my-stats in
-// it, by Home's own rule) the scoped one. Their answers are parked for Home.
+// On Home, its first bundle too, with the scoped reads in it (PERF-2). Its
+// answers are parked for Home.
 export function startHomeReads() {
   // Home's deck (Insights.jsx HomeMoves, useInsights("deck")) on its own: the
   // heaviest read on Home, so it does not hold the first bundle back.
-  prefetch(["/insights?view=deck"], { keep: true }).catch(() => {});
+  const [, , deck, rail, first] = bootBundles(true);
+  prefetch(deck, { keep: true }).catch(() => {});
   // HOME-4: the right rail's reads, beside the deck's.
-  prefetch(RAIL_READS, { keep: true }).catch(() => {});
-  prefetch(HOME_FIRST_READS, { keep: true }).then(b => {
-    const r = b && b["/dashboard/my-stats"];
-    prefetch(homeScopeReads(initialScope(r && r.status === 200 ? r.body : null)), { keep: true });
-  }).catch(() => {});
+  prefetch(rail, { keep: true }).catch(() => {});
+  // PERF-2: the scoped reads ride in the first bundle; the server picks the scope.
+  prefetch(first, { keep: true }).catch(() => {});
 }
 
 export function bootRead(path) {

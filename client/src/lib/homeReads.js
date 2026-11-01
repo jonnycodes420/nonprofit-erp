@@ -23,3 +23,28 @@ export const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/
 // Home's first scope: "mine" when this person has a portfolio, else "all"
 // (and "all" when /dashboard/my-stats could not be read).
 export const initialScope=myStats=>((myStats?.portfolioCount||0)>0?"mine":"all");
+// PERF-2: the scoped reads asked for in the FIRST bundle, beside /dashboard/my-stats.
+// The server resolves {scope} by initialScope's rule (routes/homeBundle.js) and
+// answers each under its resolved path, so Home does not wait a round trip on a
+// phone to ask for them. Keep the two rules the same.
+export const HOME_SCOPED_FIRST=homeScopeReads("{scope}");
+
+// PERF-2: the app's boot reads and the shell's (lib/bootReads.js asks for
+// them), here beside Home's so app.html's preloader can be built from the same
+// lists (scripts/prerender.mjs). Every path is in routes/homeBundle.js HOME_READS.
+export const BOOT_READS=["/org","/grants","/volunteers","/tasks","/board","/financials","/billing/status"];
+export const SHELL_READS=["/billing/donor-band","/atlas/status","/me/nav-layout","/people/photos","/capture/count",
+  "/status/summary","/org/sample-data-status","/org/welcome","/atlas/activity","/changelog/hidden","/thank-yous/clock",
+  "/volunteer-hub/crossover",
+  "/me/mfa"];   // PERF-2: the idle guard's read, which left on its own after Home drew
+// One bundle's address (GET /home/bundle), the one way it is written.
+export const bundlePath=paths=>"/home/bundle?"+paths.map(p=>"p="+encodeURIComponent(p)).join("&");
+// The bundles the app asks for as it boots, in the order it asks (main.jsx:
+// boot, shell, then Home's deck, rail and first reads), each read in the first
+// bundle that names it, as api.js prefetch drops a read already asked for.
+export function bootBundles(home){
+  const lists=[BOOT_READS,home?[...SHELL_READS,"/atlas/notes?place=home"]:SHELL_READS];
+  if(home) lists.push(["/insights?view=deck"],RAIL_READS,[...HOME_FIRST_READS,...HOME_SCOPED_FIRST]);
+  const asked=new Set();
+  return lists.map(l=>[...new Set(l)].filter(p=>!asked.has(p)&&asked.add(p)));
+}

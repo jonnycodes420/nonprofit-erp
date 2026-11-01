@@ -14,7 +14,8 @@ import { useEffect, useState } from "react";
 import { T, Modal, SectionLabel } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { useMailTypes, setMailType, reloadMailTypes } from "../lib/mailTypes";
-import { askConfirm } from "./ConfirmDialog";
+// PERF-2: the confirm dialog loads when one is asked (it mounts itself), not with Home.
+const askConfirm = opts => import("./ConfirmDialog").then(m => m.askConfirm(opts));
 
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 24px", marginBottom: 14 };
 const help = { fontSize: 12.5, color: T.ink3, lineHeight: 1.5 };

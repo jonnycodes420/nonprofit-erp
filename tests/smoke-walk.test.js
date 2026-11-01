@@ -1755,7 +1755,9 @@ async function donorScreensSayNothingWrong(browser) {
       await p2.waitForTimeout(800);
     };
     let orgSeen = 0;
-    const isOrg = u => { try { return new URL(u).pathname === "/org"; } catch { return false; } };
+    // PERF-2: /org also arrives inside the app's boot bundle (GET /home/bundle?p=/org…,
+    // asked for by app.html's preloader), so the route watches and rewrites it there too.
+    const isOrg = u => { try { const x = new URL(u); return x.pathname === "/org" || (x.pathname === "/home/bundle" && x.searchParams.getAll("p").includes("/org")); } catch { return false; } };
     await p2.route(isOrg, async route => { orgSeen++; await route.continue(); });
     await openDonors();
     ok("§connected with no address lookup provider the Donors page has no Map tab", orgSeen > 0 && (await mapTabs()) === 0,
@@ -1764,7 +1766,9 @@ async function donorScreensSayNothingWrong(browser) {
     await p2.route(isOrg, async route => {
       const r = await route.fetch();
       const j = await r.json();
-      await route.fulfill({ response: r, json: { ...j, capabilities: { ...(j.capabilities || {}), geocoding: true } } });
+      const geo = o => ({ ...o, capabilities: { ...(o.capabilities || {}), geocoding: true } });
+      const inBundle = new URL(route.request().url()).pathname === "/home/bundle";
+      await route.fulfill({ response: r, json: inBundle ? { ...j, "/org": { ...j["/org"], body: geo(j["/org"].body) } } : geo(j) });
     });
     await openDonors();
     ok("§connected with a provider set up the Map tab appears", (await mapTabs()) === 1, await mapTabs());

@@ -21,6 +21,9 @@ import { errorMessage } from "../lib/domainError";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { countLabel } from "../../../shared/countWords.js";
+// PERF-2: the banner and the /mailbox read live in MailboxBanner.jsx (Home loads only those).
+import { useMailbox } from "./MailboxBanner";
+export { MailboxBanner, useMailbox } from "./MailboxBanner";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: "1px solid " + (primary ? T.greenDk : T.ink),
@@ -90,29 +93,6 @@ export function SyncHealth({ h, calendar, onRetry, busy }) {
       </div>}
     </div>
   );
-}
-
-// The reconnect banner: shown wherever it is mounted (Home, and the top of the
-// Connections card) when a connection has not read in two hours or its
-// permission was refused.
-export function MailboxBanner({ onNavigate }) {
-  const [d] = useMailbox();
-  if (!d || !d.banner) return null;
-  const go = () => onNavigate && onNavigate("settings", { section: "connections", focus: "inbox" });
-  return (
-    <div data-testid="mailbox-banner" role="status" style={{ background: T.white, border: "1px solid " + T.gold, borderLeft: "4px solid " + T.gold, borderRadius: 10, padding: "10px 14px", fontSize: 14, color: T.ink, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-      <span>{d.banner.replace(/\. Reconnect$/, ".")}</span>
-      {onNavigate && <button type="button" onClick={go} style={{ ...quiet, color: T.greenDk, fontSize: 14, fontWeight: 700 }}>Reconnect</button>}
-    </div>
-  );
-}
-
-// One read of /mailbox, shared by every door.
-export function useMailbox() {
-  const [d, setD] = useState(null);
-  const load = () => apiFetch("/mailbox").then(setD).catch(() => setD({ providers: [], team: [], failed: true }));
-  useEffect(() => { load(); }, []);
-  return [d, load];
 }
 
 // The donor profile's quiet line. Nothing at all once she has connected, and
