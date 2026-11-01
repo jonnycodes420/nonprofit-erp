@@ -35,7 +35,7 @@ export const FALLBACK_SETUP = {
 // The widths the list had before LIST-1, so the default layout looks the same.
 const DEFAULT_TRACKS = {
   name: "minmax(180px,2fr)", stage: "minmax(110px,1fr)", owner: "minmax(120px,1fr)",
-  lifetime: "120px", last_gift_date: "110px", engagement: "88px", generosity: "70px",
+  lifetime: "120px", last_gift_date: "110px", engagement: "104px", generosity: "88px",
   room_to_give: "104px", room: "104px",
 };
 const RIGHT_FORMATS = new Set(["money", "number", "date"]);

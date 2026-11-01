@@ -91,7 +91,7 @@ const SEARCH_KINDS = [
   // SEARCH-2: the records that hang off a person open on that person's
   // profile, on their own row (the profile reads the #anchor).
   { kind:"gift", key:"gifts", group:"Gifts", row:g=>({ title:fmtCents(g.amount)+" from "+g.title,
-      sub:[shortDay(g.date), g.checkNumber?"cheque "+g.checkNumber:g.method].filter(Boolean).join(" · "),
+      sub:[shortDay(g.date), g.checkNumber?"check "+g.checkNumber:g.method].filter(Boolean).join(" · "),
       tab:"donors", opts:{selectDonorId:g.donorId, anchor:"gift-"+g.id} }) },
   { kind:"plan", key:"plans", group:"Monthly plans", row:r=>({ title:fmtCents(r.amount)+(r.interval==="year"?" a year":" a month")+" from "+r.title,
       sub:{active:"Active",past_due:"Payment failed",recovering:"Recovering",recovered:"Card fixed",paused:"Paused",canceled:"Canceled"}[r.status]||r.status||"",

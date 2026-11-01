@@ -166,7 +166,24 @@ function judgePair(a, b, { near = null } = {}) {
   if (samePhone && !rel && !near) meet("low", "same phone, different names");
   if (!confidence && nd && rel) meet("low", `name only: ${nd.sentence}; no address, phone or email in common`);
   if (!confidence) return null;
-  return { confidence, reasons: [...new Set(reasons)] };
+  return { confidence, reasons: joinReasons(reasons) };
+}
+// SWEEP-2: "same address, names differ by a letter or two; same household,
+// names differ by a letter or two" said the name twice. Reasons that end in
+// the same words are one reason: "same address and household, names differ …".
+function joinReasons(reasons) {
+  const order = [], by = new Map();
+  for (const r of new Set(reasons)) {
+    const m = /^same ([a-z]+), (.+)$/.exec(r);
+    if (!m) { order.push(r); continue; }
+    if (!by.has(m[2])) { by.set(m[2], []); order.push({ tail: m[2] }); }
+    by.get(m[2]).push(m[1]);
+  }
+  return order.map(o => {
+    if (typeof o === "string") return o;
+    const w = by.get(o.tail);
+    return `same ${w.length > 1 ? `${w.slice(0, -1).join(", ")} and ${w[w.length - 1]}` : w[0]}, ${o.tail}`;
+  });
 }
 
 // Likely pairs among ONE org's rows. The caller passes only that org's rows;

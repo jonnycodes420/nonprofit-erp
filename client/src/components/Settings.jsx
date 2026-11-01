@@ -2058,7 +2058,7 @@ function ImportsHistory(){
                     )}
                   </td>
                   <td style={td}>{r.committedOn?displayDate(r.committedOn):""}</td>
-                  <td style={td}>{r.by||"Not set"}</td>
+                  <td style={td}>{r.by||"Not recorded"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.peopleSentence?(r.peopleRowsIn??(r.donorsCreated+(r.peopleMatched||0))):r.rowsIn)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
                   {/* FIX-58: what came in as gifts, and what is pledged: never one sum */}

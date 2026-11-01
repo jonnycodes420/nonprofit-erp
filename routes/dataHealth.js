@@ -504,6 +504,11 @@ app.post("/data-health/notice/:id/dismiss", requireAuth, checkWriteAccess, wrap(
   res.json({ ok: true });
 }));
 
+// SWEEP-2: review lists page. 50 by default, 500 at most in one answer.
+function pageOf(req) {
+  const n = Number.parseInt(req.query.limit, 10), o = Number.parseInt(req.query.offset, 10);
+  return { limit: Number.isFinite(n) && n > 0 ? Math.min(n, 500) : 50, offset: Number.isFinite(o) && o > 0 ? o : 0 };
+}
 // ── Duplicates ─────────────────────────────────────────────────────────────
 app.get("/data-health/duplicates", requireAuth, wrap(async (req, res) => {
   const people = await livePeople(req.user.orgId);
@@ -519,7 +524,9 @@ app.get("/data-health/duplicates", requireAuth, wrap(async (req, res) => {
     proposed: { by: m.created_by_name || "Somebody", reason: m.reason || null } }));
   const topKeys = new Set(top.map(p => key(p.a, p.b)));
   const all = [...top, ...pairs.filter(p => !topKeys.has(key(p.a, p.b)))];
-  res.json({ pairs: all.map(p => ({ ...p, left: brief(byId.get(p.a)), right: brief(byId.get(p.b)) })) });
+  // SWEEP-2: a page at a time (?limit=&offset=), with the total for the heading
+  const { limit, offset } = pageOf(req);
+  res.json({ total: all.length, offset, pairs: all.slice(offset, offset + limit).map(p => ({ ...p, left: brief(byId.get(p.a)), right: brief(byId.get(p.b)) })) });
 }));
 // AGENT-2: propose that two people are one. Nothing merges here: the pair
 // joins the duplicate queue above, and a person commits it with Merge.
@@ -1094,7 +1101,8 @@ app.get("/data-health/families", requireAuth, wrap(async (req, res) => {
   const people = await livePeople(req.user.orgId);
   const byId = new Map(people.map(d => [d.id, d]));
   const { families } = await pairsAndFamilies(req.user.orgId, people);
-  res.json({ rows: families.map(f => ({ ...f, left: brief(byId.get(f.a)), right: brief(byId.get(f.b)) })),
+  const { limit, offset } = pageOf(req);   // SWEEP-2
+  res.json({ total: families.length, offset, rows: families.slice(offset, offset + limit).map(f => ({ ...f, left: brief(byId.get(f.a)), right: brief(byId.get(f.b)) })),
     sentence: `${families.length.toLocaleString("en-US")} ${families.length === 1 ? "pair looks like one family" : "pairs look like families"}: one surname, two first names, one address, phone or email. They are never offered as duplicates.` });
 }));
 app.post("/data-health/families/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {

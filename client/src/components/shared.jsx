@@ -310,20 +310,32 @@ export const TIER_COLOR = {Micro:T.ink3,Small:T.green500,Mid:T.greenMid,Major:T.
 
 // ── Score helpers ──────────────────────────────────────────────────────────
 export function donorScore(d) {
+  const p=donorScoreParts(d);
+  return p?p.score:null;
+}
+// SWEEP-2: the parts the score is added up from, so a number on the list can
+// open its reasons (the badge's hover says them). One arithmetic, two readers.
+export function donorScoreParts(d) {
   // BUILD-79 Part 6 — score on no giving data is NO SCORE. 1,111 giftless
   // imports once all scored 35 (base 5 + a recency 30 earned by the read-side
   // today-fallback). A donor with zero gifts, no dollars and no last-gift
   // date has nothing to score; render blank with "no gifts on file".
   if (!(d.gifts > 0) && !(d.total > 0) && !d.lastGift) return null;
-  let s=0;
-  if(d.total>20000)s+=35; else if(d.total>5000)s+=22; else if(d.total>1000)s+=12; else s+=5;
+  const parts=[];
+  const total=d.total>20000?35:d.total>5000?22:d.total>1000?12:5;
+  parts.push([total,35,`${fmtFull(d.total||0)} given in all`]);
   const days=d.lastGift?daysDiff(d.lastGift):null;
-  if(days!=null){ if(days<90)s+=30; else if(days<180)s+=22; else if(days<365)s+=12; }
-  s+=Math.min(d.gifts*4,20);
-  if(d.status==="lapsed")s-=15;
-  if(d.tags.includes("board-adjacent"))s+=10;
-  if(d.tags.includes("recurring"))s+=5;
-  return Math.max(5,Math.min(s,99));
+  const recent=days==null?0:days<90?30:days<180?22:days<365?12:0;
+  parts.push([recent,30,days==null?"no gift date on file":days<365?`last gift ${days} ${days===1?"day":"days"} ago`:"no gift in the last year"]);
+  const count=Math.min((d.gifts||0)*4,20);
+  parts.push([count,20,`${d.gifts||0} ${d.gifts===1?"gift":"gifts"}`]);
+  if(d.status==="lapsed")parts.push([-15,0,"lapsed"]);
+  if((d.tags||[]).includes("board-adjacent"))parts.push([10,10,"close to the board"]);
+  if((d.tags||[]).includes("recurring"))parts.push([5,5,"a monthly gift"]);
+  const raw=parts.reduce((t,[n])=>t+n,0);
+  const score=Math.max(5,Math.min(raw,99));
+  const said=parts.map(([n,of,w])=>of?`${w} (${n} of ${of})`:`${w} (${n})`).join(", ");
+  return { score, parts, sentence:`Giving strength ${score}: ${said}.${score!==raw?` Kept between 5 and 99.`:""}` };
 }
 
 export function retentionRisk(d) {
@@ -840,8 +852,10 @@ export function GlobalStyles() {
       .dir-select-toggle{display:inline-flex!important;}
 
       /* ReEngage table: hide non-essential columns, fix grid template */
-      .reEngage-header{grid-template-columns:1fr 90px 100px!important;}
-      .reEngage-row{grid-template-columns:1fr 90px 100px!important;}
+      /* SWEEP-2: room for "+ Log" and "View →" beside the days, stacked if need be */
+      .reEngage-header{grid-template-columns:minmax(0,1fr) 92px 64px!important;gap:8px!important;}
+      .reEngage-row{grid-template-columns:minmax(0,1fr) 92px 64px!important;gap:8px!important;}
+      .re-col-actions{flex-direction:column!important;align-items:stretch!important;}
       .re-col-lifetime,.re-col-lastgift,.re-col-score{display:none!important;}
 
       /* Filter bar */

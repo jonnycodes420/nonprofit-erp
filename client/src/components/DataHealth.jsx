@@ -40,6 +40,7 @@ const TABLE_WORDS = {
   sequence_enrollments: ["journey", "journeys"], auction_bidders: ["auction bidder record", "auction bidder records"],
 };
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const PAGE = 50;   // SWEEP-2: review lists come a page at a time
 // FIX-59: when Data health last ran, and what made it run.
 const RUN_WORDS = { import: "after your import", undo: "after an import was undone", merge: "after a merge", merge_undo: "after a merge was undone",
   delete: "after people were deleted", nightly: "overnight", manual: "when you asked" };
@@ -51,12 +52,15 @@ function checkedWords(run) {
   return `Checked ${sameDay ? time : `${displayDate(at.toISOString().slice(0, 10)) || at.toLocaleDateString()} at ${time}`}, ${RUN_WORDS[run.trigger] || "by hand"}.`;
 }
 
-function Line({ id, label, count, sentence, action, onOpen, onAction, open, testid }) {
+function Line({ label, count, sentence, action, onOpen, onAction, open, testid, first }) {
   return (
-    <div data-testid={testid} style={{ ...rowStyle, borderTop: id === "duplicates" ? "none" : rowStyle.borderTop }}>
+    <div data-testid={testid} style={{ ...rowStyle, borderTop: first ? "none" : rowStyle.borderTop }}>
+      {/* SWEEP-2: a line with nothing to count (People who moved, before a
+          provider's file) draws no "0", only its sentence and its action */}
+      {count == null ? <div aria-hidden style={{ minWidth: 64 }} /> :
       <button onClick={onOpen} aria-expanded={open} aria-label={`${label}: ${count}. Open the rows.`}
         style={{ background: open ? T.bg2 : T.white, border: "1px solid " + T.bg3, borderRadius: 10, minWidth: 64, padding: "8px 10px",
-          fontFamily: "'DM Serif Display',serif", fontSize: 24, color: T.ink, cursor: "pointer", lineHeight: 1 }}>{count}</button>
+          fontFamily: "'DM Serif Display',serif", fontSize: 24, color: T.ink, cursor: "pointer", lineHeight: 1 }}>{count}</button>}
       <div style={{ flex: "1 1 240px", minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{label}</div>
         <div style={{ fontSize: 13, color: T.ink3, marginTop: 2 }}>{sentence}</div>
@@ -77,7 +81,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
   const load = () => apiFetch("/data-health").then(setHealth).catch(e => setErr(e.message || "Data health couldn't load."));
   useEffect(() => { load(); }, []);
   const toggle = k => setOpen(o => (o === k ? null : k));
-  const done = msg => { setFlash(msg); setTick(t => t + 1); load(); };
+  // SWEEP-2: the pairs list re-reads on the tick, so an Undo below redraws the
+  // pairs above it; the "Checked … after" line is re-read once the server's
+  // re-check (half a second after a change) has run.
+  const done = msg => { setFlash(msg); setTick(t => t + 1); load(); setTimeout(load, 1200); };
 
   if (err) return <Card><div style={{ color: T.ink2, fontSize: 14 }}>Data health couldn't load. {err}</div><button style={{ ...btn(false), marginTop: 10 }} onClick={() => { setErr(null); load(); }}>Try again</button></Card>;
   if (!health) return <Card><div style={{ color: T.ink3, fontSize: 13 }}>Checking your file…</div></Card>;
@@ -93,7 +100,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
     { id: "addresses", label: "Addresses to tidy", count: c.addressesToTidy,
       sentence: `${plural(c.addressesToTidy, "address", "addresses")} can be written the standard US way${c.addressesUnreadable ? `; ${c.addressesUnreadable} can't be read and are listed for you to fix by hand` : ""}.`,
       action: c.addressesToTidy || c.addressesUnreadable ? "Review changes" : null },
-    { id: "moved", label: "People who moved", count: c.moved,
+    { id: "moved", label: "People who moved", count: c.hasNcoaFile ? c.moved : null,
       sentence: c.hasNcoaFile ? `${plural(c.moved, "change of address", "changes of address")} from the provider's file wait for you.` : "Prepare an address update file for a change-of-address provider, then bring their results back here.",
       action: c.hasNcoaFile && c.moved ? "Review moves" : "Prepare or bring in a file" },
     { id: "emails", label: "Emails to look at", count: c.emails,
@@ -120,6 +127,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
   ];
+  // SWEEP-2: a check at zero hides. People who moved stays (it is a file to
+  // prepare, not a count), and with nothing else to show, one sentence says so.
+  const shown = lines.filter(l => l.id === "moved" || l.count > 0);
+  const clean = !shown.some(l => l.count > 0);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="data-health">
       <Card>
@@ -128,11 +139,15 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
           {health.lastRun && checkedWords(health.lastRun) && <span data-testid="dh-checked"> {checkedWords(health.lastRun)}</span>}
         </div>
         {flash && <div role="status" data-testid="dh-flash" style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: T.ink, margin: "6px 0" }}>{flash}</div>}
-        {lines.map(l => (
-          <Line key={l.id} {...l} testid={`dh-line-${l.id}`} open={open === l.id} onOpen={() => toggle(l.id)} onAction={() => setOpen(l.id)} />
+        {clean && <div data-testid="dh-clean" style={{ fontSize: 14, color: T.ink, padding: "10px 0 4px" }}>
+          {c.people ? "Nothing to tidy: no likely duplicates, every address is written the standard way, no email to look at, and everyone has a way to reach them."
+            : "Nothing to check yet. Once people are on file, Steward looks here for duplicates, addresses to tidy, emails that bounce and people you can't reach. Bring in a file from Import & tools."}
+        </div>}
+        {shown.map((l, i) => (
+          <Line key={l.id} {...l} first={i === 0 && !clean} testid={`dh-line-${l.id}`} open={open === l.id} onOpen={() => toggle(l.id)} onAction={() => setOpen(l.id)} />
         ))}
       </Card>
-      {open === "duplicates" && <DuplicatesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
+      {open === "duplicates" && <DuplicatesPanel tick={tick} onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "addresses" && <AddressesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "moved" && <MovedPanel onDone={done} isReadOnly={isReadOnly} note={health.ncoaNote} demo={!!health.demo} />}
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
@@ -148,14 +163,19 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
 }
 
 // ── Duplicates ─────────────────────────────────────────────────────────────
-function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly }) {
+function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly, tick }) {
   const [pairs, setPairs] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [shown, setShown] = useState(PAGE);
   const [cmp, setCmp] = useState(null);
   const [bulk, setBulk] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
-  const load = () => apiFetch("/data-health/duplicates").then(r => setPairs(r.pairs)).catch(e => setErr(e.message));
-  useEffect(() => { load(); }, []);
+  // SWEEP-2: the pairs come a page at a time; Show more asks for the next page.
+  const load = (limit = shown) => apiFetch(`/data-health/duplicates?limit=${limit}`)
+    .then(r => { setPairs(r.pairs); setTotal(r.total ?? r.pairs.length); }).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, [tick]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const more = () => { const n = shown + PAGE; setShown(n); load(n); };
   const notDup = async p => {
     try { await apiFetch("/data-health/pairs/dismiss", { method: "POST", body: JSON.stringify({ a: p.a, b: p.b }) }); load(); onDone(`${p.left.name} and ${p.right.name} are marked as two different people. They won't be suggested again.`); }
     catch (e) { setErr(e.sentence || e.message); }
@@ -175,7 +195,7 @@ function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly }) {
   return (
     <Card data-testid="dh-duplicates">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{plural(pairs.length, "possible duplicate")}</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{plural(total, "possible duplicate")}</div>
         {highs > 0 && <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={openBulk}>Merge all high-confidence pairs</button>}
       </div>
       {err && <div style={{ color: T.ink2, fontSize: 13, marginTop: 8 }}>{err}</div>}
@@ -198,6 +218,8 @@ function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly }) {
           </div>
         </div>
       ))}
+      {pairs.length < total && <button data-testid="dh-pairs-more" style={{ ...btn(false), marginTop: 12 }} onClick={more}>
+        Show {Math.min(PAGE, total - pairs.length)} more of {total.toLocaleString("en-US")}</button>}
       {cmp && <CompareModal pair={cmp} onClose={() => setCmp(null)} onMerged={msg => { setCmp(null); load(); onDone(msg); }} />}
       {bulk && (
         <Modal onClose={() => setBulk(null)} title="Merge all high-confidence pairs" width={620}
@@ -526,7 +548,8 @@ function FamiliesPanel({ onDone, onOpenDonor, isReadOnly }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [made, setMade] = useState(null);
-  const load = () => apiFetch("/data-health/families").then(setData).catch(e => setErr(e.message));
+  const [shown, setShown] = useState(PAGE);
+  const load = (limit = shown) => apiFetch(`/data-health/families?limit=${limit}`).then(setData).catch(e => setErr(e.message));
   useEffect(() => { load(); }, []);
   const link = async f => {
     try {
@@ -565,6 +588,9 @@ function FamiliesPanel({ onDone, onOpenDonor, isReadOnly }) {
           </div>
         </div>
       ))}
+      {data.rows.length < (data.total ?? data.rows.length) && <button data-testid="dh-families-more" style={{ ...btn(false), marginTop: 12 }}
+        onClick={() => { const n = shown + PAGE; setShown(n); load(n); }}>
+        Show {Math.min(PAGE, data.total - data.rows.length)} more of {data.total.toLocaleString("en-US")}</button>}
     </Card>
   );
 }
