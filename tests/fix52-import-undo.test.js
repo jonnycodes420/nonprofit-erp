@@ -230,10 +230,11 @@ async function main() {
   const mv = (await api("GET", "/move", tok)).body || {};
   ok("§6 Home's file line no longer counts the deleted people or their gifts", !new RegExp(`\\b${made.length}\\b|${E.gifts} gifts`).test(JSON.stringify(mv.homeLine || "")), JSON.stringify(mv.homeLine));
   const evs = (await api("GET", "/events", tok)).body;
+  // EVENTS-3: the list's money is numbers.eventsRaised (`money.received`); its own SQL copy (`raised`) is gone
   const evRow = (Array.isArray(evs) ? evs : (evs.events || [])).find(e => e.id === evId) || {};
   const liveRaised = await one(`SELECT COALESCE(SUM(g.amount),0)::numeric AS s FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.event_id=$1 AND d.deleted_at IS NULL`, [evId]);
-  ok("§6 Events counts no deleted guest and none of their money", Number(evRow.attendee_count) === live.attended && centsOf(evRow.raised) === centsOf(liveRaised.s) && live.attended < E.attended,
-     JSON.stringify([evRow.attendee_count, evRow.raised, live, liveRaised]));
+  ok("§6 Events counts no deleted guest and none of their money", Number(evRow.attendee_count) === live.attended && centsOf(evRow.money && evRow.money.received) === centsOf(liveRaised.s) && live.attended < E.attended,
+     JSON.stringify([evRow.attendee_count, evRow.money && evRow.money.received, live, liveRaised]));
   const evd = (await api("GET", `/events/${evId}`, tok)).body || {};
   ok("§6 the event's own page lists no deleted guest", (evd.attendees || []).length === live.listed, [(evd.attendees || []).length, live.listed]);
   const fr = (await api("GET", "/fundraising/campaigns", tok)).body;

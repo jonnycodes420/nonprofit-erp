@@ -241,8 +241,11 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
       ok(`§fix60 events-year-${k} foots: ${f.measure} ${f.value} = rows ${f.rowsFoot}`, f.foots, f);
       ok(`§fix60 events-year-${k} is what the events' own pages add up to (${want[k]})`, same(f.value, want[k]), { source: f.value, pages: want[k] });
     }
-    if (own) ok("§fix60 …and on the fixture that is 2 events, 3 came of 5 registered (60%), $390.25 received",
-      want.events === 2 && want.came === 3 && want.registered === 5 && want.rate === 60 && want.received === 390.25, want);
+    // EVENTS-3: by party. Ada and Ben Okafor are one household and came to the
+    // Spring dinner together: one party. So the dinner is 1 came of 2 registered
+    // (the Okafors, Cy), the open studio 1 of 2 (Ada, Eli): 2 of 4, 50%.
+    if (own) ok("§fix60 …and on the fixture that is 2 events, 2 parties came of 4 registered (50%), $390.25 received",
+      want.events === 2 && want.came === 2 && want.registered === 4 && want.rate === 50 && want.received === 390.25, want);
     const shown = await api("GET", `/figures/events-year-received/rows?from=${efrom}&to=${eto}&pageSize=1`, tok);
     ok("§fix60 the endpoint the Events list reads hands it the same value", shown.status === 200 && same(shown.body.value, want.received), { status: shown.status, value: shown.body && shown.body.value });
   }
