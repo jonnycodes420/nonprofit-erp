@@ -4,6 +4,16 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## The truth check against the key (TRUTH-1, 31 Oct 2026)
+
+Found by `assertSurfacesAgree` once it compared every surface to the key (`tests/keys/truthKey.js`, from the rows, no app code), on `tests/surfaces-agree.test.js` org D (soft and matching credit rows, a household, a pledge-held person, gifts marked already deposited). Each is a duplicate MAP-1 marked "by luck", not the shared version, so none was rewritten here (NUMBERS-3 folds them). D-1, D-2 and D-5 were fixed in TRUTH-1 itself, because fixing the shared sources made those duplicates stop footing beside them. Each is marked KNOWN in `tests/lib/knownDefects.js` and passes the check only at exactly the value it predicts; the same surface off by anything else fails. Delete the marker with the line.
+
+- **P1 · D-3 · Ask and Atlas count credit rows as money and as givers.** Org D, "How much have we raised this year?": $5,840.00 against $540.00; "How many donors do we have?": 5 people gave this year against the key's 3 (the Board says 3). `askEngine.js:46` `giftSet` selects every gift row; the metrics sum and count them. Suggested: NUMBERS-3.
+- **P1 · D-4 · Finance's money in counts credit rows as money.** Org D's twelve months: $5,840.00 against $540.00. `routes/finance.js:214` (money in by month) and `finFigure` `moneyInThisMonth` (`:143`). Suggested: NUMBERS-3 (or the Finance sweep).
+- **P1 · D-6 · The bookkeeper's file calls a deposited gift "not matched to a deposit".** Org D: the three gifts she marked already deposited (FIX-59) are on Finance's deposits and in the bookkeeper's `no_deposit` issue; on real-shaped, all 278 of the gift file's gifts after the import's own "already deposited". `reportBookkeeper` reads `deposit_ref` (`routes/crm.js:24988`), which only Undo writes (`routes/finance.js:426`); a deposit run holds its gifts by `import_id` and writes neither column. The deposits file (`depositsFile.js:52`, `/reports/deposits`, `routes/crm.js:25076`) and QuickBooks' deposit mode (`qboSync.js:680-742`) read the same column. Suggested: NUMBERS-3 makes `routes/finance.js` `ON_NO_DEPOSIT` the one definition, and decides what `deposit_ref` holds (see the TRUTH-1 report).
+- **P2 · D-8 · Fundraising's Recent gifts lists a soft credit row as a gift.** The walk of org D: "Oona Credit · $5,000" sits among the recent gifts beside the Raised tile's $540. The recent-gifts query (`/fundraising/overview`, `routes/crm.js` near 22058) lists every row. No truth-check leg reads a list of recent gifts, so it has no marker. Suggested: NUMBERS-3.
+- **P3 · D-7 · The onboarding card's gift count counts credit rows as gifts.** Org D: 10 against the key's 8. `routes/crm.js:3318` (`/org/setup-status`). TRUTH-1's brief allows a known marker only for a P1; this one is marked too, so CI stays green, and Jonathan decides whether it waits for NUMBERS-3 or is fixed alone. Suggested: NUMBERS-3.
+
 ## Home and Atlas (SWEEP-1, 31 Oct 2026; walk in docs/sweeps/sweep-1/walk.md)
 
 - **P2 · A business with no business word in its name is greeted by a first name.** "Redshaw Holville Wine Spirits" (kept as a person) reads "Hi Redshaw,"; `isPersonUnit` (insights.js) and `shared/greeting.js` know a business by its record's kind or a word like Inc, LLC, Bank, Club. Suggested: the people sweep offers "this looks like an organisation" on import and in Data health, so the kind is right at the source.
@@ -33,6 +43,8 @@ one deletes its line.
 - **P3 · Home's year-end ask works out its own fiscal year.** `insights.js` (SWEEP-1, near line 439) builds `fyStart` from `fiscalStartMonth` by hand, the one copy outside `orgTime.orgPeriodBounds` the `fiscal-year` ratchet counts (baseline 1). It agrees with orgTime today. Suggested: NUMBERS-3, which gives every number one home.
 - **P3 · Nothing schedules `sweepQuietConnections`** (server.js, near 2259); `POST /connections/sweep` is the only way it runs, and nothing calls that. Suggested: the next integrations build either schedules it on the tick or removes both.
 - **P3 · `GET /pos/attendance-drift` has no caller,** yet `scripts/seed-demo.js` seeds a fixture for it. Kept under amendment A1 (no deletion without Jonathan's yes); listed in `docs/architecture/routes-reviewed.md`. Suggested: the events build that next touches POS.
+
+- **P3 · numbers1-foot §1 depends on which suites share its shard.** §1 runs the numbers checker on every org in the shard's database. When agents1-persona-scope (which loads tenant-matrix's fixture, `org_mxa` and `org_mxb`, written straight to the tables) runs earlier in the same shard, §1 fails on those orgs' stored totals. TRUTH-1's second battery, with timings refreshed by the first, put the two together; with main's timings they are apart and §1 passes. Suggested: the next tests-and-CI build makes §1 skip fixture orgs that bypass the gift path, or has tenant-matrix's fixture recompute its totals.
 
 ## Communications (SWEEP-3, 30 Oct 2026; walk in docs/sweeps/sweep-3/walk.md)
 
