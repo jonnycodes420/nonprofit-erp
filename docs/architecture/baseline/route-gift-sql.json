@@ -1,0 +1,21 @@
+{
+  "check": "route-gift-sql",
+  "what": "lines in routes/ that sum an amount or window a gift's date",
+  "counts": {
+    "routes/agent.js": 1,
+    "routes/billing.js": 1,
+    "routes/crm.js": 149,
+    "routes/dataHealth.js": 2,
+    "routes/finance.js": 35,
+    "routes/give.js": 42,
+    "routes/grantSystem.js": 1,
+    "routes/homeCalls.js": 1,
+    "routes/homeLead.js": 7,
+    "routes/insights.js": 1,
+    "routes/oldReports.js": 2,
+    "routes/supporter.js": 1,
+    "routes/surveys.js": 1,
+    "routes/templates.js": 2,
+    "routes/volunteerScheduling.js": 1
+  }
+}

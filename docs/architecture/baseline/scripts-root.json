@@ -1,0 +1,5 @@
+{
+  "check": "scripts-root",
+  "what": "files in the scripts/ root (new ones go in scripts/ops, ci or once)",
+  "counts": {}
+}

@@ -58,6 +58,17 @@ if ! node scripts/ci/tdz-scan.js; then
   exit 1
 fi
 
+# ── THE ARCHITECTURE RATCHET ALWAYS (ARCH-1). A second, and it is the same
+# ── check CI's guards job runs: big files, gift SQL in routes, fiscal-year
+# ── copies, scripts in the root, tests on the real clock, org-specific code
+# ── and committed images. A count may go down, never up.
+echo "[pre-push] arch-check"
+if ! node scripts/ci/arch-check.js; then
+  echo ""
+  echo "[pre-push] BLOCKED: the architecture ratchet went up (docs/architecture/ARCHITECTURE.md)."
+  exit 1
+fi
+
 zero=0000000000000000000000000000000000000000
 mode=""
 reason=""

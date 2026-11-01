@@ -29,6 +29,34 @@ and its tests. Today's files move there over the coming PRUNE builds, one domain
 verbatim the FIX-1 way. **New server code goes in `server/<domain>/` now.** A new file that
 belongs to no domain is a sign the domain list needs a line, so ask.
 
+## The three patterns
+
+Steward is **one modular monolith**: one deployable, split inside by domain. Not microservices.
+Three patterns, each where it fits:
+
+- **Layered, with closed layers, for the core** (donors, giving, events, mail, finance): a route
+  calls a service, a service calls queries. A layer talks only to the one below it.
+- **Microkernel for integrations and import readers**: a small core plus plug-ins, one contract
+  each. A giving source, a mailbox, a bookkeeping sync or a file shape (Bloomerang, DonorPerfect,
+  a Givebutter export) is a plug-in that implements its domain's one contract. Adding one adds
+  a file; it does not edit the core.
+- **Events and a queue for background work**: anything slow, scheduled or retried (syncs,
+  sweeps, big imports, digests) is a job on the queue (`jobQueue.js`), started by an event or a
+  schedule, never inside a request.
+
+## One core, many faces
+
+The app, the donor portal, the public giving pages, emails and mail-merge fields all get a donor's
+numbers from the same functions ("One home per number" below). **No face computes its own.** A
+portal total, a `{{lifetime_total}}` merge field and the profile's Lifetime are one call.
+
+## No org-specific code
+
+No `if (org === …)` and no code path for one customer. Differences between orgs are settings or
+data. A demo or fixture org has an id in tests and seeds, never in app code. The `org-specific`
+ratchet counts org ids and slugs in app code (tests, scripts and fixtures excepted), and the count
+may only go down.
+
 ## Layers
 
 - **A route** reads the request, checks who is asking, calls a service and writes the response.
@@ -37,6 +65,14 @@ belongs to no domain is a sign the domain list needs a line, so ask.
 - A route never contains SQL that computes a donor-facing number (a sum of `amount`, a gift
   date window, a count of people). It calls the service or figure source that owns that number.
 - The client never computes a number the server already has. It shows it.
+
+## Queries in bulk
+
+- No query inside a loop over rows (N+1). Fetch the set once, with `= ANY(?)` or a join.
+- Select only the columns needed; never `SELECT *` into a response.
+- A big job (an import, a recompute, a sync) runs in batches as background work, not in a request.
+- The yardstick is `messy-25k`: 25,000 people from a messy real-shaped file. A change that is slow
+  there is slow.
 
 ## One home per number
 
@@ -99,6 +135,14 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
   that cannot run in the battery says so on one line in its own file:
   `// battery: skip — <reason>`. `tests/every-test-runs.test.js` checks both.
 - A guard must be proven able to fail before it is trusted (CLAUDE.md).
+- **Tests set their own clock.** A test that depends on today's date fixes its own date
+  ("Tuesday 4 Nov 2026, 2 PM ET") through `tests/clock.js`, never `Date.now()` or `new Date()`.
+  Anything that reads a date gets boundary tests: midnight UTC (still yesterday in New York),
+  the last day of a month at 11 PM ET, the last day of the fiscal year, and the DST change.
+  The `real-clock` ratchet (and `test-clock-seam` §5 with `audit/test-clock-direct.json`) counts
+  the tests that still read the real clock; the count may only go down. **The weekend pin**
+  (`STEWARD_TEST_NOW` set to Monday noon ET on a Saturday or Sunday) **stays until that count is
+  zero**, and then it goes.
 
 ## Where the rest goes
 
@@ -107,8 +151,16 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
   - `scripts/ci/`: what CI, the battery, the hooks or a test runs.
   - `scripts/once/`: a one-time script. It is deleted after it has run on prod and Jonathan
     says so. A script that only served one build's walk or capture is deleted with that build.
-  - The existing folders (`scripts/lib/`, `scripts/load/`, `scripts/sql/`, `scripts/nightly-ai/`,
-    `scripts/demo-sites/`, `scripts/demo-assets/`, `scripts/fixtures/`) stay where they are.
+  - The existing folders (`scripts/lib/`, `scripts/seed/`, `scripts/load/`, `scripts/sql/`,
+    `scripts/nightly-ai/`, `scripts/demo-sites/`, `scripts/demo-assets/`, `scripts/fixtures/`)
+    stay where they are. `scripts/README.md` lists what Jonathan runs, with each command.
+  - A deleted script is listed in `docs/architecture/scripts-removed.md`; `git show` brings it back.
+- **Routes.** A route is deleted only when a person-readable search shows no caller in the
+  client, the server, emails, templates, schedulers, scripts and outside services (Stripe,
+  Resend, Mailchimp, PayPal, QuickBooks, Google, Microsoft), **and** its path carries none of
+  `token`, `webhook`, `public`, `pay`, `unsubscribe`, `callback` or `run`. A route that fails
+  either test needs Jonathan's yes. Every route reviewed is a line in
+  `docs/architecture/routes-reviewed.md`: who calls it, or what was searched.
 - **Generated files** (suite timings, the route inventory, anything a run writes) are never
   committed. They are written to `.generated/` (git-ignored) and rebuilt on demand. The one
   committed baseline is `audit/suite-counts.json`, the pass-count ratchet, because a ratchet needs
@@ -116,6 +168,9 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
 - **Screenshots and captured output** are not committed. A walk keeps its notes in markdown and
   its pictures outside git. CI fails on any committed image over 500 KB outside
   `client/src/assets/` and `assets/`.
+- **Decisions.** `docs/decisions/house.md` holds the house-wide decisions (soft credits, the
+  weekly email, one fiscal year, the modular monolith, no org-specific code, tests set their own
+  clock); each area's file holds the rest.
 - **History.** One file per brief in `docs/history/` (`docs/history/<BRIEF>.md`). Add a file;
   never edit another brief's. `docs/history/README.md` says how. The same for things waiting on
   Jonathan: `docs/needs-jonathan/<BRIEF>.md`, with `node scripts/ci/needs-jonathan.js` printing
@@ -134,7 +189,9 @@ each one matches:
 | `big-files` | every tracked `.js`/`.jsx` file over 1,500 lines, with its length | `git ls-files`, count `\n`. A file not in the list may not exceed 1,500; a listed file may not exceed its baseline + 50 |
 | `route-gift-sql` | per file in `routes/`, the lines that sum `amount` or window gift dates | a line matches `SUM(` … `amount`, or `g.date`/`gifts.date` compared with `>=`/`<=`/`BETWEEN`, or `LEFT(…date…, 4)`; counted per file |
 | `fiscal-year` | per file, the lines that compute a fiscal-year boundary | a line reads `fiscal_year_start_month` / `orgFiscalStartMonth(` / `fiscalStartMonth` **and** builds a date from it, or is a known hand-rolled form (`fyOf`, `finPeriodBounds`, `windowsFor`); `orgTime.js` and `shared/fiscalPeriod.js` are exempt |
-| `scripts-root` | the files in the `scripts/` root | `git ls-files scripts/` with no further `/`; the list may only shrink |
+| `scripts-root` | the files in the `scripts/` root | `git ls-files scripts/` with no further `/` (a README excepted); the list may only shrink |
+| `real-clock` | per test file, the real-clock reads | the lines of `tests/*.js` (not `clock.js`) with `Date.now()` or a bare `new Date()`, comments stripped |
+| `org-specific` | per app file, lines naming one org | a quoted `org_<id>` literal, `org_slug === "…"`, or `orgId === "org_…"`, in app code (not tests, scripts, docs or audit) |
 | `big-images` | none (it is a hard rule, not a ratchet) | any committed image over 500 KB outside `client/src/assets/` and `assets/` |
 
 A pattern match will miss things and catch some innocent lines. That is the trade: it is a

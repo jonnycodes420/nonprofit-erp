@@ -54,6 +54,17 @@ const FISCAL = new RegExp([
 const FISCAL_HOME = new Set(["orgTime.js", "shared/fiscalPeriod.js"]);
 const isAppCode = f => CODE.test(f) && !/^(tests|scripts|docs|audit|node_modules)\//.test(f) && !/(^|\/)node_modules\//.test(f);
 
+// A test that reads the real clock instead of setting its own (the same count
+// tests/test-clock-seam.test.js §5 holds against audit/test-clock-direct.json).
+const REAL_CLOCK = /Date\.now\(\s*\)|new Date\(\s*\)/;
+const isTestFile = f => /^tests\/[^/]+\.js$/.test(f) && !/^tests\/(clock|test-clock-seam\.test)\.js$/.test(f);
+const countClock = f => read(f).split("\n").filter(l => REAL_CLOCK.test(l.replace(/\/\/.*$/, ""))).length;
+
+// Code for one customer: an org id written into app code, or a branch on one
+// org's slug. Differences between orgs are settings or data. Tests, scripts and
+// fixtures are exempt (a fixture org is supposed to have an id).
+const ORG_SPECIFIC = /["'`]org_[a-z0-9][a-z0-9_]{2,}["'`]|org_slug\s*===?\s*["'`]|\borgId\s*===?\s*["'`]org_/;
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i;
 const IMAGE_OK = f => f.startsWith("client/src/assets/") || f.startsWith("assets/");
 
@@ -78,8 +89,18 @@ const CHECKS = {
   },
   "scripts-root": {
     what: "files in the scripts/ root (new ones go in scripts/ops, ci or once)",
-    measure: files => Object.fromEntries(files.filter(f => /^scripts\/[^/]+$/.test(f)).map(f => [f, 1])),
+    measure: files => Object.fromEntries(files.filter(f => /^scripts\/[^/]+$/.test(f) && !/README\.md$/.test(f)).map(f => [f, 1])),
     worse: (key, now, base) => base == null ? `${key} is new in the scripts/ root; put it in scripts/ops/, scripts/ci/ or scripts/once/` : null,
+  },
+  "real-clock": {
+    what: "test files that read the real clock (Date.now(), new Date()) instead of setting their own",
+    measure: files => Object.fromEntries(files.filter(isTestFile).map(f => [f, countClock(f)]).filter(([, n]) => n > 0)),
+    worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} real-clock reads (baseline ${base || 0}); set the test's own time through tests/clock.js` : null,
+  },
+  "org-specific": {
+    what: "app code naming one org (an org id or slug in code; tests, scripts and fixtures excepted)",
+    measure: files => Object.fromEntries(files.filter(isAppCode).map(f => [f, countLines(f, ORG_SPECIFIC)]).filter(([, n]) => n > 0)),
+    worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} lines naming one org (baseline ${base || 0}); make it a setting or data` : null,
   },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
@@ -107,7 +128,7 @@ for (const [name, c] of Object.entries(CHECKS)) {
     for (const b of bad) out.push(`      ${b}`);
   } else {
     const lower = Object.keys(base).filter(k => (now[k] || 0) < base[k]).length;
-    out.push(`  ✓ ${name}: ${c.hard ? "none" : `${Object.keys(now).length} file(s), ${name === "big-files" || name === "scripts-root" ? "" : total(now) + " line(s), "}within the baseline`}${lower ? ` (${lower} below it: run --update to lower it)` : ""}`);
+    out.push(`  ✓ ${name}: ${c.hard ? "none" : `${Object.keys(now).length} file(s), ${name === "big-files" || name === "scripts-root" ? "" : total(now) + (name === "real-clock" ? " read(s), " : " line(s), ")}within the baseline`}${lower ? ` (${lower} below it: run --update to lower it)` : ""}`);
   }
   if (UPDATE && !c.hard && !bad.length) {
     // Only ever down: each key keeps the lower of its baseline and today, and a

@@ -155,6 +155,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 Read the decisions file before you touch its area. Each one opens with "Read this when you
 touch …", then the rules, then the reference sections moved from the old CLAUDE.md.
 
+- `docs/decisions/house.md` — the decisions that hold everywhere: soft credits, the weekly email, one fiscal year, the monolith, no org-specific code, tests set their clock.
 - `docs/decisions/money-and-gifts.md` — gifts, `recordGift`, funds, attribution, ledger, soft credits, cheques, giving sources.
 - `docs/decisions/imports.md` — file import, shape detection, the mapper, money/date parsing, dedupe, exports.
 - `docs/decisions/mail-and-notifications.md` — every send: Resend, `donorMailDecision`, the mail block, appeals, sequences, notifications.
