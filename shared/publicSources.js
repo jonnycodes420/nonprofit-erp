@@ -32,7 +32,7 @@
 // signed up for a connection that does not work.
 //
 // Pure: no DB, no network, no clock, no JSX. Imported by the landing page, by
-// scripts/landing-prod-verify.js, and by tests/build91-public-sources.test.js.
+// scripts/ops/landing-prod-verify.js, and by tests/build91-public-sources.test.js.
 
 // ── WHY THIS FILE DOES NOT IMPORT THE PROVIDER REGISTRY ────────────────────
 // shared/givingSources.js is the registry and would be the obvious import.

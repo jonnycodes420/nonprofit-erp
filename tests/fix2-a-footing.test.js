@@ -292,7 +292,7 @@ async function foots(tok, fig) {
   // The other half of the guard, on the source: on an in-scope screen (the
   // four dashboards, the Campaigns list and every campaign page) a number is
   // drawn only by a <Figure> written with a source.
-  const census = require("../scripts/build97-number-census");
+  const census = require("../scripts/ci/build97-number-census");
   const srcProbs = census.figureSourceProblems();
   ok(`§1 every <Figure> on ${census.FIGURE_SOURCE_SCOPE.join(", ")} has a source, and no number is drawn any other way`,
     census.FIGURE_SOURCE_SCOPE.includes("components/CampaignsList.jsx") && srcProbs.length === 0, srcProbs.slice(0, 5));

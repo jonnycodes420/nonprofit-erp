@@ -4,13 +4,13 @@
 // four Some, three Not yet known), and two foundations with made-up EINs. Their
 // public filing rows are in tests/fixtures/irs-bmf/eo_fixture.csv, made-up
 // rows in the IRS EO BMF's own columns; production reads the real IRS file
-// that scripts/load-irs-bmf.js loads, where these two EINs are not.
+// that scripts/ci/load-irs-bmf.js loads, where these two EINs are not.
 // The sample screening file a provider might return is
 // tests/fixtures/prospect1/harborlight-screening-return.csv: it matches six of
 // the ten (by the Steward ID sent out, or by email) and has one row that
 // matches nobody, which the import lists rather than guesses.
 //
-// Called by scripts/seed-demo.js only, before the scores are computed, so the
+// Called by scripts/ci/seed-demo.js only, before the scores are computed, so the
 // generosity and engagement reasons read the seed's own numbers. It checks
 // itself through prospect.js, the same rule the profile reads, and stops if
 // the words are not what this header says.

@@ -1352,7 +1352,7 @@ async function donorScreensSayNothingWrong(browser) {
   if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
-    ok("the demo org is on this database (run scripts/seed-demo.js)", false, login.status);
+    ok("the demo org is on this database (run scripts/ci/seed-demo.js)", false, login.status);
     return summary("smoke-walk");
   }
   ok("logged in to the demo", true);

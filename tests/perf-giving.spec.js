@@ -136,7 +136,7 @@ async function measure(browser, p) {
 
 (async () => {
   const why = (() => {
-    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/build-local-dist.sh)";
+    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
     return null;
   })();

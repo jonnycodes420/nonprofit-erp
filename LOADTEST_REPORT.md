@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-16 · **Verdict: tested to 25k donors / 200k gifts / 150k interactions — every hot path sub-second after fixes; before them, the Home screen was unusable at this scale (>15 min per load).**
 
-Everything ran against LOCAL infrastructure (real `server.js` + real local PostgreSQL 16), never production. Harness: `scripts/seed-loadtest.js` (deterministic synthetic org) + `scripts/loadtest.js` (autocannon driver) — both committed, rerunnable.
+Everything ran against LOCAL infrastructure (real `server.js` + real local PostgreSQL 16), never production. Harness: `scripts/ops/seed-loadtest.js` (deterministic synthetic org) + `scripts/loadtest.js` (autocannon driver) — both committed, rerunnable.
 
 ## Environment
 
@@ -15,7 +15,7 @@ Everything ran against LOCAL infrastructure (real `server.js` + real local Postg
 
 Production is Supabase over a network hop, so absolute numbers there will be worse across the board. The findings here are the *complexity cliffs* and the *relative* before/after — those transfer.
 
-## Seed profile (deterministic, `scripts/seed-loadtest.js`)
+## Seed profile (deterministic, `scripts/ops/seed-loadtest.js`)
 
 - **org_loadtest** — 25,000 donors, 202,561 gifts (power-law: ~1% majors with 10–60 gifts, long small-gift tail), 150,000 interactions, 500 recurring subscriptions (5% at-risk), 50 grants, 20 funds, 20 campaigns; dates spread over 6 years so LYBUNT/retention/lapsed predicates do real work. Donor aggregates (total_giving, first/last gift, gift_count) derived from the generated gifts, not invented.
 - **org_smalltest** — 300 donors / 2,051 gifts / 1,500 interactions (noisy-neighbor probe).

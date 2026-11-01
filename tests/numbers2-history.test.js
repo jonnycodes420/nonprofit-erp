@@ -59,7 +59,7 @@ const giftId = async (donor, amount) => (await q(`SELECT id FROM gifts WHERE don
   console.log(`numbers2-history (NUMBERS-2) · seed ${SEED}`);
   await wipe(`${PREFIX}%`);
   const today = civilToday();
-  const { checkOrg } = require("../scripts/check-numbers");
+  const { checkOrg } = require("../scripts/ci/check-numbers");
   const NUM = require("../numbers");
 
   // ── §1 an imported total is never erased ───────────────────────────────

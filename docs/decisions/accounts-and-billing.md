@@ -186,7 +186,7 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **An org is a demo only if its Kind is Demo (FIX-50).** Ask `orgKind.isDemoOrg(org)` (select `org_kind`) or
   `orgKind.demoOrgSql(alias)`; never read `is_demo_org`, an id list or the name. The flag is a copy of Kind kept by
   the trigger in `orgDemoMigration.js`. The guess (`inferKind`) never says Demo. The super-admin Demo switch sets Kind.
-- **Prod cleanup is `scripts/admin-clean.js`, run by Jonathan**, dry run first. It never merges duplicates and never
+- **Prod cleanup is `scripts/ci/admin-clean.js`, run by Jonathan**, dry run first. It never merges duplicates and never
   writes `org_b72demo` or `org_creo`.
 
 ### FIX-AUTH — a revoked session is refused, and the client acts on it
@@ -239,7 +239,7 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   `checkBillingPriceModes`, `orgPlanTier`/`requirePlan`, `checkWriteAccess`
 - `client/src/pages/Pricing.jsx`, `components/PlanPicker.jsx`, `shared.jsx` `goToPricing`, `api.js`
   `billingErrorMessage`
-- `scripts/create-billing-products.js` — provisions prices (test first; `--live` required for live)
+- `scripts/once/create-billing-products.js` — provisions prices (test first; `--live` required for live)
 - `tests/close-link`, `trial-billing`, `one-date`, `billing`, `build92-close-existing`,
   `permissions-matrix`, `build98-security`, `first-login-matrix`
 

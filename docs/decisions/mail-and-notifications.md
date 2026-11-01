@@ -180,7 +180,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
   bounce, unsubscribed, deceased, no address, the block list: marked failed with its reason, in `email_log`, never
   tried again). Pledge reminders keep it on `pledges.reminder_failed_at`/`reminder_error`; dunning logs `dunning_skipped`.
 - **Before the real Resend key goes back on, or an org's donor mail is switched on, run
-  `DATABASE_URL=<prod> node scripts/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
+  `DATABASE_URL=<prod> node scripts/ci/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
 - **No automated onboarding or welcome series to org staff, ever (Jonathan, 2026-10-04).** He writes and
   sends onboarding himself; nothing creates an onboarding sequence and the engine stops any left over.
 - **Refuse `is_sample` donors, demo orgs and mail-off orgs for every kind, above the transactional split.**
@@ -190,7 +190,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
   every `emails.send` to `email_log` (recipient DOMAIN only, never the address) and applies the permanent
   block; `opsAlert` and `routes/migc.js` are the known raw sends and check the block themselves. (BUILD-97)
 - **`email_log.gate` and `donor_ids` (ids, never addresses) record which arm of the send gate let a donor
-  message go and to whom (HARDEN-1).** `scripts/auto-mail-switches-readonly.sql` reads them by hand. The
+  message go and to whom (HARDEN-1).** `scripts/ops/auto-mail-switches-readonly.sql` reads them by hand. The
   3:30 AM nightly check that read them was removed (NIGHTLY-OFF); its five checks live on as read-only
   `scripts/*-readonly.sql` files that Jonathan runs.
 - **Build org-scoped send options with `donorSendOpts` (or set `_stewardOrgId`/`_stewardKind`).** That tag is

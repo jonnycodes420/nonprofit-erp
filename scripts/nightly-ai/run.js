@@ -261,7 +261,7 @@ async function spend() {
   const db = new Client({ connectionString: DB });
   await db.connect();
   const [org] = (await db.query(`SELECT timezone FROM orgs WHERE id = $1`, [ORG])).rows;
-  if (!org) { console.error(`The org ${ORG} is not in this database; seed it first (scripts/seed-demo.js).`); process.exit(2); }
+  if (!org) { console.error(`The org ${ORG} is not in this database; seed it first (scripts/ci/seed-demo.js).`); process.exit(2); }
   const today = civil(org.timezone || "America/New_York");
   const c = {
     db, today, year: Number(today.slice(0, 4)), yearStart: today.slice(0, 4) + "-01-01", monthStart: today.slice(0, 8) + "01",

@@ -109,10 +109,10 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   and portal total sums through `campaignMatch.CAMPAIGN_GIFT_MATCH` (by id, or the legacy name only when the
   gift has no id; a deleted person's gifts count nowhere). Choosing an out-of-window campaign is refused with
   `campaignWindowRefusal`'s sentence; a date edit keeps the attribution and the gift counts toward nothing.
-  `scripts/numbers1-campaign-window.js` clears old ones. (NUMBERS-1)
+  `scripts/ops/numbers1-campaign-window.js` clears old ones. (NUMBERS-1)
 - **The totals kept on a person are recomputed, never adjusted, by `donorSummary.DONOR_SUMMARY_UPDATE`.**
   Count is gifts above zero; the last gift is by date, then the one recorded last. A soft credit follows its
-  gift's amount (`SOFT_CREDIT_RESIZE`). `node scripts/check-numbers.js --org <id>` proves an org to the cent;
+  gift's amount (`SOFT_CREDIT_RESIZE`). `node scripts/ci/check-numbers.js --org <id>` proves an org to the cent;
   the server runs it nightly, counts only (`numberCheck.js`). (NUMBERS-1)
 - **Attribute gifts to campaigns by `campaign_id`, never free text.** Foreign campaign is 404; a giving
   page's own campaign wins over a client-sent one; ambiguous attribution attributes nothing. (BUILD-32, FIX attribution)
@@ -242,7 +242,7 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - `server.js` `stampGrantAward`, `ensureOrgLedger`, `fundraisingCampaignRows`, `computeFundraisingPace`
 - `orgTime.js` `orgPeriodBounds`; `server.js` `finPeriodBounds` — fiscal and calendar period bounds
 - `qboSync.js`: QuickBooks Online sync: the Pending definition, the mapping, sales receipts and deposits (PARITY-2)
-- `scripts/consistency-audit.js` — read-only cross-surface reconciliation; run before a pilot goes live
+- `scripts/ops/consistency-audit.js` — read-only cross-surface reconciliation; run before a pilot goes live
 
 ---
 

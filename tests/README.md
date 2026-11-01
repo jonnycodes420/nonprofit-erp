@@ -56,10 +56,10 @@ those fetches got `index.html` back and the portal sat on "Loading…" forever.
 
 ```bash
 cd client && VITE_API_URL=http://localhost:5606 npx vite build
-API=http://localhost:5606 PORT=4173 node scripts/local-preview.js
+API=http://localhost:5606 PORT=4173 node scripts/ci/local-preview.js
 ```
 
-`scripts/local-preview.js` is that stand-in: the same rewrite table, pointed at
+`scripts/ci/local-preview.js` is that stand-in: the same rewrite table, pointed at
 the local API. It refuses any non-loopback `API` by construction.
 
 ## Boot the server + seed
@@ -75,7 +75,7 @@ DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
 # seed the 25k-donor load-test org (needed by donors-pagination; the other
 # suites create their own small fixture orgs but reuse its org_smalltest
 # admin as the org-isolation probe)
-DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" node scripts/seed-loadtest.js
+DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" node scripts/ops/seed-loadtest.js
 ```
 
 Note: `/health` reports `db:true` before `initSchema` finishes — wait for the
@@ -148,7 +148,7 @@ suite's send simply fails-and-logs against the unbound port — no real email ev
 leaves either way.
 
 Four suites are **not** in the standard run (extra setup — run individually):
-`donors-pagination` + `reports` (`node scripts/seed-loadtest.js` first),
+`donors-pagination` + `reports` (`node scripts/ops/seed-loadtest.js` first),
 `email-footer` (mock Resend on :5602), `export-zip` (`unzip` + loadtest org),
 `cover-fees` (real Stripe test creds).
 

@@ -787,7 +787,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const keyOf = r => `${r.method} ${r.path}`;
   const liveSet = new Set(inv.map(keyOf)), fileSet = new Set(committed.routes.map(keyOf));
   const drift = [...liveSet].filter(k => !fileSet.has(k)).concat([...fileSet].filter(k => !liveSet.has(k)));
-  ok("committed audit/route-inventory.json matches the live router (re-run scripts/build75-route-inventory.js when routes change)",
+  ok("committed audit/route-inventory.json matches the live router (re-run scripts/ops/build75-route-inventory.js when routes change)",
      drift.length === 0, drift.slice(0, 10));
 
   const isPublic = r => r.auth.length === 0 || r.auth.every(a => /[lL]imiter|Parser/.test(a));

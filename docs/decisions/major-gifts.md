@@ -231,8 +231,8 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
 - `shared/majorGiftsDash.js` — dashboard tiles and their definitions
 - `shared/importShape.js` — `detectOwnerColumn`, `matchOwnersToUsers`, `groupOwnerMatches`, `WEALTH_HDR`
 - `client/src/components/MajorGifts.jsx` — proposals, portfolio, plans, brief, dashboard; `Pipeline.jsx` — the board
-- `prospect.js` `lookupFiling` / `shapeFiling` + `scripts/load-irs-bmf.js`: the public filing, read from `irs_bmf` (FIX-22)
-- `scripts/build99-brief-drill.js` — the manual real-model brief drill (not in the battery)
+- `prospect.js` `lookupFiling` / `shapeFiling` + `scripts/ci/load-irs-bmf.js`: the public filing, read from `irs_bmf` (FIX-22)
+- `scripts/ops/build99-brief-drill.js` — the manual real-model brief drill (not in the battery)
 
 ---
 
@@ -287,10 +287,10 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   product.** (FIX-22; PROSPECT-1 used ProPublica, whose terms forbid charging people to see the data.) The source
   is the Exempt Organizations Business Master File (EO BMF,
   https://www.irs.gov/charities-non-profits/exempt-organizations-business-master-file-extract-eo-bmf), which the
-  IRS refreshes monthly. `scripts/load-irs-bmf.js` loads eo1.csv to eo4.csv (or local files with `--file`) into
+  IRS refreshes monthly. `scripts/ci/load-irs-bmf.js` loads eo1.csv to eo4.csv (or local files with `--file`) into
   `irs_bmf`, one row per EIN, replacing the whole table in one transaction; `source_date` is the IRS file's own
   date (its Last-Modified). Load it once a month on prod:
-  `DATABASE_URL=<prod> node scripts/load-irs-bmf.js --i-know-this-is-prod`.
+  `DATABASE_URL=<prod> node scripts/ci/load-irs-bmf.js --i-know-this-is-prod`.
 - **A lookup reads `irs_bmf` and nothing else.** Pressing Look up copies the row onto the person in
   `public_filings` (with the file and its date); no page render and no button press reaches the network. When the
   table is empty the answer says so in words ("The IRS file ... has not been loaded"), never "no filing found".

@@ -80,6 +80,6 @@ Read this when you touch the donor portal, white-label surfaces, /giving, the di
   `portalScale.js`, `portalTheme.js`, `portalCrop.js`
 - `server.js` `portalThemePayload`, `givingAccountEntry`, `linkOrgJoinsNetwork`, `requireDonorAccount`,
   `requireFlag`, `stripeChargesEnabled`
-- `scripts/load-irs-ein-registry.js` — the EIN registry loader (monthly)
+- `scripts/ops/load-irs-ein-registry.js` — the EIN registry loader (monthly)
 - `tests/org-blindness`, `portal`, `donor-accounts`, `donor-linking`, `donor-dashboard`, `network-gate`,
   `network-directory`, `donor-front-door`, `portal-visual`, `portal-contrast`

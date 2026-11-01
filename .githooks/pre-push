@@ -50,7 +50,7 @@ fi
 # false positives is a gate people learn to bypass. A self-reference needs no
 # judgement at all: it is always a bug.
 echo "[pre-push] tdz-scan (self-references)"
-if ! node scripts/tdz-scan.js; then
+if ! node scripts/ci/tdz-scan.js; then
   echo ""
   echo "[pre-push] BLOCKED: a const reads itself. That is always a bug — it throws"
   echo "[pre-push] ReferenceError at runtime and takes the screen to its error boundary."
@@ -132,10 +132,10 @@ case "$mode" in
     # FIX-60 item 6: against a server that is already up, the browser legs use
     # whatever client/dist is here. A dist built for that server from an older
     # commit (or before an uncommitted edit) is rebuilt, never tested as if it
-    # were this push. scripts/dist-fresh.js is the one check; run-all.sh's
+    # were this push. scripts/ci/dist-fresh.js is the one check; run-all.sh's
     # sharded runs use the same one.
     if [ -z "$self" ]; then
-      node scripts/dist-fresh.js --rebuild --if-present --api "$hbase" \
+      node scripts/ci/dist-fresh.js --rebuild --if-present --api "$hbase" \
         || echo "[pre-push] WARNING: the client rebuild failed — the browser legs will skip"
     fi
     if ! env $self SUITES="$selection" bash tests/run-all.sh; then

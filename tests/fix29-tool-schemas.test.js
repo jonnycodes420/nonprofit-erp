@@ -101,7 +101,7 @@ function count(schema) {
   // §3 THE INVENTORY IS WHOLE. Each file's input_schema count is what the
   // list above covers; a new one fails here until it is added.
   const EXPECTED = { "askQuery.js": 1, "shared/meetingNote.js": 2, "shared/askCatalog.js": 1, "shared/showMe.js": 1,
-    "routes/crm.js": 3, "routes/agent.js": 3, "scripts/build95-cheque-drill.js": 1, "capture.js": 2,   // FIX-45: the fund pick   // AGENT-3: the batched plan call is PLAN_SCHEMA again
+    "routes/crm.js": 3, "routes/agent.js": 3, "scripts/ops/build95-cheque-drill.js": 1, "capture.js": 2,   // FIX-45: the fund pick   // AGENT-3: the batched plan call is PLAN_SCHEMA again
     "shared/voiceMemo.js": 1, "routes/voice.js": 2, "shared/voiceTalk.js": 1,   // VOICE-3: the log/do/ask sort, defined in shared and sent by the route (meeting mode's two went with it)
     "shared/clientSafe.js": 1, "clientSafe.js": 1,
     "shared/sheetRead.js": 1, "routes/sheetImport.js": 1,

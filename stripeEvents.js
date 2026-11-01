@@ -7,7 +7,7 @@
 // event types Steward's handler processes. It is kept honest by
 // `tests/webhook-manifest.test.js`, which scans the handler source and FAILS if
 // a `case` exists with no manifest entry OR a manifest entry has no `case` — so
-// the manifest cannot drift from the handler. `scripts/check-webhook-subscriptions.js`
+// the manifest cannot drift from the handler. `scripts/ops/check-webhook-subscriptions.js`
 // and the /health `webhookSubscriptions` counter diff this manifest against the
 // LIVE endpoint's subscribed list, so a handled-but-unsubscribed event becomes
 // visible instead of silent.

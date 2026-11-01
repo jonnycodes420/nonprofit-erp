@@ -220,7 +220,7 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
                   ('g_b88a1_dupe2',$1,$2,500,$3,'cash','ff_b88a1','Check')`,
     [ORG, donors.form, TODAY]);
   await q(`UPDATE donors SET total_giving = total_giving + 1000, gift_count = gift_count + 2 WHERE id=$1`, [donors.form]);
-  const script = path.join(__dirname, "..", "scripts", "build88a-dedupe-gifts.js");
+  const script = path.join(__dirname, "..", "scripts", "ci", "build88a-dedupe-gifts.js");
   const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest" };
   const dry = execFileSync("node", [script, "--org", ORG], { env, encoding: "utf8" });
   ok("the de-duplication script finds the twins and, by default, only SAYS so",

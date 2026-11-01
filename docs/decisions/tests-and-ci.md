@@ -26,12 +26,12 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **CI runs on `main` only.** A push to a build branch is gated by nothing, so run the battery
   locally and say that CI gates at the merge. (BUILD-99)
 - **Verify a deploy by what is actually live, never by the config that claims to gate it.**
-  `node scripts/status.js` compares HEAD, origin, the backend's `buildSha` and the frontend's
+  `node scripts/ci/status.js` compares HEAD, origin, the backend's `buildSha` and the frontend's
   `build-sha` meta. The `deploy-vercel` CLI job ignores `vercel.json`'s `deploymentEnabled`. (BUILD-92)
 - **Verify the frontend by CONTENT, not HTTP status.** The SPA rewrite answers a missing asset
   with 200 and `index.html`. Fetch prod's `main-*.js` and grep for a string your change added.
   (BUILD-91)
-- **A new route means re-running `scripts/build75-route-inventory.js` in the same commit.** It
+- **A new route means re-running `scripts/ops/build75-route-inventory.js` in the same commit.** It
   needs `DATABASE_URL`, `JWT_SECRET`, `RESEND_API_KEY` and `STRIPE_SECRET_KEY` to boot, and
   `tenant-matrix` fails if `audit/route-inventory.json` differs from the live router. (BUILD-84)
 - **A new parameterized route needs a tenant probe (a `bResolver` entry) or a reasoned
@@ -64,8 +64,8 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   and `STEWARD_TEST_DB_TZ=UTC TZ=UTC` for CI's zone. `test-clock-seam` §5 holds real-clock reads per
   file to `audit/test-clock-direct.json`: a count may fall, never rise. (FIX-42)
 - **A real boundary is proven by a `SELF_REFUSING` drill against the real service, and an
-  undrilled one is decided or goes in `NEEDS-JONATHAN.md` (never a new `BLOCKED-*.md`).** Examples are `scripts/build58-stripe-drill.js`
-  and `scripts/build95-cheque-drill.js`. (BUILD-57, BUILD-58, BUILD-95)
+  undrilled one is decided or goes in `NEEDS-JONATHAN.md` (never a new `BLOCKED-*.md`).** Examples are `scripts/ops/build58-stripe-drill.js`
+  and `scripts/ops/build95-cheque-drill.js`. (BUILD-57, BUILD-58, BUILD-95)
 - **A walk checks the status of every write it makes.** An ignored 409 lets a walk pass against
   its own broken fixtures. It also fails on any console error, not only on a `pageerror`. (BUILD-84)
 - **Never `JSON.stringify` a payload and then substring-search it.** Walk the payload with
@@ -99,11 +99,11 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)
 - **A `client/dist` built before a rebase, a merge or an uncommitted client edit is stale, and is rebuilt.**
-  `scripts/dist-fresh.js` is the one check: built against this API, from HEAD, with no change to the
+  `scripts/ci/dist-fresh.js` is the one check: built against this API, from HEAD, with no change to the
   client's inputs since (the stamp `build-local-dist.sh` writes). The sharded battery and the pre-push
   hook both rebuild through it; a hand-run `SHARDS=1` battery does not, so run it first. (PARITY-2, FIX-60)
-- **For a browser leg, build dist with `scripts/build-local-dist.sh` and serve it with
-  `scripts/local-preview.js` on :4173.** A dist with only `VITE_API_URL` breaks the portal paths.
+- **For a browser leg, build dist with `scripts/ops/build-local-dist.sh` and serve it with
+  `scripts/ci/local-preview.js` on :4173.** A dist with only `VITE_API_URL` breaks the portal paths.
   `vite preview` has no rewrites, whatever that script's closing echo says. (BUILD-75, BUILD-89S)
 - **`npx vite build` skips the brand guard.** `npm run build --prefix client` runs
   brand-allowlist, then `eslint src` (no-undef and rules-of-hooks are errors), then vite. (BUILD-96)
@@ -170,9 +170,9 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - `tests/permissions-matrix.test.js`, `tests/first-login-matrix.test.js` — role and tier data tables
 - `tests/deploy-shape.test.js` — every server import resolves inside the Railway artifact
 - `tests/script-guards.test.js` + `scripts/lib/prodGuard.js` — script classification and prod guard
-- `scripts/status.js` — the post-deploy drift check across HEAD, origin, backend and frontend
-- `scripts/build-local-dist.sh`, `scripts/local-preview.js` — local dist and the vercel.json mirror
-- `scripts/consistency-audit.js` — the read-only reconciliation against prod, run before a pilot
+- `scripts/ci/status.js` — the post-deploy drift check across HEAD, origin, backend and frontend
+- `scripts/ops/build-local-dist.sh`, `scripts/ci/local-preview.js` — local dist and the vercel.json mirror
+- `scripts/ops/consistency-audit.js` — the read-only reconciliation against prod, run before a pilot
 
 ---
 
@@ -201,12 +201,12 @@ battery are not optional.
 **The grep that catches it** — every `const`/`let`/`class` read above its own
 declaration in a file:
 
-`scripts/tdz-scan.js` — run it on a file, a directory, or with no argument for
+`scripts/ci/tdz-scan.js` — run it on a file, a directory, or with no argument for
 all of `client/src` and `shared/`:
 
 ```bash
-node scripts/tdz-scan.js client/src/pages/TermsPage.jsx
-node scripts/tdz-scan.js                 # everything
+node scripts/ci/tdz-scan.js client/src/pages/TermsPage.jsx
+node scripts/ci/tdz-scan.js                 # everything
 ```
 
 It reports two shapes, and only one of them is in the default output:
@@ -249,7 +249,7 @@ The verification discipline is not negotiable; the CEREMONY around it is. Five w
 2. **A test family is the SMALLEST set that catches the regression** — not every combination that could be enumerated. The question is "what would have to break for this to fail", answered once, honestly; a suite that cannot fail is ceremony with a pass count.
 3. **Screenshots only when a walkthrough FOUND a defect.** A green walk needs its assertions committed, not its pictures. (The walks that earned their images — BUILD-84's import, BUILD-86's `day 0` and the Board-management collision — all found something.)
 4. **Independent parts run in PARALLEL WORKTREES and merge in order.** Sequential work that has no dependency between its halves is just a longer build.
-5. **Prod smoke ONCE per push**, not once per commit. `node scripts/status.js` after the push that deploys, not after each one that does not.
+5. **Prod smoke ONCE per push**, not once per commit. `node scripts/ci/status.js` after the push that deploys, not after each one that does not.
 
 **What this does NOT relax:** the full battery stays green before every push, the pre-push hook is never bypassed, a new route still needs its tenant probe or a reasoned exemption, and a guard still has to be PROVEN able to fail. Speed comes out of the paperwork, never out of the evidence.
 
@@ -258,7 +258,7 @@ The verification discipline is not negotiable; the CEREMONY around it is. Five w
 - **A guard whose number cannot fall is not measuring coverage** (BUILD-75 A.6, from the BUILD-74 date-audit defect: a defective helper counted as one site forever at its definition, so every new call site was invisible and `total <= BASELINE` could never fire while coverage decayed). When you add a guard or assertion: state explicitly what would have to happen for it to fail, and PROVE it fails on a tree where the defect exists (see `tests/date-seam.test.js` §8 — synthetic-tree proofs — for the pattern). Report counts on separate axes separately (expressions written vs values consumed); never sum them into one number.
 - After every change, run: git add -A && git commit -m "..." && git push origin main. Always run `git status` and `git log --oneline -3` to CONFIRM the commit landed — do not report work as "done" until git confirms it's committed and pushed.
 - **Scripted verification is committed with the feature, not discarded after passing.** Suites live in `tests/` (see `tests/README.md` for the scratch-Postgres recipe). BUILD-02/03 discarded theirs and BUILD-05 had to improvise capture-and-diff parity checks as a result — that's the failure mode this rule exists to prevent.
-- **The standard test run is `bash tests/run-all.sh` (= `npm test`) — keep it green.** It runs all 40 self-contained suites incl. `tests/consistency-e2e.test.js` (the cross-surface duplication guardrail, BUILD-23), `tests/workflows-e2e.test.js` (BUILD-25 — workflows fire on live events only), `tests/finance-reports-consistency` / `name-normalize` / `reserved-recovered` (BUILD-26), and `tests/concurrency.test.js` (BUILD-27 — parallel-race guarantees). Boot the scratch server with `STRIPE_WEBHOOK_SECRET=whsec_localtest` AND `RESEND_BASE_URL=http://localhost:5602` first (workflows-e2e captures recipe emails at that sink) — see the boot recipe in `tests/README.md`. Before a pilot goes live, also run the read-only reconciliation audit against prod: `node scripts/consistency-audit.js` (see "Cross-surface consistency" below).
+- **The standard test run is `bash tests/run-all.sh` (= `npm test`) — keep it green.** It runs all 40 self-contained suites incl. `tests/consistency-e2e.test.js` (the cross-surface duplication guardrail, BUILD-23), `tests/workflows-e2e.test.js` (BUILD-25 — workflows fire on live events only), `tests/finance-reports-consistency` / `name-normalize` / `reserved-recovered` (BUILD-26), and `tests/concurrency.test.js` (BUILD-27 — parallel-race guarantees). Boot the scratch server with `STRIPE_WEBHOOK_SECRET=whsec_localtest` AND `RESEND_BASE_URL=http://localhost:5602` first (workflows-e2e captures recipe emails at that sink) — see the boot recipe in `tests/README.md`. Before a pilot goes live, also run the read-only reconciliation audit against prod: `node scripts/ops/consistency-audit.js` (see "Cross-surface consistency" below).
 
 ## Deploys — gated behind green CI (deploy rewire, 2026-08-11)
 Full before/after + break-glass: `audit/deploy-rewire.md`. The shape:

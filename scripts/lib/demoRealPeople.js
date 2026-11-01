@@ -18,7 +18,7 @@
 //      are all `pi_demo_…`): real money means a real person paid it.
 //
 // READ-ONLY. This module only SELECTs; it is shared by the seed (which then
-// removes what it finds, in scripts/seed-demo.js) and by the prod check
+// removes what it finds, in scripts/ci/seed-demo.js) and by the prod check
 // (scripts/demo-real-people-check.js, PROD_READONLY). `q(sql, params)` must
 // return rows.
 "use strict";

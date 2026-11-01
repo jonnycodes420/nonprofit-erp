@@ -92,7 +92,7 @@ let PG_DELAY = 0, PG_COUNT = 0;
   }; }
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { FAKE_ROUTING, FAKE_ACCOUNT, FIXTURES } = require("../scripts/capture1-make-fixtures.js");
+const { FAKE_ROUTING, FAKE_ACCOUNT, FIXTURES } = require("../scripts/ci/capture1-make-fixtures.js");
 const FX = path.join(__dirname, "fixtures", "capture1");
 const dataUrl = (f, t) => `data:${t};base64,${fs.readFileSync(path.join(FX, f)).toString("base64")}`;
 

@@ -47,7 +47,7 @@ async function createdAsDemoThenCustomer(id, name) {
 }
 
 function preflightDemo(orgId) {
-  const out = execFileSync(process.execPath, [path.join(__dirname, "..", "scripts", "mail-preflight.js")],
+  const out = execFileSync(process.execPath, [path.join(__dirname, "..", "scripts", "ci", "mail-preflight.js")],
     { env: { ...process.env }, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   const lines = out.split("\n");
   const i = lines.findIndex(l => l.startsWith(orgId + " "));

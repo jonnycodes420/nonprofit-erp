@@ -1,6 +1,6 @@
 // scripts/seed/parity2-memberships.js: PARITY-2 Part 1. THE MEMBERSHIP PAGE.
 //
-// Called with one line from scripts/seed-demo.js main(), after the MEMBERS-2
+// Called with one line from scripts/ci/seed-demo.js main(), after the MEMBERS-2
 // block has written Harborlight's three levels. It gives each a description
 // for its card and an order on the page, so the page shows three cards. It also
 // adds one monthly level, HIDDEN: the brief asks for a three-level page, and a

@@ -10,7 +10,7 @@
 // money arrives when a winner pays, and the in-kind gift for each donated item
 // is a button the director presses, so the demo's totals are untouched.
 //
-// Called with ONE line from scripts/seed-demo.js main(). `q` takes $n params.
+// Called with ONE line from scripts/ci/seed-demo.js main(). `q` takes $n params.
 "use strict";
 const crypto = require("crypto");
 

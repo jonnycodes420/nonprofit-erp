@@ -148,7 +148,7 @@ PREV_PID=""
 # the API rewrites pointed at this shard's API. One dist is shared (run-all.sh
 # builds it once); only the proxy target differs per shard.
 if [ -f client/dist/index.html ] && [ "${SHARD_PREVIEW:-1}" = "1" ]; then
-  API="http://localhost:$api" PORT="$preview" node scripts/local-preview.js >"$OUT/preview-$N.log" 2>&1 &
+  API="http://localhost:$api" PORT="$preview" node scripts/ci/local-preview.js >"$OUT/preview-$N.log" 2>&1 &
   PREV_PID=$!
 fi
 
@@ -231,7 +231,7 @@ for name in $SUITES_IN; do
   if grep -qE 'org_b72demo|the demo org is not seeded|run-all seeds it before the battery|seed-demo' "$f" 2>/dev/null; then needs_demo=1; break; fi
 done
 if [ "$needs_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
-  if node scripts/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
+  if node scripts/ci/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
     say "seeded the demo org"
   else
     say "seed-demo FAILED — see $LOGDIR/seed-demo.log"
@@ -269,7 +269,7 @@ for name in $SUITES_IN; do
   # CRM for that org) is the suite working, and must not buy an exemption
   # from the count ratchet. helpers' browserLegOrSkip prints the marker.
   legskips=$(grep -c "\[leg-skip\]" "$log" 2>/dev/null || true); legskips=${legskips:-0}
-  # ONE SUMMARY. scripts/shard-report.js prints every suite once, at the end,
+  # ONE SUMMARY. scripts/ci/shard-report.js prints every suite once, at the end,
   # in name order — six shards interleaving their own PASS lines is not a
   # summary, it is six of them. A FAILURE still shows the moment it happens,
   # because waiting six minutes to learn something broke in the first ten

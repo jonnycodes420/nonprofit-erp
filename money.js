@@ -40,7 +40,7 @@
 // carry a money value across a function boundary.
 //
 // Pinned by tests/money-cents.test.js and by the source scan in
-// scripts/build73-money-audit.js, which is run BY that suite — so a new
+// scripts/ci/build73-money-audit.js, which is run BY that suite — so a new
 // Math.round() on a money value fails the build rather than waiting for a
 // donor to notice.
 

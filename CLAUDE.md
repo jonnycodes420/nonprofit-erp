@@ -19,7 +19,7 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
   separate Stripe client. AI through the Anthropic SDK, for narrow tasks only (no chat).
 - App: https://www.stewardapp.dev · API: https://nonprofit-erp-production.up.railway.app
 - Repo: github.com/jonnycodes420/nonprofit-erp · the demo is Harborlight Youth Collective,
-  director@harborlight.demo (`org_b72demo`), seeded only by `scripts/seed-demo.js`
+  director@harborlight.demo (`org_b72demo`), seeded only by `scripts/ci/seed-demo.js`
 - What is live: `GET /health` → `buildSha` (backend) and `<meta name="build-sha">` on
   www.stewardapp.dev (frontend). Never guess from route probes.
 - Only what physically needs Jonathan (a credential, a payment, a signature, a real
@@ -66,7 +66,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   shade), emerald `#0D5C3A` (the one action colour), brass `#C9A84C`. Overdue is brass,
   not red. Red is only for a destructive confirm.
 - **The TDZ rule.** A module-scope or component-scope `const` is declared above every line
-  that reads it. Shared consts go in one block under the imports. Run `scripts/tdz-scan.js`.
+  that reads it. Shared consts go in one block under the imports. Run `scripts/ci/tdz-scan.js`.
 - **A guard must be proven able to fail.** State what would make it fail, then plant that
   defect and watch it go red before you trust the green.
 - **At most ONE new test per build, and only if it guards money, donor data, email or
@@ -87,7 +87,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
-- **The demo is its own org.** Only `scripts/seed-demo.js` writes `org_b72demo`; no suite logs
+- **The demo is its own org.** Only `scripts/ci/seed-demo.js` writes `org_b72demo`; no suite logs
   in to it or names it. `org_creo` is the boot-seed fixture org with a fabricated legal
   identity: never write to it on prod, and a real CREO onboards as a fresh org.
 - **Never kill processes by name or pattern** (no `pkill -f`, no `killall`). Stop only the PIDs
@@ -121,8 +121,8 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   `createdb -h localhost -p 5544 -U steward steward_<tag>`, then boot with
   `DATABASE_URL=postgresql://steward@localhost:5544/steward_<tag>` and the env from the header.
   The first boot builds the schema and demo seed.
-- **Client dist for the browser legs:** `bash scripts/build-local-dist.sh`, then
-  `API=http://localhost:5601 PORT=4173 node scripts/local-preview.js`. Never a bare
+- **Client dist for the browser legs:** `bash scripts/ops/build-local-dist.sh`, then
+  `API=http://localhost:5601 PORT=4173 node scripts/ci/local-preview.js`. Never a bare
   `npx vite build`, because it skips the brand guard. Rebuild after any client edit.
 - **The battery:** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
   (= `npm test`). It SHARDS three ways by default — each shard builds its own database
@@ -134,15 +134,15 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   on: it fails on a dead shard and on any suite whose pass count dropped.
 - **The tenant battery:** `node tests/tenant-matrix.test.js` (boots server.js in-process on
   :5697) and `node tests/tenant-isolation.test.js`. After adding a route, re-run
-  `node scripts/build75-route-inventory.js` in the same commit.
-- **TDZ scan:** `node scripts/tdz-scan.js [file|dir]`. Self-references exit 1. `--all` adds
+  `node scripts/ops/build75-route-inventory.js` in the same commit.
+- **TDZ scan:** `node scripts/ci/tdz-scan.js [file|dir]`. Self-references exit 1. `--all` adds
   the noisy reads-above list.
 - **Deploys go through GitHub Actions only.** Pushing to main runs CI (`.github/workflows/ci.yml`),
   and green tests deploy Railway and Vercel with a SHA-verified health poll. Git auto-deploy is
   off on both sides, and it stays off. Read CI after every push. Break-glass steps are in
   `docs/decisions/tests-and-ci.md`.
-- **Prod smoke:** `node scripts/status.js` (= `npm run status`), once, after the push that
-  deploys. It includes the AI smoke (`scripts/prod-ai-smoke.js`), which CI also runs after deploy.
+- **Prod smoke:** `node scripts/ci/status.js` (= `npm run status`), once, after the push that
+  deploys. It includes the AI smoke (`scripts/ci/prod-ai-smoke.js`), which CI also runs after deploy.
 - **Git:** work on a branch in your own worktree. Never push a branch that sits on another
   session's unpushed commits. Merge to main only on Jonathan's word.
 

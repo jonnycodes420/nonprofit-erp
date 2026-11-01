@@ -1,5 +1,5 @@
 // BUILD-58 Part 3 — dispute / chargeback handling, driven by the REAL Stripe
-// dispute payload recorded by scripts/build58-stripe-drill.js §C
+// dispute payload recorded by scripts/ops/build58-stripe-drill.js §C
 // (tests/fixtures/external/stripe-charge.dispute.created.json). The whole
 // point of the fixture-provenance property: this suite runs the deterministic
 // created → (won | lost) lifecycle against the recorded shape, so the

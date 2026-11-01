@@ -43,7 +43,7 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   // ── §1 · A ROW IN POSTGRES BY DESIGN DOES NOT COUNT ─────────────────────
   const before = await assetStore.refreshAssetFallbackCount();
   ok("§1 the fallback count reads a number while S3 is configured", typeof before === "number", before);
-  // Exactly the INSERT scripts/seed-demo.js makes for a volunteer-page image.
+  // Exactly the INSERT scripts/ci/seed-demo.js makes for a volunteer-page image.
   await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data,is_public)
            VALUES ($1,$2,'volpage','image/webp',4,'db',$3,TRUE)`,
           ["pa_intprod1seed" + crypto.randomBytes(4).toString("hex"), ORG, Buffer.from("seed").toString("base64")]);
@@ -97,7 +97,7 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
      { guardsOk: h.guardsOk, guardsFailed: h.guardsFailed });
 
   // ── §5 · FIX-47 · A STALE MAILBOX IS ITS OWN LINE, THE SMOKE STAYS GREEN ──
-  // scripts/status.js against a local stand-in for prod: every smoke route
+  // scripts/ci/status.js against a local stand-in for prod: every smoke route
   // answers 200 and one Gmail mailbox has not read in two hours. The smoke used
   // to read FAILING here. No address is on /health, so none is printed.
   const http = require("http");
@@ -117,7 +117,7 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   await new Promise(r => stub.listen(0, r));
   const url = `http://localhost:${stub.address().port}`;
   const out = await new Promise(resolve => {
-    const c = require("child_process").spawn(process.execPath, ["scripts/status.js"], { cwd: require("path").join(__dirname, ".."),
+    const c = require("child_process").spawn(process.execPath, ["scripts/ci/status.js"], { cwd: require("path").join(__dirname, ".."),
       env: { ...process.env, STATUS_BACKEND_URL: url, STATUS_FRONTEND_URL: url, STATUS_SKIP_AI: "1", NO_COLOR: "1" } });
     let o = ""; c.stdout.on("data", d => { o += d; }); c.stderr.on("data", d => { o += d; }); c.on("close", () => resolve(o.replace(/\x1b\[[0-9;]*m/g, "")));
   });

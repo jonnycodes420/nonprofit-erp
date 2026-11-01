@@ -2,7 +2,7 @@
 // AND A MONTH OF GIFT-TO-THANK-YOU TIMES.
 //
 // Six cards, each from a committed, plainly fake document in
-// tests/fixtures/capture1/ (written by scripts/capture1-make-fixtures.js):
+// tests/fixtures/capture1/ (written by scripts/ci/capture1-make-fixtures.js):
 //
 //   · three checks photographed as one batch with their deposit slip, which
 //     totals what the checks do ($1,825.00): one matched by the printed name,
@@ -27,7 +27,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { FIXTURES, FAKE_ROUTING, FAKE_ACCOUNT } = require("../capture1-make-fixtures");
+const { FIXTURES, FAKE_ROUTING, FAKE_ACCOUNT } = require("../ci/capture1-make-fixtures");
 
 const PRE = "cap_b72demo_";
 const DIR = path.join(__dirname, "..", "..", "tests", "fixtures", "capture1");
@@ -73,7 +73,7 @@ async function seedCapture1(q, ORG) {
                state=EXCLUDED.state, zip=EXCLUDED.zip, deleted_at=NULL`,
       [id, ORG, name, email, address, city, state, zip, kind, ...WHO]);
     // HARDEN-2: a person this seed brings back (deleted_at cleared above) keeps
-    // no open deletion record, or scripts/stale-deletions-readonly.sql counts them.
+    // no open deletion record, or scripts/ops/stale-deletions-readonly.sql counts them.
     await q(`UPDATE deleted_records SET restored_at = NOW() WHERE org_id=$1 AND table_name='donors' AND record_id=$2 AND restored_at IS NULL`, [ORG, id]);
     return id;
   };

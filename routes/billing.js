@@ -1206,7 +1206,7 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
       console.error(
         `[close-link] PRICE MISMATCH: ${plan.env} (${priceId}) is ${actual}, ${cadence}, ` +
         `but the ${plan.name} plan is $${planAmountUsd(plan)} every ${planInterval(plan)}. Refusing to mint a link that would ` +
-        `quote one number and charge another. Run scripts/create-billing-products.js and update ${plan.env}.`
+        `quote one number and charge another. Run scripts/once/create-billing-products.js and update ${plan.env}.`
       );
       return res.status(400).json({
         error: "plan_price_mismatch",
@@ -1430,7 +1430,7 @@ const CHECKOUT_SIGNIN_BAD = { error: "signin_link_invalid",
   message: "This sign-in link has expired or was already used. We can email you a fresh one." };
 
 // GET /public/checkout-signin: the prod smoke's read-only proof that the
-// route Checkout depends on is deployed (scripts/status.js). Says nothing else.
+// route Checkout depends on is deployed (scripts/ci/status.js). Says nothing else.
 app.get("/public/checkout-signin", (req, res) => res.json({ ok: true, route: "checkout-signin" }));
 
 // POST /public/checkout-signin { sessionId, key }

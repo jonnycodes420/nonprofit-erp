@@ -21,7 +21,7 @@
 //
 // The browser leg (playwright, against client/dist, so it runs in the browser
 // shard) READS the demo org (director@harborlight.demo; run-all seeds it with
-// scripts/seed-demo.js before the battery), as smoke-walk does, and never saves there: Delete is answered No, and the editors are
+// scripts/ci/seed-demo.js before the battery), as smoke-walk does, and never saves there: Delete is answered No, and the editors are
 // opened and left. Everything that writes runs on this suite's own org.
 //
 // RED ON MAIN (2026-10-14): §table (two tables; tab 10 vs 2 rows), §words

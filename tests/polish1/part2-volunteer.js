@@ -107,7 +107,7 @@ module.exports = async function part2(h) {
       apps && (apps.applications || []).some(a => a.email === "theo.applicant@pol1vol.local" && a.status === "pending"), apps && apps.applications);
 
     // ── §2d the live site proxies every path Reach hands out ────────────────
-    const { loadRewrites } = require(path.join(__dirname, "..", "..", "scripts", "local-preview.js"));
+    const { loadRewrites } = require(path.join(__dirname, "..", "..", "scripts", "ci", "local-preview.js"));
     const rules = loadRewrites();
     const proxied = p0 => rules.some(([re]) => re.test(p0));
     for (const p0 of ["/volunteer/join", `/volunteer-with/${SLUG}`, `/volunteer-with/${SLUG}/apply`])

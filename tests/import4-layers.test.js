@@ -71,7 +71,7 @@ const PASSWORD = "loadtest1234";
 const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", "pledges", "thank_you_drafts", "interactions", "gifts", "events",
   "fin_transactions", "imports", "donor_scores", "readouts", "tasks", "cultivation_plans", "name_fixes", "donors", "households", "custom_field_defs",
   "fin_funds", "budgets", "accounts", "users"];
-const { checkOrg } = require("../scripts/check-numbers");
+const { checkOrg } = require("../scripts/ci/check-numbers");
 const NUM = require("../numbers");
 
 let R = null;

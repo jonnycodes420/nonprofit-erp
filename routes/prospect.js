@@ -173,7 +173,7 @@ app.get("/donors/:id/public-filing", requireAuth, mg, wrap(async (req, res) => {
   res.json({ ein: d.funder_ein ? P.cleanEin(d.funder_ein) : null, isOrganization: isOrg(d), filing: r && r.found ? P.shapeFiling(r) : null,
     notFound: r && !r.found ? { ein: r.ein, fetchedAt: r.fetched_at, source: P.sourceLine(r.source_date) } : null });
 }));
-// Reads irs_bmf (loaded by scripts/load-irs-bmf.js) and records what it found
+// Reads irs_bmf (loaded by scripts/ci/load-irs-bmf.js) and records what it found
 // on the person. Nothing here reaches the network.
 app.post("/donors/:id/public-filing/refresh", requireAuth, checkWriteAccess, mg, wrap(async (req, res) => {
   const orgId = req.user.orgId;

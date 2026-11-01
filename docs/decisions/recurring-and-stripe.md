@@ -109,7 +109,7 @@ Read this when you touch Stripe Connect, the donation webhook, recurring gifts, 
 - **`stripe listen` forwards events one at a time, so it hides ordering races.** Prove ordering with
   `tests/webhook-ordering.test.js` (events reversed, simultaneous and redelivered). (BUILD-62, BUILD-63)
 - **A Stripe mock can be wrong in load-bearing ways; the recurring layer's mock was wrong in seven.** Drill
-  real test mode with `scripts/build58-stripe-drill.js` and `stripe listen`. (BUILD-57 §2a, BUILD-58)
+  real test mode with `scripts/ops/build58-stripe-drill.js` and `stripe listen`. (BUILD-57 §2a, BUILD-58)
 - **A test that uses an external payload must use a recorded real one.** `tests/fixtures/external/` holds only
   those, with a `_provenance` stamp. A hand-written fixture fails `external-fixture-provenance`. (BUILD-58)
 - **The live donation endpoint may still lack events that Steward handles.** Check
@@ -130,7 +130,7 @@ Read this when you touch Stripe Connect, the donation webhook, recurring gifts, 
 - `ensureRecurringGiftProduct`, `invoiceSubscriptionId`/`invoiceSubMetadata`/`invoiceLineInterval`,
   `stripeChargesEnabled` — server.js
 - `client/src/components/RecurringGiving.jsx` — `RecurringView` (Fundraising) + the Home exceptions panel
-- `scripts/check-webhook-subscriptions.js` — manifest vs live endpoint (read-only, prod-guarded)
+- `scripts/ops/check-webhook-subscriptions.js` — manifest vs live endpoint (read-only, prod-guarded)
 - `tests/recurring-surface`, `recurring-recovery`, `webhook-ordering`, `webhook-manifest`,
   `reconciliation`, `stripe-disputes` — the suites that pin this area
 

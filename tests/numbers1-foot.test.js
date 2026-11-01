@@ -11,7 +11,7 @@
 //   §3 hundreds of random sequences of the things people do to gifts (add,
 //      edit amount, edit date, move campaign, refund, delete, Undo, split,
 //      soft credit, merge two donors, import a file, a voice gift card's Yes),
-//      each in a fresh small org, with scripts/check-numbers.js run after every
+//      each in a fresh small org, with scripts/ci/check-numbers.js run after every
 //      step. A failure prints the shortest sequence that still breaks a rule.
 //
 // It boots server.js IN-PROCESS (like voice1-tell-steward) so the voice card
@@ -109,7 +109,7 @@ async function makeOrg(today) {
 }
 
 const NUM = require("../numbers");
-const { checkOrg } = require("../scripts/check-numbers");
+const { checkOrg } = require("../scripts/ci/check-numbers");
 const stripeLib = require("stripe");
 async function fire(evt) {
   const payload = JSON.stringify(evt);

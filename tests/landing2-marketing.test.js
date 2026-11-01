@@ -3,7 +3,7 @@
 //
 // The browser half (no sideways scroll at 390 on any route, every rendered
 // link resolves, every STATS figure renders beside its source link, no quote
-// that is not a sourced research quote) is scripts/landing-prod-verify.js,
+// that is not a sourced research quote) is scripts/ops/landing-prod-verify.js,
 // which crawls the same route table against a running site.
 //
 // What this file fails on, and the defect each one stops:

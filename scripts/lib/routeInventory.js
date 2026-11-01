@@ -1,6 +1,6 @@
 // scripts/lib/routeInventory.js — BUILD-75 B.1: the mechanical route walk.
 //
-// ONE inventory builder, used by BOTH scripts/build75-route-inventory.js (which
+// ONE inventory builder, used by BOTH scripts/ops/build75-route-inventory.js (which
 // commits audit/route-inventory.json) and tests/route-coverage.test.js (B.4 —
 // which regenerates the inventory from the LIVE router and fails when a route
 // exists that the isolation matrix did not exercise). Never hand-maintain a

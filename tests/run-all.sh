@@ -97,7 +97,7 @@
 #          selection from a git range for the pre-push hook)
 #
 # NOT included here (need extra setup — run individually, see tests/README.md):
-#   donors-pagination, reports  → need `node scripts/seed-loadtest.js` first
+#   donors-pagination, reports  → need `node scripts/ops/seed-loadtest.js` first
 #   export-zip                  → needs the `unzip` binary + the loadtest org
 #   cover-fees                  → needs real Stripe test creds (STRIPE_TEST_KEY)
 
@@ -475,7 +475,7 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
 
   # The assignment is computed once, in one place, and written down — so a
   # failure can be reproduced with the exact list that shard was given.
-  node scripts/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
+  node scripts/ci/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
     || { echo "ERROR: could not plan the shards" >&2; exit 2; }
 
   # THE BROWSER LEGS' DIST. They are all in one shard (see shard-plan.js) and
@@ -486,12 +486,12 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   #
   # FIX-60 item 6: "usable" used to mean only "built against this port", so a
   # dist from before a merge passed and the legs walked the old screens. It is
-  # now scripts/dist-fresh.js: built against this port AND from HEAD AND with
+  # now scripts/ci/dist-fresh.js: built against this port AND from HEAD AND with
   # no uncommitted change to the client's inputs since. Stale means rebuild.
   BSHARD=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.browserShard||""))' "$SHARD_OUT/plan.json")
   if [ -n "$BSHARD" ] && [ "${SHARD_BUILD_DIST:-1}" = "1" ]; then
     bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * BSHARD ))
-    node scripts/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
+    node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
       || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
   fi
 
@@ -506,22 +506,22 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   done
   for pid in "${pids[@]}"; do wait "$pid" || true; done
 
-  node scripts/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
+  node scripts/ci/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
   exit $?
 fi
 
 
 
 # FIX-1 §11 — THE DEMO IS SEEDED BEFORE THE BATTERY, so demo-shape never skips.
-# scripts/seed-demo.js drops and recreates ONLY the demo org, against the
+# scripts/ci/seed-demo.js drops and recreates ONLY the demo org, against the
 # server at $BASE (default :5601) and $DATABASE_URL; it refuses any database
 # that is not an allowlisted scratch name. CI seeds it in its own step and
 # passes DEMO_SEEDED=1. A seed that fails is a red battery, never a skip.
 want_demo=0
 for name in "${RUN[@]}"; do [ "$name" = "demo-shape" ] && want_demo=1; done
 if [ "$want_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
-  if node scripts/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
-    echo "  seeded the demo org (scripts/seed-demo.js)"
+  if node scripts/ci/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
+    echo "  seeded the demo org (scripts/ci/seed-demo.js)"
   else
     echo "  FAIL  seed-demo: the demo did not seed ($LOGDIR/seed-demo.log)"
     cat "$LOGDIR/seed-demo.log"

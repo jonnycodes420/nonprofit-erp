@@ -5,7 +5,7 @@
 // screening file both ways (out: the layout providers accept; in: what came
 // back, stored as ranges with the provider's name and the date), and the
 // public filing for an organisation with an EIN (read from the IRS EO BMF
-// that scripts/load-irs-bmf.js loads into irs_bmf; never the network).
+// that scripts/ci/load-irs-bmf.js loads into irs_bmf; never the network).
 //
 // WHO SEES ANY OF IT: admins, and staff an admin gave the major gifts
 // permission. `canSee` reads the LIVE row on every request, never the JWT.
@@ -269,7 +269,7 @@ async function matchRows(orgId, rows) {
 // ── PUBLIC FILINGS (the IRS Exempt Organizations Business Master File) ─────
 // The IRS publishes the EO BMF as public-domain CSV files, refreshed monthly:
 // https://www.irs.gov/charities-non-profits/exempt-organizations-business-master-file-extract-eo-bmf
-// scripts/load-irs-bmf.js loads them into irs_bmf. A lookup reads that table
+// scripts/ci/load-irs-bmf.js loads them into irs_bmf. A lookup reads that table
 // and nothing else: no page render and no button press reaches the network.
 // When the table is empty the answer says so plainly. Tests load
 // tests/fixtures/irs-bmf/eo_fixture.csv (made-up organisations) the same way.

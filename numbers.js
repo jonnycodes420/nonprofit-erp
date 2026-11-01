@@ -363,7 +363,7 @@ async function pledgeSummary(orgId, { yearEnd, today }) {
 
 // The screens that live inside a route file register here when the server
 // mounts them, so the checker running in the server reads the very function a
-// screen draws (scripts/check-numbers.js). Empty in a bare script.
+// screen draws (scripts/ci/check-numbers.js). Empty in a bare script.
 const screens = {};
 
 module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, eventsRaised, eventGuests, screens, eventStory, pledgeSummary };

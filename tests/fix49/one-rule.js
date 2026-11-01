@@ -164,7 +164,7 @@ module.exports = async function run() {
   ok("§8 the household total is the household's own figure, not a sum over links", rel.householdTotalSource && rel.householdTotalSource.key === "household-giving" && Number(rel.householdTotal) === 500, rel);
   // A link made before this build (straight into the table) is migrated.
   await q(`INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type,created_by,created_by_name) VALUES ($1,$2,$3,$4,'household',${sys})`, [`drel_${org}`, org, c, dd]);
-  const { checkOrg } = require("../../scripts/check-numbers");
+  const { checkOrg } = require("../../scripts/ci/check-numbers");
   const before = (await checkOrg(org)).problems.find(p => p.rule === "household-one");
   ok("§8 the checker sees a linked pair that is not one household", before && before.count === 1, before);
   const db = require("../../db");
@@ -177,6 +177,6 @@ module.exports = async function run() {
   const r = await checkOrg(org);
   const bad = r.problems.filter(p => ["lapse", "giving-level", "household-one"].includes(p.rule));
   ok("§6-8 the numbers checker finds every lapse, level and household rule holding", bad.length === 0, r.problems);
-  ok("§6-8 ...and it knows the rules", ["lapse", "giving-level", "household-one"].every(k => require("../../scripts/check-numbers").RULES[k]));
+  ok("§6-8 ...and it knows the rules", ["lapse", "giving-level", "household-one"].every(k => require("../../scripts/ci/check-numbers").RULES[k]));
   await wipe(`${PREFIX}%`);
 };

@@ -61,7 +61,7 @@ module.exports = async function run() {
   ok("§9 she is not tagged New (she gave in the old system before Mar 2025)", !!life && life.key !== "new", st.tags);
   const since = String(((await api("GET", `/people/${helen.id}`, A.tok)).body || {}).first_gift_date || "");
   ok("§9 Donor since is 2025, not this year", since.slice(0, 4) === "2025", since);
-  const { checkOrg } = require("../../scripts/check-numbers");
+  const { checkOrg } = require("../../scripts/ci/check-numbers");
   const ck = await checkOrg(A.org);
   ok("§9 the checker holds the org to the donor-since rule", !ck.problems.some(p => p.rule === "donor-since" || p.rule === "donor-stored"), ck.problems);
 
@@ -130,7 +130,7 @@ module.exports = async function run() {
   console.log("\n§13 the mail pre-flight reads Staff, Donor and Billing mail");
   const C = await makeOrg();
   const preflight = () => {
-    const out = execFileSync(process.execPath, [path.join(__dirname, "..", "..", "scripts", "mail-preflight.js"), "--org", C.org],
+    const out = execFileSync(process.execPath, [path.join(__dirname, "..", "..", "scripts", "ci", "mail-preflight.js"), "--org", C.org],
       { env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest" }, encoding: "utf8" });
     const lines = out.split("\n");
     const i = lines.findIndex(l => l.startsWith(C.org));

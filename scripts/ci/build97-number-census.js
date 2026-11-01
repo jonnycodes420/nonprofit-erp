@@ -1,0 +1,355 @@
+#!/usr/bin/env node
+// BUILD-97 Part 2 — THE NUMERIC CENSUS SCANNER.
+//
+// A PURE SOURCE SCAN: reads the client's active surfaces off disk and finds
+// every place a NUMBER is drawn for a person to read. No server, no database,
+// no network — the same construction as scripts/ci/build73-money-audit.js, and run
+// BY tests/build97-numbers.test.js so the enumeration cannot drift away from
+// the census document.
+//
+// ── WHY A SCANNER AND NOT A LIST ──────────────────────────────────────────
+// BUILD-75 A.6: "a guard whose number cannot fall is not measuring coverage."
+// A hand-written census is a photograph of one afternoon. This counts the
+// sites, per file, and the suite asserts the count EXACTLY — not a ceiling.
+// Add a number to a screen and the count rises and the suite fails until the
+// census says what the number is, how it is computed, and the sentence a
+// director would use to explain it. Delete one and it falls and fails the same
+// way. There is no direction in which a numeric surface can change silently.
+//
+// ── WHAT COUNTS AS A NUMERIC RENDER SITE ──────────────────────────────────
+// A number a person READS, which is narrower than a number the code touches:
+//   · a money formatter reaching JSX            — {fmt(x)} / {fmtFull(x)}
+//   · a percentage reaching JSX                  — {x}% and `${x}%`
+//   · a count reaching JSX                       — {x.toLocaleString()}, {n} in a
+//     stat-tile shape, `${n} donor` style clauses
+//   · an explicit score                          — /99, /10, "out of"
+// Deliberately NOT counted, with the reason, because counting them would drown
+// the signal the census exists to carry:
+//   · numbers inside style objects (fontSize, padding, a hex, a z-index)
+//   · numbers in a comment
+//   · array indices, slice/limit arguments, timeouts
+//   · a DATE (a date is not a claim about a threshold)
+//
+// Usage:  node scripts/ci/build97-number-census.js            # table
+//         node scripts/ci/build97-number-census.js --sites    # every site, with lines
+//         node scripts/ci/build97-number-census.js --json
+
+const fs = require("fs");
+const path = require("path");
+const { readSource } = require("../lib/readSource");
+
+const root = path.join(__dirname, "..", "..");
+const SRC = path.join(root, "client", "src");
+
+// ── THE SCOPE, AND IT IS A DECISION ───────────────────────────────────────
+// The ACTIVE surfaces only — the tabs App.jsx actually renders. Events,
+// Volunteers, Board, AnnualFund and Programs are commented out of the nav
+// (the 2026-07-12 pivot) and AnnualFund/Programs are not even imported; their
+// numbers are real but nobody can reach them, and censusing a screen no
+// customer can open would pad the count with work that buys nothing. If one of
+// those tabs is ever un-hidden it joins this list in the same commit.
+const SURFACES = [
+  "components/Dashboard.jsx",      // Home + the board surface
+  "components/Dashboards.jsx",     // the four dashboards (each metric already defined)
+  "components/Donors.jsx",         // directory, profile, re-engage, import
+  "components/Pipeline.jsx",
+  "components/Fundraising.jsx",
+  "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and a campaign's page
+  "components/RecurringGiving.jsx",
+  "components/Grants.jsx",
+  "components/Communications.jsx",
+  "components/Reports.jsx",
+  "components/Finance.jsx",
+  "components/Tasks.jsx",
+  "components/Workflows.jsx",
+  "components/Agent.jsx",           // FIX-1 §A — Steward Agent (its figures are sentences the server compiled)
+  "components/Settings.jsx",
+  "components/DepositSheet.jsx",
+  "components/DonorMap.jsx",
+  "components/MetricBreakdownPanel.jsx", // FIX-2 A — the one drill-through panel (a figure's rows and their total)
+  "components/Figure.jsx",          // FIX-2 A — the one figure component; every figure it draws opens
+  "components/FunnelChart.jsx",
+  "components/PlanFollowUp.jsx",
+  "components/LogConversation.jsx",
+  "components/WorkbookImport.jsx",
+  "components/Uploader.jsx",
+  "components/ColumnTargetSelect.jsx",
+  "components/UpgradeModal.jsx",
+  "components/PlanPicker.jsx",
+  "components/TopBar.jsx",
+  "components/ShareBlocks.jsx",
+  "components/ProductMark.jsx",
+  "components/YourWords.jsx",
+  "components/Programs.jsx",
+  "components/AnnualFund.jsx",
+  "components/DonorPortalHub.jsx",
+  "components/PortalWidgets.jsx",
+  "components/PortalBanner.jsx",
+  "components/shared.jsx",
+  "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
+  "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
+  "components/VolunteerPanel.jsx", // BUILD-98 (switch) Part 5 — hours on the profile, and the hours import
+  "components/VolunteersHub.jsx",  // FIX-1 C — the Volunteers hub (hours as plain hundredths, each defined; no money drawn)
+  "components/ApiKeysPanel.jsx",   // BUILD-98 (switch) Part 6 — API keys (dates and a prefix; no figures)
+  "components/Memberships.jsx",    // BUILD-101 Part 1 — Fundraising → Members, and the profile panel
+  "components/MajorGifts.jsx",     // BUILD-99 (major gifts) — Fundraising → Major gifts / Proposals / Portfolios / Plans, and three profile panels
+  "components/SecurityPanel.jsx",  // BUILD-98 (switch) Part 8 — two-step sign-in and the full export (no figures)
+  "components/GrantDeadlines.jsx", // BUILD-100 (grants) Part 7 — Grants → Deadlines, and a grant's own deadlines
+  "components/GrantDocuments.jsx", // BUILD-100 (grants) Part 7 — documents on a grant
+  "components/FunderPanel.jsx",    // BUILD-100 (grants) Part 7 — the funder on an organisation's record
+  "components/RestrictedView.jsx", // BUILD-100 (grants) Part 7 — Finance → Restricted
+  "components/GrantImport.jsx",    // BUILD-100 (grants) Part 7 — Import grants
+  "components/GrantOverview.jsx",  // GRANTS-1 — Grants → Reports (every number a <Figure>, also in FIGURE_SOURCE_SCOPE)
+];
+
+// Surfaces deliberately OUT of scope, each with its reason — named here rather
+// than silently absent, which is the same rule the ignored-column list follows.
+// FIX-1 — Donors.jsx was split into these files. They ARE scanned: as
+// components/Donors.jsx, which scanFile reads through readSource and which is
+// rebuilt from them (scripts/lib/readSource.js). Named here so the scope check
+// sees every screen file accounted for.
+const SCANNED_AS_DONORS = [
+  "components/donorShared.jsx", "components/DonorImport.jsx",
+  "components/DonorProfile.jsx", "components/DonorDirectory.jsx",
+];
+
+const OUT_OF_SCOPE = {
+  "components/Events.jsx": "hidden from the nav since the 2026-07-12 pivot",
+  "components/Volunteers.jsx": "hidden from the nav since the 2026-07-12 pivot",
+  "components/Board.jsx": "hidden from the nav since the 2026-07-12 pivot",
+  "marketing/": "the public marketing site (LANDING-2); its own guards (tests/landing2-marketing.test.js, scripts/ops/landing-prod-verify.js)",
+  "pages/Pricing.jsx": "public marketing page; prices are pinned by tests/one-date.test.js",
+  "pages/Donate.jsx": "public white-label donation page on publicTheme.js",
+  // BUILD-102 (Steward Give) — the donation form and its embedded twin. OUT OF
+  // SCOPE for the same reason Donate.jsx is: these are PUBLIC, white-label
+  // surfaces on publicTheme.js, addressed to a donor rather than to staff, and
+  // the census exists to make sure a figure on a STAFF screen carries its
+  // definition. A donor choosing between $25 and $50 does not need a definition
+  // of $25.
+  //
+  // Their own figures are guarded where it matters instead, and more tightly than
+  // a census could: tests/build102-steps-upsell.test.js asserts the amounts are
+  // the FORM's own list and that the monthly suggestion is a third in whole
+  // dollars; tests/build102-embed.test.js asserts the same numbers render inside
+  // an iframe on another origin; and the SERVER refuses any amount the form does
+  // not offer, so a figure on these screens cannot disagree with what is charged.
+  // The staff-facing figures this build DOES add — the funnel — live in
+  // Settings.jsx, which IS scanned, and each carries its definition from the
+  // server's registry.
+  "pages/GiveSteps.jsx": "public donation form, white-label, addressed to a donor; its figures are pinned by build102-steps-upsell",
+  "pages/EmbeddedForm.jsx": "the same form inside an org's own site; pinned by build102-embed",
+  "pages/Portal.jsx": "the donor's own portal, white-label, its own palette and guards",
+  "pages/GivingDashboard.jsx": "the donor-side giving account, not a staff surface",
+  "pages/AdminDashboard.jsx": "super-admin ops tool, its own palette and audience",
+  // BUILD-98 (switch) Part 3 — these were in NEITHER list, which the census
+  // could not see: a new screen file was silently out of scope. Each now has
+  // its reason, and tests/build97-numbers.test.js fails on the next file that
+  // has neither.
+  "pages/LoginPage.jsx": "sign-in form; carries no figures",
+  "pages/ForgotPasswordPage.jsx": "password-reset request form; carries no figures",
+  "pages/ResetPasswordPage.jsx": "password-reset form; carries no figures",
+  "pages/InvitePage.jsx": "accept-an-invitation form; carries no figures",
+  "pages/Invitation.jsx": "public request-an-invitation form; its own guards (landing verifier)",
+  "pages/JoinNetwork.jsx": "public network sign-up, flagged off in production (BUILD-46)",
+  "pages/ManageFundraiser.jsx": "a peer fundraiser's own public edit page on publicTheme.js",
+  "pages/PortalEditor.jsx": "the donor-portal page builder; its figures are the portal's, previewed",
+  "pages/PrivacyPage.jsx": "legal text; its numbers are dates and section numbers",
+  "pages/TermsPage.jsx": "legal text; its numbers are dates, prices pinned by tests/one-date.test.js",
+  "pages/WelcomePage.jsx": "first-run onboarding; the import receipt it shows is census'd in Donors.jsx",
+};
+
+// ── FIX-2 — EVERY NUMBER OPENS ─────────────────────────────────────────────
+// The screens on which every figure must carry a `source` (the rows behind it,
+// figureSources.js on the server). On these screens a number is drawn ONLY by
+// <Figure> (components/Figure.jsx), and every <Figure> is written with
+// `source=`. Two things fail the battery, each named by file and line:
+//   · a <Figure …> element written without a `source=` attribute
+//   · a number drawn any other way (any numeric render site the patterns
+//     below find) — a figure with no source, because it is not a <Figure>
+// FIX-2 starts with the four dashboards. OTHER SCREENS JOIN THIS LIST AS THEY
+// ADOPT <Figure>, in the commit that converts them; a screen on it can never
+// again draw a number that does not open.
+const FIGURE_SOURCE_SCOPE = [
+  "components/Dashboards.jsx",      // Board, Fundraising, People, Recurring (FIX-2 A)
+  "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and every campaign page
+  "components/GrantOverview.jsx",   // GRANTS-1 — Grants → Reports: pipeline, awarded against goal, win rate, what is due
+];
+// The component and the panel themselves: they are where a figure's number
+// and its rows' total are drawn, so the patterns below find numbers in them by
+// design. Figure.jsx must take `source`; the panel draws only rows and totals.
+const FIGURE_COMPONENTS = ["components/Figure.jsx", "components/MetricBreakdownPanel.jsx"];
+
+// Every opening <Figure …> tag in a source text, with the line it starts on
+// and its attribute text (braces and strings are walked, so a `>` inside an
+// expression does not end the tag).
+function figureTags(src) {
+  const out = [];
+  const re = /<Figure\b/g;
+  let m;
+  while ((m = re.exec(src))) {
+    let i = m.index + m[0].length, depth = 0, quote = null;
+    for (; i < src.length; i++) {
+      const c = src[i];
+      if (quote) { if (c === quote && src[i - 1] !== "\\") quote = null; continue; }
+      if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) break;
+    }
+    out.push({ line: src.slice(0, m.index).split("\n").length, attrs: src.slice(m.index + m[0].length, i) });
+  }
+  return out;
+}
+
+// [{ file, line, problem }] — empty when every figure on every in-scope
+// screen carries its source. `files` ({ rel: text }) lets the suite plant a
+// defect in a synthetic screen without writing to the client tree.
+function figureSourceProblems({ files } = {}) {
+  const problems = [];
+  const texts = files || Object.fromEntries(FIGURE_SOURCE_SCOPE.map(rel => {
+    const full = path.join(SRC, rel);
+    return [rel, fs.existsSync(full) ? fs.readFileSync(full, "utf8") : null];
+  }));
+  for (const [rel, raw] of Object.entries(texts)) {
+    if (raw === null) { problems.push({ file: rel, line: 0, problem: "an in-scope screen that does not exist" }); continue; }
+    // COMMENTS ARE NOT A SCREEN. Blanked, keeping every newline, so a line
+    // number still points at the line in the file.
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, " "))
+      .split("\n").map(l => (/^\s*\/\//.test(l) ? "" : l.replace(/\s\/\/\s.*$/, ""))).join("\n");
+    for (const t of figureTags(src)) {
+      // `source=` as an attribute, not a word inside some other expression.
+      if (!/(^|\s)source=\{/.test(t.attrs)) {
+        problems.push({ file: rel, line: t.line, problem: "a <Figure> without a source, so it cannot open" });
+      }
+    }
+    const lines = src.split("\n");
+    lines.forEach((line, i) => {
+      if (isNoise(line)) return;
+      for (const p of PATTERNS) {
+        p.re.lastIndex = 0;
+        if (p.re.test(line)) {
+          problems.push({ file: rel, line: i + 1, problem: `a number drawn outside <Figure> (${p.what}), so it has no source: ${line.trim().slice(0, 90)}` });
+        }
+      }
+    });
+  }
+  return problems;
+}
+
+// ── THE PATTERNS ───────────────────────────────────────────────────────────
+// Each names what it catches, because a pattern nobody can explain is a count
+// nobody can defend.
+const PATTERNS = [
+  { key: "money",   re: /\{\s*fmtFull?\s*\(/g,                     what: "a money formatter reaching JSX" },
+  { key: "percent", re: /\{[^{}]{1,80}\}\s*%|\$\{[^{}]{1,80}\}\s*%/g, what: "a percentage reaching JSX" },
+  // A DATE IS NOT A COUNT, and this file's own rules above already exclude
+  // dates. The first cut of this pattern matched `new Date(x).toLocaleString()`
+  // anyway, so the scanner was breaking the contract it states at the top.
+  // Caught by the census's own drift assertion the moment Part 3 put a run
+  // timestamp on the Activity screen and the total went 390 to 391 — which is
+  // the census working, on itself.
+  { key: "count",   re: /\{(?![^{}]*\bDate\s*\()[^{}]{1,60}\.toLocaleString\(\)/g, what: "a formatted count reaching JSX" },
+  { key: "score",   re: /\/\s*99|\/\s*10\b(?!\s*[)\],;])/g,        what: "an explicit score out of a fixed ceiling" },
+];
+
+// A line is skipped outright when it is only style or only a comment — those
+// carry numbers by the dozen and none of them is a claim.
+const isNoise = (line) => {
+  const t = line.trim();
+  if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) return true;
+  return false;
+};
+
+function scanFile(rel) {
+  const full = path.join(SRC, rel);
+  if (!fs.existsSync(full)) return null;
+  const lines = readSource(full).split("\n");
+  const sites = [];
+  lines.forEach((line, i) => {
+    if (isNoise(line)) return;
+    for (const p of PATTERNS) {
+      p.re.lastIndex = 0;
+      let m;
+      while ((m = p.re.exec(line))) {
+        sites.push({ file: rel, line: i + 1, kind: p.key, claim: isClaimShaped(lines, i),
+                     snippet: line.trim().slice(0, 150) });
+        if (m.index === p.re.lastIndex) p.re.lastIndex++;
+      }
+    }
+  });
+  return sites;
+}
+
+// ── A CLAIM IS NOT THE SAME THING AS A CELL ────────────────────────────────
+// The brief censuses "every numeric tile, badge, score and percentage" — and
+// that is deliberately narrower than every number a formatter touches. A row in
+// the LYBUNT report is DATA: it is the donor's own giving, in a table, under a
+// column header that says what the column is. A tile is a CLAIM ABOUT the data
+// — one figure, in display type, under a label, standing alone and inviting a
+// reading. "Weighted forecast $59,500" is a claim. "$2,000 · 2026-03-04" in a
+// gift table is not.
+//
+// The distinction is load-bearing, because censusing all 390 sites at the same
+// depth would bury the fifteen that actually make claims among three hundred
+// table cells, and a census nobody can read is a census nobody checks.
+//
+// A site is CLAIM-SHAPED when the three lines around it carry one of the marks
+// of a headline figure: display type, a large font size, a letter-spaced
+// uppercase label, or an explicit `label` prop. Everything else is counted by
+// family and named as data in the census.
+const CLAIM_MARKS = [
+  /DM Serif Display/,
+  /fontSize:\s*(?:2[0-9]|[3-9][0-9])/,          // 20px and up — a headline figure
+  /textTransform:\s*"uppercase"/,
+  /\blabel[:=]/,
+  /letterSpacing/,
+];
+function isClaimShaped(lines, idx) {
+  for (let j = Math.max(0, idx - 3); j <= Math.min(lines.length - 1, idx + 3); j++) {
+    const l = lines[j];
+    if (CLAIM_MARKS.some(re => re.test(l))) return true;
+  }
+  return false;
+}
+
+function census() {
+  const byFile = {};
+  let total = 0;
+  const all = [];
+  for (const rel of SURFACES) {
+    const sites = scanFile(rel);
+    if (sites === null) { byFile[rel] = null; continue; }   // file does not exist
+    byFile[rel] = sites.length;
+    total += sites.length;
+    all.push(...sites);
+  }
+  const claims = all.filter(s => s.claim);
+  return { byFile, total, claims: claims.length, claimSites: claims, sites: all, outOfScope: OUT_OF_SCOPE };
+}
+
+module.exports = { census, SURFACES, OUT_OF_SCOPE, SCANNED_AS_DONORS, PATTERNS,
+                   FIGURE_SOURCE_SCOPE, FIGURE_COMPONENTS, figureSourceProblems, figureTags };
+
+if (require.main === module) {
+  const r = census();
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify(r, null, 2));
+  } else if (process.argv.includes("--claims")) {
+    for (const s of r.claimSites) console.log(`${s.file}:${s.line}  [${s.kind}]  ${s.snippet}`);
+    console.log(`\n${r.claims} claim-shaped sites of ${r.total} numeric render sites`);
+  } else if (process.argv.includes("--figures")) {
+    const probs = figureSourceProblems();
+    for (const x of probs) console.log(`${x.file}:${x.line}  ${x.problem}`);
+    console.log(`\n${probs.length} figure(s) without a source on ${FIGURE_SOURCE_SCOPE.length} in-scope screen(s)`);
+    if (probs.length) process.exitCode = 1;
+  } else if (process.argv.includes("--sites")) {
+    for (const s of r.sites) console.log(`${s.file}:${s.line}  [${s.kind}]  ${s.snippet}`);
+    console.log(`\n${r.sites.length} numeric render sites`);
+  } else {
+    const rows = Object.entries(r.byFile).filter(([, n]) => n !== null).sort((a, b) => b[1] - a[1]);
+    for (const [f, n] of rows) if (n > 0) console.log(String(n).padStart(4), f);
+    const missing = Object.entries(r.byFile).filter(([, n]) => n === null).map(([f]) => f);
+    if (missing.length) console.log("\nlisted but not present:", missing.join(", "));
+    console.log("\ntotal:", r.total, "· claim-shaped:", r.claims);
+  }
+}

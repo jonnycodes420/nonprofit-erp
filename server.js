@@ -12238,7 +12238,7 @@ app.use((err, req, res, next) => {
   // choice, not a crash. A route with a non-AI path catches it before here.
   if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : err.reason === "ai_budget" ? 429 : 503).json({ error: err.message, message: err.message, code: err.code, reason: err.reason });
   // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
-  // so scripts/error-digest.js can group a day of these by type and route.
+  // so scripts/ci/error-digest.js can group a day of these by type and route.
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
   // FIX-58: an upload S3 refused every try is a 503 with its sentence, never a
   // 500 (and never a copy in Postgres; assetStore.putThemeAsset).

@@ -22,7 +22,7 @@
 
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
-const { findManualDupes } = require("../scripts/dedupe-finance-gift-stamps");
+const { findManualDupes } = require("../scripts/ci/dedupe-finance-gift-stamps");
 
 const ORG_A = "org_gstamp_a", ORG_B = "org_gstamp_b";
 const today = require("./helpers").civilToday();

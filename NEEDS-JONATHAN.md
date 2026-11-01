@@ -36,7 +36,7 @@ source, tests and CI all name this file instead.
 
 ## 0-HARDEN-2 · COUNT THE PEOPLE RESTORED THE OLD WAY (2026-10-27)
 
-- **Run the read-only count on prod:** `psql "$PROD_DATABASE_URL" -f scripts/stale-deletions-readonly.sql` (it begins READ ONLY and rolls back; it prints org id and a count, nothing else). For any org it lists, a dry run shows what would close: `DATABASE_URL=… node scripts/close-stale-deletions.js --org <org id>`; add `--apply --i-know-this-is-prod` only when you want it closed. Not run by the build.
+- **Run the read-only count on prod:** `psql "$PROD_DATABASE_URL" -f scripts/ops/stale-deletions-readonly.sql` (it begins READ ONLY and rolls back; it prints org id and a count, nothing else). For any org it lists, a dry run shows what would close: `DATABASE_URL=… node scripts/ci/close-stale-deletions.js --org <org id>`; add `--apply --i-know-this-is-prod` only when you want it closed. Not run by the build.
 
 ## 0-FIX-49 · RE-SEED THE PROD DEMO (2026-10-26)
 
@@ -46,7 +46,7 @@ source, tests and CI all name this file instead.
 
 Until step 2 is done, public signup answers "That plan is not available to buy online yet. Write to us" (nothing breaks, nothing is charged).
 
-1. **Live prices:** `cd ~/nonprofit-erp && STRIPE_BILLING_SECRET_KEY=sk_live_... node scripts/stripe-live-prices.js --live` (add `--dry-run` first to preview). Safe to run twice: it reuses what exists.
+1. **Live prices:** `cd ~/nonprofit-erp && STRIPE_BILLING_SECRET_KEY=sk_live_... node scripts/ops/stripe-live-prices.js --live` (add `--dry-run` first to preview). Safe to run twice: it reuses what exists.
 2. **Railway (nonprofit-erp, production) Variables:** paste the 12 lines it prints (`STRIPE_PRICE_R500_MONTHLY` … `STRIPE_PRICE_R25000_SETUP`). Leave the old `STRIPE_PRICE_T*` / `CORE` / `TEAM` / `FOUNDING` ones in place: orgs may be on them.
 3. **Test mode (optional, to see a real Checkout):** the same command with an `sk_test_` key and no `--live`.
 4. **Super-admin, Organizations, CKRH:** Custom price `149`, ends on the date you agreed, note "first customer". Do the same for each beta org with `0` and its free-until date. Those orgs are then never moved to a band price.
@@ -98,10 +98,10 @@ Until these are set, push stays off and the 5-minute read carries on exactly as 
 ## 0-ADMIN-CLEAN · SORT THE 30 ORGS ON PROD (2026-10-11)
 
 1. **Dry run** (after the ADMIN-CLEAN deploy, which adds the columns), from `~/nonprofit-erp` after `git pull`:
-   `railway run -- node scripts/admin-clean.js --i-know-this-is-prod`. It writes nothing. Read every line: ACTION, KIND, ORG ID, NAME (why).
+   `railway run -- node scripts/ci/admin-clean.js --i-know-this-is-prod`. It writes nothing. Read every line: ACTION, KIND, ORG ID, NAME (why).
 2. **Say which CKRH org Sarah uses.** The DUPLICATES block lists both orgs' logins, last sign-in and Stripe state. Add
    `--archive=<the other id>`. If a line is wrong, `--keep=<id>` leaves that org exactly as it is.
-3. **Apply:** `railway run -- node scripts/admin-clean.js --i-know-this-is-prod --apply --archive=<id>`. A second dry run
+3. **Apply:** `railway run -- node scripts/ci/admin-clean.js --i-know-this-is-prod --apply --archive=<id>`. A second dry run
    should show nothing left to delete. Any archive is undone with Restore in /admin.
 
 ## 0-JOURNEYS-4 · RE-SEED THE PROD DEMO (2026-10-11)
@@ -117,7 +117,7 @@ Until these are set, push stays off and the 5-minute read carries on exactly as 
 
 ## 0-INT-PROD-1 · PAYPAL AND QUICKBOOKS ON PRODUCTION, IN THIS ORDER (2026-10-07)
 
-1. **PayPal:** `railway run node scripts/verify-paypal.js --i-know-this-is-prod`. It prints the base, a token line,
+1. **PayPal:** `railway run node scripts/ops/verify-paypal.js --i-know-this-is-prod`. It prints the base, a token line,
    then counts and totals for the last 30 days. If it says Transaction Search was refused: developer.paypal.com,
    Apps & Credentials, Live, the Steward app, Features, tick **Transaction search**, Save, wait, and run it again.
 2. **QuickBooks:** the ten-minute walk in `docs/int-prod-1/qb-walk.md` (turn sync on for TEST STEWARD in /admin,
@@ -164,7 +164,7 @@ Reading a first number over 12 as the day is unambiguous but changes the BUILD-8
 
 ## 0-FIX-30 · PUT BACK THE POSTAL STATES THE AGENT SET TO "runs" (2026-10-07)
 
-- **Run the repair on prod, dry run first.** From `~/nonprofit-erp` after `git pull`: `railway run -- node scripts/repair-runs-state.js --i-know-this-is-prod`. It writes nothing. Read it: each org with a count, one line per person ("now runs, restore to X"), then LEFT ALONE (people whose state changed after the Agent's write, or who read runs with no Agent write; those are yours to fix by hand on the profile). Check the restore values look like real states. Then apply, in one transaction with an audit row on each person's History: `railway run -- node scripts/repair-runs-state.js --apply --i-know-this-is-prod`. A second dry run should print "Nothing to repair". If anything looks wrong afterwards, `--undo --i-know-this-is-prod` reverses exactly what --apply changed.
+- **Run the repair on prod, dry run first.** From `~/nonprofit-erp` after `git pull`: `railway run -- node scripts/ci/repair-runs-state.js --i-know-this-is-prod`. It writes nothing. Read it: each org with a count, one line per person ("now runs, restore to X"), then LEFT ALONE (people whose state changed after the Agent's write, or who read runs with no Agent write; those are yours to fix by hand on the profile). Check the restore values look like real states. Then apply, in one transaction with an audit row on each person's History: `railway run -- node scripts/ci/repair-runs-state.js --apply --i-know-this-is-prod`. A second dry run should print "Nothing to repair". If anything looks wrong afterwards, `--undo --i-know-this-is-prod` reverses exactly what --apply changed.
 
 ## 0-FIX-44 · THE REAL-AI RUN IS YOURS TO START (2026-10-19)
 
@@ -198,7 +198,7 @@ Reading a first number over 12 as the day is unambiguous but changes the BUILD-8
 
 ## 0-FIX-27 · RE-SEED THE PROD DEMO (2026-10-04)
 
-- **Re-seed Harborlight** (`scripts/seed-demo.js` with your prod flags): the seed now confirms the
+- **Re-seed Harborlight** (`scripts/ci/seed-demo.js` with your prod flags): the seed now confirms the
   timezone (so sequences run and Communications says nothing about pausing) and gives 24 roster volunteers
   an approved application with their days (so the Availability filter has people to find).
 
@@ -212,7 +212,7 @@ The seed changed: ten prospects (3 Strong, 4 Some, 3 Not yet known), two foundat
 (271000101, 271000102, made up) and a matched-gift employer. Re-seed with the CLEAN-1 command above. The sample
 screening file for the walk is `tests/fixtures/prospect1/harborlight-screening-return.csv` (six match, one does not).
 On prod "Look up public filing" reads the IRS file (FIX-22: load it once with
-`DATABASE_URL=<prod> node scripts/load-irs-bmf.js --i-know-this-is-prod`, then monthly), so the two made-up
+`DATABASE_URL=<prod> node scripts/ci/load-irs-bmf.js --i-know-this-is-prod`, then monthly), so the two made-up
 EINs come back "not in the IRS file"; to see a real filing on the walk, put a real foundation's EIN on one of them first. Choosing and paying a
 screening provider (prices and links in the PROSPECT-1 PR) is yours; nothing is signed up.
 
@@ -221,7 +221,7 @@ screening provider (prices and links in the PROSPECT-1 PR) is yours; nothing is 
 The seed now adds eight duplicate pairs (3 high, 3 medium, 2 low), fifteen messy addresses, four emails to
 look at and four movers whose results are in `tests/fixtures/clean1/harborlight-ncoa-return.csv`:
 
-    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/seed-demo.js --i-know-this-is-prod
+    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/ci/seed-demo.js --i-know-this-is-prod
 
 NCOA: Steward prepares the file and reads the results; running the check needs an account with a licensed
 provider (TrueNCOA $20 per file, Melissa $1.50 per 1,000 records with a $50 minimum, NCOAsource $45 up to
@@ -234,7 +234,7 @@ seeded hidden), the Spring Paddle peer-to-peer campaign (two teams, eight fundra
 sponsor benefits and a gallery on the gala and the 5K, a twelve-item auction with bids, and the
 QuickBooks mapping (no tokens). This session cannot read the production `DATABASE_URL`:
 
-    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/seed-demo.js --i-know-this-is-prod
+    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/ci/seed-demo.js --i-know-this-is-prod
 
 ## 0-PARITY-1 · RE-SEED THE PROD DEMO FOR GROUPS, JOURNEYS AND A VIDEO DRAFT (2026-10-02)
 
@@ -242,7 +242,7 @@ The seed now adds three Groups (one by rule), a "joins a group" journey beside t
 video thank-you draft for Margaret Chen, and an annual goal for Home's goal bar; tags and highlights
 are computed and appear without it. This session cannot read the production `DATABASE_URL`:
 
-    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/seed-demo.js --i-know-this-is-prod
+    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app node scripts/ci/seed-demo.js --i-know-this-is-prod
 
 ## 0-NOW · THE PROD DEMO RE-SEED, AFTER FIX-7 THROUGH INT-2 (2026-09-28)
 
@@ -256,7 +256,7 @@ Run it when you are ready. It DROPS AND RECREATES `org_b72demo` and is safe to
 run ten minutes before a call:
 
     DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app \
-      node scripts/seed-demo.js --i-know-this-is-prod
+      node scripts/ci/seed-demo.js --i-know-this-is-prod
 
 Afterwards Harborlight also has (GIVE-2 and CAMPAIGN-2, 2 October): a donation
 form with amounts drawn from Harborlight's own giving, five covered-fee gifts
@@ -582,9 +582,9 @@ session's Railway connection returns variable NAMES only, so the production
 `DATABASE_URL` is not readable from here. Run it with that set:
 
     DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app \
-      node scripts/seed-demo.js --i-know-this-is-prod
+      node scripts/ci/seed-demo.js --i-know-this-is-prod
 
-VOL-1 and FIN-1 both changed `scripts/seed-demo.js`, so Harborlight on
+VOL-1 and FIN-1 both changed `scripts/ci/seed-demo.js`, so Harborlight on
 production has no volunteer programme and no finance month on it. Everything
 they added WORKS on prod; the demo org just has no data for it, which matters
 because Harborlight is what you show people.
@@ -593,7 +593,7 @@ I did not run this. It DROPS AND RECREATES `org_b72demo`, and dropping the
 demo org on production while you are asleep is your call and not mine. It is
 deterministic and safe to run any time, including ten minutes before a call:
 
-    node scripts/seed-demo.js --i-know-this-is-prod
+    node scripts/ci/seed-demo.js --i-know-this-is-prod
 
 Afterwards Harborlight has three volunteer opportunities with seven shifts
 (one full with two people waiting), 30 volunteers, a company group, 269 hours,
@@ -759,7 +759,7 @@ hand.
 | A read-only API key | **Laura** (Hooves of Hope, Zeffy) | Zeffy → Settings → Integrations → API → create a key |
 | A production access token **and** which locations or item names count as donations | **Allie** (Justin's Place, Square) | Square is a point of sale; the same row shape carries a lesson fee and a gift, so nothing imports until she says which is which |
 | Her real Salesforce/NPSP export | **Allie** | also answers the open NPSP question: does her org use standard soft-credit reports, or the household roll-up |
-| Three real cheque photographs | anyone who consents | on a desk, ordinary light, at an angle, **one of them badly handwritten** — not scans, not three easy ones. Then `ANTHROPIC_API_KEY=… node scripts/build95-cheque-drill.js a.jpg b.jpg c.jpg` and record what came back beside what was written. Until this runs, `claude/BUILD-95.md` says "reading unproven". |
+| Three real cheque photographs | anyone who consents | on a desk, ordinary light, at an angle, **one of them badly handwritten** — not scans, not three easy ones. Then `ANTHROPIC_API_KEY=… node scripts/ops/build95-cheque-drill.js a.jpg b.jpg c.jpg` and record what came back beside what was written. Until this runs, `claude/BUILD-95.md` says "reading unproven". |
 | One scrubbed month each of PayPal, Venmo and Cash App activity | you | drop in `fixtures/sources/`, run `node tests/build89s-presets.test.js`; unknown headers show up as unmatched columns. Also answers whether Cash App exports CSV at all, or only PDF. |
 | A real restricted Stripe key and a Givebutter key | a real org | confirms the minimum permission set, so the connect screen can stop asking for more than it needs |
 | A real customer's DNS records | a founding partner | per-org sending domains (SPF/DKIM) cannot be proven without one |
@@ -838,11 +838,11 @@ hand.
   Railway (already in §7). Until then the route answers 503 `brief_unavailable`
   and the panel says the control is unavailable rather than inventing a page.
 - **One drill is yours, and it is the honest half:** `ANTHROPIC_API_KEY=… BASE=…
-  EMAIL=… PASSWORD=… DONOR=… node scripts/build99-brief-drill.js`. The suite
+  EMAIL=… PASSWORD=… DONOR=… node scripts/ops/build99-brief-drill.js`. The suite
   proves every refusal; only a person reading real output can say whether the page
   is worth carrying into a meeting. Ten minutes.
 - **On the demo org after the merge deploys:** the brief's own ending —
-  `BASE=<prod> EMAIL=admin@creoarts.org PASSWORD=… node scripts/build99-walk.js`.
+  `BASE=<prod> EMAIL=admin@creoarts.org PASSWORD=… node scripts/ops/build99-walk.js`.
   It writes (a proposal, a pledge, three assignments, a plan), so run it on
   org_creo deliberately or not at all. It passed 36/36 against a local fixture org.
 

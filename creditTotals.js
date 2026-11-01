@@ -5,7 +5,7 @@
 // credited to them, and their own credit rows). Each is computed once, by its
 // figure source, so the census lines and the header can never disagree. The
 // second is never added into the first anywhere except on the line that says
-// it is "with soft credit". Its own file so scripts/check-numbers.js can check
+// it is "with soft credit". Its own file so scripts/ci/check-numbers.js can check
 // it (server.js cannot be required without booting).
 "use strict";
 const figureSources = require("./figureSources");

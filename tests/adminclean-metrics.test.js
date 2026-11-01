@@ -163,8 +163,8 @@ const snapshot = async () => JSON.stringify(await q(
 
   console.log("\n§4 · the cleanup dry run changes nothing");
   const before = await snapshot();
-  const auditBefore = (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/admin-clean'`))[0].c;
-  const out = execFileSync("node", [path.join(__dirname, "..", "scripts", "admin-clean.js")],
+  const auditBefore = (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/ci/admin-clean'`))[0].c;
+  const out = execFileSync("node", [path.join(__dirname, "..", "scripts", "ci", "admin-clean.js")],
     { env: { ...process.env }, encoding: "utf8", timeout: 60000 });
   ok("the dry run says it is a dry run", /DRY RUN/.test(out) && /nothing was changed/i.test(out), out.slice(0, 200));
   ok("…prints the walk fixture for delete, by name and id", new RegExp(`DELETE\\s+Fixture\\s+${JUNK}\\s+ACM-9 Walk`).test(out));
@@ -177,8 +177,8 @@ const snapshot = async () => JSON.stringify(await q(
      !/DELETE\s+\S+\s+org_riverbend_demo/.test(out) && (!/org_riverbend_demo/.test(out) || /KEEP\s+Demo\s+org_riverbend_demo/.test(out)), out.split("\n").filter(l => /riverbend/.test(l)));
   ok("nothing in orgs changed", (await snapshot()) === before);
   ok("…and no audit row was written",
-     (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/admin-clean'`))[0].c === auditBefore);
-  const plan = require("../scripts/admin-clean").decide;
+     (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/ci/admin-clean'`))[0].c === auditBefore);
+  const plan = require("../scripts/ci/admin-clean").decide;
   const guarded = plan({ id: "org_x", name: "f", stripe_subscription_id: "sub_1" }, { users: [{ email: "xjca2006+f@gmail.com" }], payments: 0, realDonors: 0 });
   ok("a junk org with a Stripe subscription is archived, never deleted", guarded.action === "archive", JSON.stringify(guarded));
 

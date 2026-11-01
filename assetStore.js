@@ -234,7 +234,7 @@ async function pruneUnreferencedAssets(orgId, kind, keepIds) {
 const pruneThemeAssets = (orgId, kind, keepId) => pruneUnreferencedAssets(orgId, kind, keepId ? [keepId] : []);
 
 // Un-delete a retained object (the restore half lives in
-// scripts/restore-asset.js, which also re-points the pointer from history).
+// scripts/ops/restore-asset.js, which also re-points the pointer from history).
 async function restoreAsset(id) {
   const [row] = await query(`SELECT id, deleted_at FROM portal_assets WHERE id = ?`, [id]);
   if (!row) return null;
