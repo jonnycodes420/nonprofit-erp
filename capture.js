@@ -169,8 +169,9 @@ async function prepareFile(buffer) {
     return { buffer: r.data, contentType: "image/webp", width: r.info.width, height: r.info.height };
   } catch { return { error: "Steward couldn't open that photo. Take it again in better light." }; }
 }
-async function putFile(orgId, f) {
-  const asset = await D.putThemeAsset({ orgId, kind: personPhoto.PHOTO_ASSET_KIND, buffer: f.buffer, contentType: f.contentType, width: f.width, height: f.height });
+async function putFile(orgId, f, { seal = false } = {}) {
+  // SECURE-3: a file a mailbox read kept is sealed at rest (assetStore `seal`).
+  const asset = await D.putThemeAsset({ orgId, kind: personPhoto.PHOTO_ASSET_KIND, buffer: f.buffer, contentType: f.contentType, width: f.width, height: f.height, seal });
   return asset.id;
 }
 const fileUrl = (orgId, assetId) => assetId ? personPhoto.signPhotoUrl({ orgId, assetId }) : null;
@@ -502,7 +503,7 @@ async function cardsFromFile(orgId, buffer, fileName, from, batchId = null) {
   const items = r.ai === "read" ? r.items.filter(i => i.kind !== "deposit_slip" && !(email && i.kind === "other")) : [];
   const slip = r.ai === "read" ? r.items.find(i => i.kind === "deposit_slip") : null;
   if (email && !items.length) return { cards: [], ignored: "not_a_card" };
-  const assetId = await putFile(orgId, f);
+  const assetId = await putFile(orgId, f, { seal: from.sealFile === true });
   const at = { ...from, ai: r.ai, assetId, contentType: f.contentType, fileName, batchId };
   if (!items.length) {
     if (slip) return { slip: await amountFor(scrubBank(slip)), assetId, cards: [] };
@@ -546,7 +547,7 @@ async function fromMailboxMessage(orgId, { donorIds, direction, attachmentCount,
     const t = sniff(a.buffer);
     if (t !== PDF && !IMAGE_TYPES.includes(t)) continue;
     const r = await cardsFromFile(orgId, a.buffer, a.fileName || "attachment", {
-      source: "email", receivedAt, sourceRef: `${provider}:${messageId}:${i}`, actorId, actorName, senderDonorId: donorIds[0], healthScreen: privacy.on });
+      source: "email", receivedAt, sourceRef: `${provider}:${messageId}:${i}`, actorId, actorName, senderDonorId: donorIds[0], healthScreen: privacy.on, sealFile: true });
     cards += (r.cards || []).length;
   }
   return { cards };

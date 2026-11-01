@@ -24,6 +24,10 @@
 //       API never returns one
 //   §7  one person's mailbox is hers — an admin colleague cannot pause,
 //       disconnect or read it, and the connection is keyed to the user
+//   §8  SECURE-3: mail logged before sealing (body in `note`, attachment bytes
+//       in portal_assets) is sealed by scripts/ops/seal-synced-mail.js --apply,
+//       reads back whole through the profile and the asset reader, and a
+//       second run changes nothing. Red on main (no script, nothing sealed).
 //
 // HOW IT WOULD GO RED: match on a substring instead of a whole address; log
 // the subject before checking the match; consult the never-log list only for
@@ -36,7 +40,12 @@
 // Standard scratch stack (tests/README.md).
 
 const bcrypt = require("bcryptjs");
+const path = require("path");
+const { execFileSync } = require("child_process");
 const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+// The battery server's key (tests/run-all.sh); the backfill script and the
+// asset reader below run in this process's env, so they must hold the same one.
+process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 
 const A = "org_int4a", B = "org_int4b";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -46,7 +55,7 @@ const SECRET_SUBJECT = "Biopsy results and next steps";
 const SECRET_ADDRESS = "oncology.scheduling@hospital.invalid";
 const SECRET_BODY    = "Your appointment with Dr Okonkwo is confirmed for Tuesday";
 
-const TABLES = ["mailbox_exclusions", "mailbox_never_log", "mailbox_connections",
+const TABLES = ["grant_documents", "portal_assets", "mailbox_exclusions", "mailbox_never_log", "mailbox_connections",
                 "interactions", "threads", "gifts", "donors", "users"];
 
 async function reset() {
@@ -190,6 +199,58 @@ const countLike = async (orgId, needle) => {
   // She can.
   const herPause = await api("POST", "/mailbox/google/pause", dana, { paused: true });
   ok("§7 she can pause her own", herPause.status === 200, `status ${herPause.status}`);
+
+  // ── §8 · SECURE-3: MAIL LOGGED BEFORE SEALING IS SEALED BY THE BACKFILL ──
+  // An old row, written the way syncMailboxRun wrote it before SECURE-3 (the
+  // line and the body together in `note`), and an attachment it kept as a
+  // grant document (plain base64 in portal_assets.data). The script Jonathan
+  // runs seals both; a second run changes nothing. Red on main: no script.
+  const OLD_BODY = "OLD-PLAINTEXT she wrote this before sealing existed";
+  const OLD_LINE = "Replied to Dana: The spring visit";
+  const OLD_PDF = Buffer.from("%PDF-1.4\nOLD-ATTACHMENT-BYTES\n%%EOF\n");
+  const OLD_ASSET = "pa_" + "0123456789abcdef01234567";
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+           VALUES ('int_int4_old',$1,'d_a_marion','email',$2,'2026-09-01',$3,'Dana',$4)`,
+    [A, `${OLD_LINE}\n\n${OLD_BODY}`, `system:mailbox/google/u_${A}`,
+     JSON.stringify({ message_id: "m_int4_old", provider: "google", direction: "inbound", subject: "The spring visit", logged_by: `u_${A}` })]);
+  await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'grantdoc','application/pdf',$3,'db',$4)`,
+    [OLD_ASSET, A, OLD_PDF.length, OLD_PDF.toString("base64")]);
+  await q(`INSERT INTO grant_documents (id,org_id,grant_id,doc_type,asset_id,file_name,content_type,bytes,uploaded_by,uploaded_by_name,source,message_id)
+           VALUES ('gdoc_int4_old',$1,NULL,'report',$2,'Visit.pdf','application/pdf',$3,$4,'Dana','mailbox','m_int4_old')`,
+    [A, OLD_ASSET, OLD_PDF.length, `system:mailbox/google/u_${A}`]);
+  const script = path.join(__dirname, "..", "scripts", "ops", "seal-synced-mail.js");
+  const runScript = (...args) => {
+    try { return { code: 0, out: execFileSync(process.execPath, [script, `--org=${A}`, ...args], { env: process.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; }
+    catch (e) { return { code: e.status == null ? 1 : e.status, out: String(e.stdout || "") + String(e.stderr || "") }; }
+  };
+  const rowNow = async () => (await q(`SELECT note, body_sealed, body_key_id FROM interactions WHERE id='int_int4_old'`).catch(() => [{}]))[0] || {};
+  const assetNow = async () => (await q(`SELECT data, sealed_header, sealed_key_id FROM portal_assets WHERE id=$1`, [OLD_ASSET]).catch(() => [{}]))[0] || {};
+  const dry = runScript();
+  const afterDry = await rowNow();
+  ok("§8 the dry run counts the old row and the old attachment, and changes nothing",
+    dry.code === 0 && /DRY RUN/.test(dry.out) && /1 email body to seal/.test(dry.out) && /1 attachment to seal/.test(dry.out)
+    && afterDry.note.includes(OLD_BODY) && !afterDry.body_sealed, dry.out);
+  const first = runScript("--apply");
+  const oldSealed = await rowNow(), sealedAsset = await assetNow();
+  ok("§8 --apply seals the old body: the line stays, the text is gone from the table",
+    first.code === 0 && oldSealed.note === OLD_LINE && /^m1\.k1\./.test(oldSealed.body_sealed || "") && oldSealed.body_key_id === "k1"
+    && !String(oldSealed.body_sealed).includes("OLD-PLAINTEXT"), { out: first.out, note: oldSealed.note });
+  ok("§8 --apply seals the old attachment's bytes in place",
+    /^m1\.k1\./.test(sealedAsset.sealed_header || "") && !Buffer.from(sealedAsset.data || "", "base64").includes(Buffer.from("OLD-ATTACHMENT")),
+    { header: String(sealedAsset.sealed_header).slice(0, 6) });
+  ok("§8 the script prints counts, never content", !/OLD-PLAINTEXT|OLD-ATTACHMENT|spring visit/i.test(dry.out + first.out), dry.out + first.out);
+  const second = runScript("--apply");
+  const again = await rowNow(), againAsset = await assetNow();
+  ok("§8 a second run changes nothing", second.code === 0 && /0 email bodies sealed/.test(second.out) && /0 attachments sealed/.test(second.out)
+    && again.body_sealed === oldSealed.body_sealed && againAsset.data === sealedAsset.data && againAsset.sealed_header === sealedAsset.sealed_header, second.out);
+  const prof = await api("GET", "/donors/d_a_marion", dana);
+  const oldRead = ((prof.body && prof.body.interactions) || []).find(i => i.id === "int_int4_old");
+  ok("§8 the profile timeline reads the sealed row back exactly as it was written",
+    !!oldRead && oldRead.note === `${OLD_LINE}\n\n${OLD_BODY}` && !("body_sealed" in oldRead), oldRead);
+  const AS = (() => { try { return require("../assetStore"); } catch { return null; } })();
+  const opened = AS ? await AS.getThemeAsset(OLD_ASSET).catch(e => ({ error: e.code || e.message })) : null;
+  ok("§8 the attachment opens to its original bytes through the one asset reader", !!opened && Buffer.isBuffer(opened.buffer) && opened.buffer.equals(OLD_PDF),
+    opened && (opened.error || opened.buffer && opened.buffer.subarray(0, 12).toString()));
 
   for (const o of [A, B]) {
     for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});

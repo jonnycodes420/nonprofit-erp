@@ -48,6 +48,7 @@ Node scripts:
 | `ops/landing-prod-verify.js` | The marketing site's prod honesty and quality check | `node scripts/ops/landing-prod-verify.js` |
 | `ops/stripe-live-prices.js` | Creates the record-band prices in Stripe (test first; live needs `--live`) | `STRIPE_BILLING_SECRET_KEY=… node scripts/ops/stripe-live-prices.js` |
 | `ops/numbers1-campaign-window.js` | Moves gifts credited outside their campaign's dates to no campaign. Dry run by default | `node scripts/ops/numbers1-campaign-window.js --org <id>` then `--apply` |
+| `ops/seal-synced-mail.js` | SECURE-3. Seals synced email bodies and attachments stored before sealing, and rewraps rows under a rotated mail key. Counts only, never content. Dry run by default; never at deploy | `DATABASE_URL=… STEWARD_CREDENTIAL_KEY=… node scripts/ops/seal-synced-mail.js` then the same with `--apply --i-know-this-is-prod` (add `PORTAL_ASSETS_S3_*` when S3 is in use; `STEWARD_MAIL_KEYS` while rotating) |
 | `ops/backfill-campaign-attribution.js` | Backfills `campaign_id` on historical gifts. Dry run by default | `node scripts/ops/backfill-campaign-attribution.js` then `--apply` |
 | `ops/restore-asset.js` | Brings back a soft-deleted portal asset and its pointer | `node scripts/ops/restore-asset.js list <orgId>` / `restore <pa_id> [--repoint]` |
 | `ops/load-irs-ein-registry.js` | Loads the IRS Pub 78 list into `ein_registry` | `node scripts/ops/load-irs-ein-registry.js <pub78.txt \| --url>` |

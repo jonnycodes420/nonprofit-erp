@@ -42,6 +42,10 @@ const GUARDED_WRITERS = [
   // run by default; --apply resolves its database through writerDbUrl(), so a
   // remote one also needs --i-know-this-is-prod. Jonathan runs it.
   "move-theme-assets-to-s3",
+  // SECURE-3 — seals synced mail stored before sealing (bodies and attachments)
+  // and rewraps rows under a rotated key. Dry run by default; --apply writes
+  // through writerDbUrl. Jonathan runs it; never at deploy.
+  "seal-synced-mail",
   // The demo seed (BUILD-72 Part 5; FIX-1 §11 renamed it seed-demo). Loopback
   // default via writerBase; any database name outside the scratch allowlist
   // fails closed EXCEPT the one deliberate production path (prod db + prod
