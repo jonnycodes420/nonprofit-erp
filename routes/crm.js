@@ -29472,8 +29472,9 @@ app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
     query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
     query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY ea.created_at DESC", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),
-    // SECURE-3: the org-wide export carries a synced email's line, never its sealed body.
-    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST", [orgId]).then(rs => rs.map(SEALED_MAIL.stubInteraction)),
+    // SECURE-3: the org's own export is its whole record, so a synced email is
+    // opened through the one reader, as it was in the clear before sealing.
+    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST", [orgId]).then(rs => SEALED_MAIL.openInteractions(rs)),
     query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY t.due", [orgId]),
