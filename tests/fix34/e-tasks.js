@@ -61,7 +61,8 @@ async function run() {
                VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),true,NOW(),$4,'12 Wharf Street, Salem, MA 01970',$2,NULL)`,
         [o, demo ? "Fix34e Demo" : "Fix34e Real", demo ? "fix34e-demo" : "fix34e-real", demo]);
       const uid = demo ? "u_f34e_demo" : "u_f34e";
-      await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana Reyes','admin')`,
+      // STAFF-MAIL-2: a new person starts with the daily email off; §3 reads one, so she has turned it on.
+      await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,notify_thread_nudge) VALUES ($1,$2,$3,$4,'Dana Reyes','admin',true)`,
         [uid, o, demo ? "dana@fix34e-demo.local" : "dana@fix34e.local", pw]);
       await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,assigned_to,assigned_to_name,created_by,created_by_name)
                VALUES ($1,$2,'Christine Stewart',$3,'active','active','[]',$4,'Dana Reyes','system:test','test')`,

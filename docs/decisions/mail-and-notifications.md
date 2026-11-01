@@ -17,7 +17,19 @@ default 6) and its days (`brief_days`, weekdays or every day); `notify_thread_nu
 and NULL means on. Every other staff email reads `userWantsEmail(user, kind)` where NULL means OFF, and a
 `prefKind` that names no switch in `NOTIFY_PREF_COLUMN` never sends (`tests/mail-suppression.test.js` §12 scans
 every `prefKind`). A schedule a person set up themselves (a weekly saved report, a board pack) is already that
-switch. The org's Staff mail switch (super-admin) still sits above all of it. A step with a time today stays in
+switch. The org's Staff mail switch (super-admin) still sits above all of it.
+
+**STAFF-MAIL-2 (Jonathan, 31 Oct 2026): the weekly email is the default.** Everyone new (the person who signs up
+the org, and everyone they invite) starts with the weekly email ("Your week", `notify_weekly`) ON and every other
+staff email OFF, the daily morning email included (`notify_thread_nudge` defaults to false). People who existed
+before keep exactly what they had: `notify_weekly` was added with no default (their rows are NULL, which reads off)
+and the defaults were set afterwards, so the deploy wrote no rows. The weekly email goes Monday from 7 AM in the
+org's time zone (`runWeeklyEmailForOrg`, on the morning tick, ledger `weekly_email`), built from the morning email's
+parts and Home's figures (`gifts`, `unthanked` from Home's own start date, donorStatus's lapsed rule), and an empty
+week still sends one line. Turning the daily email on turns the weekly one off (`PUT /me/notification-prefs`
+answers `weeklyTurnedOff`, and the page's Undo sends both back); ticking both gets both. Its footer link opens
+Settings → Your email (a GET never changes state), where the switch is one click. The org's Staff mail switch
+stops it like everything else. Tested in `tests/mail-suppression.test.js` §12a and §13. A step with a time today stays in
 the morning email unless the person turned on its own reminder, so no step goes unmentioned.
 
 ## Rules

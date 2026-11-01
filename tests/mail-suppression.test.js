@@ -609,8 +609,22 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const EM = require("../routes/email");
     const me = await api("GET", "/me", tok);
     const n = me.body?.notifications || {};
-    ok("§12a a new person: the morning email on, every other staff email off",
-      n.morningEmail === true && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => n[k] === false), n);
+    // STAFF-MAIL-2 (Jonathan, 31 Oct 2026): a new person starts with the
+    // weekly email on and every other staff email off, the daily morning email
+    // too; someone added before keeps exactly what they had. Red on main: the
+    // column had no default, so a new person read the daily email on, and
+    // there was no weekly email.
+    ok("§12a a new person: the weekly email on, every other staff email off, the daily one too",
+      n.morningEmail === false && n.weekly === true && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => n[k] === false), n);
+    {
+      const myId = me.body?.user?.id;
+      // A row from before this build: the two columns NULL, as the deploy leaves them.
+      await q("UPDATE users SET notify_thread_nudge=NULL, notify_weekly=NULL WHERE id=$1", [myId]);
+      const legacy = (await api("GET", "/me", tok)).body?.notifications || {};
+      ok("§12a someone added before STAFF-MAIL-2 keeps exactly what they had: the daily email on, no weekly email",
+        legacy.morningEmail === true && legacy.weekly === false, legacy);
+      await q("UPDATE users SET notify_thread_nudge=false, notify_weekly=true WHERE id=$1", [myId]);
+    }
     ok("§12a …at 6 AM on weekdays with every section in, until she changes it",
       n.brief?.hour === 6 && n.brief?.days === "weekdays" && Object.values(n.brief?.sections || {}).every(v => v === true), n.brief);
 
@@ -625,7 +639,8 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const day = dow => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7 || 7)); return d.toISOString().slice(0, 10); };
     const wed = day(3), sat = day(6);
     const why = r => ((r.body?.skipped || []).find(x => x.recipientUserId === reg.user?.id || x.recipientUserId === me.body?.user?.id) || {}).reason || null;
-    const set = await api("PUT", "/me/notification-prefs", tok, { brief: { hour: 9 } });
+    ok("§12c off until she turns it on: nothing comes", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 9, dryRun: true })) === "opted_out");
+    const set = await api("PUT", "/me/notification-prefs", tok, { morningEmail: true, brief: { hour: 9 } });
     ok("§12c she picks 9 AM, and it is kept", set.status === 200 && set.body?.notifications?.brief?.hour === 9, set.body);
     ok("§12c at 7 AM it has not come yet", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 7, dryRun: true })) === "not_yet");
     ok("§12c at 9 AM it is due", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 9, dryRun: true })) !== "not_yet");
@@ -652,6 +667,110 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const bad2 = kinds.filter(k => !EM.NOTIFY_PREF_COLUMN[JSON.parse(k.split(" ")[1])]);
     ok("§12d every staff alert names a switch that exists", kinds.length >= 4 && bad2.length === 0, { bad: bad2, n: kinds.length });
     ok("§12d a staff email kind with no switch is not sent", (await EM.userWantsEmail("u_none", "notify_portfolio_gifts")) === false, null);
+  }
+
+  // ── §13 STAFF-MAIL-2 · THE WEEKLY EMAIL IS THE DEFAULT ────────────────────
+  // Everyone new (the person who signs up the org, and everyone they invite)
+  // starts with the weekly email on and the daily one off. Turning the daily
+  // one on turns the weekly one off, and Undo puts both back. The org's Staff
+  // mail switch still stops it. Its numbers are Home's. Red on main: there is
+  // no weekly switch, the invitee reads the daily email on, and the daily
+  // switch turns nothing off.
+  console.log("\n§13 STAFF-MAIL-2: the weekly email is the default");
+  {
+    const civil = d => d.toISOString().slice(0, 10);
+    const monday = (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return civil(d); })();
+    const tuesday = (() => { const d = new Date(monday + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return civil(d); })();
+    const wantNew = x => x && x.weekly === true && x.morningEmail === false
+      && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => x[k] === false);
+
+    let signupEmail;
+    const signup = await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgName: "SM2 New Org " + uniq(), userName: "Nia New", email: (signupEmail = `sm2-new-${uniq()}@test.local`), password: "loadtest1234" }) }).then(r => r.json());
+    const sNotes = (await api("GET", "/me", signup.token)).body?.notifications;
+    ok("§13a a new signup: the weekly email on, the daily email and everything else off", wantNew(sNotes), sNotes);
+
+    const inviteeEmail = `sm2-invitee-${uniq()}@test.local`;
+    const inv = await api("POST", "/auth/invite", tok, { email: inviteeEmail, role: "member" });
+    const invToken = String(inv.body?.inviteLink || "").split("/invite/")[1];
+    const acc = await api("POST", "/auth/invite/accept", null, { token: invToken, name: "Ivo Invitee", password: "loadtest1234" });
+    const iTok = acc.body?.token;
+    const iNotes = (await api("GET", "/me", iTok)).body?.notifications;
+    ok("§13a a new invitee: the weekly email on, the daily email and everything else off", acc.status === 201 && wantNew(iNotes), { inv: inv.status, acc: acc.status, iNotes });
+
+    // People who exist today keep exactly what they have: no row is written at deploy.
+    const dbSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "db.js"), "utf8");
+    ok("§13b the build writes no person's email settings: schema only",
+      !/UPDATE\s+users\s+SET[^`;]*notify_(weekly|thread_nudge)/i.test(dbSrc.split("STAFF-MAIL-2")[1] || dbSrc), null);
+
+    const on = await api("PUT", "/me/notification-prefs", iTok, { morningEmail: true });
+    ok("§13c turning the daily email on turns the weekly one off, and says so",
+      on.status === 200 && on.body?.weeklyTurnedOff === true && on.body.notifications.morningEmail === true && on.body.notifications.weekly === false, on.body);
+    const undo = await api("PUT", "/me/notification-prefs", iTok, { morningEmail: false, weekly: true });
+    ok("§13c Undo puts both back", undo.status === 200 && undo.body?.notifications?.weekly === true && undo.body.notifications.morningEmail === false && !undo.body.weeklyTurnedOff, undo.body);
+    await api("PUT", "/me/notification-prefs", iTok, { morningEmail: true });
+    const both = await api("PUT", "/me/notification-prefs", iTok, { weekly: true });
+    ok("§13c ticking both gets both", both.body?.notifications?.weekly === true && both.body.notifications.morningEmail === true, both.body?.notifications);
+
+    // When: Monday at 7 AM in the org's time zone (dry runs compose, never send).
+    // §12c turned this admin's daily email on, which turned the weekly one off.
+    await api("PUT", "/me/notification-prefs", tok, { weekly: true });
+    const why = r => (r.body?.skipped || [])[0]?.reason || null;
+    ok("§13d not on a Tuesday", why(await api("POST", "/nudges/run", tok, { kind: "weekly", today: tuesday, hour: 9, dryRun: true })) === "not_today");
+    ok("§13d not before 7 AM", why(await api("POST", "/nudges/run", tok, { kind: "weekly", today: monday, hour: 6, dryRun: true })) === "not_yet");
+    const due = await api("POST", "/nudges/run", tok, { kind: "weekly", today: monday, hour: 7, dryRun: true });
+    const mine = (due.body?.sent || []).find(s => s.email === email);
+    ok("§13d Monday at 7 AM it is due, to the person who has it on", !!mine && /Open Home/.test(mine.html) && /Turn on the daily email/.test(mine.html), due.body?.skipped);
+
+    // Its numbers are Home's: gifts last week and thank-yous owed, through the same figures.
+    const g = await api("GET", `/figures/gifts/rows?from=${mine?.sources?.gifts?.params?.from}&to=${mine?.sources?.gifts?.params?.to}`, tok);
+    const gN = await api("GET", `/figures/gifts/rows?from=${mine?.sources?.gifts?.params?.from}&to=${mine?.sources?.gifts?.params?.to}&measure=count`, tok);
+    const home = await api("GET", "/dashboards/people", tok);
+    ok("§13e last week's gifts are the gifts figure, to the cent", mine && Math.round(mine.giftDollars * 100) === Math.round(Number(g.body?.value || 0) * 100) && mine.giftCount === Number(gN.body?.value),
+      { email: mine && [mine.giftCount, mine.giftDollars], fig: [gN.body?.value, g.body?.value] });
+    const homeOwed = (home.body?.metrics || []).find(m => m.key === "giftsNotYetThanked");
+    ok("§13e thank-yous owed is Home's number, from Home's start date", mine && homeOwed && mine.unthanked === Number(homeOwed.value)
+      && mine.sources?.unthanked?.params?.since === homeOwed.source?.params?.since, { email: [mine?.unthanked, mine?.sources?.unthanked], home: homeOwed && [homeOwed.value, homeOwed.source] });
+
+    // A week with nothing in it still sends: one line and the link to Home.
+    const quiet = (await api("POST", "/nudges/run", signup.token, { kind: "weekly", today: monday, force: true, dryRun: true })).body?.sent?.[0];
+    ok("§13f an empty week says nothing needs you, with one link to Home",
+      quiet?.empty === true && /Nothing needs you this week/.test(quiet.html) && (quiet.html.match(/\/dashboard"/g) || []).length === 1, quiet && { subject: quiet.subject, empty: quiet.empty });
+
+    // The same kind of follow-up is one line with its count: two Data health
+    // tasks (1 and 2 duplicates) read "Review 3 possible duplicates". A task a
+    // person wrote stays its own line. And a staff email never says the org
+    // has no mailing address: with none on file there is no footer line.
+    const [nu] = await q("SELECT id, org_id FROM users WHERE email=$1", [signupEmail]);
+    const lastWeekDay = (() => { const d = new Date(monday + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 3); return civil(d); })();
+    for (const [n, imp] of [[1, "imp_sm2a"], [2, "imp_sm2b"]])
+      await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,assigned_to,assigned_to_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'medium','admin',0,$5,'Nia New',$6,'Steward (automatic)')`,
+        ["t_sm2" + imp.slice(-1) + uniq().slice(-4), nu.org_id, `Review ${n} possible duplicate${n === 1 ? "" : "s"} from the import in Data health`, lastWeekDay, nu.id, `system:data-health/import/${imp}`]);
+    await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,assigned_to,assigned_to_name,created_by,created_by_name)
+             VALUES ($1,$2,'Call the bank about the deposit',$3,'medium','admin',0,$4,'Nia New',$4,'Nia New')`, ["t_sm2p" + uniq().slice(-4), nu.org_id, monday, nu.id]);
+    const grouped = (await api("POST", "/nudges/run", signup.token, { kind: "weekly", today: monday, force: true, dryRun: true })).body?.sent?.[0];
+    const [noAddr] = await q("SELECT receipt_address FROM orgs WHERE id=$1", [nu.org_id]);
+    ok("§13h two Data health follow-ups are one line with the total: Review 3 possible duplicates",
+      /Review 3 possible duplicates from the import in Data health/.test(grouped?.html || "") && (grouped.html.match(/possible duplicate/g) || []).length === 1
+        && /Call the bank about the deposit/.test(grouped.html) && /2 things need you/.test(grouped.subject), grouped && { subject: grouped.subject, tasks: grouped.tasks });
+    ok("§13h with no mailing address on file, the weekly email has no line about it",
+      !String(noAddr?.receipt_address || "").trim() && !!grouped && !/mailing address/i.test(grouped.html), noAddr);
+    const srvSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+    ok("§13h no staff email can say the org has no mailing address", !/no mailing address on file for/.test(srvSrc), null);
+
+    // The org's Staff mail switch still stops everything, the weekly email included.
+    await q("UPDATE orgs SET staff_mail_enabled=false WHERE id=$1", [orgId]);
+    await new Promise(r => setTimeout(r, 5100));   // the org gate's 5s cache
+    state.captured.length = 0;
+    const gated = await api("POST", "/nudges/run", tok, { kind: "weekly", today: monday, force: true });
+    await settle();
+    ok("§13g with Staff mail off the weekly email does not send", gated.body?.gated && !(gated.body.sent || []).length && to(email).length === 0, { gated: gated.body?.gated, n: to(email).length });
+    await q("UPDATE orgs SET staff_mail_enabled=true WHERE id=$1", [orgId]);
+    await new Promise(r => setTimeout(r, 5100));
+    const sent = await api("POST", "/nudges/run", tok, { kind: "weekly", today: monday, force: true });
+    await settle();
+    ok("§13g …and with it on, the same run does (to the local sink)", (sent.body?.sent || []).some(s => s.email === email) && to(email).length === 1, { b: sent.body?.skipped, n: to(email).length });
   }
 
   sink.srv.close();

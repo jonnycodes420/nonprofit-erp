@@ -6670,12 +6670,12 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
         `<tr><td style="padding:3px 0;font-size:13px;color:${INK};">${digestEsc(displayNameCase(r.who))}<span style="color:${SAGE};"> · ${r.n} open${r.overdue ? ` · ${r.overdue} overdue` : ""}</span></td></tr>`).join("")}</table>
     </div>` : "";
 
-  // CAN-SPAM: the org's mailing address in the footer. No address on file →
-  // the email SAYS SO and links to add it, never a footer that pretends.
+  // The org's mailing address in the footer when it has one. This goes to a
+  // person's own work account, so with no address on file there is no line.
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:${EMERALD};">Add it in Settings</a> and it will.</div>`;
+    : "";
 
   // The one button: the first person waiting, else her tasks, else Home.
   const button = threads.length
@@ -6685,7 +6685,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
       ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${button}${footer}
-      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under My email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
+      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Your email, where you choose what is in it and when it comes. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
 
@@ -6839,8 +6839,226 @@ async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null
       + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
 <p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
 ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
-      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under My email. Untick "Your meetings today" there to stop it.</p>`;
+      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Your email. Untick "Your meetings today" there to stop it.</p>`;
     if (await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body)) out.sent.push({ recipientUserId: u.id, count: meetings.length });
+    else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
+  }
+  return out;
+}
+
+// ── STAFF-MAIL-2 — YOUR WEEK: THE ONE STAFF EMAIL A NEW PERSON STARTS WITH ──
+// Jonathan, 31 Oct 2026: everyone new starts with this ON and every other
+// staff email off, the daily morning email included (`notify_weekly` defaults
+// to true; people who existed before keep NULL, which reads off). Monday at
+// 7 AM in the org's time zone: the week ahead, then last week in a few lines.
+//
+// BUILT FROM PARTS THAT ALREADY ANSWER ELSEWHERE, so its numbers cannot drift:
+//   steps due        the morning email's ranked queue, run to Sunday
+//   follow-ups due   the morning email's task list, run to Sunday
+//   pledge payments  unpaid pledge installments due this week
+//   events           events dated this week
+//   gifts in         the `gifts` figure (Home, Atlas and every report read it)
+//   thank-yous owed  the `unthanked` figure, from Home's own start date
+//   who lapsed       donorStatus's lapsed rule (the Directory's), whose lapse
+//                    day (last gift + 365) fell last week
+// A week with nothing in it still sends: one line, and the link to Home.
+const WEEKLY_HOUR = 7;
+const WEEKLY_CATCH_UP_HOURS = 6;
+const WEEKLY_LIST_CAP = 5;
+function weeklyDay(civil) {
+  const c = orgTime.parseCivil(String(civil || "").slice(0, 10));
+  if (!c) return "";
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return `${DOW[orgTime.dayOfWeek(String(civil).slice(0, 10))]} ${MON[c.m - 1]} ${c.d}`;
+}
+// "Not this week" until the org's Monday, from 7 AM until six hours after.
+function weeklyDueNow(today, nowHour, force) {
+  if (force) return null;
+  if (orgTime.dayOfWeek(today) !== 0) return "not_today";
+  if (nowHour != null && (nowHour < WEEKLY_HOUR || nowHour >= WEEKLY_HOUR + WEEKLY_CATCH_UP_HOURS)) return "not_yet";
+  return null;
+}
+
+// The org-wide half (last week, pledges, events) is the same for everyone, so
+// it is composed once per org; the person's own steps and follow-ups per person.
+async function composeWeeklyOrgPart(orgId, monday) {
+  const sunday = orgTime.addDays(monday, 6);
+  const lastMon = orgTime.addDays(monday, -7), lastSun = orgTime.addDays(monday, -1);
+  const since = await require("./routes/crm").reportHooks.thanksSince(orgId);   // Home's start date for thank-yous owed
+  const giftsSrc = { key: "gifts", params: { from: lastMon, to: lastSun } };
+  const unthankedSrc = { key: "unthanked", params: { since } };
+  const [giftSum, giftCount, unthanked] = await Promise.all([
+    figureSources.figureValue(orgId, giftsSrc),
+    figureSources.figureValue(orgId, { key: "gifts", params: { ...giftsSrc.params, measure: "count" } }),
+    figureSources.figureValue(orgId, unthankedSrc),
+  ]);
+  const DS = require("./donorStatus");
+  const st = DS.statusSql(orgId, monday, await DS.cutsFor(orgId));
+  const lapsed = await query(
+    `SELECT d.id, d.name, d.email, s.last_date FROM (${st.sql}) s JOIN donors d ON d.id = s.donor_id AND d.org_id = ?
+      WHERE ${DS.tagColumn("lapsed")} AND s.last_date::date BETWEEN ?::date AND ?::date
+      ORDER BY s.last12 DESC NULLS LAST, d.name`,
+    [...st.args, orgId, "lapsed", orgTime.addDays(lastMon, -lapseRule.LAPSED_DAYS), orgTime.addDays(lastSun, -lapseRule.LAPSED_DAYS)]);
+  const pledges = await query(
+    `SELECT i.id, i.due_date, i.amount, d.id AS donor_id, d.name AS donor_name, d.email AS donor_email
+       FROM pledge_installments i JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+       JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+      WHERE i.org_id = ? AND i.paid_gift_id IS NULL AND d.deleted_at IS NULL AND COALESCE(p.status, 'open') = 'open'
+        AND i.due_date >= ? AND i.due_date <= ?
+      ORDER BY i.due_date, i.amount DESC`, [orgId, monday, sunday]);
+  const events = await query(
+    `SELECT id, name, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM events WHERE org_id = ? AND date >= ?::date AND date <= ?::date
+        AND COALESCE(status, 'upcoming') NOT IN ('cancelled', 'canceled')
+      ORDER BY date, name`, [orgId, monday, sunday]);
+  return {
+    monday, sunday, lastWeek: { from: lastMon, to: lastSun },
+    giftCount: Number(giftCount.value) || 0, giftDollars: Number(giftSum.value) || 0,
+    unthanked: Number(unthanked.value) || 0,
+    lapsed: lapsed.map(r => ({ id: r.id, name: displayNameCase(r.name || ""), email: r.email })),
+    pledges: pledges.map(r => ({ id: r.id, due: String(r.due_date).slice(0, 10), amount: Number(r.amount) || 0, donorId: r.donor_id, donorName: displayNameCase(r.donor_name || ""), donorEmail: r.donor_email })),
+    events: events.map(e => ({ id: e.id, name: e.name, date: e.date })),
+    sources: { gifts: giftsSrc, unthanked: unthankedSrc },
+  };
+}
+
+// The same kind of follow-up is one line with its count. A task Steward opened
+// itself carries its kind in its actor (`system:<path>/<id>`); its path is the
+// kind. A kind that counts something says its total; any other shows its first
+// title and how many more. A task a person wrote is its own line.
+const WEEKLY_TASK_KINDS = {
+  "system:data-health/import": {
+    count: t => Number((String(t.title).match(/\d+/) || [1])[0]) || 1,
+    line: n => `Review ${n} possible ${n === 1 ? "duplicate" : "duplicates"} from the import in Data health`,
+  },
+};
+function weeklyTaskKind(t) {
+  const by = String(t.created_by || "");
+  return by.startsWith("system:") ? by.replace(/\/[^/]*$/, "") : null;
+}
+function groupWeeklyTasks(rows) {
+  const out = [], byKind = new Map();
+  for (const t of rows) {
+    const kind = weeklyTaskKind(t);
+    const g = kind && byKind.get(kind);
+    if (g) { g.tasks.push(t); if (String(t.due) < String(g.due)) g.due = t.due; continue; }
+    const line = { kind, tasks: [t], due: t.due };
+    if (kind) byKind.set(kind, line);
+    out.push(line);
+  }
+  return out.map(g => {
+    const [t] = g.tasks, rule = g.kind && WEEKLY_TASK_KINDS[g.kind];
+    if (g.tasks.length === 1) return { id: t.id, title: t.title, due: t.due, donor_id: t.donor_id, donor_name: t.donor_name, n: 1 };
+    const title = rule ? rule.line(g.tasks.reduce((a, x) => a + rule.count(x), 0))
+      : `${t.title}, and ${g.tasks.length - 1} more like it`;
+    return { id: null, title, due: g.due, n: g.tasks.length };
+  });
+}
+
+async function composeWeeklyEmail(org, u, monday, orgPart) {
+  const isAdmin = u.role === "admin";
+  const steps = await composeThreadNudgeQueue(org.id, orgPart.sunday, { userId: u.id, isAdmin, keepTimed: true });
+  const tasks = groupWeeklyTasks((await composeDailyTaskReminder(org.id, u.id, orgPart.sunday)).rows);
+  return { ...orgPart, steps: steps.list, stepCount: steps.total, tasks, taskCount: tasks.length };
+}
+
+const weeklyIsEmpty = w => !w.stepCount && !w.taskCount && !w.pledges.length && !w.events.length
+  && !w.giftCount && !w.unthanked && !w.lapsed.length;
+
+function weeklySubject(w, org) {
+  const n = w.stepCount + w.taskCount;
+  const name = displayNameCase(org.name || "");
+  if (weeklyIsEmpty(w)) return `Your week · ${name}: nothing needs you`;
+  return n ? `Your week · ${n} ${n === 1 ? "thing needs" : "things need"} you · ${name}` : `Your week · ${name}`;
+}
+
+function renderWeeklyBody(w, org, user) {
+  const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c";
+  const L = staffLinks(), base = publicAppUrl();
+  const QUIET = `color:${SAGE};text-decoration:underline;`;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const person = (id, name, email) => L.refLinkHtml({ kind: "person", id, name, email }, base, { style: `color:${EMERALD};text-decoration:underline;` });
+  const list = items => `<ul style="margin:6px 0 0;padding-left:18px;">${items.map(i => `<li style="margin:4px 0;font-size:13.5px;color:${INK};">${i}</li>`).join("")}</ul>`;
+  const more = (shown, total) => total > shown ? `<div style="font-size:12px;color:${SAGE};margin-top:4px;">and ${total - shown} more in Steward.</div>` : "";
+  const head = t => `<div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};margin-top:20px;">${t}</div>`;
+  const first = displayNameCase(String(user?.name || "").split(/\s+/)[0] || "");
+  const empty = weeklyIsEmpty(w);
+
+  let ahead = "";
+  if (!empty) {
+    const parts = [];
+    if (w.stepCount) parts.push(`${head("Next steps due")}${list(w.steps.slice(0, WEEKLY_LIST_CAP).map(t => `${person(t.donorId, t.donorName)}<span style="color:${SAGE};"> · ${t.stepRef ? L.refLinkHtml(t.stepRef, base, { label: t.stepLabel, style: QUIET }) : digestEsc(t.stepLabel || "")} · ${String(t.due).slice(0, 10) < w.monday ? "overdue" : digestEsc(weeklyDay(t.due))}</span>`))}${more(Math.min(w.steps.length, WEEKLY_LIST_CAP), w.stepCount)}`);
+    if (w.taskCount) parts.push(`${head("Follow-ups due")}${list(w.tasks.slice(0, WEEKLY_LIST_CAP).map(t => `${t.id ? L.refLinkHtml({ kind: "task", id: t.id, name: t.title }, base, { style: `color:${INK};text-decoration:underline;` }) : `<a href="${base}/app/tasks" style="color:${INK};text-decoration:underline;">${digestEsc(t.title)}</a>`}<span style="color:${SAGE};"> · ${String(t.due).slice(0, 10) < w.monday ? "overdue" : digestEsc(weeklyDay(t.due))}${t.donor_id ? ` · ${digestEsc(displayNameCase(t.donor_name || ""))}` : ""}</span>`))}${more(Math.min(w.tasks.length, WEEKLY_LIST_CAP), w.taskCount)}`);
+    if (w.pledges.length) parts.push(`${head("Pledge payments due")}${list(w.pledges.slice(0, WEEKLY_LIST_CAP).map(p => `${person(p.donorId, p.donorName, p.donorEmail)}<span style="color:${SAGE};"> · ${digestMoney(p.amount)} · ${digestEsc(weeklyDay(p.due))}</span>`))}${more(Math.min(w.pledges.length, WEEKLY_LIST_CAP), w.pledges.length)}`);
+    if (w.events.length) parts.push(`${head("Events")}${list(w.events.slice(0, WEEKLY_LIST_CAP).map(e => `${digestEsc(e.name)}<span style="color:${SAGE};"> · ${digestEsc(weeklyDay(e.date))}</span>`))}${more(Math.min(w.events.length, WEEKLY_LIST_CAP), w.events.length)}`);
+    if (!parts.length) parts.push(`<div style="font-size:14px;color:${INK};margin-top:14px;">Nothing is due this week.</div>`);
+    ahead = parts.join("");
+  }
+
+  // LAST WEEK, IN A FEW LINES. Each figure is one Home and Atlas read.
+  const lines = [];
+  if (!empty) {
+    lines.push(w.giftCount
+      ? `${plural(w.giftCount, "gift", "gifts")} came in, ${digestMoney(w.giftDollars)} in all.`
+      : "No gifts came in.");
+    if (w.unthanked) lines.push(`${plural(w.unthanked, "gift is", "gifts are")} still waiting for a thank-you.`);
+    if (w.lapsed.length) {
+      const named = w.lapsed.slice(0, 3).map(p => person(p.id, p.name, p.email));
+      const rest = w.lapsed.length - named.length;
+      lines.push(`${named.join(", ")}${rest > 0 ? ` and ${plural(rest, "other", "others")}` : ""} lapsed: a year since their last gift.`);
+    }
+  }
+  const lastWeek = lines.length ? `${head("Last week")}<div style="font-size:13.5px;color:${INK};line-height:1.6;margin-top:6px;">${lines.join(" ")}</div>` : "";
+
+  const opening = empty
+    ? `<div style="font-size:15px;color:${INK};margin-top:6px;line-height:1.55;">Good morning${first ? `, ${digestEsc(first)}` : ""}. Nothing needs you this week.</div>`
+    : `<div style="font-size:15px;color:${INK};margin-top:6px;line-height:1.55;">Good morning${first ? `, ${digestEsc(first)}` : ""}. Here is your week.</div>`;
+  const addr = org.receipt_address && String(org.receipt_address).trim();
+  const footer = addr
+    ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
+    : "";
+  // A GET never changes state: the link opens My email, and the switch there is the one click.
+  const settings = `${base}/app/settings?section=myemail&daily=1`;
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+      <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">Your week · ${digestEsc(weeklyDay(w.monday))} to ${digestEsc(weeklyDay(w.sunday))}</div>
+      ${opening}${ahead}${lastWeek}
+      <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};">${L.buttonHtml("Open Home", `${base}/dashboard`)}</div>
+      ${footer}
+      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">Want this every morning instead? <a href="${settings}" style="color:${EMERALD};text-decoration:underline;">Turn on the daily email</a>. You get this weekly email because it is on in Settings, under Your email. <a href="${staffUnsubscribeUrl(user, org.id, "weekly")}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the weekly email.</div>` : ""}
+    </div>`;
+}
+
+// One per person per week (the `weekly_email` ledger). The org's Staff mail
+// switch is read before anything is reserved, exactly as the digests do, so a
+// week reserved while mail was off is never burned.
+async function runWeeklyEmailForOrg(org, { today, send = true, nowHour = null, force = false }) {
+  await ItemRefs.links();
+  const out = { sent: [], skipped: [] };
+  const notNow = weeklyDueNow(today, nowHour, force);
+  if (notNow) { out.skipped.push({ reason: notNow }); return out; }
+  if (send) {
+    const gate = await orgMaySendEmail(org.id, mailPolicy.CATEGORY.STAFF);
+    if (!gate.send) { out.gated = gate.reason; return out; }
+  }
+  const users = await query(
+    "SELECT id, name, email, role, notify_weekly FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL", [org.id]);
+  // The week this email is about starts on the Monday of `today`'s week.
+  const monday = orgTime.addDays(today, -(orgTime.dayOfWeek(today) || 0));
+  let orgPart = null;
+  for (const u of users) {
+    if (!(await userWantsEmail(u.id, "weekly"))) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
+    orgPart = orgPart || await composeWeeklyOrgPart(org.id, monday);
+    const w = await composeWeeklyEmail(org, u, monday, orgPart);
+    const subject = weeklySubject(w, org);
+    const payload = { recipientUserId: u.id, email: u.email, subject, empty: weeklyIsEmpty(w),
+      steps: w.stepCount, tasks: w.taskCount, pledges: w.pledges.length, events: w.events.length,
+      giftCount: w.giftCount, giftDollars: w.giftDollars, unthanked: w.unthanked, lapsed: w.lapsed.map(p => p.id),
+      sources: w.sources };
+    if (!send) { out.sent.push({ ...payload, html: renderWeeklyBody(w, org, u) }); continue; }
+    if (!(await reserveDigest(org.id, "weekly_email", "week:" + monday, u.id, u.email, "user", { steps: w.stepCount, tasks: w.taskCount, empty: payload.empty }))) {
+      out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue;
+    }
+    if (await sendDigestEmail(org, u.email, subject, renderWeeklyBody(w, org, u))) out.sent.push(payload);
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   return out;
@@ -6901,7 +7119,7 @@ function renderStepReminderBody(t, org, timeLabel) {
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
+    : "";
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">${digestEsc(timeLabel)}. ${digestEsc(t.next_step_label)}.</div>
       <div style="font-size:14px;color:#0f1a12;margin-top:6px;">${staffLinks().refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, publicAppUrl())}</div>
@@ -12666,7 +12884,7 @@ require("./routes/crm").mount({
   reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
-  runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
+  runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, runTx, sampleDataMod,
   seedOrgData, sendBoardPackEmail, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
   scheduleScores, recomputeScoresForOrg, engagementMod,
   snapshotMetricsForOrg, solicitableSql, sustainerFileFacts, syncGmail, testMode, threadNudgeDayOk,
@@ -12719,7 +12937,7 @@ require("./routes/jobs").mount({
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,
-  runStepRemindersForOrg, runThreadNudgesForOrg, snapshotMetricsForOrg, syncGmail, threadNudgeDayOk,
+  runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, snapshotMetricsForOrg, syncGmail, threadNudgeDayOk,
   weekBounds,
 });
 require("./routes/email").mount({

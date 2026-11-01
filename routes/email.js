@@ -129,9 +129,11 @@ function buildUnsubscribeUrl(email, orgId, source) {
 // renders on GET (and HEAD) and changes nothing, and its one POST turns off
 // the morning email's two settings (Settings > Account, notify_daily_tasks and
 // notify_thread_nudge). It never touches the donor suppression list.
-function staffUnsubscribeUrl(user, orgId) {
+// STAFF-MAIL-2: `kind` "weekly" is the weekly email's own link, which turns
+// off only notify_weekly.
+function staffUnsubscribeUrl(user, orgId, kind = "morning_brief") {
   const payload = Buffer.from(JSON.stringify({
-    email: String(user.email || "").toLowerCase(), orgId: orgId || null, staff: "morning_brief", userId: user.id,
+    email: String(user.email || "").toLowerCase(), orgId: orgId || null, staff: kind === "weekly" ? "weekly" : "morning_brief", userId: user.id,
   })).toString("base64url");
   const sig = crypto.createHmac("sha256", UNSUB_SECRET).update(payload).digest("base64url");
   return `${publicAppUrl()}/unsubscribe?token=${payload}.${sig}`;
@@ -655,11 +657,13 @@ async function sendBoardPackEmail(org, toEmail, subject, bodyHtml, pdf, filename
 //
 // STAFF-MAIL-1 (Jonathan, 30 Oct 2026): THE MORNING EMAIL IS THE ONLY STAFF
 // EMAIL STEWARD SENDS WITHOUT BEING ASKED. `thread_nudge` is that email's own
-// switch and NULL means on. Every other kind is a switch the person flips for
+// switch and NULL means on, but only people added before STAFF-MAIL-2 have
+// NULL: the column defaults to false, so a new person starts with it off until
+// they turn it on (Jonathan, 31 Oct 2026). Every other kind is a switch the person flips for
 // themselves: NULL means OFF, and a kind with no column here never sends at
 // all (fail closed, so a new alert can't go out before it has a switch).
 const NOTIFY_PREF_COLUMN = {
-  thread_nudge: "notify_thread_nudge",   // the morning email (BUILD-81), on unless she turns it off
+  thread_nudge: "notify_thread_nudge",   // the morning email (BUILD-81); off for anyone added from STAFF-MAIL-2 until they turn it on
   portfolio_gifts: "notify_portfolio_gifts",
   task_assignments: "notify_task_assignments",
   step_reminder: "notify_step_reminder", // BUILD-84 — a step with a time on it
@@ -667,6 +671,7 @@ const NOTIFY_PREF_COLUMN = {
   week_in_review: "notify_week_in_review",
   monthly_report: "notify_monthly_report",
   connection_alerts: "notify_connection_alerts",
+  weekly: "notify_weekly",               // STAFF-MAIL-2 — "Your week"; on for a new person, NULL (before) reads off
 };
 const NOTIFY_ON_UNLESS_OFF = new Set(["thread_nudge"]);
 async function userWantsEmail(userId, prefKind) {
