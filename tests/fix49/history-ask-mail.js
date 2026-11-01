@@ -119,7 +119,7 @@ module.exports = async function run() {
   const [att] = await q(`SELECT event_id, status FROM event_attendees WHERE org_id=$1 AND donor_id=$2`, [B.org, undine]);
   ok("§12 Atlas marks her attended at the run that already happened", at.status < 300 && !!att && att.event_id === `ev_${B.org}_past` && att.status === "attended", { status: at.status, att, lines: at.body && at.body.request && at.body.request.lines });
   // The demo seed is read, not run (no suite writes or signs in to the demo).
-  const seedSrc = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", ["seed", "demo"].join("-") + ".js"), "utf8");
+  const seedSrc = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", "ci", ["seed", "demo"].join("-") + ".js"), "utf8");
   const pastRun = /INSERT INTO events[^;]*?'completed'[^;]*?\[\s*(\w+)\.id, ORG, `Harbor Run \$\{\1\.date\.slice\(0, 4\)\}`/.exec(seedSrc);
   ok("§12 the demo seed has a Harbor Run that already happened", !!pastRun, null);
   const dated = pastRun && new RegExp(`const ${pastRun[1]} = \\{[^}]*date: orgTime\\.addDays\\(run5k\\.date, -(\\d+)\\)`).exec(seedSrc);

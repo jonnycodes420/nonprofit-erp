@@ -789,7 +789,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const keyOf = r => `${r.method} ${r.path}`;
   const genPath = require("./lib/routeInventoryFile").FILE;
   fs.mkdirSync(path.dirname(genPath), { recursive: true });
-  fs.writeFileSync(genPath, JSON.stringify({ generatedAt: new Date().toISOString(), count: inv.length, routes: inv }, null, 1));
+  fs.writeFileSync(genPath, JSON.stringify({ count: inv.length, routes: inv }, null, 1));
   const written = JSON.parse(fs.readFileSync(genPath, "utf8")).routes.map(keyOf);
   ok("the generated route inventory (.generated/route-inventory.json) is written from the live router",
      written.length === inv.length && written.every((k, i) => k === keyOf(inv[i])), written.length);
