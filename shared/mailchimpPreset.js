@@ -39,17 +39,7 @@ const COLUMNS = {
   notes:      ["notes"],
 };
 
-// Columns that are Mailchimp plumbing and mean nothing in a CRM. Named so the
-// mapper can set them to "ignore" up front rather than making a person answer
-// twenty questions about LEID and GMTOFF.
-const NOISE = new Set([
-  "optin ip", "optin_ip", "confirm ip", "confirm_ip", "latitude", "longitude",
-  "gmtoff", "dstoff", "timezone", "cc", "region", "last changed", "last_changed",
-  "leid", "euid", "id", "source", "language", "tags count",
-].map(h => normalizeHeader(h)));
-
 const norm = (h) => normalizeHeader(String(h || ""));
-const matches = (header, list) => list.some(l => norm(l) === norm(header));
 
 // Is this a Mailchimp audience export? An email column alone is every CSV ever
 // written, so the signal is the COMBINATION of Mailchimp-specific columns.
@@ -68,45 +58,6 @@ export function detectMailchimpAudience(headers) {
     hasTags,
   };
 }
-
-// The pre-filled answer to the mapper's questions. Returns
-// { mapping: {header -> target}, tagsHeader, statusHeader, ignored: [...] }.
-// Target strings are the CSV mapper's own keys, so nothing downstream learns a
-// second vocabulary.
-export function mailchimpMapping(headers) {
-  const mapping = {}, ignored = [];
-  let tagsHeader = null, statusHeader = null;
-  for (const h of headers || []) {
-    if (matches(h, COLUMNS.email))            mapping[h] = "email";
-    else if (matches(h, COLUMNS.firstName))   mapping[h] = "_firstName";
-    else if (matches(h, COLUMNS.lastName))    mapping[h] = "_lastName";
-    else if (matches(h, COLUMNS.address))     mapping[h] = "address";
-    else if (matches(h, COLUMNS.phone))       mapping[h] = "phone";
-    else if (matches(h, COLUMNS.notes))       mapping[h] = "notes";
-    else if (matches(h, COLUMNS.tags))      { tagsHeader = h; mapping[h] = "cf:tags"; }
-    else if (matches(h, COLUMNS.status))    { statusHeader = h; mapping[h] = "_mcStatus"; }
-    // MEMBER_RATING, OPTIN_TIME and CONFIRM_TIME are real facts about the
-    // person that a CRM has no standard column for, so they become custom
-    // fields rather than being thrown away. They are the three the brief names.
-    else if (matches(h, COLUMNS.rating))      mapping[h] = "cf:member_rating";
-    else if (matches(h, COLUMNS.optinTime))   mapping[h] = "cf:optin_time";
-    else if (matches(h, COLUMNS.confirmTime)) mapping[h] = "cf:confirm_time";
-    else if (matches(h, COLUMNS.unsubTime))   mapping[h] = "cf:unsub_time";
-    else if (NOISE.has(norm(h)))            { mapping[h] = "ignore"; ignored.push(h); }
-    else                                      mapping[h] = "ignore";
-  }
-  return { mapping, tagsHeader, statusHeader, ignored };
-}
-
-// The custom fields this preset needs to exist. ONE multi-select named Tags
-// (the brief's word), plus the three Mailchimp facts.
-export const MAILCHIMP_CUSTOM_FIELDS = [
-  { key: "tags",         label: "Tags",           type: "multi_select", entity: "donor" },
-  { key: "member_rating",label: "Member rating",  type: "number",       entity: "donor" },
-  { key: "optin_time",   label: "Opted in",       type: "date",         entity: "donor" },
-  { key: "confirm_time", label: "Confirmed",      type: "date",         entity: "donor" },
-  { key: "unsub_time",   label: "Unsubscribed on",type: "date",         entity: "donor" },
-];
 
 // Mailchimp writes tags as a comma-separated string, sometimes quoted.
 export function parseTags(raw) {

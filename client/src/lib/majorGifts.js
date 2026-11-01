@@ -47,7 +47,6 @@ export async function postDownload(path, body, fallbackName) {
 }
 
 export const ROOM_LABEL = { strong: "Strong", some: "Some", unknown: "Not yet known" };
-export const ROOM_RANK = { strong: 2, some: 1, unknown: 0 };
 
 // "$25,000" from cents, whole dollars when there are no cents.
 export function dollarsOf(cents) {

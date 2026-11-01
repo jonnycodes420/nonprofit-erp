@@ -379,27 +379,6 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
   };
 }
 
-// A stable fingerprint of the spec, so a suite can assert the editor's preview
-// and the public page derive the SAME form rather than two similar ones. Key
-// order is normalised, so a reordered object is the same form.
-export function specFingerprint(spec) {
-  const norm = v => {
-    if (Array.isArray(v)) return v.map(norm);
-    if (v && typeof v === "object") {
-      return Object.keys(v).sort().reduce((o, k) => { o[k] = norm(v[k]); return o; }, {});
-    }
-    return v;
-  };
-  return JSON.stringify(norm(spec));
-}
-
-// The sentence the editor shows beside the designation choice, from the registry
-// rather than a copy of it (the BUILD-86 C.3 rule).
-export function designationBlurb(mode) {
-  const m = DESIGNATION_MODES.find(x => x.key === mode);
-  return m ? m.blurb : "";
-}
-
 // ── BUILD-102 Part 2 — THE FORM'S CONFIG CONSTRAINS THE CHARGE ─────────────
 // The server already prices every charge; this is the narrower rule the config
 // adds: a form that offers four amounts and no box to type in may not be charged
@@ -577,21 +556,6 @@ export const FUNNEL_METRICS = [
   { key: "averageGift", label: "Average gift",
     definition: "The money that came through this form divided by the number of gifts." },
 ];
-export const FUNNEL_METRIC_KEYS = FUNNEL_METRICS.map(m => m.key);
-export function funnelDefinition(key) {
-  const m = FUNNEL_METRICS.find(x => x.key === key);
-  return m ? m.definition : null;
-}
-// The registry's teeth: a metric added without a definition cannot reach a screen.
-export function funnelDefinitionProblems() {
-  const out = [];
-  for (const m of FUNNEL_METRICS) {
-    if (!m.definition || m.definition.length < 25) out.push(`${m.key}: definition too short to mean anything`);
-    else if (!/\.$/.test(m.definition)) out.push(`${m.key}: definition is not a sentence`);
-    if (!m.label) out.push(`${m.key}: no label`);
-  }
-  return out;
-}
 
 // THE FUNNEL CANNOT GO BACKWARDS. Starts may not exceed views and completions may
 // not exceed starts — not because the counters are trusted, but because they are
@@ -618,7 +582,6 @@ export function funnelFor({ views = 0, starts = 0, completions = 0, completedCen
 // would be two different forms sharing one set of numbers, and every conclusion
 // drawn from it would be wrong about which change did what.
 export const AB_FIELDS = ["amountsCents", "headline"];
-export const AB_VARIANTS = ["a", "b"];
 // A HUNDRED VIEWS PER VARIANT before anything may be called a winner. It is not a
 // statistical test and does not pretend to be one: it is the floor below which the
 // difference between two numbers is noise, and below it the screen says so in a

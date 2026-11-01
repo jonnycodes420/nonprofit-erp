@@ -122,8 +122,6 @@ export const RESTRICTION_KEYS = RESTRICTIONS.map(r => r.key);
 export function restrictionFor(key) {
   return RESTRICTIONS.find(r => r.key === String(key || "").trim().toLowerCase()) || null;
 }
-export function restrictionLabel(key) { const r = restrictionFor(key); return r ? r.label : ""; }
-export function isRestricted(key) { const r = restrictionFor(key); return !!r && r.restricted; }
 
 // ── DECLINE REASONS ────────────────────────────────────────────────────────
 // A closed list, for the same reason BUILD-99's is: "why do we lose grants" is

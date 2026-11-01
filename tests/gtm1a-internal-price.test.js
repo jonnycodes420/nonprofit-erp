@@ -76,7 +76,7 @@ async function seed() {
   // ROUTE is still shipped to every browser if it is in the catalogue the
   // page imports, so the page's own source is checked for the string too.
   ok("§1 the pricing page does not render it",
-     !/internal_test/.test(readSource("client/src/pages/Pricing.jsx")));
+     !/internal_test/.test(readSource("client/src/marketing/pages/pricing.jsx")));
   ok("§1 …and neither does the signup page",
      !/internal_test/.test(readSource("client/src/pages/SignupPage.jsx")));
 

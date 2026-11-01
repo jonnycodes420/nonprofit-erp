@@ -277,12 +277,3 @@ export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membe
   return sentences.join(" ");
 }
 
-// The punctuation this voice does not use. Exported so the suite asserts the
-// rule rather than a list of strings, and so anyone adding a clause can check
-// their own work.
-export const BANNED_PUNCTUATION = [
-  { name: "a colon", re: /:/ },
-  { name: "an em dash", re: /—/ },
-  { name: "a day count", re: /\bday \d+/i },
-  { name: "a bare numeral under ten", re: /(^|\s)[0-9](\s|\b)/ },
-];

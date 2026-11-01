@@ -46,8 +46,6 @@ export const PILLARS = [
 ];
 export const PILLAR = Object.fromEntries(PILLARS.map(p => [p.n, p]));
 
-// "How does it work?" The three steps, in MESSAGING.md's words.
-export const HOW_INTRO = "Three things, all from your own records.";
 export const HOW = [
   ["Notices who's gone quiet", "Steward notices who's gone quiet, not as a report you have to pull, but as a tap on the shoulder: these eleven people gave last spring and haven't this year."],
   ["Shows you why", "When you ask why, why the appeal came in under, why she stopped giving, it shows you the reasons in dollars, and every number opens the actual gifts and conversations behind it, so you can trust it."],
@@ -67,8 +65,6 @@ export const HOW_CLOSE = "Steward never sends anything you haven't approved. It'
 export const CAREFUL = "You've spent years building these relationships. Steward doesn't replace any of that. It just makes sure nobody you've ever thanked falls through the cracks again.";
 export const GIFT = "Here are the people who stood with you last year. Let's make sure none of them slip away unnoticed.";
 export const GIFT_TERMS = "Ten minutes, no pitch, your own file.";
-// "Never sends without your yes" is the Agent and drafts. Anything wider says this.
-export const NEVER_SENDS = "Steward never sends anything you haven't approved.";
 
 // Which pillar each feature page serves (its first line, above its own h1).
 export const FEATURE_PILLAR = { drift: 1, journeys: 1, "major-gifts": 1, audit: 2, forms: 3, p2p: 3, events: 3, memberships: 3,

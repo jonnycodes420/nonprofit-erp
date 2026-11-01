@@ -34,12 +34,6 @@
 // timezone. Nothing here returns an instant, so nothing downstream can
 // accidentally compare one to a date.
 
-// The product's fiscal year starts July 1 (month index 6). One definition.
-// Retained ONLY as the historical export (0-indexed July) for any external
-// reader; nothing inside this file uses it any more. The one number that
-// decides a boundary is FISCAL_START_MONTH_DEFAULT, below, read through
-// orgFiscalStartMonth so the ORG can answer instead.
-const FISCAL_START_MONTH = 6;
 const DEFAULT_TZ = "America/New_York";
 
 // Format an instant as the civil date it is IN A GIVEN ZONE. Intl is the only
@@ -369,7 +363,7 @@ function orgDayWindowSql(col, tzSql, fromSql, toSql) {
 
 module.exports = {
   samePointLastYear, equalYearSpans,
-  DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
+  DEFAULT_TZ, PERIODS,
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,
   orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,

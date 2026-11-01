@@ -26,7 +26,6 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
-import { displayDate as dateWords } from "./displayDate.js";
 import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
@@ -202,12 +201,6 @@ export const TRIGGER_KEYS = TRIGGERS.map(t => t.key);
 // JOURNEYS-3 — the triggers the hourly sweep looks for, and the milestones.
 export const SWEEP_TRIGGER_KEYS = TRIGGERS.filter(t => t.sweep).map(t => t.key);
 export const HOUR_MILESTONES = [10, 25, 50, 100];
-// The highest milestone passed between two totals (in hours), or null.
-export function hoursMilestoneCrossed(before, after) {
-  const b = Number(before) || 0, a = Number(after) || 0;
-  const passed = HOUR_MILESTONES.filter(m => b < m && a >= m);
-  return passed.length ? passed[passed.length - 1] : null;
-}
 export const triggerByKey = k => TRIGGERS.find(t => t.key === k) || null;
 
 // ── FIX-4 1c · WHO IT IS FOR ──────────────────────────────────────────────
@@ -260,7 +253,6 @@ export const EVENT_GUEST_CHOICES = [
 ];
 export const EVENT_GUEST_KEYS = EVENT_GUEST_CHOICES.map(c => c.key);
 AUDIENCE_FILTERS.find(f => f.key === "eventGuests").options = EVENT_GUEST_CHOICES;
-export const AUDIENCE_KEYS = AUDIENCE_FILTERS.map(f => f.key);
 
 // Normalise whatever the page sent into the shape the query builder reads.
 // Anything unrecognised is DROPPED rather than guessed at: a filter nobody
@@ -508,9 +500,6 @@ PRESETS.push(
       { type: "check_in_ask", label: "Make the ask",              offsetDays: 45, draft: "the_ask" },
     ] },
 );
-// The EMAIL-1 starters a ready-made step may name.
-export const PRESET_STARTERS = ["membership_renewal", "failed_card", "thank_you", "volunteer_thank_you",
-  "event_thank_you", "grant_funder_update"];
 export const PRESET_KEYS = PRESETS.map(p => p.key);
 export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 
@@ -833,11 +822,6 @@ export function touchesSentence(steps = []) {
   const span = last < 45 ? `${countLabel(weeks, "week")}`
              : `${countLabel(months, "month")}`;
   return `${n} touch${n === 1 ? "" : "es"} over ${span}. Nothing is sent without you.`;
-}
-
-// Where a donor is, in the words the profile shows.
-export function stepPositionSentence({ seq, total, label, dueDate }) {
-  return `Step ${seq} of ${total} · ${label}${dueDate ? ` · due ${dateWords(dueDate) || dueDate}` : ""}`;
 }
 
 export { MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel };

@@ -87,26 +87,3 @@ export function footsToTheCent(f) {
       && f.intendedCents + f.coveredCents === f.grossCents;
 }
 
-// ── THE SENTENCE UNDER EACH ONE ────────────────────────────────────────────
-// Every number has a sentence (CLAUDE.md), and these are the four. They name
-// the column so a bookkeeper asked "where does this come from" has an answer.
-export const FOOTING_DEFINITIONS = Object.freeze({
-  gross: "What the card or bank account was charged. This is the receipt's amount and the amount every giving total counts.",
-  covered: "The part the donor added on purpose to cover the processing fee. Zero unless they ticked the box.",
-  fee: "What the payment processor took, read from the charge itself rather than from a rate.",
-  net: "What reached the organization's bank account: the charge less the processor's fee.",
-  intended: "What the donor meant to give to the mission: the charge less the part they added for the fee. This is what a campaign's progress counts.",
-});
-
-// A one-line summary for a gift row, used on the donor profile and the
-// fundraising panel. Dollars are formatted by the caller (`en-US`, named —
-// never `toLocaleString(undefined, …)`, which flips the separator in half of
-// Europe and makes `$25.000` read as twenty-five dollars).
-export function footingLine(f, fmtCents) {
-  if (!f || !f.grossCents) return "";
-  const parts = [`${fmtCents(f.grossCents)} charged`];
-  if (f.coveredCents) parts.push(`${fmtCents(f.coveredCents)} of it added to cover the fee`);
-  if (f.feeKnown && f.feeCents) parts.push(`${fmtCents(f.feeCents)} taken by the processor`);
-  if (f.feeKnown) parts.push(`${fmtCents(f.netCents)} received`);
-  return parts.join(", ") + ".";
-}

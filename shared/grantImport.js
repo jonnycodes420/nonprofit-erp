@@ -108,27 +108,6 @@ export const GRANT_COLUMNS = {
 };
 export const GRANT_FIELD_KEYS = Object.keys(GRANT_COLUMNS);
 
-// A header may only claim a field when it matches a candidate spelling WHOLE.
-// `headerTokens` normalises to tokens first (the underscore lesson: `\b` does
-// not fire at one), so "fiscal_year" reads as the cycle and "ein_verified" does
-// not claim the EIN.
-export function fieldForHeader(header) {
-  const tokens = headerTokens(header).join(" ");
-  if (!tokens) return null;
-  let best = null;
-  for (const [field, spellings] of Object.entries(GRANT_COLUMNS)) {
-    for (const s of spellings) {
-      const want = headerTokens(s).join(" ");
-      if (!want) continue;
-      // EXACT token-run equality only. A substring rule would let "amount
-      // requested last year" claim the amount, and the longest-spelling
-      // preference below is what settles "amount" against "amount awarded".
-      if (tokens === want && (!best || want.length > best.len)) best = { field, len: want.length };
-    }
-  }
-  return best ? best.field : null;
-}
-
 // The matched spelling's length, so the more SPECIFIC header wins a contested
 // field. Returned beside the field because the write path needs to know which
 // spelling matched — see `requestedIsExplicit` below.

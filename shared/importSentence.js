@@ -31,7 +31,6 @@
 // that invents a sentence about a decision it does not understand is worse
 // than one that stays quiet about it.
 import { plural } from "./countWords.js";
-export const DECISION_KINDS = ["exclusion", "gift_type", "date_convention", "duplicates"];
 
 const DEFAULT_WORD = {
   giver: ["donor", "donors"],

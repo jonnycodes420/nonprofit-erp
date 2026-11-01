@@ -13,10 +13,6 @@ export function markDirty(token, dirty) {
   if (dirty) holders.add(token); else holders.delete(token);
 }
 
-export function anyDirty() {
-  return holders.size > 0;
-}
-
 // Returns true when it's OK to navigate. Confirming clears the registry (the
 // forms unmount with the navigation).
 export function confirmIfDirty(message) {

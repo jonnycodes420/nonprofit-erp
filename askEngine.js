@@ -431,13 +431,5 @@ async function cellRows(orgId, rawPlan, cell) {
   const v = await computeGiftMetric(orgId, plan.metric, rows, span);
   return v ? v.rows : [];
 }
-async function cellMeasure(rawPlan, cell) {
-  const C = await catMod();
-  const m = C.METRICS[rawPlan.metric];
-  if (!m) return "count";
-  if (cell === "who" || cell === "kept" || cell === "prior" || m.base === "donors") return "count";
-  return { raised: "sum", event_revenue: "sum", largest_gift: "sum", gift_count: "count", donor_count: "count",
-    new_donor_count: "count", average_gift: "mean", median_gift: "mean" }[rawPlan.metric] || "count";
-}
 
-module.exports = { askContext, runPlan, cellRows, cellMeasure, giftSet, computeGiftMetric, firstYearRetention };
+module.exports = { askContext, runPlan, cellRows, giftSet, computeGiftMetric, firstYearRetention };

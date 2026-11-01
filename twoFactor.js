@@ -75,9 +75,6 @@ async function issueSession(user, req, signToken) {
     isSuperAdmin: !!user.is_super_admin, sid });
   return { token, sid };
 }
-async function sessionAlive(sid, userId) {
-  return (await sessionState(sid, userId)).ok;
-}
 // SECURE-2 item 7: alive, and why not. A session with no request for longer
 // than its org's idle minutes is signed out here (revoked_by system:idle), so
 // a token left in a closed tab or a copied one stops working on its own. The
@@ -260,7 +257,7 @@ async function rememberDevice(user, req, deviceId) {
 module.exports = {
   LOCK_AFTER, LOCK_MINUTES, TRUST_DAYS, EMAIL_CODE_MINUTES, RECOVERY_COUNT, DEMO_SENTENCE,
   isDemoOrg, ipPrefix, describeAgent,
-  createSession, issueSession, sessionAlive, sessionState, revokeSessions, IDLE_MIN, IDLE_MAX, IDLE_DEFAULT,
+  createSession, issueSession, sessionState, revokeSessions, IDLE_MIN, IDLE_MAX, IDLE_DEFAULT,
   rememberDevice, deviceLabel,
   makeRecoveryCodes, useRecoveryCode, recoveryLeft, looksLikeRecovery,
   sendEmailCode, useEmailCode, trustBrowser, isTrusted,

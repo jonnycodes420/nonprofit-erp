@@ -133,10 +133,3 @@ export function pickStock(group, seed = "") {
   return list[h % list.length];
 }
 
-// EMAIL-1 photo blocks: the stock photo a NEW photo block starts with, for an
-// org whose mission and website are known. The editor stores it through
-// POST /stock-photos/:id/use and sets the block's image and alt to what that
-// answers.
-export function stockForNewBlock({ mission, website, seed } = {}) {
-  return pickStock(missionGroup(mission, website), seed || "");
-}

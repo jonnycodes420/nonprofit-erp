@@ -60,6 +60,6 @@ const TARGETS = [
     const after = (await api("GET", "/portal-settings", token)).body;
     console.log(`  OK   ${t.name}: header → ${after.header_image_url}  focal (${after.header_focal_x}, ${after.header_focal_y})`);
   }
-  console.log("\nDone. Old banners are in the 90-day soft-delete window (scripts/restore-asset.js to undo).");
+  console.log("\nDone. Old banners are in the 90-day soft-delete window (scripts/ops/restore-asset.js to undo).");
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -1148,6 +1148,6 @@ function nextMoveFor(result, donorId) {
 }
 
 module.exports = {
-  RUNGS, RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
+  RUNG_LABEL, RUNG_SENTENCE, STATUS_LABEL, RANK_ORDER, OUTCOME_DAYS, GIFT_TYPES, GIFT_TYPE_LABEL,
   computeInsights, ready, buildDeck, withDrift, withEventGuests, DECK_TABS, nextMoveFor, undatedNote, giftTypeOf, notAGift, readGift, rhythmOf, naturalCents, numbersIn, numbersOk, money, longDate,
 };

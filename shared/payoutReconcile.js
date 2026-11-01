@@ -103,7 +103,6 @@ const dollars = c => {
   const s = "$" + (a / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return neg ? "-" + s : s;
 };
-export { dollars as centsToDollarsText };
 
 export function payoutSentence({ payoutCents, differenceCents, rows, unmatched = 0 }) {
   if (!rows.length) return "Stripe returned nothing behind this payout, so Steward cannot say which gifts it held.";

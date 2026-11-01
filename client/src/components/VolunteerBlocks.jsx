@@ -374,7 +374,6 @@ const BLOCKS = {
   opportunities: Opportunities, shiftpicker: ShiftPicker, volsignup: SignupForm, volwaiver: Waiver,
   volimpact: Impact, volquote: VolQuote, groupsignup: GroupSignup,
 };
-export const VOLUNTEER_BLOCK_TYPES = Object.keys(BLOCKS);
 
 export function VolunteerBlock({ w, ctx }) {
   const C = BLOCKS[w.type];

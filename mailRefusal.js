@@ -48,14 +48,10 @@ function classifyProviderError(err) {
   return code >= 400 ? "permanent" : "transient";
 }
 
-// A hard bounce is never retried, by any path: the reason a decision gives for
-// an address the provider said does not exist.
-const HARD_BOUNCE_REASONS = new Set(["bounced", "email_unreachable", "complained"]);
-
 function reasonText(err) {
   if (!err) return "unknown";
   if (typeof err === "string") return err.slice(0, 300);
   return String(err.message || err.name || "refused").slice(0, 300);
 }
 
-module.exports = { classifyDecision, classifyProviderError, reasonText, ORG_WAIT_REASONS, HARD_BOUNCE_REASONS };
+module.exports = { classifyDecision, classifyProviderError, reasonText, ORG_WAIT_REASONS };

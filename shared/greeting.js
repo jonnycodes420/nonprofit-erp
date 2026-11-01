@@ -50,11 +50,6 @@ export function greetingName(person = {}) {
   return first;
 }
 
-// The whole opening line, the same everywhere.
-export function dearLine(person, fallback = "friend") {
-  return `Dear ${greetingName(person) || fallback},`;
-}
-
 // The {{first_name}} merge field: the first names on the record, so a joint
 // record reads "Desmond and Ruth" there too. No salutation: a template that
 // says "Dear {{first_name}}" chose first names. FIX-56: an organisation has no

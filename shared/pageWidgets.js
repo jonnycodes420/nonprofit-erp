@@ -143,10 +143,8 @@ export const WIDGETS = [
 export const WIDGET_TYPES = WIDGETS.map(w => w.key);
 const BY_KEY = new Map(WIDGETS.map(w => [w.key, w]));
 
-export function widgetDef(key) { return BY_KEY.get(key) || null; }
 export function widgetsForSurface(surface) { return WIDGETS.filter(w => w.surfaces.includes(surface)); }
 export function typesForSurface(surface) { return widgetsForSurface(surface).map(w => w.key); }
-export function isFullWidth(key) { const d = BY_KEY.get(key); return !!(d && d.full); }
 export function defaultWidget(key) {
   const d = BY_KEY.get(key);
   return d ? { type: key, ...JSON.parse(JSON.stringify(d.defaults)) } : null;
@@ -163,7 +161,3 @@ export const DEFAULT_FORM_POSITION = "top";
 export function normalizeFormPosition(v) {
   return FORM_POSITIONS.includes(v) ? v : DEFAULT_FORM_POSITION;
 }
-export const FORM_POSITION_LABEL = {
-  top: "The form leads, and the story follows it.",
-  bottom: "The story leads, and the form waits at the end of it.",
-};

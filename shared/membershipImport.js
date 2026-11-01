@@ -64,7 +64,6 @@ export const MEMBERSHIP_PRESETS = {
     confidence: "documented-not-walked",
   },
 };
-export const MEMBERSHIP_PRESET_KEYS = Object.keys(MEMBERSHIP_PRESETS);
 
 export const norm = h => String(h || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 

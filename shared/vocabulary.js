@@ -166,15 +166,6 @@ export const MONTH_NAMES = ["January", "February", "March", "April", "May", "Jun
 // a clause while it is ahead and near; a date three months out is noise and a
 // date in the past is a different build's problem.
 export const SEASON_HORIZON_DAYS = 45;
-export function seasonDaysAway(vocabulary, today) {
-  const v = normalizeVocabulary(vocabulary);
-  if (!v.season_name || !v.season_date || !today) return null;
-  const p = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s)); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
-  const a = p(today), b = p(v.season_date);
-  if (a == null || b == null) return null;
-  const days = Math.round((b - a) / 86400000);
-  return days >= 0 && days <= SEASON_HORIZON_DAYS ? days : null;
-}
 
 // ── FIX-1 §13 — A COUNT OF GIVERS SAYS WHAT THEY ARE ───────────────────────
 // The walk: "11 sponsors have gone quiet", three of the eleven foundations and

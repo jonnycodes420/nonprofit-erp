@@ -202,7 +202,7 @@ async function prune() {
   await run(`DELETE FROM job_queue WHERE status = 'done' AND finished_at < NOW() - INTERVAL '1 day'`);
 }
 
-let started = false, wake = null, busy = 0;
+let started = false, wake = null;
 function poke() { if (wake) { const w = wake; wake = null; w(); } }
 
 function start({ scheduler = true } = {}) {
@@ -219,7 +219,7 @@ function start({ scheduler = true } = {}) {
     for (;;) {
       let job = null;
       try { job = await claim(); } catch (e) { if (!/does not exist/.test(e.message)) console.error("[jobs] claim:", e.message); }
-      if (job) { busy++; try { await runOne(job); } finally { busy--; } continue; }
+      if (job) { await runOne(job); continue; }
       await new Promise(res => { wake = res; const t = setTimeout(res, POLL_MS()); if (t.unref) t.unref(); });
     }
   };
@@ -279,4 +279,4 @@ async function keyBusy(key) {
 }
 
 module.exports = { define, handle, enqueue, start, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
-  scheduleDue, claim, MAX_ATTEMPTS, WORKER_ID, _busy: () => busy };
+  scheduleDue, claim, MAX_ATTEMPTS, WORKER_ID };

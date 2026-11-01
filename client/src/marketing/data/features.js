@@ -91,18 +91,7 @@ export const FEAT = {
 
 export const FEATURE_SLUGS = Object.keys(FEAT);
 
-// The homepage feature finder: each feature's filter chips (the reference's
-// `C` map) and the six entries it lists beyond the fourteen.
-export const FEATURE_CATS = { drift: "keep focus", journeys: "keep", "major-gifts": "keep focus", memberships: "keep", inbox: "keep", receipts: "keep run", forms: "raise", p2p: "raise", events: "raise", grants: "raise", finance: "run", import: "run", audit: "run", reports: "focus", ask: "focus" };
 // The reference's Open API entry pointed at /developers, which does not exist
 // in this app (INT-5 shipped keys, not a docs page). It points at the Open API
 // row on Connections until a developer page exists.
 export const OPEN_API_HREF = "/connections#api";
-export const FEATURE_EXTRAS = [
-  { n: "Steward Volunteer", s: "Shifts, kiosk check-in, waivers and hours.", i: "hand", h: "/volunteer", c: "run" },
-  { n: "Steward Agent", s: "Tell it what happened. It does the work, after your yes.", i: "spark", h: "/agent", c: "focus" },
-  { n: "Connections", s: "Keep your giving tools. Steward watches every one.", i: "link", h: "/connections", c: "run raise" },
-  { n: "Open API", s: "Scoped keys and webhooks for your own tools.", i: "code", h: OPEN_API_HREF, c: "run" },
-  { n: "Moving to Steward", s: "About a day of your time, matched to the cent.", i: "import", h: "/move", c: "run" },
-  { n: "Lost & Found audit", s: "A free look at the people who stood with you last year.", i: "drift", h: "/tools/lost-and-found", c: "focus keep" },
-];

@@ -46,13 +46,7 @@ function refsNamedIn(texts, catalog) {
   return out;
 }
 
-// The person a row is about, never with a blank name.
-async function personRef(d) {
-  const L = await links();
-  return { kind: "person", id: d.id, name: L.nameOrFallback(d.name, d.email), email: d.email || null };
-}
-
 // The module, once loaded (it loads at boot); for a sync email renderer.
 function linksNow() { return LINKS; }
 
-module.exports = { links, linksNow, LINKS_READY, orgCatalog, refsNamedIn, personRef };
+module.exports = { links, linksNow, LINKS_READY, orgCatalog, refsNamedIn };
