@@ -154,14 +154,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
 
   // ── THE GROUND TRUTH, from the database ──────────────────────────────────
   const LIVE = `d.org_id = $1 AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`;
-  const [[people], [gifts], deleted, donorRows, imports, groupRows, eventRows, campaignRows, [org]] = await Promise.all([
-    q(`SELECT COUNT(*)::int AS n FROM donors d WHERE ${LIVE}`, [orgId]),
-    q(`SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS c,
-              COUNT(*) FILTER (WHERE g.date IS NULL)::int AS undated
-         FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE ${LIVE}`, [orgId]),
+  // TRUTH-1: people, gifts and money come from the key below, not from SQL here.
+  const [deleted, imports, groupRows, eventRows, campaignRows, [org]] = await Promise.all([
     q(`SELECT id, name, email FROM donors WHERE org_id = $1 AND deleted_at IS NOT NULL`, [orgId]),
-    q(`SELECT COUNT(*) FILTER (WHERE imported_total IS NOT NULL OR imported_gift_count IS NOT NULL)::int AS summarised
-         FROM donors d WHERE ${LIVE}`, [orgId]),
     q(`SELECT i.id, i.migration_source, i.gifts_created, i.shape,
               (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_rows,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_cents,
@@ -297,7 +292,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["the export zip's gifts.csv", zg ? zg.length : undefined],
     ], String, { "the onboarding card": ["D-7", key.gifts.count + key.credits.rows], "Fundraising, all time": ["D-1", key.gifts.count + key.credits.rows] });
     const listed = list && Array.isArray(list.donors) && list.donors.length === list.total ? list.donors : null;
-    const summarised = donorRows[0] && donorRows[0].summarised > 0;
+    const summarised = key.importedIds.length > 0;
     agree("total given", [
       ["the key (live people's hard-credit gifts)", key.gifts.cents],
       ["Fundraising, all time", fund && fund.allTime ? cents(fund.allTime.raised) : undefined],
