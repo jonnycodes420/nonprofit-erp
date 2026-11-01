@@ -37,6 +37,7 @@ Read-only SQL (paste into a console or `psql "$DATABASE_URL" -f <file>`):
 | `ops/list-vs-home-readonly.sql` | The Donors list and Home count the same people |
 | `ops/stale-deletions-readonly.sql` | People live again but still named by an open deletion record |
 | `sql/big-orgs.sql` | The largest orgs by rows, for scale planning |
+| `sql/rls-status.sql` | SECURE-3: every public table has row-level security on (not forced) and the deny policy, and nothing is granted to anon, authenticated or service_role. Every section should be empty. psql only (`\echo`); Jonathan runs it, never a builder |
 
 Node scripts:
 
