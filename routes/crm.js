@@ -19359,7 +19359,8 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     // return a list that actually matches what's being counted.
     query(`SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type IN ${MEANINGFUL_CONTACT_TYPES} AND date>=?`, [orgId, userId, fyStart]),
     // NUMBERS-2: the drill-down's rows exactly (deleted people out, cents kept).
-    query("SELECT COALESCE(SUM(g.amount),0)::text as total FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id WHERE g.org_id=? AND d.assigned_to=? AND d.deleted_at IS NULL AND g.date>=?", [orgId, userId, fyStart]),
+    // NUMBERS-3: this fiscal year TO TODAY, money only (shared/numbers/givingBetween.js).
+    query(`SELECT COALESCE(SUM(g.amount),0)::text as total FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id WHERE g.org_id=? AND d.assigned_to=? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")}`, [orgId, userId, fyStart, today]),
     query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
     // Org-wide (not user-scoped) signals for the Home dashboard's empty-state
@@ -19594,23 +19595,25 @@ app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res
 
 app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
-  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  // fyStart mirrors /dashboard/my-stats exactly: this fiscal year to today,
+  // money only (NUMBERS-3, shared/numbers/givingBetween.js).
   const now = new Date();
   const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const today = orgToday(await orgTz(orgId));                // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
   const [rows, totalRow] = await Promise.all([
     query(
       `SELECT g.id, g.donor_id, d.name AS donor_name, g.date, g.amount FROM gifts g
-       JOIN donors d ON d.id = g.donor_id
-       WHERE d.org_id=? AND d.assigned_to=? AND g.date>=? AND d.deleted_at IS NULL
+       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       WHERE g.org_id=? AND d.assigned_to=? AND ${NUMBERS.givingBetween.IN_SPAN("g")} AND d.deleted_at IS NULL
        ORDER BY g.amount DESC LIMIT ?`,
-      [orgId, userId, fyStart, PAGE_SIZE]
+      [orgId, userId, fyStart, today, PAGE_SIZE]
     ),
     query(
       `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(*) as cnt FROM gifts g
-       JOIN donors d ON d.id=g.donor_id
-       WHERE d.org_id=? AND d.assigned_to=? AND g.date>=? AND d.deleted_at IS NULL`,
-      [orgId, userId, fyStart]
+       JOIN donors d ON d.id=g.donor_id AND d.org_id = g.org_id
+       WHERE g.org_id=? AND d.assigned_to=? AND ${NUMBERS.givingBetween.IN_SPAN("g")} AND d.deleted_at IS NULL`,
+      [orgId, userId, fyStart, today]
     ),
   ]);
   res.json({
@@ -24700,18 +24703,15 @@ async function reportAnnual(orgId, p) {
   const [split] = await query(
     `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}),
-          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts g WHERE org_id = ? AND ${NOT_CREDIT("g")} GROUP BY donor_id)
+          -- NUMBERS-3: the one first gift (shared/numbers/firstGift.js), imported history included
+          firsts AS (SELECT d.id AS donor_id, ${NUMBERS.firstGift.FIRST_DATE("d")} AS fg FROM donors d WHERE d.org_id = ?)
      SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
      FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
     [orgId, cur.from, cur.to, orgId, cur.from, cur.to]);
-  // Retention: donors who gave in the prior year and gave again this year.
-  const [ret] = await query(
-    `WITH prior AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")})
-     SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
-            (SELECT COUNT(*) FROM prior pr WHERE EXISTS
-               (SELECT 1 FROM gifts g WHERE g.org_id=? AND g.donor_id=pr.donor_id AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}))::int AS retained`,
-    [orgId, prior.from, prior.to, orgId, cur.from, cur.to]);
+  // Retention: donors who gave in the prior year and gave again this year
+  // (NUMBERS-3: shared/numbers/retained.js, so a refund is not giving again).
+  const ret = await NUMBERS.retained.retention(query, orgId, cur, prior)
+    .then(r => ({ prior_donors: r.prior, retained: r.retained }));
   const byFund = await query(
     `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id

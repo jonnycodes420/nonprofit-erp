@@ -76,25 +76,30 @@ may only go down.
 
 ## One home per number
 
-Every figure a person sees has exactly one function that computes it. These will live in
-`shared/numbers/` (NUMBERS-3 builds it). Until a number moves there, call the place MAP-1 marked
-as the shared version. **Writing a new copy of any of these is not allowed**; if the shared one
-doesn't fit, change it (with a test) rather than writing a second.
+Every figure a person sees has exactly one function that computes it. The giving numbers live in
+`shared/numbers/` (NUMBERS-3): one module per concept, each with its SQL fragment and, where a screen
+needs it, its function, and each tested by hand in `tests/numbers-home.test.js`. **Writing a new
+copy of any of these is not allowed**; if the shared one doesn't fit, change it (with a test)
+rather than writing a second.
 
-| Number | Call this (until `shared/numbers/` exists) |
+| Number | Call this |
 |---|---|
-| Lifetime giving | the stored rollup `donors.total_giving` (`donorSummary.js` `DONOR_SUMMARY_UPDATE`), or live: figure source `donor-lifetime` |
-| This fiscal year's giving | the boundary from `orgTime.orgPeriodBounds(org, "fiscal_year")` / `orgFiscalYearStart`; the money from the `gifts` figure source (`donor-gifts-between` per person) |
-| Last gift | stored `donors.last_gift_date` / `last_gift_amount` (`donorSummary.js`), live `donor-last-gift`. MAP-1 §2.3: these and `donorStatus` disagree on refunds; NUMBERS-3 settles one rule |
+| Money in a total | `shared/numbers/money.js`: `MONEY(g)` (hard credit, refunds off), `GIFT(g)` (money above zero), `LIVE(d)` |
+| The fiscal year | `shared/numbers/fiscalYear.js`: `fiscalYear`, `fiscalYearToDate` (cut at the org's today), `period` (fiscal or calendar), `thisAndLast`, `yearStarting`. It wraps `orgTime.orgPeriodBounds` |
+| Lifetime giving | stored `donors.total_giving` (`donorSummary.js`), live `shared/numbers/lifetime.js` `LIFETIME(d)`; the profile opens `donor-lifetime` |
+| Giving in a span (this year, any window) | `shared/numbers/givingBetween.js`: `IN_SPAN(g)`, `givingBetween()`; never past the org's today |
+| Last gift | `shared/numbers/lastGift.js`: the latest dated gift above zero, never a refund or a credit row, the imported last gift as a floor. Stored on the person by `donorSummary.js`, live `donor-last-gift` |
+| First gift and first-time | `shared/numbers/firstGift.js`: `FIRST_DATE(d)` (the old system's first gift counts), `isFirstTimeIn` |
+| Retained | `shared/numbers/retained.js`; `computeRetentionRate` (server.js) and the retention sources read it |
+| Deposited | `shared/numbers/deposited.js`: `DEPOSITED`, `NOT_DEPOSITED`, `BANKED`, `DEPOSIT_NAME` (Finance, month close, the bookkeeper's file, the deposits file, QuickBooks) |
+| A face's numbers (portal, account page, merge fields) | `shared/numbers/donorTotals.js` |
 | Lapsed and lapsing | `lapseRule.js` (the bounds and `lapseState`) and `donorStatus.statusSql` |
-| First-time donor | `donorStatus` lifecycle `new`; the `givers` source with `first: new` |
-| Retained | `computeRetentionRate` (server.js) behind the `retention` source; the person tag in `donorStatus` |
 | Major (and every computed tag) | `donorStatus.statusSql` |
 | Pledge balance and due | `numbers.pledgeSummary()` and the figure sources `pledges-open`, `pledges-due`, `pledges-overdue`, `pledge-payments` |
 | Event came and gave | `numbers.eventGuests()` and `numbers.eventStory()` |
 | Suggested ask | `engagement.suggestedAsk` → `shared/smartAmounts.suggestedAskCents` |
 | People and households | the Donors list filter (`groups.buildDonorFilter`) for people; figure source `household-giving` for households |
-| Net, fee, deposited | `shared/giftFooting.js` for fee and net; `routes/finance.js` `ON_NO_DEPOSIT` for undeposited |
+| Net and fee | `shared/giftFooting.js` |
 
 Every number on a screen is a `<Figure>` with a `source` (CLAUDE.md), so the place that computes it
 is also the place its rows come from.

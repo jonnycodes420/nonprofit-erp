@@ -55,7 +55,7 @@
     "tests/stripe-disputes.test.js": 3,
     "tests/tasks2-thread.test.js": 1,
     "tests/tenant-isolation.test.js": 1,
-    "tests/tenant-matrix.test.js": 8,
+    "tests/tenant-matrix.test.js": 7,
     "tests/thread2a-no-send.test.js": 2,
     "tests/thread3-human.test.js": 1,
     "tests/volpage1-signup.test.js": 2,

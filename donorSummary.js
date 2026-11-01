@@ -22,12 +22,21 @@
 //     the one recorded last, the same gift the profile's Last gift opens;
 //   · a person with no gifts and no imported total has a zero total and no
 //     first or last gift.
+//   · NUMBERS-3: the first and last gift are gifts: money above zero, so a
+//     refund or a credit row is never either one.
 // `$1` is the org; `scope` narrows it (e.g. "AND d.id = ANY($2)").
 // FIX-49: soft and matching credit rows are not money, so they are in neither
 // the total nor the count (creditTypes.js).
-// Only creditTypes.js is required, so server.js, afterChange.js and the seed all load it.
+// Only creditTypes.js and shared/numbers (no database) are required, so server.js, afterChange.js and the seed all load it.
 const { NOT_CREDIT } = require("./creditTypes");
-const LAST_GIFT_ORDER = "g.date DESC NULLS LAST, g.created_at DESC, g.id DESC";
+// NUMBERS-3: the first and last gift are GIFTS (shared/numbers/money.js GIFT:
+// money above zero). A refund dated after the last gift moved the stored last
+// gift (and made its amount negative) while the tags' last gift did not
+// (MAP-1 §2.3); a credit row could be someone's last gift. One rule now,
+// shared/numbers/lastGift.js and firstGift.js, and the profile's Last gift
+// opens the same row.
+const { GIFT } = require("./shared/numbers/money");
+const { LAST_GIFT_ORDER } = require("./shared/numbers/lastGift");
 
 // FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
 // gave one; when it gave only a last gift date, that date, because the person
@@ -41,15 +50,8 @@ const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_da
 // period, because nobody knows its day: it is always counted.
 const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date IS NULL OR g.date > dd.imported_through)";
 
-const DONOR_SUMMARY_UPDATE = (scope = "") => `
-  UPDATE donors d SET
-    total_giving = s.total,
-    gift_count = s.n,
-    first_gift_date = s.first_date,
-    last_gift_date = s.last_date,
-    last_gift_amount = s.last_amt,
-    updated_at = NOW()
-  FROM (SELECT x.donor_id,
+// The rollup each person should carry, one row per person in scope.
+const SUMMARY_ROWS = (scope = "") => `(SELECT x.donor_id,
                (COALESCE(x.imp_total, 0) + COALESCE(x.after_total, 0))::numeric(12,2) AS total,
                (COALESCE(x.imp_n, CASE WHEN x.imp_total IS NOT NULL THEN x.before_n END, 0) + x.after_n)::int AS n,
                NULLIF(LEAST(COALESCE(NULLIF(x.imp_first, ''), '9999-12-31'), COALESCE(x.row_first, '9999-12-31')), '9999-12-31') AS first_date,
@@ -62,17 +64,37 @@ const DONOR_SUMMARY_UPDATE = (scope = "") => `
                        SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_total,
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_n,
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS before_n,
-                       MIN(g.date) FILTER (WHERE g.amount > 0) AS row_first,
-                       MAX(g.date) AS row_last,
-                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL))[1] AS row_last_amt
+                       MIN(g.date) FILTER (WHERE ${GIFT("g")}) AS row_first,
+                       MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
+                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
                   FROM donors dd LEFT JOIN gifts g ON g.donor_id = dd.id AND g.org_id = dd.org_id
                  WHERE dd.org_id = $1 ${scope.replace(/\bd\./g, "dd.")}
-                 GROUP BY dd.id) x) s
+                 GROUP BY dd.id) x)`;
+
+const DONOR_SUMMARY_UPDATE = (scope = "") => `
+  UPDATE donors d SET
+    total_giving = s.total,
+    gift_count = s.n,
+    first_gift_date = s.first_date,
+    last_gift_date = s.last_date,
+    last_gift_amount = s.last_amt,
+    updated_at = NOW()
+  FROM ${SUMMARY_ROWS(scope)} s
   WHERE d.id = s.donor_id AND d.org_id = $1
     -- A person whose totals already agree is not written (an undone merge must
     -- leave the row exactly as it was, updated_at included).
     AND (d.total_giving, d.gift_count, d.first_gift_date, d.last_gift_date, d.last_gift_amount)
         IS DISTINCT FROM (s.total, s.n, s.first_date, s.last_date, s.last_amt)`;
+
+// NUMBERS-3: the people whose stored rollup differs from what it should be,
+// read only (scripts/once/numbers3-recompute-totals.js counts these first).
+const DONOR_SUMMARY_DIFF = (scope = "") => `
+  SELECT d.id, d.total_giving AS stored_total, s.total, d.last_gift_date AS stored_last, s.last_date,
+         d.last_gift_amount AS stored_last_amt, s.last_amt, d.first_gift_date AS stored_first, s.first_date, d.gift_count AS stored_n, s.n
+    FROM donors d JOIN ${SUMMARY_ROWS(scope)} s ON s.donor_id = d.id
+   WHERE d.org_id = $1
+     AND (d.total_giving, d.gift_count, d.first_gift_date, d.last_gift_date, d.last_gift_amount)
+         IS DISTINCT FROM (s.total, s.n, s.first_date, s.last_date, s.last_amt)`;
 
 // NUMBERS-2 · AN IMPORTED TOTAL, KEPT AS ITS OWN FIGURE. A person who arrives
 // with a total the file stated and no gifts (or fewer gifts than the total)
@@ -114,4 +136,4 @@ const SOFT_CREDIT_RESIZE = [
     WHERE g.id = sc.gift_id AND g.org_id = sc.org_id AND sc.gift_id = $1 AND sc.org_id = $2`,
 ];
 
-module.exports = { DONOR_SUMMARY_UPDATE, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };
+module.exports = { DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };
