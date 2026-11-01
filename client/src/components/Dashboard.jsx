@@ -56,7 +56,7 @@ import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
 import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
-import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn } from "./HomeRail";   // HOME-4, PROFILE-2
+import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 import { countLabel, countWords, plural } from "../../../shared/countWords";
 
@@ -873,7 +873,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // month by somebody who wants the sections marked off, and keeps it.
   const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:18,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25,
                 ...(surface==="home"?{}:{borderBottom:"3px solid "+T.gold500,paddingBottom:2})};
-  const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
+  const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"};   // SWEEP-1: the page's type, not the system's
   // BUILD-88d — the hairline is bg2 (#e8e4db), the radius is 12, and nothing
   // on this page casts a shadow. bg3 (#d4cfc6) drew a card's edge harder than
   // its own contents.
@@ -2862,6 +2862,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div data-testid="home-rail" data-ready="1" style={{display:"flex",flexDirection:"column",gap:12}}>
         {setupWhere==="rail"&&<SetupRailCard status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>}
         <TodayCard items={todayItems}/>
+        {isAdmin&&!isReadOnly&&<OwnersCard owners={railReads.owners} onNavigate={onNavigate}/>}
         <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} preload={railReads} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
         {!editMode&&<>
           <ToConfirmLine clock={railReads.clock} onNavigate={onNavigate}/>
@@ -3291,11 +3292,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{marginTop:8,fontSize:12.5,color:T.ink3,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
               <span>Steward calls them donors. What do you call them?</span>
               <button onClick={()=>setWordsOpen(true)}
-                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"3px 10px",color:T.ink,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"3px 10px",color:T.ink,fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                 Set your words
               </button>
               <button onClick={()=>{setWordsDone(true);apiFetch("/org/vocabulary",{method:"PUT",body:JSON.stringify({skip:true})}).catch(()=>{});}}
-                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
+                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
                 Keep Steward's words
               </button>
             </div>

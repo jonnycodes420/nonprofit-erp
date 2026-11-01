@@ -27,18 +27,61 @@ export function useRailReads() {
   const [goal, setGoal] = useState(undefined);
   const [clock, setClock] = useState(undefined);
   const [mail, setMail] = useState(false);
+  const [owners, setOwners] = useState(undefined);   // SWEEP-1
   useEffect(() => {
     let alive = true;
     const loadClock = () => apiFetch("/thank-yous/clock").then(r => { if (alive) setClock(r || null); }).catch(() => { if (alive) setClock(null); });
     apiFetch("/home/calls").then(r => { if (alive) setCalls(r || null); }).catch(() => { if (alive) setCalls(null); });
     apiFetch("/home/annual-goal").then(r => { if (alive) setGoal(r && r.goal ? r.goal : null); }).catch(() => { if (alive) setGoal(null); });
+    apiFetch("/home/owners").then(r => { if (alive) setOwners(r || null); }).catch(() => { if (alive) setOwners(null); });
     loadClock();
     Promise.resolve(reloadMailTypes()).finally(() => { if (alive) setMail(true); });
     // CHECK-2: a check read from anywhere moves the waiting line at once.
     window.addEventListener("steward:capture-changed", loadClock);
     return () => { alive = false; window.removeEventListener("steward:capture-changed", loadClock); };
   }, []);
-  return { calls, goal, clock, ready: calls !== undefined && goal !== undefined && clock !== undefined && mail };
+  return { calls, goal, clock, owners, ready: calls !== undefined && goal !== undefined && clock !== undefined && owners !== undefined && mail };
+}
+
+// SWEEP-1 · nobody owns a donor yet (every import starts that way): her 25
+// largest givers become hers in one click, and Undo takes that batch back.
+export function OwnersCard({ owners, onNavigate }) {
+  const [done, setDone] = useState(null);   // { ids, n } once assigned
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (!owners || (!owners.offer && !done)) return null;
+  const go = async () => {
+    setBusy(true); setMsg("");
+    try { const r = await apiFetch("/home/owners/assign", { method: "POST", body: "{}" }); setDone(r); }
+    catch (e) { setMsg(e.message || "That didn't work. Nothing was changed."); }
+    finally { setBusy(false); }
+  };
+  const undo = async () => {
+    setBusy(true); setMsg("");
+    try { await apiFetch("/home/owners/undo", { method: "POST", body: JSON.stringify({ ids: done.ids }) }); setDone(null); setMsg("Undone. Nobody has an owner again."); }
+    catch (e) { setMsg(e.message || "That didn't work. Nothing was changed."); }
+    finally { setBusy(false); }
+  };
+  const n = owners.top, all = owners.unowned;
+  return (
+    <div data-testid="home-owners" style={card}>
+      <div style={eyebrow}>Owners</div>
+      {done ? <>
+        <div data-testid="home-owners-done" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
+          Your {done.n === 1 ? "largest giver is" : `${done.n.toLocaleString("en-US")} largest givers are`} yours now. Home, the calls and your morning email start with them.</div>
+        <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+          <button type="button" data-testid="home-owners-undo" style={link} disabled={busy} onClick={undo}>Undo</button>
+          <button type="button" style={link} onClick={() => onNavigate && onNavigate("donors")}>Choose owners for the rest</button>
+        </div>
+      </> : <>
+        <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>
+          {all.toLocaleString("en-US")} {all === 1 ? "giver has" : "givers have"} no owner yet. Take your {n === 1 ? "largest one" : `${n.toLocaleString("en-US")} largest`} yourself, and Home starts with them.</div>
+        <button type="button" data-testid="home-owners-assign" style={{ ...link, marginTop: 8 }} disabled={busy} onClick={go}>
+          {n === 1 ? "Make them mine" : `Make my top ${n.toLocaleString("en-US")} mine`}</button>
+      </>}
+      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>{msg}</div>}
+    </div>
+  );
 }
 
 // Today: only what is not zero, as short lines with counts. Nothing due is one line.

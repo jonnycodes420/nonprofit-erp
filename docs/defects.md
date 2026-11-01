@@ -14,6 +14,14 @@ Found by `assertSurfacesAgree` once it compared every surface to the key (`tests
 - **P2 · D-8 · Fundraising's Recent gifts lists a soft credit row as a gift.** The walk of org D: "Oona Credit · $5,000" sits among the recent gifts beside the Raised tile's $540. The recent-gifts query (`/fundraising/overview`, `routes/crm.js` near 22058) lists every row. No truth-check leg reads a list of recent gifts, so it has no marker. Suggested: NUMBERS-3.
 - **P3 · D-7 · The onboarding card's gift count counts credit rows as gifts.** Org D: 10 against the key's 8. `routes/crm.js:3318` (`/org/setup-status`). TRUTH-1's brief allows a known marker only for a P1; this one is marked too, so CI stays green, and Jonathan decides whether it waits for NUMBERS-3 or is fixed alone. Suggested: NUMBERS-3.
 
+## Home and Atlas (SWEEP-1, 31 Oct 2026; walk in docs/sweeps/sweep-1/walk.md)
+
+- **P2 · A business with no business word in its name is greeted by a first name.** "Redshaw Holville Wine Spirits" (kept as a person) reads "Hi Redshaw,"; `isPersonUnit` (insights.js) and `shared/greeting.js` know a business by its record's kind or a word like Inc, LLC, Bank, Club. Suggested: the people sweep offers "this looks like an organisation" on import and in Data health, so the kind is right at the source.
+- **P3 · Home's right rail is mostly empty at 1440.** Today, Owners, Snap a check and one sentence beside a 2,000 px main column. Suggested: the next Home build moves the thank-yous or the chips into the rail.
+- **P3 · An empty org is offered Import three times above the fold** (the setup card's Next, its Import row, Your moves' Import a spreadsheet). Suggested: the next Home build lets Your moves' empty card stand alone while the setup card is open.
+- **P3 · Phone: the mic button sits over the setup card's "Set up →".** Suggested: the next phone build gives the floating button a gutter Home's cards respect.
+- **P3 · "Answer ready" sits above a refusal** ("There's no fund … called …", "Steward can't answer that one yet."). Suggested: the next Ask build labels a refusal as one.
+
 ## Donors, Data health and imports (SWEEP-2, 31 Oct 2026; walk in docs/sweeps/sweep-2/walk.md)
 
 - **P3 · smoke-walk's report reads race the report's figures.** On SWEEP-2's first CI run `units.feeTablesOnPage` read 0 rows from the bookkeeper's table that the next check read drawn (run 41249592761), and the "?"-between-a-count-and-its-noun check only sees a report's figures when they arrive before it reads (CI yes, locally no), which is how SWEEP-2's CI found four real misses that local runs pass. Suggested: the next tests build waits for a report's figures and rows before reading them, and proves it by planting one of the four back.

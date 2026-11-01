@@ -226,7 +226,8 @@ async function orgCounts() {
       JSON.stringify({ got: ids(a7.rows || []), rules: a7.rules }));
     const askOf = id => (a7.rows || []).find(r => r.donorId === id) || {};
     ok("§7 …each with the suggested ask from their own gifts, and the step to plan it",
-      a7.withAsk === true && askOf("d_p4show_c").ask && askOf("d_p4show_c").ask.cents === 35000 && askOf("d_p4show_d").ask.cents === 50000
+      // SWEEP-1: an ask held at their level is their level rounded (naturalAskCents), no longer the rung above it ($350, $500)
+      a7.withAsk === true && askOf("d_p4show_c").ask && askOf("d_p4show_c").ask.cents === 30000 && askOf("d_p4show_d").ask.cents === 40000
       && a7.askStep && a7.askStep.label === "Plan the ask",
       JSON.stringify((a7.rows || []).map(r => [r.donorId, r.ask && r.ask.cents])));
     await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
