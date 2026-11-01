@@ -763,8 +763,10 @@ async function findingJoy() {
      && (st.peopleWords || {}).attended === `${figPeople("attended")} people`, JSON.stringify((st.peopleWords || {})));
   ok("§FJ the page's story says the same: came = came and gave + came and didn't, in parties",
      st.attended === K.attended && st.cameGave + st.cameDidntGive === st.attended && st.gave === K.gave && st.cameGave + st.gaveNotCame === st.gave
-     && st.addsUp.startsWith(`${K.attended} came: ${K.attended_and_gave} gave and ${K.attended_no_gift} didn't.`),
-     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave, st.addsUp]));
+     && st.addsUp.startsWith(`${K.attended} came: ${K.attended_and_gave} gave and ${K.attended_no_gift} didn't.`)
+     // a clause whose count is 0 is left out: nobody is "no reply" on this list
+     && st.listAddsUp === `${K.invited} invited: ${K.rsvp_yes} said yes or came and ${K.invited - K.rsvp_yes} declined. Of the ${K.rsvp_yes}, ${K.attended} came and ${K.rsvp_yes - K.attended} didn't.`,
+     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave, st.addsUp, st.listAddsUp]));
   const couple = (L.attended.raw || []).find(r => (r.people || []).length === 2);
   ok("§FJ a couple who came is one row, named the way the household reads, with both people under it",
      !!couple && couple.type === "party" && /^\S.* and \S.* \S+$/.test(couple.name) && couple.people.every(x => x.donorId)

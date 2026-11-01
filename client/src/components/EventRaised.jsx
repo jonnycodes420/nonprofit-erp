@@ -38,6 +38,12 @@ export default function EventRaised({ e, showName = true, style }) {
 export const peopleLine = f => (f && f.people != null && f.people !== f.value
   ? `${Number(f.people).toLocaleString("en-US")} ${f.people === 1 ? "person" : "people"}` : null);
 
+// "a, b and c" over the clauses that are there
+const joinClauses = parts => {
+  const p = parts.filter(Boolean);
+  return p.map((x, i) => <span key={i}>{i === 0 ? "" : i === p.length - 1 ? " and " : ", "}{x}</span>);
+};
+
 export function EventStory({ s, style, noGiftShownBelow }) {
   if (!s) return null;
   const tile = (k, label, kind = "money") => (
@@ -67,8 +73,14 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {/* FIX-59: the list adds up too: invited = said yes or came + declined + no reply */}
       {s.listAddsUp ? (
         <div data-testid="event-story-list-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
-          {inline("invited", "Invited")} invited: {inline("registered", "Registered")} said yes or came, {inline("declined", "Declined")} declined, {inline("noReply", "No reply")} didn't reply.
-          {s.invitedDidntCome != null ? <> Of the {inline("registered", "Registered")}, {inline("attended", "Came")} came and {inline("invitedDidntCome", "Said yes, didn't come")} didn't.</> : null}
+          {/* EVENTS-3: a clause whose count is 0 is left out */}
+          {inline("invited", "Invited")} invited: {joinClauses([
+            s.registered ? <>{inline("registered", "Registered")} said yes or came</> : null,
+            s.declined ? <>{inline("declined", "Declined")} declined</> : null,
+            s.noReply ? <>{inline("noReply", "No reply")} didn't reply</> : null])}.
+          {s.invitedDidntCome != null && s.registered ? <> Of the {inline("registered", "Registered")}, {joinClauses([
+            s.attended ? <>{inline("attended", "Came")} came</> : null,
+            s.invitedDidntCome ? <>{inline("invitedDidntCome", "Said yes, didn't come")} didn't</> : null])}.</> : null}
         </div>
       ) : null}
     </div>

@@ -279,9 +279,11 @@ async function eventStory(orgId, eventId) {
     ? `${n(out.attended)} came: ${n(out.cameGave)} gave and ${n(out.cameDidntGive)} didn't. ${n(out.gave)} gave or pledged: ${n(out.cameGave)} who came and ${n(out.gaveNotCame)} who didn't.`
     : null;
   // FIX-59: the list's own sentence: who was asked, and what they answered
+  // EVENTS-3: a clause whose count is 0 is left out ("203 declined", never ", 0 didn't reply")
+  const said = parts => { const p = parts.filter(Boolean); return p.length > 1 ? `${p.slice(0, -1).join(", ")} and ${p[p.length - 1]}` : p.join(""); };
   out.listAddsUp = out.invited
-    ? `${n(out.invited)} invited: ${n(out.registered)} said yes or came, ${n(out.declined)} declined, ${n(out.noReply)} didn't reply.`
-      + (out.invitedDidntCome != null ? ` Of the ${n(out.registered)}, ${n(out.attended)} came and ${n(out.invitedDidntCome)} didn't.` : "")
+    ? `${n(out.invited)} invited: ${said([out.registered && `${n(out.registered)} said yes or came`, out.declined && `${n(out.declined)} declined`, out.noReply && `${n(out.noReply)} didn't reply`])}.`
+      + (out.invitedDidntCome != null && out.registered ? ` Of the ${n(out.registered)}, ${said([out.attended && `${n(out.attended)} came`, out.invitedDidntCome && `${n(out.invitedDidntCome)} didn't`])}.` : "")
     : null;
   return out;
 }

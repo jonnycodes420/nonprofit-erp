@@ -248,6 +248,9 @@ async function eventsAndPledgesSayNothingWrong(browser) {
         const came = page.locator('[data-testid="event-story"] .fig-tile:has([data-figure-key="event.attended"])').first();
         const cameText = await came.innerText().catch(() => "");
         ok(`§events3 ${where}: Came is 3 parties with its 4 people beside it`, /\b3\b/.test(cameText) && /4 people/.test(cameText), cameText);
+        const listLine = (await page.locator('[data-testid="event-story-list-adds-up"]').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+        ok(`§events3 ${where}: the list's sentence leaves out a clause whose count is 0`,
+           /^5 invited: 4 said yes or came and 1 declined\. Of the 4, 3 came and 1 didn't\.$/.test(listLine.replace(/\s*\?\s*/g, " ").replace(/\s+([.,])/g, "$1").trim()), listLine);
         const tiles = await page.locator('[data-testid="ev-report-tiles"] [data-figure]').evaluateAll(els => els.map(e => [e.getAttribute("data-figure"), e.getAttribute("data-source-key")]));
         ok(`§events3 ${where}: After the event is one tile look, every tile opening its rows (First-time givers and Sponsors too)`,
            tiles.length >= 4 && tiles.every(([, k]) => !!k) && tiles.some(([f]) => /firstTime/.test(f)) && tiles.some(([f]) => /sponsors/.test(f)), tiles);

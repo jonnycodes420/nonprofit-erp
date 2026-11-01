@@ -257,7 +257,7 @@ async function eventList(tok) {
   ok(`§7 Gave ${PARTY.gave} (a household once) = came, gave ${FIG.cameGave} + gave, didn't come ${PARTY.gaveNotCame}; the people beside them`,
      f.gave === PARTY.gave && st.gave === PARTY.gave && st.gaveNotCame === PARTY.gaveNotCame && st.cameGave + st.gaveNotCame === st.gave
      && fp.gaveNotCame === PARTY.gaveNotCame, JSON.stringify([f.gave, st.gave, st.cameGave, st.gaveNotCame, fp.gaveNotCame]));
-  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} invited: ${FIG.registered} said yes or came, ${FIG.declined} declined, ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
+  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} invited: ${FIG.registered} said yes or came, ${FIG.declined} declined and ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
   const rows = async k => (await api("GET", `/events/${EV}/rows?rows=${k}`, tok)).body || {};
   const [regRows, decRows] = [await rows("registered"), await rows("declined")];
   const declinedIds = new Set(["d1", "d2", "d3", "d4"].map(k => ids[k]));
