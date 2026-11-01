@@ -6,10 +6,12 @@
 // shared/engagementWeights.js through the same response, so the screen cannot
 // describe a weight the arithmetic does not use. Every part's points open the
 // rows it counted (figure sources donor-engagement-part / donor-generosity-part).
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
-import MetricBreakdownPanel from "./MetricBreakdownPanel";
+import { retryImport } from "../lib/lazyRetry";
+// PERF-2: the panel opens from the modal, so Home (SuggestedAskLine) does not load it.
+const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
 
 const BAND_COLOUR = { close: T.greenDk, warm: T.ink, distant: T.gold700, on_track: T.greenDk, cooling: T.gold700, new: T.ink };
 
@@ -139,8 +141,8 @@ export function ScoreWhyModal({ s, onClose }) {
         <p style={{ fontSize: 12, color: T.ink3, margin: 0 }}>{s.explanation.parts}{s.computedFor ? ` Worked out for ${s.computedFor}.` : ""}</p>
       </div>
       {open && (
-        <MetricBreakdownPanel open onClose={() => setOpen(null)} title={`${open.p.label}: ${open.p.points} of ${open.score === "engagement" ? s.engagement : s.generosity}`}
-          explanation={open.p.how ? `Counts ${open.p.how}.` : undefined} source={open.p.source} />
+        <Suspense fallback={null}><MetricBreakdownPanel open onClose={() => setOpen(null)} title={`${open.p.label}: ${open.p.points} of ${open.score === "engagement" ? s.engagement : s.generosity}`}
+          explanation={open.p.how ? `Counts ${open.p.how}.` : undefined} source={open.p.source} /></Suspense>
       )}
     </Modal>
   );

@@ -51,6 +51,7 @@ const SRC = path.join(root, "client", "src");
 const SURFACES = [
   "components/Dashboard.jsx",      // Home + the board surface
   "components/Dashboards.jsx",     // the four dashboards (each metric already defined)
+  "components/GoalRow.jsx",        // PERF-2 — a goal's row, out of Dashboards.jsx (Fundraising and Home)
   "components/Donors.jsx",         // directory, profile, re-engage, import
   "components/Pipeline.jsx",
   "components/Fundraising.jsx",
@@ -165,6 +166,7 @@ const OUT_OF_SCOPE = {
 // again draw a number that does not open.
 const FIGURE_SOURCE_SCOPE = [
   "components/Dashboards.jsx",      // Board, Fundraising, People, Recurring (FIX-2 A)
+  "components/GoalRow.jsx",         // PERF-2 — Dashboards.jsx's goal row, on its own so Home does not load the dashboards
   "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and every campaign page
   "components/GrantOverview.jsx",   // GRANTS-1 — Grants → Reports: pipeline, awarded against goal, win rate, what is due
 ];

@@ -2,6 +2,7 @@ import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
 import { saveDrafts } from "./lib/idleDraft";
 import { inSupport, leaveSupport } from "./lib/supportSession";   // FIX-57
+import { bundlePath } from "./lib/homeReads";   // PERF-2
 
 // GRANTS-1: one adapter for a legacy grant row, used by the first load and by
 // the Grants screen when it opens a grant created since (a planned renewal).
@@ -159,17 +160,44 @@ const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/];
 // HARDEN-2: `keep` parks each answer for the screen that has not mounted yet
 // (see `parked` above), and the bundle's own answer is returned so the caller
 // can read one of them (Home's scope) without taking it from the screen.
+const EARLY_TTL_MS = 30000;
+function takeEarly(url) {
+  const e = typeof window !== "undefined" ? window.__stewardEarly : null;
+  if (!e || !e.reads || !e.reads[url] || Date.now() - e.at > EARLY_TTL_MS) return null;
+  const p = e.reads[url];
+  delete e.reads[url];
+  return p;
+}
 export function prefetch(paths, { keep = false } = {}) {
   const token = getToken();
   if (!token) return Promise.resolve(null);
-  const want = [...new Set(paths)].filter(p => {
+  const have = p => {
     const key = token + " " + p;
     const hit = kept.get(key), held = parked.get(key);
-    return !inFlight.has(key) && !(hit && Date.now() - hit.at < SHARED_TTL_MS) && !(held && Date.now() - held.at < PARKED_TTL_MS);
-  });
+    return inFlight.has(key) || (hit && Date.now() - hit.at < SHARED_TTL_MS) || (held && Date.now() - held.at < PARKED_TTL_MS);
+  };
+  // PERF-2: a {scope} read is had when it is in flight, or its answer is parked under either scope.
+  const want = [...new Set(paths)].filter(p => !have(p) && !(p.includes("{scope}") && ["mine", "all"].some(s => have(p.split("{scope}").join(s)))));
   if (!want.length) return Promise.resolve(null);
-  const bundle = apiFetchNow("/home/bundle?" + want.map(p => "p=" + encodeURIComponent(p)).join("&")).catch(() => null);
+  const url = bundlePath(want);
+  // PERF-2: app.html's preloader asks for the boot's bundles the moment the
+  // page arrives (scripts/prerender.mjs), before this code has downloaded. Its
+  // answer is taken once, for the same address; when it did not answer, the
+  // bundle is asked for here as it always was.
+  const early = takeEarly(url);
+  const bundle = (early ? early.then(b => b || apiFetchNow(url)) : apiFetchNow(url)).catch(() => null);
+  // PERF-2: a read written with {scope} comes back under the path the server
+  // resolved it to (routes/homeBundle.js), so it is parked under that path for
+  // Home, and only when it answered; otherwise Home asks for it as it always did.
+  const scoped = want.filter(p => p.includes("{scope}"));
+  if (scoped.length) {
+    const landed = bundle.then(b => {
+      for (const [p, r] of Object.entries(b || {})) if (!want.includes(p) && r && r.status === 200 && "body" in r) parked.set(token + " " + p, { at: Date.now(), value: r.body });
+    }).catch(() => {});
+    for (const p of scoped) { const key = token + " " + p; inFlight.set(key, landed.finally(() => inFlight.delete(key))); }
+  }
   for (const p of want) {
+    if (scoped.includes(p)) continue;
     const key = token + " " + p;
     inFlight.set(key, bundle
       .then(b => (b && b[p] && b[p].status === 200 && "body" in b[p]) ? b[p].body : apiFetchNow(p))

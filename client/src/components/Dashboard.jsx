@@ -8,7 +8,7 @@ import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNam
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
 import { SkeletonBar } from "./Skeleton";
-import { HOME_FIRST_READS, RAIL_READS, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2
+import { HOME_FIRST_READS, RAIL_READS, HOME_SCOPED_FIRST, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2, PERF-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
@@ -20,14 +20,14 @@ import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
-import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
+import { ThreadDismissMenu, PutItOnMyCalendar } from "./ThreadMenus";   // PERF-2: the log form loads on its click
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import { SuggestedAskLine } from "./ScoreWhy";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
-import { MorningBrief } from "./MeetingPanels";
-import { MailboxBanner } from "./InboxConnect";
+import { MorningBrief } from "./MorningBrief";   // PERF-2: not the meeting forms
+import { MailboxBanner } from "./MailboxBanner";   // PERF-2: not the inbox panels
 import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
 import { stepInSentence, ORG_NAME_RE } from "../../../shared/stepCase.js";
@@ -44,17 +44,22 @@ const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakd
 const YourWords = lazy(() => retryImport(() => import("./YourWords")).then(m => ({ default: m.YourWords })));
 const PlanFollowUpModal = lazy(() => retryImport(() => import("./PlanFollowUp")).then(m => ({ default: m.PlanFollowUpModal })));
 const PinnedAnswers = lazy(() => retryImport(() => import("./AskPanel")).then(m => ({ default: m.PinnedAnswers })));
+// PERF-2: the moves deck (INSIGHTS-1, HOME-3) is below the fold on a phone, so
+// its code loads beside its read instead of holding Home's first look. Until it
+// is in, the deck's own "Reading your donors…" card holds its place.
+const HomeMoves = lazy(() => retryImport(() => import("./Insights")).then(m => ({ default: m.HomeMoves })));
+const MOVES_WAIT = <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14}}>Reading your donors…</section>;
+const LogConversationModal = lazy(() => retryImport(() => import("./LogConversation")).then(m => ({ default: m.LogConversationModal })));   // PERF-2
 const Breakdown = p => p.open ? <Suspense fallback={null}><MetricBreakdownPanel {...p}/></Suspense> : null;
 // Most orgs pin nothing: the pins' code loads only when there is a pin to draw.
 function PinsIfAny({ isReadOnly }) {
   const [n, setN] = useState(0);
   useEffect(() => { apiFetch("/ask/pins").then(r => setN(((r && r.pins) || []).length)).catch(() => {}); }, []);
-  return n ? <PinsIfAny isReadOnly={isReadOnly}/> : null;
+  return n ? <Suspense fallback={null}><PinnedAnswers isReadOnly={isReadOnly}/></Suspense> : null;   // PERF-2: it drew itself, and nothing drew it
 }
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { openRecentChanges } from "./RecentChanges";
 import { atlasName } from "../lib/atlas";
-import { HomeMoves } from "./Insights";   // INSIGHTS-1, HOME-3 the moves deck
 import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
@@ -214,7 +219,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
   // answer. The list is exactly what Home and its panels read when it opens.
-  useState(()=>{ if(surface==="home"){ prefetch(["/insights?view=deck"]); prefetch(RAIL_READS); prefetch(HOME_FIRST_READS); } return null; });   // HOME-4: the deck and the rail first, side by side
+  useState(()=>{ if(surface==="home"){ prefetch(["/insights?view=deck"]); prefetch(RAIL_READS); prefetch([...HOME_FIRST_READS,...HOME_SCOPED_FIRST]); } return null; });   // HOME-4: the deck and the rail first, side by side
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   // BUILD-89 — which of the rail's two states is showing. `today` is the
@@ -2281,7 +2286,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 rail of questions the org's own records can answer. An
                 answer's step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <Suspense fallback={null}><PinnedAnswers isReadOnly={isReadOnly}/></Suspense>
+              <PinsIfAny isReadOnly={isReadOnly}/>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
             {threadsData&&!threadsData.failed&&threadList.length===0&&(
@@ -3141,8 +3146,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px",marginTop:6}}>
           {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
-          <HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet}
-            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/>
+          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet}
+            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>
         </div>
       )}
       </>);
@@ -3374,8 +3379,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         onSelectDonor={goToDonorFromPortfolio}
       />
 
-      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
-        onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
+      {convoFor&&<Suspense fallback={null}><LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
+        onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/></Suspense>}
       {wordsOpen&&<Suspense fallback={null}><YourWords mode="first-run" onClose={()=>setWordsOpen(false)}
         onDone={()=>{setWordsOpen(false);setWordsDone(true);if(setData)setData(d=>({...d,org:{...d.org,vocabularySetAt:new Date().toISOString()}}));}}/></Suspense>}
       {planFor&&<Suspense fallback={null}><PlanFollowUpModal donor={planFor.donor}

@@ -759,7 +759,7 @@ async function findingJoy() {
   const line = (fl.events || []).find(e => e.id === evId) || {};
   ok(`§FJ Home's first look: "$${K.dinner_total.toLocaleString("en-US")} raised ($${K.received.toLocaleString("en-US")} received, $${K.not_yet_received.toLocaleString("en-US")} pledged)"`,
      (line.words || "").includes(`$${K.dinner_total.toLocaleString("en-US")} raised ($${K.received.toLocaleString("en-US")} received, $${K.not_yet_received.toLocaleString("en-US")} pledged)`), line.words);
-  const deck = (await api("GET", "/insights?view=deck&asOf=2026-10-22", tok)).body || {};
+  const deck = (await api("GET", "/insights?view=deck&moves=all&asOf=2026-10-22", tok)).body || {};   // PERF-2: every move
   const grow = (((deck.deck || deck).tabs) || []).flatMap(t => t.moves || []).find(m => m.kind === "came_no_gift" && m.group && m.group.eventId === evId);
   ok(`§FJ Home's Grow: "Came to the Finding Joy Dinner, didn't give" counts the page's ${fig("cameNoGift")} people (the key's ${K.attended_no_gift} rows)`,
      !!grow && grow.group.count === fig("cameNoGift") && L.cameNoGift.rows === K.attended_no_gift, JSON.stringify(grow && grow.group));

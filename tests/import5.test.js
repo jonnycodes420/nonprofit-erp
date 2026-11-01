@@ -243,7 +243,7 @@ async function guests() {
   ok("§2 the list opens its rows, and the figure source says the same", rows.count === KEY && (fig.rows || []).length === KEY && Number(fig.value) === KEY, JSON.stringify([rows.count, (fig.rows || []).length, fig.value]));
 
   // Home: one Grow move per person, the event named, no ask on the first touch
-  const deck = ((await api("GET", "/insights?view=deck", tok)).body || {}).deck || {};
+  const deck = ((await api("GET", "/insights?view=deck&moves=all", tok)).body || {}).deck || {};   // PERF-2: every move, as the deck has once it is in view
   const all = (deck.tabs || []).flatMap(t => t.moves || []);
   const came = all.filter(m => m.kind === "came_no_gift");
   const also = all.filter(m => (m.also || []).some(a => a.kind === "came_no_gift"));

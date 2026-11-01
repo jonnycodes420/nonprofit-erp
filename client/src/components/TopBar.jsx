@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
 import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
-import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 import { RecordLink } from "./RecordLink";
 import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 import { openRecentChanges } from "./RecentChanges";
@@ -350,7 +349,8 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
   // SWEEP-6 (PERF-1): the entries are every docs/changelog file, so they load
   // once the page has drawn, not before Home's first look.
   const [changelog,setChangelog] = useState([]);
-  const loadChangelog = () => { import("../lib/changelog").then(m=>setChangelog(m.CHANGELOG)).catch(()=>{}); };
+  const [PRODUCT_WORDS,setProductWords] = useState({});   // PERF-2: with the entries, not with Home
+  const loadChangelog = () => { import("../lib/changelog").then(m=>{setProductWords(m.PRODUCT_WORDS);setChangelog(m.CHANGELOG);}).catch(()=>{}); };
   useEffect(()=>{ const t=setTimeout(()=>{ if(window.requestIdleCallback) window.requestIdleCallback(loadChangelog,{timeout:4000}); else loadChangelog(); },4000); return ()=>clearTimeout(t); },[]);
   useEffect(()=>{ if(meOpen&&!changelog.length) loadChangelog(); },[meOpen]);   // eslint-disable-line react-hooks/exhaustive-deps
   const wnEntries = changelog.filter(e=>!wnHidden||!wnHidden.has(e.id));

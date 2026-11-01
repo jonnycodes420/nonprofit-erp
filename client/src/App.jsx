@@ -34,6 +34,11 @@ import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { openRecentChanges } from "./components/RecentChanges";
 import { retryImport } from "./lib/lazyRetry";
 const CLIP_X = typeof CSS !== "undefined" && CSS.supports && CSS.supports("overflow-x", "clip") ? "clip" : "hidden";   // HOME-4, see BASE
+// PERF-2: the app's typefaces. app.html writes their faces into its head
+// (scripts/prerender.mjs); a second copy of the same faces made each font
+// download twice, so the stylesheet is added only where the shell did not.
+const FONTS_IN_SHELL = typeof document !== "undefined" && !!document.querySelector("style[data-app-fonts]");
+const AppFonts = () => (FONTS_IN_SHELL ? null : <link href="/fonts/app-fonts.css" rel="stylesheet"/>);
 // HARDEN-2 item 2: every tab but Home is its own chunk, fetched when it is
 // opened, so the first look downloads Home and the shell, not the whole CRM.
 // The tabs below are rendered under one Suspense with SkeletonPage.
@@ -503,7 +508,7 @@ function AppShell() {
 
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <AppFonts/>
     {/* Splash mark = the OG badge: Emerald badge + Cream serif S (was the retired
         off-brand green #0d5c3a badge with a white S). Spinner accent = Emerald. */}
     <div style={{width:40,height:40,background:T.greenDk,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -520,14 +525,14 @@ function AppShell() {
   // server was down, and given a Retry button that could never work.
   if(leavingForLogin()) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
     <GlobalStyles/>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <AppFonts/>
     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
     <div style={{fontSize:13,color:T.ink3}}>Taking you to the login page.</div>
   </div>;
 
   if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
     <GlobalStyles/>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <AppFonts/>
     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
     <div style={{fontSize:15,fontWeight:700,color:T.terracotta}}>{loadLimited?"One moment":"Failed to connect"}</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
@@ -727,7 +732,7 @@ function AppShell() {
          problem rather than a dead nav. */
       "--sidebar-w":(sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W)+"px"}}>
     <GlobalStyles/>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <AppFonts/>
 
     {/* Global top bar — full-width, fixed, spans the whole viewport ABOVE the
         sidebar (BUILD-10). Carries the wordmark, search, help menu, user chip
