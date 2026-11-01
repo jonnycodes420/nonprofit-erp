@@ -246,7 +246,7 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Fiscal year (moved from the old CRITICAL WORKING RULES)
 

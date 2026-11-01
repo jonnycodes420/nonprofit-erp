@@ -182,7 +182,7 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Strategic pivot (2026-07-12) — READ THIS FIRST
 Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewardship product** built around Donors + Grants + Communications.

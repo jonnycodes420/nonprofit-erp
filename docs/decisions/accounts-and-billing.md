@@ -245,7 +245,7 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Super admin pattern
 - **Open as support (FIX-57)** is the only way to see a customer's screen; nobody reads prod data to

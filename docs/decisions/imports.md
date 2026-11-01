@@ -336,7 +336,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## One-file import and workbooks (moved from the old CRITICAL WORKING RULES)
 

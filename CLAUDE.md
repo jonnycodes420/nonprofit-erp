@@ -1,8 +1,10 @@
 # Steward — Nonprofit ERP SaaS
 
+**Read `docs/architecture/ARCHITECTURE.md` before writing code. Where it and a brief disagree, ask; don't guess.**
+
 Every session reads this file on every turn. Keep it short: **200 lines at most**, enforced by
 `tests/claude-md.test.js`. Rules for one area live in `docs/decisions/`. The story of how
-each rule was learned lives in `docs/HISTORY.md`.
+each rule was learned lives in `docs/history/`, one file per brief.
 
 ## What Steward is
 
@@ -23,7 +25,8 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
 - What is live: `GET /health` → `buildSha` (backend) and `<meta name="build-sha">` on
   www.stewardapp.dev (frontend). Never guess from route probes.
 - Only what physically needs Jonathan (a credential, a payment, a signature, a real
-  customer's file) goes in `NEEDS-JONATHAN.md`, one line each. Decide everything else.
+  customer's file) goes in `docs/needs-jonathan/<BRIEF>.md` (the brief's own file), one line
+  each. Decide everything else.
   Never create a `BLOCKED-*.md`.
 
 ## How Steward is built
@@ -111,7 +114,8 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   The public page and the in-app panel read only these files, never commit messages.
 - **The two-strikes rule for this file.** A new line goes into CLAUDE.md only when the same
   mistake has happened twice. Anything else goes into the decisions file for its area, or
-  into `docs/HISTORY.md`. A new build's entry goes at the top of HISTORY.md, not here.
+  into history. A build's entry is its own new file, `docs/history/<BRIEF>.md`: add a file,
+  never edit another brief's.
 
 ## How to run things
 
@@ -169,6 +173,7 @@ touch …", then the rules, then the reference sections moved from the old CLAUD
 - `docs/decisions/home-and-reports.md` — Home, the Dashboard, the Thread, Drift, tasks, goals, report definitions, board reports.
 - `docs/decisions/people-and-records.md` — the person record: donors, orgs, non-donors, households, merge, deletion, profile, volunteers, events.
 - `docs/decisions/accounts-and-billing.md` — sign-in, signup, onboarding, invites, roles, super admin, Settings, platform billing.
-- `docs/HISTORY.md` — every dated build entry, verbatim, newest first. It holds the why, not instructions.
-- `NEEDS-JONATHAN.md` — the only list of things waiting on Jonathan.
+- `docs/history/` — one file per brief, the why, not instructions. Index: `node scripts/ci/history-index.js`.
+- `docs/architecture/` — ARCHITECTURE.md (the rules), the MAP-1 map, and the ratchet baselines.
+- `docs/needs-jonathan/` — what waits on Jonathan, one file per brief. All of it: `node scripts/ci/needs-jonathan.js`.
 - `tests/README.md` — the scratch stack, the browser-leg environment, and the individual suites.

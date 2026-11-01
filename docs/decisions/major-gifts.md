@@ -236,7 +236,7 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Status vs stage, and stage inference (moved from the old CRITICAL WORKING RULES)
 

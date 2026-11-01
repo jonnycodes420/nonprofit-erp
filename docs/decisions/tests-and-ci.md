@@ -178,7 +178,7 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## THE TDZ RULE (standing, from BUILD-96 — this class has now cost four builds)
 

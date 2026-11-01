@@ -190,6 +190,8 @@ const LOOPBACK_CAPTURES = [
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "history-index": "ARCH-1 — prints the index of docs/history/ from the files there. Reads only; no BASE, no DB, no network, no writes",
+  "needs-jonathan": "ARCH-1 — prints what waits on Jonathan from docs/needs-jonathan/. Reads only; no BASE, no DB, no network, no writes",
   "arch-check": "ARCH-1 — the architecture ratchet. Reads the tracked tree (git ls-files) and its own baselines in docs/architecture/baseline/; --update rewrites only those baselines. No BASE, no DB, no network",
   "prod-ai-smoke": "HARDEN-1 — signs in to the prod demo and POSTs ONLY to /ask/preview and /agent/preview, both declared read-only in auditTrail.READ_ONLY_POSTS (nothing saved); checked below",
   "error-digest": "HARDEN-1 — reads Railway log lines (stdin or a file) and writes one markdown file under docs/errors/; no BASE, no DB, no app write",
