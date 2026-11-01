@@ -25006,7 +25006,10 @@ async function reportBookkeeper(orgId, p) {
   const noFund = out.filter(r => !String(r.fund || "").trim());
   const chequesNoNumber = out.filter(r => /check|cheque/i.test(String(r.paymentMethod || ""))
     && !String(r.checkNumber || "").trim());
-  const noDeposit = out.filter(r => !String(r.deposit || "").trim() && r.cashOrNot === "Cash");
+  // NUMBERS-3: the one meaning of deposited and the one list of banked money
+  // (shared/numbers/deposited.js), the same set Finance and month close read.
+  // A gift that does not say how it arrived is "no payment method" above.
+  const noDeposit = out.filter(r => !String(r.deposit || "").trim() && r.cashOrNot === "Cash" && NUMBERS.deposited.isBanked({ payment_method: r.paymentMethod }));
   // POLISH-1 Part 5: the banner read "57 gifts no fund (46693.95)": the CSV's
   // bare decimal, printed at a person. `amount` stays the file's shape;
   // `display` is the money as a person reads it, through the one formatter.

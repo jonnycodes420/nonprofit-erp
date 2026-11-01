@@ -62,6 +62,9 @@ const GUARDED_WRITERS = [
   // ADMIN-CLEAN: sorts every org into its kind, archives and deletes junk.
   // Dry run by default; --apply writes through writerDbUrl.
   "admin-clean",
+  // NUMBERS-3: recomputes stored first and last gifts to the one rule.
+  // Dry run by default; --apply writes through writerDbUrl. org_creo skipped.
+  "numbers3-recompute-totals",
   "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
    "fix-build54-demo-photos",
   "fix-demo-finance-ledger",  "load-irs-ein-registry",

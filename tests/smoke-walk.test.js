@@ -977,15 +977,20 @@ async function moneyScreensSayNothingWrong(browser) {
       const lm = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 10)).toISOString().slice(0, 10);
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name) VALUES ($1,$2,$3,250,$4,'Needs you','system:test','test')`,
         [`g_${org}_lm`, org, `d_${org}_1`, lm]);
+      // and a cheque on no deposit (NUMBERS-3), so the tick has something to refuse
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name) VALUES ($1,$2,$3,75,$4,'Check','system:test','test')`,
+        [`g_${org}_lmc`, org, `d_${org}_1`, lm]);
     }
     return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
   };
   const cases = [["imported history, no ledger", await make("org_sweep5_hist", 8)], ["empty", await make("org_sweep5_none", 0)]];
   const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"],
     [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"]];
-  // Month close: a gift with no payment method may be a check, so "Every
-  // check is on a deposit" is not ticked while the bookkeeper's file for the
-  // same month says that gift is not matched to a deposit. Red on main.
+  // Month close never ticks "Every check is on a deposit" while the
+  // bookkeeper's file for the same month says a gift is not matched to one.
+  // NUMBERS-3: both read one definition and one list of banked money
+  // (shared/numbers/deposited.js); the gift that does not say how the money
+  // arrived is the bookkeeper's "no payment method", not a deposit question.
   {
     const tok = cases[0][1].token;
     const close = (await api("GET", "/finance/month-close", tok)).body || {};
@@ -995,6 +1000,8 @@ async function moneyScreensSayNothingWrong(browser) {
     const unmatched = ((bk.issues || []).find(i => i.key === "no_deposit") || {}).count || 0;
     ok("§sweep5 Month close does not tick \"every check is on a deposit\" beside gifts the bookkeeper's file says are not on one",
        unmatched > 0 && banked.done === false && banked.count === unmatched, { banked, unmatched, from, to });
+    const noMethod = ((bk.issues || []).find(i => i.key === "no_method") || {}).count || 0;
+    ok("§sweep5 …and the gift that does not say how it arrived is the bookkeeper's \"no payment method\"", noMethod >= 1, (bk.issues || []).map(i => [i.key, i.count]));
   }
   for (const [what, a] of cases) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
