@@ -7,7 +7,7 @@ day is at the foot and supersedes "HOW THIS RUNS" where they differ.)
 
 **Why.** On 25 September Jonathan walked the product as a customer would and found it deep in places and wrong in the places a customer looks first. FIX-1 makes what exists feel like the product it is, before anything new is added.
 
-**What does not move.** One database, one person record, one gift path (`recordGift`), one ledger. Agents read, draft and propose; a human signs anything that reaches a donor or moves money. Every number on screen has a sentence. The four colours. Every write carries an actor. `scripts/tdz-scan.js` before every commit. Nothing is done until the full battery is green.
+**What does not move.** One database, one person record, one gift path (`recordGift`), one ledger. Agents read, draft and propose; a human signs anything that reaches a donor or moves money. Every number on screen has a sentence. The four colours. Every write carries an actor. `scripts/ci/tdz-scan.js` before every commit. Nothing is done until the full battery is green.
 
 ## PART 0 — WHAT THE WALK FOUND (each one a test before it is a fix)
 1. The agent's plan and its run disagree (Sunrise, $5,000: plan said record + follow-up; run recorded nothing, opened no thread, drafted a note and a task).

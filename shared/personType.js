@@ -62,12 +62,6 @@ export function typesOf(row) {
 export const isDonor = (row) => typesOf(row).includes(DONOR_TYPE);
 export const hasType = (row, type) => typesOf(row).includes(type);
 
-// Adding a type is idempotent and order-stable. A volunteer's first gift runs
-// through HERE, never through a row insert.
-export function addType(row, type) {
-  return normalizeTypes([...typesOf(row), type]);
-}
-
 // ── THE PREDICATE ──────────────────────────────────────────────────────────
 // Spliced into a WHERE clause wherever "donors" means money. `alias` is the
 // table alias at the call site ("d", "donors", ""). NULL-tolerant on purpose:

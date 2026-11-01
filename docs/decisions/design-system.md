@@ -135,7 +135,7 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## THE DESIGN RULE (BUILD-86 — standing, applies to every build from here on)
 **FOUR COLOURS reach a screen. Nothing else.**

@@ -51,7 +51,7 @@ const LOGS = [];
 for (const k of ["log", "error", "warn"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { FAKE_ROUTING, FAKE_ACCOUNT } = require("../scripts/capture1-make-fixtures.js");
+const { FAKE_ROUTING, FAKE_ACCOUNT } = require("../scripts/ci/capture1-make-fixtures.js");
 const FX = path.join(__dirname, "fixtures", "capture1");
 const dataUrl = f => `data:image/png;base64,${fs.readFileSync(path.join(FX, f)).toString("base64")}`;
 

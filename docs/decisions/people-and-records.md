@@ -200,7 +200,7 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   `deleted_at` calls `bringPeopleBack` (personTrash.js), which closes all their open `deleted_records`
   rows in the same transaction. An id taken again by a new row closes its open
   rows (trigger `steward_person_row_forgets_trash`, db.js); records are closed, never deleted. Old leftovers: count with
-  `scripts/stale-deletions-readonly.sql`, close one org at a time with `scripts/close-stale-deletions.js`.
+  `scripts/ops/stale-deletions-readonly.sql`, close one org at a time with `scripts/ci/close-stale-deletions.js`.
 - **Every Undo toast comes from the one host** (`offerUndo` in `EditHistory.jsx`, mounted on
   document.body). A screen never renders its own toast: one drawn inside the screen dies when that screen
   re-renders away. The ten seconds stop while the pointer or focus is on it or the tab is hidden. (FIX-25)
@@ -357,7 +357,7 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy
-  `/person-photos` and every bare backend path before the SPA catch-all. `scripts/local-preview.js`
+  `/person-photos` and every bare backend path before the SPA catch-all. `scripts/ci/local-preview.js`
   derives its table from vercel.json. (BUILD-95)
 - **An `http://169.254.169.254` fixture is refused by the protocol check** and never exercises the
   metadata rule. Use an https URL for that case. (BUILD-94)
@@ -383,7 +383,7 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Database tables (moved from the old "Database — key tables and columns")
 

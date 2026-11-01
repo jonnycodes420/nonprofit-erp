@@ -282,7 +282,7 @@ async function reset() {
 
   // ── §5 · the source scan ────────────────────────────────────────────────
   console.log("\n— §5 · no money value is rounded to a whole dollar, anywhere —");
-  const audit = require("../scripts/build73-money-audit.js");
+  const audit = require("../scripts/ci/build73-money-audit.js");
   for (const w of audit.wiring) ok(w.msg, w.ok, null);
   ok(`the source scan finds ZERO unexplained money rounding sites (found ${audit.findings.length})`,
      audit.findings.length === 0,

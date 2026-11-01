@@ -4,7 +4,7 @@
 # the Railway CLI and the project-scoped RAILWAY_TOKEN that ci.yml's
 # deploy-railway job already uses (service nonprofit-erp, environment
 # production; read only), groups them by type and by route with
-# scripts/error-digest.js, and posts it as that day's issue.
+# scripts/ci/error-digest.js, and posts it as that day's issue.
 #
 # FIX-44: the digest is ONE GITHUB ISSUE PER DAY, titled "Error digest, Oct
 # 19, 2026", with the digest (the top errors by type and by route) as its body.
@@ -89,7 +89,7 @@ jobs:
           wc -l logs.jsonl
 
       - name: Write the digest
-        run: node scripts/error-digest.js --in logs.jsonl --day "${{ steps.logs.outputs.day }}" --out "$RUNNER_TEMP/errors"
+        run: node scripts/ci/error-digest.js --in logs.jsonl --day "${{ steps.logs.outputs.day }}" --out "$RUNNER_TEMP/errors"
 
       - name: Open or update the day's digest issue
         env:

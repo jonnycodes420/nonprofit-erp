@@ -54,7 +54,7 @@ const WORDS = new RegExp(
   ].join("|") + ")\\b", "i");
 
 // The places a person reads.
-const ROOTS = ["client/src", "routes", "shared", "server.js", "scripts/seed-demo.js",
+const ROOTS = ["client/src", "routes", "shared", "server.js", "scripts/ci/seed-demo.js",
   // Email and PDF builders that live at the root.
   "emailCompose.js", "readout.js", "grantDocs.js", "depositsFile.js", "memberCard.js",
   "why.js", "appealWhy.js", "prospectBrief.js", "timelineLine.js", "groups.js",
@@ -156,7 +156,7 @@ function scanEnGb(rootDir) {
 // includes/split/replace/indexOf/test (code looking FOR a dash).
 //
 // It fails when: someone writes "Raised — so far" in a screen, an email, a PDF,
-// a page title, a changelog line or the demo seed. scripts/fix45-no-em-dash.js
+// a page title, a changelog line or the demo seed. scripts/fix45-no-em-dash.js (removed by ARCH-1; docs/architecture/scripts-removed.md)
 // is the sweep that rewrites them.
 const DASH = /—|&mdash;|&#8212;/;
 const EM_ROOTS = [...new Set([...ROOTS, "scripts/seed"])];

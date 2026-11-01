@@ -29,7 +29,7 @@
   "pledge-math": 99,
   "reconciliation": 13,
   "recurring-recovery": 29,
-  "script-guards": 506,
+  "script-guards": 289,
   "session-privilege": 18,
   "smoke-walk": 104,
   "stripe-disputes": 25,
@@ -38,7 +38,7 @@
   "test-clock-seam": 18,
   "thread2a-no-send": 31,
   "trial-end": 25,
-  "upgrade-checkout": 32,
+  "upgrade-checkout": 20,
   "webhook-manifest": 15,
   "webhook-ordering": 15
  }

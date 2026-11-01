@@ -57,7 +57,7 @@ export const STALE_DAYS = 30;
 // type from the label's FIRST verb, so a step a human typed as "Send
 // thank-you note" is stored as type `send` and would have missed this
 // entirely. The step's type is a convenience; what the step IS is in the
-// words. Found by scripts/build85-capture.js, where a deliberately-seeded
+// words. Found by scripts/build85-capture.js (removed by ARCH-1; docs/architecture/scripts-removed.md), where a deliberately-seeded
 // late thank-you ranked as an ordinary overdue follow-up.
 const DECAYING_STEP_TYPES = new Set(["thank", "thank_you_note"]);
 const DECAYING_LABEL = /thank[- ]?you|thanks/i;

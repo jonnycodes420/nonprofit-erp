@@ -248,21 +248,4 @@ export const NUMBER_CENSUS = [
 ];
 
 export const censusById = (id) => NUMBER_CENSUS.find(n => n.id === id) || null;
-export const censusFor = (surface) => NUMBER_CENSUS.filter(n => n.surface === surface);
 
-// Every sentence is checked for the properties the rules above demand, so a
-// future entry cannot be added that breaks them quietly.
-export function sentenceProblems(entry) {
-  const problems = [];
-  const s = String(entry.sentence || "");
-  if (!s) problems.push("no sentence");
-  if (s.length < 25) problems.push("too short to be an explanation");
-  if (s.length > 420) problems.push("longer than one plain sentence's worth");
-  if (!/[.!?]$/.test(s.trim())) problems.push("does not end as a sentence");
-  // The vocabulary that would mean the number looks OUTSIDE the org's own rows.
-  // "capacity" and "estimated" are how a giving figure becomes a claim about
-  // somebody's means, which is the reading BUILD-100 spent a build denying.
-  if (/\bwealth\b|\bcapacity to give\b|\bestimated net worth\b|\bscreened\b/i.test(s))
-    problems.push("claims something outside the org's own records");
-  return problems;
-}

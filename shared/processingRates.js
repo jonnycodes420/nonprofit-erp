@@ -36,26 +36,11 @@ export const DEFAULT_RATES = Object.freeze({
 
 export const RATE_KINDS = Object.keys(DEFAULT_RATES);
 
-// Stripe's nonprofit rate, for the sentence on the settings screen. Not a
-// default: an org only pays it once Stripe has approved its application, and
-// guessing that it has would be guessing in the direction that costs the org.
-export const NONPROFIT_CARD_RATE = Object.freeze({ pct: 0.022, flatCents: 30, capCents: null });
-
 const PCT_MAX = 0.2;              // a fifth of a gift is not a processing rate
 const FLAT_MAX_CENTS = 1000;      // ten dollars
 const CAP_MAX_CENTS = 100000;     // a thousand dollars
 
 const isInt = v => Number.isInteger(v);
-
-// ── WHICH RATE A PAYMENT RUNS ON ───────────────────────────────────────────
-// Stripe's own payment-method type strings, so the caller never has to map
-// them. Anything unrecognised is a CARD, which is the dearer of the two: an
-// unknown method must not under-state what the org will pay.
-export function rateKindForMethod(stripeMethodType) {
-  const t = String(stripeMethodType || "").toLowerCase();
-  if (t === "us_bank_account" || t === "ach_debit" || t === "ach_credit_transfer" || t === "acss_debit") return "ach";
-  return "card";
-}
 
 // ── THE ORG'S OWN RATES ────────────────────────────────────────────────────
 // `org` is a row from `orgs`. A NULL column means "I have not told Steward my
@@ -165,11 +150,6 @@ export function grossUpCents(netCents, rate) {
   const cap = Math.round(Number(r.capCents));
   if (feeOnChargeCents(uncapped, { ...r, capCents: null }) <= cap) return uncapped;
   return net + cap;
-}
-
-// What the checkbox adds. The one number the donor reads beside it.
-export function coveredAmountCents(netCents, rate) {
-  return grossUpCents(netCents, rate) - Math.max(0, Math.round(Number(netCents) || 0));
 }
 
 // ── THE SENTENCE ───────────────────────────────────────────────────────────

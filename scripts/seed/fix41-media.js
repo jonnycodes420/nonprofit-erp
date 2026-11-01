@@ -1,6 +1,6 @@
 // scripts/seed/fix41-media.js: FIX-41 Part 2. THE DEMO SHOWS PICTURES.
 //
-// Called with one line from scripts/seed-demo.js main(), after the auction,
+// Called with one line from scripts/ci/seed-demo.js main(), after the auction,
 // the event pages and the volunteer page are written. It only ever writes
 // org_b72demo, through the `q` the seed hands it, and only seed-demo calls it.
 //

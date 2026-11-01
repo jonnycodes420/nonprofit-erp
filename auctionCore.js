@@ -27,7 +27,6 @@ const crypto = require("crypto");
 const money = require("./money");
 
 const SYS_PUBLIC = { id: "system:auction-public", name: "The bidder, from the auction page" };
-const SYS_PAY = { id: "system:auction-pay", name: "The winner, from the pay page" };
 const BID_MAX_CENTS = 100000000;   // $1,000,000: a typo guard, not a business rule
 
 // The top bid on every item of one auction, by the one ordering.
@@ -142,7 +141,7 @@ function slugify(s) {
 }
 
 module.exports = {
-  SYS_PUBLIC, SYS_PAY, BID_MAX_CENTS, TOP_BIDS_SQL, ITEM_STATE_SQL,
+  SYS_PUBLIC, BID_MAX_CENTS, TOP_BIDS_SQL, ITEM_STATE_SQL,
   itemStates, minNextBidCents, deductibleCents, quidProQuoDesc, deductibleSentence, fmtMoney,
   cents, dollars, randomToken, hashToken, payToken, resolvePayToken, slugify,
 };

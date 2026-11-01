@@ -75,7 +75,7 @@ function logLabels() {
   const gb = scanEnGb(ROOT);
   ok("§spell no en-GB spelling in a sentence a person reads", gb.length === 0, show(gb));
   // FIX-45: docs/MESSAGING.md says "No em dashes." The sweep that removed the
-  // 381 found on 19 Oct is scripts/fix45-no-em-dash.js; run it, then this.
+  // 381 found on 19 Oct is scripts/fix45-no-em-dash.js (removed by ARCH-1; docs/architecture/scripts-removed.md); run it, then this.
   const dashes = scanEmDash(ROOT);
   ok("§dash no em dash in a sentence, label, email, PDF, page title or changelog a person reads", dashes.length === 0,
     dashes.slice(0, 12).map(h => `${h.file}:${h.line} ${h.text}`));

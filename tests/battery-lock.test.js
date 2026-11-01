@@ -17,7 +17,7 @@
 //   §3 a lock with no pid yet (between mkdir and the pid write) is not stale
 //   §4 FIX-60 item 6, the battery's other shared thing: client/dist. A dist
 //      built before a merge, a rebase or an uncommitted client edit is STALE
-//      (scripts/dist-fresh.js, run against a throwaway git repo and a fake
+//      (scripts/ci/dist-fresh.js, run against a throwaway git repo and a fake
 //      dist), and run-all.sh and the pre-push hook rebuild through it instead
 //      of reusing whatever dist is built against the same port. Red on main:
 //      the checker did not exist and run-all.sh's only test was that grep.
@@ -93,7 +93,7 @@ const done = p => new Promise(r => { let out = ""; p.stdout.on("data", d => out 
   // ── §4 a client/dist from before a merge is stale (FIX-60 item 6) ─────
   {
     const root = path.join(__dirname, "..");
-    const CHECK = path.join(root, "scripts", "dist-fresh.js");
+    const CHECK = path.join(root, "scripts", "ci", "dist-fresh.js");
     const repo = path.join(tmp, "s4-repo"), dist = path.join(tmp, "s4-dist");
     const g = (...a) => execFileSync("git", a, { cwd: repo, stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
     const put = (f, body) => { fs.mkdirSync(path.dirname(path.join(repo, f)), { recursive: true }); fs.writeFileSync(path.join(repo, f), body); };
@@ -108,7 +108,7 @@ const done = p => new Promise(r => { let out = ""; p.stdout.on("data", d => out 
       fs.writeFileSync(path.join(dist, "assets", "index-abc.js"), `const API="${api}";`);
     };
     const haveChecker = fs.existsSync(CHECK);
-    ok("§4 scripts/dist-fresh.js exists (the one freshness check)", haveChecker);
+    ok("§4 scripts/ci/dist-fresh.js exists (the one freshness check)", haveChecker);
     if (haveChecker) {
       fs.mkdirSync(repo);
       g("init", "-q"); g("config", "user.email", "t@example.org"); g("config", "user.name", "t");
@@ -159,11 +159,11 @@ const done = p => new Promise(r => { let out = ""; p.stdout.on("data", d => out 
     // The two callers ask it, and the port-only reuse is gone.
     const runAll = fs.readFileSync(path.join(root, "tests", "run-all.sh"), "utf8");
     const prePush = fs.readFileSync(path.join(root, ".githooks", "pre-push"), "utf8");
-    const bld = fs.readFileSync(path.join(root, "scripts", "build-local-dist.sh"), "utf8");
-    ok("§4 run-all.sh rebuilds the browser shard's dist through dist-fresh.js", /node scripts\/dist-fresh\.js --rebuild --api "http:\/\/localhost:\$bapi"/.test(runAll));
+    const bld = fs.readFileSync(path.join(root, "scripts", "ops", "build-local-dist.sh"), "utf8");
+    ok("§4 run-all.sh rebuilds the browser shard's dist through dist-fresh.js", /node scripts\/ci\/dist-fresh\.js --rebuild --api "http:\/\/localhost:\$bapi"/.test(runAll));
     ok("§4 run-all.sh no longer reuses any dist built against the same port", !/grep -rqs "localhost:\$bapi" client\/dist/.test(runAll));
-    ok("§4 the pre-push hook checks the dist before running suites on a live server", /node scripts\/dist-fresh\.js --rebuild --if-present --api "\$hbase"/.test(prePush));
-    ok("§4 build-local-dist.sh stamps the fingerprint it took before the build", /FP="\$\(node \.\.\/scripts\/dist-fresh\.js --fingerprint/.test(bld) && /--stamp "\$FP"/.test(bld) && bld.indexOf("--fingerprint") < bld.indexOf("npm run build"));
+    ok("§4 the pre-push hook checks the dist before running suites on a live server", /node scripts\/ci\/dist-fresh\.js --rebuild --if-present --api "\$hbase"/.test(prePush));
+    ok("§4 build-local-dist.sh stamps the fingerprint it took before the build", /FP="\$\(node \.\.\/scripts\/ci\/dist-fresh\.js --fingerprint/.test(bld) && /--stamp "\$FP"/.test(bld) && bld.indexOf("--fingerprint") < bld.indexOf("npm run build"));
   }
 
   fs.rmSync(tmp, { recursive: true, force: true });

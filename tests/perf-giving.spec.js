@@ -33,6 +33,7 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, q, closeDb, BASE, browserLegOrSkip, civilPlusDays } = require("./helpers");
+const timed = require("./lib/budget").withinBudget(ok);
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -135,7 +136,7 @@ async function measure(browser, p) {
 
 (async () => {
   const why = (() => {
-    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/build-local-dist.sh)";
+    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
     return null;
   })();
@@ -166,8 +167,8 @@ async function measure(browser, p) {
   }
   for (const r of results) {
     ok(`${r.name}: the page draws and can be used (${r.url})`, r.ready && !r.errors.length, { ready: r.ready, errors: r.errors });
-    ok(`${r.name}: Largest Contentful Paint under 2.5 s on a phone (${r.lcp} ms)`, r.lcp > 0 && r.lcp < BUDGET.lcp, r.lcp);
-    ok(`${r.name}: usable under 2.5 s on a phone (${r.usable} ms)`, r.usable > 0 && r.usable < BUDGET.usable, r.usable);
+    timed(`${r.name}: Largest Contentful Paint under 2.5 s on a phone (${r.lcp} ms)`, { ms: r.lcp, budget: BUDGET.lcp });
+    timed(`${r.name}: usable under 2.5 s on a phone (${r.usable} ms)`, { ms: r.usable, budget: BUDGET.usable });
     ok(`${r.name}: under 200 KB of JavaScript (${r.jsKB} KB)`, r.jsKB * 1024 < BUDGET.jsBytes, r.jsKB);
   }
   summary();

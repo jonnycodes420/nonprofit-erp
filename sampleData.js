@@ -99,7 +99,6 @@ const HEADLINE = ["people", "gifts", "households", "threads", "tasks", "enrollme
 // another build's migration. `tests/build96-sample-data.test.js` PINS both
 // cascades: change either to NO ACTION and the suite says so, rather than a
 // customer's handover failing with "Some sample rows could not be removed".
-const CASCADE_HANDLED = ["gift_soft_credits", "tribute_notices"];
 
 // A gift the provisioning path did not write. This is the whole safety
 // property: an org with one hand-entered gift is an org somebody has started
@@ -267,6 +266,6 @@ async function clearSampleData({ query, run }, orgId) {
 }
 
 module.exports = {
-  TAGGED_TABLES, DONOR_CHILD_TABLES, CASCADE_HANDLED, HEADLINE, REAL_GIFT_SQL, HOUSEHOLD_BY_DONOR_SQL,
+  TAGGED_TABLES, DONOR_CHILD_TABLES, HEADLINE, REAL_GIFT_SQL, HOUSEHOLD_BY_DONOR_SQL,
   sampleDonorIds, countSampleData, clearSampleData, tagSampleRows,
 };

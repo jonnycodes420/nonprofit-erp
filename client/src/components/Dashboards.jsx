@@ -12,7 +12,7 @@
 // `source` the server computed it from, and clicking it opens the rows that
 // make it. This file draws no number any other way: it is in the number
 // census's FIGURE_SOURCE_SCOPE, which fails the battery on a figure here
-// without a source (scripts/build97-number-census.js).
+// without a source (scripts/ci/build97-number-census.js).
 //
 // Every number is a number a board can define. That is the whole rule, and it
 // is why "stewardship debt" is not on any of them.

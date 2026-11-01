@@ -259,29 +259,6 @@ export function stageTileSentence(row, formatMoney) {
   return `${fm(row.askCents)} asked for across ${n} ${n === 1 ? "proposal" : "proposals"} at ${row.label}: ${stageFor(row.stage)?.blurb || ""}.`;
 }
 
-// ── "ONE OPEN AT A TIME PER FUND" ─────────────────────────────────────────
-// The rule exists to stop two officers asking the same household for the same
-// thing. So the test is at the HOUSEHOLD, not the person: asking a husband and
-// a wife separately for the capital campaign is exactly the double-ask this
-// prevents. `groupKey` is the household id when there is one and the donor id
-// when there is not; the caller supplies it, because only the server knows the
-// household.
-export function conflictRefusal(existing = [], { groupKey, fundId, excludeId } = {}) {
-  const fund = fundId || "";
-  const hit = existing.find(p =>
-    p.id !== excludeId && isOpenStage(p.stage) &&
-    String(p.groupKey || "") === String(groupKey || "") &&
-    String(p.fundId || "") === String(fund));
-  if (!hit) return null;
-  return {
-    code: "proposal_already_open",
-    message: hit.sameHousehold
-      ? `${hit.donorName || "Somebody in this household"} already has an open proposal for this ${hit.fundLabel || "fund"}. Close or move that one first.`
-      : `There is already an open proposal for this ${hit.fundLabel || "fund"}. Close or move that one first.`,
-    conflictId: hit.id,
-  };
-}
-
 // ── SORTING THE LIST ──────────────────────────────────────────────────────
 // Expected date first is the default because the question the screen answers is
 // "what is landing when". A missing date sorts LAST, never as the epoch.

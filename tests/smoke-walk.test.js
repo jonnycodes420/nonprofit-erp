@@ -1054,13 +1054,30 @@ async function moneyScreensSayNothingWrong(browser) {
         giving: !!document.querySelector('[data-testid="fin-giving-head"]') && !!document.querySelector('[data-testid="fin-ledger-head"]') }));
       ok("§sweep5 imported history and no ledger: Finance says the ledger is empty in one card, under its own heading, with no ledger $0 tiles", fin.empty && fin.tiles === 0 && fin.giving, fin);
     }
+    // ARCH-1: a report is read once ITS answer is drawn. Reports marks the
+    // answer for the report and settings on screen with data-report-state
+    // (Reports.jsx); "loading" until it is back. settle() alone raced it: a
+    // check ran on the screen before the rows arrived, read 0 rows from the
+    // bookkeeper's year in CI (run 41249592761), and passed the count-and-noun
+    // check without seeing a figure, locally, where the answer came later.
+    // `pressed` is a control the click turned on, so the wait is for the
+    // answer to THAT click, never the one already drawn.
+    const reportReady = (id, pressed = null) => page.waitForFunction(([want, label]) => {
+      const el = document.querySelector("[data-report-active]");
+      if (!el || el.getAttribute("data-report-active") !== want || el.getAttribute("data-report-state") === "loading") return false;
+      return !label || [...el.querySelectorAll('button[aria-pressed="true"]')].some(b => b.textContent.trim().startsWith(label));
+    }, [id, pressed], { timeout: 30000 }).then(() => true).catch(() => false);
     // Reports: every report in the rail
     await page.goto(`${APP}/app/reports`, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForSelector('[data-testid="reports-rail"] [data-report-id]', { timeout: 20000 }).catch(() => {});
+    ok(`§arch1 ${what} · Reports: the first report's answer is drawn before it is read`,
+       await page.waitForSelector('[data-report-state]:not([data-report-state="loading"])', { timeout: 30000 }).then(() => true).catch(() => false));
     await settle();
     await check("Reports");
     for (const id of await page.$$eval('[data-testid="reports-rail"] [data-report-id]', bs => [...new Set(bs.map(b => b.getAttribute("data-report-id")))])) {
-      await page.locator(`[data-testid="reports-rail"] [data-report-id="${id}"]`).first().click(); await settle();
+      await page.locator(`[data-testid="reports-rail"] [data-report-id="${id}"]`).first().click();
+      ok(`§arch1 ${what} · Reports › ${id}: its answer is drawn before it is read`, await reportReady(id), id);
+      await settle();
       await check(`Reports › ${id}`);
       if (what !== "empty" && id === "top-donors") {
         const say = await page.locator('[data-testid="report-table"]').first().evaluate(t => {
@@ -1070,7 +1087,9 @@ async function moneyScreensSayNothingWrong(browser) {
         ok("§sweep5 Top donors says the dollars its rows gave, not how many people", say.narrative && Math.round(Number(say.narrative.replace(/,/g, "")) * 100) === say.rows, say);
       }
       if (what !== "empty" && id === "bookkeeper") {
-        await page.locator("button", { hasText: /^This CY/ }).first().click().catch(() => {}); await settle();
+        await page.locator("button", { hasText: /^This CY/ }).first().click().catch(() => {});
+        ok("§arch1 the bookkeeper's year is drawn before it is read", await reportReady(id, "This CY"));
+        await settle();
         const fee = await page.evaluate(() => {
           const t = document.querySelector('[data-testid="report-table"]'); if (!t) return null;
           const heads = [...t.querySelectorAll("th")].map(h => h.textContent.trim().toLowerCase());
@@ -1437,7 +1456,7 @@ async function donorScreensSayNothingWrong(browser) {
   if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
-    ok("the demo org is on this database (run scripts/seed-demo.js)", false, login.status);
+    ok("the demo org is on this database (run scripts/ci/seed-demo.js)", false, login.status);
     return summary("smoke-walk");
   }
   ok("logged in to the demo", true);

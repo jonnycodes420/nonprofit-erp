@@ -108,12 +108,6 @@ export function daysBetween(fromISO, toISO) {
   const b = Date.UTC(+toISO.slice(0, 4), +toISO.slice(5, 7) - 1, +toISO.slice(8, 10));
   return Math.round((b - a) / 86400000);
 }
-export function shiftDays(iso, n) {
-  if (!isCivilDate(iso)) return null;
-  const t = Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) + n * 86400000;
-  const d = new Date(t);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
 
 // ── IS IT TIME TO OPEN A THREAD? ──────────────────────────────────────────
 // TRUE the moment `today` reaches (due − lead), and it STAYS true afterwards.

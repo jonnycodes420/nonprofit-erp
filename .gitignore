@@ -5,3 +5,18 @@ node_modules/
 client/dist
 .b72probe/
 .b73probe/
+
+# ARCH-1: screenshots and captured output stay out of git (git history keeps
+# what was committed before). A walk keeps its notes in markdown.
+docs/**/*.png
+docs/**/*.jpg
+docs/**/*.jpeg
+docs/**/*.webp
+docs/**/*.gif
+docs/**/*.txt
+# ARCH-1: generated files (suite timings, the route inventory) are written here.
+.generated/
+# ARCH-1: these two were committed and collided in dozens of merges; they are
+# generated now, into .generated/.
+audit/route-inventory.json
+audit/suite-timings.json

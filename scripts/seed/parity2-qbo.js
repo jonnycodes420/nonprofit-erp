@@ -1,6 +1,6 @@
 // scripts/seed/parity2-qbo.js, PARITY-2 Part 5. QUICKBOOKS SYNC ON HARBORLIGHT.
 //
-// Called once from scripts/seed-demo.js main(), after INT-2 has written the
+// Called once from scripts/ci/seed-demo.js main(), after INT-2 has written the
 // demo's QuickBooks connection row (`bkc_b72_qbo`, no credentials). This turns
 // the founder's per-org switch on for Harborlight and fills in the sync
 // mapping with sandbox-shaped account and class ids, so Settings, Connections,

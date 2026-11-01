@@ -11,7 +11,7 @@
 //
 // A figure drawn without a source cannot open, and it says so: it renders
 // `data-no-source`, which the dashboards' browser leg counts, and the number
-// census (scripts/build97-number-census.js, FIGURE_SOURCE_SCOPE) fails the
+// census (scripts/ci/build97-number-census.js, FIGURE_SOURCE_SCOPE) fails the
 // battery on a <Figure> written without `source=` on an in-scope screen.
 //
 // Variants — one component, the places a figure is drawn:

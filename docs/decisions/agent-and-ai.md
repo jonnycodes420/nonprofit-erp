@@ -247,7 +247,7 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## The line that does not get crossed (moved from the old CRITICAL WORKING RULES)
 

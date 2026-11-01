@@ -120,7 +120,7 @@ module.exports = async function run() {
 
   // ── §6 the checker ──────────────────────────────────────────────────────
   console.log("\n§6 the numbers checker");
-  const { checkOrg } = require("../../scripts/check-numbers");
+  const { checkOrg } = require("../../scripts/ci/check-numbers");
   const res = await checkOrg(org, {});
   ok("§6 the checker finds no problem in this org", res.problems.length === 0, res.problems);
   await wipe(`${PREFIX}%`);

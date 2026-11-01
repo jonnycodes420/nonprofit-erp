@@ -158,7 +158,6 @@ export const PROVIDERS = {
 };
 
 export const PROVIDER_KEYS = Object.keys(PROVIDERS);
-export const API_PROVIDERS = PROVIDER_KEYS.filter(k => PROVIDERS[k].mode === "api");
 export const FILE_PROVIDERS = PROVIDER_KEYS.filter(k => PROVIDERS[k].mode === "file");
 
 export function providerLabel(key) {
@@ -184,19 +183,11 @@ export function requestAllowed(provider, method, url) {
 // ── THE ADAPTER CONTRACT ───────────────────────────────────────────────────
 // Every provider returns THIS and nothing else. The point of a narrow contract
 // is that adding Donorbox next month is one file: it cannot introduce a new
-// concept into the runner, because there is nowhere to put one.
-export const ROW_FIELDS = [
-  "externalId",     // the provider's own id for this payment — the dedupe key
-  "occurredAt",     // civil date, YYYY-MM-DD
-  "amountCents",    // GROSS, in integer cents. The donor gave the gross.
-  "feeCents",       // what the provider took, integer cents, 0 when unknown
-  "currency",
-  "donorName",
-  "donorEmail",
-  "recurringRef",   // the provider's subscription/plan id, or null
-  "status",         // completed | refunded | failed
-  "memo",
-];
+// concept into the runner, because there is nowhere to put one. A row is:
+//   externalId (the provider's own id for this payment: the dedupe key),
+//   occurredAt (civil date, YYYY-MM-DD), amountCents (GROSS, integer cents),
+//   feeCents (what the provider took, 0 when unknown), currency, donorName,
+//   donorEmail, recurringRef (subscription/plan id, or null), status, memo.
 export const ROW_STATUSES = ["completed", "refunded", "failed"];
 
 const MONEY_RE = /^-?\d+$/;
@@ -391,7 +382,6 @@ export function isMissed(expectedNext, today, { grace = MISSED_GRACE_DAYS } = {}
 // provider can take hours to publish a transaction; a product that says "live"
 // about a number that is four hours old has told its first lie to a person
 // whose job is being accurate about money.
-export const FORBIDDEN_FRESHNESS_WORDS = ["live", "real time", "real-time", "realtime", "instantly", "instant"];
 
 export function recurringPhrase(c, { provider = "" } = {}) {
   const amt = money(c.amountCents);

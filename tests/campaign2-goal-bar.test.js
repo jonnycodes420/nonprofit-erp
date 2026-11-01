@@ -27,6 +27,7 @@
 // Runs against the scratch server + scratch Postgres, never production.
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
 
 const ORG = "org_c2bar", SLUG = "c2bar-harbor-test";
 const uniq = () => Math.random().toString(36).slice(2, 8);
@@ -60,6 +61,10 @@ async function gift({ id, donorId, amount, campaignId = null, campaignName = nul
                         peer_fundraiser_id,cover_fee_amount,show_name_publicly,created_by,created_by_name)
      VALUES ($1,$2,$3,$4,$5,'cash',$6,$7,$8,$9,$10,$11,'system:test','Test')`,
     [id, ORG, donorId, amount, date, campaignId, campaignName || "", pageId, peerId, coverFee, publicName]);
+  // ...and finished the way those doors finish one: the person's stored totals
+  // follow (the one statement, donorSummary.js). numbers1-foot §1 checks every
+  // org on the database, and a shard that ran this first left it red (ARCH-1).
+  await q(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [ORG, [donorId]]);
   return id;
 }
 

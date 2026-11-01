@@ -1,6 +1,6 @@
 // scripts/seed/parity2-events.js: PARITY-2 Part 3. THE TWO PUBLIC EVENT PAGES.
 //
-// Called with one line from scripts/seed-demo.js main(), after the gala and
+// Called with one line from scripts/ci/seed-demo.js main(), after the gala and
 // the 5K are written. It only ever writes org_b72demo, through the `q` the
 // seed hands it, and only seed-demo calls it.
 //

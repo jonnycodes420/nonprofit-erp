@@ -40,7 +40,7 @@
 // carry a money value across a function boundary.
 //
 // Pinned by tests/money-cents.test.js and by the source scan in
-// scripts/build73-money-audit.js, which is run BY that suite — so a new
+// scripts/ci/build73-money-audit.js, which is run BY that suite — so a new
 // Math.round() on a money value fails the build rather than waiting for a
 // donor to notice.
 
@@ -99,14 +99,6 @@ function toDollars(cents) {
   // Divide, then snap to 2dp: 3333/100 is exactly 33.33 in IEEE-754 terms only
   // after the round, and the DB column is NUMERIC(12,2) either way.
   return Math.round(c) / 100;
-}
-
-// Read a money value BACK out of the database (or any dollars-shaped source)
-// into cents, for arithmetic. A NUMERIC column arrives from `pg` as a STRING,
-// which is exactly why this exists: `parseFloat` on it is how money arithmetic
-// silently becomes float arithmetic.
-function fromDollars(value) {
-  return toCents(value);
 }
 
 // Sum a list of dollars-shaped values EXACTLY, returning cents. Every "add up
@@ -177,6 +169,6 @@ function parseMoneyOrThrow(input, field = "amount") {
 module.exports = {
   formatCentsPlain,
   MAX_CENTS,
-  toCents, toDollars, fromDollars, sumDollars,
+  toCents, toDollars, sumDollars,
   formatCents, hasCents, parseMoneyOrThrow,
 };

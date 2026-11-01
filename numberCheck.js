@@ -1,7 +1,7 @@
 // NUMBERS-1 · WATCH PROD WITHOUT READING IT.
 //
 // Once a night (after 05:00 UTC, before the 06:23 Error digest reads the day's
-// logs) the server runs scripts/check-numbers.js on every organisation and
+// logs) the server runs scripts/ci/check-numbers.js on every organisation and
 // keeps ONLY COUNTS: "Harborlight: 0 problems; Org X: 2 donors where Average
 // disagrees". No name, amount or id leaves an org: the line is countLine(),
 // which is built from rule names and counts and nothing else. The counts go to
@@ -22,7 +22,7 @@ function ensureTable() {
 // Every org, counts only. `opts.screens` is numbers.screens in the server.
 async function runAll(opts = {}) {
   await ensureTable();
-  const { checkOrg, countLine } = require("./scripts/check-numbers");
+  const { checkOrg, countLine } = require("./scripts/ci/check-numbers");
   const ranOn = opts.ranOn || new Date().toISOString().slice(0, 10);
   const orgs = await query(`SELECT id FROM orgs ORDER BY id`);
   const lines = [];

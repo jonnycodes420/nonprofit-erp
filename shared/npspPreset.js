@@ -278,20 +278,6 @@ export function accountIsHousehold(row = {}) {
   return null;
 }
 
-// The organisation name for this row, or "" when the row is a person. This is
-// the ONE place the Account Name → organization decision is made.
-export function npspOrganizationName(row = {}) {
-  const isHh = accountIsHousehold(row);
-  if (isHh !== false) return "";          // true OR unknown → not an organisation
-  for (const k of Object.keys(row)) {
-    if (norm(k) === norm("account name") || norm(k) === norm("account")) {
-      const v = String(row[k] ?? "").trim();
-      if (v) return v;
-    }
-  }
-  return "";
-}
-
 // ── STAGE ─────────────────────────────────────────────────────────────────
 // THE VOCABULARY LIVES IN ONE PLACE, AND IT IS NOT HERE.
 // `classifyGiftStage` is in shared/importShape.js, beside `classifyGiftType`,
@@ -324,7 +310,6 @@ export const NPSP_STAGE_NOT_RECEIVED = "not_received";
 // CLOSED WON IS A GIFT, NEVER A PROPOSAL. That is the brief's line and it is the
 // one that matters: money that arrived is money, and a proposal beside it would
 // double the organisation's own history.
-export const NPSP_STAGE_PROPOSAL = "proposal";
 export const NPSP_PROPOSAL_STAGES = {
   "prospecting": "identified",
   "qualification": "cultivating",
@@ -341,13 +326,6 @@ export function npspProposalStage(stage) {
   const k = String(stage || "").trim().toLowerCase().replace(/\s+/g, " ");
   return NPSP_PROPOSAL_STAGES[k] || null;
 }
-
-// The stages NPSP ships out of the box — for the help text and the fixture,
-// NOT for the decision, which is classifyGiftStage's.
-export const NPSP_DEFAULT_STAGES = [
-  "Prospecting", "Qualification", "Proposal/Price Quote", "Negotiation/Review",
-  "Pledged", "Promised", "Granted", "Closed Won", "Closed Lost",
-];
 
 export function npspStageKind(stage) {
   const v = classifyGiftStage(stage);

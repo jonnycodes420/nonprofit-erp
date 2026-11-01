@@ -6,7 +6,7 @@
 // OPEN while restored_at IS NULL. A person counts as deleted if EITHER
 // deleted_at is set OR an open trash row names them, so a live person with an
 // open trash row reads as "a deleted person on the Donors list"
-// (scripts/stale-deletions-readonly.sql counts them).
+// (scripts/ops/stale-deletions-readonly.sql counts them).
 //
 // Every door that clears deleted_at goes through bringPeopleBack: the Undo
 // (POST /deleted-records/:id/restore), the bulk Undo (POST
@@ -23,7 +23,7 @@
 // gone for good is never live, so its record is left as it is.
 //
 // STALE_DELETIONS_SQL is the read-only count by org, the same definition as
-// scripts/stale-deletions-readonly.sql, used by scripts/close-stale-deletions.js and the FIX-54 suite.
+// scripts/ops/stale-deletions-readonly.sql, used by scripts/ci/close-stale-deletions.js and the FIX-54 suite.
 "use strict";
 
 // The people who are live (deleted_at IS NULL) and still named by an open

@@ -1,6 +1,6 @@
 // scripts/seed/parity4-dinner.js: PARITY-4 Part 4. TONIGHT'S SUPPER, HALF SEATED.
 //
-// Called with one line from scripts/seed-demo.js main(). It only ever writes
+// Called with one line from scripts/ci/seed-demo.js main(). It only ever writes
 // org_b72demo, through the `q` the seed hands it, and only seed-demo calls it.
 //
 // The gala is over and the 5K is a run (nobody sits down at a 5K), so neither

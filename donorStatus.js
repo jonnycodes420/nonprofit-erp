@@ -175,7 +175,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
 // FIX-51 · LAPSING OR LAPSED, the one quiet rule, as the set of people the
 // tags themselves call Lapsing or Lapsed (statusSql above, so imported history
 // counts and a refund or a credit row is not a gift). Communications' segment
-// reads this, and scripts/check-numbers.js checks it against the gifts.
+// reads this, and scripts/ci/check-numbers.js checks it against the gifts.
 async function quietIds(orgId, today) {
   const st = statusSql(orgId, today, await cutsFor(orgId));
   return new Set((await query(st.sql, st.args)).filter(r => r.lifecycle === "lapsed" || r.lapsing).map(r => r.donor_id));

@@ -365,7 +365,7 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Database tables (moved from the old "Database — key tables and columns")
 

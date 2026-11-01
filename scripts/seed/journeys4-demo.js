@@ -1,7 +1,7 @@
 // scripts/seed/journeys4-demo.js: JOURNEYS-4. TWO READY-MADE JOURNEYS ON THE
 // NEW TRIGGERS, WITH PEOPLE ALREADY PART WAY THROUGH.
 //
-// Called with one line from scripts/seed-demo.js main(). It only ever writes
+// Called with one line from scripts/ci/seed-demo.js main(). It only ever writes
 // org_b72demo, through the `q` the seed hands it, and only seed-demo calls it.
 //
 // The gala was in May and the spring auction is still open, so nothing on the

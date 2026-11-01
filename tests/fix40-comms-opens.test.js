@@ -21,7 +21,7 @@
 //   §guard    app-wide: Home, Donors, a profile, Fundraising, every
 //             Communications tab, Reports and Finance render no donor name,
 //             money amount or headline count as plain text. It READS the demo
-//             org (seeded by scripts/seed-demo.js before the battery, as
+//             org (seeded by scripts/ci/seed-demo.js before the battery, as
 //             smoke-walk and fix39-campaigns read it) and never writes there.
 //
 // RED ON MAIN (2026-10-15): §counts (Emails sent 0; no /communications/audience),

@@ -776,7 +776,6 @@ export function frequencyOf(raw) {
   if (m) return { kind: "multiYear", years: +(m[1] || m[3] || m[5]), original: t };
   return { kind: "unknown", original: t };
 }
-export function mapMethodWord(raw) { return methodOf(raw); }
 
 // Suggested event name from a file name: "Finding Joy Dinner Gifts.xlsx" →
 // "Finding Joy Dinner".

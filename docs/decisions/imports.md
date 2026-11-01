@@ -161,7 +161,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   alike, so nothing is overdue the week after the event (FIX-58, Jonathan's rule of 29 Oct); `choose` with `pledgeDueDate` is that day, then yearly; `none` is "No set due date", `due_date` NULL). The
   import day is never a due date. An installment with no set date counts in the event's raised by its place: the first
   is pledged, the later ones later years (`EVENT_PLEDGE_OPEN`). Existing pledges were not changed;
-  `scripts/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
+  `scripts/ops/import5-pledges-from-import-day-readonly.sql` counts the ones counted from an import day.
   Pledges an older import dated from the event's own day are a Data health Review item ("N pledges have a first
   installment dated the event day · Move to Dec 31", `/data-health/pledge-dates`): before and after per pledge, applied
   on her click, each date it changed kept in `pledge_date_fixes` for Undo. Nothing moves at deploy.
@@ -336,7 +336,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## One-file import and workbooks (moved from the old CRITICAL WORKING RULES)
 

@@ -125,14 +125,6 @@ function priceIdFor(tierId, interval, env) {
   return name ? ((env || {})[name] || null) : null;
 }
 
-// What a tier costs for one cadence, in whole dollars.
-function amountUsdFor(tierId, interval) {
-  const t = tierById(tierId) || legacyTierById(tierId);
-  if (!t) return null;
-  return interval === "yearly" ? t.yearlyUsd : interval === "monthly" ? t.monthlyUsd
-    : interval === "setup" ? (t.setupUsd ?? null) : null;
-}
-
 // The lowest monthly price, the one number the marketing site says.
 const fromMonthlyUsd = () => Math.min(...TIERS.map(t => t.monthlyUsd));
 
@@ -181,21 +173,11 @@ function planDisplayBand(plan) {
   return t ? t.band : null;
 }
 
-// Every price env var this file knows about, so a health check or a script
-// can report which ones are set without duplicating the list.
-function allPriceEnvNames() {
-  const names = [];
-  for (const t of TIERS) names.push(t.envMonthly, t.envYearly, t.envSetup);
-  for (const t of LEGACY_TIERS) names.push(t.envMonthly, t.envYearly);
-  names.push(INTERNAL_TEST.env);
-  return names;
-}
-
 module.exports = {
   TIERS, TALK_TO_US, INTERNAL_TEST, FOUNDING_COUPON,
   LEGACY_TIERS, BAND_MOVE, SETUP_NOTE, RECORD_SENTENCE, INCLUDED, TERMS_STRIP,
   BILLING_INTERVALS, YEARLY_NOTE, COPY, INCLUDED_GROUPS, EXTRAS,
   LEGACY_PLAN_NAMES,
   publicTierIds, tierById, legacyTierById, tierForRecordCount, priceEnvFor, priceIdFor,
-  amountUsdFor, fromMonthlyUsd, allPriceEnvNames, tierForPlanValue, planDisplayName, planDisplayBand,
+  fromMonthlyUsd, tierForPlanValue, planDisplayName, planDisplayBand,
 };

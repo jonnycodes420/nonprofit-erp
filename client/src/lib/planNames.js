@@ -47,13 +47,3 @@ export function planDisplayBand(plan) {
   return t ? t.band : null;
 }
 
-// The name plus the size, for the one-line places (an email subject, a
-// notice) where two elements will not fit.
-export function planDisplayLine(plan) {
-  const name = planDisplayName(plan), band = planDisplayBand(plan);
-  // A record band's name is the start of its band ("Up to 500" / "Up to 500
-  // records"), so it says the band once rather than twice.
-  if (name && band && band.toLowerCase().startsWith(name.toLowerCase())) return band;
-  if (name && band) return `${name} · ${band.charAt(0).toLowerCase()}${band.slice(1)}`;
-  return name || String(plan || "");
-}

@@ -114,6 +114,10 @@ const {
   sendDonorLifecycleEmail, fromWithDisplayName,
   openAdminTask,
 } = ctx;
+// ARCH-1: a timestamp tested against the org's civil days (a fiscal year, a
+// report's from..to), cut at the ORG's midnight through the one seam, never at
+// the database's (`?::date`). Placeholders stay where they were: from, then to.
+const inOrgDays = (col, orgCol, from, to) => orgTime.orgDayWindowSql(col, orgTime.orgTzSql(orgCol), from, to);
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
 // this module keeps its own binding, set from that promise the same way.
@@ -11758,7 +11762,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const { start } = finPeriodBounds("fiscal", 0, await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
   const wonAgg = await query(
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
-       WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
+       WHERE org_id=? AND status='won' AND ${inOrgDays("closed_at", "org_id", "?", null)}`, [orgId, start]);
   res.json({
     tier, locked, single_user, multiOfficer, stages, scope, sort, canViewAll: isAdmin,
     officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
@@ -12497,7 +12501,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
   const [won] = await query(
     `SELECT COALESCE(SUM(COALESCE(gift_amount, target_amount)),0) AS amt, COUNT(*)::int AS n
        FROM opportunities WHERE org_id=? AND officer_id=? AND status='won'
-        AND closed_at >= ?::date AND closed_at < (?::date + 1)`, [orgId, officer.id, fy.start, fy.end]);
+        AND ${inOrgDays("closed_at", "org_id", "?", "?")}`, [orgId, officer.id, fy.start, fy.end]);
   const [t] = await query("SELECT target_amount, count_cap FROM portfolio_targets WHERE org_id=? AND user_id=? AND fiscal_year=?",
     [orgId, officer.id, fyYear]);
   const prog = PF.targetProgress({
@@ -15468,12 +15472,11 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
              FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
             WHERE o.org_id=? AND d.deleted_at IS NULL
               AND o.proposal_stage IN ('asked','committed','declined','stewarding')
-              AND COALESCE(o.updated_at, o.created_at) >= ?::date
-              AND COALESCE(o.updated_at, o.created_at) < (?::date + 1)`, [orgId, fy.start, fy.end]),
+              AND ${inOrgDays("COALESCE(o.updated_at, o.created_at)", "o.org_id", "?", "?")}`, [orgId, fy.start, fy.end]),
     query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(COALESCE(o.gift_amount, o.target_amount)),0) AS amt
              FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
             WHERE o.org_id=? AND d.deleted_at IS NULL AND o.status='won'
-              AND o.closed_at >= ?::date AND o.closed_at < (?::date + 1)`, [orgId, fy.start, fy.end]),
+              AND ${inOrgDays("o.closed_at", "o.org_id", "?", "?")}`, [orgId, fy.start, fy.end]),
     // Conversations logged THIS MONTH, per officer, from who logged them.
     query(`SELECT COALESCE(NULLIF(i.logged_by_name,''),'(not recorded)') AS who, COUNT(*)::int AS n
              FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
@@ -15551,15 +15554,15 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const from = req.query.from || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const to = req.query.to || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
+  const from = req.query.from || orgTime.addDays(orgToday(await orgTz(orgId)), -90);   // ORG_TZ_SEAM_OK (ARCH-1: the org's day, not UTC's)
   const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const moves = await query(
-    "SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+    `SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND ${inOrgDays("created_at", "org_id", "?", "?")} GROUP BY officer_id`, [orgId, from, to]);
   const asks = await query(
-    "SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND ${inOrgDays("created_at", "org_id", "?", "?")} GROUP BY officer_id`, [orgId, from, to]);
   const won = await query(
-    "SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND status='won' AND ${inOrgDays("closed_at", "org_id", "?", "?")} GROUP BY officer_id`, [orgId, from, to]);
   const mv = Object.fromEntries(moves.map(r => [r.officer_id, r.cnt]));
   const ak = Object.fromEntries(asks.map(r => [r.officer_id, r]));
   const wn = Object.fromEntries(won.map(r => [r.officer_id, r]));
@@ -18166,11 +18169,11 @@ async function auditQuery(req, q0 = req.query) {
     params.push(pid, pid, pid, pid);
   }
   if (q0.record) { sql += " AND entity_id = ?"; params.push(String(q0.record)); }
-  if (from) { sql += " AND created_at >= ?::date"; params.push(from); }
+  if (from) { sql += ` AND ${inOrgDays("created_at", "org_id", "?", null)}`; params.push(from); }
   // `to` is inclusive of the whole day somebody typed, which is what a person
   // filtering "up to the 30th" means. An exclusive bound silently drops that
   // day's rows and reads as a missing record.
-  if (to) { sql += " AND created_at < (?::date + INTERVAL '1 day')"; params.push(to); }
+  if (to) { sql += ` AND ${inOrgDays("created_at", "org_id", null, "?")}`; params.push(to); }
   // SEARCH BY DONOR NAME is the one a fundraiser actually needs, so it matches
   // the label the row carries (the donor's name) as well as the person who
   // acted and the record id, rather than making her know which field it is in.
@@ -18727,7 +18730,7 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
   const view = String(req.query.view || "");
   const viewWhere = ["today", "upcoming", "overdue", "later", "nodate", "done"].includes(view) ? `AND ${taskViewSql} = ?` : "";
   const viewParams = viewWhere ? [days.today, days.today, days.week, view] : [];
-  const doneWindow = view === "done" ? "AND COALESCE(t.completed_at, t.updated_at, t.created_at) >= ?::date" : "";
+  const doneWindow = view === "done" ? `AND ${inOrgDays("COALESCE(t.completed_at, t.updated_at, t.created_at)", "t.org_id", "?", null)}` : "";
   const rows = await readTasks(req.user.orgId, {
     where: `${scope.sql} ${viewWhere} ${doneWindow}`,
     params: [...scope.params, ...viewParams, ...(doneWindow ? [days.monthAgo] : [])], days });
@@ -22835,7 +22838,8 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   // Shared with the Home dashboard's Retention Rate metric (see
   // computeRetentionRate) so the two can never disagree — pass the
   // already-fetched allGifts through rather than querying twice.
-  const retentionResult = await computeRetentionRate(orgId, { year, gifts: allGifts });
+  // `year` is a calendar year here, so retention counts calendar years too.
+  const retentionResult = await computeRetentionRate(orgId, { year, gifts: allGifts, startMonth: 1 });
   const totalDonors    = retentionResult.thisYearCount;
   const retained       = retentionResult.retained;
   const acquired       = totalDonors - retained;
@@ -24766,17 +24770,17 @@ async function reportSolicitations(orgId, p) {
      FROM opportunities WHERE org_id=? AND status='open' GROUP BY officer_id`, [orgId]);
   const madeByOfficer = await query(
     `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt
-     FROM opportunities WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id`,
+     FROM opportunities WHERE org_id=? AND ${inOrgDays("created_at", "org_id", "?", "?")} GROUP BY officer_id`,
     [orgId, p.from, p.to]);
   const wonByOfficer = await query(
     `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt
-     FROM opportunities WHERE org_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id`,
+     FROM opportunities WHERE org_id=? AND status='won' AND ${inOrgDays("closed_at", "org_id", "?", "?")} GROUP BY officer_id`,
     [orgId, p.from, p.to]);
   // Lost asks decided in the window — the OTHER half of the win-rate denominator.
   // Symmetric with won (marking an ask lost stamps closed_at=NOW(), like won).
   const lostByOfficer = await query(
     `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt
-     FROM opportunities WHERE org_id=? AND status='lost' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id`,
+     FROM opportunities WHERE org_id=? AND status='lost' AND ${inOrgDays("closed_at", "org_id", "?", "?")} GROUP BY officer_id`,
     [orgId, p.from, p.to]);
   const idx = rows => Object.fromEntries(rows.map(r => [r.officer_id, r]));
   const op = idx(openByOfficer), md = idx(madeByOfficer), wn = idx(wonByOfficer), ls = idx(lostByOfficer);

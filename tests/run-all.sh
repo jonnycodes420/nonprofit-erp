@@ -97,7 +97,7 @@
 #          selection from a git range for the pre-push hook)
 #
 # NOT included here (need extra setup — run individually, see tests/README.md):
-#   donors-pagination, reports  → need `node scripts/seed-loadtest.js` first
+#   donors-pagination, reports  → need `node scripts/ops/seed-loadtest.js` first
 #   export-zip                  → needs the `unzip` binary + the loadtest org
 #   cover-fees                  → needs real Stripe test creds (STRIPE_TEST_KEY)
 
@@ -116,199 +116,16 @@ cd "$(dirname "$0")/.."
 export DB_SSL="${DB_SSL:-disable}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://steward@localhost:5544/steward_loadtest}"
 
-# Self-contained suites (server + scratch DB only). Alphabetical.
-CORE=(
-  tenant-isolation
-  tenant-matrix
-  security
-  fix11-audit-trail
-  fix11-job-audit
-  org-blindness
-  session-privilege
-  auth-revocation
-  permissions-matrix
-  vol1-coordinator-scope
-  lf1-no-donor-data-leaves
-  members2-isolation
-  events2-checkout
-  parity2-auction
-  fix20-auction-double-checkout
-  fix11-seating
-  build103-soft-credit
-  agents1-persona-scope
-  int1-paypal-webhook
-  int-prod-1-guards
-  intpos-sale-is-not-a-gift
-  int2-send-once
-  parity2-qbo-sync
-  qboin-read
-  fix36-history
-  live1-alive
-  fix37-import-thanks
-  scale1-queue
-  scale2-same-numbers
-  fix20-qbo-realm-switch
-  oauth-state
-  int3-optout
-  mailchimp1-sync
-  connect2-sources
-  import2-history
-  import3
-  import4-layers
-  import5
-  fix55-import-reads
-  fix52-import-undo
-  fix54-deleted-stay-deleted
-  surfaces-agree
-  truth-key
-  org-bound-writes
-  real-shaped
-  fix59-event-import
-  sweep4-events-pledges
-  sweep3-comms
-  sweep1-home
-  insights
-  fundraising2-screens
-  int4-mailbox
-  intb1-calendar-store
-  fix33-sync-proof
-  push1-instant
-  fix14-meeting-counts
-  engage1-score-breakdown
-  survey1-anonymous
-  comms2-statement-total
-  sec1-two-factor
-  trust2-erase
-  clean1-merge
-  clean1-duplicates
-  fix59-data-health
-  prospect1-room-to-give
-  prospect1-who-sees
-  help1-ask
-  why1-appeal-variance
-  parity1-donor-tags
-  parity1-groups-journeys
-  parity3-volunteers
-  agent2-volunteer
-  agent2-gift
-  why1-sentence-check
-  parity4-show-me
-  fix29-tool-schemas
-  ask2-plans
-  ask2-refuse
-  ask3-person-thread
-  adminclean-metrics
-  ask3-sentence-check
-  ask4-query-guard
-  cal1-moves
-  grants1-system
-  sheets1-import
-  email1-brand-render
-  fix28-calendar-rule
-  fix12-ai-switch
-  parity4-started
-  fix12-recipe-drafts
-  fix11-inbound-resend
-  wire-journey
-  golden-journeys
-  repair-runs-state
-  agent3-catalog
-  thread3-human
-  fix31-one-record
-  tasks2-thread
-  fix34-thanks
-  groups2-starters
-  volpage1-signup
-  search2-everything
-  reports4-foot
-  reports5-import
-  int5-api-keys
-  script-guards
-  every-test-runs
-  battery-lock
-  fix15-two-worktrees
-  build96-ai-gate
-  incident-mail-gate
-  fix50-demo-one-rule
-  fix53-mail-off
-  fix51-leftovers
-  mail-block
-  send-gate
-  send-gate-2
-  mail-suppression
-  email-footer
-  consistency-e2e
-  build88a-one-gift
-  gift-idempotency
-  fix10-gift-delete-tasks
-  finance-gift-stamp
-  money-cents
-  pledge-math
-  reconciliation
-  fix11-deposits
-  fix2-a-footing
-  reports3-board-pack
-  gtm1a-internal-price
-  pricing1-bands
-  thread2a-no-send
-  journeys3-triggers
-  journeys4-triggers
-  fix6-approval
-  import-reconciliation
-  trans1-reimport
-  webhook-manifest
-  webhook-ordering
-  stripe-disputes
-  recurring-recovery
-  give2-fee-footing
-  campaign2-goal-bar
-  giveedit1-pages
-  give3-pages
-  editor1
-  trial-end
-  upgrade-checkout
-  close-link
-  import-messy
-  fix11-gift-file-import
-  import-workbook-v3
-  import-columns
-  palette
-  no-emoji
-  claude-md
-  landing2-marketing
-  clickability
-  test-clock-seam
-  hotfix1-profile
-  smoke-walk
-  polish1-trust
-  polish2-voice
-  fix39-campaigns
-  profile1-everything-clicks
-  fix40-comms-opens
-  fix41-remove-and-pictures
-  reconcile1-checks
-  capture1-zero-day
-  check2-match
-  home2-living
-  onboard1-setup
-  voice1-tell-steward
-  numbers1-foot
-  numbers2-history
-  voice2-everywhere
-  voice3-talk
-  voice4-does-it-all
-  agent5-atlas
-  auto1-send
-  thread2-links
-  fix43-safe-fetch
-  clientsafe1
-  support1-answers
-  fix49-decisions
-  list1-columns-filters
-  breaker
-  perf-giving
-  perf-app
-)
+# ARCH-1: the battery FINDS its suites (tests/lib/suites.js): every
+# tests/*.test.js, alphabetical, with the ones marked `// battery: last` at the
+# end. A suite the battery cannot run says `// battery: skip — <reason>` in its
+# own file. There is no hand-kept list to edit or to collide on.
+CORE=()
+while IFS= read -r _suite; do [ -n "$_suite" ] && CORE+=("$_suite"); done < <(node tests/lib/suites.js)
+[ ${#CORE[@]} -gt 50 ] || { echo "ERROR: suite discovery found ${#CORE[@]} suites (tests/lib/suites.js)" >&2; exit 2; }
+# `bash tests/run-all.sh --list` prints what this run would run, and nothing else
+# (tests/every-test-runs.test.js compares it with the files on disk).
+if [ "${1:-}" = "--list" ]; then printf '%s\n' "${CORE[@]}"; exit 0; fi
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
 # an unknown name is a hard error so a typo can't silently skip verification).
@@ -322,7 +139,7 @@ if [ -n "${SUITES:-}" ]; then
       if [ "$name" = "$want" ]; then found=1; break; fi
     done
     if [ "$found" -ne 1 ]; then
-      echo "ERROR: unknown suite '$want' (not in run-all.sh CORE)." >&2
+      echo "ERROR: unknown suite '$want' (no tests/$want.test.js, or it is marked battery: skip)." >&2
       echo "Valid names: ${CORE[*]}" >&2
       exit 2
     fi
@@ -369,7 +186,7 @@ mkdir -p "$LOGDIR"
 #   SHARDS=<n> + SHARD_ONLY=<i>   run just shard i (this is what CI's matrix does)
 #
 # BALANCE. Longest suite first into the emptiest shard (LPT), from
-# audit/suite-timings.json. A suite with no recorded time is assumed to be the
+# .generated/suite-timings.json (git-ignored; CI keeps it in its cache). A suite with no recorded time is assumed to be the
 # median, so a brand-new suite is never the thing that unbalances a run. The
 # file is data, not a gate: a stale entry costs seconds, never correctness.
 #
@@ -392,7 +209,7 @@ if [ -z "${SHARDS:-}" ]; then
   # running.
   if [ ${#RUN[@]} -ge "$SHARD_MIN" ]; then SHARDS=3; else SHARDS=1; fi
 fi
-TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
+TIMINGS="${SHARD_TIMINGS:-.generated/suite-timings.json}"
 
 # HARDEN-1 · ONE BATTERY AT A TIME ON THIS MACHINE. Two batteries that each
 # boot their own servers (three shards, ten database connections a server,
@@ -477,7 +294,7 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
 
   # The assignment is computed once, in one place, and written down — so a
   # failure can be reproduced with the exact list that shard was given.
-  node scripts/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
+  node scripts/ci/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
     || { echo "ERROR: could not plan the shards" >&2; exit 2; }
 
   # THE BROWSER LEGS' DIST. They are all in one shard (see shard-plan.js) and
@@ -488,12 +305,12 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   #
   # FIX-60 item 6: "usable" used to mean only "built against this port", so a
   # dist from before a merge passed and the legs walked the old screens. It is
-  # now scripts/dist-fresh.js: built against this port AND from HEAD AND with
+  # now scripts/ci/dist-fresh.js: built against this port AND from HEAD AND with
   # no uncommitted change to the client's inputs since. Stale means rebuild.
   BSHARD=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.browserShard||""))' "$SHARD_OUT/plan.json")
   if [ -n "$BSHARD" ] && [ "${SHARD_BUILD_DIST:-1}" = "1" ]; then
     bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * BSHARD ))
-    node scripts/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
+    node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
       || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
   fi
 
@@ -508,22 +325,22 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   done
   for pid in "${pids[@]}"; do wait "$pid" || true; done
 
-  node scripts/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
+  node scripts/ci/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
   exit $?
 fi
 
 
 
 # FIX-1 §11 — THE DEMO IS SEEDED BEFORE THE BATTERY, so demo-shape never skips.
-# scripts/seed-demo.js drops and recreates ONLY the demo org, against the
+# scripts/ci/seed-demo.js drops and recreates ONLY the demo org, against the
 # server at $BASE (default :5601) and $DATABASE_URL; it refuses any database
 # that is not an allowlisted scratch name. CI seeds it in its own step and
 # passes DEMO_SEEDED=1. A seed that fails is a red battery, never a skip.
 want_demo=0
 for name in "${RUN[@]}"; do [ "$name" = "demo-shape" ] && want_demo=1; done
 if [ "$want_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
-  if node scripts/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
-    echo "  seeded the demo org (scripts/seed-demo.js)"
+  if node scripts/ci/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
+    echo "  seeded the demo org (scripts/ci/seed-demo.js)"
   else
     echo "  FAIL  seed-demo: the demo did not seed ($LOGDIR/seed-demo.log)"
     cat "$LOGDIR/seed-demo.log"

@@ -212,6 +212,3 @@ export const OUTLINE_SECTIONS = [
   { key: "outcomes", heading: "What changed for the people you serve",
     source: null },       // NOTHING. Steward holds no outcomes; the human writes it.
 ];
-export function sectionsWithoutSource() {
-  return OUTLINE_SECTIONS.filter(s => !s.source).map(s => s.key);
-}

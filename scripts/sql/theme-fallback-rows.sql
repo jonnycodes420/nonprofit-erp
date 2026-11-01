@@ -5,7 +5,7 @@
 -- assetStore.refreshAssetFallbackCount. FIX-58 stops new ones; these are the
 -- ones already there. Per org and kind: a count, the bytes, and the first and
 -- last upload day. Org ids only: no file contents, no names, no emails.
--- To move them: scripts/move-theme-assets-to-s3.js (dry run by default).
+-- To move them: scripts/ops/move-theme-assets-to-s3.js (dry run by default).
 BEGIN TRANSACTION READ ONLY;
 SELECT org_id, kind, COUNT(*)::int AS rows, SUM(bytes)::bigint AS bytes,
        MIN(created_at)::date AS first_uploaded, MAX(created_at)::date AS last_uploaded

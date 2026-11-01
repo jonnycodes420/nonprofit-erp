@@ -1,7 +1,7 @@
 // tests/qboin/standin.js, QBO-IN. THE STAND-IN QUICKBOOKS COMPANY.
 //
 // One company and one Steward org, shared by tests/qboin-read.test.js and the
-// walk (scripts/qboin-walk.js) so the screenshots show exactly what the guard
+// walk (scripts/qboin-walk.js (removed by ARCH-1; docs/architecture/scripts-removed.md)) so the screenshots show exactly what the guard
 // asserts. The company answers Intuit's v3 query endpoint in the entity shapes
 // of the API reference on developer.intuit.com (SalesReceipt, Payment,
 // Invoice, Deposit with DepositLineDetail and LinkedTxn, RefundReceipt, Item

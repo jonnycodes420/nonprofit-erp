@@ -361,4 +361,3 @@ export function stepReminderDue(thread, today, nowHHMM, { windowMinutes = STEP_R
 // commitment to a moment, so a timed task fires on weekends REGARDLESS of the
 // org's weekend toggle. (Said next to the toggle, in Settings, so it is not a
 // surprise.)
-export const TIMED_STEPS_IGNORE_WEEKEND_TOGGLE = true;

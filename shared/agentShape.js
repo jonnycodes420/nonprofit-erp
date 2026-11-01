@@ -41,7 +41,6 @@ export const KINDS = [KIND_TASK, KIND_STANDING];
 // flip she makes per instruction — her signature, once, on that instruction.
 export const AUTH_DRAFT = "draft";
 export const AUTH_SEND = "send";
-export const AUTHORIZATIONS = [AUTH_DRAFT, AUTH_SEND];
 
 export const STATUS_PLANNED = "planned";  // a plan exists, she has not confirmed
 export const STATUS_ACTIVE = "active";    // confirmed; a task runs once, a standing one keeps running
@@ -198,7 +197,6 @@ export const AGENT_TOOLS = [
 ];
 
 export const TOOLS_BY_NAME = Object.fromEntries(AGENT_TOOLS.map(t => [t.name, t]));
-export const TOOL_NAMES = AGENT_TOOLS.map(t => t.name);
 
 // The tools that may appear in a plan at all. A money tool is never planned —
 // it is refused at the instruction, before a plan exists.
@@ -905,12 +903,6 @@ export function citationProblems(item, { knownRowIds = [] } = {}) {
   return problems;
 }
 
-export function withheldSentence(withheld, produced) {
-  if (!withheld) return "";
-  return `${withheld} of ${withheld + produced} withheld: Steward could not point at the rows ` +
-    `${withheld === 1 ? "that draft" : "those drafts"} came from, so ${withheld === 1 ? "it was" : "they were"} not written.`;
-}
-
 // ── STANDING INSTRUCTIONS FIRE ON THE TICK, NEVER RETROACTIVELY ────────────
 // BUILD-94's enrolment rule, applied to instructions: the only way in is the
 // event itself. A standing instruction turned on today does not reach back over
@@ -931,12 +923,6 @@ export const TRIGGER_KEYS = TRIGGERS.map(t => t.key);
 // quietly starts touching three times as many people is a different
 // instruction.
 export const RESHOW_PLAN_RATIO = 0.5;
-export function planNeedsReshowing(lastCount, thisCount) {
-  const a = Number(lastCount), b = Number(thisCount);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
-  if (a === 0) return b > 0;
-  return Math.abs(b - a) / a > RESHOW_PLAN_RATIO;
-}
 
 // ── THE DAILY LINE ─────────────────────────────────────────────────────────
 // One sentence in the morning email and on Home. It follows the morning

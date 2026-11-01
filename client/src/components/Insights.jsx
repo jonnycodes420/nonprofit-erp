@@ -639,35 +639,6 @@ export function FirstLook({ onNavigate, isReadOnly, onClose }) {
   );
 }
 
-// THE PROFILE: rung, status, the signals, and the one next move.
-export function ProfileLadder({ donorId, onNavigate, isReadOnly }) {
-  const [d, setD] = useState(null);
-  const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
-  useEffect(() => { if (donorId) load(); }, [donorId]);
-  if (!d || !d.unit) return null;
-  const u = d.unit, m = d.move;
-  return (
-    <div data-testid="profile-ladder" style={{ marginTop: 8 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-        <RungChips unit={u} />
-        {(u.signals || []).slice(0, 5).map(s => <span key={s} style={{ fontSize: 12, color: T.ink3, marginRight: 8 }}>{s}</span>)}
-      </div>
-      {u.undatedNote && <div style={{ fontSize: 13, color: T.ink, marginTop: 4, borderLeft: "3px solid " + T.gold, paddingLeft: 8 }}>{u.undatedNote}</div>}
-      {(d.notGifts || []).length > 0 && <div data-testid="profile-not-gifts" style={{ fontSize: 13, color: T.ink3, marginTop: 4 }} title="Marked Not a gift in Review: in Finance as revenue, not in their giving.">
-        Also paid, not gifts: {d.notGifts.map(x => `${x.label} ${money(x.cents)}${x.date ? ` (${displayDate(x.date)})` : ""}`).join(", ")}.</div>}
-      {d.combined && <div style={{ fontSize: 13, color: T.ink, marginTop: 4 }} title={d.combined.sentence}>With {d.combined.names.join(", ")}: {money(d.combined.cents)} together.</div>}
-      {m && m.item && (
-        <div data-testid="profile-next-move" style={{ background: T.bg, borderRadius: 10, padding: "10px 12px", marginTop: 8 }}>
-          <div style={EYEBROW}>Next move · {m.title}</div>
-          <div style={{ fontSize: 13, color: T.ink, margin: "4px 0" }}>{m.item.facts.map(f => `${f[0]} ${f[1]}`).join(" · ")}</div>
-          <When how={m.item.how} />
-          <OutcomeButtons card={{ kind: m.kind }} items={[m.item]} onChanged={load} isReadOnly={isReadOnly} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 // REPORTS: what happened after each kind of card.
 const KIND_LABEL = { review: "Rows that may not be gifts", year_end: "Year-end givers due", sponsors: "Sponsors to renew", second_gift: "First gift, no second yet",
   upgraded: "Upgraded on their own", major_slipping: "Major donor slipping", pledges: "Open pledges to collect", planned: "Planned-gift signals", family: "Family or network to link",

@@ -6,6 +6,7 @@
 //                      "Flavia" on its own is ambiguous on file.
 //   Bram Lanternby     $400 then $600 (gave more); Cora Wickfield $500 then $200 (less).
 const bcrypt = require("bcryptjs");
+const { DONOR_SUMMARY_UPDATE } = require("../../donorSummary");
 module.exports = async function ask3Fixture(q, ORG, { ai = false } = {}) {
   const Y = new Date().getUTCFullYear();
   for (const t of ["question_log", "threads", "interactions", "gifts", "campaigns", "donors", "user_sessions", "users"])
@@ -31,5 +32,8 @@ module.exports = async function ask3Fixture(q, ORG, { ai = false } = {}) {
   for (const [k, date, amt, camp, thanked] of G)
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,campaign_id,acknowledgement_sent,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,'system:test','test')`,
       [`g_${ORG}_${++i}`, ORG, `d_${ORG}_${k}`, amt, date, camp, thanked]);
+  // Finished the way an import finishes: the stored totals follow the gifts
+  // (donorSummary.js), so numbers1-foot §1 holds whichever shard ran this (ARCH-1).
+  await q(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [ORG, [...new Set(G.map(g => `d_${ORG}_${g[0]}`))]]);
   return { Y, email, last, now, flavia: `d_${ORG}_flavia`, other: `d_${ORG}_other`, campaignNow: `Lantern Appeal ${Y}`, campaignLast: `Lantern Appeal ${Y - 1}` };
 };

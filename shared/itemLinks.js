@@ -123,13 +123,6 @@ export function refLinkHtml(ref, base, { label = null, style = LINK_STYLE } = {}
   return url ? `<a href="${escHtml(url)}" style="${style}">${words}</a>` : words;
 }
 
-// A sentence with every named thing linked.
-export function linkedHtml(text, refs, base, { style = LINK_STYLE } = {}) {
-  return linkSegments(text, refs).map(seg => seg.ref
-    ? `<a href="${escHtml(refUrl(seg.ref, base))}" style="${style}">${escHtml(seg.text)}</a>`
-    : escHtml(seg.text)).join("");
-}
-
 // The one button at the foot of a staff email: the main thing.
 export function buttonHtml(label, url) {
   return `<div style="margin-top:22px;" data-email-button="1"><a href="${escHtml(url)}" style="display:inline-block;background:#0d5c3a;color:#ffffff;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px;">${escHtml(label)}</a></div>`;

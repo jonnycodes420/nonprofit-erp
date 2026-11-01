@@ -10,7 +10,6 @@
 import { Fragment } from "react";
 import { RecordLink } from "./RecordLink";
 import { linkSegments, refPath, refLabel } from "../../../shared/itemLinks.js";
-import { T } from "./shared";
 
 const LINK = { color: "inherit", textDecoration: "underline", textDecorationColor: "#0d5c3a", textUnderlineOffset: 2 };
 
@@ -34,4 +33,3 @@ export function Linked({ text, refs, linkStyle, onOpen }) {
     : <Fragment key={i}>{s.text}</Fragment>)}</>;
 }
 
-export const LINK_EMERALD = { color: T.greenDk };

@@ -30,8 +30,16 @@ async function fire(evt) {
   return (await fetch(BASE + "/stripe/webhook", { method: "POST", headers: { "Content-Type": "application/json", "stripe-signature": header }, body: payload })).status;
 }
 const settle = (ms = 600) => new Promise(r => setTimeout(r, ms));
+// ARCH-1: when the session started. "Two hours ago" left the org's month at
+// New York's evening on the last day of a month: at 02:04Z on 1 Nov (22:04 on
+// 31 Oct in New York) it was 00:04Z on 1 Nov, outside October on a UTC
+// database, and §2 read 0 (CI run 41260326197). The start is now inside the
+// org's today on both clocks: no earlier than its midnight, and no later than 18:00
+// in New York, which is still the same UTC date in summer and in winter.
+const { testNow, startOfDay } = require("./clock");
+const startedAt = () => { const sod = startOfDay(testNow()); return Math.min(Math.max(testNow() - 7200e3, sod), sod + 18 * 3600e3); };
 const expired = (id, sid, md, cents) => ({ id, type: "checkout.session.expired", account: ACCT,
-  data: { object: { id: sid, object: "checkout.session", status: "expired", amount_total: cents, created: Math.floor(Date.now() / 1000) - 7200,
+  data: { object: { id: sid, object: "checkout.session", status: "expired", amount_total: cents, created: Math.floor(startedAt() / 1000),
                     customer_email: md.donor_email, metadata: { org_id: ORG, ...md } } } });
 const startsFor = email => q(`SELECT * FROM gift_starts WHERE org_id=$1 AND LOWER(email)=LOWER($2)`, [ORG, email]);
 
@@ -107,6 +115,54 @@ async function wipe() {
   const s2 = again ? await api("POST", `/gift-starts/${again.id}/send`, tok, { subject: "Your gift", body: "Again" }) : { status: 0 };
   await settle();
   ok("§5 a second note to the same person for the same form is refused", s2.status === 409 && mailTo(B).length === 1, { status: s2.status, n: mailTo(B).length });
+
+  // §6 THE ORG'S MIDNIGHT, NOT THE DATABASE'S (ARCH-1). A start is counted on
+  // the New York day it happened, whatever zone the database runs in (UTC on
+  // prod and CI). Red on main: the figure cut each day at the database's
+  // midnight, so 10:30 PM in New York on the last day of a month counted in
+  // the next month. The fixtures are fixed instants, so this holds at any hour.
+  const { civilDay } = require("./clock");
+  const NY = "America/New_York";
+  // The instant that reads hh:mm on `civil` in New York (EDT -4 or EST -5).
+  const nyAt = (civil, hh, mm) => {
+    for (const off of [4, 5]) {
+      const t = Date.UTC(+civil.slice(0, 4), +civil.slice(5, 7) - 1, +civil.slice(8, 10), hh + off, mm);
+      const f = new Intl.DateTimeFormat("en-CA", { timeZone: NY, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(t));
+      if (f.replace(",", "") === `${civil} ${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`) return new Date(t).toISOString();
+    }
+    throw new Error("no such New York time: " + civil);
+  };
+  const plant = (id, email, at) => q(`INSERT INTO gift_starts (id, org_id, email, amount, started_at, expired_at, created_by, created_by_name)
+                                      VALUES ($1, $2, $3, 10, $4, $4, 'system:test', 'test')`, [id, ORG, email, at]);
+  const rowsFor = async (from, to) => (await api("GET", `/figures/gifts-not-finished/rows?from=${from}&to=${to}`, tok)).body || {};
+  const today6 = civilDay();
+  const [ty, tm] = today6.split("-").map(Number);
+  const lmY = tm === 1 ? ty - 1 : ty, lmM = tm === 1 ? 12 : tm - 1;
+  const lmLast = new Date(Date.UTC(lmY, lmM, 0)).getUTCDate();
+  const lm = { from: `${lmY}-${String(lmM).padStart(2, "0")}-01`, to: `${lmY}-${String(lmM).padStart(2, "0")}-${String(lmLast).padStart(2, "0")}` };
+  const lateAt = nyAt(lm.to, 22, 30);   // 10:30 PM New York on last month's last day: already tomorrow in UTC
+  await plant("gs_p4gs_late", "late@p4gs.test", lateAt);
+  const lmRows = await rowsFor(lm.from, lm.to);
+  const late = (lmRows.rows || []).find(r => r.id === "gs_p4gs_late");
+  ok(`§6 a start at 10:30 PM New York on ${lm.to} counts in that month, not the next (${lateAt})`, !!late, (lmRows.rows || []).map(r => r.id));
+  ok("§6 …and its row is dated that New York day", !!late && String(late.date).slice(0, 10) === lm.to, late);
+  const now6 = (await api("GET", "/gift-starts", tok)).body || {};
+  const nowRows = await rowsFor(now6.month.from, now6.month.to);
+  ok("§6 this month's figure does not count last month's late start", !(nowRows.rows || []).some(r => r.id === "gs_p4gs_late"), (nowRows.rows || []).map(r => r.id));
+  ok(`§6 this month is the org's month (${today6.slice(0, 7)}), from its 1st to its last day`,
+     now6.month.from === `${today6.slice(0, 7)}-01` && now6.month.to.slice(0, 7) === today6.slice(0, 7) && now6.month.to >= today6, now6.month);
+  const close6 = (await api("GET", "/finance/month-close", tok)).body || {};
+  const cFrom = close6.from || (close6.month && close6.month.from), cTo = close6.to || (close6.month && close6.month.to);
+  ok(`§6 last month is the org's last month (${lm.from} to ${lm.to}), on the month close`, cFrom === lm.from && cTo === lm.to, { cFrom, cTo });
+  // The clock change (1 Nov 2026, 2 AM EDT → 1 AM EST): 1 Nov is a 25-hour
+  // day from 04:00Z to 05:00Z on 2 Nov. A fixed -4h would put the 23:30 EST
+  // start on 2 Nov, and a fixed -5h would put the 23:30 EDT start on 1 Nov.
+  await plant("gs_p4gs_dst_a", "dst-a@p4gs.test", "2026-11-01T03:30:00Z");   // 23:30 EDT, 31 Oct
+  await plant("gs_p4gs_dst_b", "dst-b@p4gs.test", "2026-11-01T04:30:00Z");   // 00:30 EDT, 1 Nov
+  await plant("gs_p4gs_dst_c", "dst-c@p4gs.test", "2026-11-02T04:30:00Z");   // 23:30 EST, 1 Nov
+  await plant("gs_p4gs_dst_d", "dst-d@p4gs.test", "2026-11-02T05:30:00Z");   // 00:30 EST, 2 Nov
+  const dst = ((await rowsFor("2026-11-01", "2026-11-01")).rows || []).map(r => r.id).filter(id => /dst/.test(id)).sort();
+  ok("§6 across the clock change, 1 Nov holds exactly its own two starts", dst.join() === "gs_p4gs_dst_b,gs_p4gs_dst_c", dst);
 
   await wipe();
   if (sink) sink.close();

@@ -3149,7 +3149,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   // Audit log tab is admin-only, so `visibleTabs` now reads `isAdmin`, which
   // used to be declared six lines further down. A component-scope const read
   // above its declaration is a blank screen, and this is the fifth time that
-  // class has cost a build (see CLAUDE.md and scripts/tdz-scan.js).
+  // class has cost a build (see CLAUDE.md and scripts/ci/tdz-scan.js).
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
   const userEmail=auth?.user?.email||"";

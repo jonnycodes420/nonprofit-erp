@@ -148,8 +148,8 @@ the morning email unless the person turned on its own reminder, so no step goes 
 - **A bidder's second-device sign-in link is kind `auction_signin`, transactional** (FIX-20). It is asked for
   on the auction page and goes only to an email registered for that auction.
 - **No workflow recipe sends to a donor (FIX-12).** It writes a draft to Drafts to review. The automatic
-  donor-facing sends that remain are listed in the FIX-12 entry of `docs/HISTORY.md`; a new one needs Jonathan.
-- **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/HISTORY.md`. Volunteer shift
+  donor-facing sends that remain are listed in `docs/history/FIX-12.md`; a new one needs Jonathan.
+- **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/history/FIX-12.md`. Volunteer shift
   reminders were on it (FIX-14) and came OFF it in PARITY-3, by Jonathan's brief: they are drafted the day
   before and staff send them in one tap (`docs/decisions/people-and-records.md`).
 - **Volunteer mail goes through `donorMailDecision` like donor mail.** Kinds `volunteer_reminder` and
@@ -180,7 +180,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
   bounce, unsubscribed, deceased, no address, the block list: marked failed with its reason, in `email_log`, never
   tried again). Pledge reminders keep it on `pledges.reminder_failed_at`/`reminder_error`; dunning logs `dunning_skipped`.
 - **Before the real Resend key goes back on, or an org's donor mail is switched on, run
-  `DATABASE_URL=<prod> node scripts/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
+  `DATABASE_URL=<prod> node scripts/ci/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
 - **No automated onboarding or welcome series to org staff, ever (Jonathan, 2026-10-04).** He writes and
   sends onboarding himself; nothing creates an onboarding sequence and the engine stops any left over.
 - **Refuse `is_sample` donors, demo orgs and mail-off orgs for every kind, above the transactional split.**
@@ -190,7 +190,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
   every `emails.send` to `email_log` (recipient DOMAIN only, never the address) and applies the permanent
   block; `opsAlert` and `routes/migc.js` are the known raw sends and check the block themselves. (BUILD-97)
 - **`email_log.gate` and `donor_ids` (ids, never addresses) record which arm of the send gate let a donor
-  message go and to whom (HARDEN-1).** `scripts/auto-mail-switches-readonly.sql` reads them by hand. The
+  message go and to whom (HARDEN-1).** `scripts/ops/auto-mail-switches-readonly.sql` reads them by hand. The
   3:30 AM nightly check that read them was removed (NIGHTLY-OFF); its five checks live on as read-only
   `scripts/*-readonly.sql` files that Jonathan runs.
 - **Build org-scoped send options with `donorSendOpts` (or set `_stewardOrgId`/`_stewardKind`).** That tag is
@@ -326,7 +326,7 @@ the morning email unless the person turned on its own reminder, so no step goes 
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## THE PERMANENT MAIL BLOCK (2026-09-24) — Jonathan's list, nobody else edits it
 `mailBlock.js` holds addresses Steward must never email, from any org, for any reason: **`hello@justinsplaceky.com`**. It is checked at **the Resend client proxy** in server.js (every send in that file passes through it, including ones written later; a blocked send returns a provider-style error, is logged to `email_log` as `blocked`, and never reaches Resend), in **`donorMailDecision`** (first, above the org switch), in **`opsAlert`** (the one raw-client send) and in **routes/migc.js** (its own client). `tests/mail-block.test.js` (19) plants an invite and a donor receipt to the address, asserts nothing reaches the sink while a control invite does, and pins the entry by name; it is proven able to fail with the proxy check planted off, and its receipt leg proves the donor gate independently. **Remove an address only on Jonathan's word, and in both files.**

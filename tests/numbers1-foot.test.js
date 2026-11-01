@@ -4,14 +4,14 @@
 // "$14,423.08 of 13 gifts", Largest at $15,000, and the gift counted toward
 // GivingTuesday 2026, which had not started. This suite proves the numbers
 // three ways:
-//   §1 the checker passes on every demo org and fixture org on this database;
+//   §1 the checker passes on every demo org and the boot fixture org (org_creo);
 //   §2 Margaret's case: a $25,000 gift moves Average (over 14) and Largest on
 //      the ONE read the header draws from, and a gift dated before a campaign
 //      starts is refused it and never counts toward it;
 //   §3 hundreds of random sequences of the things people do to gifts (add,
 //      edit amount, edit date, move campaign, refund, delete, Undo, split,
 //      soft credit, merge two donors, import a file, a voice gift card's Yes),
-//      each in a fresh small org, with scripts/check-numbers.js run after every
+//      each in a fresh small org, with scripts/ci/check-numbers.js run after every
 //      step. A failure prints the shortest sequence that still breaks a rule.
 //
 // It boots server.js IN-PROCESS (like voice1-tell-steward) so the voice card
@@ -109,7 +109,7 @@ async function makeOrg(today) {
 }
 
 const NUM = require("../numbers");
-const { checkOrg } = require("../scripts/check-numbers");
+const { checkOrg } = require("../scripts/ci/check-numbers");
 const stripeLib = require("stripe");
 async function fire(evt) {
   const payload = JSON.stringify(evt);
@@ -331,13 +331,17 @@ async function shrink(seq, today) {
 
   // ── §1 every demo and fixture org on this database ─────────────────────
   console.log("\n§1 the checker on every demo and fixture org");
-  const orgs = await q(`SELECT id FROM orgs WHERE id NOT LIKE $1 AND id NOT LIKE 'org_n1m_%' ORDER BY id`, [`${PREFIX}%`]);
+  // ARCH-1: the orgs this means, the demo orgs seed-demo writes (is_demo_org) and
+  // the boot fixture, and not whatever other suites left on a shared shard. The
+  // battery's order now comes from generated timings, and other suites' fixture
+  // orgs (raw gift inserts by design) made this pass or fail by shard luck.
+  const orgs = await q(`SELECT id FROM orgs WHERE (is_demo_org = true OR id = 'org_creo') AND id NOT LIKE $1 AND id NOT LIKE 'org_n1m_%' ORDER BY id`, [`${PREFIX}%`]);
   const red = [];
   for (const { id } of orgs) {
     const r = await checkOrg(id, { screens: NUM.screens }).catch(e => ({ problems: [{ rule: "error", count: 1, examples: [e.message] }] }));
     if (r.problems.length) red.push({ id, problems: r.problems.map(p => `${p.rule} x${p.count} ${JSON.stringify(p.examples.slice(0, 2))}`) });
   }
-  ok(`§1 every rule holds on all ${orgs.length} orgs here (demo and fixture)`, orgs.length > 0 && red.length === 0, red.slice(0, 5));
+  ok(`§1 every rule holds on all ${orgs.length} demo and boot-fixture orgs here`, orgs.length > 0 && red.length === 0, red.slice(0, 5));
 
   // ── §2 Margaret's gift ─────────────────────────────────────────────────
   console.log("\n§2 a $25,000 gift to Margaret, and GivingTuesday");

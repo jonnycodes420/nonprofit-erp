@@ -1,4 +1,4 @@
-// FIX-30 Part 1 · the "runs" postal-state repair (scripts/repair-runs-state.js).
+// FIX-30 Part 1 · the "runs" postal-state repair (scripts/ci/repair-runs-state.js).
 //
 // Before HARDEN-1, an Agent contact update wrote "runs" into a person's postal
 // state, and prod still holds those rows, including a real customer's. This
@@ -13,10 +13,10 @@
 const { execFileSync } = require("child_process");
 const path = require("path");
 const { ok, summary, q, closeDb } = require("./helpers");
-const { decide } = require("../scripts/repair-runs-state");
+const { decide } = require("../scripts/ci/repair-runs-state");
 
 const ORG = "org_fix30runs", OTHER = "org_fix30other";
-const SCRIPT = path.join(__dirname, "..", "scripts", "repair-runs-state.js");
+const SCRIPT = path.join(__dirname, "..", "scripts", "ci", "repair-runs-state.js");
 const DB = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
 
 function runScript(...args) {
@@ -107,7 +107,7 @@ const states = async () => Object.fromEntries((await q(
                             WHERE org_id IN ($1,$2) AND action='repair runs state' ORDER BY entity_id`, [ORG, OTHER]);
     ok("one audit row per restore (4)", audit.length === 4 && audit.map(r => r.entity_id).join() === "f30_a,f30_b,f30_e,f30_x", audit.map(r => r.entity_id));
     ok("each audit row names the script and carries before/after",
-      audit.every(r => r.user_id === "system:scripts/repair-runs-state" && r.actor_kind === "system" && r.before_fields.state === "runs"));
+      audit.every(r => r.user_id === "system:scripts/ci/repair-runs-state" && r.actor_kind === "system" && r.before_fields.state === "runs"));
 
     console.log("\n§5 a second run finds nothing");
     const again = runScript();

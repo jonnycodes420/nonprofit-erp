@@ -163,8 +163,8 @@ amount — but it means **nobody can be closed until these three exist**.
 Amounts: Founding **$199**, Core **$249**, Team **$499**.
 
 ```bash
-STRIPE_BILLING_SECRET_KEY=sk_test_… node scripts/create-billing-products.js          # test first
-STRIPE_BILLING_SECRET_KEY=sk_live_… node scripts/create-billing-products.js --live   # then live
+STRIPE_BILLING_SECRET_KEY=sk_test_… node scripts/once/create-billing-products.js          # test first
+STRIPE_BILLING_SECRET_KEY=sk_live_… node scripts/once/create-billing-products.js --live   # then live
 ```
 
 Paste the printed `STRIPE_PRICE_FOUNDING` / `STRIPE_PRICE_CORE` /
@@ -193,7 +193,7 @@ live mode; the three Railway variables were simply pointed at older ones:
 So the fix was three variable values, nothing else. `FOUNDER_EMAIL` was already
 `jonathan@stewardapp.dev` and was left untouched.
 
-**DO NOT run `scripts/create-billing-products.js --live` on this account.** It
+**DO NOT run `scripts/once/create-billing-products.js --live` on this account.** It
 finds a product by `metadata['steward_plan']`, and the three live products
 (`Founding Partner`, `Core`, `Team`) carry **no metadata at all**. The script
 would not recognise them, would create three NEW products named `Steward — Core`
@@ -240,10 +240,10 @@ row.
 
 | Script | Override |
 |---|---|
-| `scripts/consistency-audit.js` | `ADMIN_PASSWORD` |
+| `scripts/ops/consistency-audit.js` | `ADMIN_PASSWORD` |
 | `scripts/build12-ui-capture.js` | `PASSWORD` |
 | `scripts/finance-overview-capture.js` | `PASSWORD` |
-| `scripts/topbar-verify.js` | `PASSWORD` |
+| `scripts/ops/topbar-verify.js` | `PASSWORD` |
 | `scripts/build59-install-demo-images.js` | `CREO_PASSWORD` |
 | `scripts/seed-fundraising-demo.js` | `DEMO_PASSWORD` |
 | `scripts/build88a-walk.js` | `DEMO_PASSWORD` **(added in BUILD-93 — it hardcoded the password until tonight)** |
@@ -441,11 +441,11 @@ before it reaches a paying customer's org.
 
 ### 4. Then run the drill
 
-`scripts/build95-cheque-drill.js` has **never run against a real photograph**.
+`scripts/ops/build95-cheque-drill.js` has **never run against a real photograph**.
 Until it has, `claude/BUILD-95.md` says "reading unproven" and that line stays.
 
 ```
-ANTHROPIC_API_KEY=sk-ant-… node scripts/build95-cheque-drill.js cheque1.jpg cheque2.jpg cheque3.jpg
+ANTHROPIC_API_KEY=sk-ant-… node scripts/ops/build95-cheque-drill.js cheque1.jpg cheque2.jpg cheque3.jpg
 ```
 
 Three real cheques, and record what came back beside what was actually written

@@ -21,7 +21,7 @@
 const bcrypt = require("bcryptjs");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BASE, waitFor } = require("./helpers");
 const ORG_KIND = require("../orgKind");
 const mailPolicy = require("../mailPolicy");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
@@ -163,8 +163,8 @@ const snapshot = async () => JSON.stringify(await q(
 
   console.log("\n§4 · the cleanup dry run changes nothing");
   const before = await snapshot();
-  const auditBefore = (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/admin-clean'`))[0].c;
-  const out = execFileSync("node", [path.join(__dirname, "..", "scripts", "admin-clean.js")],
+  const auditBefore = (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/ci/admin-clean'`))[0].c;
+  const out = execFileSync("node", [path.join(__dirname, "..", "scripts", "ci", "admin-clean.js")],
     { env: { ...process.env }, encoding: "utf8", timeout: 60000 });
   ok("the dry run says it is a dry run", /DRY RUN/.test(out) && /nothing was changed/i.test(out), out.slice(0, 200));
   ok("…prints the walk fixture for delete, by name and id", new RegExp(`DELETE\\s+Fixture\\s+${JUNK}\\s+ACM-9 Walk`).test(out));
@@ -177,12 +177,13 @@ const snapshot = async () => JSON.stringify(await q(
      !/DELETE\s+\S+\s+org_riverbend_demo/.test(out) && (!/org_riverbend_demo/.test(out) || /KEEP\s+Demo\s+org_riverbend_demo/.test(out)), out.split("\n").filter(l => /riverbend/.test(l)));
   ok("nothing in orgs changed", (await snapshot()) === before);
   ok("…and no audit row was written",
-     (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/admin-clean'`))[0].c === auditBefore);
-  const plan = require("../scripts/admin-clean").decide;
+     (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/ci/admin-clean'`))[0].c === auditBefore);
+  const plan = require("../scripts/ci/admin-clean").decide;
   const guarded = plan({ id: "org_x", name: "f", stripe_subscription_id: "sub_1" }, { users: [{ email: "xjca2006+f@gmail.com" }], payments: 0, realDonors: 0 });
   ok("a junk org with a Stripe subscription is archived, never deleted", guarded.action === "archive", JSON.stringify(guarded));
 
   console.log("\n§5 · archive hides an org and undo brings it back");
+  const [{ t0 }] = await q(`SELECT NOW() AS t0`);   // this run's rows only: the trail is append-only and keeps every earlier run's
   const arc = await api("POST", `/admin/orgs/${EMPTY}/archive`, supr, {});
   const l1 = await api("GET", "/admin/orgs", supr);
   const m3 = await api("GET", "/admin/metrics", supr);
@@ -195,7 +196,11 @@ const snapshot = async () => JSON.stringify(await q(
   const l2 = await api("GET", "/admin/orgs", supr);
   const e2 = l2.body.find(o => o.id === EMPTY);
   ok("undo brings it back, counted again", un.status === 200 && e2.archived === false && e2.counted === true, JSON.stringify({ a: e2.archived, c: e2.counted }));
-  const audit = await q(`SELECT action FROM fin_audit_log WHERE request_path LIKE $1 ORDER BY created_at`, [`/admin/orgs/${EMPTY}/%archive`]).catch(() => []);
+  // ARCH-1: the audit row is written when the response finishes, after the
+  // client already has its answer, so the trail is read until both rows are
+  // there (a ceiling, not a sleep). CI read 1 on a busy runner (run 41249704829).
+  const readAudit = () => q(`SELECT action FROM fin_audit_log WHERE request_path LIKE $1 AND created_at >= $2 ORDER BY created_at`, [`/admin/orgs/${EMPTY}/%archive`, t0]).catch(() => []);
+  const audit = (await waitFor(async () => { const a = await readAudit(); return a.length >= 2 && a; }, { timeout: 15000 })) || await readAudit();
   ok("both are on the audit trail", audit.length >= 2, audit.length);
 
   console.log("\n§6 · Jonathan's orgs never get billing mail");

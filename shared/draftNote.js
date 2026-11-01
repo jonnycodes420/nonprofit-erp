@@ -28,9 +28,6 @@ const money = cents => {
   const n = (Number(cents) || 0) / 100;
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 };
-// FIX-58 · "$1,000 on April 30, 2026". The draft's header and its letter both
-// read this, so the two can never show the same gift two ways.
-export const letterMoney = money;
 export function giftOnDate(cents, date) {
   const day = date ? displayDateLong(date instanceof Date ? date : String(date).slice(0, 10)) : "";
   return day ? `${money(cents)} on ${day}` : money(cents);

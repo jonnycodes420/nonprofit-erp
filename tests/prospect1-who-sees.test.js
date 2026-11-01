@@ -91,7 +91,7 @@ const carries = t => MARK.some(m => String(t).includes(m));
   const { Client } = require("pg");
   const pgc = new Client({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest", ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false } });
   await pgc.connect();
-  const loaded = await require("../scripts/load-irs-bmf").load(pgc, { sources: [{ file: require("path").join(__dirname, "fixtures", "irs-bmf", "eo_fixture.csv") }], date: "2026-09-07" });
+  const loaded = await require("../scripts/ci/load-irs-bmf").load(pgc, { sources: [{ file: require("path").join(__dirname, "fixtures", "irs-bmf", "eo_fixture.csv") }], date: "2026-09-07" });
   await pgc.end();
   const [quoted] = await q(`SELECT name FROM irs_bmf WHERE ein='271000103'`);
   ok("FIX-22 the loader reads every fixture row, a quoted name with a comma whole", loaded[0].rows === 3 && quoted && quoted.name === "BRAMBLEWICK, PELL AND OARSMAN FUND", { loaded, quoted });

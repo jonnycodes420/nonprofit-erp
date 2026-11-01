@@ -423,7 +423,6 @@ export const STANDARD_REPORTS = [
   { key: "p2p-fundraisers", name: "Fundraisers by campaign", question: "Who is raising for us, and how much has each of them brought in?", kind: "handler", handler: "p2p-fundraisers", params: {} },
   { key: "p2p-teams", name: "Teams by campaign", question: "How is each team doing against its goal?", kind: "handler", handler: "p2p-teams", params: {} },
 ];
-export const STANDARD_KEYS = STANDARD_REPORTS.map(r => r.key);
 
 // Fill {{fyStart}} and friends from the server's clock and the org's fiscal
 // year. Returns a new definition; the stored one keeps its placeholders.

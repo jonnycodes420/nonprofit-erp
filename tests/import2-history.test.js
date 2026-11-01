@@ -72,7 +72,14 @@ const toObjects = (raw) => { const h = raw[0].map(x => x.trim()); return { heade
 
 async function reset() {
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
-  await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
+  // ARCH-1: everything else that carries the org (the stored drift and rhythm,
+  // the job queue, the data-health run) too, or a second run on the same
+  // database died on orgs_pkey before its first check.
+  const all = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of all) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
+  }
 }
 
 (async () => {

@@ -33,6 +33,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, api, login, BASE, browserLegOrSkip } = require("./helpers");
 const PREVIEW = require("./lib/previewPerfOrg");
+const timed = require("./lib/budget").withinBudget(ok);
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -166,7 +167,7 @@ async function previewLeg() {
 (async () => {
   await previewLeg();
   const why = (() => {
-    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/build-local-dist.sh)";
+    if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";
     try { require(PW); } catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
     return null;
   })();
@@ -213,13 +214,13 @@ async function previewLeg() {
   }
   for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
-  ok(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, homeD.usable > 0 && homeD.usable < BUDGET.homeDesktop, homeD.usable);
-  ok(`Home, its rail included, usable under 4.8 s on a phone (${homeP.usable} ms)`, homeP.usable > 0 && homeP.usable < BUDGET.homePhone, homeP.usable);
+  timed(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, { ms: homeD.usable, budget: BUDGET.homeDesktop });
+  timed(`Home, its rail included, usable under 4.8 s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
-  ok(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, listServer < BUDGET.listServer, { listServer, listUrl });
-  ok(`the Donors list draws 100 rows in under 2 s (${list.readyAt} ms)`, list.ready && list.readyAt < BUDGET.listDraw, list.readyAt);
-  ok(`a donor profile draws in under 2 s (${prof.usable} ms)`, prof.usable > 0 && prof.usable < BUDGET.profile, prof.usable);
+  timed(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, { ms: listServer, budget: BUDGET.listServer, extra: { listServer, listUrl } });
+  timed(`the Donors list draws 100 rows in under 2 s (${list.readyAt} ms)`, { drew: list.ready, ms: list.readyAt, budget: BUDGET.listDraw });
+  timed(`a donor profile draws in under 2 s (${prof.usable} ms)`, { ms: prof.usable, budget: BUDGET.profile });
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); ok("perf-app ran", false, String(e && e.stack || e)); summary(); await closeDb().catch(() => {}); });

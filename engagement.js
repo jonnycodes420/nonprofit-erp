@@ -9,7 +9,7 @@
 // and nowhere else.
 //
 // `q(sql, args)` is any query function that takes `?` placeholders and returns
-// rows: db.js's `query` on the server, an adapter in scripts/seed-demo.js.
+// rows: db.js's `query` on the server, an adapter in scripts/ci/seed-demo.js.
 //
 // The scores are stored in donor_scores (derived data: rebuilt whole for an org
 // each time, never edited by a person), so the Donors list can sort by them and

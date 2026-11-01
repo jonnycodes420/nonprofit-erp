@@ -13,7 +13,6 @@
 // small "Why?" a report number carries.
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { EXAMPLES as SHOW_EXAMPLES } from "../../../shared/showMe";
 import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { DonorLink, RecordLink } from "./RecordLink";
@@ -333,33 +332,6 @@ export function WhyPanel({ payload, onClose, isReadOnly, onStepTaken }) {
         {!a && !err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
         {a && <WhyAnswerBody answer={a} isReadOnly={isReadOnly} onStepTaken={onStepTaken} />}
       </div>
-    </div>
-  );
-}
-
-// PARITY-4: the "Show me" examples: each opens its list in the same panel.
-function ShowMeChips({ onAsk }) {
-  return (
-    <div data-testid="show-me-examples" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", flexBasis: "100%" }}>
-      <span style={{ ...LABEL, marginRight: 2 }}>Show me</span>
-      {SHOW_EXAMPLES.map(t => <button key={t} type="button" data-show-me-tap={t} style={CHIP} onClick={() => onAsk(t)}>{t}</button>)}
-    </div>
-  );
-}
-
-// The Show me line on Reports: the examples and a box to type a list question.
-export function ShowMeLine({ isReadOnly }) {
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(null);
-  const submit = e => { e.preventDefault(); const t = text.trim(); if (t) { setOpen({ text: t, mode: "show" }); setText(""); } };
-  return (
-    <div data-testid="show-me-line" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-      <ShowMeChips onAsk={t => setOpen({ text: t, mode: "show" })} />
-      <form onSubmit={submit} style={{ flex: "1 1 260px", display: "flex", minWidth: 0 }}>
-        <input aria-label="Show me a list" data-testid="show-me-input" value={text} onChange={e => setText(e.target.value)} placeholder="Or describe who you want to see"
-          style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontFamily: "inherit", background: T.white, color: T.ink }} />
-      </form>
-      {open && <WhyPanel payload={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} />}
     </div>
   );
 }

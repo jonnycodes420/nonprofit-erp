@@ -37,13 +37,6 @@
 // Pure: no DB, no network, no clock, no JSX.
 
 export const SOFT_CREDIT_ROLES = ["recommender", "spouse", "solicitor", "household", "other"];
-export const SOFT_CREDIT_ROLE_LABELS = {
-  recommender: "Recommended the gift",
-  spouse: "Spouse or partner",
-  solicitor: "Asked for it",
-  household: "Household",
-  other: "Other",
-};
 
 export const TRIBUTE_HONOR = "honor";
 export const TRIBUTE_MEMORY = "memory";

@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "bash tests/run-all.sh",
-    "test:audit": "node scripts/consistency-audit.js",
+    "test:audit": "node scripts/ops/consistency-audit.js",
     "setup:hooks": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'",
-    "status": "node scripts/status.js",
+    "status": "node scripts/ci/status.js",
     "test:load": "node tests/scale1-load.test.js",
     "worker": "STEWARD_PROCESS=worker node server.js"
   },

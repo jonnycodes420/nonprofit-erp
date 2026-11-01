@@ -1,8 +1,10 @@
 # Steward — Nonprofit ERP SaaS
 
+**Read `docs/architecture/ARCHITECTURE.md` before writing code. Where it and a brief disagree, ask; don't guess.**
+
 Every session reads this file on every turn. Keep it short: **200 lines at most**, enforced by
 `tests/claude-md.test.js`. Rules for one area live in `docs/decisions/`. The story of how
-each rule was learned lives in `docs/HISTORY.md`.
+each rule was learned lives in `docs/history/`, one file per brief.
 
 ## What Steward is
 
@@ -19,11 +21,12 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
   separate Stripe client. AI through the Anthropic SDK, for narrow tasks only (no chat).
 - App: https://www.stewardapp.dev · API: https://nonprofit-erp-production.up.railway.app
 - Repo: github.com/jonnycodes420/nonprofit-erp · the demo is Harborlight Youth Collective,
-  director@harborlight.demo (`org_b72demo`), seeded only by `scripts/seed-demo.js`
+  director@harborlight.demo (`org_b72demo`), seeded only by `scripts/ci/seed-demo.js`
 - What is live: `GET /health` → `buildSha` (backend) and `<meta name="build-sha">` on
   www.stewardapp.dev (frontend). Never guess from route probes.
 - Only what physically needs Jonathan (a credential, a payment, a signature, a real
-  customer's file) goes in `NEEDS-JONATHAN.md`, one line each. Decide everything else.
+  customer's file) goes in `docs/needs-jonathan/<BRIEF>.md` (the brief's own file), one line
+  each. Decide everything else.
   Never create a `BLOCKED-*.md`.
 
 ## How Steward is built
@@ -66,7 +69,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   shade), emerald `#0D5C3A` (the one action colour), brass `#C9A84C`. Overdue is brass,
   not red. Red is only for a destructive confirm.
 - **The TDZ rule.** A module-scope or component-scope `const` is declared above every line
-  that reads it. Shared consts go in one block under the imports. Run `scripts/tdz-scan.js`.
+  that reads it. Shared consts go in one block under the imports. Run `scripts/ci/tdz-scan.js`.
 - **A guard must be proven able to fail.** State what would make it fail, then plant that
   defect and watch it go red before you trust the green.
 - **At most ONE new test per build, and only if it guards money, donor data, email or
@@ -87,7 +90,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
-- **The demo is its own org.** Only `scripts/seed-demo.js` writes `org_b72demo`; no suite logs
+- **The demo is its own org.** Only `scripts/ci/seed-demo.js` writes `org_b72demo`; no suite logs
   in to it or names it. `org_creo` is the boot-seed fixture org with a fabricated legal
   identity: never write to it on prod, and a real CREO onboards as a fresh org.
 - **Never kill processes by name or pattern** (no `pkill -f`, no `killall`). Stop only the PIDs
@@ -111,7 +114,8 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   The public page and the in-app panel read only these files, never commit messages.
 - **The two-strikes rule for this file.** A new line goes into CLAUDE.md only when the same
   mistake has happened twice. Anything else goes into the decisions file for its area, or
-  into `docs/HISTORY.md`. A new build's entry goes at the top of HISTORY.md, not here.
+  into history. A build's entry is its own new file, `docs/history/<BRIEF>.md`: add a file,
+  never edit another brief's.
 
 ## How to run things
 
@@ -121,28 +125,28 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   `createdb -h localhost -p 5544 -U steward steward_<tag>`, then boot with
   `DATABASE_URL=postgresql://steward@localhost:5544/steward_<tag>` and the env from the header.
   The first boot builds the schema and demo seed.
-- **Client dist for the browser legs:** `bash scripts/build-local-dist.sh`, then
-  `API=http://localhost:5601 PORT=4173 node scripts/local-preview.js`. Never a bare
+- **Client dist for the browser legs:** `bash scripts/ops/build-local-dist.sh`, then
+  `API=http://localhost:5601 PORT=4173 node scripts/ci/local-preview.js`. Never a bare
   `npx vite build`, because it skips the brand guard. Rebuild after any client edit.
 - **The battery:** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
   (= `npm test`). It SHARDS three ways by default — each shard builds its own database
   (`steward_<worktree>_shard_<n>`), boots its own server on a port block it claims, and the
   run prints one summary. Two tabs can run batteries side by side: the names, ports and logs
   come from the worktree folder, and a run drops only its own databases. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
-  change the width. Balance comes from `audit/suite-timings.json`, which the run refreshes.
+  change the width. Balance comes from `.generated/suite-timings.json` (git-ignored), which the run refreshes.
   CI runs the same three shards as a matrix and `combine` is the one gate the deploys wait
   on: it fails on a dead shard and on any suite whose pass count dropped.
 - **The tenant battery:** `node tests/tenant-matrix.test.js` (boots server.js in-process on
-  :5697) and `node tests/tenant-isolation.test.js`. After adding a route, re-run
-  `node scripts/build75-route-inventory.js` in the same commit.
-- **TDZ scan:** `node scripts/tdz-scan.js [file|dir]`. Self-references exit 1. `--all` adds
+  :5697) and `node tests/tenant-isolation.test.js`. The route inventory is generated into
+  `.generated/` on each run, never committed.
+- **TDZ scan:** `node scripts/ci/tdz-scan.js [file|dir]`. Self-references exit 1. `--all` adds
   the noisy reads-above list.
 - **Deploys go through GitHub Actions only.** Pushing to main runs CI (`.github/workflows/ci.yml`),
   and green tests deploy Railway and Vercel with a SHA-verified health poll. Git auto-deploy is
   off on both sides, and it stays off. Read CI after every push. Break-glass steps are in
   `docs/decisions/tests-and-ci.md`.
-- **Prod smoke:** `node scripts/status.js` (= `npm run status`), once, after the push that
-  deploys. It includes the AI smoke (`scripts/prod-ai-smoke.js`), which CI also runs after deploy.
+- **Prod smoke:** `node scripts/ci/status.js` (= `npm run status`), once, after the push that
+  deploys. It includes the AI smoke (`scripts/ci/prod-ai-smoke.js`), which CI also runs after deploy.
 - **Git:** work on a branch in your own worktree. Never push a branch that sits on another
   session's unpushed commits. Merge to main only on Jonathan's word.
 
@@ -151,6 +155,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 Read the decisions file before you touch its area. Each one opens with "Read this when you
 touch …", then the rules, then the reference sections moved from the old CLAUDE.md.
 
+- `docs/decisions/house.md` — the decisions that hold everywhere: soft credits, the weekly email, one fiscal year, the monolith, no org-specific code, tests set their clock.
 - `docs/decisions/money-and-gifts.md` — gifts, `recordGift`, funds, attribution, ledger, soft credits, cheques, giving sources.
 - `docs/decisions/imports.md` — file import, shape detection, the mapper, money/date parsing, dedupe, exports.
 - `docs/decisions/mail-and-notifications.md` — every send: Resend, `donorMailDecision`, the mail block, appeals, sequences, notifications.
@@ -169,6 +174,7 @@ touch …", then the rules, then the reference sections moved from the old CLAUD
 - `docs/decisions/home-and-reports.md` — Home, the Dashboard, the Thread, Drift, tasks, goals, report definitions, board reports.
 - `docs/decisions/people-and-records.md` — the person record: donors, orgs, non-donors, households, merge, deletion, profile, volunteers, events.
 - `docs/decisions/accounts-and-billing.md` — sign-in, signup, onboarding, invites, roles, super admin, Settings, platform billing.
-- `docs/HISTORY.md` — every dated build entry, verbatim, newest first. It holds the why, not instructions.
-- `NEEDS-JONATHAN.md` — the only list of things waiting on Jonathan.
+- `docs/history/` — one file per brief, the why, not instructions. Index: `node scripts/ci/history-index.js`.
+- `docs/architecture/` — ARCHITECTURE.md (the rules), the MAP-1 map, and the ratchet baselines.
+- `docs/needs-jonathan/` — what waits on Jonathan, one file per brief. All of it: `node scripts/ci/needs-jonathan.js`.
 - `tests/README.md` — the scratch stack, the browser-leg environment, and the individual suites.

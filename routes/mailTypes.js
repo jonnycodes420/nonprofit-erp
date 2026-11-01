@@ -23,6 +23,7 @@ const express = require("express");
 const TYPES = require("../mailTypes");
 const SEND_GATE = require("../sendGate");
 const GOING = require("../goingOut");
+const ORG_TIME = require("../orgTime");
 
 const routers = { r0: express.Router() };
 const BULK_CAP = 25000;   // the same cap as GET /donors/ids (select all matching)
@@ -55,10 +56,13 @@ async function orgMail(orgId) {
 async function typesFor(orgId) {
   const rows = await query(`SELECT type_key, is_on, audience, set_at, set_by_name FROM org_mail_types WHERE org_id = ?`, [orgId]);
   const by = new Map(rows.map(r => [r.type_key, r]));
+  // ARCH-1: "this month" is the org's month, from its first midnight.
+  const tz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const mo = ORG_TIME.orgPeriodBounds(tz, "month", 0);
   const last = new Map((await query(
     `SELECT type_key, MAX(sent_at) AS last_at,
-            COUNT(*) FILTER (WHERE sent_at >= date_trunc('month', NOW()))::int AS month_n
-       FROM auto_mail_sent WHERE org_id = ? GROUP BY type_key`, [orgId])).map(r => [r.type_key, r]));
+            COUNT(*) FILTER (WHERE ${ORG_TIME.orgDayWindowSql("sent_at", "?", "?", null)})::int AS month_n
+       FROM auto_mail_sent WHERE org_id = ? GROUP BY type_key`, [mo.start, tz.timezone, orgId])).map(r => [r.type_key, r]));
   return TYPES.TYPES.map(t => {
     const r = by.get(t.key), l = last.get(t.key);
     const on = !!r && r.is_on === true;

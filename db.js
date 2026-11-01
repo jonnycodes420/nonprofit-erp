@@ -4237,7 +4237,7 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_follows_account ON donor_org_follows (account_id)`);
 
   // ── §3 the gate ───────────────────────────────────────────────────────────
-  // IRS Pub 78 / BMF snapshot (loaded by scripts/load-irs-ein-registry.js;
+  // IRS Pub 78 / BMF snapshot (loaded by scripts/ops/load-irs-ein-registry.js;
   // refresh cadence: monthly, documented there). ein stored digits-only.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ein_registry (
@@ -5527,7 +5527,7 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_org ON email_log (org_id, created_at DESC)`);
   // HARDEN-1: which arm of the donor-mail gate let a send go (sendGate.js:
   // exempt, staff_confirm, auto_email_on) and the people it went to (ids,
-  // never addresses), so scripts/auto-mail-switches-readonly.sql can prove no
+  // never addresses), so scripts/ops/auto-mail-switches-readonly.sql can prove no
   // automatic message reached a person whose Automatic emails switch was off.
   await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS gate TEXT`);
   await pool.query(`ALTER TABLE email_log ADD COLUMN IF NOT EXISTS donor_ids TEXT[]`);
@@ -6730,7 +6730,7 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_org ON deleted_records (org_id, created_at DESC)`);
   // HARDEN-2: a person's OPEN deletion records, by person (personTrash.js,
-  // scripts/stale-deletions-readonly.sql and the trigger below all ask this).
+  // scripts/ops/stale-deletions-readonly.sql and the trigger below all ask this).
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_open_person ON deleted_records (org_id, record_id)
                       WHERE table_name = 'donors' AND restored_at IS NULL`);
   // HARDEN-2: an open deletion record is about one row. When a new row takes a
@@ -8389,7 +8389,7 @@ async function runSchemaInit(pool) {
 
   // FIX-22: the public filing comes from the IRS's own public-domain file, the
   // Exempt Organizations Business Master File, loaded by
-  // scripts/load-irs-bmf.js into irs_bmf (one row per EIN, every org reads it,
+  // scripts/ci/load-irs-bmf.js into irs_bmf (one row per EIN, every org reads it,
   // nobody's private data). A lookup reads this table only; nothing calls out
   // on a page render or on a button press. Money is whole dollars in the file,
   // stored as cents. tax_period is the file's YYYYMM.
@@ -9061,7 +9061,7 @@ async function seedData() {
 
   // ── BUILD-92 A1 — THE DEMO ORG'S OWN WORDS, ON A FRESH DATABASE ──────────
   // BUILD-86 Part B gave the demo org Heart of Africa's vocabulary, but only
-  // through `scripts/seed-build86-vocabulary.js`, run by hand against one
+  // through `scripts/once/seed-build86-vocabulary.js`, run by hand against one
   // server. A fresh database therefore came up saying "donors" and "funds" —
   // the generic words BUILD-86 exists to avoid — until somebody remembered to
   // run the script. The words belong to the seed.

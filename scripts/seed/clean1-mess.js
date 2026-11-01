@@ -6,7 +6,7 @@
 // typed every which way, four emails that need a look, and four people whose
 // change-of-address results are in tests/fixtures/clean1/harborlight-ncoa-return.csv.
 //
-// Called by scripts/seed-demo.js only, after the rest of the org exists. The
+// Called by scripts/ci/seed-demo.js only, after the rest of the org exists. The
 // seed checks itself through the same dataHealth.js the page reads, and stops
 // if the mess is not what this header says it is.
 "use strict";

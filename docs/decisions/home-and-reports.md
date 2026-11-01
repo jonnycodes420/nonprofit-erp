@@ -326,7 +326,7 @@ number that cannot open does not ship.
   (a percentage) and a `difference` (the Board sentence) are computed from their two parts' values. The
   dashboards compute every metric through `figureValue`, and `composeActivityReport` (the Week in Review email,
   `/reports/activity`) reads the same activity sources as the People dashboard's This week.
-- **The in-scope list.** `FIGURE_SOURCE_SCOPE` in `scripts/build97-number-census.js`: the screens where every
+- **The in-scope list.** `FIGURE_SOURCE_SCOPE` in `scripts/ci/build97-number-census.js`: the screens where every
   figure must carry a source. It starts with `components/Dashboards.jsx`; other screens join it in the commit
   that converts them to `<Figure>`.
 - **Guard one, the census.** On an in-scope screen, a `<Figure>` written without `source=`, or a number drawn any
@@ -368,7 +368,7 @@ number that cannot open does not ship.
 
 ---
 
-The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/HISTORY.md`.
+The sections below were moved verbatim from the old CLAUDE.md. Build entries they cite live in `docs/history/` (one file per brief).
 
 ## Database tables (moved from the old "Database — key tables and columns")
 

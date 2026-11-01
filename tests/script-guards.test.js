@@ -25,7 +25,14 @@ const path = require("path");
 const root = path.join(__dirname, "..");
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } };
-const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8");
+// ARCH-1: scripts live in scripts/ops (Jonathan runs them), scripts/ci (CI, the
+// battery, a hook or a test runs them) and scripts/once (one-time; deleted
+// after they have run on prod and Jonathan says so). Nothing is in the root.
+const SCRIPT_DIRS = ["ops", "ci", "once"];
+const where = {};
+for (const d of SCRIPT_DIRS) for (const f of fs.readdirSync(path.join(root, "scripts", d)).filter(f => f.endsWith(".js"))) where[f.replace(/\.js$/, "")] = d;
+const fileOf = f => path.join(root, "scripts", where[f] || ".", f + ".js");
+const read = f => fs.readFileSync(fileOf(f), "utf8");
 
 // ── The classification (every scripts/*.js must appear in exactly one list) ──
 
@@ -35,10 +42,6 @@ const GUARDED_WRITERS = [
   // run by default; --apply resolves its database through writerDbUrl(), so a
   // remote one also needs --i-know-this-is-prod. Jonathan runs it.
   "move-theme-assets-to-s3",
-  // BUILD-92 — the close-an-existing-org walk. Seeds its own org + admin
-  // straight into the scratch DB (an org that ALREADY exists is the premise,
-  // and no route creates one), then drives the console in Playwright.
-  "build92-close-org-walk",
   // The demo seed (BUILD-72 Part 5; FIX-1 §11 renamed it seed-demo). Loopback
   // default via writerBase; any database name outside the scratch allowlist
   // fails closed EXCEPT the one deliberate production path (prod db + prod
@@ -59,13 +62,9 @@ const GUARDED_WRITERS = [
   // ADMIN-CLEAN: sorts every org into its kind, archives and deletes junk.
   // Dry run by default; --apply writes through writerDbUrl.
   "admin-clean",
-  "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
-  "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
-  "build55-capture", "build57-capture", "build57-import-drill",
-  "build48-capture", "build50-capture", "build54-capture",
-  "dedupe-finance-gift-stamps",
-  "finance-entity-routing-capture", "fix-build54-demo-photos",
-  "fix-demo-finance-ledger", "invitation-capture", "load-irs-ein-registry",
+  "backfill-campaign-attribution",                    "dedupe-finance-gift-stamps",
+   "fix-build54-demo-photos",
+  "fix-demo-finance-ledger",  "load-irs-ein-registry",
   // FIX-22: fills irs_bmf (the IRS EO BMF) straight into the database.
   "load-irs-bmf",
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",
@@ -77,21 +76,11 @@ const GUARDED_WRITERS = [
   // a real customer's account off a mistyped BASE is precisely the accident
   // this guard exists to prevent.
   "ckrh-provision",
-  // TRANS-1 — the fixture org the prod walk is driven against. It writes no
-  // donors and no gifts (the walk imports the file itself), but it creates an
-  // org, a login and a fund, so it is a writer and is guarded like one.
-  "trans1-walk-org",
-  // FIX-10 — the fixture org THIS build's prod walk is driven against. Unlike
-  // the TRANS-1 one it writes fourteen donors and twenty-three gifts, because
-  // the shape of the file is the point: an org whose whole giving history
-  // predates the current fiscal year. A writer twice over, guarded like one.
-  "fix10-walk-org",
   // BUILD-86 Part B — the demo org's own words.
   "seed-build86-vocabulary",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",
   "seed-fundraising-demo",
-  "build59-capture", "build59-install-demo-images",
-  "build64-capture",
+   "build59-install-demo-images",
   // BUILD-88a A.1 — the gift de-duplicator. DELETES rows, so it is a writer:
   // dry run by default, --apply to act, and the guard is the only way it can
   // reach a remote database.
@@ -101,29 +90,12 @@ const GUARDED_WRITERS = [
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter
 // than the guard — these are load/e2e fixtures that must never see prod).
 const SELF_REFUSING = [
-  // FIX-34 D — the QuickBooks + PayPal walk on the LOCAL stack (seeds a fixture org).
-  "fix34d-capture",
-  // QBO-IN — the QuickBooks read walk on the LOCAL stack (seeds the stand-in fixture org).
-  "qboin-walk",
   // FUNDRAISING-2 — the Fundraising walk org (real-shaped files) and its screenshots, on the LOCAL stack.
-  "fundraising2-walk-org", "fundraising2-walk",
-  // SWEEP-2 — the Donors, Data health and imports walk org (real-shaped files), on the LOCAL stack.
+      // SWEEP-2 — the Donors, Data health and imports walk org (real-shaped files), on the LOCAL stack.
   "sweep2-walk-org",
-  // FIX-34 E — the Tasks walk (thank-you draft, select mode at 390, morning email) on the LOCAL stack.
-  "fix34e-capture",
-  // FIX-34 C — Book a visit with two calendars and a refused Google API, on the LOCAL stack.
-  "fix34c-capture",
-  // FIX-2 B — captures every Reports export on the LOCAL stack (seeds a fixture org).
-  "fix2-b-capture-exports",
-  // FIX-3 D — captures the donor profile and its mockups on the LOCAL stack (seeds a fixture org).
-  "fix3-d-profile-capture",
-  // PROFILE-1 — the profile walk: drives a fixture org's record at 1440 and
-  // 390 beside the approved mockup. Loopback only, by an explicit refusal at
-  // the top of the file.
-  "profile1-capture",
   // BUILD-75 B.1 — the route-inventory walker. BOOTS server.js (schema init
   // runs), so it hard-refuses any non-loopback DATABASE_URL outright.
-  "build75-route-inventory","loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill",
+  "build75-route-inventory", "seed-loadtest",  "build58-stripe-drill",
   // BUILD-76 — the drift-vs-real-Stripe drill: same rig as build58's (scratch
   // server on :5621 + `stripe listen`), refuses any non-loopback BASE.
   "build76-drift-drill",
@@ -137,172 +109,29 @@ const SELF_REFUSING = [
   // routes on a loopback stack, so it refuses a non-loopback BASE outright;
   // there is no read-only mode for a walk whose point is that the writes land.
   "build99-walk",
-  // LANDING-1 — the walk. It opens the public landing page at 1440 and 390
-  // and reads it; it writes nothing at all. Loopback APP_URL only, and it
-  // refuses to run with NODE_ENV production.
-  "landing1-walk",
-  // LOST & FOUND — the walk. It uploads a donor fixture to the public page,
-  // downloads the PDF (which writes a lead row), and promotes one user to
-  // super admin and back to read the leads list. Loopback BASE and APP_URL
-  // only, refused otherwise, and it refuses to run with NODE_ENV production.
-  "lf1-walk",
-  // FIN-1 — the walk. It opens every Finance screen at 1440 and 390 and
-  // reads the numbers back; it writes nothing of its own, but it signs in as
-  // a real admin, so it refuses a non-loopback BASE or APP_URL outright and
-  // refuses to run with NODE_ENV production.
-  "fin1-walk",
-  // VOL-1 — the walk. It signs a volunteer up through the public page, checks
-  // somebody in and out (which writes hours), and switches one user's ROLE to
-  // volunteer_coordinator and back to prove the server-side boundary rather
-  // than a hidden tab. Loopback BASE and APP_URL only, refused otherwise, and
-  // it refuses to run with NODE_ENV production.
-  "vol1-walk",
-  // FIX-4 — the walk. It creates a journey and puts one donor in it through
-  // the real routes on a loopback stack, so it refuses a non-loopback BASE
-  // or APP_URL outright and refuses to run with NODE_ENV production. There
-  // is no read-only mode for a walk whose point is that the writes land.
-  "fix4-walk",
-  // FIX-5 — the walk. It creates journeys, retimes steps and saves them
-  // through the real routes on a loopback stack, so it refuses a non-loopback
-  // BASE or APP_URL outright and refuses to run with NODE_ENV production.
-  // There is no read-only mode for a walk whose point is that the writes land.
-  "fix5-walk",
-  // VOL-2 — the walk. It adds a volunteer, imports a file and undoes the
-  // import through the real routes, and signs up a fresh org for the empty
-  // case, so it refuses a non-loopback BASE or APP_URL outright and refuses
-  // to run with NODE_ENV production. There is no read-only mode for a walk
-  // whose point is that the writes land.
-  "vol2-walk",
-  // FIX-6 — the walk. It approves and skips real items in the approval queue
-  // through the real routes, so it refuses a non-loopback BASE or APP_URL
-  // outright and refuses to run with NODE_ENV production. There is no
-  // read-only mode for a walk whose point is that the writes land.
-  "fix6-walk",
-  // EVENTS-1 — the walk. It registers through the PUBLIC page and checks
-  // somebody in at the door, through the real routes, so it refuses a
-  // non-loopback BASE or APP_URL outright and refuses to run with NODE_ENV
-  // production. There is no read-only mode for a walk whose point is that the
-  // writes land.
-  "events1-walk",
-  // BUILD-102 (Steward Give) — the walk. It writes a form, a gift, a tribute draft
-  // and a match pledge through the real routes, so a non-loopback BASE or APP_URL is
-  // refused outright rather than guarded: there is no read-only mode for a walk
-  // whose whole point is that the writes land.
-  "build102-walk",
-  // BUILD-78 Part 0 — the cross-org field_id red-run reproduction. Runs
-  // entirely through tests/helpers, whose api()/q() refuse any non-loopback
-  // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and
-  // the source note below keeps this suite's pattern check honest.
-  "build78-repro-crossorg-fieldid",
-  // BUILD-88a — the walk. WRITES (it logs a real conversation and a real gift
-  // on the demo org) and refuses any non-loopback API, app or database.
-  "build88a-walk",
-  // BUILD-88b B.1 — ten cheques, before and after. WRITES (it records the same
-  // ten gifts twice, on its own scratch org) and refuses non-loopback.
-  "build88b-deposit-timing",
-  // BUILD-88b — the walk. WRITES (it records a real deposit on its own scratch
-  // org) and refuses non-loopback.
-  "build88b-walk",
-  // BUILD-88c — the walk. WRITES (it seeds its own scratch org and saves a
-  // draft campaign there) and refuses any non-loopback API, app or database;
-  // the test send it presses is captured by the walk's own :5602 sink.
-  "build88c-walk",
   // BUILD-89 — the demo file. WRITES 1,000 donors and their giving through the
   // API; loopback by default, and a non-loopback BASE needs
   // --i-know-this-is-prod, because seeding the demo org IS a prod write.
   "build89-demo-seed",
-  // BUILD-101 — the memberships demo. WRITES its own org (never org_creo) and
-  // a signed test webhook; refuses any non-loopback API or database outright.
-  "build101-demo-seed",
   // FIX-55 — the import walk and the preview timings. Each seeds its own org on
   // the LOCAL stack and refuses a non-loopback API or database outright.
-  "import-walk",
-  "preview-perf"];
+  "import-walk"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [
-  // BUILD-85 — the follow-up engine walk. Loopback :5601/:4173, hardcoded.
-  "build85-capture",
-  // BUILD-86 — the Home/Dashboard walk. Loopback :5601/:4173, hardcoded.
-  "build86-capture",
-  // BUILD-87 F.3 — the Home layout walk. Loopback :5601/:4173, hardcoded.
-  "build87-f3-walk",
-  // BUILD-87 F.1 — the modal-shell walk. Loopback :5601/:4173, hardcoded.
-  "build87-f1-walk",
-  // BUILD-89 — the Home walk (BUILD-88d's, folded forward: 88d's proportions
-  // live inside 89's shape, and two walks measuring one screen is one too
-  // many). Loopback :5601/:4173, hardcoded.
-  "build89-walk",
-  // NAV-1 — the grouped-sidebar walk. Loopback :5631/:4193 by default,
-  // hardcoded; APP/API are the per-worktree port block, never a remote host.
-  "nav1-walk",
-  // AGENT-3: the Agent walk. Loopback only (refuses anything else); it plans,
-  // runs and approves on the LOCAL scratch Harborlight it is pointed at.
-  "agent3-walk",
-  // VOICE-1: the Tell Steward walk. Loopback only (refuses anything else and
-  // NODE_ENV production); it files memos, says yes to a card and undoes, on
-  // the LOCAL scratch Harborlight it is pointed at.
-  "voice1-walk",
-  // VOICE-3: the talk-to-Steward walk. Loopback only (refuses anything else
-  // and NODE_ENV production); it files a memo, plans and asks, on the LOCAL
-  // scratch Harborlight it is pointed at.
-  "voice3-walk",
-  // VOICE-4: Margaret's memo, before and after. Loopback only (refuses anything
-  // else and NODE_ENV production); it files memos, records and removes a gift,
-  // and puts her back as she was, on the LOCAL scratch Harborlight.
-  "voice4-walk",
-  // IMPORT-3: the event-sheet walk. Loopback only (refuses anything else and
-  // NODE_ENV production); it makes its own org on the LOCAL scratch database,
-  // imports the fake-name fixture and undoes it.
-  "import3-walk",
-  // AUTO-1: the journey auto-send walk. Loopback only (refuses anything else and
-  // NODE_ENV production); it turns switches on the LOCAL scratch Harborlight,
-  // a demonstration org, which never sends.
-  "auto1-walk",
-  // CHECK-2: the Henrietta Duffield check walk. Loopback API, APP and
-  // DATABASE_URL only (refuses anything else and NODE_ENV production); it
-  // uploads and confirms a check on the LOCAL scratch Harborlight.
-  "check2-walk",
-  // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
-  // it drafts and saves on the LOCAL scratch database it is pointed at.
-  "fix30-walk",
-  // FIX-11 Part 5 — the BCC-address walk. Loopback :5841/:4313 by default,
-  // hardcoded. It registers its own throwaway org and only reads a screen.
-  "fix11-bcc-walk",
-  // FIX-11 Part 4 — the gift-file import walk. Loopback :5831/:4303 by
-  // default, hardcoded. It registers its own throwaway org, uploads a gift
-  // file into it and undoes the import again; every write is through the API.
-  "fix11-import-walk",
-  // FIX-11 Part 3 — the bookkeeper-export walk. Loopback :5821/:4293 by
-  // default, hardcoded. It READS the demo org (which is the only org with a
-  // month of money in it) and writes nothing: its only non-GET is the login.
-  "fix11-books-walk",
-  // FIX-11 Part 1 — the audit-log and "+ Log → Gift" walk. Loopback
-  // :5801/:4273 by default, hardcoded; APP/API are the per-worktree port
-  // block, never a remote host. It registers its own throwaway org and
-  // writes only through the API, like every walk above it.
-  "fix11-audit-walk",
-  // FIX-11 Part 2 — the seating walk. Loopback :5811/:4283 by default,
-  // hardcoded; APP/API are the per-worktree port block, never a remote host.
-  // It registers its own throwaway org and writes only through the API.
-  "fix11-seating-walk",
-  "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
+];
 
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
-  // CLEAN-1 follow-up: counts rows the July merge left pointing at folded records, in a READ ONLY transaction.
-  "clean1-orphan-report",
   // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
   "mail-preflight",
   // NUMBERS-1: checks an org's numbers against its gifts; SELECTs only, counts-only with --counts.
   "check-numbers",
-  "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
-  "build61-prod-verify", "check-webhook-subscriptions",
+         "check-webhook-subscriptions",
   // INT-PROD-1: one PayPal token POST, then GET-only Transaction Search; counts and totals only.
   "verify-paypal",
-  "consistency-audit", "finance-overview-capture",
-  // BUILD-73 Part 4 — the landing page was rebuilt, and FIVE scripts that
+  "consistency-audit",    // BUILD-73 Part 4 — the landing page was rebuilt, and FIVE scripts that
   // policed the old one were consolidated into this one:
   //   landing-funnel-verify · landing-hero-verify · landing-crispness-prod
   //   landing-image-verify  · landing-motion-verify
@@ -313,15 +142,11 @@ const PROD_READONLY = [
   // rebuilt page has no product screenshots, so that subject is gone rather
   // than unwatched. See audit/BUILD-73-FINDINGS.md.
   "landing-prod-verify",
-  // LANDING-5 — the Home and /pricing mockup captures. Opens pages in a
-  // browser and writes screenshots to docs/landing-5; no request writes.
-  "landing5-capture",
   // BUILD-78 — the independent EAV→JSONB migration reconciliation. Connects to
   // the DB directly and issues ONLY SELECTs (no INSERT/UPDATE/DELETE, no write
   // HTTP); safe to run read-only against prod to certify zero-loss from the
   // SURVIVING legacy tables, which the migration never drops.
-  "build78-migration-reconcile",
-  "screenshot-matrix", "topbar-verify", "status",
+     "screenshot-matrix", "topbar-verify", "status",
   // BUILD-72 Step A — the cents measurement. READ-ONLY by construction: it
   // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It
   // verifies identity (product + database) before the connection is used.
@@ -336,18 +161,10 @@ const PROD_READONLY = [
   // /health + current_database() before the connection is used for anything,
   // --i-know-this-is-prod required for a remote target). Never writes.
   "build75-phase0-audit",
-  // BUILD-72 Part 4 — a pure SOURCE scan (reads server.js/db.js off disk and
-  // counts civil-date/instant confusion sites). Touches no server, no database
-  // and no network at all.
-  "build72-date-audit",
   // BUILD-73 Part 2 — a pure SOURCE scan (reads server.js/db.js off disk and
   // finds any money value rounded to a whole dollar). No server, no database,
   // no network. Run BY tests/money-cents.test.js so the enumeration cannot drift.
   "build73-money-audit",
-  // BUILD-86 C.2 — renders twenty notes from shared/homeNote.js to a fixture a
-  // human reads in a row. Pure: no server, no database, no network, and the
-  // date is pinned so a regeneration only moves when the grammar moves.
-  "build86-notes-fixture",
   // BUILD-97 Part 2 — the numeric census. A pure SOURCE scan: reads the
   // client's active surfaces off disk and counts the places a number is drawn
   // for a person to read. No server, no database, no network. Run BY
@@ -369,28 +186,20 @@ const PROD_READONLY = [
 // Browser-driving captures: default loopback; any writes ride the logged-in
 // app UI (Playwright), not script-issued fetches. Loopback default asserted.
 const LOOPBACK_CAPTURES = [
-  // BUILD-72 Part 5 — the walk. Drives the logged-in app in Playwright and
-  // only reads; its one script-issued fetch is /auth/login.
-  "build72-capture",
-  "build14-capture", "build15-capture", "build17-capture", "build19-capture",
-  "build19-home-capture", "build21-capture", "build22-capture", "build28-capture",
-  "build34-capture", "build36-invite-capture", "build40-mobile-capture", "build61-capture",
-  "build41-capture", "build46-capture", "creo-goals-capture",
-  "donor-profile-gating-capture", "goal-consistency-capture", "import-stage-capture",
-];
+                               ];
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "history-index": "ARCH-1 — prints the index of docs/history/ from the files there. Reads only; no BASE, no DB, no network, no writes",
+  "needs-jonathan": "ARCH-1 — prints what waits on Jonathan from docs/needs-jonathan/. Reads only; no BASE, no DB, no network, no writes",
+  "arch-check": "ARCH-1 — the architecture ratchet. Reads the tracked tree (git ls-files) and its own baselines in docs/architecture/baseline/; --update rewrites only those baselines. No BASE, no DB, no network",
   "prod-ai-smoke": "HARDEN-1 — signs in to the prod demo and POSTs ONLY to /ask/preview and /agent/preview, both declared read-only in auditTrail.READ_ONLY_POSTS (nothing saved); checked below",
   "error-digest": "HARDEN-1 — reads Railway log lines (stdin or a file) and writes one markdown file under docs/errors/; no BASE, no DB, no app write",
   "local-preview": "serves client/dist and proxies vercel.json's rewrites to a LOOPBACK-ONLY API; refuses any non-loopback API and writes nothing",
-  "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
-  "build28-prepare-images": "local image generation, no network writes",
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
   "stripe-live-prices": "writes to STRIPE, not the app (PRICING-1 bands); refuses a live key without --live and --live with a test key",
   "build95-cheque-drill": "BUILD-95 — the cheque-reading boundary drill: reads local image files, calls the Anthropic API directly and prints what came back. No BASE, no DATABASE_URL, no Steward server, no app write of any kind; it refuses to run under NODE_ENV=production",
   "capture1-make-fixtures": "CAPTURE-1: draws the fake check, slip and letter fixtures with sharp and pdfkit into tests/fixtures/capture1/; no BASE, no DATABASE_URL, no network, no app write",
-  "fix45-no-em-dash": "FIX-45 2.6: rewrites em dashes in the repo's OWN source files (the strings tests/polish2/enGb.js scanEmDash finds). No BASE, no DATABASE_URL, no network, no app write",
   "audit-gate": "BUILD-75 B.6 — runs `npm audit --json` on the local package and compares against audit/npm-audit-allowlist.json; no BASE, no DB, no app writes",
   // ── CHORE-2 — the sharded battery's four helpers. None of them has a BASE,
   // a DATABASE_URL or any notion of an app: they read a suite list, a plan, a
@@ -398,15 +207,16 @@ const EXEMPT = {
   // a temp directory. The thing that DOES touch a database is tests/shard.sh,
   // which is a test file rather than a script, and it only ever creates and
   // drops `steward_shard_<n>` on the loopback scratch Postgres.
-  "shard-plan": "CHORE-2 — pure scheduling: reads audit/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
-  "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is audit/suite-timings.json. No BASE, no DB, no network",
+  "shard-plan": "CHORE-2 — pure scheduling: reads .generated/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
+  "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is .generated/suite-timings.json. No BASE, no DB, no network",
   "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only write is that baseline file. No BASE, no DB, no app calls",
-  "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
+  "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/ops/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
 // ── 1. Every script file is classified ──────────────────────────────────────
-const all = fs.readdirSync(path.join(root, "scripts")).filter(f => f.endsWith(".js")).map(f => f.replace(/\.js$/, ""));
+const all = Object.keys(where);
+ok(!fs.readdirSync(path.join(root, "scripts")).some(f => f.endsWith(".js")), "no script sits in the scripts/ root (ARCH-1: ops, ci or once)");
 const classified = new Set([...GUARDED_WRITERS, ...SELF_REFUSING, ...LOOPBACK_HARDCODED, ...PROD_READONLY, ...LOOPBACK_CAPTURES, ...Object.keys(EXEMPT)]);
 for (const s of all) {
   ok(classified.has(s), `scripts/${s}.js is not classified in tests/script-guards.test.js — decide whether it writes and guard it`);
@@ -477,8 +287,6 @@ for (const s of LOOPBACK_CAPTURES) {
   const slp = read("stripe-live-prices");
   ok(/--live/.test(slp) && /sk_live|rk_live/.test(slp) && /STRIPE_BILLING_SECRET_KEY/.test(slp),
      "stripe-live-prices refuses live without --live and reads only the billing key");
-  const prep = read("build28-prepare-images");
-  ok(!/process\.env\.BASE|method:\s*["'](POST|PUT|PATCH|DELETE)/.test(prep), "build28-prepare-images stays network-write-free");
 }
 
 // ── 8. prodGuard semantics (in-process, injected env/argv, no exits) ────────
@@ -523,8 +331,8 @@ fs.rmSync(tmp, { recursive: true, force: true });
 // hard-refused from any non-loopback target by the assertions above, so their
 // orgs only ever exist in a scratch database with no real Resend key — a
 // different guarantee, and a stronger one.
-for (const f of fs.readdirSync(path.join(root, "scripts")).filter(n => /^seed-.*\.js$/.test(n))) {
-  const src = fs.readFileSync(path.join(root, "scripts", f), "utf8");
+for (const f of all.filter(n => /^seed-/.test(n)).map(n => n + ".js")) {
+  const src = read(f.replace(/\.js$/, ""));
   if (!/INSERT INTO orgs/.test(src)) continue;
   ok(/is_demo_org/.test(src), `${f} must create its orgs with is_demo_org (a seeded org is fiction)`);
   ok(/emails_enabled/.test(src), `${f} must create its orgs with emails_enabled=false (a seeded org mails nobody)`);
@@ -571,7 +379,7 @@ ok(nulFiles.length === 0,
 // about $2 a run, and Jonathan starts it by hand. Red if nightly-ai.yml grows a
 // schedule or a push trigger back, loses workflow_dispatch, or if any workflow
 // that runs on a schedule or a push reaches the paid suite. The prod AI smoke
-// (scripts/prod-ai-smoke.js, one Ask and one Agent plan after a deploy) stays.
+// (scripts/ci/prod-ai-smoke.js, one Ask and one Agent plan after a deploy) stays.
 {
   const wfDir = path.join(root, ".github", "workflows");
   const wfs = fs.readdirSync(wfDir).filter(f => /\.ya?ml$/.test(f));
@@ -594,7 +402,7 @@ ok(nulFiles.length === 0,
   ok(/issues: write/.test(perms) && !/contents: write|pull-requests/.test(perms), "the error digest asks only for issues write (and reads the code)");
   ok(!/gh pr |git push|git commit/.test(dg) && /gh issue create/.test(dg) && /gh issue edit/.test(dg), "the error digest opens or edits an issue, and never a branch or a pull request");
   const ci = fs.readFileSync(path.join(wfDir, "ci.yml"), "utf8");
-  ok(/node scripts\/prod-ai-smoke\.js/.test(ci), "the post-deploy prod AI smoke still runs in ci.yml");
+  ok(/node scripts\/ci\/prod-ai-smoke\.js/.test(ci), "the post-deploy prod AI smoke still runs in ci.yml");
 }
 
 // ── FIX-23 · THE DEMO TEARDOWN IS COMPLETE BY CONSTRUCTION ─────────────────
@@ -615,7 +423,7 @@ ok(nulFiles.length === 0,
 (async () => {
   const { Client } = require("pg");
   const { execFileSync } = require("child_process");
-  const { teardownPlan } = require("../scripts/seed-demo.js");
+  const { teardownPlan } = require("../scripts/ci/seed-demo.js");
   const url = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
   const client = new Client({ connectionString: url });
   try { await client.connect(); }
@@ -659,7 +467,7 @@ ok(nulFiles.length === 0,
 
   for (const run of [1, 2]) {
     let out = "", code = 0;
-    try { out = execFileSync("node", ["scripts/seed-demo.js"], { cwd: root, env: process.env, encoding: "utf8", stdio: "pipe" }); }
+    try { out = execFileSync("node", ["scripts/ci/seed-demo.js"], { cwd: root, env: process.env, encoding: "utf8", stdio: "pipe" }); }
     catch (e) { code = e.status; out = String(e.stdout || "") + String(e.stderr || ""); }
     ok(code === 0, `the demo seeds on run ${run} of 2 in a row on one database` + (code ? `:\n${out.split("\n").slice(-12).join("\n")}` : ""));
   }

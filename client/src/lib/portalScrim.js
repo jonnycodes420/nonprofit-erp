@@ -40,9 +40,3 @@ export function compositeBlackOver(rgb, alpha) {
   return rgb.map(c => Math.round(c * (1 - alpha)));
 }
 
-// The contrast a text color gets over an image pixel once the scrim (at that
-// pixel's vertical fraction) is composited under it.
-export function textContrastOverPixel(pixelRgb, yFraction, textRgb = [255, 255, 255]) {
-  const scrimmed = compositeBlackOver(pixelRgb, scrimAlphaAt(yFraction));
-  return contrastRatio(scrimmed, textRgb);
-}

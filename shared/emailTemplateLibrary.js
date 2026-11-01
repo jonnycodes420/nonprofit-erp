@@ -254,8 +254,6 @@ export const EMAIL_STARTERS = [
   },
 ];
 
-export const STARTER_KEYS = EMAIL_STARTERS.map(s => s.key);
-
 export function starterByKey(key) {
   const s = EMAIL_STARTERS.find(x => x.key === key);
   return s ? JSON.parse(JSON.stringify(s)) : null;

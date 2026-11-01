@@ -44,7 +44,6 @@ export const METRICS = [
     definition: "Open follow-ups on each officer's own people, with the ones past their due date counted separately. A snoozed follow-up is not counted until it comes back.",
     kind: "count" },
 ];
-export const METRIC_IDS = METRICS.map(m => m.id);
 export function metric(id) { return METRICS.find(m => m.id === id) || null; }
 export function definitionFor(id) { const m = metric(id); return m ? m.definition : ""; }
 

@@ -240,7 +240,7 @@ async function sendToDonor(opts, deliver) {
     return { data: null, error: { name: "send_gate_unreadable", message: "send_gate_unreadable: " + e.message } };
   }
   // HARDEN-1: the arm that let it go, and to whom (ids, never addresses), ride
-  // to the email_log row (scripts/auto-mail-switches-readonly.sql reads it).
+  // to the email_log row (scripts/ops/auto-mail-switches-readonly.sql reads it).
   if (d.send) {
     const out = await deliver(Object.assign(opts, { _stewardGate: d.why, _stewardGateDonors: d.donorIds || null }));
     if (out && !out.error) {

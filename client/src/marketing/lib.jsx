@@ -180,18 +180,6 @@ export function Block({ flip, tint = "cream", h, p, sh, sp, ui, photo }) {
   );
 }
 
-// LANDING-4 · a real product screen: a screenshot taken from the Harborlight
-// demo organisation (client/public/marketing/product), never a mock. `cap`
-// says in one line what the screen shows.
-export function Shot({ k, alt, cap, cls = "" }) {
-  return (
-    <div className={"shot " + cls} data-shot={k}>
-      <img src={"/marketing/product/" + k + ".webp"} alt={alt} loading="lazy" decoding="async" />
-      {cap && <p className="shot-cap">{cap}</p>}
-    </div>
-  );
-}
-
 // LANDING-5 · a person and the product, side by side: a photograph of
 // someone at work, with a tight crop of the Harborlight screen overlapping
 // its corner. Neither is ever drawn larger than its file (photos are 1000px
@@ -335,17 +323,6 @@ export function FinalCta() {
   );
 }
 
-// The homepage's own pair, which the reference splits in two: the demo on the
-// left, starting now on the right. No tour on either side.
-export function ReadyPair() {
-  return (
-    <section className="ready"><div className="wrap ready-g">
-      <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a call</Pill></div>
-      <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
-    </div></section>
-  );
-}
-
 // The reference's statBand(n, dark): the first n research numbers, each with
 // its own source link, then every source in full.
 export function StatBand({ n, dark }) {
@@ -402,20 +379,6 @@ export function Person({ t, i }) {
 
 export function People() {
   return <div className="wrap lead-g">{LEADERSHIP_SHOWN.map((t, i) => <Person key={t[0]} t={t} i={i} />)}</div>;
-}
-
-// The homepage band that stands where the reel did: one line, one button.
-export function LeadBand() {
-  return (
-    <section style={{ paddingTop: 0 }}><div className="wrap"><div className="lead-band">
-      <div>
-        <div className="eyebrow">Leadership</div>
-        <h2 className="mix h-m" style={{ marginTop: 16 }}>A founder who answers, <b>advisors who've raised.</b></h2>
-        <p>Steward is led by its founder with advisors from nonprofit development, arts and philanthropy. Funded by angel investment.</p>
-      </div>
-      <Pill href="/leadership">Meet our leadership</Pill>
-    </div></div></section>
-  );
 }
 
 // ── Article covers ────────────────────────────────────────────────────────

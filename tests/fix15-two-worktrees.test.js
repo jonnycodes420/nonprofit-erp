@@ -36,7 +36,9 @@ function childEnv(tag) {
   }
   // A copy, so the nested runs never rewrite this repo's timings file.
   const timings = path.join("/tmp", `fix15-timings-${tag}-${process.pid}.json`);
-  fs.copyFileSync(path.join(root, "audit/suite-timings.json"), timings);
+  // ARCH-1: the timings are generated (git-ignored); a fresh checkout has none.
+  const src = path.join(root, ".generated/suite-timings.json");
+  if (fs.existsSync(src)) fs.copyFileSync(src, timings); else fs.writeFileSync(timings, "{}");
   Object.assign(env, {
     STEWARD_WT_TAG: tag, SHARDS: "2", SUITES, SHARD_BUILD_DIST: "0", SHARD_PREVIEW: "0",
     SHARD_TIMINGS: timings,

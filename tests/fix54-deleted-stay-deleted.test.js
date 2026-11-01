@@ -20,8 +20,8 @@
 //      hand, undo the import: the hand-deleted stay deleted.
 //   §5 HARDEN-2: every door that brings someone back (Undo, the bulk Undo,
 //      Bring them back, and Load sample data after Clear) leaves no deletion
-//      record open, so scripts/stale-deletions-readonly.sql counts none; and
-//      scripts/close-stale-deletions.js closes the ones left from before.
+//      record open, so scripts/ops/stale-deletions-readonly.sql counts none; and
+//      scripts/ci/close-stale-deletions.js closes the ones left from before.
 //
 // HOW IT GOES RED ON MAIN: the bulk delete ignores the confirmed count (§1),
 // and the import makes the deleted person again as someone new, with no
@@ -198,7 +198,7 @@ async function opened(org, id, tag) {
            VALUES ($1,$2,'donors',$3,'{"__soft":true}'::jsonb,'system:test','test')`, ["del_f54_" + tag, org, id]);
 }
 const STALE_SQL = () => {
-  const sql = require("fs").readFileSync(require("path").join(__dirname, "..", "scripts", "stale-deletions-readonly.sql"), "utf8")
+  const sql = require("fs").readFileSync(require("path").join(__dirname, "..", "scripts", "ops", "stale-deletions-readonly.sql"), "utf8")
     .replace(/--.*$/gm, "").replace(/BEGIN TRANSACTION READ ONLY;|ROLLBACK;/g, "").trim().replace(/;$/, "");
   return sql;
 };
@@ -250,12 +250,12 @@ async function deletionRecordsClose(tok) {
   ok("§5d reloaded, the person is a new row and no deletion record names them", cl.status === 200 && l2.status === 200 && again && again.deleted_at === null
      && (await openFor(ORG_S, gone)) === 0 && (await staleIn(ORG_S)) === 0, [cl.status, l2.status, again, await openFor(ORG_S, gone)]);
 
-  // §5e scripts/close-stale-deletions.js: --org required, a dry run writes
+  // §5e scripts/ci/close-stale-deletions.js: --org required, a dry run writes
   // nothing, --apply closes exactly the open records of people already back.
   const s = sample.find(id => id !== gone);
   await opened(ORG_S, s, "s_old");
   const { spawnSync } = require("child_process");
-  const script = require("path").join(__dirname, "..", "scripts", "close-stale-deletions.js");
+  const script = require("path").join(__dirname, "..", "scripts", "ci", "close-stale-deletions.js");
   const runScript = args => spawnSync(process.execPath, [script, ...args], { env: { ...process.env, DB_SSL: "disable" }, encoding: "utf8" });
   const noOrg = runScript(["--apply"]);
   ok("§5e the script refuses to run without --org", noOrg.status === 2 && (await openFor(ORG_S, s)) === 1, [noOrg.status, noOrg.stderr]);
@@ -263,9 +263,9 @@ async function deletionRecordsClose(tok) {
   ok("§5e a dry run names the record and changes nothing", dry.status === 0 && dry.stdout.includes("del_f54_s_old") && /1 live person with 1 open deletion record/.test(dry.stdout)
      && !/@|Sample Person/.test(dry.stdout) && (await openFor(ORG_S, s)) === 1, [dry.status, dry.stdout, dry.stderr]);
   const app = runScript(["--org", ORG_S, "--apply"]);
-  const audit = await one("SELECT user_id, record_count FROM fin_audit_log WHERE org_id=$1 AND request_path='scripts/close-stale-deletions.js' ORDER BY created_at DESC LIMIT 1", [ORG_S]);
-  ok("§5e --apply closes it, stamped system:scripts/close-stale-deletions", app.status === 0 && (await openFor(ORG_S, s)) === 0 && (await staleIn(ORG_S)) === 0
-     && audit && audit.user_id === "system:scripts/close-stale-deletions" && audit.record_count === 1, [app.status, app.stdout, app.stderr, audit]);
+  const audit = await one("SELECT user_id, record_count FROM fin_audit_log WHERE org_id=$1 AND request_path='scripts/ci/close-stale-deletions.js' ORDER BY created_at DESC LIMIT 1", [ORG_S]);
+  ok("§5e --apply closes it, stamped system:scripts/ci/close-stale-deletions", app.status === 0 && (await openFor(ORG_S, s)) === 0 && (await staleIn(ORG_S)) === 0
+     && audit && audit.user_id === "system:scripts/ci/close-stale-deletions" && audit.record_count === 1, [app.status, app.stdout, app.stderr, audit]);
   await api("POST", "/org/clear-sample-data", stok, {});
 }
 

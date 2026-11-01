@@ -76,7 +76,7 @@ export const DIMENSIONS = {
   event: "event", source: "giving source", payment_method: "payment method", level: "giving level",
   lifecycle: "lifecycle", city: "city", state: "state", owner: "owner", tag: "tag",
 };
-export const DIMENSION_KEYS = Object.keys(DIMENSIONS);
+const DIMENSION_KEYS = Object.keys(DIMENSIONS);
 
 // ── PERIODS ────────────────────────────────────────────────────────────────
 export const PERIOD_KINDS = ["this_month", "last_month", "month", "this_quarter", "last_quarter", "this_year", "last_year",

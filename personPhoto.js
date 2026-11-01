@@ -78,18 +78,6 @@ function verifyPhotoUrl({ orgId, assetId, e, s, now = Date.now(), env } = {}) {
   return { ok: true, expiresAt: exp };
 }
 
-// The mark shown when there is no photo. One or two letters, never a silhouette
-// — a grey stranger-shaped icon on a record is worse than nothing; initials at
-// least say whose record you are on. Organisations get one letter (an
-// organisation's "last name" is not a surname).
-function initialsFor(name, kind) {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  const letter = (w) => (Array.from(w).find(c => /\p{L}|\p{N}/u.test(c)) || "").toUpperCase();
-  if (kind === "organization" || words.length === 1) return letter(words[0]) || "?";
-  return (letter(words[0]) + letter(words[words.length - 1])) || "?";
-}
-
 // ── BUILD-37 G5 — fetching a URL somebody else's file told us to fetch ──────
 // The import mapper can point at a photo URL that came out of Equal Force,
 // Bloomerang or Little Green Light. That is a server making an outbound
@@ -156,6 +144,5 @@ const PHOTO_FETCH_TIMEOUT_MS = 10_000;
 module.exports = {
   PHOTO_SIZE, PHOTO_MAX_BYTES, PHOTO_MAX_STR, PHOTO_URL_TTL_MS, PHOTO_ASSET_KIND,
   PHOTO_FETCH_TIMEOUT_MS,
-  signPhotoUrl, verifyPhotoUrl, initialsFor, checkRemoteImageUrl,
-  _photoSignature: photoSignature,
+  signPhotoUrl, verifyPhotoUrl, checkRemoteImageUrl,
 };

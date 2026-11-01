@@ -24,6 +24,12 @@ set -u
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root" || exit 1
 
+# ARCH-1 moved the scripts this hook calls into scripts/ci/. core.hooksPath is
+# one absolute folder shared by every worktree, so this hook also runs for
+# branches cut before the move: each script is found where the pushed tree
+# keeps it, and the ratchet runs only where it exists.
+ci_script() { if [ -f "scripts/ci/$1" ]; then echo "scripts/ci/$1"; else echo "scripts/$1"; fi; }
+
 # ── Lint always. It is two seconds and it catches the class of mistake that
 # ── otherwise reaches a browser: a bad import, a hook called conditionally, a
 # ── JSX tag that does not close.
@@ -50,11 +56,22 @@ fi
 # false positives is a gate people learn to bypass. A self-reference needs no
 # judgement at all: it is always a bug.
 echo "[pre-push] tdz-scan (self-references)"
-if ! node scripts/tdz-scan.js; then
+if ! node "$(ci_script tdz-scan.js)"; then
   echo ""
   echo "[pre-push] BLOCKED: a const reads itself. That is always a bug — it throws"
   echo "[pre-push] ReferenceError at runtime and takes the screen to its error boundary."
   echo "[pre-push] Fix the declaration; do not --no-verify past this one."
+  exit 1
+fi
+
+# ── THE ARCHITECTURE RATCHET ALWAYS (ARCH-1). A second, and it is the same
+# ── check CI's guards job runs: big files, gift SQL in routes, fiscal-year
+# ── copies, scripts in the root, tests on the real clock, org-specific code
+# ── and committed images. A count may go down, never up.
+echo "[pre-push] arch-check"
+if [ -f scripts/ci/arch-check.js ] && ! node scripts/ci/arch-check.js; then
+  echo ""
+  echo "[pre-push] BLOCKED: the architecture ratchet went up (docs/architecture/ARCHITECTURE.md)."
   exit 1
 fi
 
@@ -132,10 +149,10 @@ case "$mode" in
     # FIX-60 item 6: against a server that is already up, the browser legs use
     # whatever client/dist is here. A dist built for that server from an older
     # commit (or before an uncommitted edit) is rebuilt, never tested as if it
-    # were this push. scripts/dist-fresh.js is the one check; run-all.sh's
+    # were this push. scripts/ci/dist-fresh.js is the one check; run-all.sh's
     # sharded runs use the same one.
     if [ -z "$self" ]; then
-      node scripts/dist-fresh.js --rebuild --if-present --api "$hbase" \
+      node scripts/ci/dist-fresh.js --rebuild --if-present --api "$hbase" \
         || echo "[pre-push] WARNING: the client rebuild failed — the browser legs will skip"
     fi
     if ! env $self SUITES="$selection" bash tests/run-all.sh; then

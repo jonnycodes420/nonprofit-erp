@@ -21,7 +21,7 @@ const shared   = read("client/src/components/shared.jsx");
 const pipeline = read("client/src/components/Pipeline.jsx");
 const reports  = read("client/src/components/Reports.jsx");
 const donors   = read("client/src/components/Donors.jsx");
-const pricing  = read("client/src/pages/Pricing.jsx");
+const pricing  = read("client/src/marketing/pages/pricing.jsx");   // ARCH-1: the page /pricing renders
 const app      = read("client/src/App.jsx");
 const server   = read("server.js");
 
@@ -66,40 +66,10 @@ const serverAll = ["server.js", ...fs.readdirSync(path.join(__dirname, "..", "ro
 ok(!/requirePlan\(/.test(serverAll), "no server route is wrapped in requirePlan()");
 ok(!/"plan_required"/.test(serverAll), "the server never answers plan_required");
 
-// ── Pricing page starts a REAL Stripe Checkout for the chosen plan ─────────
-ok(/import\s*\{\s*apiFetch\s*\}\s*from\s*"\.\.\/api"/.test(pricing), "Pricing imports apiFetch");
-// GTM-1a — there is ONE plan now, in three BANDS, so the page iterates
-// `TIERS` and the handler takes a tier id plus a cadence rather than a plan
-// object. Every behaviour below is the same behaviour; only the noun changed.
-// What must not change, and is what this block is actually for: the button
-// starts a REAL Checkout, the browser is sent to Stripe's URL, an org sees
-// which band it is already on instead of a button that re-buys it, the
-// button says it is working, and a configuration failure is a sentence
-// rather than a dead button.
-ok(/async function startCheckout\(tierId\)/.test(pricing), "Pricing has a startCheckout(tierId) handler");
-ok(/apiFetch\("\/billing\/create-checkout",\s*\{[\s\S]{0,120}plan:\s*`\$\{tierId\}_\$\{interval\}`/.test(pricing),
-   "startCheckout POSTs /billing/create-checkout with the band AND the cadence");
-ok(/window\.location\.href\s*=\s*r\.url/.test(pricing), "startCheckout redirects the browser to the returned Stripe URL");
-ok(/startCheckout\(t\.id\)/.test(pricing), "the band button calls startCheckout(t.id)");
-
-// ── Plan-aware button states: current-plan handled, loading + honest errors ─
-ok(/const\s+currentTier\s*=/.test(pricing) && /subActive/.test(pricing),
-   "Pricing computes the current band (only an ACTIVE sub counts as current)");
-ok(has(pricing, "Your current plan"), "the org's active band says so (not a re-checkout button)");
-ok(/checkingOut\s*===\s*t\.id/.test(pricing), "the button reflects an in-flight (loading) state per band");
-ok(has(pricing, "plan_not_configured") || /No Stripe price/i.test(pricing), "a failed create-checkout shows a clean message, never a dead button");
-// FIX-4 6 — the button names the PLAN now ("Choose Sapling"), because the
-// approved section gives every band a name and "this band" was the phrasing
-// of the page that had none. Still the same assertion: an authed org that is
-// not already on a band gets a checkout button, not a dead card.
-ok(/Choose\s*" \+ t\.name|Choose \$\{t\.name\}|"Choose " \+ t\.name/.test(pricing),
-   "authed non-current bands get a checkout label naming the plan");
-
-// GTM-1a — the two public actions, side by side, and the one sentence that
-// defines the thing the price is charged on.
-ok(/data-testid="pricing-start"/.test(pricing) && /Start now/.test(pricing), "the page's primary action is Start now");
-ok(/data-testid="pricing-book"/.test(pricing) && /Book a call/.test(pricing), "…beside Book a call");
-ok(/recordSentence/.test(pricing), "…and the page renders the one sentence that defines a record");
+// ARCH-1: the in-app checkout assertions read client/src/pages/Pricing.jsx,
+// which nothing imported (the /pricing route renders marketing/pages/pricing.jsx).
+// They went with that file; checkout itself is covered by close-link
+// and the server checks below.
 
 // ── Founding stays off-menu (never rendered on the public pricing page) ────
 ok(!/id:\s*"founding"/.test(pricing), "the founding-partner plan is NOT surfaced on the pricing page");

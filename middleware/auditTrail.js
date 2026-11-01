@@ -112,12 +112,6 @@ function tableCandidates(resource, tables) {
   return out;
 }
 
-// Kept as the single-answer form for callers that only need a name.
-function tableFor(resource, tables) {
-  const c = tableCandidates(resource, tables);
-  return c.length ? c[0] : null;
-}
-
 // ── WHO ──────────────────────────────────────────────────────────────────
 // In priority order, because a route that KNOWS who acted (an agent run a
 // human approved, an import carrying a filename) is more honest than the
@@ -679,6 +673,6 @@ function enrichFromLegacyCall(orgId, userId, userName, action, entityType, entit
 }
 
 module.exports = {
-  auditTrail, coversRoute, snapshottableTables, tableFor, tableCandidates, resolveActor, MUTATING,
+  auditTrail, coversRoute, snapshottableTables, tableCandidates, resolveActor, MUTATING,
   auditContext, enrichFromLegacyCall, insertAuditRow, resolveAuditNames, personScrub,
 };

@@ -59,14 +59,14 @@ The panel is now beside the processor on Integrations.
 > that "fixes" them back to one screen is undoing this.
 
 ### 3 · The photo adjuster — `a52d5df` (and the prod FIX `cc59fbd` under it)
-`Donors.jsx`, `shared.jsx`, `scripts/local-preview.js`, `vercel.json`.
+`Donors.jsx`, `shared.jsx`, `scripts/ci/local-preview.js`, `vercel.json`.
 
 Server-side centre-crop is fine for a logo and wrong for a face. Drag to move,
 scroll or slider to zoom; **the circle is exactly what is saved**, cropped to
 512 in the browser, so what she positioned is what the server stores rather
 than a second opinion about where the face is.
 
-> **Do not break:** `scripts/local-preview.js` now **derives** its rewrite table
+> **Do not break:** `scripts/ci/local-preview.js` now **derives** its rewrite table
 > from `vercel.json` instead of hand-copying it. The hand-copied table is how
 > `/person-photos` went missing locally while every suite stayed green — the
 > suites call the API directly, so only a browser could see it. One list, one
@@ -96,7 +96,7 @@ and is the most sensitive image this product will ever hold.
 
 ### 5 · Cheque reading, which proposes and cannot post — `a16f8da`, `5c4f49f`
 `shared/chequeRead.js`, `server.js`, `DepositSheet.jsx`,
-`scripts/build95-cheque-drill.js`. **50 assertions**
+`scripts/ops/build95-cheque-drill.js`. **50 assertions**
 (`tests/build95-cheque-read.test.js`).
 
 A cheque carries its amount twice and a bank has a rule about it, because the

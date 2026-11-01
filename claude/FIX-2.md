@@ -4,7 +4,7 @@
 
 **Why this build exists.** On 27 September Jonathan walked FIX-1 on localhost. The structure is right, but the product still looks unfinished where a board member or ED looks first: the dashboards are thin tiles with no way to see where a number comes from, Reports has two navigations and a tab row that runs off the screen, the app is too green, and the Agent room dead-ends with "drafting is not enabled" and no way to turn it on.
 
-**What does not move.** One database, one person record, one gift path (`recordGift`), one ledger. Agents read, draft and propose; a human signs anything that reaches a donor or moves money. The four colours. Every write carries an actor. `scripts/tdz-scan.js` before every commit. Nothing is done until the full battery is green.
+**What does not move.** One database, one person record, one gift path (`recordGift`), one ledger. Agents read, draft and propose; a human signs anything that reaches a donor or moves money. The four colours. Every write carries an actor. `scripts/ci/tdz-scan.js` before every commit. Nothing is done until the full battery is green.
 
 ---
 

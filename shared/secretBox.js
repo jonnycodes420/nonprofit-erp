@@ -139,10 +139,6 @@ export function open(envelope, { aad = "", env = process.env, key = null } = {})
   }
 }
 
-export function isSealed(s) {
-  return typeof s === "string" && s.split(".").length === 5 && s.startsWith(ENVELOPE_VERSION + ".");
-}
-
 // A credentials BAG — {clientId, secret} etc. — sealed as one JSON envelope,
 // because the fields of one connection are one secret and splitting them into
 // separate columns invites half of them being logged.
