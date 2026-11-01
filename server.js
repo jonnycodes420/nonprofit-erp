@@ -6670,12 +6670,12 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
         `<tr><td style="padding:3px 0;font-size:13px;color:${INK};">${digestEsc(displayNameCase(r.who))}<span style="color:${SAGE};"> · ${r.n} open${r.overdue ? ` · ${r.overdue} overdue` : ""}</span></td></tr>`).join("")}</table>
     </div>` : "";
 
-  // CAN-SPAM: the org's mailing address in the footer. No address on file →
-  // the email SAYS SO and links to add it, never a footer that pretends.
+  // The org's mailing address in the footer when it has one. This goes to a
+  // person's own work account, so with no address on file there is no line.
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:${EMERALD};">Add it in Settings</a> and it will.</div>`;
+    : "";
 
   // The one button: the first person waiting, else her tasks, else Home.
   const button = threads.length
@@ -6922,11 +6922,44 @@ async function composeWeeklyOrgPart(orgId, monday) {
   };
 }
 
+// The same kind of follow-up is one line with its count. A task Steward opened
+// itself carries its kind in its actor (`system:<path>/<id>`); its path is the
+// kind. A kind that counts something says its total; any other shows its first
+// title and how many more. A task a person wrote is its own line.
+const WEEKLY_TASK_KINDS = {
+  "system:data-health/import": {
+    count: t => Number((String(t.title).match(/\d+/) || [1])[0]) || 1,
+    line: n => `Review ${n} possible ${n === 1 ? "duplicate" : "duplicates"} from the import in Data health`,
+  },
+};
+function weeklyTaskKind(t) {
+  const by = String(t.created_by || "");
+  return by.startsWith("system:") ? by.replace(/\/[^/]*$/, "") : null;
+}
+function groupWeeklyTasks(rows) {
+  const out = [], byKind = new Map();
+  for (const t of rows) {
+    const kind = weeklyTaskKind(t);
+    const g = kind && byKind.get(kind);
+    if (g) { g.tasks.push(t); if (String(t.due) < String(g.due)) g.due = t.due; continue; }
+    const line = { kind, tasks: [t], due: t.due };
+    if (kind) byKind.set(kind, line);
+    out.push(line);
+  }
+  return out.map(g => {
+    const [t] = g.tasks, rule = g.kind && WEEKLY_TASK_KINDS[g.kind];
+    if (g.tasks.length === 1) return { id: t.id, title: t.title, due: t.due, donor_id: t.donor_id, donor_name: t.donor_name, n: 1 };
+    const title = rule ? rule.line(g.tasks.reduce((a, x) => a + rule.count(x), 0))
+      : `${t.title}, and ${g.tasks.length - 1} more like it`;
+    return { id: null, title, due: g.due, n: g.tasks.length };
+  });
+}
+
 async function composeWeeklyEmail(org, u, monday, orgPart) {
   const isAdmin = u.role === "admin";
   const steps = await composeThreadNudgeQueue(org.id, orgPart.sunday, { userId: u.id, isAdmin, keepTimed: true });
-  const tasks = await composeDailyTaskReminder(org.id, u.id, orgPart.sunday);
-  return { ...orgPart, steps: steps.list, stepCount: steps.total, tasks: tasks.rows, taskCount: tasks.count };
+  const tasks = groupWeeklyTasks((await composeDailyTaskReminder(org.id, u.id, orgPart.sunday)).rows);
+  return { ...orgPart, steps: steps.list, stepCount: steps.total, tasks, taskCount: tasks.length };
 }
 
 const weeklyIsEmpty = w => !w.stepCount && !w.taskCount && !w.pledges.length && !w.events.length
@@ -6955,7 +6988,7 @@ function renderWeeklyBody(w, org, user) {
   if (!empty) {
     const parts = [];
     if (w.stepCount) parts.push(`${head("Next steps due")}${list(w.steps.slice(0, WEEKLY_LIST_CAP).map(t => `${person(t.donorId, t.donorName)}<span style="color:${SAGE};"> · ${t.stepRef ? L.refLinkHtml(t.stepRef, base, { label: t.stepLabel, style: QUIET }) : digestEsc(t.stepLabel || "")} · ${String(t.due).slice(0, 10) < w.monday ? "overdue" : digestEsc(weeklyDay(t.due))}</span>`))}${more(Math.min(w.steps.length, WEEKLY_LIST_CAP), w.stepCount)}`);
-    if (w.taskCount) parts.push(`${head("Follow-ups due")}${list(w.tasks.slice(0, WEEKLY_LIST_CAP).map(t => `${L.refLinkHtml({ kind: "task", id: t.id, name: t.title }, base, { style: `color:${INK};text-decoration:underline;` })}<span style="color:${SAGE};"> · ${String(t.due).slice(0, 10) < w.monday ? "overdue" : digestEsc(weeklyDay(t.due))}${t.donor_id ? ` · ${digestEsc(displayNameCase(t.donor_name || ""))}` : ""}</span>`))}${more(Math.min(w.tasks.length, WEEKLY_LIST_CAP), w.taskCount)}`);
+    if (w.taskCount) parts.push(`${head("Follow-ups due")}${list(w.tasks.slice(0, WEEKLY_LIST_CAP).map(t => `${t.id ? L.refLinkHtml({ kind: "task", id: t.id, name: t.title }, base, { style: `color:${INK};text-decoration:underline;` }) : `<a href="${base}/app/tasks" style="color:${INK};text-decoration:underline;">${digestEsc(t.title)}</a>`}<span style="color:${SAGE};"> · ${String(t.due).slice(0, 10) < w.monday ? "overdue" : digestEsc(weeklyDay(t.due))}${t.donor_id ? ` · ${digestEsc(displayNameCase(t.donor_name || ""))}` : ""}</span>`))}${more(Math.min(w.tasks.length, WEEKLY_LIST_CAP), w.taskCount)}`);
     if (w.pledges.length) parts.push(`${head("Pledge payments due")}${list(w.pledges.slice(0, WEEKLY_LIST_CAP).map(p => `${person(p.donorId, p.donorName, p.donorEmail)}<span style="color:${SAGE};"> · ${digestMoney(p.amount)} · ${digestEsc(weeklyDay(p.due))}</span>`))}${more(Math.min(w.pledges.length, WEEKLY_LIST_CAP), w.pledges.length)}`);
     if (w.events.length) parts.push(`${head("Events")}${list(w.events.slice(0, WEEKLY_LIST_CAP).map(e => `${digestEsc(e.name)}<span style="color:${SAGE};"> · ${digestEsc(weeklyDay(e.date))}</span>`))}${more(Math.min(w.events.length, WEEKLY_LIST_CAP), w.events.length)}`);
     if (!parts.length) parts.push(`<div style="font-size:14px;color:${INK};margin-top:14px;">Nothing is due this week.</div>`);
@@ -6983,7 +7016,7 @@ function renderWeeklyBody(w, org, user) {
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet.</div>`;
+    : "";
   // A GET never changes state: the link opens My email, and the switch there is the one click.
   const settings = `${base}/app/settings?section=myemail&daily=1`;
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
@@ -7086,7 +7119,7 @@ function renderStepReminderBody(t, org, timeLabel) {
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
     ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
+    : "";
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">${digestEsc(timeLabel)}. ${digestEsc(t.next_step_label)}.</div>
       <div style="font-size:14px;color:#0f1a12;margin-top:6px;">${staffLinks().refLinkHtml({ kind: "person", id: t.donor_id, name: displayNameCase(t.donor_name || ""), email: t.donor_email }, publicAppUrl())}</div>

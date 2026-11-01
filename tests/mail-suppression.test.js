@@ -684,8 +684,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const wantNew = x => x && x.weekly === true && x.morningEmail === false
       && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => x[k] === false);
 
+    let signupEmail;
     const signup = await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgName: "SM2 New Org " + uniq(), userName: "Nia New", email: `sm2-new-${uniq()}@test.local`, password: "loadtest1234" }) }).then(r => r.json());
+      body: JSON.stringify({ orgName: "SM2 New Org " + uniq(), userName: "Nia New", email: (signupEmail = `sm2-new-${uniq()}@test.local`), password: "loadtest1234" }) }).then(r => r.json());
     const sNotes = (await api("GET", "/me", signup.token)).body?.notifications;
     ok("§13a a new signup: the weekly email on, the daily email and everything else off", wantNew(sNotes), sNotes);
 
@@ -735,6 +736,28 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const quiet = (await api("POST", "/nudges/run", signup.token, { kind: "weekly", today: monday, force: true, dryRun: true })).body?.sent?.[0];
     ok("§13f an empty week says nothing needs you, with one link to Home",
       quiet?.empty === true && /Nothing needs you this week/.test(quiet.html) && (quiet.html.match(/\/dashboard"/g) || []).length === 1, quiet && { subject: quiet.subject, empty: quiet.empty });
+
+    // The same kind of follow-up is one line with its count: two Data health
+    // tasks (1 and 2 duplicates) read "Review 3 possible duplicates". A task a
+    // person wrote stays its own line. And a staff email never says the org
+    // has no mailing address: with none on file there is no footer line.
+    const [nu] = await q("SELECT id, org_id FROM users WHERE email=$1", [signupEmail]);
+    const lastWeekDay = (() => { const d = new Date(monday + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 3); return civil(d); })();
+    for (const [n, imp] of [[1, "imp_sm2a"], [2, "imp_sm2b"]])
+      await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,assigned_to,assigned_to_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'medium','admin',0,$5,'Nia New',$6,'Steward (automatic)')`,
+        ["t_sm2" + imp.slice(-1) + uniq().slice(-4), nu.org_id, `Review ${n} possible duplicate${n === 1 ? "" : "s"} from the import in Data health`, lastWeekDay, nu.id, `system:data-health/import/${imp}`]);
+    await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,assigned_to,assigned_to_name,created_by,created_by_name)
+             VALUES ($1,$2,'Call the bank about the deposit',$3,'medium','admin',0,$4,'Nia New',$4,'Nia New')`, ["t_sm2p" + uniq().slice(-4), nu.org_id, monday, nu.id]);
+    const grouped = (await api("POST", "/nudges/run", signup.token, { kind: "weekly", today: monday, force: true, dryRun: true })).body?.sent?.[0];
+    const [noAddr] = await q("SELECT receipt_address FROM orgs WHERE id=$1", [nu.org_id]);
+    ok("§13h two Data health follow-ups are one line with the total: Review 3 possible duplicates",
+      /Review 3 possible duplicates from the import in Data health/.test(grouped?.html || "") && (grouped.html.match(/possible duplicate/g) || []).length === 1
+        && /Call the bank about the deposit/.test(grouped.html) && /2 things need you/.test(grouped.subject), grouped && { subject: grouped.subject, tasks: grouped.tasks });
+    ok("§13h with no mailing address on file, the weekly email has no line about it",
+      !String(noAddr?.receipt_address || "").trim() && !!grouped && !/mailing address/i.test(grouped.html), noAddr);
+    const srvSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+    ok("§13h no staff email can say the org has no mailing address", !/no mailing address on file for/.test(srvSrc), null);
 
     // The org's Staff mail switch still stops everything, the weekly email included.
     await q("UPDATE orgs SET staff_mail_enabled=false WHERE id=$1", [orgId]);
