@@ -367,7 +367,7 @@ mkdir -p "$LOGDIR"
 #   SHARDS=<n> + SHARD_ONLY=<i>   run just shard i (this is what CI's matrix does)
 #
 # BALANCE. Longest suite first into the emptiest shard (LPT), from
-# audit/suite-timings.json. A suite with no recorded time is assumed to be the
+# .generated/suite-timings.json (git-ignored; CI keeps it in its cache). A suite with no recorded time is assumed to be the
 # median, so a brand-new suite is never the thing that unbalances a run. The
 # file is data, not a gate: a stale entry costs seconds, never correctness.
 #
@@ -390,7 +390,7 @@ if [ -z "${SHARDS:-}" ]; then
   # running.
   if [ ${#RUN[@]} -ge "$SHARD_MIN" ]; then SHARDS=3; else SHARDS=1; fi
 fi
-TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
+TIMINGS="${SHARD_TIMINGS:-.generated/suite-timings.json}"
 
 # HARDEN-1 · ONE BATTERY AT A TIME ON THIS MACHINE. Two batteries that each
 # boot their own servers (three shards, ten database connections a server,

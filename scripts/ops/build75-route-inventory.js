@@ -5,7 +5,7 @@
 // remote DATABASE_URL outright: booting the app RUNS schema init), walks the
 // live Express router, annotates every route with its auth chain and every
 // parameter that accepts an identifier, checks each for a frontend reference,
-// and writes audit/route-inventory.json.
+// and writes .generated/route-inventory.json (git-ignored; ARCH-1).
 //
 // Usage (scratch stack only):
 //   DATABASE_URL=postgresql://steward@localhost:5544/steward_loadtest \
@@ -29,7 +29,9 @@ const { buildInventory } = require("../lib/routeInventory");
   await new Promise(r => setTimeout(r, 3000)); // let boot-time DDL settle
   const inv = buildInventory(app);
 
-  const out = path.join(__dirname, "..", "..", "audit", "route-inventory.json");
+  // ARCH-1: generated, never committed (.generated/ is git-ignored).
+  const out = process.env.ROUTE_INVENTORY_OUT || path.join(__dirname, "..", "..", ".generated", "route-inventory.json");
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, JSON.stringify({ generatedAt: new Date().toISOString(), count: inv.length, routes: inv }, null, 1));
 
   const byAuth = {};

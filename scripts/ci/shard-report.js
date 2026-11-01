@@ -9,7 +9,7 @@
 // otherwise vanish and the run would read green with a third of the battery
 // missing.
 //
-// It also refreshes audit/suite-timings.json from the run, so the next plan is
+// It also refreshes .generated/suite-timings.json (git-ignored, ARCH-1) from the run, so the next plan is
 // balanced by what actually happened.
 const fs = require("fs");
 const path = require("path");
@@ -19,7 +19,7 @@ const flag = (n, d) => { const i = argv.indexOf("--" + n); return i === -1 ? d :
 const OUT = flag("out", "");
 const PLAN = flag("plan", "");
 const STARTED = Number(flag("started", "0"));
-const TIMINGS = flag("timings", "audit/suite-timings.json");
+const TIMINGS = flag("timings", ".generated/suite-timings.json");
 const ROOT = path.join(__dirname, "..", "..");
 const G = "\x1b[32m", R = "\x1b[31m", Y = "\x1b[33m", Z = "\x1b[0m";
 

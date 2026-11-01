@@ -423,7 +423,7 @@ async function fixtures() {
     // /donors/ids is the select-all for bulk actions: ids only, capped at
     // 25,000 by design (routes/donorList.js IDS_CAP). Named here, not hidden.
     const BY_DESIGN = new Set(["/donors/ids"]);
-    const inventory = require("../audit/route-inventory.json").routes;
+    const inventory = require("./lib/routeInventoryFile").load().routes;   // ARCH-1: generated, not committed
     const gets = inventory.filter(r => r.method === "GET" && !r.path.includes(":") && !BY_DESIGN.has(r.path)
       && !/export|\.csv|download|pdf|zip|stream|oauth|callback|webhook|unsubscribe|^\/health|^\/admin\//i.test(r.path));
     const over = [];

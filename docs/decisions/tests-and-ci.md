@@ -31,9 +31,11 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **Verify the frontend by CONTENT, not HTTP status.** The SPA rewrite answers a missing asset
   with 200 and `index.html`. Fetch prod's `main-*.js` and grep for a string your change added.
   (BUILD-91)
-- **A new route means re-running `scripts/ops/build75-route-inventory.js` in the same commit.** It
-  needs `DATABASE_URL`, `JWT_SECRET`, `RESEND_API_KEY` and `STRIPE_SECRET_KEY` to boot, and
-  `tenant-matrix` fails if `audit/route-inventory.json` differs from the live router. (BUILD-84)
+- **The route inventory is generated, never committed** (ARCH-1). `tenant-matrix` writes
+  `.generated/route-inventory.json` from the live router on every run, and `security` reads it
+  through `tests/lib/routeInventoryFile.js`, which rebuilds it when a route file is newer. A new
+  route needs no inventory commit. By hand: `node scripts/ops/build75-route-inventory.js`.
+  (BUILD-84, ARCH-1)
 - **A new parameterized route needs a tenant probe (a `bResolver` entry) or a reasoned
   `PARAM_EXEMPT` entry** in `tests/tenant-matrix.test.js`. (BUILD-86, BUILD-100)
 - **Add every new table to tenant-matrix's reset list, children before parents.** This includes

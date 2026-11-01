@@ -8,9 +8,9 @@
 //   §1  COVERAGE IS THE GATE (B.4): every parameterized route must either be
 //       cross-tenant-probed (its params resolve to org B's real rows) or carry
 //       an explicit, reasoned entry in PARAM_EXEMPT. A new `/foo/:barId` with
-//       neither FAILS THE BUILD. The committed audit/route-inventory.json must
-//       also match the live router exactly (re-run the inventory script when
-//       routes change). Proven to fail: a synthetic route is injected into a
+//       neither FAILS THE BUILD. The route inventory is generated from the live
+//       router on each run (.generated/route-inventory.json, ARCH-1), never
+//       committed. Proven to fail: a synthetic route is injected into a
 //       copy of the inventory and must land in the unexercised bucket.
 //   §2  AUTH WALL: every authenticated route → 401 on no/tampered/expired
 //       token (never 200, never 500); requireAdmin routes → 403 for staff;
@@ -63,6 +63,8 @@ process.env.RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET || "whsec_
 process.env.PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "WH-MATRIX-DUMMY";
 
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { ok, summary, q, closeDb } = require("./helpers");
@@ -782,13 +784,15 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const inv = buildInventory(app);
   ok(`live router walked: ${inv.length} routes (sanity: > 300)`, inv.length > 300, inv.length);
 
-  // committed inventory must match the live router
-  const committed = require("../audit/route-inventory.json");
+  // ARCH-1: the inventory is generated, never committed. This run writes the
+  // copy other suites read (tests/lib/routeInventoryFile.js), from this router.
   const keyOf = r => `${r.method} ${r.path}`;
-  const liveSet = new Set(inv.map(keyOf)), fileSet = new Set(committed.routes.map(keyOf));
-  const drift = [...liveSet].filter(k => !fileSet.has(k)).concat([...fileSet].filter(k => !liveSet.has(k)));
-  ok("committed audit/route-inventory.json matches the live router (re-run scripts/ops/build75-route-inventory.js when routes change)",
-     drift.length === 0, drift.slice(0, 10));
+  const genPath = require("./lib/routeInventoryFile").FILE;
+  fs.mkdirSync(path.dirname(genPath), { recursive: true });
+  fs.writeFileSync(genPath, JSON.stringify({ generatedAt: new Date().toISOString(), count: inv.length, routes: inv }, null, 1));
+  const written = JSON.parse(fs.readFileSync(genPath, "utf8")).routes.map(keyOf);
+  ok("the generated route inventory (.generated/route-inventory.json) is written from the live router",
+     written.length === inv.length && written.every((k, i) => k === keyOf(inv[i])), written.length);
 
   const isPublic = r => r.auth.length === 0 || r.auth.every(a => /[lL]imiter|Parser/.test(a));
   const failures = { auth: [], role: [], cross: [], leak: [], fivehundred: [] };

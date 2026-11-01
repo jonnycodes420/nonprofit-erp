@@ -129,12 +129,12 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   (`steward_<worktree>_shard_<n>`), boots its own server on a port block it claims, and the
   run prints one summary. Two tabs can run batteries side by side: the names, ports and logs
   come from the worktree folder, and a run drops only its own databases. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
-  change the width. Balance comes from `audit/suite-timings.json`, which the run refreshes.
+  change the width. Balance comes from `.generated/suite-timings.json` (git-ignored), which the run refreshes.
   CI runs the same three shards as a matrix and `combine` is the one gate the deploys wait
   on: it fails on a dead shard and on any suite whose pass count dropped.
 - **The tenant battery:** `node tests/tenant-matrix.test.js` (boots server.js in-process on
-  :5697) and `node tests/tenant-isolation.test.js`. After adding a route, re-run
-  `node scripts/ops/build75-route-inventory.js` in the same commit.
+  :5697) and `node tests/tenant-isolation.test.js`. The route inventory is generated into
+  `.generated/` on each run, never committed.
 - **TDZ scan:** `node scripts/ci/tdz-scan.js [file|dir]`. Self-references exit 1. `--all` adds
   the noisy reads-above list.
 - **Deploys go through GitHub Actions only.** Pushing to main runs CI (`.github/workflows/ci.yml`),

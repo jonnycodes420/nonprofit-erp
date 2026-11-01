@@ -324,6 +324,16 @@ jobs:
       # its own port block, waits for /health, runs its suites serially and
       # tears everything down. FIX-1 §11's demo seed happens inside the shard
       # that holds demo-shape, so it is seeded exactly once and never skipped.
+      # ARCH-1: suite timings are generated, not committed. The cache carries
+      # the last run's timings forward so the shards stay balanced; a miss
+      # only costs balance (an unrecorded suite is weighed at the median).
+      - name: Restore suite timings
+        uses: actions/cache@v4
+        with:
+          path: .generated/suite-timings.json
+          key: suite-timings-${{ github.run_id }}
+          restore-keys: suite-timings-
+
       - name: The battery (three shards, one runner)
         run: bash tests/run-all.sh
         env:

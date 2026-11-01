@@ -52,7 +52,7 @@ function needsDist(name) {
 const argv = process.argv.slice(2);
 const flag = (name, dflt) => { const i = argv.indexOf("--" + name); return i === -1 ? dflt : argv[i + 1]; };
 const shards = Math.max(1, parseInt(flag("shards", "6"), 10) || 6);
-const timingsPath = flag("timings", "audit/suite-timings.json");
+const timingsPath = flag("timings", ".generated/suite-timings.json");
 const outPath = flag("out", "");
 const names = argv.filter((a, i) => !a.startsWith("--") && !(i > 0 && argv[i - 1].startsWith("--")));
 
