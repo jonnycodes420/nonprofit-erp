@@ -167,23 +167,28 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     q(`SELECT gr.id, gr.name, (SELECT COUNT(*)::int FROM group_members m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
                                  WHERE m.group_id = gr.id AND m.org_id = gr.org_id AND d.deleted_at IS NULL) AS live
          FROM groups gr WHERE gr.org_id = $1 AND COALESCE(gr.kind,'static') = 'static'`, [orgId]).catch(() => []),
-    q(`SELECT e.id, e.name,
+    // EVENTS-3, written out here, never read from shared/numbers/events.js: an
+    // event counts PARTIES, a household once (a couple's row on her list is one
+    // entry), a person on their own, or a walk-in's own row. Invited is every
+    // party on the list, registered a party where anyone said yes or came,
+    // declined a party that said no with nobody saying yes; came a party where
+    // anyone came. People are each person once, beside them.
+    q(`WITH g AS (
+         SELECT a.event_id, COALESCE(d.household_id, a.donor_id, a.id) AS party, COALESCE(a.donor_id, a.id) AS person, a.status,
+                (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))) AS came,
+                (a.status IN ('registered','confirmed','attended','no_show') OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))) AS reg
+           FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
+          WHERE a.org_id = $1 AND (a.donor_id IS NULL OR d.deleted_at IS NULL) AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled')),
+       p AS (SELECT event_id, party, bool_or(came) AS came, bool_or(reg) AS reg, bool_or(status = 'declined') AS dec FROM g GROUP BY event_id, party)
+       SELECT e.id, e.name,
               (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
                 WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)) AS live,
-              (SELECT COUNT(*)::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined')))) AS attended,
-              -- FIX-58 + FIX-59, written out here, never read from figureSources: invited is the whole list,
-              -- registered said yes or came, declined said no; no reply is the rest
-              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND (a.status IN ('registered','confirmed','attended','no_show') OR (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))))) AS registered,
-              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND a.status = 'declined' AND NOT (a.status IN ('registered','confirmed','attended','no_show') OR (a.status = 'attended' OR (a.checked_in_at IS NOT NULL AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled','declined'))))) AS declined,
-              (SELECT COUNT(DISTINCT COALESCE(a.donor_id, a.id))::int FROM event_attendees a LEFT JOIN donors d ON d.id = a.donor_id
-                WHERE a.event_id = e.id AND a.org_id = e.org_id AND (a.donor_id IS NULL OR d.deleted_at IS NULL)
-                  AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled')) AS invited,
+              (SELECT COUNT(*)::int FROM p WHERE p.event_id = e.id AND p.came) AS attended,
+              (SELECT COUNT(*)::int FROM p WHERE p.event_id = e.id AND p.reg) AS registered,
+              (SELECT COUNT(*)::int FROM p WHERE p.event_id = e.id AND p.dec AND NOT p.reg) AS declined,
+              (SELECT COUNT(*)::int FROM p WHERE p.event_id = e.id) AS invited,
+              (SELECT COUNT(DISTINCT person)::int FROM g WHERE g.event_id = e.id AND g.came) AS attended_people,
+              (SELECT COUNT(DISTINCT person)::int FROM g WHERE g.event_id = e.id) AS invited_people,
               (e.date_unknown IS TRUE OR e.date IS NULL OR e.date::date <= (NOW() AT TIME ZONE COALESCE((SELECT timezone FROM orgs WHERE id = e.org_id), 'America/New_York'))::date) AS past
          FROM events e WHERE e.org_id = $1`, [orgId]),
     q(`SELECT c.id, c.name, c.goal_amount, to_char(c.start_date,'YYYY-MM-DD') AS from_day, to_char(c.end_date,'YYYY-MM-DD') AS to_day,
@@ -460,10 +465,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     for (const e of eventRows) {
       const shown = events.find(x => x.id === e.id);
       if (!shown) continue;
-      // attendee_count is who attended; invited_count is every live row.
+      // EVENTS-3: attendee_count is the parties that came; invited_count every party on the list
       const inv = shown.invited_count, att = shown.attendee_count;
-      if (typeof inv === "number" && inv !== e.live) diffs.push(`event "${e.name}": the Events page says ${inv} on the list, the database holds ${e.live} live`);
-      if (typeof att === "number" && att !== e.attended) diffs.push(`event "${e.name}": the Events page says ${att} attended, the database holds ${e.attended} live`);
+      if (typeof inv === "number" && inv !== e.invited) diffs.push(`event "${e.name}": the Events page says ${inv} on the list, the database holds ${e.invited} parties`);
+      if (typeof att === "number" && att !== e.attended) diffs.push(`event "${e.name}": the Events page says ${att} attended, the database holds ${e.attended} parties`);
+      if (shown.people && typeof shown.people.came === "number" && shown.people.came !== e.attended_people) diffs.push(`event "${e.name}": the Events page says ${shown.people.came} people came, the database holds ${e.attended_people}`);
     }
   }
   if (!skip.has("campaigns") && Array.isArray(campaigns)) {
@@ -533,7 +539,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const e = eventRows.find(x => x.id === id) || {};
         agree(`event "${st.name}" pledged, all years`, [["its event page", st.pledgedAllCents], ["Pledges' rows made there", rows.reduce((n, r) => n + cents(r.balance), 0)]], money);
         agree(`event "${st.name}" came`, [["the database", e.attended], ["its event page", st.attended]]);
-        // FIX-58: people, once each, and the counts add up
+        // FIX-58 + EVENTS-3: parties, once each, and the counts add up
         const regFig = ((evReports[i].figures || []).find(f => f.key === "registered") || {}).value;
         const card = Array.isArray(events) ? (events.find(x => x.id === id) || {}).registered_count : undefined;
         agree(`event "${st.name}" registered`, [["the database", e.registered], ["its event page", regFig], ["its story", st.registered], ["the Events card", card]]);
@@ -588,12 +594,18 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["the check-in door", kiosk ? kiosk.checkedIn : undefined], ["came, gave + came, didn't give", (fig("cameGave") || 0) + (fig("cameNoGift") || 0)]]);
       agree(`${name} declined`, [["the database", e.declined], ["its page", fig("declined")], ["its story", st.declined],
         ["its rows", decRows ? decRows.count : undefined], ["the figure drawer", fv(frDec)]]);
-      // TRUTH-1: came, came and gave, came and didn't, as the key counts people
-      // (each person once; a household gave when anyone in it gave there).
+      // TRUTH-1 + EVENTS-3: came, came and gave, came and didn't, as the key
+      // counts them: parties (a household once; it gave when anyone in it gave
+      // there), and the people beside each, each person once.
       const ke = key.events[e.id];
-      agree(`${name} came and didn't give`, [...(ke ? [["the key (people)", ke.cameNoGift.people]] : []), ["its page", fig("cameNoGift")], ["its story", st.cameDidntGive], ["the figure drawer", fv(frNoGift)]]);
-      if (ke) agree(`${name} came and gave`, [["the key (people)", ke.cameGave.people], ["its page", fig("cameGave")], ["its story", st.cameGave]]);
-      if (ke) agree(`${name} came, as people`, [["the key (people)", ke.came.people], ["its page", fig("attended")]]);
+      const ppl = k => { const f = rep.figures.find(x => x.key === k); return f ? f.people : undefined; };
+      const sp = k => (st.people || {})[k];
+      agree(`${name} came and didn't give`, [...(ke ? [["the key (parties)", ke.cameNoGift.parties]] : []), ["its page", fig("cameNoGift")], ["its story", st.cameDidntGive], ["the figure drawer", fv(frNoGift)]]);
+      if (ke) agree(`${name} came and gave`, [["the key (parties)", ke.cameGave.parties], ["its page", fig("cameGave")], ["its story", st.cameGave]]);
+      if (ke) agree(`${name} came, as parties`, [["the key (parties)", ke.came.parties], ["its page", fig("attended")]]);
+      if (ke) agree(`${name} came, as people`, [["the key (people)", ke.came.people], ["the database", e.attended_people], ["its page", ppl("attended")], ["its story", sp("attended")]]);
+      if (ke) agree(`${name} came and didn't give, as people`, [["the key (people)", ke.cameNoGift.people], ["its page", ppl("cameNoGift")], ["its story", sp("cameDidntGive")]]);
+      if (ke) agree(`${name} came and gave, as people`, [["the key (people)", ke.cameGave.people], ["its page", ppl("cameGave")], ["its story", sp("cameGave")]]);
       agree(`${name} invited`, [["the database", e.invited], ["its page", fig("invited")], ["its story", st.invited],
         ["registered + declined + no reply", (fig("registered") || 0) + (fig("declined") || 0) + (fig("noReply") || 0)]]);
       agree(`${name} no reply`, [["invited less registered less declined", e.invited - e.registered - e.declined], ["its page", fig("noReply")], ["its story", st.noReply]]);

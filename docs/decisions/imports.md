@@ -167,7 +167,7 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   on her click, each date it changed kept in `pledge_date_fixes` for Undo. Nothing moves at deploy.
 - **An event the file shows is created even without a date** when she says so (`events.date_unknown`, on the import's
   day, "Date not known" on its page, never "Coming up"). Its name comes from a title row, the file name, or a question that blocks
-  only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two).
+  only when Steward cannot guess one. Attendance is one `event_attendees` row per person (a couple's row is two people, one household); the event counts the household once (EVENTS-3).
 - **The button says what will exist afterwards** (`importButtonSentence`); over 5% of people or dollars set aside,
   it says "Review N set aside first" until the list is opened.
 - **Undo restores a person who was already here exactly**: the fields the import changed are kept in

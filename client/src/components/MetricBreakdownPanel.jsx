@@ -119,6 +119,24 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
         const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 24px",
                            borderBottom: "1px solid " + T.bg, width: "100%", textAlign: "left", background: "transparent",
                            border: "none", borderTop: "none", font: "inherit" };
+        // EVENTS-3 — a party (a household who came together) is one row,
+        // named the way the household reads, with its people under it, each a
+        // link to their own record.
+        if (Array.isArray(r.people) && r.people.length > 1) {
+          return (
+            <div key={r.id} data-figure-row data-party-row={r.id} style={{ padding: "11px 24px", borderBottom: "1px solid " + T.bg }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{r.name || "Unnamed"}</div>
+                <div style={{ fontSize: 12, color: T.ink3, flexShrink: 0 }}>{r.people.length} people</div>
+              </div>
+              {r.people.map(x => x.donorId
+                ? <DonorLink key={x.donorId} id={x.donorId} data-person-row={x.donorId}
+                    onOpen={onSelectDonor ? () => onSelectDonor({ donorId: x.donorId, donorName: x.name }) : undefined}
+                    title={`Open ${x.name}`} style={{ display: "block", padding: "4px 0 0 14px", fontSize: 13, color: T.ink, cursor: "pointer", background: "transparent", border: "none", textAlign: "left", font: "inherit", width: "100%" }}>{x.name}</DonorLink>
+                : <div key={x.name} style={{ padding: "4px 0 0 14px", fontSize: 13, color: T.ink }}>{x.name}</div>)}
+            </div>
+          );
+        }
         // FIX-13 Part 6 — a person's row is a real link to them even where the
         // page gave no handler: a plain click then goes through the router.
         return r.donorId

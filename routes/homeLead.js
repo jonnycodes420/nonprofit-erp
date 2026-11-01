@@ -199,15 +199,17 @@ async function readFacts(req, nowMs) {
        FROM events e WHERE e.org_id=? AND e.is_sample IS NOT TRUE AND COALESCE(e.status,'') NOT IN ('cancelled','canceled','completed')
         AND e.date >= ? AND e.date <= ? ORDER BY e.date LIMIT 1`, [orgId, today, orgTime.addDays(today, 7)]))
     .map(e => ({ id: e.id, name: e.name, capacity: num(e.capacity) || null, guests: num(e.guests), unpaid: num(e.unpaid), unpaidAmount: num(e.unpaid_amount),
-      // SWEEP-1: Registered is the event page's number (numbers.eventGuests, each
-      // person once); `guests` was places taken, a party of two counted twice.
+      // SWEEP-1 + EVENTS-3: Registered is the event page's number (shared/numbers/
+      // events.js, each party once); `guests` is places taken, against capacity.
       registered: null,
       daysAway: orgTime.daysBetween(today, String(e.date).slice(0, 10)),
       dayName: new Date(String(e.date).slice(0, 10) + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }) }));
 
   if (events.length) {
-    const [g] = await require("../numbers").eventGuests(orgId, { ids: events.map(e => e.id), asOf: today });
+    const [g] = await require("../shared/numbers/events").eventFigures(query, orgId, { ids: events.map(e => e.id), asOf: today });
+    // EVENTS-3: parties (a household once), with the people beside them
     events[0].registered = g ? g.registered : 0;
+    events[0].registeredPeople = g ? g.counts.registered.people : 0;
   }
 
   // ── A quiet day: three people worth a note, the largest givers of the last

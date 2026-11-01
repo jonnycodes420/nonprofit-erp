@@ -667,7 +667,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <div style={h3}>Before anything is written</div>
               <Layer title="People" testId="layer-people"
                 // SWEEP-2: an organization is one of the people counted, never added to them
-                main={`${n(c.persons ?? c.people, "person", "people")}${c.organizations ? ` (${c.organizations.toLocaleString("en-US")} of them ${c.organizations === 1 ? "an organization" : "organizations"})` : ""}${c.households ? `, ${n(c.households, "household")}` : ""}`}
+                // EVENTS-3: a couple's row is one entry on her list: the list's count leads
+                main={`${c.records != null && c.records !== (c.persons ?? c.people) ? `${c.records.toLocaleString("en-US")} on the list · ` : ""}${n(c.persons ?? c.people, "person", "people")}${c.organizations ? ` (${c.organizations.toLocaleString("en-US")} of them ${c.organizations === 1 ? "an organization" : "organizations"})` : ""}${c.households ? `, ${n(c.households, "household")}` : ""}`}
                 sub={`${u.peopleLine ? u.peopleLine.sentence.replace(/^[^:]*: /, "") : `${u.newPeople} new, ${u.matchedPeople} already in Steward`}.${tablesRead.length > 1 ? " Sheets that list the same people are read as one list, by ID first, then email, then name." : ""}`}
                 notes={[
                         // IMPORT-5 (7c): every row is a person, merged into one, or set aside

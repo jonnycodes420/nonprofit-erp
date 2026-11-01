@@ -3209,7 +3209,8 @@ app.get("/figures/:source/export.csv", requireAuth, wrap(async (req, res) => {
 app.get("/figures/:source/people", requireAuth, wrap(async (req, res) => {
   const rows = await figureRowsFor(req, res);
   if (!rows) return;
-  const ids = [...new Set(rows.map(r => r.donorId).filter(Boolean))];
+  // EVENTS-3: a party's row (a household who came together) is all its people
+  const ids = [...new Set(rows.flatMap(r => Array.isArray(r.people) ? r.people.map(x => x.donorId) : [r.donorId]).filter(Boolean))];
   res.json({ donorIds: ids, rows: rows.length });
 }));
 
@@ -28573,23 +28574,10 @@ const EVENT_ROW_SQL = {
              FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
             WHERE g.org_id=? AND g.event_id=?
             ORDER BY g.amount DESC`,
-  // each PERSON once: two gifts on their first day were two first-time givers
-  firstTime: `SELECT * FROM (
-              SELECT DISTINCT ON (d.id) d.id AS donor_id, d.name, g.amount::float AS amount, g.date
-                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
-               WHERE g.org_id=? AND g.event_id=? AND g.amount > 0
-                 AND g.date = (SELECT MIN(x.date) FROM gifts x
-                                WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.amount > 0)
-                 AND NOT EXISTS (SELECT 1 FROM gifts y
-                                  WHERE y.org_id=g.org_id AND y.donor_id=g.donor_id
-                                    AND y.amount > 0 AND y.date < g.date)
-               ORDER BY d.id, g.amount DESC) ft
-             ORDER BY amount DESC, name`,
-  sponsors: `SELECT a.id, a.donor_id, a.name, a.recognition, a.sponsor_pledge_id, l.name AS level_name, l.price::float AS price
-               FROM event_attendees a JOIN event_levels l ON l.id=a.level_id
-               LEFT JOIN donors sd ON sd.id=a.donor_id AND sd.org_id=a.org_id
-              WHERE a.org_id=? AND a.event_id=? AND l.kind='sponsor' AND a.status <> 'cancelled' AND (a.donor_id IS NULL OR sd.deleted_at IS NULL)
-              ORDER BY l.price DESC, a.name`,
+  // EVENTS-3: First-time givers and Sponsors are figure sources now
+  // (event-first-time, event-sponsors); this is their one SQL.
+  firstTime: figureSources.EVENT_FIRST_TIME_SQL,
+  sponsors: figureSources.EVENT_SPONSORS_SQL,
 };
 
 app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
@@ -28606,48 +28594,53 @@ app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
   // function the card, the first look and Reports read (numbers.eventsRaised).
   const [money] = await require("../numbers").eventsRaised(orgId, { ids: [event.id] });
   const raisedCents = money ? money.raisedCents : 0;
-  // IMPORT-5: who came and gave, who came and didn't, who was invited and didn't
-  // come: numbers.eventGuests, the answer Home's Grow moves and Ask read too.
-  // FIX-59: Registered and Came are that answer too, counted in PEOPLE: an
-  // imported party size ("2") on one of a couple's two rows made 443 people
-  // read as 552 places. Declined is its own figure, never registered.
-  const [guests] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
-  const G = guests || { cameNoGift: [], cameGave: [], invitedNoShow: [], notYet: [], saidYes: [], declined: [], noReply: [], came: 0, registered: 0, invited: 0, past: true,
-                        definitions: figureSources.EVENT_GUEST_WORDS };
+  // EVENTS-3: every guest count is shared/numbers/events.js, by PARTY (a
+  // household once), with its people beside it: "172 came · 252 people". The
+  // story, Home's Grow moves, Ask and the Events list read the same answer.
+  const EVF = require("../shared/numbers/events");
+  const [guests] = await EVF.eventFigures(query, orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+  const G = guests || { lists: Object.fromEntries(EVF.LIST_KEYS.map(k => [k, []])), counts: Object.fromEntries(EVF.LIST_KEYS.map(k => [k, { parties: 0, people: 0 }])),
+                        cameNoGift: [], cameGave: [], invitedNoShow: [], came: 0, registered: 0, past: true, definitions: EVF.EVENT_GUEST_WORDS };
   const progress = EV.eventProgress({ raisedCents,
     goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
   const attendance = EV.attendanceRate({ registered: G.registered, attended: G.came });
   const gsrc = list => ({ key: "event-guests", params: { event: event.id, list } });
   const story = await require("../numbers").eventStory(orgId, event.id);
+  const guestFig = (key, label, list, source, sentence) => {
+    const c = G.counts[list];
+    return { key, label, value: c.parties, count: c.parties, people: c.people, peopleWords: EVF.peopleWords(c),
+             sentence: sentence || G.definitions[list], source: source || gsrc(list) };
+  };
+  const evSrc = key => ({ key, params: { event: event.id } });
+  const nNoGift = G.counts.cameNoGift.parties;
 
   res.json({
     event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
              goalAmount: event.goal_amount == null ? null : Number(event.goal_amount) },
     progress, attendance, money,
     guests: { past: G.past, cameNoGift: G.cameNoGift, cameGave: G.cameGave, invitedNoShow: G.invitedNoShow,
-              sentence: G.cameNoGift.length ? `${G.cameNoGift.length} ${G.cameNoGift.length === 1 ? "person" : "people"} came and didn't give. Thank them for coming; the ask can wait.` : null },
-    // FUNDRAISING-2: the night's story, each count opening its people.
+              sentence: nNoGift ? `${nNoGift.toLocaleString("en-US")} came and didn't give. Thank them for coming; the ask can wait.` : null },
+    // FUNDRAISING-2: the night's story, each count opening its parties.
     story,
     figures: [
       { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
-        count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
-      { key: "invited", label: "Invited", value: G.invited, count: G.invited, sentence: G.definitions.invited, source: gsrc("invited") },
-      { key: "registered", label: "Registered", value: G.registered,
-        count: G.registered, sentence: EV.EVENT_FIGURES.registered, source: gsrc("registered") },
-      { key: "attended", label: "Came", value: G.came,
-        count: G.came, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence, source: { key: "event-attended", params: { event: event.id } } },
-      { key: "declined", label: "Declined", value: G.declined.length, count: G.declined.length, sentence: EV.EVENT_FIGURES.declined, source: gsrc("declined") },
-      { key: "noReply", label: "No reply", value: G.noReply.length, count: G.noReply.length, sentence: G.definitions.noReply, source: gsrc("noReply") },
-      { key: "cameNoGift", label: "Came, didn't give", value: G.cameNoGift.length, count: G.cameNoGift.length, sentence: G.definitions.cameNoGift, source: gsrc("cameNoGift") },
-      { key: "cameGave", label: "Came, gave", value: G.cameGave.length, count: G.cameGave.length, sentence: G.definitions.cameGave, source: gsrc("cameGave") },
-      ...(G.past ? [{ key: "invitedNoShow", label: "Said yes, didn't come", value: G.invitedNoShow.length, count: G.invitedNoShow.length, sentence: G.definitions.invitedNoShow, source: gsrc("invitedNoShow") }] : []),
-      // FIX-58: Gave, household-aware: Gave = Came, gave + Gave, didn't come
-      ...(story ? [{ key: "gave", label: "Gave", value: story.gave, count: story.gave, sentence: story.definitions.gave, source: story.sources.gave },
-                   { key: "gaveNotCame", label: "Gave, didn't come", value: story.gaveNotCame, count: story.gaveNotCame, sentence: story.definitions.gaveNotCame, source: story.sources.gaveNotCame }] : []),
+        count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence, source: evSrc("event-raised") },
+      guestFig("invited", "Invited", "invited"),
+      guestFig("registered", "Registered", "registered"),
+      guestFig("attended", "Came", "came", evSrc("event-attended"), G.definitions.came + " " + attendance.sentence),
+      guestFig("declined", "Declined", "declined"),
+      guestFig("noReply", "No reply", "noReply"),
+      guestFig("cameNoGift", "Came, didn't give", "cameNoGift"),
+      guestFig("cameGave", "Came, gave", "cameGave"),
+      ...(G.past ? [guestFig("invitedNoShow", "Said yes, didn't come", "invitedNoShow")] : []),
+      // FIX-58: Gave = Came, gave + Gave, didn't come
+      guestFig("gave", "Gave", "gave", evSrc("event-gave")),
+      guestFig("gaveNotCame", "Gave, didn't come", "gaveNotCame", { key: "event-gave", params: { event: event.id, came: "no" } }),
+      guestFig("gaveNotInvited", "Gave, not invited", "gaveNotInvited"),
       { key: "firstTime", label: "First-time givers", value: counts.firstTime.length,
-        count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime },
+        count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime, source: evSrc("event-first-time") },
       { key: "sponsors", label: "Sponsors", value: counts.sponsors.length,
-        count: counts.sponsors.length, sentence: EV.EVENT_FIGURES.sponsors },
+        count: counts.sponsors.length, sentence: EV.EVENT_FIGURES.sponsors, source: evSrc("event-sponsors") },
     ],
     // WHAT THIS REPORT DOES NOT CLAIM. An event is not the reason somebody
     // gave, and a report that implies it is a report that flatters the event.
@@ -28661,19 +28654,19 @@ app.get("/events/:id/rows", requireAuth, wrap(async (req, res) => {
   const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const key = String(req.query.rows || "");
-  // FIX-59: registered, came and declined open the same answer their figures
-  // count (numbers.eventGuests), so a figure and its rows cannot drift.
-  if (["cameNoGift", "cameGave", "invitedNoShow", "registered", "attended", "declined", "invited", "noReply"].includes(key)) {
-    const [g] = await require("../numbers").eventGuests(orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
-    const byName = (a, b) => String(a.name).localeCompare(String(b.name));
-    const list = !g ? [] : key === "attended" ? [...g.cameGave, ...g.cameNoGift].sort(byName)
-      : key === "registered" ? [...g.cameGave, ...g.cameNoGift, ...g.saidYes].sort(byName)
-      : key === "invited" ? [...g.cameGave, ...g.cameNoGift, ...g.saidYes, ...g.declined, ...g.noReply].sort(byName) : g[key];
-    return res.json({ eventId: event.id, rows: key, count: list.length, donors: list.map(p => ({ donor_id: p.noRecord ? null : p.id, name: p.name })) });
+  // FIX-59 + EVENTS-3: the guest lists open the same answer their figures
+  // count (shared/numbers/events.js), one row per party with its people.
+  const EVF = require("../shared/numbers/events");
+  const list = key === "attended" ? "came" : key;
+  if (EVF.LIST_KEYS.includes(list)) {
+    const [g] = await EVF.eventFigures(query, orgId, { ids: [event.id], asOf: orgToday(await orgTz(orgId)) });   // ORG_TZ_SEAM_OK
+    const rows = g ? g.lists[list] : [];
+    return res.json({ eventId: event.id, rows: key, count: rows.length,
+      donors: rows.map(p => ({ donor_id: p.donorId, name: p.name, people: p.people.map(x => ({ donor_id: x.noRecord ? null : x.id, name: x.name })) })) });
   }
   const sql = EVENT_ROW_SQL[key];
   if (!sql) return res.status(400).json({ error: "unknown_rows",
-    message: `There is no set of rows called "${key}". Ask for one of: ${["invited", "registered", "attended", "declined", "noReply", "cameNoGift", "cameGave", "invitedNoShow", ...Object.keys(EVENT_ROW_SQL)].join(", ")}.` });
+    message: `There is no set of rows called "${key}". Ask for one of: ${["attended", ...EVF.LIST_KEYS, ...Object.keys(EVENT_ROW_SQL)].join(", ")}.` });
   const rows = await query(sql, [orgId, event.id]);
   res.json({ eventId: event.id, rows: key, count: rows.length, donors: rows.slice(0, 1000) });
 }));
@@ -28750,11 +28743,15 @@ app.get("/events/:id/kiosk", requireAuth, wrap(async (req, res) => {
   // is in, the same people the event's Came counts; expected is Registered
   // (the list, declined apart). "0 of 552 checked in" beside "Came 249" was
   // two answers to one question.
+  // EVENTS-3: the count is the event page's own, by party (a household once),
+  // from shared/numbers/events.js; the people are said beside it.
   for (const g of guests) g.in = g.status === "attended" || !!g.checked_in_at;
-  const inCount = guests.filter(g => g.in).length;
+  const [F] = await require("../shared/numbers/events").eventFigures(query, orgId, { ids: [event.id] });
+  const inCount = F ? F.counts.came.parties : 0, expected = F ? F.counts.registered.parties : 0;
+  const inPeople = F ? F.counts.came.people : 0, expectedPeople = F ? F.counts.registered.people : 0;
   const noDoor = guests.filter(g => g.in && !g.checked_in_at).length;
-  res.json({ event, guests, levels, checkedIn: inCount, expected: guests.length,
-    sentence: `${inCount} of ${guests.length} checked in.`
+  res.json({ event, guests, levels, checkedIn: inCount, expected, people: { checkedIn: inPeople, expected: expectedPeople },
+    sentence: `${inCount} of ${expected} checked in${expectedPeople !== expected ? ` (${inPeople} of ${expectedPeople} people)` : ""}.`
       + (noDoor ? ` ${noDoor === inCount ? (noDoor === 1 ? "They were" : "All of them were") : `${noDoor} of them ${noDoor === 1 ? "was" : "were"}`} marked as attending without a time at the door, from an import or by hand.` : "") });
 }));
 
@@ -28922,37 +28919,31 @@ app.get("/events", requireAuth, async (req, res) => {
     // EVENTS-1 — RAISED IS SUMMED FROM THE GIFTS, never from a typed figure
     // and never from `gift_amount` on the attendee row, which is a copy. The
     // card's number and the rows behind it are one query.
-    const rows = await query(`
-      SELECT e.*,
-        COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
-        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
-        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
-        COUNT(ea.id)::int AS invited_count,
-        COALESCE(SUM(ea.gift_amount),0) AS total_revenue,
-        (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
-          WHERE g.org_id = e.org_id AND ${NOT_DELETED("g")}
-            AND (g.event_id = e.id
-                 OR (g.event_id IS NULL AND e.campaign_id IS NOT NULL AND g.campaign_id = e.campaign_id)
-                 OR (g.event_id IS NULL AND e.campaign_id IS NULL AND g.campaign = e.name)))::float AS raised
-      FROM events e
-      LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ${NOT_DELETED("ea")}
-      WHERE e.org_id = $1
-      GROUP BY e.id
-      ORDER BY e.date DESC NULLS LAST
-    `, [orgId]);
+    // EVENTS-3: no count of guests here. The list's numbers are the event
+    // page's own (shared/numbers/events.js): parties, with their people.
+    const rows = await query(`SELECT e.* FROM events e WHERE e.org_id = $1 ORDER BY e.date DESC NULLS LAST`, [orgId]);
     // HOME-3: raised the way she says it (received + pledged for the event's
     // year), one function for the card, the event page, the first look and Reports.
     const money = new Map((await require("../numbers").eventsRaised(orgId, { ids: rows.map(r => r.id) })).map(m => [m.id, m]));
-    // FIX-59: Registered and who is in are the event page's own answer
-    // (numbers.eventGuests): people, declined apart, attended counts as in.
-    const guests = new Map((await require("../numbers").eventGuests(orgId, { ids: rows.map(r => r.id) })).map(g => [g.id, g]));
-    res.json(rows.map(r => {
-      const g = guests.get(r.id);
-      return { ...r, attendee_count: g ? g.came : 0, registered_count: g ? g.registered : 0, checked_in_count: g ? g.came : 0,
-               declined_count: g ? g.declined.length : 0, money: money.get(r.id) || null };
-    }));
+    const counts = await eventCounts(orgId, rows.map(r => r.id));
+    res.json(rows.map(r => ({ ...r, ...counts.get(r.id), money: money.get(r.id) || null })));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// EVENTS-3 · an event's guest counts on its row, by party, with the people
+// beside them (shared/numbers/events.js). One id gives that event's counts;
+// a list of ids gives a Map.
+async function eventCounts(orgId, ids) {
+  const list = Array.isArray(ids) ? ids : [ids];
+  const evs = await require("../shared/numbers/events").eventFigures(query, orgId, { ids: list });
+  const out = new Map(evs.map(g => {
+    const c = k => g.counts[k];
+    return [g.id, { attendee_count: c("came").parties, registered_count: c("registered").parties, checked_in_count: c("came").parties,
+      invited_count: c("invited").parties, declined_count: c("declined").parties,
+      people: { came: c("came").people, registered: c("registered").people, invited: c("invited").people } }];
+  }));
+  return Array.isArray(ids) ? out : (out.get(ids) || {});
+}
 
 app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
   try {
@@ -29006,16 +28997,8 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
          notes || null, req.params.id, orgId]
       );
     }
-    const rows = await query(`
-      SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
-        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
-        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
-        COUNT(ea.id)::int AS invited_count,
-        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
-      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id AND ${NOT_DELETED("ea")}
-      WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
-    `, [req.params.id, orgId]);
-    res.json(rows[0] || {});
+    const rows = await query(`SELECT e.* FROM events e WHERE e.id=$1 AND e.org_id=$2`, [req.params.id, orgId]);
+    res.json(rows[0] ? { ...rows[0], ...(await eventCounts(orgId, rows[0].id)) } : {});
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -29153,17 +29136,9 @@ app.delete("/events/:id", requireAuth, async (req, res) => {
 app.get("/events/:id", requireAuth, async (req, res) => {
   try {
     const orgId = req.user.orgId;
-    const evts = await query(`
-      SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
-        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
-        COUNT(CASE WHEN ea.status='invited' THEN 1 END)::int AS invited_count_raw,
-        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
-        COUNT(ea.id)::int AS total_count,
-        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
-      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id AND ${NOT_DELETED("ea")}
-      WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
-    `, [req.params.id, orgId]);
+    const evts = await query(`SELECT e.* FROM events e WHERE e.id=$1 AND e.org_id=$2`, [req.params.id, orgId]);
     if (!evts.length) return res.status(404).json({ error: "Not found" });
+    Object.assign(evts[0], await eventCounts(orgId, evts[0].id));
     const attendees = await query(`
       SELECT ea.*, d.stage, d.total_giving, d.assigned_to_name
       FROM event_attendees ea

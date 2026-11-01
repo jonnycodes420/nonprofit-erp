@@ -12,7 +12,7 @@ import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
 import { SaveAsGroup } from "./Groups";
 import { Figure } from "./Figure";
-import EventRaised, { EventStory } from "./EventRaised";   // HOME-3 · FUNDRAISING-2
+import EventRaised, { EventStory, peopleLine } from "./EventRaised";   // HOME-3 · FUNDRAISING-2 · EVENTS-3
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 import { countLabel } from "../../../shared/countWords.js";
 
@@ -378,17 +378,15 @@ function EventReport({ eventId, onOpenRows }) {
       {r.money && <EventRaised e={r.money} style={{ marginBottom: 12 }} />}
       {/* FUNDRAISING-2: the night's story, each figure opening its people. */}
       {r.story && <EventStory s={r.story} noGiftShownBelow={!!(r.guests && r.guests.cameNoGift.length + r.guests.cameGave.length + r.guests.invitedNoShow.length)} style={{ marginBottom: 12 }} />}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      {/* SWEEP-4 + EVENTS-3: one tile look, the white figure tiles, and every
+          tile a <Figure> that opens its rows: First-time givers and Sponsors too.
+          A guest count is parties, its people under it. */}
+      <div data-testid="ev-report-tiles" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 12 }}>
         {r.figures.filter(f => !(r.money && f.key === "raised") && !(r.story && f.key === "attended") && !["cameNoGift", "cameGave", "invitedNoShow"].includes(f.key) && !(r.story && ["gave", "gaveNotCame"].includes(f.key))).map(f => (
-          <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
-            onClick={() => onOpenRows(f.key, f.label, f.sentence)}
-            style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
-                     cursor: "pointer", fontFamily: "inherit", textAlign: "left", minWidth: 120 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: T.ink3 }}>{f.label}</div>
-            <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, color: T.ink, lineHeight: 1.15 }}>
-              {f.money ? fmtFull(f.value) : f.value}
-            </div>
-          </button>
+          <div key={f.key} data-testid={"ev-fig-" + f.key} style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <Figure kind={f.money ? "money" : "count"} whole value={f.value} label={f.label} definition={f.sentence} source={f.source}
+              figureKey={"event.report." + f.key} sub={f.peopleWords || null} />
+          </div>
         ))}
       </div>
       {r.guests && (r.guests.cameNoGift.length + r.guests.cameGave.length + r.guests.invitedNoShow.length) > 0 && (
@@ -1075,6 +1073,7 @@ export function EventKiosk({ eventId }) {
   const [code, setCode] = useState("");
   const [result, setResult] = useState(null);      // { tone: "in"|"again"|"no", title, sentence }
   const [view, setView] = useState("all");          // "all" | "in": the count opens the rows behind it
+  const [listOpen, setListOpen] = useState(false);   // EVENTS-3: the full list folds under the search
   const [camOn, setCamOn] = useState(false);
   const [camErr, setCamErr] = useState("");
   const [walkins, setWalkins] = useState([]);
@@ -1225,7 +1224,10 @@ export function EventKiosk({ eventId }) {
 
   if (!data) return null;
   const guests = data.guests || [];
-  const inCount = guests.filter(isIn).length;
+  // EVENTS-3: checked in and expected are the event page's Came and
+  // Registered, by party (a household once); the people are in the sentence.
+  const inCount = data.checkedIn ?? guests.filter(isIn).length;
+  const expected = data.expected ?? guests.length;
   const base = view === "in" ? guests.filter(isIn) : guests;
   const shown = q ? base.filter(g => (g.name || "").toLowerCase().includes(q)) : base;
   const onList = new Set(guests.map(g => g.donor_id).filter(Boolean));
@@ -1254,13 +1256,19 @@ export function EventKiosk({ eventId }) {
           style={{ background: view === "in" ? T.green100 : T.white, border: "1.5px solid " + T.greenDk, borderRadius: 999,
                    padding: "8px 14px", fontFamily: "inherit", cursor: "pointer", color: T.ink, minHeight: 44 }}>
           <span style={{ fontSize: 18, fontWeight: 800, color: T.greenDk, fontVariantNumeric: "tabular-nums" }}>{inCount}</span>
-          <span style={{ fontSize: 13 }}> of {guests.length} checked in</span>
+          <span style={{ fontSize: 13 }}> of {expected} checked in</span>
         </button>
       </div>
       <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-sentence">
         {data.sentence} Checked in counts everybody marked in, at the door or as attending; expected is everybody who said they were coming or came.
       </div>
 
+      {/* EVENTS-3: the door search is the page. Who is at the door types a name
+          (or scans); the whole list is folded under it, open on request. */}
+      <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Find a guest or a walk-in by name"
+        onKeyDown={e => { if (e.key === "Enter" && picked) { e.preventDefault(); submitCheck(); } }}
+        aria-label="Find a guest or a walk-in by name"
+        style={{ width: "100%", boxSizing: "border-box", border: "2px solid " + T.greenDk, borderRadius: 12, padding: "14px 16px", fontSize: 18, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         {!camOn
           ? <button type="button" data-testid="ev-kiosk-camera" onClick={startCamera} style={{ ...big, flex: "1 1 160px", background: T.greenDk, color: T.white }}>Scan</button>
@@ -1298,18 +1306,25 @@ export function EventKiosk({ eventId }) {
           {picked && !code.trim() ? "Check in" : "Check"}</button>
       </form>
 
-      <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Find a guest or a walk-in by name"
-        onKeyDown={e => { if (e.key === "Enter" && picked) { e.preventDefault(); submitCheck(); } }}
-        aria-label="Find a guest or a walk-in by name"
-        style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginBottom: 8 }}>{msg}</div>}
       {view === "in" && (
         <div data-testid="ev-kiosk-in-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>Checked in · {inCount}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>Checked in · {base.length} {base.length === 1 ? "guest" : "guests"}</span>
           <button type="button" onClick={() => setView("all")} style={{ background: "none", border: "none", color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", minHeight: 44 }}>Show everyone</button>
         </div>
       )}
+      {!q && view !== "in" && !listOpen ? (
+        <button type="button" data-testid="ev-kiosk-show-all" onClick={() => setListOpen(true)}
+          style={{ background: "none", border: "none", padding: "6px 0", minHeight: 44, color: T.greenDk, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}>
+          {/* the list is one row per person; when a household makes the
+              parties above fewer, say people, as the sentence does */}
+          Show all {guests.length.toLocaleString("en-US")} {guests.length === expected ? (guests.length === 1 ? "guest" : "guests") : (guests.length === 1 ? "person" : "people")}</button>
+      ) : (
       <div data-own-scroll="pick-list" style={{ maxHeight: 360, overflowY: "auto" }}>
+        {!q && view !== "in" && (
+          <button type="button" data-testid="ev-kiosk-hide-all" onClick={() => setListOpen(false)}
+            style={{ background: "none", border: "none", padding: "0 0 6px", color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Fold the list</button>
+        )}
         {shown.slice(0, 200).map(g => (
           <div key={g.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
             <div role="button" tabIndex={0} data-testid="ev-kiosk-row" data-selected={picked && picked.id === g.id ? "1" : undefined}
@@ -1335,6 +1350,7 @@ export function EventKiosk({ eventId }) {
         ))}
         {!shown.length && <div style={{ fontSize: 13, color: T.ink3, marginBottom: 6 }}>{view === "in" && !q ? "Nobody is checked in yet." : "Nobody by that name on the list."}</div>}
       </div>
+      )}
       {q.length >= 2 && (
         <div data-testid="ev-kiosk-walkin" style={{ borderTop: "1px solid " + T.bg3, marginTop: 8, paddingTop: 10 }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Walk-in, not on the list</div>
@@ -1910,13 +1926,15 @@ export function Events({ data, isReadOnly }) {
         {yearLoaded ? <>
         <Figure kind="count" value={yv("events")} label="Events this year" figureKey="events.thisYear" source={yearSrc.events}
           definition={`Every event dated in ${currentYear}, upcoming and past.`} />
+        {/* EVENTS-3: parties, as the guest list counts them, with the people under */}
         <Figure kind="count" value={yv("came")} label="Came, this year" figureKey="events.came" source={yearSrc.came}
-          definition={`Each person marked as having come to an event dated in ${currentYear}, once per event.`} />
+          sub={peopleLine(yearFig.came)}
+          definition={`Each party that came to an event dated in ${currentYear}, once per event. A household is one party.`} />
         <Figure kind="money" whole value={yv("received")} label="Received at events" figureKey="events.received" source={yearSrc.received}
           definition={`Every gift received for an event dated in ${currentYear}, the same figure each event's page calls Received. Pledges are not in it.`} />
         <Figure kind="percent" value={yv("rate")} label="Came of registered" figureKey="events.rate" source={yearSrc.rate}
           blank="No event this year has anybody registered yet." blankShort="No guest lists yet"
-          definition={`Of everyone registered for an event dated in ${currentYear}, the share who came, counted once per event.`} />
+          definition={`Of every party registered for an event dated in ${currentYear}, the share that came, counted once per event.`} />
         </> : [0, 1, 2, 3].map(i => (
           <div key={i} aria-hidden="true" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
             <SkeletonBar width="55%" /><SkeletonBar width="40%" height={26} />

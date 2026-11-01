@@ -96,7 +96,7 @@ rather than writing a second.
 | Lapsed and lapsing | `lapseRule.js` (the bounds and `lapseState`) and `donorStatus.statusSql` |
 | Major (and every computed tag) | `donorStatus.statusSql` |
 | Pledge balance and due | `numbers.pledgeSummary()` and the figure sources `pledges-open`, `pledges-due`, `pledges-overdue`, `pledge-payments` |
-| Event came and gave | `numbers.eventGuests()` and `numbers.eventStory()` |
+| An event's guests (invited, came, gave, ...) | `shared/numbers/events.js` `eventFigures()`: parties (a household once), people beside them; `numbers.eventStory()` for the page's story |
 | Suggested ask | `engagement.suggestedAsk` → `shared/smartAmounts.suggestedAskCents` |
 | People and households | the Donors list filter (`groups.buildDonorFilter`) for people; figure source `household-giving` for households |
 | Net and fee | `shared/giftFooting.js` |

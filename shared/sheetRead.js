@@ -1773,10 +1773,17 @@ export function importButtonSentence(u, extra = {}) {
   const sub = [];
   if (c.donors) sub.push(plural(c.donors, "donor"));
   if (c.volunteers) sub.push(plural(c.volunteers, "volunteer"));
-  parts.push(`${plural(c.persons || 0, "person", "people")}${sub.length ? ` (${sub.join(", ")})` : ""}`);
+  // EVENTS-3: a couple's row is one entry on her list and two people in
+  // Steward. The button says what will exist (the people) and the list's own
+  // count beside it ("558 people, 443 on the list"): SWEEP-2's "558 against 443".
+  const onList = c.records != null && c.persons != null && c.records !== c.persons ? `, ${(c.records || 0).toLocaleString("en-US")} on the list` : "";
+  parts.push(`${plural(c.persons || 0, "person", "people")}${onList}${sub.length ? ` (${sub.join(", ")})` : ""}`);
   if (c.gifts) parts.push(`${plural(c.gifts, "gift")} ${fmt$(c.giftCents)}${c.undatedGifts ? ` (${c.undatedGifts.toLocaleString("en-US")} undated)` : ""}`);
   if (c.pledges) parts.push(`${plural(c.pledges, "pledge")} ${pledgeMoneyWords({ dueThisYearCents: c.pledgeDueThisYearCents, openCents: c.pledgeOpenCents, years: c.pledgeYears, undatedCents: c.pledgeUndatedCents }, fmt$)}`);
-  if (u.event && u.event.name && u.event.fromEngagement) parts.push(`${u.event.name}: ${c.attended.toLocaleString("en-US")} attended`);
+  if (u.event && u.event.name && u.event.fromEngagement) {
+    const rows = c.attendedRecords ?? c.attended;
+    parts.push(`${u.event.name}: ${rows.toLocaleString("en-US")} attended${rows !== c.attended ? ` (${c.attended.toLocaleString("en-US")} people)` : ""}`);
+  }
   if (c.optOuts) parts.push(plural(c.optOuts, "opt-out"));
   if (c.doNotContact) parts.push(`${c.doNotContact.toLocaleString("en-US")} do not contact`);
   if (extra.matched) parts.push(`${extra.matched.toLocaleString("en-US")} already in Steward`);

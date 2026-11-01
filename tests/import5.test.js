@@ -304,7 +304,7 @@ async function giftHistory() {
   await undo(tok, j.importId);
 }
 
-// §6 FIX-58: an event counts people once. The dinner's guest list and its
+// §6 FIX-58 + EVENTS-3: an event counts parties once (a household once), people beside them. The dinner's guest list and its
 // gifts, one event: "Registered 263" was 233 party places for 165 guests plus
 // 30 who declined. FIX-60: read from the combined Finding Joy workbook, whose
 // guest list and gifts are the same people (the old guest list belonged to
@@ -327,16 +327,21 @@ async function eventPeople() {
   const rep = (await api("GET", `/events/${ev.id}/report`, tok)).body || {};
   const fig = k => ((rep.figures || []).find(f => f.key === k) || {}).value;
   const card = (((await api("GET", "/events", tok)).body) || []).find(e => e.id === ev.id) || {};
-  ok(`§6 Registered is each person who said they were coming or came, once: ${key.reg}, on the page and the card`,
-     evs.length === 1 && fig("registered") === key.reg && card.registered_count === key.reg && rep.story && rep.story.registered === key.reg,
-     JSON.stringify([evs.length, key, fig("registered"), card.registered_count, rep.story && rep.story.registered]));
+  // EVENTS-3: the page counts parties (the key's rows), with the people beside them
+  const figPeople = k => ((rep.figures || []).find(f => f.key === k) || {}).people;
+  ok(`§6 Registered is each party that said it was coming or came, once: the key's ${K.rsvp_yes} (${key.reg} people), on the page and the card`,
+     evs.length === 1 && fig("registered") === K.rsvp_yes && card.registered_count === K.rsvp_yes && rep.story && rep.story.registered === K.rsvp_yes
+     && figPeople("registered") === key.reg && card.people && card.people.registered === key.reg,
+     JSON.stringify([evs.length, key, fig("registered"), figPeople("registered"), card.registered_count, rep.story && rep.story.registered]));
   const st = rep.story || {};
-  ok("§6 Came = came and gave + came and didn't; Gave = came and gave + gave and didn't come",
-     st.attended === key.came && st.cameGave + st.cameDidntGive === st.attended && st.gave === st.cameGave + st.gaveNotCame && typeof st.addsUp === "string",
+  ok("§6 Came = came and gave + came and didn't; Gave = came and gave + gave and didn't come; the people beside them",
+     st.attended === K.attended && st.people.attended === key.came && st.cameGave + st.cameDidntGive === st.attended && st.gave === st.cameGave + st.gaveNotCame && typeof st.addsUp === "string",
      JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave, st.gaveNotCame, st.addsUp]));
   const reg = (await api("GET", `/figures/event-registered/rows?event=${ev.id}&page=1&pageSize=200`, tok)).body || {};
   const regRows = (await api("GET", `/events/${ev.id}/rows?rows=registered`, tok)).body || {};
-  ok("§6 Registered opens its people, the same number", Number(reg.value) === key.reg && reg.totalRows === key.reg && regRows.count === key.reg, JSON.stringify([reg.value, reg.totalRows, regRows.count]));
+  ok("§6 Registered opens one row per party, the same number, its people under them",
+     Number(reg.value) === K.rsvp_yes && reg.totalRows === K.rsvp_yes && regRows.count === K.rsvp_yes && reg.people === key.reg
+     && (regRows.donors || []).reduce((n, r) => n + (r.people || []).length, 0) === key.reg, JSON.stringify([reg.value, reg.totalRows, regRows.count, reg.people]));
   let agree = null;
   try { agree = await assertSurfacesAgree(ORG, { token: tok, label: "after the dinner and its guest list", soft: true }); } catch (e) { agree = { ok: false, diffs: [String(e.message)] }; }
   ok("§6 the truth check: registered on the database, the page, the story and the card, and the counts add up", agree.ok, (agree.diffs || []).join("\n"));
