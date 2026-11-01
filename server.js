@@ -1633,10 +1633,10 @@ const engagementMod = require("./engagement");
 // each other in this process, and the advisory lock does the same across
 // processes. Every call still runs; nothing is skipped or merged.
 const _scoreRuns = new Map();
-function recomputeScoresForOrg(orgId) {
+async function recomputeScoresForOrg(orgId) {
+  if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
   const prev = _scoreRuns.get(orgId) || Promise.resolve();
   const mine = prev.catch(() => {}).then(async () => {
-    if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
     const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
     if (!o) return 0;
     return withAdvisoryLock(`donor_scores:${orgId}`, () => engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o)));
