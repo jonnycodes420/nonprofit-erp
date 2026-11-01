@@ -1251,7 +1251,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
     const was = process.env.TEST_MODE; delete process.env.TEST_MODE;
     try {
       const taken = `admin-a@mx.local`;
-      const fresh = `s3-legacy-${Date.now()}@mx.local`;
+      const fresh = `s3-legacy-${require("crypto").randomBytes(4).toString("hex")}@mx.local`;
       for (const path of ["/auth/register", "/auth/register-org"]) {
         for (const [who, tok] of [["signed out", null], ["an org admin", aAdmin]]) {
           const t = await mfetch("POST", path, tok, { email: taken, password: "loadtest1234", orgName: "S3 Legacy", name: "S3", userName: "S3" });
