@@ -290,7 +290,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ["Fundraising, all time", fund && fund.allTime ? fund.allTime.giftCount : undefined],
       ["the workbook export", wbGifts ? wbGifts.length : undefined],
       ["the export zip's gifts.csv", zg ? zg.length : undefined],
-    ], String, { "the onboarding card": ["D-7", key.gifts.count + key.credits.rows], "Fundraising, all time": ["D-1", key.gifts.count + key.credits.rows] });
+    ], String, { "the onboarding card": ["D-7", key.gifts.count + key.credits.rows] });
     const listed = list && Array.isArray(list.donors) && list.donors.length === list.total ? list.donors : null;
     const summarised = key.importedIds.length > 0;
     agree("total given", [
@@ -300,7 +300,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       // A person's lifetime folds in an imported total; only comparable when no one carries one.
       ["the Donors list (sum of lifetime)", listed && !summarised ? listed.reduce((a, d) => a + cents(d.total_giving), 0) : undefined],
       ["the CSV export (sum of Total giving)", csvRows && !summarised ? csvRows.reduce((a, r) => a + cents(r["Total giving"]), 0) : undefined],
-    ], money, { "Fundraising, all time": ["D-1", key.gifts.cents + key.credits.cents] });
+    ], money);
     // TRUTH-1: each person's lifetime is their hard credit, never a soft or
     // matching credit (only where no imported total is folded in).
     if (listed) {
@@ -317,8 +317,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   if (ctx.fileKey) {
     const fk = ctx.fileKey;
     if (fk.gifts) agree("the file's gifts (count)", [["the file's key", fk.gifts.count], ["the org's key", key.gifts.count]]);
-    if (fk.gifts) agree("the file's gifts (money)", [["the file's key", fk.gifts.cents], ["the org's key", key.gifts.cents], ...(fund && fund.allTime ? [["Fundraising, all time", cents(fund.allTime.raised)]] : [])], money,
-      { "Fundraising, all time": ["D-1", fk.gifts.cents + key.credits.cents] });
+    if (fk.gifts) agree("the file's gifts (money)", [["the file's key", fk.gifts.cents], ["the org's key", key.gifts.cents], ...(fund && fund.allTime ? [["Fundraising, all time", cents(fund.allTime.raised)]] : [])], money);
     if (fk.byCalendarYear) {
       for (const [y, c] of Object.entries(fk.byCalendarYear)) agree(`the file's ${y} (money)`, [["the file's key", c], ["the org's key", key.between(`${y}-01-01`, `${y}-12-31`).cents]], money);
     }
@@ -354,7 +353,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["Atlas, asked how much this year", aY ? cents(num(aY[1])) : undefined],
         ["Ask, asked how much this year", askYm ? cents(num(askYm[1])) : undefined],
       ], money, (() => { const withCredits = thisYear + key.creditsBetween(key.fiscalYear.from, today).cents;
-        return { "Fundraising's Raised tile": ["D-2", withCredits], "Atlas, asked how much this year": ["D-3", withCredits], "Ask, asked how much this year": ["D-3", withCredits] }; })());
+        return { "Atlas, asked how much this year": ["D-3", withCredits], "Ask, asked how much this year": ["D-3", withCredits] }; })());
     }
     if (!skip.has("vsLastYear") && w) {
       // HOME-3: Home says pace once, in the greeting (lead.pace, numbers.vsLastYear).
