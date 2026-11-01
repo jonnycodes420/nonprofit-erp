@@ -191,7 +191,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
                   AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled')) AS invited,
               (e.date_unknown IS TRUE OR e.date IS NULL OR e.date::date <= (NOW() AT TIME ZONE COALESCE((SELECT timezone FROM orgs WHERE id = e.org_id), 'America/New_York'))::date) AS past
          FROM events e WHERE e.org_id = $1`, [orgId]),
-    q(`SELECT c.id, c.name, c.goal_amount,
+    q(`SELECT c.id, c.name, c.goal_amount, to_char(c.start_date,'YYYY-MM-DD') AS from_day, to_char(c.end_date,'YYYY-MM-DD') AS to_day,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 WHERE g.org_id = c.org_id AND g.campaign_id = c.id AND d.deleted_at IS NULL
                   AND (c.start_date IS NULL OR g.date >= to_char(c.start_date,'YYYY-MM-DD'))
@@ -386,7 +386,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
         const dbCents = /\./.test(door[1]) ? thisYear - lastYear : Math.round((thisYear - lastYear) / 100) * 100;
         facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's greeting"] = homeCents;
-        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the database says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
+        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
       }
       // Every "vs last year" says which days it compares.
       if (fp && fp.priorRaised > 0 && !(fundCmp && fundCmp.sentence && fundCmp.lastFrom === w.from && fundCmp.lastTo === w.to)) {
@@ -477,14 +477,18 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     for (const c of campaignRows) {
       const goal = ((fund && fund.goals) || []).find(x => x.id === c.id);
       const gr = goal ? (goal.giftRaised ?? goal.raised) : undefined;
-      if (gr !== undefined && cents(gr) !== Number(c.raised)) diffs.push(`campaign "${c.name}": Fundraising's goals say ${money(cents(gr))} raised, its live gifts in its dates are ${money(Number(c.raised))}`);
+      // TRUTH-1: the key's hard credit in the campaign's dates (c.raised, the
+      // old SQL, summed every row; it stays as the second witness)
+      const from = c.from_day || null, to = c.to_day || null;
+      const kc = key.sumHard(g => g.campaign === c.id && (!from || (g.d && g.d >= from)) && (!to || (g.d && g.d <= to)));
+      if (gr !== undefined) agree(`campaign "${c.name}" raised`, [["the key (hard credit in its dates)", kc], ["Fundraising's goals", cents(gr)]], money);
     }
   }
 
   if (!skip.has("campaigns")) {
     for (const p of pageRows) {
       const shown = ((fund && fund.givingPages && fund.givingPages.pages) || []).find(x => x.id === p.id);
-      if (shown && cents(shown.raised) !== Number(p.raised)) diffs.push(`giving page "${p.title}": Fundraising says ${money(cents(shown.raised))} raised, its live people's gifts are ${money(Number(p.raised))}`);
+      if (shown) agree(`giving page "${p.title}" raised`, [["the key (hard credit through it)", key.sumHard(g => g.page === p.id)], ["Fundraising", cents(shown.raised)]], money);
     }
   }
 
@@ -718,8 +722,12 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const askG = !skip.has("ask") && askN && askN.answered !== false ? gave(askN.sentence) : null;
   const atlasG = !skip.has("atlas") ? gave(answerLine(atlasN)) : null;
   if (!skip.has("ask") && askN && askN.answered === false) diffs.push(`Ask could not answer "${ASK_N}": ${askN.sentence}`);
-  agree("people who gave this year", [["the Board's People who gave", donorCount],
-    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]]);
+  // TRUTH-1: and the key's people who gave (a hard-credit gift above zero) from the year's first day to today
+  const kToday = (board && board.asOf) || key.asOf;
+  const kGave = key.giversBetween(key.fiscalYear.from, kToday).people, kRows = key.rowsBetween(key.fiscalYear.from, kToday).people;
+  agree("people who gave this year", [["the key", kGave], ["the Board's People who gave", donorCount],
+    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]], String,
+    { "Ask, asked how many donors": ["D-3", kRows], "Atlas, asked how many donors": ["D-3", kRows] });
 
   // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
   // open-pledge rows for that person and Home's pledge move say one number.
@@ -740,6 +748,34 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const shown = [["the database", Number(o.c)], ["the profile's open pledge", profC], ["Fundraising's open pledges for them", fr ? cents(fr.value) : undefined],
           ...(m ? [["Home's move", homeC]] : [])];
         for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);
+      }
+    }
+  }
+
+  // ── TRUTH-1 · WHO GAVE, AND WHO GAVE FOR THE FIRST TIME, THIS FISCAL YEAR ──
+  // Reports' giving summary for the org's fiscal year: people who gave (a
+  // hard-credit gift above zero) and first-time (their first gift ever, the
+  // old system's history included, falls in it), the second by person.
+  if (!skip.has("units")) {
+    const fy = key.fiscalYear;
+    const gs = await get(`/reports/giving-summary?yearMode=fiscal&year=${fy.to.slice(0, 4)}`).catch(() => null);
+    const F = gs && gs.figures;
+    const fyLabel = Object.keys(key.firstTime)[0];
+    const firsts = key.firstTime[fyLabel] || [];
+    if (F && F.uniqueDonors && F.uniqueDonors.source && F.uniqueDonors.source.params && F.uniqueDonors.source.params.from === fy.from) {
+      agree(`people who gave in ${fy.label}`, [["the key", key.giversBetween(fy.from, fy.to).people], ["Reports' giving summary", Number(F.uniqueDonors.value)]]);
+      if (F.newDonors) {
+        agree(`first-time donors in ${fy.label}`, [["the key", firsts.length], ["Reports' giving summary", Number(F.newDonors.value)]]);
+        const ids = [];
+        for (let pg = 1; pg <= 10; pg++) {
+          const r = await get(`/figures/givers/rows?from=${fy.from}&to=${fy.to}&first=new&page=${pg}&pageSize=500`).catch(() => null);
+          const rows = (r && r.rows) || [];
+          ids.push(...rows.map(x => x.donorId || x.donor_id || x.id));
+          if (rows.length < 500) break;
+        }
+        const want = new Set(firsts), got = new Set(ids);
+        const missing = firsts.filter(id => !got.has(id)), extra = ids.filter(id => !want.has(id));
+        if (missing.length || extra.length) diffs.push(`first-time donors in ${fy.label}: the giving summary's rows ${missing.length ? `leave out ${missing.length} the key names (${missing.slice(0, 3).join(", ")})` : ""}${missing.length && extra.length ? " and " : ""}${extra.length ? `list ${extra.length} the key does not (${extra.slice(0, 3).join(", ")})` : ""}`);
       }
     }
   }

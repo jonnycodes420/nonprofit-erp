@@ -83,6 +83,15 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   leave out), and smoke-walk over every `<Figure>` on every screen (it reads `data-kind`, `data-source-params`
   and `data-shown`, which Figure.jsx writes for it) and every fee column. Both of SWEEP-5's bugs, planted back,
   go red.
+- **The truth check's answer is the key, never the app (TRUTH-1).** `tests/keys/truthKey.js` computes every
+  number from plain rows by definitions written out in it (money is hard credit; lapsed by person with the
+  pledge hold; a household once; deposited is a deposit run or `deposited_on`), and imports no app code;
+  `tests/keys/fromDb.js` reads an org's rows with plain SELECTs. `assertSurfacesAgree` compares every surface to
+  the key and to each other. A real-shaped file's key is built from its cells (`tests/keys/build-keys.js`,
+  committed as `tests/keys/*.key.json`, rebuilt and checked by `tests/truth-key.test.js`) and passed as
+  `ctx.fileKey`. A disagreement logged in `docs/defects.md` is marked in `tests/lib/knownDefects.js` and passes
+  only at exactly the value its defect predicts; it still prints as KNOWN. Change the key only when a definition
+  changes, never to match a screen.
 
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,

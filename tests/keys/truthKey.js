@@ -211,6 +211,8 @@ function computeKey(rows, opts = {}) {
       const ids = new Set(a.map(g => g.person));
       return { cents: sumC(a), count: a.length, people: ids.size, units: new Set([...ids].map(unitOf)).size };
     },
+    // hard money on the rows a test names (a campaign's, a giving page's)
+    sumHard: pred => sumC(hard.filter(pred)),
     depositRefOf: id => { const g = gifts.find(x => x.id === id); return g ? String(g.depositRef || "").trim() : null; },
     // who gave (hard, above zero) from..to: people, and units (a household once)
     giversBetween: (from, to) => {
@@ -221,6 +223,6 @@ function computeKey(rows, opts = {}) {
 }
 
 // The key as JSON (no functions), for a committed file.
-const toJson = k => { const { unitOf, between, giversBetween, creditsBetween, rowsBetween, depositRefOf, ...rest } = k; return rest; };
+const toJson = k => { const { unitOf, between, giversBetween, creditsBetween, rowsBetween, depositRefOf, sumHard, ...rest } = k; return rest; };
 
 module.exports = { computeKey, toJson, isCreditType, fiscalYear, addDays, monthsBack };

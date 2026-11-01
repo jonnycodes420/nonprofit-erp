@@ -156,10 +156,12 @@ async function main() {
 //   Moss Pledger gave long ago and has an open pledge: held, not lapsed.
 //   Nell Quiet gave 400 days ago: lapsed.
 //   Oona Credit's $5,000 this month is a Soft Credit row; her own giving is $50.
+//   A campaign holds Lux's matching gift and Kit's credit row; a giving page
+//   holds Ivy's later check and Oona's soft credit row.
 // HOW IT GOES RED ON MAIN: Kit and Oona read Current (a credit row counted as
 // a gift in the lifecycle), so the lapsed list leaves out two the key calls
-// lapsed, and Fundraising's all-time, Finance's money in and the
-// this-year figures count $5,300 of credit rows as money.
+// lapsed; the Board's and Home's this year count $5,300 of credit rows as
+// money; Reports' giving summary counts Kit and Oona as people who gave.
 async function blindSpots() {
   const today = civilToday();
   const d = n => orgTime.addDays(today, n);
@@ -188,7 +190,15 @@ async function blindSpots() {
   ok("D: the fixture lands (9 rows, a household, a pledge, three gifts marked deposited, one later check)",
      r.status === 200 && hh.status === 201 && pl.status < 300 && marked.status === 201 && marked.body.marked === 3 && later.status < 300,
      [r.status, hh.status, pl.status, marked.status, marked.body && marked.body.marked, later.status]);
-  const f = await agrees("D: every surface agrees with the key (credits, lapsed by person, households, deposits)", ORG_D, tok);
+  // a matching campaign holding Lux's matching gift and Kit's credit row, and
+  // a giving page holding Ivy's later check and Oona's soft credit row
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date,created_by,created_by_name)
+           VALUES ($1,$2,'Spring Match','appeal','active',5000,$3,$4,'system:test','test')`, ["cmp_hs1d_" + STAMP, ORG_D, d(-60), d(60)]);
+  await q(`UPDATE gifts SET campaign_id=$1 WHERE org_id=$2 AND donor_id = ANY($3) AND date >= $4`, ["cmp_hs1d_" + STAMP, ORG_D, [ids["Lux Industries"], ids["Kit Worker"]], d(-60)]);
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,status,created_by,created_by_name) VALUES ($1,$2,$3,'Give in spring','active','system:test','test')`,
+    ["gp_hs1d_" + STAMP, ORG_D, "spring-" + STAMP]);
+  await q(`UPDATE gifts SET giving_page_id=$1 WHERE org_id=$2 AND donor_id = ANY($3) AND date >= $4`, ["gp_hs1d_" + STAMP, ORG_D, [ids["Ivy Hearth"], ids["Oona Credit"]], d(-16)]);
+  const f = await agrees("D: every surface agrees with the key (credits, lapsed by person, households, deposits, campaigns, first-time)", ORG_D, tok);
   const k = f.facts.key || {};
   const knownIds = new Set((f.known || []).map(x => /^KNOWN (D-\d+)/.exec(x)[1]));
   ok("D: the logged defects (docs/defects.md) are found, each at exactly the value it predicts: D-1 to D-7",

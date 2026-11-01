@@ -47,7 +47,10 @@ function giftHistory() {
   const k = computeKey({ people, gifts }, { today: "2026-11-02", fiscalStartMonth: 7 });
   const byCalendarYear = {};
   for (const g of gifts) { const y = g.date.slice(0, 4); byCalendarYear[y] = (byCalendarYear[y] || 0) + g.cents; }
-  return { file: F, rows: R.length, units: k.units, gifts: { count: k.gifts.count, cents: k.gifts.cents },
+  // `names` is not compared as people: the importer rightly folds a name's
+  // variants ("Mr & Mrs. X" and "X") into one person, which a key read from
+  // the cells cannot know without becoming the importer.
+  return { file: F, rows: R.length, names: k.units, gifts: { count: k.gifts.count, cents: k.gifts.cents },
     setAside: { count: setAside.length, cents: setAside.reduce((n, g) => n + g.cents, 0) },
     net: k.gifts.cents + setAside.reduce((n, g) => n + g.cents, 0), byCalendarYear };
 }

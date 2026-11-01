@@ -105,7 +105,7 @@ const hand = JSON.parse(require("fs").readFileSync(require("path").join(RS, "exp
 const fj = JSON.parse(require("fs").readFileSync(require("path").join(RS, "expected-finding-joy.json"), "utf8"));
 const gk = BK.load("gift-history-287"), fk = BK.load("finding-joy-443"), ev = fk.events["Finding Joy Dinner"];
 eq("the gift file's key is the hand key: 278 gifts, $571,129.93, 9 set aside, 190 names, net $566,183.93",
-  [gk.gifts.count, gk.gifts.cents, gk.setAside.count, gk.units, gk.net], [hand.gifts, Math.round(hand.gift_dollars * 100), hand.set_aside, hand.distinct_donor_names, Math.round(hand.file_total * 100)]);
+  [gk.gifts.count, gk.gifts.cents, gk.setAside.count, gk.names, gk.net], [hand.gifts, Math.round(hand.gift_dollars * 100), hand.set_aside, hand.distinct_donor_names, Math.round(hand.file_total * 100)]);
 eq("Finding Joy's key is the hand key: 443 rows, 422 invited, 172 came, 104 gave, 77 came and gave, 95 didn't, $45,340 + $78,950",
   [fk.rows, ev.invited, ev.came, ev.gave, ev.cameGave, ev.cameNoGift, fk.gifts.cents, fk.pledged],
   [fj.people, fj.invited, fj.attended, fj.gave, fj.attended_and_gave, fj.attended_no_gift, fj.received * 100, fj.not_yet_received * 100]);
