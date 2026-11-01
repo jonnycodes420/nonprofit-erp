@@ -5,6 +5,7 @@
 // that a failure, via helpers.browserLegOrSkip).
 const path = require("path");
 const fs = require("fs");
+const { pinBrowserClock } = require("../lib/browserClock");
 
 const ROOT = path.join(__dirname, "..", "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -29,6 +30,7 @@ async function open(h, label) {
   const signedIn = async (email, viewport = { width: 1440, height: 900 }) => {
     const li = await h.api("POST", "/auth/login", null, { email, password: "loadtest1234" });
     const ctx = await browser.newContext({ viewport, serviceWorkers: "block" });
+    await pinBrowserClock(ctx);   // ARCH-1: the page's "today" is the run's, as the server's and the fixture's are
     await ctx.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
     }, [li.body.token, JSON.stringify(li.body.user || {}), JSON.stringify(li.body.org || {})]);
