@@ -666,8 +666,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <style>{".sheet-layer-n::before{content:counter(layer)}"}</style>
               <div style={h3}>Before anything is written</div>
               <Layer title="People" testId="layer-people"
-                main={`${n(c.persons ?? c.people, "person", "people")}${c.households ? `, ${n(c.households, "household")}` : ""}${c.organizations ? `, ${n(c.organizations, "organization")}` : ""}`}
-                sub={`${u.peopleLine ? u.peopleLine.sentence.replace(/^[^:]*: /, "") : `${u.newPeople} new, ${u.matchedPeople} already in Steward`}. Sheets that list the same people are read as one list, by ID first, then email, then name.`}
+                // SWEEP-2: an organization is one of the people counted, never added to them
+                main={`${n(c.persons ?? c.people, "person", "people")}${c.organizations ? ` (${c.organizations.toLocaleString("en-US")} of them ${c.organizations === 1 ? "an organization" : "organizations"})` : ""}${c.households ? `, ${n(c.households, "household")}` : ""}`}
+                sub={`${u.peopleLine ? u.peopleLine.sentence.replace(/^[^:]*: /, "") : `${u.newPeople} new, ${u.matchedPeople} already in Steward`}.${tablesRead.length > 1 ? " Sheets that list the same people are read as one list, by ID first, then email, then name." : ""}`}
                 notes={[
                         // IMPORT-5 (7c): every row is a person, merged into one, or set aside
                         u.rowAccount && <span key="rows" data-testid="sheet-row-account">{u.rowAccount.sentence}
@@ -790,7 +791,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
 // "An event workbook: a list of people and gifts for Finding Joy Dinner."
 function fileSentence(u, tablesRead, eventName) {
   const ev = eventName || (u.event && u.event.name);
-  const where = tablesRead.map(t => `${t.sheet}, ${n(t.rows, "row")} from row ${t.headerLine}`).join("; ");
+  // SWEEP-2: a CSV has no "Sheet1", and "from row 1" read as if row 1 were data
+  const where = tablesRead.map(t => `${t.sheet === "Sheet1" && tablesRead.length === 1 ? "" : `${t.sheet}, `}${n(t.rows, "row")} under the headings on row ${t.headerLine}`).join("; ");
   const kinds = new Set(tablesRead.map(t => t.kind));
   if (u.fileKind === "unknown") return "Steward could not find names or amounts yet. Tell it which columns they are below.";
   if (u.event && u.event.fromEngagement) {

@@ -1529,7 +1529,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const rowsInFile = usable.reduce((a, t) => a + (t.readCount != null ? t.readCount : dataRows(t).length), 0);
   const eventNeedsDate = eventNamed && !eventDateAnswer && (eventGiftCount + undatedPledges.length > 0 || (hasEngagement && !fileHasDates));
   if (eventNamed) {
-    const named = evName ? `the ${evName}` : "this event";
+    // SWEEP-2: "the Dinner", "the Spring Gala", but "Finding Joy", never "the Finding Joy"
+    const named = !evName ? "this event" : new RegExp(EVENT_WORD_RE.source + "\\s*$", "i").test(evName) ? `the ${evName}` : evName;
     questions.push({ id: "event", kind: "event", optional: !!evName && !eventNeedsDate, required: eventNeedsDate,
                      text: eventNeedsDate ? `When was ${named}?` : "What was this event called, and when?",
                      holds: fileHasDates ? null : `${rowsInFile.toLocaleString("en-US")} ${rowsInFile === 1 ? "row" : "rows"}, no dates`,
@@ -1540,7 +1541,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   }
   if (eventNamed && eventDateAnswer && eventGiftCount && typeof answers.useEventDate !== "boolean") {
     questions.push({ id: "eventGifts", kind: "useEventDate", count: eventGiftCount, eventName: evName || null, eventDate: eventDateAnswer,
-                     text: `Use the ${evName || "event"} date for ${eventGiftCount === 1 ? "this gift" : `these ${eventGiftCount.toLocaleString("en-US")} gifts`}?`,
+                     text: `Use ${evName ? (new RegExp(EVENT_WORD_RE.source + "\\s*$", "i").test(evName) ? `the ${evName}` : evName) + "'s" : "the event's"} date for ${eventGiftCount === 1 ? "this gift" : `these ${eventGiftCount.toLocaleString("en-US")} gifts`}?`,
                      hint: "Yes dates them on the event's day. No leaves them No date: they count in Lifetime and the event's total, not in This year, a goal or retention.",
                      options: [{ key: "yes", label: "Yes" }, { key: "no", label: "No, leave them No date" }] });
   }

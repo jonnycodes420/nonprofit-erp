@@ -12,6 +12,11 @@ one deletes its line.
 - **P3 · Phone: the mic button sits over the setup card's "Set up →".** Suggested: the next phone build gives the floating button a gutter Home's cards respect.
 - **P3 · "Answer ready" sits above a refusal** ("There's no fund … called …", "Steward can't answer that one yet."). Suggested: the next Ask build labels a refusal as one.
 
+## Donors, Data health and imports (SWEEP-2, 31 Oct 2026; walk in docs/sweeps/sweep-2/walk.md)
+
+- **P3 · smoke-walk's report reads race the report's figures.** On SWEEP-2's first CI run `units.feeTablesOnPage` read 0 rows from the bookkeeper's table that the next check read drawn (run 41249592761), and the "?"-between-a-count-and-its-noun check only sees a report's figures when they arrive before it reads (CI yes, locally no), which is how SWEEP-2's CI found four real misses that local runs pass. Suggested: the next tests build waits for a report's figures and rows before reading them, and proves it by planting one of the four back.
+- **P3 · On a phone the Donors toolbar fills the first screen.** Two chips, search, four view tabs, Log a call, + Add, Import & tools, five selects and three buttons come before the first donor at 390, and "Re-engage" breaks as "Re- / engage". Suggested: the people sweep folds the selects behind one Filters button on a phone, as Team and Data health already do.
+
 ## Staff mail (STAFF-MAIL-1, 30 Oct 2026; walk of Settings → My email and the morning email)
 
 - **P2 · The morning email's date line reads "2026-10-31".** `renderMorningBriefBody` (server.js) prints `today` as the raw ISO string beside the person's name ("Wren Walker · 2026-10-31"), where every other screen shows a written date. Seen on the walk's 9 AM send. Suggested: the next staff-mail or Settings sweep, through `shared/displayDate.js`.
