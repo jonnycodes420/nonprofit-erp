@@ -43,6 +43,7 @@ Node scripts:
 
 | Script | What it does | Command |
 |---|---|---|
+| `ops/restore-drill.js` | SECURE-3: the restore drill (docs/security/restore-steps.md). Read-only SQL on a restored copy, then a scratch backend against it, the smoke and the truth check, counts only. Dry run by default; refuses prod. Jonathan only, against a `steward-restore-` project | `node scripts/ops/restore-drill.js` (dry run), then `RESTORE_DATABASE_URL=… node scripts/ops/restore-drill.js --run --project steward-restore-… --i-am-jonathan` |
 | `ops/check-webhook-subscriptions.js` | READ-ONLY. Compares the Stripe webhook subscriptions with the events the code handles | `node scripts/ops/check-webhook-subscriptions.js` |
 | `ops/verify-paypal.js` | READ-ONLY. One PayPal token, then a transaction search; counts only | `railway run node scripts/ops/verify-paypal.js --i-know-this-is-prod` |
 | `ops/consistency-audit.js` | READ-ONLY cross-surface consistency audit (also `npm run test:audit`) | `node scripts/ops/consistency-audit.js` |
@@ -64,6 +65,11 @@ Node scripts:
 | `ops/screenshot-matrix.js` | Layout screenshots and deep-link checks on the built client | see its header |
 | `ops/topbar-verify.js` | Top-bar search check on the built client | see its header |
 | `ops/seed-loadtest.js` | A 25,000-donor org on the local database, for load tests | `DATABASE_URL=postgresql://steward@localhost:5544/steward_loadtest node scripts/ops/seed-loadtest.js` |
+
+`ci/builder-access-check.js` (SECURE-3) is run by the battery (`tests/script-guards.test.js`): it fails if
+this environment holds a Railway token, a Supabase secret or a remote postgres URL, and warns about
+the machine's own Railway login and MCP (docs/security/builder-access.md). `node scripts/ci/builder-access-check.js`
+runs it by hand.
 
 The commands most builds use are `npm run status` (`ci/status.js`, prod smoke after a deploy),
 `node scripts/ci/tdz-scan.js` and `node scripts/ci/arch-check.js`.
