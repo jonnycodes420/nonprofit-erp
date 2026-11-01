@@ -523,17 +523,6 @@ export function moveHomeLine({ active = false, imports = 0, giftsImported = 0, p
 
 export const MOVE_UNDO_DAYS = 30;
 
-export function moveCardSentence({ source = "", startedAt = null, imports = 0, completedAt = null } = {}, fmtDate) {
-  const label = moveTileLabel(source) || source;
-  const when = startedAt && fmtDate ? fmtDate(startedAt) : null;
-  const runs = n(imports);
-  const bits = [];
-  bits.push(completedAt ? `Moved from ${label}` : `Moving from ${label}`);
-  if (when) bits.push(`started ${when}`);
-  if (runs) bits.push(`${countLabel(runs, "import")}`);
-  return bits.join(" · ");
-}
-
 // Does the "We've moved" button still undo? 30 days from the day it was
 // pressed, compared on whole milliseconds against the caller's `now`.
 export function moveUndoOpen(undoUntil, now) {

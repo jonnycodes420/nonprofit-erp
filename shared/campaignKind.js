@@ -26,8 +26,6 @@
 
 const blank = v => v === null || v === undefined || String(v).trim() === "";
 
-// The statuses that only an email campaign ever reaches.
-export const EMAIL_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "awaiting_approval"];
 // The statuses only a fundraising goal ever reaches.
 export const GOAL_STATUSES = ["active", "completed", "planned", "archived"];
 

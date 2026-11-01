@@ -147,7 +147,6 @@ const PARKED_TTL_MS = 30000;
 // still parked for it, which then went out again. A seen-write whose own read
 // is kept or re-read (/org/welcome/seen, /gift-starts/notice/seen) is NOT here.
 const SEEN_ONLY = [/^\/insights\/seen$/, /^\/atlas\/notes\/seen$/];
-export function forgetReads() { kept.clear(); parked.clear(); }
 
 // ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
 // Home opened with 25 requests. prefetch(paths) asks for them in ONE

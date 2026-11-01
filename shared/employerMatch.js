@@ -67,16 +67,6 @@ export const LOOKUP_FLAG_ENV = "MATCHING_LOOKUP_ENABLED";
 //   }
 const providers = new Map();
 
-export function registerLookupProvider(provider) {
-  if (!provider || typeof provider.lookup !== "function" || !provider.key) {
-    throw new Error("A matching-gift provider needs a key and a lookup function.");
-  }
-  providers.set(String(provider.key), provider);
-  return provider.key;
-}
-
-export function lookupProviderKeys() { return [...providers.keys()]; }
-
 // THE ONE CALL. With no provider registered, or with the flag off, it answers
 // null — which is the state Steward ships in, and the reason every caller has
 // to handle null anyway.
@@ -181,43 +171,6 @@ export function matchEmployerInList(employerName, rows) {
     formUrl: hit.r.form_url,
     note: hit.r.note,
   }, "org_list");
-}
-
-// ── THE ONE RESOLVER ───────────────────────────────────────────────────────
-// Every surface that wants to know whether a donor's employer matches calls
-// THIS, and it answers from the org's own list, then the curated snapshot, then
-// a flagged provider. The caller hands in the curated answer already looked up,
-// because `matchingGifts.js` at the root is CommonJS and synchronous and this
-// module is neither — and because the ownership question ("is this row this
-// org's") is a fact about the database that a pure module may not guess at.
-//
-// `curated` is the shape `lookupMatchingGift` returns:
-//   { matched, companyName, ratio, sourceNote, lastVerified }
-export async function resolveEmployerMatch(employerName, {
-  orgRows = [], curated = null, lookupEnabled = false, providerKey = null, emailDomain = null,
-} = {}) {
-  const name = String(employerName || "").trim();
-  if (!name) return null;
-
-  const own = matchEmployerInList(name, orgRows);
-  if (own) return own;
-
-  if (curated && curated.matched) {
-    // THE SNAPSHOT'S OWN CAVEAT TRAVELS WITH IT. A donor is about to be told
-    // their employer matches; the sentence that says to confirm the terms is
-    // part of the answer, not a footnote somebody might drop.
-    return normaliseProgramme({
-      employerName: curated.companyName,
-      matches: true,
-      ratio: curated.ratio,
-      note: curated.sourceNote,
-      formUrl: null,
-    }, "curated");
-  }
-
-  const viaProvider = await lookupMatchingProgramme({ employerName: name, emailDomain },
-    { enabled: !!lookupEnabled, providerKey });
-  return viaProvider;
 }
 
 // ── THE WORDS ON THE PAGE ──────────────────────────────────────────────────

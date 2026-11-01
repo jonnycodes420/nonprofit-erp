@@ -338,24 +338,6 @@ export function donorScoreParts(d) {
   return { score, parts, sentence:`Giving strength ${score}: ${said}.${score!==raw?` Kept between 5 and 99.`:""}` };
 }
 
-export function retentionRisk(d) {
-  const days = daysDiff(d.lastGift);
-  let risk = 0;
-  if (days > 365) risk += 40; else if (days > 270) risk += 25; else if (days > 180) risk += 12;
-  if (d.gifts < 2) risk += 20; else if (d.gifts < 4) risk += 8;
-  if (d.status === "lapsed") risk += 30;
-  if (d.tags.includes("recurring")) risk -= 15;
-  if (d.tags.includes("board-adjacent")) risk -= 10;
-  risk = Math.max(0, Math.min(risk, 99));
-  const level = risk >= 55 ? "high" : risk >= 30 ? "medium" : "low";
-  const reasons = [];
-  if (days > 270) reasons.push(`${days}d since last gift`);
-  if (d.gifts < 2) reasons.push("one-time donor");
-  if (d.status === "lapsed") reasons.push("marked lapsed");
-  const actions = { high:"Call this week, in person", medium:"Send a targeted update in next 2 weeks", low:"Keep on regular cadence" };
-  return { risk, level, reason: reasons.join(", ") || "steady engagement", action: actions[level] };
-}
-
 export function moveUrgency(d) {
   const lastContact=d.lastTouchpoint||d.lastGift;
   const days=lastContact?daysDiff(lastContact):999;

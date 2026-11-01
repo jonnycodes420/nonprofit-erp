@@ -91,9 +91,6 @@ export const MEASUREMENT_QUALIFIERS = new Set([
   "year", "years", "yr", "yrs", "fy", "age", "zip", "zipcode", "zipcodes", "postal", "postcode",
   "ein", "id", "ids", "phone", "fax", "ntee", "ssn", "tin", "uuid", "guid",
 ]);
-export function headerHasQualifier(h) {
-  return headerTokens(h).some(w => MEASUREMENT_QUALIFIERS.has(w));
-}
 
 // headerMatchesLabel(header, label) — a label matches only as the WHOLE
 // normalised header, a trailing word-run, or a leading word-run whose
@@ -131,9 +128,6 @@ export const MONEY_WORDS = new Set([
   "fee", "fees",
   "dollars", "usd", "giving", "raised", "income",
 ]);
-export function headerHasMoneyWord(h) {
-  return headerTokens(h).some(w => MONEY_WORDS.has(w));
-}
 
 // BUILD-84 census — containment with boundaries lives in shared/textMatch.js
 // (its header carries the whole account of the class). Re-exported here so the
@@ -2136,7 +2130,7 @@ export function parseAttributionNote(note) {
 // new; an honouree stays a name unless they are on file; an employer is found
 // or created as an organisation). Nothing here is money — the gift's amount is
 // the gift's, and none of these add to it.
-export function giftCreditFromRow(row, txMap) {
+function giftCreditFromRow(row, txMap) {
   const cell = k => (txMap[k] ? String(row[txMap[k]] ?? "").trim() : "");
   const out = {};
   const sc = cell("softCreditName");

@@ -292,4 +292,4 @@ async function readSite(rawUrl) {
   return { ok: true, ...mergeSite(pages, start.href), skipped };
 }
 
-module.exports = { readSite, readPage, mergeSite, normaliseSiteUrl, robotsDisallows, allowLocal, MAX_PAGES };
+module.exports = { readSite, readPage, normaliseSiteUrl, robotsDisallows, allowLocal, MAX_PAGES };

@@ -25,7 +25,6 @@ export const LEGAL_ENTITY_NAME = "Steward Software LLC";
 // long form is the one the documents already used, so both are exported and
 // neither is spelled out a second time in a page.
 export const LEGAL_ENTITY_STATE = "Kentucky";
-export const LEGAL_ENTITY_STATE_LONG = "the Commonwealth of Kentucky";
 
 // The address of record. Structured, because a receipt lays it out over lines
 // and a paragraph runs it inline, and a second hand-written copy of a street
@@ -49,10 +48,3 @@ export function copyrightLine(year = new Date().getFullYear()) {
   return `© ${year} ${LEGAL_ENTITY_NAME}`;
 }
 
-// The one sentence that turns "we" into a named party. Both legal documents
-// were missing a counterparty entirely; this defines the term once, at the top,
-// and every existing "Steward" in the body then resolves to the LLC without a
-// word of the body changing.
-export function operatedByLine() {
-  return `Steward is operated by ${LEGAL_ENTITY_NAME}, a ${LEGAL_ENTITY_STATE} limited liability company, ${LEGAL_ENTITY_ADDRESS_LINE}.`;
-}

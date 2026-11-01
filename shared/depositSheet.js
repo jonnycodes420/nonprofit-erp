@@ -40,8 +40,6 @@ import { normalizeMoney, normalizeName, matchNameKey, matchNamesCompatible, norm
 import { containsTokenRun } from "./textMatch.js";
 import { plural } from "./countWords.js";
 
-export const DEPOSIT_STATES = ["placed", "placed_new_donor", "needs_you", "not_a_gift"];
-
 // ── The paste, turned into a table ─────────────────────────────────────────
 // A slip is typed, not exported: tabs from a spreadsheet, or two-and-more
 // spaces from a screen, or commas. It becomes { headers, rows } — the same

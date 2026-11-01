@@ -33,7 +33,6 @@
 // Pure: no DB, no network, no clock, no JSX.
 
 import { normalizeHeader, normalizeMoney } from "./importShape.js";
-import { countLabel } from "./countWords.js";
 
 // A statement row is money coming IN, money going OUT, or neither. Only the
 // first is a gift, and the reason a row was set aside is always kept so the
@@ -357,22 +356,6 @@ export function amountCents(raw) {
   return Math.round(Number(n.value) * 100);
 }
 
-// The sentence the review step shows when a preset is chosen — one line, in
-// the same voice as the rest of the import, naming what was pre-filled and
-// what still needs a human.
-export function presetSentence(applied) {
-  if (!applied?.ok) {
-    const missing = (applied?.missingRequired || []).join(", ");
-    return `This does not look like a ${applied?.label || "statement"}: ${missing ? `there is no ${missing} column` : "the columns do not match"}. Map it by hand instead.`;
-  }
-  const n = Object.keys(applied.matched).length;
-  const left = applied.unmatchedColumns.length;
-  const method = applied.constants.paymentMethod;
-  return left
-    ? `${n} columns mapped from your ${applied.label}, and every gift will read "${method}". ${countLabel(left, "column")} had no home and ${left === 1 ? "was" : "were"} left alone.`
-    : `${n} columns mapped from your ${applied.label}, and every gift will read "${method}".`;
-}
-
 
 // ── BUILD-92 A4 — AN EXTERNAL ID FOR A FILE THAT HAS NONE ──────────────────
 //
@@ -399,15 +382,6 @@ export function statementRowKey({ date, amountCents, name, memo }) {
     String(name || "").trim().toLowerCase().replace(/\s+/g, " "),
     String(memo || "").trim().toLowerCase().replace(/\s+/g, " "),
   ].join(" ");
-}
-
-// `hashHex` is injected so this module stays pure and runs unchanged in a
-// browser and in Node. Callers pass a sha256-hex function.
-export function statementExternalId(sourceKey, row, hashHex) {
-  const k = String(sourceKey || "").trim();
-  if (!k) return null;
-  const digest = hashHex(statementRowKey(row));
-  return `statement:${k}:${String(digest).slice(0, 20)}`;
 }
 
 // ── THE SAVED MAPPING ──────────────────────────────────────────────────────

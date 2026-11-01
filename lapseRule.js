@@ -132,11 +132,6 @@ function rhythmAheadSql(idExpr, today) {
 const isLapsed = (last, today) => lapseState(last, today) === "lapsed";
 const isLapsing = (last, today) => lapseState(last, today) === "lapsing";
 
-// The day a person with this last gift became lapsed, and lapsing. A journey
-// fires once per lapse (the episode is the last gift date), and only when that
-// day fell while the person was live in Steward.
-const lapsedOn = last => orgTime.addDays(String(last).slice(0, 10), LAPSED_DAYS);
-const lapsingOn = last => shiftMonths(String(last).slice(0, 10), -LAPSING_MONTHS);
 
 // SQL over a civil-date expression (a column holding YYYY-MM-DD or a DATE).
 // Placeholders are `?`; the args to pass are returned beside the text.
@@ -164,4 +159,4 @@ function sql(state, lastExpr, today, idExpr = null) {
 }
 
 module.exports = { LAPSED_DAYS, LAPSING_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead, rhythmAheadSql,
-  pledgeHold, pledgeHoldSql, pledgeOverdueSql, pledgesFor, isLapsed, isLapsing, lapsedOn, lapsingOn, sql };
+  pledgeHold, pledgeHoldSql, pledgeOverdueSql, pledgesFor, isLapsed, isLapsing, sql };

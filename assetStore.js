@@ -233,16 +233,6 @@ async function pruneUnreferencedAssets(orgId, kind, keepIds) {
 }
 const pruneThemeAssets = (orgId, kind, keepId) => pruneUnreferencedAssets(orgId, kind, keepId ? [keepId] : []);
 
-// Un-delete a retained object (the restore half lives in
-// scripts/restore-asset.js, which also re-points the pointer from history).
-async function restoreAsset(id) {
-  const [row] = await query(`SELECT id, deleted_at FROM portal_assets WHERE id = ?`, [id]);
-  if (!row) return null;
-  if (row.deleted_at != null) await run(`UPDATE portal_assets SET deleted_at = NULL WHERE id = ?`, [id]);
-  refreshRetentionCounts().catch(() => {});
-  return row;
-}
-
 // Every id currently referenced by a LIVE pointer, across every pointer
 // table an asset kind is stored into (portal_settings logo/header ·
 // impact_updates photos · campaigns hero · portal_pages draft+published
@@ -535,7 +525,6 @@ module.exports = {
   ASSET_CSP,
   s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
   refreshAssetFallbackCount, refreshRetentionCounts, assetHealth, moveFallbackAssetsToS3, ASSET_MOVE_SKIP_ORGS,
-  restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
+  collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
   assetIdFor, assetPath, ASSET_ID_RE, AssetStoreUnavailable,
-  _signedS3Request: signedS3Request, // exported for the suite's determinism checks
 };

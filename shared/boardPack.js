@@ -133,14 +133,6 @@ export const PACK_SECTIONS = [
   },
 ];
 
-export const packSectionByKey = key => PACK_SECTIONS.find(s => s.key === key) || null;
-
-// Every figure the default pack declares, flat. The definitions page walks
-// this, and so does the one test.
-export function packFigureDefs() {
-  return PACK_SECTIONS.filter(s => s.kind === "figures").flatMap(s => s.figures.map(f => ({ ...f, section: s.key })));
-}
-
 // ── A SAVED DASHBOARD ──────────────────────────────────────────────────────
 // A name, the tiles she picked, the order she put them in, the filters she
 // chose, and whether the team can see it. Validated here so a hostile or

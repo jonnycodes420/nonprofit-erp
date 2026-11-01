@@ -26,7 +26,6 @@ export const TRUST_LABELS = {
   privacy: "Privacy link",
   contact: "Contact email or phone",
 };
-export const WAY_KEYS = ["check", "phone", "daf", "stock"];
 
 // Story paragraphs shown before "Read more".
 export const READ_MORE_AFTER = 2;

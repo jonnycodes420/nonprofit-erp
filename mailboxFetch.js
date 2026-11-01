@@ -21,7 +21,6 @@
 // and per-read limits). Past those limits the old read kept whichever 40 the
 // first search returned, from donors in no fixed order; this one keeps the
 // newest across the whole search, which is the better 120.
-const GMAIL_MIN_CHUNK = 15;          // what every read used before SCALE-2
 const LIST_AHEAD = 4;
 const GET_PARALLEL = 8;
 const TOO_LONG = new Set([400, 413, 414]);
@@ -127,4 +126,4 @@ async function readGmail({ ask, base, emails, toMessage, cap = 120, onProgress =
   return out;
 }
 
-module.exports = { readGmail, gmailChunks, gmailQuery, GMAIL_MIN_CHUNK, TOO_LONG, queryMax };
+module.exports = { readGmail, gmailChunks, gmailQuery, TOO_LONG, queryMax };

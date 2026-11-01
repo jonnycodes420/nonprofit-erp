@@ -101,10 +101,6 @@ export function tableLabel(raw) {
   return t.replace(/^table\b/i, "Table");
 }
 
-// The one sentence a receipt for a ticket must carry (Pub. 1771).
-export const QPQ_DISCLOSURE =
-  "The amount of your contribution that is deductible for federal income tax purposes is limited to the excess of the amount you paid over the value of the goods and services provided.";
-
 // ── EVENTS-1 · WHAT THE NIGHT DID ─────────────────────────────────────────
 // The four questions an ED is asked the morning after, and the sentence that
 // defines each one. Built here so the card, the report and the PDF all read

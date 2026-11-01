@@ -264,12 +264,3 @@ export function dollars(cents) {
   }).format(c / 100);
 }
 
-// ── HOW THE AMOUNTS WERE CHOSEN, for the settings screen ───────────────────
-// Named here rather than written on the screen, so the words a fundraiser reads
-// and the words the public form shows cannot drift.
-export const HOW_CHOSEN = Object.freeze({
-  form: "The amounts you set on this form. Nothing is computed.",
-  donor_history: "A returning donor arriving by their own personal link sees amounts starting from their own last gift. Their history, never anything bought from anybody.",
-  org_distribution: "Everyone else sees amounts drawn from this organization's own recorded gifts through this form: the middle gift, then three asks above it.",
-  too_few: "Until there are eight gifts to look at, the form keeps the amounts you set.",
-});

@@ -118,8 +118,5 @@ async function conversationsWith(orgId, donorId, { limit = 500 } = {}) {
     .map(m => ({ id: m.id, kind: m.kind, donor_id: m.donor_id, type: "meeting", note: m.kind === "calendar" ? (m.title || "Meeting") : m.note, date: m.date, who: m.who }));
   return [...talk, ...met].sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id))).slice(0, lim);
 }
-async function lastConversationWith(orgId, donorId) {
-  return (await conversationsWith(orgId, donorId, { limit: 1 }))[0] || null;
-}
 
-module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, lastConversationWith, CONVERSATION_TYPES, CAL_DATE };
+module.exports = { meetingsSql, meetingsWith, lastMeetingWith, conversationsWith, CONVERSATION_TYPES, CAL_DATE };

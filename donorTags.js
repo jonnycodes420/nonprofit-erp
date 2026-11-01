@@ -34,4 +34,4 @@ function refusedRowsOf(raw) {
   return n;
 }
 
-module.exports = { INTERNAL_TAG_RES, isInternalTag, visibleTags, internalTags, keepInternal, refusedRowsOf };
+module.exports = { INTERNAL_TAG_RES, isInternalTag, visibleTags, keepInternal, refusedRowsOf };

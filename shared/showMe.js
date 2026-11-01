@@ -494,11 +494,3 @@ export function listSentence(count, names = [], words = []) {
 export function refusalSentence(what) {
   return `${CANT_FILTER}${what && what !== "unread" ? ` (${String(what).slice(0, 80)})` : ""}. Nothing was changed, and we've noted the question.`;
 }
-
-// The questions Home and Reports offer as examples.
-export const EXAMPLES = [
-  "Donors who gave last year but not this year",
-  "Monthly donors in Lexington",
-  "Everyone who gave over $1,000 to the gala",
-  "Volunteers who've never given",
-];

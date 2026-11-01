@@ -101,14 +101,6 @@ function toDollars(cents) {
   return Math.round(c) / 100;
 }
 
-// Read a money value BACK out of the database (or any dollars-shaped source)
-// into cents, for arithmetic. A NUMERIC column arrives from `pg` as a STRING,
-// which is exactly why this exists: `parseFloat` on it is how money arithmetic
-// silently becomes float arithmetic.
-function fromDollars(value) {
-  return toCents(value);
-}
-
 // Sum a list of dollars-shaped values EXACTLY, returning cents. Every "add up
 // the gifts" in this codebase should end here rather than reducing floats.
 function sumDollars(values) {
@@ -177,6 +169,6 @@ function parseMoneyOrThrow(input, field = "amount") {
 module.exports = {
   formatCentsPlain,
   MAX_CENTS,
-  toCents, toDollars, fromDollars, sumDollars,
+  toCents, toDollars, sumDollars,
   formatCents, hasCents, parseMoneyOrThrow,
 };

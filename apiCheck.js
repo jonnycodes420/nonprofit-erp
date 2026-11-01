@@ -72,10 +72,6 @@ function refusalSentence(spec, reason, status) {
 }
 const timeoutSentence = spec => `${spec.label} did not answer when Steward asked for ${spec.what === "calendar" ? "your calendar" : "your mail"}. Steward tries again in 5 minutes.`;
 
-// Is this thrown error a timeout or a dropped connection (the only "did not answer")?
-const isNoAnswer = e => !!e && (e.name === "TimeoutError" || e.name === "AbortError"
-  || /timeout|ECONNREFUSED|ECONNRESET|ENOTFOUND|fetch failed/i.test(String(e.message || e.cause?.code || "")));
-
 // One cheap request per API. Returns [{ api, label, ok, status, reason, sentence }].
 async function checkApis(providerKey, token, opts = {}) {
   const out = [];
@@ -115,4 +111,4 @@ function retryAfterDate(header, now = Date.now()) {
   return Number.isFinite(t) ? new Date(Math.min(t, now + 6 * 3600e3)) : null;
 }
 
-module.exports = { apisFor, checkApis, refusalReason, refusalSentence, timeoutSentence, isNoAnswer, providerError, retryAfterDate };
+module.exports = { apisFor, checkApis, refusalReason, refusalSentence, timeoutSentence, providerError, retryAfterDate };

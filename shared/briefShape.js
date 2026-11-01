@@ -47,7 +47,6 @@ export const SECTION_KEYS = BRIEF_SECTIONS.map(s => s.key);
 // ── THE CITATION FORM ─────────────────────────────────────────────────────
 // `kind:id`, where kind names the TABLE the row came from. Anything else is not
 // a citation, which is what makes "every sentence cites a row" checkable.
-export const CITE_KINDS = ["gift", "pledge", "conversation", "proposal", "plan", "note", "person", "household", "softcredit"];
 export const CITE_RE = /^(gift|pledge|conversation|proposal|plan|note|person|household|softcredit):[A-Za-z0-9_.:-]{1,64}$/;
 
 export function isCitation(s) { return CITE_RE.test(String(s || "")); }
@@ -112,19 +111,6 @@ export function schemaNumericFields(schema = BRIEF_SCHEMA, path = "") {
     if (node.items) walk(node.items, `${p}[]`);
   };
   walk(schema, path);
-  return out;
-}
-export function schemaForbiddenKeys(schema = BRIEF_SCHEMA) {
-  const out = [];
-  const walk = node => {
-    if (!node || typeof node !== "object") return;
-    if (node.properties) for (const [k, v] of Object.entries(node.properties)) {
-      if (FORBIDDEN_SCHEMA_KEYS.includes(String(k).toLowerCase())) out.push(k);
-      walk(v);
-    }
-    if (node.items) walk(node.items);
-  };
-  walk(schema);
   return out;
 }
 

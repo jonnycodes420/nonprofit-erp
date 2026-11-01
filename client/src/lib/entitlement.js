@@ -13,7 +13,3 @@
 // FIX-32 removed the last lock: one plan, everything included.
 export const PLAN_UNKNOWN = "unknown";
 
-export function planKnown(tier) {
-  return typeof tier === "string" && tier !== "" && tier !== PLAN_UNKNOWN;
-}
-

@@ -13,9 +13,7 @@
 //
 // Pure: no DB, no clock of its own, no network.
 
-export const TEAM_STATUSES = ["active", "archived"];
 export const MAX_TEAM_NAME = 80;
-export const MAX_STORY = 5000;
 
 export const money = cents => {
   const n = Math.round(Number(cents) || 0) / 100;
@@ -63,9 +61,6 @@ export const PAGE_TOTAL_SENTENCE =
 
 export const NOT_YET_SENTENCE =
   "Fundraisers who have signed up and have not received a gift yet. This is the list to pick up the phone about; nobody is emailed from here.";
-
-export const SOFT_CREDIT_SENTENCE =
-  "A soft credit records that this person brought the gift in. The money stays counted once, on the person who gave it: nothing here changes any total.";
 
 // ── SLUGS ────────────────────────────────────────────────────────────────
 export function teamSlug(name) {
@@ -186,7 +181,6 @@ export function mailtoFor(draft) {
 // A fundraiser page is 'active' (public, takes gifts), 'pending' (waiting for
 // a staff member to approve it; the page asked for approval) or 'archived'
 // (taken down). Only 'active' is ever shown to the public or takes a gift.
-export const FUNDRAISER_STATUSES = ["active", "pending", "archived"];
 
 // THE NUMBER BESIDE THE THERMOMETER. Computed once, on the server, over the
 // same gift rows the bar sums; this is the sentence that defines it.

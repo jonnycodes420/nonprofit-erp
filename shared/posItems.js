@@ -150,7 +150,6 @@ export const money = cents => {
 // not the J Smith who gives $5,000 a year on the strength of a fold and a
 // shrug. A buyer with no match becomes a GUEST — a person record typed guest,
 // never a donor, because they have not given a penny.
-export const MATCH_ORDER = ["email", "phone", "exact_name"];
 
 export function matchBuyer(buyer, people) {
   const email = String(buyer && buyer.email || "").trim().toLowerCase();

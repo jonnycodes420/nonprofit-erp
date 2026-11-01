@@ -62,14 +62,6 @@ export const TRACK_RULE_KINDS = [
 ];
 const RULE_BY_KEY = Object.fromEntries(TRACK_RULE_KINDS.map(r => [r.key, r]));
 
-export function trackRuleSentence(track) {
-  const r = RULE_BY_KEY[track && track.rule];
-  if (!r) return "Everyone else";
-  if (track.rule === "fund")   return `Gave to ${track.value || "(no fund named)"}`;
-  if (track.rule === "source") return `Gave through ${track.value || "(no source named)"}`;
-  return r.label;
-}
-
 // THE ONE PLACE A PERSON IS PUT ON A TRACK. Tracks are tried IN ORDER and the
 // FIRST match wins, so "a person is on exactly one track" is true by
 // construction rather than by hoping the rules are disjoint. A sequence whose

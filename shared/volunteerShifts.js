@@ -76,8 +76,6 @@ export function timeRangeWords(startTime, endTime) {
 // `capacity` null means unlimited, which is a real answer for a phone bank or
 // a park clean-up. Zero is NOT unlimited: it is a slot that is closed, and
 // conflating the two is how a tool tells somebody a shut shift is open.
-export const SIGNUP_STATUSES = ["confirmed", "waitlisted", "cancelled", "no_show", "completed"];
-export const OPEN_STATUSES = ["confirmed", "waitlisted"];
 
 // Everything a page needs to know about one slot, from its capacity and the
 // sign-ups already on it. ONE function, so "full" means the same thing to the
@@ -225,10 +223,6 @@ export function milestoneCrossed(previousHundredths, newHundredths) {
   const after = Number(newHundredths || 0) / 100;
   const crossed = HOUR_MILESTONES.filter(m => before < m && after >= m);
   return crossed.length ? crossed[crossed.length - 1] : null;
-}
-
-export function milestoneSentence({ personName, hours, orgName }) {
-  return `${personName} has now given ${hours} hours to ${orgName}.`;
 }
 
 // ── GROUPS ────────────────────────────────────────────────────────────────

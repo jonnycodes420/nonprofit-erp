@@ -36,9 +36,6 @@ export const STATUSES = ["active", "grace", "lapsed", "cancelled", "renewed"];
 // The org's two settings and their defaults (the brief's numbers).
 export const DEFAULT_RENEWAL_DAYS = 30;
 export const DEFAULT_GRACE_DAYS = 30;
-// A person HOLDS a membership while it is active or in its grace period; that
-// is what the one-per-person index guards.
-export const CURRENT_STATUSES = ["active", "grace"];
 export const MAX_BENEFITS = 20;
 
 const toCents = v => Math.round(Number(String(v ?? "").replace(/[$,\s]/g, "")) * 100);
@@ -120,13 +117,6 @@ export function statusOn({ expiresOn, today, graceDays = DEFAULT_GRACE_DAYS }) {
   if (!expiresOn) return "active";
   if (today <= expiresOn) return "active";
   return today <= addDaysCivil(expiresOn, graceDays) ? "grace" : "lapsed";
-}
-
-// Inside the renewal window: expiring between today and `renewalDays` ahead.
-// A date already past is NOT in the window — an imported membership that
-// expired last spring is history, never a thread (Part 6).
-export function inRenewalWindow({ expiresOn, today, renewalDays = DEFAULT_RENEWAL_DAYS }) {
-  return !!expiresOn && expiresOn >= today && expiresOn <= addDaysCivil(today, renewalDays);
 }
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

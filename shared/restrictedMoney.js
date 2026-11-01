@@ -39,11 +39,6 @@ export const RESTRICTED_METRICS = [
   { key: "remaining", label: "Remaining to spend",
     definition: "Received minus spent, the restricted money you are holding right now. It deliberately excludes what the funder still owes, because you cannot spend that." },
 ];
-export const RESTRICTED_METRIC_KEYS = RESTRICTED_METRICS.map(m => m.key);
-export function metricDefinition(key) {
-  const m = RESTRICTED_METRICS.find(x => x.key === key);
-  return m ? m.definition : null;
-}
 // The registry test's teeth: a metric added without a definition, or with one
 // that is not a sentence, cannot reach a screen.
 export function definitionProblems() {

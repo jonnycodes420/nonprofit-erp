@@ -205,24 +205,10 @@ export function answerFigure(dashboardKey, key) {
   return m ? { key: a.key, label: m.label, kind: m.kind, definition: m.definition } : null;
 }
 
-export const DASHBOARD_KEYS = DASHBOARDS.map(d => d.key);
 export const dashboardByKey = key => DASHBOARDS.find(d => d.key === key) || null;
-
-// Every metric on every dashboard, flat — what the registry test walks.
-export function allMetrics() {
-  return DASHBOARDS.flatMap(d => d.metrics.map(m => ({ ...m, dashboard: d.key })));
-}
 
 export function definitionFor(dashboardKey, metricKey) {
   const d = dashboardByKey(dashboardKey);
   return d ? (d.metrics.find(m => m.key === metricKey)?.definition || null) : null;
 }
 
-// A definition is a SENTENCE somebody could say out loud, not a formula and
-// not a label repeated back. The registry test holds these; they are here so
-// the rule travels with the thing it governs.
-export const DEFINITION_RULES = {
-  minLength: 30,
-  mustEndInPeriod: true,
-  bannedOpeners: /^(the )?(number|count|total|sum|amount) of\b/i,
-};

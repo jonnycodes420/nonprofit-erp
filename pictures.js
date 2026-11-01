@@ -17,7 +17,6 @@ const ASSET_PATH_RE = /^\/portal-assets\/pa_[a-f0-9]{24}$/;
 const HTTPS_RE = /^https:\/\/\S{1,1990}$/;
 const ALT_MAX = 200;
 const PHOTOS_MAX = 5;   // an auction item: the first is the main one
-const MAX_UPLOAD_MB = 15;
 
 const clamp01 = v => {
   const n = Number(v);
@@ -217,5 +216,5 @@ function mount(ctx) {
 
 module.exports = {
   mount, routers, readPicture, cleanPicture, readPhotos, pictureHtml, focusCss, isHeicDataUri, heicToJpegDataUri,
-  PHOTOS_MAX, MAX_UPLOAD_MB, SLOTS, ASSET_PATH_RE,
+  PHOTOS_MAX, SLOTS, ASSET_PATH_RE,
 };

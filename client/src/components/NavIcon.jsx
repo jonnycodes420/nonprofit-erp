@@ -76,4 +76,3 @@ export function NavIcon({ id, size = NAV_ICON_SIZE, style }) {
     style={{ flexShrink: 0, display: "block", ...style }} />;
 }
 
-export const hasNavIcon = id => !!ICONS[id];

@@ -173,11 +173,6 @@ async function putFile(orgId, f) {
   const asset = await D.putThemeAsset({ orgId, kind: personPhoto.PHOTO_ASSET_KIND, buffer: f.buffer, contentType: f.contentType, width: f.width, height: f.height });
   return asset.id;
 }
-async function storeFile(orgId, buffer) {
-  const f = await prepareFile(buffer);
-  if (f.error) return f;
-  return { assetId: await putFile(orgId, f), contentType: f.contentType, readBuffer: f.buffer, readType: f.contentType };
-}
 const fileUrl = (orgId, assetId) => assetId ? personPhoto.signPhotoUrl({ orgId, assetId }) : null;
 
 // ── THE PROPOSAL: person, amount, fund ─────────────────────────────────────
@@ -708,7 +703,7 @@ async function clock(orgId) {
 module.exports = {
   fromMailboxMessage, captureSlug, prepareFile,
   clockSql, clock, CLOCK_SENTENCE, CLOCK_DAYS,
-  configure, scrubBank, readDocument, storeFile, decodeDataUrl, sniff, cardsFromFile, cardFromItem, insertCard,
+  configure, scrubBank, readDocument, decodeDataUrl, sniff, cardsFromFile, cardFromItem, insertCard,
   applyLow, undoLow, receivedAtFor, orgNamesFor, fundFor, closeFund, FUND_PICK_SCHEMA, donorFor, amountFor, tributeFrom, pledgeFor, jointCredit, JOINT_RULES, defaultFund, fileUrl,
-  MAX_BYTES, UNDO_DAYS, MONEY_KINDS, LOW_KINDS, KINDS, READ_SCHEMA, READ_PROMPT, AI_OFF_SENTENCE, cents$,
+  MAX_BYTES, UNDO_DAYS, MONEY_KINDS, KINDS, READ_SCHEMA, READ_PROMPT, AI_OFF_SENTENCE, cents$,
 };

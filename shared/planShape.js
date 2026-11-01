@@ -26,11 +26,7 @@ export const STATUS_PENDING = "pending";
 export const STATUS_OPEN = "open";
 export const STATUS_DONE = "done";
 export const STATUS_SKIPPED = "skipped";
-export const STEP_STATUSES = [STATUS_PENDING, STATUS_OPEN, STATUS_DONE, STATUS_SKIPPED];
 
-export const PLAN_ACTIVE = "active";
-export const PLAN_DONE = "done";
-export const PLAN_ABANDONED = "abandoned";
 
 export const NAME_MAX = 80;
 export const LABEL_MAX = 120;
@@ -126,9 +122,6 @@ export function nextPendingSeq(steps = []) {
 }
 export function openStep(steps = []) {
   return steps.find(s => s.status === STATUS_OPEN) || null;
-}
-export function planIsFinished(steps = []) {
-  return steps.length > 0 && steps.every(s => s.status === STATUS_DONE || s.status === STATUS_SKIPPED);
 }
 
 export function planProgress(steps = []) {
