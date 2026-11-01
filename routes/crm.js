@@ -48,7 +48,7 @@ const lapseRule = require("../lapseRule");   // FIX-49: the one lapse rule
 // columns /me and the prefs route read for it.
 const { briefSettings, BRIEF_SECTIONS } = require("./email");
 const NOTIFY_SELECT = "notify_thread_nudge, brief_sections, brief_hour, brief_days, notify_portfolio_gifts, notify_task_assignments, "
-  + "notify_step_reminder, notify_meeting_brief, notify_week_in_review, notify_monthly_report, notify_connection_alerts";
+  + "notify_step_reminder, notify_meeting_brief, notify_week_in_review, notify_monthly_report, notify_connection_alerts, notify_weekly";
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
 const fileLimiter = rateLimit("fileLimiter", {
@@ -104,7 +104,7 @@ const {
   reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
-  runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
+  runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runWeeklyEmailForOrg, runTx, sampleDataMod,
   seedOrgData, sendBoardPackEmail, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
   scheduleScores, recomputeScoresForOrg, engagementMod,
   snapshotMetricsForOrg, solicitableSql, sustainerFileFacts, syncGmail, testMode, threadNudgeDayOk,
@@ -1630,17 +1630,28 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 }));
 
 // PUT /me/notification-prefs (BUILD-36 A4) — one person's own staff email.
-// STAFF-MAIL-1: `morningEmail` is the one email that is on unless she turns it
-// off; `brief` is what goes in it and when ({sections, hour, days}). Every
+// STAFF-MAIL-1/2: `morningEmail` is off for a new person until they turn it on
+// (people added before STAFF-MAIL-2 kept it on); `brief` is what goes in it and when ({sections, hour, days}). Every
 // other key is an email she turns on for herself, off until she does.
 const NOTIFY_PREF_MAP = { morningEmail: "notify_thread_nudge", portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments",
   stepReminder: "notify_step_reminder", meetingBrief: "notify_meeting_brief", weekInReview: "notify_week_in_review",
-  monthlyReport: "notify_monthly_report", connectionAlerts: "notify_connection_alerts" };
+  monthlyReport: "notify_monthly_report", connectionAlerts: "notify_connection_alerts", weekly: "notify_weekly" };
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
   const sets = [], params = [];
   for (const [k, col] of Object.entries(NOTIFY_PREF_MAP)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
+  }
+  // STAFF-MAIL-2 (Jonathan, 31 Oct 2026): turning the daily email ON turns the
+  // weekly one off, so nobody gets both unless they tick both. Only on the turn
+  // itself, and only when the same save does not say what the weekly is; the
+  // answer says so (`weeklyTurnedOff`), and the page's Undo sends both back.
+  let weeklyTurnedOff = false;
+  if (b.morningEmail === true && typeof b.weekly !== "boolean") {
+    const [cur] = await query("SELECT notify_thread_nudge, notify_weekly FROM users WHERE id=?", [req.user.userId]);
+    if (cur && !briefSettings(cur).on && cur.notify_weekly === true) {
+      sets.push("notify_weekly=?"); params.push(false); weeklyTurnedOff = true;
+    }
   }
   const brief = b.brief && typeof b.brief === "object" ? b.brief : null;
   if (brief) {
@@ -1663,7 +1674,7 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
   const rows = await query(`SELECT ${NOTIFY_SELECT} FROM users WHERE id=?`, [req.user.userId]);
-  res.json({ notifications: mapNotifyPrefs(rows[0]) });
+  res.json({ notifications: mapNotifyPrefs(rows[0]), ...(weeklyTurnedOff ? { weeklyTurnedOff: true } : {}) });
 }));
 
 // ── FIX-57 · MY PROFILE: A SIGNATURE FOR EACH PERSON ──────────────────────
@@ -25888,7 +25899,10 @@ app.post("/nudges/run", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!org) return res.status(404).json({ error: "Org not found" });
   const today = (req.body && req.body.today) || orgToday(org);   // ORG_TZ_SEAM_OK
   const hour = Number.isInteger(req.body?.hour) ? req.body.hour : null;
-  const out = await runThreadNudgesForOrg(org, { today, send: !(req.body && req.body.dryRun), nowHour: hour, force: !!req.body?.force });
+  // STAFF-MAIL-2: {kind:"weekly"} runs the weekly email instead; with dryRun
+  // it composes only and returns each person's email, which is the preview.
+  const run1 = req.body?.kind === "weekly" ? runWeeklyEmailForOrg : runThreadNudgesForOrg;
+  const out = await run1(org, { today, send: !(req.body && req.body.dryRun), nowHour: hour, force: !!req.body?.force });
   res.json({ today, ...out });
 }));
 
@@ -26718,7 +26732,8 @@ app.put("/gifts/:id/custom-fields", requireAuth, checkWriteAccess, wrap(async (r
   await cfEvent(req, req.user.orgId, "gift", "values_written", { entityId: req.params.id, detail: { keys: Object.keys(v.values) } });
   res.json({ ok: true, customFields: merged });
 }));
-// STAFF-MAIL-1: the morning email reads on unless turned off; every other
+// STAFF-MAIL-1/2: the morning email reads on only for a NULL left from before
+// STAFF-MAIL-2 (new people get false); every other
 // staff email reads off unless turned on (routes/email.js userWantsEmail).
 function mapNotifyPrefs(row) {
   const b = briefSettings(row);
@@ -26732,6 +26747,7 @@ function mapNotifyPrefs(row) {
     weekInReview: row?.notify_week_in_review === true,
     monthlyReport: row?.notify_monthly_report === true,
     connectionAlerts: row?.notify_connection_alerts === true,
+    weekly: row?.notify_weekly === true,   // STAFF-MAIL-2: NULL (from before) reads off
   };
 }
 

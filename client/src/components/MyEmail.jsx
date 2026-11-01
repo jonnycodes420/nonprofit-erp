@@ -1,8 +1,10 @@
-// STAFF-MAIL-1 · Settings → My email. The morning email is the only email
-// Steward sends a person on its own: here she picks what goes in it, the hour
-// it comes and which days. Everything else Steward can email her is listed
-// below it, each off until she turns it on. One person's own settings: the
-// server reads them (routes/email.js briefSettings, userWantsEmail).
+// STAFF-MAIL-1 · Settings → My email. The morning email: here she picks
+// what goes in it, the hour it comes and which days. Everything else Steward
+// can email her is listed below it. STAFF-MAIL-2: a new person starts with
+// the weekly email on and everything else off; turning the daily email on
+// turns the weekly one off (the server does it and says so, and Undo puts
+// both back). One person's own settings: the server reads them
+// (routes/email.js briefSettings, userWantsEmail).
 import { useState, useEffect } from "react";
 import { T } from "./shared";
 import { apiFetch } from "../api";
@@ -48,17 +50,27 @@ export function MyEmailPanel({ isAdmin }) {
   const [org, setOrg] = useState(null);
   const [saving, setSaving] = useState("");
   const [err, setErr] = useState("");
+  const [undo, setUndo] = useState(false);
+  // The weekly email's "Turn on the daily email" link lands here with ?daily=1.
+  const [fromLink] = useState(() => { try { return new URLSearchParams(window.location.search).get("daily") === "1"; } catch { return false; } });
   useEffect(() => {
     apiFetch("/me").then(r => { setP(r?.notifications || null); setOrg(r?.org || null); }).catch(e => setErr(errorMessage(e, "Your email settings did not load.")));
   }, []);
 
   async function save(key, body, optimistic) {
     const before = p;
-    setP(optimistic); setSaving(key); setErr("");
-    try { const r = await apiFetch("/me/notification-prefs", { method: "PUT", body: JSON.stringify(body) }); if (r?.notifications) setP(r.notifications); }
+    setP(optimistic); setSaving(key); setErr(""); setUndo(false);
+    try {
+      const r = await apiFetch("/me/notification-prefs", { method: "PUT", body: JSON.stringify(body) });
+      if (r?.notifications) setP(r.notifications);
+      if (r?.weeklyTurnedOff) setUndo(true);
+    }
     catch (e) { setP(before); setErr(errorMessage(e, "That setting was not saved.")); }
     finally { setSaving(""); }
   }
+  // Turning the daily email on turns the weekly one off (server-side); Undo sends both back.
+  const turnOnDaily = () => save("on", { morningEmail: true }, { ...p, morningEmail: true, weekly: false });
+  const undoDaily = () => save("undo", { morningEmail: false, weekly: true }, { ...p, morningEmail: false, weekly: true });
   const setBrief = (key, patch) => save(key, { brief: patch }, { ...p, brief: { ...p.brief, ...patch, sections: { ...p.brief.sections, ...(patch.sections || {}) } } });
 
   if (!p) return <div style={card}>{err || <span style={{ fontSize: 13, color: T.ink3 }}>Loading your email settings…</span>}</div>;
@@ -75,15 +87,46 @@ export function MyEmailPanel({ isAdmin }) {
         </div>
       )}
 
-      <div style={card}>
-        <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 20, color: T.ink }}>Your morning email</div>
+      <div style={card} data-testid="weekly-card">
+        <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 20, color: T.ink }}>Your weekly email</div>
         <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 14, lineHeight: 1.55, maxWidth: 620 }}>
-          The one email Steward sends you without being asked. It comes once a day at the hour you pick, and not at all on a morning with nothing in it.
+          Monday at 7 AM: the week ahead (next steps, follow-ups, pledge payments and events) and last week in a few lines. A quiet week still gets one line saying so.
+        </div>
+        <label style={{ ...rowStyle, cursor: "pointer" }}>
+          <input type="checkbox" data-testid="notify-weekly" checked={!!p.weekly} disabled={saving === "weekly"}
+            onChange={() => save("weekly", { weekly: !p.weekly }, { ...p, weekly: !p.weekly })} style={box} />
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>Send me the weekly email</div>
+        </label>
+        {!p.morningEmail && (
+          <div data-testid="daily-prompt" style={{ ...rowStyle, alignItems: "center", flexWrap: "wrap", ...(fromLink ? { background: T.bg, borderRadius: 10, padding: "12px 14px", borderTop: "none", marginTop: 6 } : {}) }}>
+            <div style={{ fontSize: 13.5, color: T.ink, flex: "1 1 240px" }}>Want this every morning instead?</div>
+            <button type="button" data-testid="turn-on-daily" onClick={turnOnDaily} disabled={saving === "on"}
+              style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              Turn on the daily email</button>
+          </div>
+        )}
+        {undo && (
+          <div data-testid="daily-undo" role="status" style={{ ...rowStyle, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13.5, color: T.ink, flex: "1 1 240px" }}>The daily email is on, and the weekly email is off.</div>
+            <button type="button" data-testid="undo-daily" onClick={undoDaily} disabled={saving === "undo"}
+              style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "8px 14px", fontSize: 13.5, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" }}>
+              Undo</button>
+          </div>
+        )}
+      </div>
+
+      <div style={card}>
+        <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 20, color: T.ink }}>Your daily email</div>
+        <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 14, lineHeight: 1.55, maxWidth: 620 }}>
+          What needs you today, in one email. It comes once a day at the hour you pick, and not at all on a morning with nothing in it.
         </div>
         <label style={{ ...rowStyle, cursor: "pointer" }}>
           <input type="checkbox" data-testid="brief-on" checked={p.morningEmail} disabled={saving === "on"}
-            onChange={() => save("on", { morningEmail: !p.morningEmail }, { ...p, morningEmail: !p.morningEmail })} style={box} />
-          <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>Send me the morning email</div>
+            onChange={() => p.morningEmail ? save("on", { morningEmail: false }, { ...p, morningEmail: false }) : turnOnDaily()} style={box} />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>Send me the daily email every morning</div>
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 1 }}>Turning it on turns the weekly email off. Tick both if you want both.</div>
+          </div>
         </label>
 
         {p.morningEmail && <>
@@ -111,7 +154,7 @@ export function MyEmailPanel({ isAdmin }) {
               </div>
             </label>
           ))}
-          {noneIn && <div data-testid="brief-empty" style={{ fontSize: 12.5, color: T.gold700, marginTop: 4 }}>Nothing is ticked, so no morning email will come.</div>}
+          {noneIn && <div data-testid="brief-empty" style={{ fontSize: 12.5, color: T.gold700, marginTop: 4 }}>Nothing is ticked, so no daily email will come.</div>}
         </>}
       </div>
 

@@ -21,6 +21,14 @@ one deletes its line.
 
 - **P2 · The morning email's date line reads "2026-10-31".** `renderMorningBriefBody` (server.js) prints `today` as the raw ISO string beside the person's name ("Wren Walker · 2026-10-31"), where every other screen shows a written date. Seen on the walk's 9 AM send. Suggested: the next staff-mail or Settings sweep, through `shared/displayDate.js`.
 
+## Home (suggestion from Jonathan, 31 Oct 2026, raised during STAFF-MAIL-2; SWEEP-1 owns Home)
+
+- **P3 · Home's Set up Steward card in the right rail opens closed.** Jonathan wants its steps shown by default (each step with its sentence and action, as in his screenshot of Justin's Place), closing only when the person clicks Hide the steps, and staying closed for them after that. Today `SetupRailCard` (client/src/components/HomeSetup.jsx) starts with `useState(false)`, so it shows "Show all steps". `tests/smoke-walk.test.js` §home-4 pins "Show all steps" and would change with it. Suggested: SWEEP-1.
+
+## The battery on a weekend (STAFF-MAIL-2, 31 Oct 2026)
+
+- **P3 · Two suites fail only with the weekend clock pin.** With `STEWARD_TEST_NOW=2026-11-02T17:00:00Z` (the Monday-noon pin), `polish1-trust` §bare (the month-close banner reads the October close's other gifts) and `capture1-zero-day` §7 (time to thank reads 1.52 days, not 1.5: real-time stamps against the shifted database clock) fail on this branch; both pass unpinned, and neither reads anything STAFF-MAIL-2 changed. Suggested: the next tests-and-CI build makes both fixtures read the test clock.
+
 ## Communications (SWEEP-3, 30 Oct 2026; walk in docs/sweeps/sweep-3/walk.md)
 
 - **P1 · A campaign reaches only people set to Always include, even with Campaign emails on for Everyone.** `donorMailDecision` (routes/email.js) refuses kind `campaign` unless `donors.auto_email` is true (SEND-GATE-1), while SEND-GATE-2's rule for a type set to Everyone is "anyone not set to Never". On the walk org with Donor mail and Campaign emails on for Everyone the builder still said "315 donors · 0 can get this email: 247 have no email address, 68 have automatic email off". Who a campaign reaches is a sending rule, so it needs Jonathan's word on which rule is meant, then the real-shaped check and the truth check. Suggested: SEND-GATE-3.

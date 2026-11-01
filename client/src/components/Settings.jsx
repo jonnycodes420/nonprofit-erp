@@ -2835,7 +2835,7 @@ const SETTINGS_TABS=[
   {id:"account",label:"Account"},
   // STAFF-MAIL-1 — the morning email (what is in it, when) and every other
   // staff email, each off until the person turns it on.
-  {id:"myemail",label:"My email"},
+  {id:"myemail",label:"Your email"},
   // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
   {id:"security",label:"Security"},
 ];

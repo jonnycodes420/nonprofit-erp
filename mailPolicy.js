@@ -5,10 +5,12 @@
 // family may do. `orgMaySendEmail` (routes/email.js) and the Resend client
 // proxy (server.js top) both ask it; nothing else restates these rules.
 //
-//   staff       Steward to an org's own staff: the morning email (on unless a
-//               person turns it off), and digests, Week in Review, "Your
-//               meetings today", reminders, alerts and task notices, each off
-//               until that person turns it on (STAFF-MAIL-1).
+//   staff       Steward to an org's own staff: the weekly email ("Your
+//               week", on for a new person), the daily morning email, Week in
+//               Review, "Your meetings today", reminders, alerts and task
+//               notices, each off until that person turns it on (STAFF-MAIL-1,
+//               STAFF-MAIL-2; people added before STAFF-MAIL-2 keep exactly
+//               what they had).
 //   donor       an org to its own donors and volunteers: receipts, campaigns,
 //               thank-yous, sequences she turned on, statements, event,
 //               auction, volunteer and pledge mail.
