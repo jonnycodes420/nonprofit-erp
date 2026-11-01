@@ -4,6 +4,10 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## CI (EVENTS-3, 1 Nov 2026)
+
+- **P2 · The battery runs as one CI job and is close to its ceiling.** Since ARCH-1 the battery finds 192 suites and runs them as three shards inside one `test` job: PR #292 took 39m45s, and EVENTS-3's first run was cancelled at 40m15s. EVENTS-3 raised `timeout-minutes` from 40 to 60 to unblock merges; that only buys time. Suggested: a CI build splits the battery into a GitHub matrix of parallel jobs (one shard each, with an upload and a combine step, as ci.yml's comment on the earlier attempt describes).
+
 ## One home for every giving number (NUMBERS-3, 1 Nov 2026)
 
 - **P3 · Two gifts on one day from one import pick the "last" one by random id.** An import writes its rows with one `created_at`, so `LAST_GIFT_ORDER` (date, created_at, id) falls to the gift's random id: OAKVILLE Foundation's two gifts of 16 Dec 2025 ($20,000 and $5,000) show either as the Last gift, run to run. Seen on the real-shaped before-and-after capture. Suggested: the next imports build stamps each row's file position (or `created_at` plus its row number) so the later row is the last.
