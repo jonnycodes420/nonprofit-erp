@@ -319,7 +319,8 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   for (const f of r.files) results.push({ kind: "document", id: f.id, title: f.file_name, donorId: f.donor_id, donorName: f.donor_name || "" });
   for (const f of r.grantFiles) results.push({ kind: "grantDocument", id: f.id, title: f.file_name, grantId: f.grant_id, funder: f.funder || "" });
   for (const g of r.gifts) results.push({ kind: "gift", id: g.id, title: g.donor_name, amount: Number(g.amount) || 0, date: day10(g.date),
-    checkNumber: g.check_number || "", method: g.payment_method || "", donorId: g.donor_id });
+    // SWEEP-2: "Needs you" is recordGift's word for no method given; a search result says nothing then
+    checkNumber: g.check_number || "", method: g.payment_method && g.payment_method !== "Needs you" ? g.payment_method : "", donorId: g.donor_id });
   for (const s of r.plans) results.push({ kind: "plan", id: s.id, title: s.donor_name, amount: Number(s.amount) || 0,
     interval: s.interval || "month", status: s.status || null, donorId: s.donor_id });
   for (const s of r.pledges) results.push({ kind: "pledge", id: s.id, title: s.donor_name, amount: Number(s.amount) || 0,

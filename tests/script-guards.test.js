@@ -107,6 +107,8 @@ const SELF_REFUSING = [
   "qboin-walk",
   // FUNDRAISING-2 — the Fundraising walk org (real-shaped files) and its screenshots, on the LOCAL stack.
   "fundraising2-walk-org", "fundraising2-walk",
+  // SWEEP-2 — the Donors, Data health and imports walk org (real-shaped files), on the LOCAL stack.
+  "sweep2-walk-org",
   // FIX-34 E — the Tasks walk (thank-you draft, select mode at 390, morning email) on the LOCAL stack.
   "fix34e-capture",
   // FIX-34 C — Book a visit with two calendars and a refused Google API, on the LOCAL stack.

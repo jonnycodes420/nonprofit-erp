@@ -528,7 +528,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const yl = yearMode === "fiscal" ? fyLabelFromEnd(d.year, fsm) : d.year;
       const priorLabel = yearMode === "fiscal" ? fyLabelFromEnd(d.year - 1, fsm) : String(d.year - 1);
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} /> {plural(d.rows.length, "donor")}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+      narrative = <><strong>{d.figures?.people ? <RF f={d.figures.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} unit={plural(d.rows.length, "donor")} /> : `${d.rows.length} ${plural(d.rows.length, "donor")}`}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
@@ -581,7 +581,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px", minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, color: T.ink3 }}>{y.label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} {plural(y.donors, "donor")}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} unit={plural(y.donors, "donor")} /> : `${y.donors} ${plural(y.donors, "donor")}`}</div>
             {/* REPORTS-5: what an old system's report said for this year,
                 labelled, beside Steward's number and never added into it. */}
             {y.imported && <div data-testid="three-year-imported" style={{ fontSize: 11.5, color: T.ink, marginTop: 6, lineHeight: 1.4 }}>
@@ -607,7 +607,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // in those words: "down 69%" for four months against twelve read as a
       // collapse, and was one.
       const running = d.span ? !!d.span.cut : d.year === (yearMode === "fiscal" ? CUR_FY : CUR_CY);
-      narrative = <>In <strong>{d.label}</strong>{running ? " so far" : ""} you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> {plural(d.uniqueDonors, "donor")}
+      narrative = <>In <strong>{d.label}</strong>{running ? " so far" : ""} you received <strong><RF f={d.figures?.total} kind="money" label={`Received in ${d.label}`} /></strong> from <strong>{d.figures?.uniqueDonors ? <RF f={d.figures.uniqueDonors} label="Donors" unit={plural(d.uniqueDonors, "donor")} /> : `${d.uniqueDonors} ${plural(d.uniqueDonors, "donor")}`}</strong>
         {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up " : "a change of "}<RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> on <RF f={d.figures?.priorTotal} kind="money" label={`${d.priorLabel}, the same days`} /> in {d.priorLabel}</>}
         {d.span?.sentence && <span data-testid="annual-span"> ({running ? "the same days" : "the whole year"}, {d.span.sentence})</span>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
@@ -632,7 +632,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
-      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} {plural(d.giftCount, "gift")} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" unit={plural(d.giftCount, "gift")} /> : `${d.giftCount} ${plural(d.giftCount, "gift")}`} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
       // SWEEP-5: the two ids are for the bookkeeper's file, not for reading.
       const BK_FILE_ONLY = new Set(["donorId", "giftId"]);
       const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";

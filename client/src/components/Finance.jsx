@@ -527,9 +527,13 @@ const monthBounds = ym => {
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   return { from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, "0")}` };
 };
+// SWEEP-2: last month is the org's last month (FIX-14 Part 1), not the
+// browser's: a browser in another zone (UTC, or someone travelling) is already
+// on the 1st while the org is on the 31st, and the close opened the wrong month.
 const lastMonth = () => {
-  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const [y, m] = orgTodayCivil().split("-").map(Number);
+  const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, "0")}`;
 };
 function MonthlyClose() {
   const [ym, setYm] = useState(lastMonth);
