@@ -305,11 +305,14 @@ async function reset() {
 
   // ── §7 received_at and thanked_at make the clock line ───────────────────
   console.log("\n§7 the clock");
-  await q(`UPDATE gifts SET received_at = NOW() - INTERVAL '3 days', thanked_at = NOW() - INTERVAL '1 day' WHERE org_id=$1 AND id=$2`, [ORG, gifts[0].id]);
+  // ARCH-1: hours, not days. The scratch database runs in New York, where
+  // NOW() - INTERVAL '3 days' across a clock change (1 Nov 2026) is 73 hours,
+  // and the line read 1.52 days, not 1.5. The clock line counts elapsed time.
+  await q(`UPDATE gifts SET received_at = NOW() - INTERVAL '72 hours', thanked_at = NOW() - INTERVAL '24 hours' WHERE org_id=$1 AND id=$2`, [ORG, gifts[0].id]);
   const sent = await api("POST", `/thank-yous/${drafts[0].id}/sent`, tok, {});
   const [gt] = await q(`SELECT thanked_at FROM gifts WHERE id=$1`, [gifts[0].id]);
   ok("§7 sending the thank-you keeps the first thanked time", sent.status === 200 && !!gt.thanked_at, { s: sent.status, gt });
-  await q(`UPDATE gifts SET received_at = NOW() - INTERVAL '5 days', thanked_at = NOW() - INTERVAL '4 days' WHERE org_id=$1 AND id=$2`, [ORG, dg.id]);
+  await q(`UPDATE gifts SET received_at = NOW() - INTERVAL '120 hours', thanked_at = NOW() - INTERVAL '96 hours' WHERE org_id=$1 AND id=$2`, [ORG, dg.id]);
   const clock = await api("GET", "/thank-yous/clock", tok);
   ok("§7 two thanked gifts, 2 days and 1 day: the line says 1.5 days", clock.status === 200 && clock.body.count === 2 && clock.body.days === 1.5
     && clock.body.sentence === "Average time from gift to thank-you, last 30 days: 1.5 days", clock.body);

@@ -21,7 +21,7 @@
 const bcrypt = require("bcryptjs");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BASE, waitFor } = require("./helpers");
 const ORG_KIND = require("../orgKind");
 const mailPolicy = require("../mailPolicy");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
@@ -183,6 +183,7 @@ const snapshot = async () => JSON.stringify(await q(
   ok("a junk org with a Stripe subscription is archived, never deleted", guarded.action === "archive", JSON.stringify(guarded));
 
   console.log("\n§5 · archive hides an org and undo brings it back");
+  const [{ t0 }] = await q(`SELECT NOW() AS t0`);   // this run's rows only: the trail is append-only and keeps every earlier run's
   const arc = await api("POST", `/admin/orgs/${EMPTY}/archive`, supr, {});
   const l1 = await api("GET", "/admin/orgs", supr);
   const m3 = await api("GET", "/admin/metrics", supr);
@@ -195,7 +196,11 @@ const snapshot = async () => JSON.stringify(await q(
   const l2 = await api("GET", "/admin/orgs", supr);
   const e2 = l2.body.find(o => o.id === EMPTY);
   ok("undo brings it back, counted again", un.status === 200 && e2.archived === false && e2.counted === true, JSON.stringify({ a: e2.archived, c: e2.counted }));
-  const audit = await q(`SELECT action FROM fin_audit_log WHERE request_path LIKE $1 ORDER BY created_at`, [`/admin/orgs/${EMPTY}/%archive`]).catch(() => []);
+  // ARCH-1: the audit row is written when the response finishes, after the
+  // client already has its answer, so the trail is read until both rows are
+  // there (a ceiling, not a sleep). CI read 1 on a busy runner (run 41249704829).
+  const readAudit = () => q(`SELECT action FROM fin_audit_log WHERE request_path LIKE $1 AND created_at >= $2 ORDER BY created_at`, [`/admin/orgs/${EMPTY}/%archive`, t0]).catch(() => []);
+  const audit = (await waitFor(async () => { const a = await readAudit(); return a.length >= 2 && a; }, { timeout: 15000 })) || await readAudit();
   ok("both are on the audit trail", audit.length >= 2, audit.length);
 
   console.log("\n§6 · Jonathan's orgs never get billing mail");

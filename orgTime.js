@@ -344,6 +344,29 @@ function equalYearSpans(years, today) {
   return { years: out, cut: true };
 }
 
+// ARCH-1 · AN INSTANT IN A WINDOW OF THE ORG'S DAYS, IN SQL. The one way a
+// timestamptz (started_at, created_at, sent_at) is tested against civil
+// bounds ("this month" from orgPeriodBounds, a report's from/to). Comparing it
+// to `?::date`, or to date_trunc('month', NOW()), cuts the day at the
+// DATABASE's midnight (UTC on prod and CI), so a gift started at 8 PM in New
+// York on the 31st counted in the next month. Here each bound is the org's
+// midnight as an instant: `(day)::timestamp AT TIME ZONE tz`, which Postgres
+// works out with the zone's own offset on that day (DST included), and which
+// still lets an index on the column answer.
+//   col      the timestamptz column, e.g. "s.started_at"
+//   tzSql    SQL that yields the org's zone name: orgTzSql("s.org_id"), or "?"
+//   fromSql  SQL for the first civil day, inclusive ("?" for a parameter), or null
+//   toSql    SQL for the last civil day, inclusive, or null
+function orgTzSql(orgIdSql) {
+  return `COALESCE((SELECT NULLIF(otz.timezone, '') FROM orgs otz WHERE otz.id = ${orgIdSql}), '${DEFAULT_TZ}')`;
+}
+function orgDayWindowSql(col, tzSql, fromSql, toSql) {
+  const parts = [];
+  if (fromSql) parts.push(`${col} >= ((${fromSql})::date::timestamp AT TIME ZONE ${tzSql})`);
+  if (toSql) parts.push(`${col} < (((${toSql})::date + 1)::timestamp AT TIME ZONE ${tzSql})`);
+  return parts.length ? `(${parts.join(" AND ")})` : "TRUE";
+}
+
 module.exports = {
   samePointLastYear, equalYearSpans,
   DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
@@ -352,4 +375,5 @@ module.exports = {
   orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,
   addDays, dayOfWeek, compareCivil, daysBetween, parseCivil, localToInstant,
   civilOf, civilLocale,
+  orgTzSql, orgDayWindowSql,
 };

@@ -3794,11 +3794,6 @@ app.post("/give/:orgSlug/started", donateLimiter, wrap(async (req, res) => {
 
 // ── The staff side ─────────────────────────────────────────────────────────
 const GS = () => require("../figureSources");
-const monthOf = today => {
-  const [y, m] = today.split("-").map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return { from: `${today.slice(0, 7)}-01`, to: `${today.slice(0, 7)}-${String(last).padStart(2, "0")}` };
-};
 const formKey = r => r.giving_page_id || r.form_path || "";
 async function giftStartRow(orgId, id) {
   const [r] = await query(
@@ -3831,8 +3826,10 @@ async function giftStartDraft(req, r) {
 
 app.get("/gift-starts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const today = String(orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
-  const month = monthOf(today);
+  // ARCH-1: this month is the org's, through the one seam; the figure counts
+  // each start by the org's day it fell on (figureSources, orgDayWindowSql).
+  const mo = orgTime.orgPeriodBounds(await orgTz(orgId), "month", 0);   // ORG_TZ_SEAM_OK
+  const month = { from: mo.start, to: mo.end };
   const [count, total] = await Promise.all([
     GS().figureValue(orgId, { key: "gifts-not-finished", params: { ...month, measure: "count" } }),
     GS().figureValue(orgId, { key: "gifts-not-finished", params: month }),
@@ -4288,6 +4285,10 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
 // technical problem you can fix, the other a relationship problem you can't.
 app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  // ARCH-1: "this month" is the org's month and its first midnight, not the
+  // database's date_trunc nor this process's local calendar.
+  const tz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const mo = orgTime.orgPeriodBounds(tz, "month", 0);
   const [mrrRows, changeRows, cohortRows] = await Promise.all([
     query(
       `SELECT COALESCE(SUM(CASE WHEN interval='year' THEN amount/12 ELSE amount END),0) AS mrr,
@@ -4298,8 +4299,8 @@ app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
       [orgId]),
     query(
       `SELECT kind, old_amount, new_amount, sub_interval FROM recurring_change_log
-        WHERE org_id = ? AND created_at >= date_trunc('month', NOW())`,
-      [orgId]),
+        WHERE org_id = ? AND ${orgTime.orgDayWindowSql("created_at", "?", "?", null)}`,
+      [orgId, mo.start, tz.timezone]),
     // 12-month sustainer retention: every subscription whose 12-month mark
     // has passed — retained means it was still alive at that mark.
     query(
@@ -4351,7 +4352,7 @@ app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
     atRiskCount: mrrRows[0]?.at_risk || 0,
     expiringCount: expSoon[0]?.n || 0,
     mrrExpiring: round2(parseFloat(expSoon[0]?.mrr) || 0),
-    waterfall: { monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10), ...buckets, net },
+    waterfall: { monthStart: mo.start, ...buckets, net },
     // No cohort → null, never a fake 0% (the empty-state honesty rule).
     retention12: { rate: cohort ? round2((retained / cohort) * 100) : null, cohortSize: cohort, retained },
     // If the sector benchmark is cited anywhere, it is THIS, sourced:

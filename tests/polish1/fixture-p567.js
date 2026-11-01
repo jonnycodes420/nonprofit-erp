@@ -40,9 +40,11 @@ async function build(h) {
            SELECT 'd_p567_' || i, $1, 'Polish Person ' || lpad(i::text, 2, '0'), 'p' || i || '@polish1-p567.test', 'steward', 'system:test', 'test'
              FROM generate_series(1, 30) i`, [ORG]);
   // Three years of gifts, every amount with cents, paid by card with a method.
+  // Dated from the org's day through NOW(), which reads the run's clock;
+  // CURRENT_DATE is a keyword and reads the machine's (ARCH-1).
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,payment_method,created_by,created_by_name)
            SELECT 'g_p567_' || i || '_' || k, $1, 'd_p567_' || i, 1234.56 + i * 10 + k * 0.25,
-                  to_char(CURRENT_DATE - (k * 200 + i * 3 + 40), 'YYYY-MM-DD'), 'Card', 'system:test', 'test'
+                  to_char((NOW() AT TIME ZONE 'America/New_York')::date - (k * 200 + i * 3 + 40), 'YYYY-MM-DD'), 'Card', 'system:test', 'test'
              FROM generate_series(1, 30) i, generate_series(0, 4) k`, [ORG]);
   const [{ today }] = await q(`SELECT to_char(NOW() AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS today`);
   const lm = lastMonth(today);
