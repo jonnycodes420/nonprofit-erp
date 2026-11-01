@@ -394,6 +394,8 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       lfLinks.length >= 4 && broken.length === 0 && rendersAudit("/lost-and-found"), broken);
     // A card or menu entry that NAMES Lost & Found points at one of those.
     const named = [];
+    // (ARCH-1: the feature-finder extras were never rendered and went, so two
+    // entries name it now: the Site menu and the tools page.)
     // Three shapes carry a title: a card tuple ["/path", "Title", …], a menu
     // item <Mi href="/path" … b="Title">, and a feature-finder extra
     // { n: "Title", …, h: "/path" }. Whichever titles Lost & Found must link to it.
@@ -402,7 +404,7 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       for (const m of t.matchAll(/href="([^"]+)"[^>\n]*\bb="[^"]*Lost & Found/g)) named.push([f, m[1]]);
       for (const m of t.matchAll(/\bn: "[^"]*Lost & Found[^"]*"[^}\n]*\bh: "([^"]+)"/g)) named.push([f, m[1]]);
     }
-    ok("every menu entry or card that names Lost & Found links to it", named.length >= 3 && named.every(([, h]) => /^(\/tools)?\/lost-and-found$/.test(h)), named);
+    ok("every menu entry or card that names Lost & Found links to it", named.length >= 2 && named.every(([, h]) => /^(\/tools)?\/lost-and-found$/.test(h)), named);
 
     // CONTENT-1b turned this around. FIX-13 banned "Book a call"; the call is
     // what /demo books, so it is now the ONLY name for it. "Book a call" on
