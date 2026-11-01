@@ -131,8 +131,10 @@ soon as `/health` is ok. Never set this in production.
 ### Running a subset
 
 `SUITES="tasks greeting" bash tests/run-all.sh` runs only the named suites
-(names must be in run-all.sh's CORE list; an unknown name is a hard error that
-prints the valid names). Per-suite elapsed seconds and a total are printed.
+(each name is a `tests/<name>.test.js`; run-all.sh finds every suite itself, through
+`tests/lib/suites.js`, and `bash tests/run-all.sh --list` prints them. An unknown name is a hard
+error that prints the valid names). A suite the battery cannot run says
+`// battery: skip — <reason>` on one line in its own file (ARCH-1). Per-suite elapsed seconds and a total are printed.
 
 `tests/affected.sh <git-range>` computes which suites a change actually
 touches — it prints `FULL` (shared surface changed: server.js, db.js, routes/,
