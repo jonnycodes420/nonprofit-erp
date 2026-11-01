@@ -57,7 +57,10 @@ async function wipe(orgId) {
   const tables = await q(
     `SELECT table_name FROM information_schema.columns
       WHERE table_schema='public' AND column_name='org_id' ORDER BY table_name`);
-  for (const r of tables) await q(`DELETE FROM ${r.table_name} WHERE org_id=$1`, [orgId]).catch(() => {});
+  // NUMBERS-3: three passes. In one alphabetical pass `donors` failed on the
+  // gifts that still pointed at it (the error swallowed) and `gifts` went
+  // after, leaving a person stored at $77 beside no gifts (ARCH-1's org_f11giA).
+  for (let pass = 0; pass < 3; pass++) for (const r of tables) await q(`DELETE FROM ${r.table_name} WHERE org_id=$1`, [orgId]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [orgId]).catch(() => {});
 }
 

@@ -75,6 +75,12 @@ runs it by hand.
 The commands most builds use are `npm run status` (`ci/status.js`, prod smoke after a deploy),
 `node scripts/ci/tdz-scan.js` and `node scripts/ci/arch-check.js`.
 
+## One-time, waiting to run (`once/`)
+
+- `numbers3-recompute-totals.js` (NUMBERS-3): brings every person's stored first and last gift up to the one
+  rule. Dry run: `DATABASE_URL=… node scripts/once/numbers3-recompute-totals.js`; then
+  `… --apply --i-know-this-is-prod`. Delete it once it has run on prod.
+
 ## One-time, not yet proven run (`once/`)
 
 These change data or read prod, and ARCH-1 could not find a record (HISTORY or a decision) that

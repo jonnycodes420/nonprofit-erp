@@ -2,10 +2,6 @@
   "check": "fiscal-year",
   "what": "hand-rolled fiscal-year boundaries outside orgTime.orgPeriodBounds",
   "counts": {
-    "client/src/components/Reports.jsx": 1,
-    "donorStatus.js": 3,
-    "insights.js": 1,
-    "routes/profileStatus.js": 2,
-    "server.js": 5
+    "client/src/components/Reports.jsx": 1
   }
 }

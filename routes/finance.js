@@ -18,6 +18,7 @@ const express = require("express");
 // FIX-12 Part 7b: the after-meeting chips reach the model only through here.
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
+const NUM = require("../shared/numbers");   // NUMBERS-3 — one home for every giving number
 const SEALED_MAIL = require("../server/mail/sealedMail");   // SECURE-3: a synced email's body opens only through it
 
 const routers = {
@@ -45,7 +46,7 @@ let sharedProcessXeroAutoSync = null;
 function mount(ctx) {
 const {
   AGENT_MODEL,
-  actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
+  actor, checkWriteAccess, crypto, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
   // INT-3 — the audience resolver the campaign sender uses, and the one
@@ -121,19 +122,14 @@ const FIN_FIGURES = [
     definition: "Gifts recorded as a check, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
 ];
 
-// WHAT PUTS A GIFT ON A DEPOSIT. A deposit run (an `imports` row with
-// shape='deposit', BUILD-88b) holding it, or a day it reached the bank
-// (`gifts.deposited_on`: a payout's arrival, or FIX-59's "They were already
-// deposited" on imported history). One fragment, so "Not yet on a deposit",
-// its rows, the close checklist and the imported-gifts line cannot disagree.
-const ON_NO_DEPOSIT = `NOT EXISTS (SELECT 1 FROM imports im
-                            WHERE im.id = g.import_id AND im.org_id = g.org_id
-                              AND im.shape = 'deposit' AND im.reversed_at IS NULL)
-          AND COALESCE(g.deposited_on, '') = ''`;
+// WHAT PUTS A GIFT ON A DEPOSIT, and what is banked money: NUMBERS-3 gives
+// both one home (shared/numbers/deposited.js), read here, by month close, the
+// bookkeeper's file, the deposits file and QuickBooks alike.
+const ON_NO_DEPOSIT = NUM.deposited.NOT_DEPOSITED("g");
 // The gifts that came in as money somebody banked, in the last ninety days,
 // and are on no deposit: the "Not yet on a deposit" set.
-const BANKED_UNDEPOSITED = `lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
-          AND g.date >= (CURRENT_DATE - 90)::text AND ${ON_NO_DEPOSIT}`;
+const BANKED_UNDEPOSITED = `${NUM.deposited.BANKED("g")} AND ${NUM.money.MONEY("g")}
+          AND g.date >= (CURRENT_DATE - ${NUM.deposited.UNDEPOSITED_DAYS})::text AND ${ON_NO_DEPOSIT}`;
 
 // The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
 // 31st belongs to that month, not to the next one in UTC.
@@ -153,10 +149,11 @@ async function finFigure(orgId, key, { from, to }, rows = false) {
                         FROM fin_transactions t LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id LEFT JOIN fin_funds f ON f.id=t.fund_id
                        WHERE t.org_id=? AND t.source='not_a_gift' AND (d.id IS NULL OR d.deleted_at IS NULL)
                          AND t.date IS NOT NULL AND t.date <> '' AND t.date >= ? AND t.date <= ?`;
+    // NUMBERS-3 (D-4): a soft or matching credit row is recognition, not money in.
     const GIFTS = `SELECT g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund FROM gifts g
          JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
          LEFT JOIN fin_funds f ON f.id=g.fund_id
-        WHERE g.org_id=? AND d.deleted_at IS NULL
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}
           AND g.date IS NOT NULL AND g.date <> '' AND g.date >= ? AND g.date <= ?`;
     const r = rows
       ? await query(`SELECT * FROM (${GIFTS} UNION ALL ${NOT_GIFT}) x ORDER BY x.date DESC NULLS LAST, x.id LIMIT 2000`, [orgId, from, to, orgId, from, to])
@@ -218,7 +215,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
             COUNT(*)::int AS n
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
       WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
-        AND g.date >= ? AND g.date <= ?
+        AND g.date >= ? AND g.date <= ? AND ${NUM.money.MONEY("g")}
       GROUP BY 1
       UNION ALL
      -- INSIGHTS-1: the rows marked Not a gift are money in too
@@ -4116,16 +4113,16 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
     await one("banked", "Every check is on a deposit",
       `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
-          -- SWEEP-5: a gift that does not say how the money arrived may be a
-          -- check, so it cannot be ticked off as banked. The tick said "every
-          -- check is on a deposit" three lines above the bookkeeper's file
-          -- saying the same gifts were not matched to one.
-          AND lower(btrim(COALESCE(g.payment_method,''))) IN ('check','cheque','cash','','needs you','unknown')
+          -- NUMBERS-3: the one list of banked money and the one meaning of
+          -- deposited, Finance's (shared/numbers/deposited.js), so this tick
+          -- and "Not yet on a deposit" count the same gifts. A gift that does
+          -- not say how it arrived is the bookkeeper's "no payment method".
+          AND ${NUM.deposited.BANKED("g")} AND ${NUM.money.MONEY("g")}
           AND ${ON_NO_DEPOSIT}`,
       [orgId, from, to],
       n => n === 0,
-      n => n ? `${n} ${n === 1 ? "gift is" : "gifts are"} not on a deposit slip: checks, cash, or gifts that don't say how the money arrived.`
-             : "Every check and cash gift this month is on a deposit."),
+      n => n ? `${n} ${n === 1 ? "gift is" : "gifts are"} not on a deposit slip: checks, cash, bank transfers or ACH.`
+             : "Every check, cash, bank transfer and ACH gift this month is on a deposit."),
     // A RECEIPT IS A ROW IN `receipts`, not a column on the gift. Writing
     // this against `gifts.receipt_number` would have compiled and counted
     // every gift as un-receipted for ever.
@@ -4580,8 +4577,8 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const { yearMode = "calendar" } = req.query;
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
-  const cur = finPeriodBounds(yearMode, 0, _fpTz);
-  const prior = finPeriodBounds(yearMode, -1, _fpTz);
+  const cur = NUM.fiscalYear.period(_fpTz, yearMode, 0);
+  const prior = NUM.fiscalYear.period(_fpTz, yearMode, -1);
   // FIX-60 — THE COMPARISON IS THE SAME DAYS. The Revenue card set this year
   // so far against ALL of last year ("↓ $X vs last FY" every October). It now
   // compares with the same stretch a year back (orgTime.samePointLastYear,

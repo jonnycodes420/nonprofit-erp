@@ -44,6 +44,10 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, q, closeDb, login, api, civilToday, civilPlusDays } = require("./helpers");
+// NUMBERS-3: a gift written straight to the table is finished the way an
+// import finishes one, so the people it belongs to carry the right totals.
+const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
+const finish = (org, ids) => q(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [org, ids]);
 
 const ORG = "org_j3trig";
 const ADMIN = "admin@j3trig.local";
@@ -89,6 +93,7 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
   await q(`INSERT INTO giving_pages (id,org_id,slug,title) VALUES ('gp_j3',$1,'j3-page','J3 Page')`, [ORG]);
   await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,personal_goal_amount,status,person_id) VALUES ('pf_j3',$1,'gp_j3','J3 P2p','p2p@j3trig.local','j3-p2p',100,'active',$2)`, [ORG, P("p2p")]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,peer_fundraiser_id,created_by,created_by_name) VALUES ('g_j3_p2p',$1,$2,150,$3,'pf_j3','system:test','test')`, [ORG, P("two"), T]);
+  await finish(ORG, [P("two")]);
 
   // ── §1 THE NEW TRIGGERS, FROM THEIR READY-MADE JOURNEYS ─────────────────────
   const cat = await api("GET", "/journeys", tok);
@@ -182,6 +187,7 @@ const day = s => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / 
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,2000,$4,'system:test','test')`,
       [`g_j3_${g}`, ORG, P(g), civilPlusDays(-10)]);
   }
+  await finish(ORG, ["g1", "g2", "g3", "g4"].map(P));
   const M = await api("POST", "/journeys", tok, { name: "J3 Major", trigger: "gift_over", amountCents: 100000, priority: 50, exclusive: true,
     steps: [{ type: "thank", label: "Major call", offsetDays: 3 }, { type: "follow_up", label: "Major visit", offsetDays: 30 }] });
   const H = await api("POST", "/journeys", tok, { name: "J3 Higher", trigger: "by_hand", priority: 95, exclusive: true,

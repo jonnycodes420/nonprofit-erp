@@ -673,7 +673,7 @@ const SOURCES = {
                    ROUND(g.amount::numeric, 2) AS amount,
                    CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Gift, fee covered' ELSE 'Gift' END AS detail
               FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND g.giving_page_id = ?`,
+             WHERE g.org_id = ? AND g.giving_page_id = ? AND (d.id IS NULL OR d.deleted_at IS NULL) AND ${NOT_CREDIT("g")}`,
       args: [orgId, p.page],
     }),
   },
@@ -1005,7 +1005,8 @@ const SOURCES = {
     // gift the stored last gift on the person names (donorSummary.js).
     sql: (orgId, p) => ({
       // IMPORT-4: the last gift is a dated one; a gift with no date is never "last".
-      sql: `${DONOR_GIFT_SELECT} AND g.date IS NOT NULL ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
+      // NUMBERS-3: the last GIFT (shared/numbers/lastGift.js): never a refund or a credit row.
+      sql: `${DONOR_GIFT_SELECT} AND g.date IS NOT NULL AND g.amount > 0 AND ${NOT_CREDIT("g")} ORDER BY ${LAST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1464,7 +1465,8 @@ const SOURCES = {
     sentence: () => "The first gift this person ever gave, on its own: what it was, when it came in and what it went to.",
     sql: (orgId, p) => ({
       // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND g.date IS NOT NULL ORDER BY g.date ASC, g.id ASC LIMIT 1`,
+      // NUMBERS-3: a credit row is never anyone's first gift (shared/numbers/firstGift.js).
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY g.date ASC, g.id ASC LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },

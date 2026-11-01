@@ -11,11 +11,8 @@
 // (NUMBERS-3 onward), and a new defect on that same surface still goes red.
 // Remove an entry the day its defect is fixed.
 "use strict";
-const KNOWN = {
-  "D-3": { level: "P1", what: "Ask and Atlas count credit rows as money (how much raised) and as givers (how many donors) (askEngine.js:46 giftSet)" },
-  "D-4": { level: "P1", what: "Finance's money in by month counts credit rows as money (routes/finance.js:214; finFigure moneyInThisMonth :143)" },
-  "D-6": { level: "P1", what: "The bookkeeper's file calls a deposited gift \"not matched to a deposit\": it reads deposit_ref, which only Undo writes (routes/crm.js:24988)" },
-  "D-7": { level: "P3", what: "The onboarding card's gift count counts credit rows as gifts (routes/crm.js:3318)" },
-};
+// NUMBERS-3 (1 Nov 2026) fixed D-3, D-4, D-6 and D-7 (shared/numbers/), so
+// nothing is known today. A new entry needs its line in docs/defects.md.
+const KNOWN = {};
 
 module.exports = { KNOWN };

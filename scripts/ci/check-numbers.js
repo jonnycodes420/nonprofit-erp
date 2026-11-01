@@ -138,14 +138,16 @@ async function checkOrg(orgId, opts = {}) {
     const through = imp ? day(d.imported_through) : null;
     const after = imp && through ? cash.filter(g => !day(g.date) || day(g.date) > through) : cash;   // IMPORT-4: an undated gift is never inside the period
     const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
-    const latest = gs.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
+    // NUMBERS-3: the first and last gift are gifts: money above zero, so never a
+    // refund or a soft or matching credit row (written out here, not read from the app).
+    const latest = realCash.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
     // Stored on the person: exactly what the gifts and the imported figure say.
     if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
     const afterN = after.filter(g => c(g.amount) > 0).length;
     const wantN = (imp ? (d.imported_gift_count != null ? Number(d.imported_gift_count) : realCash.length - afterN) : 0) + afterN;
     const n = Number(d.gift_count) || 0;
     if (n !== wantN) add("donor-stored", { donor: d.id, what: "gift_count", stored: n, gifts: wantN });
-    const firstReal = real.map(g => day(g.date)).filter(Boolean).sort()[0] || null;
+    const firstReal = realCash.map(g => day(g.date)).filter(Boolean).sort()[0] || null;
     const wantFirst = [firstReal, imp ? day(d.imported_first_gift_date || d.imported_last_gift_date) : null].filter(Boolean).sort()[0] || null;
     if ((day(d.first_gift_date) || null) !== wantFirst) add("donor-stored", { donor: d.id, what: "first_gift_date", stored: day(d.first_gift_date), gifts: wantFirst });
     const impLast = imp ? day(d.imported_last_gift_date) : null;
@@ -171,7 +173,7 @@ async function checkOrg(orgId, opts = {}) {
     const avgCents = countedN ? Math.round(counted.reduce((s, g) => s + c(g.amount), 0) / countedN) : null;
     if ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents))
       add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
-    const realDated = real.filter(g => day(g.date));
+    const realDated = realCash.filter(g => day(g.date));   // NUMBERS-3: a credit row is no one's first gift
     const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))[0];
     const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
     if (realDated.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))

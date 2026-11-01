@@ -47,11 +47,13 @@ const SM = String.raw`(sm|startMonth|fiscalStartMonth|fyStartMonth|fsm|fyMonth)`
 const FISCAL = new RegExp([
   String.raw`\b(m|month|mo|c\.m|t\.m|now\.m|cm|_today\.m)\s*(<|>=)\s*${SM}\b`,
   String.raw`\$\{[^}]*\}-\$\{[^}]*\b${SM}\b`,
-  String.raw`\bfunction\s+(fyOf|finPeriodBounds|windowsFor)\b`,
+  // (NUMBERS-3: donorStatus.windowsFor now reads shared/numbers/fiscalYear.js,
+  // so its name is no longer a copy; finPeriodBounds and fyOf are deleted.)
+  String.raw`\bfunction\s+(fyOf|finPeriodBounds)\b`,
   String.raw`\bconst\s+fyOf\s*=`,
   String.raw`getMonth\(\)\s*(\+\s*1\s*)?(<|>=)\s*\w*${SM}`,
 ].join("|"));
-const FISCAL_HOME = new Set(["orgTime.js", "shared/fiscalPeriod.js"]);
+const FISCAL_HOME = new Set(["orgTime.js", "shared/fiscalPeriod.js", "shared/numbers/fiscalYear.js"]);   // NUMBERS-3: the home
 const isAppCode = f => CODE.test(f) && !/^(tests|scripts|docs|audit|node_modules)\//.test(f) && !/(^|\/)node_modules\//.test(f);
 
 // A test that reads the real clock instead of setting its own (the same count

@@ -94,12 +94,9 @@ async function todayFor(orgId) {
 // The windows, as civil dates. W0 is the last 12 months up to today, W1 the
 // 12 months before that. cy/ly are the org's fiscal year and the one before
 // (FIX-49; the calendar year when the org's year starts in January).
+// NUMBERS-3: the two fiscal years are shared/numbers/fiscalYear.js's.
 function windowsFor(today, cuts = null) {
-  const c = orgTime.parseCivil(today);
-  const sm = (cuts && cuts.fyStartMonth) || 1;
-  const fy = c.m >= sm ? c.y : c.y - 1;
-  const p2 = n => String(n).padStart(2, "0");
-  const cyFrom = `${fy}-${p2(sm)}-01`, lyFrom = `${fy - 1}-${p2(sm)}-01`;
+  const { cyFrom, lyFrom } = require("./shared/numbers/fiscalYear").thisAndLast(today, (cuts && cuts.fyStartMonth) || 1);
   const lb = lapseRule.bounds(today);
   return {
     today,

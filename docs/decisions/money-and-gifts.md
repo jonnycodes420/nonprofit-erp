@@ -85,11 +85,19 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   General; a blank memo takes `orgs.default_fund_id` only if someone chose one. (BUILD-88b)
 - **The deposit gate is on the server.** `/deposits/plan` writes nothing; `/deposits/commit` re-plans
   and writes from `plan.lines`, never the client's copy; key attachments by line number. (BUILD-88b, BUILD-95)
-- **"On a deposit" is one fragment (FIX-59).** A gift is on a deposit when a deposit run holds it or it has a
-  `deposited_on` (`routes/finance.js ON_NO_DEPOSIT`). Finance's "Imported gifts waiting for a deposit · They were
-  already deposited" sets `deposited_on` to the day given, per run or all, on her click, recorded in
-  `deposit_marks` for its Undo. `deposit_ref` stays empty: QuickBooks' deposit mode groups by it and would post one
-  made-up deposit.
+- **"On a deposit" is one fragment (FIX-59, NUMBERS-3).** A gift is on a deposit when a deposit run holds it or it
+  has a `deposited_on`: `shared/numbers/deposited.js` `DEPOSITED` / `NOT_DEPOSITED`, read by Finance, month close,
+  the bookkeeper's file, the deposits file and QuickBooks. Finance's "Imported gifts waiting for a deposit · They
+  were already deposited" sets `deposited_on` to the day given, per run or all, on her click, recorded in
+  `deposit_marks` for its Undo. `deposit_ref` NAMES a deposit when the bank line is known (a payout id, or
+  `sheet:<date>`); it never decides whether a gift is deposited. The files and QuickBooks group by
+  `DEPOSIT_NAME` (the ref, else the run, else the day it reached the bank), so a deposited gift is never "not
+  matched to a deposit" or "waiting for its payout". Banked money is one list: check, cheque, cash, bank transfer,
+  ACH (`BANKED`; month close read a second list before NUMBERS-3).
+- **Every giving number has one home (NUMBERS-3).** Money, the fiscal year, lifetime, giving in a span, the
+  first and last gift, retained, deposited and a face's totals are `shared/numbers/` (ARCHITECTURE.md, "One home
+  per number"). A soft or matching credit row is in no total and no list of gifts; the first and last gift are
+  gifts (money above zero), never a refund or a credit row; a span stops at the org's today.
 - **A cheque read proposes and cannot post; a cheque photo never costs the deposit.** Only box and line
   amounts agreeing to the cent fill an amount; a failed photo is reported by line;
   `gifts.cheque_asset_id` must stay in `collectLiveAssetRefs`. (BUILD-95)

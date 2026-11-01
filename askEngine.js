@@ -18,6 +18,7 @@ const money = require("./money");
 const GR = require("./groups");
 const DS = require("./donorStatus");
 const orgTime = require("./orgTime");
+const NUM = require("./shared/numbers");
 
 let _cat = null;
 const catMod = async () => (_cat = _cat || await import("./shared/askCatalog.js"));
@@ -43,6 +44,9 @@ async function askContext(orgId) {
 }
 
 // ── THE GIFT SET ───────────────────────────────────────────────────────────
+// NUMBERS-3 (D-3): money is hard credit only (shared/numbers/money.js). A soft
+// or matching credit row was in this set, so "how much this year" and "how
+// many donors" counted recognition as money and its people as givers.
 async function giftSet(orgId, plan, span) {
   const f = plan.filters || {};
   const args = [orgId, span.from, span.to];
@@ -69,7 +73,7 @@ async function giftSet(orgId, plan, span) {
        LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
        LEFT JOIN events e ON e.id = g.event_id AND e.org_id = g.org_id
        LEFT JOIN giving_sources gs ON gs.id = g.giving_source_id AND gs.org_id = g.org_id
-      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}`, args);
+      WHERE g.org_id = ? AND ${NUM.money.LIVE("d")} AND g.date >= ? AND g.date <= ? AND ${NUM.money.MONEY("g")}${where}`, args);
 }
 
 // The rows a donor-level metric counts, from the shared filter: the same
@@ -112,7 +116,6 @@ function byDonor(rows) {
       amount, detail: `${x.n} ${x.n === 1 ? "gift" : "gifts"}` }, k: cents(amount) };
   }).sort((a, b) => b.k - a.k || String(a.row.id).localeCompare(String(b.row.id))).map(e => e.row);
 }
-const CREDIT = new Set(require("./figureSources").BOOKKEEPER_EXCLUDED_TYPES);
 async function computeGiftMetric(orgId, metric, rows, span) {
   const pos = rows.filter(r => cents(r.amount) > 0);
   switch (metric) {
@@ -125,7 +128,7 @@ async function computeGiftMetric(orgId, metric, rows, span) {
     case "average_gift": {
       // NUMBERS-2: the one average (figureSources AVERAGE_WORDS): a refund
       // comes off the total and is not a gift; credit rows are not gifts.
-      const counted = rows.filter(r => !CREDIT.has(String(r.gift_type || "").trim().toLowerCase()));
+      const counted = rows;   // NUMBERS-3: the gift set holds money only
       const n = counted.filter(r => cents(r.amount) > 0).length;
       const c = counted.reduce((s, r) => s + cents(r.amount), 0);
       const m = n ? Math.round(c / n) : 0;
@@ -146,8 +149,8 @@ async function computeGiftMetric(orgId, metric, rows, span) {
     case "new_donor_count": {
       const ids = [...new Set(pos.map(r => r.donor_id))];
       if (!ids.length) return { value: 0, measure: "count", rows: [] };
-      const firsts = await query(`SELECT donor_id, MIN(date)::text AS first FROM gifts WHERE org_id = ? AND donor_id = ANY(?::text[]) AND amount > 0 GROUP BY donor_id`, [orgId, ids]);
-      const firstOf = new Map(firsts.map(x => [x.donor_id, x.first]));
+      // NUMBERS-3: the one first gift (shared/numbers/firstGift.js), imported history included.
+      const firstOf = await NUM.firstGift.firstDates(query, orgId, ids);
       const inSpan = x => !!x && (!span || (x >= span.from && x <= span.to));
       const d = byDonor(pos).filter(p => inSpan(String(firstOf.get(p.donor_id) || "").slice(0, 10)));
       return { value: d.length, measure: "count", rows: d.map(r => ({ ...r, detail: `First gift ${firstOf.get(r.donor_id)}` })) };
@@ -160,7 +163,7 @@ async function computeGiftMetric(orgId, metric, rows, span) {
       const ids = [...firstIn.keys()];
       if (!ids.length) return { value: 0, measure: "count", rows: [] };
       const prev = await query(`SELECT g.donor_id, MAX(g.date)::text AS prev FROM gifts g JOIN unnest(?::text[], ?::text[]) AS f(id, first) ON f.id = g.donor_id
-                                 WHERE g.org_id = ? AND g.amount > 0 AND LEFT(g.date,10) < f.first GROUP BY g.donor_id`, [ids, ids.map(i => firstIn.get(i)), orgId]);
+                                 WHERE g.org_id = ? AND ${NUM.money.GIFT("g")} AND LEFT(g.date,10) < f.first GROUP BY g.donor_id`, [ids, ids.map(i => firstIn.get(i)), orgId]);
       const back = new Map(prev.filter(x => { const f = firstIn.get(x.donor_id); const p = String(x.prev).slice(0, 10);
         const yr = new Date(Date.UTC(+f.slice(0, 4) - 1, +f.slice(5, 7) - 1, +f.slice(8, 10))).toISOString().slice(0, 10); return p < yr; }).map(x => [x.donor_id, String(x.prev).slice(0, 10)]));
       const d = byDonor(pos).filter(p => back.has(p.donor_id)).map(p => ({ ...p, detail: `Last gift before this ${back.get(p.donor_id)}` }));
@@ -389,13 +392,13 @@ async function firstYearRetention(orgId, today) {
   const prior = await query(
     `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MIN(g.date)::text AS date, ROUND(SUM(g.amount)::numeric,2)::text AS amount, 'First gave ' || ${last} AS detail
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0
+      WHERE g.org_id = ? AND ${NUM.money.LIVE("d")} AND ${NUM.money.GIFT("g")}
       GROUP BY d.id, d.name HAVING MIN(g.date) >= ? AND MIN(g.date) <= ?`, [orgId, `${last}-01-01`, `${last}-12-31`]);
   const ids = prior.map(p => p.id);
   const kept = ids.length ? await query(
     `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date)::text AS date, ROUND(SUM(g.amount)::numeric,2)::text AS amount, 'Gave again in ' || ${y} AS detail
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND g.date >= ? AND g.date <= ?
+      WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND ${NUM.money.GIFT("g")} AND g.date >= ? AND g.date <= ?
       GROUP BY d.id, d.name`, [orgId, ids, `${y}-01-01`, today]) : [];
   return { prior, kept, lastYear: last };
 }

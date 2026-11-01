@@ -11,6 +11,7 @@
 // shows "Not yet reviewed", it previews, and it waits. A reviewed email becomes
 // a DRAFT in Drafts to review for a person to send; a reviewed letter PRINTS.
 // Nothing here sends anything.
+const NUMBERS = require("../shared/numbers");   // NUMBERS-3: merge fields are the profile's numbers
 const express = require("express");
 const routers = { r0: express.Router() };
 let factsForImpl = null;
@@ -101,10 +102,13 @@ async function factsFor(org, donorId, signer = null) {
   const year = orgTime.orgToday(org).slice(0, 4);
   const [last] = await query(
     `SELECT g.amount::text AS amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id
-      WHERE g.org_id=? AND g.donor_id=? AND g.amount > 0 ORDER BY g.date DESC NULLS LAST, g.id DESC LIMIT 1`, [org.id, d.id]);
-  const [tot] = await query(
-    `SELECT COALESCE(SUM(amount),0)::text AS life, COALESCE(SUM(amount) FILTER (WHERE LEFT(date,4)=?),0)::text AS yr FROM gifts WHERE org_id=? AND donor_id=?`,
-    [year, org.id, d.id]);
+      WHERE g.org_id=? AND g.donor_id=? AND g.date IS NOT NULL AND ${NUMBERS.money.GIFT("g")} ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER} LIMIT 1`, [org.id, d.id]);
+  // NUMBERS-3: {{lifetime_total}} is the profile's Lifetime (an imported total
+  // included, credit rows out) and {{year_total}} the calendar year's money,
+  // which is what the year-end statement it fills says ("in {{year}}"). One
+  // core, many faces: shared/numbers/donorTotals.js.
+  const T = await NUMBERS.donorTotals.donorTotals(query, org, [d.id], { byYear: true });
+  const tot = { life: String(T.lifetime), yr: String((T.byYear.find(y => y.year === year) || { total: 0 }).total) };
   const [sub] = await query(`SELECT amount::text AS amount FROM recurring_subscriptions WHERE org_id=? AND donor_id=? AND status='active' LIMIT 1`, [org.id, d.id]).catch(() => []);
   const [ev] = await query(
     `SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id WHERE a.org_id=? AND a.donor_id=?
