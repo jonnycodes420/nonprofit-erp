@@ -24,8 +24,8 @@ fi
 # Empty diff (e.g. re-push of same sha) → nothing to run.
 if [ -z "$files" ]; then exit 0; fi
 
-# CORE list, kept in sync with run-all.sh (parsed from it so it can't drift).
-core=$(awk '/^CORE=\(/{f=1;next} /^\)/{f=0} f{print}' tests/run-all.sh | tr -s ' \t' '\n' | grep -v '^$')
+# The battery's suites, found the way run-all.sh finds them (tests/lib/suites.js).
+core=$(node tests/lib/suites.js)   # ARCH-1: the same discovery run-all.sh uses
 in_core() { echo "$core" | grep -qx "$1"; }
 
 # CHORE-2 — the screens are covered by ONE suite now (smoke-walk), so a

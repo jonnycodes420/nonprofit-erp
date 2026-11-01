@@ -1,4 +1,5 @@
 // BUILD-33 Part 4 — the HARD token allowlist. Every color literal in active
+// battery: skip — runs as the first step of every client build (client/package.json build and brand-guard) and in CI's guard step, so the battery would only run it twice.
 // client source must be a value from the T token set (shared.jsx), the public
 // theme, or the explicit, documented EXTRAS list below. Anything else fails —
 // brand drift stops being "Jonathan notices it in a screenshot" and becomes

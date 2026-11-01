@@ -1,4 +1,5 @@
 // SCALE-1 · the 200-org load run, as a pass/fail. NOT in the battery: it needs
+// battery: skip — the 200-org load run (npm run test:load); it needs the load cluster from scripts/load/up.sh and takes minutes.
 // the load cluster and takes minutes. `npm run test:load`.
 //
 // Needs: a loopback database seeded by scripts/load/seed-many.js and a server

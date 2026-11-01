@@ -116,197 +116,16 @@ cd "$(dirname "$0")/.."
 export DB_SSL="${DB_SSL:-disable}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://steward@localhost:5544/steward_loadtest}"
 
-# Self-contained suites (server + scratch DB only). Alphabetical.
-CORE=(
-  tenant-isolation
-  tenant-matrix
-  security
-  fix11-audit-trail
-  fix11-job-audit
-  org-blindness
-  session-privilege
-  auth-revocation
-  permissions-matrix
-  vol1-coordinator-scope
-  lf1-no-donor-data-leaves
-  members2-isolation
-  events2-checkout
-  parity2-auction
-  fix20-auction-double-checkout
-  fix11-seating
-  build103-soft-credit
-  agents1-persona-scope
-  int1-paypal-webhook
-  int-prod-1-guards
-  intpos-sale-is-not-a-gift
-  int2-send-once
-  parity2-qbo-sync
-  qboin-read
-  fix36-history
-  live1-alive
-  fix37-import-thanks
-  scale1-queue
-  scale2-same-numbers
-  fix20-qbo-realm-switch
-  oauth-state
-  int3-optout
-  mailchimp1-sync
-  connect2-sources
-  import2-history
-  import3
-  import4-layers
-  import5
-  fix55-import-reads
-  fix52-import-undo
-  fix54-deleted-stay-deleted
-  surfaces-agree
-  org-bound-writes
-  real-shaped
-  fix59-event-import
-  sweep4-events-pledges
-  sweep3-comms
-  insights
-  fundraising2-screens
-  int4-mailbox
-  intb1-calendar-store
-  fix33-sync-proof
-  push1-instant
-  fix14-meeting-counts
-  engage1-score-breakdown
-  survey1-anonymous
-  comms2-statement-total
-  sec1-two-factor
-  trust2-erase
-  clean1-merge
-  clean1-duplicates
-  fix59-data-health
-  prospect1-room-to-give
-  prospect1-who-sees
-  help1-ask
-  why1-appeal-variance
-  parity1-donor-tags
-  parity1-groups-journeys
-  parity3-volunteers
-  agent2-volunteer
-  agent2-gift
-  why1-sentence-check
-  parity4-show-me
-  fix29-tool-schemas
-  ask2-plans
-  ask2-refuse
-  ask3-person-thread
-  adminclean-metrics
-  ask3-sentence-check
-  ask4-query-guard
-  cal1-moves
-  grants1-system
-  sheets1-import
-  email1-brand-render
-  fix28-calendar-rule
-  fix12-ai-switch
-  parity4-started
-  fix12-recipe-drafts
-  fix11-inbound-resend
-  wire-journey
-  golden-journeys
-  repair-runs-state
-  agent3-catalog
-  thread3-human
-  fix31-one-record
-  tasks2-thread
-  fix34-thanks
-  groups2-starters
-  volpage1-signup
-  search2-everything
-  reports4-foot
-  reports5-import
-  int5-api-keys
-  script-guards
-  every-test-runs
-  battery-lock
-  fix15-two-worktrees
-  build96-ai-gate
-  incident-mail-gate
-  fix50-demo-one-rule
-  fix53-mail-off
-  fix51-leftovers
-  mail-block
-  send-gate
-  send-gate-2
-  mail-suppression
-  email-footer
-  consistency-e2e
-  build88a-one-gift
-  gift-idempotency
-  fix10-gift-delete-tasks
-  finance-gift-stamp
-  money-cents
-  pledge-math
-  reconciliation
-  fix11-deposits
-  fix2-a-footing
-  reports3-board-pack
-  gtm1a-internal-price
-  pricing1-bands
-  thread2a-no-send
-  journeys3-triggers
-  journeys4-triggers
-  fix6-approval
-  import-reconciliation
-  trans1-reimport
-  webhook-manifest
-  webhook-ordering
-  stripe-disputes
-  recurring-recovery
-  give2-fee-footing
-  campaign2-goal-bar
-  giveedit1-pages
-  give3-pages
-  editor1
-  trial-end
-  upgrade-checkout
-  close-link
-  import-messy
-  fix11-gift-file-import
-  import-workbook-v3
-  import-columns
-  palette
-  no-emoji
-  claude-md
-  landing2-marketing
-  clickability
-  test-clock-seam
-  hotfix1-profile
-  smoke-walk
-  polish1-trust
-  polish2-voice
-  fix39-campaigns
-  profile1-everything-clicks
-  fix40-comms-opens
-  fix41-remove-and-pictures
-  reconcile1-checks
-  capture1-zero-day
-  check2-match
-  home2-living
-  onboard1-setup
-  voice1-tell-steward
-  numbers1-foot
-  numbers2-history
-  voice2-everywhere
-  voice3-talk
-  voice4-does-it-all
-  agent5-atlas
-  auto1-send
-  thread2-links
-  fix43-safe-fetch
-  clientsafe1
-  support1-answers
-  fix49-decisions
-  list1-columns-filters
-  breaker
-  perf-giving
-  perf-app
-)
+# ARCH-1: the battery FINDS its suites (tests/lib/suites.js): every
+# tests/*.test.js, alphabetical, with the ones marked `// battery: last` at the
+# end. A suite the battery cannot run says `// battery: skip — <reason>` in its
+# own file. There is no hand-kept list to edit or to collide on.
+CORE=()
+while IFS= read -r _suite; do [ -n "$_suite" ] && CORE+=("$_suite"); done < <(node tests/lib/suites.js)
+[ ${#CORE[@]} -gt 50 ] || { echo "ERROR: suite discovery found ${#CORE[@]} suites (tests/lib/suites.js)" >&2; exit 2; }
+# `bash tests/run-all.sh --list` prints what this run would run, and nothing else
+# (tests/every-test-runs.test.js compares it with the files on disk).
+if [ "${1:-}" = "--list" ]; then printf '%s\n' "${CORE[@]}"; exit 0; fi
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
 # an unknown name is a hard error so a typo can't silently skip verification).
@@ -320,7 +139,7 @@ if [ -n "${SUITES:-}" ]; then
       if [ "$name" = "$want" ]; then found=1; break; fi
     done
     if [ "$found" -ne 1 ]; then
-      echo "ERROR: unknown suite '$want' (not in run-all.sh CORE)." >&2
+      echo "ERROR: unknown suite '$want' (no tests/$want.test.js, or it is marked battery: skip)." >&2
       echo "Valid names: ${CORE[*]}" >&2
       exit 2
     fi
