@@ -33,6 +33,13 @@ const DEPOSIT_NAME = (g = "g") => `COALESCE(NULLIF(${g}.deposit_ref, ''),
     CASE WHEN ${ON_RUN(g)} THEN 'deposit run ' || ${g}.import_id END,
     CASE WHEN COALESCE(${g}.deposited_on, '') <> '' THEN 'deposited ' || LEFT(${g}.deposited_on, 10) END, '')`;
 
+// SQL: the words a person reads in a Deposit column: the payout or sheet, or
+// the deposit run's own name; '' when the only fact is the day it reached the
+// bank (that day is its own column, so it is not repeated as a name).
+const DEPOSIT_LABEL = (g = "g") => `COALESCE(NULLIF(${g}.deposit_ref, ''),
+    (SELECT 'Deposit run: ' || im.name FROM imports im WHERE im.id = ${g}.import_id AND im.org_id = ${g}.org_id
+        AND im.shape = 'deposit' AND im.reversed_at IS NULL), '')`;
+
 // The same rules over a row already read: { deposit_ref, deposited_on, on_run, payment_method }.
 const isDeposited = r => !!(r && (r.on_run || String(r.deposited_on || r.depositedOn || "").trim()));
 const isBanked = r => BANKED_METHODS.includes(String((r && (r.payment_method ?? r.method)) || "").trim().toLowerCase());
@@ -44,4 +51,4 @@ function depositName(r) {
   return on ? `deposited ${on.slice(0, 10)}` : "";
 }
 
-module.exports = { BANKED_METHODS, UNDEPOSITED_DAYS, ON_RUN, DEPOSITED, NOT_DEPOSITED, BANKED, DEPOSIT_NAME, isDeposited, isBanked, depositName };
+module.exports = { BANKED_METHODS, UNDEPOSITED_DAYS, ON_RUN, DEPOSITED, NOT_DEPOSITED, BANKED, DEPOSIT_NAME, DEPOSIT_LABEL, isDeposited, isBanked, depositName };

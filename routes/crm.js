@@ -24913,10 +24913,11 @@ async function reportBookkeeper(orgId, p) {
             COALESCE(NULLIF(g.external_id, ''), NULLIF(g.stripe_payment_id, ''), '') AS reference,
             COALESCE(g.check_number, '') AS check_number,
             COALESCE(g.processor_fee_amount, 0) AS processor_fee_amount,
-            -- NUMBERS-3 (D-6): the deposit's name (shared/numbers/deposited.js). A
-            -- gift on a deposit run or with the day it reached the bank is on a
-            -- deposit even when no payout id names it; only Undo wrote deposit_ref.
-            ${NUMBERS.deposited.DEPOSIT_NAME("g")} AS deposit_ref,
+            -- NUMBERS-3 (D-6): whether it is on a deposit is the one predicate
+            -- (shared/numbers/deposited.js), never whether deposit_ref is set
+            -- (only Undo wrote it); the column names the deposit when it has a name.
+            ${NUMBERS.deposited.DEPOSIT_LABEL("g")} AS deposit_ref,
+            ${NUMBERS.deposited.DEPOSITED("g")} AS on_deposit,
             COALESCE(g.deposited_on, '') AS deposited_on,
             COALESCE(g.type, '') AS gift_type,
             COALESCE(g.notes, '') AS notes,
@@ -24962,6 +24963,7 @@ async function reportBookkeeper(orgId, p) {
       netCents: cents - feeCents,
       net: bkDollars(cents - feeCents),
       deposit: r.deposit_ref || "",
+      onDeposit: r.on_deposit === true,
       depositedOn: r.deposited_on || "",
       type: r.gift_type,
       notes: r.notes,
@@ -25009,7 +25011,7 @@ async function reportBookkeeper(orgId, p) {
   // NUMBERS-3: the one meaning of deposited and the one list of banked money
   // (shared/numbers/deposited.js), the same set Finance and month close read.
   // A gift that does not say how it arrived is "no payment method" above.
-  const noDeposit = out.filter(r => !String(r.deposit || "").trim() && r.cashOrNot === "Cash" && NUMBERS.deposited.isBanked({ payment_method: r.paymentMethod }));
+  const noDeposit = out.filter(r => !r.onDeposit && r.cashOrNot === "Cash" && NUMBERS.deposited.isBanked({ payment_method: r.paymentMethod }));
   // POLISH-1 Part 5: the banner read "57 gifts no fund (46693.95)": the CSV's
   // bare decimal, printed at a person. `amount` stays the file's shape;
   // `display` is the money as a person reads it, through the one formatter.

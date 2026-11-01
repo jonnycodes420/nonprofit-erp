@@ -159,6 +159,8 @@ const at = iso => new Date(iso);
   ok("§8 a check with its deposited day is deposited, named by the day", by[gChk].dep && by[gChk].name === "deposited 2026-10-21", by[gChk]);
   ok("§8 cash on a deposit run is deposited, named by the run", by[gCash].dep && by[gCash].name === `deposit run ${RUN}`, by[gCash]);
   ok("§8 a check on nothing is not deposited and has no name", !by[gOpen].dep && by[gOpen].name === "", by[gOpen]);
+  const lab = Object.fromEntries((await query(`SELECT g.id, ${DP.DEPOSIT_LABEL("g")} AS l FROM gifts g WHERE g.org_id = ? AND g.donor_id = ?`, [ORG, D])).map(x => [x.id, x.l]));
+  ok("§8 the Deposit column names the run, and leaves a day-only deposit to its own column", lab[gCash] === "Deposit run: Deposit" && lab[gChk] === "" && lab[gOpen] === "", lab);
   ok("§8 an undone run holds nothing", !by[gUndone].dep && by[gUndone].banked, by[gUndone]);
   ok("§8 a card gift is not banked money; ACH, a check and cash are", !by[gCard].banked && by[gChk].banked && by[gCash].banked);
   const [nd] = await query(`SELECT COUNT(*)::int AS n FROM gifts g WHERE g.org_id = ? AND ${DP.BANKED("g")} AND ${DP.NOT_DEPOSITED("g")}`, [ORG]);
