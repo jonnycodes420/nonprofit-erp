@@ -229,7 +229,7 @@ const legacyRegisterGate = (req, res, next) => {
   });
 };
 
-app.post("/auth/register", legacyRegisterGate, registerLimiter, wrap(async (req, res) => {
+app.post("/auth/register", registerLimiter, legacyRegisterGate, wrap(async (req, res) => {
   // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
   { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
@@ -383,7 +383,7 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
 }));
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
-app.post("/auth/register-org", legacyRegisterGate, registerLimiter, wrap(async (req, res) => {
+app.post("/auth/register-org", registerLimiter, legacyRegisterGate, wrap(async (req, res) => {
   // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
   { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
