@@ -44,7 +44,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
-const PHONE_MS = 3800;   // PERF-2 measured 3.5 s (4.5 s at SWEEP-6); the bar is 3 s, docs/defects.md
+const PHONE_MS = 3640;   // PERF-2 measured 3,537 ms + 0.1 s, so it cannot regress (4.5 s at SWEEP-6); the bar is 3 s, docs/defects.md
 const JS_FIRST_KB = 225;   // PERF-2 measured 214 KB
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
