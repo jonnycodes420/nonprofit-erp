@@ -504,7 +504,10 @@ const SOURCES = {
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
     params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
-    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every counted" : p.measure === "median" ? "The middle amount of every counted" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every counted" : p.measure === "median" ? "The middle amount of every counted" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}, leaving out soft and matching credits (recognition, never money)${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    // TRUTH-1: money is hard credit only, in every total this source makes
+    // (Board, Home's pace, Reports): a soft or matching credit row is
+    // recognition (creditTypes.js) and was summed here into the year's giving.
     sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
       let where = giftsWhere(p, args);
@@ -519,7 +522,7 @@ const SOURCES = {
                      COALESCE(f.name, 'Unrestricted') AS detail
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}`,
+               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}${where}`,
         args,
         order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
       };

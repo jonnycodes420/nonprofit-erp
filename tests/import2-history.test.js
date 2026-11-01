@@ -214,6 +214,10 @@ async function reset() {
     const onTop = id => (top.body.people || []).some(p => p.id === id);
     ok("§8 an asking list (Top tenth) carries the ordinary donor (not vacuous)", top.status === 200 && onTop(control.id), top.body.people);
     ok("§8 …and never the donor marked do not solicit", !onTop(flaggedId), top.body.people);
+    // TRUTH-1: the gifts and the total above were written straight to the
+    // table (no recordGift, no after-change step), so each person's stored
+    // lifetime is put back to what their rows say before the truth check reads it.
+    await q(require("../donorSummary").DONOR_SUMMARY_UPDATE(), [ORG]);
 
     // ── §9 · ⌘K finds what was said ──────────────────────────────────────
     const se = await api("GET", "/search?q=" + encodeURIComponent("talk to my wife"), tok);
