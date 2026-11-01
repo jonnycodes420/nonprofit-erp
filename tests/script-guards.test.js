@@ -42,6 +42,10 @@ const GUARDED_WRITERS = [
   // run by default; --apply resolves its database through writerDbUrl(), so a
   // remote one also needs --i-know-this-is-prod. Jonathan runs it.
   "move-theme-assets-to-s3",
+  // SECURE-3 — seals synced mail stored before sealing (bodies and attachments)
+  // and rewraps rows under a rotated key. Dry run by default; --apply writes
+  // through writerDbUrl. Jonathan runs it; never at deploy.
+  "seal-synced-mail",
   // The demo seed (BUILD-72 Part 5; FIX-1 §11 renamed it seed-demo). Loopback
   // default via writerBase; any database name outside the scratch allowlist
   // fails closed EXCEPT the one deliberate production path (prod db + prod
@@ -211,6 +215,8 @@ const EXEMPT = {
   "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is .generated/suite-timings.json. No BASE, no DB, no network",
   "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only write is that baseline file. No BASE, no DB, no app calls",
   "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/ops/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
+  "builder-access-check": "SECURE-3 item 5 — reads this process's environment variable NAMES (a value only to see whether it is a postgres URL to a remote host, never printed) and two config files in the home folder for a login's presence. No BASE, no DB, no network, no writes; checked below",
+  "restore-drill": "SECURE-3 item 4 — Jonathan's restore drill. Boots server.js (so the copy's schema is migrated) against RESTORE_DATABASE_URL only after its own refusals: a non-loopback target needs --i-am-jonathan, a --project starting steward-restore-, a Supabase host whose ref is not prod's, and never a .env or a Railway shell; dry run by default. Its refusals are driven below",
   "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
@@ -403,6 +409,107 @@ ok(nulFiles.length === 0,
   ok(!/gh pr |git push|git commit/.test(dg) && /gh issue create/.test(dg) && /gh issue edit/.test(dg), "the error digest opens or edits an issue, and never a branch or a pull request");
   const ci = fs.readFileSync(path.join(wfDir, "ci.yml"), "utf8");
   ok(/node scripts\/ci\/prod-ai-smoke\.js/.test(ci), "the post-deploy prod AI smoke still runs in ci.yml");
+}
+
+// ── SECURE-3 item 5 · BUILDERS CAN'T REACH PROD ──────────────────────────
+// The battery's own environment holds no Railway token, no Supabase secret and
+// no postgres URL to a remote host (scripts/ci/builder-access-check.js). This
+// runs in the test job in CI and in every local battery; the deploy jobs,
+// which do hold RAILWAY_TOKEN, never run the battery, and the test job is
+// given no secret at all (checked on ci.yml below). The machine's own Railway
+// login and the railway MCP are WARNINGS until Jonathan flips
+// MACHINE_LOGIN_FATAL (docs/security/builder-access.md).
+// PROVEN ABLE TO FAIL: each failure is planted in a child's environment (or a
+// fake home folder) and must go red, naming the variable and never its value.
+{
+  const { execFileSync } = require("child_process");
+  const BAC = path.join(root, "scripts", "ci", "builder-access-check.js");
+  const { check, MACHINE_LOGIN_FATAL } = require(BAC);
+  const run = env => {
+    try { return { code: 0, out: execFileSync("node", [BAC], { env, encoding: "utf8", stdio: "pipe" }) }; }
+    catch (e) { return { code: e.status, out: String(e.stdout || "") + String(e.stderr || "") }; }
+  };
+  const here = run(process.env);
+  for (const l of here.out.split("\n").filter(l => /WARNING/.test(l))) console.log(l);
+  ok(here.code === 0, `the battery's environment holds a prod credential:\n${here.out.split("\n").filter(l => /FAIL/.test(l)).join("\n")}`);
+
+  const clean = { PATH: process.env.PATH, HOME: fs.mkdtempSync(path.join(require("os").tmpdir(), "sec3-home-")),
+    DATABASE_URL: "postgresql://steward:steward@localhost:5544/steward_loadtest", PGPASSWORD: "steward" };
+  ok(run(clean).code === 0, "a clean environment with the CI test job's loopback DATABASE_URL passes");
+  const FAKE_PW = "sec3-fake-password-zz";
+  const plants = [
+    ["RAILWAY_TOKEN", "fake-railway-token-zz"],
+    ["RAILWAY_API_TOKEN", "fake-railway-token-zz"],
+    ["RAILWAY_PROJECT_TOKEN", "fake-railway-token-zz"],
+    ["SUPABASE_ACCESS_TOKEN", "sbp_fakefakefake"],
+    ["SUPABASE_SERVICE_ROLE_KEY", "fake.jwt.zz"],
+    ["DATABASE_URL", `postgresql://postgres:${FAKE_PW}@db.abcdefghijklmnopqrst.supabase.co:5432/postgres`],
+    ["PROD_DATABASE_URL", `postgres://postgres.abcdefghijklmnopqrst:${FAKE_PW}@aws-0-us-east-1.pooler.supabase.com:6543/postgres`],
+    ["SOME_OTHER_URL", `postgresql://postgres:${FAKE_PW}@monorail.proxy.rlwy.net:41234/railway`],
+    ["PGHOST", "db.abcdefghijklmnopqrst.supabase.co"],
+  ];
+  for (const [k, v] of plants) {
+    const r = run({ ...clean, [k]: v });
+    ok(r.code === 1 && r.out.includes(k), `planted ${k} turns the builder-access guard red, naming the variable (proven able to fail)`);
+    ok(!r.out.includes(v) && !r.out.includes(FAKE_PW) && !r.out.includes("abcdefghijklmnopqrst"), `the guard never prints ${k}'s value`);
+  }
+  // The machine's own logins, in a fake home folder: a warning today, a failure once flipped.
+  const fakeHome = fs.mkdtempSync(path.join(require("os").tmpdir(), "sec3-home-"));
+  fs.mkdirSync(path.join(fakeHome, ".railway"));
+  fs.writeFileSync(path.join(fakeHome, ".railway", "config.json"), JSON.stringify({ user: { accessToken: "fake-oauth-zz", refreshToken: "fake-refresh-zz" } }));
+  fs.writeFileSync(path.join(fakeHome, ".claude.json"), JSON.stringify({ mcpServers: { railway: { command: "railway", args: ["mcp"] } } }));
+  const soft = check({ env: {}, home: fakeHome, machineFatal: false });
+  ok(soft.failures.length === 0 && soft.warnings.length === 2, "a Railway CLI login and a railway MCP are WARNINGS while MACHINE_LOGIN_FATAL is false", JSON.stringify(soft));
+  const hard = check({ env: {}, home: fakeHome, machineFatal: true });
+  ok(hard.failures.length === 2, "…and failures once MACHINE_LOGIN_FATAL is flipped (proven able to fail)");
+  ok(![...soft.warnings, ...hard.failures].some(l => /fake-oauth-zz|fake-refresh-zz/.test(l)), "the machine check never prints a token");
+  ok(typeof MACHINE_LOGIN_FATAL === "boolean", "MACHINE_LOGIN_FATAL is the one switch");
+  fs.rmSync(fakeHome, { recursive: true, force: true }); fs.rmSync(clean.HOME, { recursive: true, force: true });
+
+  // ci.yml: the job that runs the battery is given no secret and a loopback
+  // database; only the deploy jobs hold a token.
+  const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const jobsAt = ci.indexOf("\njobs:\n");
+  const jobs = {};
+  let cur = null;
+  for (const line of ci.slice(jobsAt + 7).split("\n")) {
+    const m = line.match(/^  ([a-z][a-z0-9-]*):\s*$/);
+    if (m) { cur = m[1]; jobs[cur] = ""; continue; }
+    if (cur) jobs[cur] += line.replace(/#.*$/, "") + "\n";
+  }
+  ok(/bash tests\/run-all\.sh/.test(jobs.test || ""), "ci.yml's test job runs the battery (so this guard runs there)");
+  for (const j of ["tree-check", "guards", "test"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
+  const dbUrl = ((jobs.test || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
+  ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's test job's DATABASE_URL is loopback");
+  ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j)), "only a deploy job in ci.yml holds RAILWAY_TOKEN");
+}
+
+// ── SECURE-3 item 4 · THE RESTORE DRILL REFUSES PROD ──────────────────────
+// scripts/ops/restore-drill.js boots a backend against RESTORE_DATABASE_URL,
+// so its refusals are the guard. Fake targets only; nothing connects.
+{
+  const D = require(path.join(root, "scripts", "ops", "restore-drill.js"));
+  const ref = "abcdefghijklmnopqrst";
+  const sb = `postgresql://postgres:fakepw@db.${ref}.supabase.co:5432/postgres`;
+  const yes = ["--run", "--i-am-jonathan", "--project", "steward-restore-20261108-0300"];
+  const R = (env, argv) => D.refusals({ env, argv, rootDir: path.join(root, "tests") });
+  ok(R({ RESTORE_DATABASE_URL: sb }, yes).length === 0, "the drill accepts a new steward-restore- project with --i-am-jonathan");
+  ok(R({ RESTORE_DATABASE_URL: "postgresql://steward@localhost:5544/steward_restore" }, ["--run"]).length === 0, "the drill accepts a local rehearsal without the confirm");
+  ok(R({ RESTORE_DATABASE_URL: sb }, ["--run", "--project", "steward-restore-x"]).length > 0, "a remote target without --i-am-jonathan is refused");
+  ok(R({ RESTORE_DATABASE_URL: sb }, ["--run", "--i-am-jonathan", "--project", "prod-copy"]).length > 0, "a project not named steward-restore-* is refused");
+  ok(R({ RESTORE_DATABASE_URL: sb, PROD_SUPABASE_REF: ref }, yes).length > 0, "the prod project ref (PROD_SUPABASE_REF) is refused");
+  ok(R({ RESTORE_DATABASE_URL: sb, PROD_DATABASE_URL: `postgresql://postgres:x@db.${ref}.supabase.co:5432/postgres` }, yes).length > 0, "a target matching PROD_DATABASE_URL is refused");
+  ok(R({ RESTORE_DATABASE_URL: `postgresql://postgres.${ref}:x@aws-0-us-east-1.pooler.supabase.com:6543/postgres`, PROD_SUPABASE_REF: ref }, yes).length > 0, "the prod ref is read from a pooler URL's user too");
+  ok(R({ RESTORE_DATABASE_URL: "postgresql://u:p@monorail.proxy.rlwy.net:1/railway" }, yes).length > 0, "a non-Supabase remote host is refused");
+  ok(R({ RESTORE_DATABASE_URL: "postgresql://steward@localhost:5544/x", RAILWAY_ENVIRONMENT: "production" }, ["--run"]).length > 0, "a shell with Railway variables is refused");
+  ok(R({ RESTORE_DATABASE_URL: "postgresql://steward@localhost:5544/x", NODE_ENV: "production" }, ["--run"]).length > 0, "NODE_ENV=production is refused");
+  ok(D.parseTarget(sb).ref === ref && /^[0-9a-f]{64}$/.test(D.PROD_REF_SHA256), "the drill reads a project ref and carries the prod ref's hash");
+  const scrub = D.scrubber({ RESTORE_DATABASE_URL: sb });
+  ok(!/fakepw/.test(scrub(`connect failed for ${sb}: password fakepw`)), "the drill scrubs the connection string and its password from anything it prints");
+  const be = D.backendEnv(sb, 5690, "s", undefined);
+  ok(be.DISABLE_BACKGROUND_TICKS === "1" && be.TEST_MODE === "1" && be.ANTHROPIC_API_KEY === "" && /^re_dummy/.test(be.RESEND_API_KEY)
+     && /^sk_test_dummy$/.test(be.STRIPE_SECRET_KEY) && /127\.0\.0\.1/.test(be.RESEND_BASE_URL) && /127\.0\.0\.1/.test(be.STRIPE_API_BASE)
+     && !Object.keys(be).some(k => /RAILWAY|SUPABASE/.test(k)), "the drill's backend gets a clean env: dummy Resend and Stripe on local ports, no AI key, ticks off");
 }
 
 // ── FIX-23 · THE DEMO TEARDOWN IS COMPLETE BY CONSTRUCTION ─────────────────

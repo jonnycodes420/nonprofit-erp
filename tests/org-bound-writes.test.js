@@ -122,8 +122,68 @@ async function main() {
   const out = await call("POST", "/auth/logout", tokY, {}, X);
   ok("§3 a stale tab can still sign out", out.status < 300, [out.status, out.body]);
 
+  await cookieSection(yId);
+
   for (const org of [X, Y]) for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
   for (const org of [X, Y]) await q(`DELETE FROM orgs WHERE id=$1`, [org]).catch(() => {});
+}
+
+// §4 SECURE-3 item 1 (Release A): the session also lives in an httpOnly cookie.
+// A sign-in from a browser sets it beside the token; a request with only the
+// cookie is signed in; a write made with the cookie needs X-Steward-Org AND the
+// session's CSRF token, and the org binding still refuses another tab's org.
+// HOW IT GOES RED ON MAIN: no cookie is set, and a cookie-only request is 401.
+async function browserLogin(email) {
+  const r = await fetch(BASE + "/auth/login", { method: "POST",
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:4173" },
+    body: JSON.stringify({ email, password: PASSWORD }) });
+  const set = typeof r.headers.getSetCookie === "function" ? r.headers.getSetCookie() : [r.headers.get("set-cookie") || ""];
+  const line = set.find(c => c.startsWith("steward_session=")) || "";
+  const cookie = line.split(";")[0];
+  return { status: r.status, body: await r.json().catch(() => ({})), line, cookie };
+}
+async function viaCookie(method, path, cookie, body, headers = {}) {
+  const r = await fetch(BASE + path, { method,
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:4173", Cookie: cookie, ...headers },
+    body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text(); let parsed = text; try { parsed = JSON.parse(text); } catch {}
+  return { status: r.status, body: parsed, csrf: r.headers.get("x-steward-csrf"), setCookie: r.headers.get("set-cookie") || "" };
+}
+async function cookieSection(yId) {
+  const a = await browserLogin(`${Y}@test.local`);
+  ok("§4 a browser sign-in sets steward_session: HttpOnly, Secure, SameSite=Lax, Path=/",
+     a.status === 200 && /HttpOnly/.test(a.line) && /Secure/.test(a.line) && /SameSite=Lax/.test(a.line) && /Path=\//.test(a.line), [a.status, a.line.replace(/=[^;]+/, "=<jwt>")]);
+  ok("§4 Release A: the answer still carries the token, and the CSRF token", typeof a.body.token === "string" && typeof a.body.csrfToken === "string",
+     Object.keys(a.body || {}));
+  const me = await viaCookie("GET", "/me", a.cookie);
+  ok("§4 a request with only the cookie is signed in, and hands back the CSRF token", me.status === 200 && me.csrf === a.body.csrfToken, [me.status, !!me.csrf]);
+  const [{ n: g0 }] = await q("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [Y]);
+  const noHeader = await viaCookie("POST", `/donors/${yId}/gifts`, a.cookie, { amount: 12, date: "2026-10-22", type: "cash" });
+  ok("§4 a cookie write with no X-Steward-Org is refused 403", noHeader.status === 403 && noHeader.body.error === "csrf_header_missing", [noHeader.status, noHeader.body]);
+  const noToken = await viaCookie("POST", `/donors/${yId}/gifts`, a.cookie, { amount: 12, date: "2026-10-22", type: "cash" }, { "X-Steward-Org": Y });
+  ok("§4 a cookie write with the org header but no CSRF token is refused 403", noToken.status === 403 && noToken.body.error === "csrf_token_invalid", [noToken.status, noToken.body]);
+  const wrongToken = await viaCookie("POST", `/donors/${yId}/gifts`, a.cookie, { amount: 12, date: "2026-10-22", type: "cash" },
+    { "X-Steward-Org": Y, "X-Steward-CSRF": "x".repeat(43) });
+  ok("§4 a cookie write with a wrong CSRF token is refused 403", wrongToken.status === 403 && wrongToken.body.error === "csrf_token_invalid", [wrongToken.status, wrongToken.body]);
+  const otherOrg = await viaCookie("POST", `/donors/${yId}/gifts`, a.cookie, { amount: 12, date: "2026-10-22", type: "cash" },
+    { "X-Steward-Org": X, "X-Steward-CSRF": a.body.csrfToken });
+  ok("§4 a cookie write from a tab bound to another org is refused 409 with the sentence", refused(otherOrg, X_NAME, Y_NAME), [otherOrg.status, otherOrg.body]);
+  const [{ n: g1 }] = await q("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1", [Y]);
+  ok("§4 none of the refused writes wrote a gift", g1 === g0, { g0, g1 });
+  const good = await viaCookie("POST", `/donors/${yId}/gifts`, a.cookie, { amount: 13, date: "2026-10-22", type: "cash" },
+    { "X-Steward-Org": Y, "X-Steward-CSRF": a.body.csrfToken });
+  ok("§4 a cookie write with both headers lands", good.status < 300, [good.status, good.body]);
+  // two tabs, one browser: a sign-in to X replaces the cookie; tab Y's next write is refused
+  const b = await browserLogin(`${X}@test.local`);
+  const stale = await viaCookie("POST", `/donors/${yId}/gifts`, b.cookie, { amount: 14, date: "2026-10-22", type: "cash" },
+    { "X-Steward-Org": Y, "X-Steward-CSRF": a.body.csrfToken });
+  ok("§4 after a sign-in to another org in another tab, the old tab's write is refused 409", refused(stale, Y_NAME, X_NAME), [stale.status, stale.body]);
+  const bearer = await call("GET", "/me", a.body.token);
+  ok("§4 the Bearer token keeps working beside the cookie", bearer.status === 200, bearer.status);
+  const out = await viaCookie("POST", "/auth/logout", a.cookie, {});
+  ok("§4 signing out with the cookie ends it and clears the cookie", out.status < 300 && /steward_session=;/.test(out.setCookie) && /Max-Age=0/.test(out.setCookie), [out.status, out.setCookie.replace(/=[^;]{20,}/g, "=<jwt>")]);
+  const after = await viaCookie("GET", "/me", a.cookie);
+  ok("§4 the signed-out cookie no longer opens anything, and is cleared again", after.status === 401 && /steward_session=;/.test(after.setCookie), [after.status, after.setCookie.slice(0, 40)]);
 }
 
 main().then(async () => { await closeDb(); summary(); }).catch(async e => { console.error(e); await closeDb(); process.exit(1); });

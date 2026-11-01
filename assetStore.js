@@ -22,6 +22,7 @@
 const crypto = require("crypto");
 const Sentry = require("@sentry/node"); // no-op if the server never init'd it
 const { query, run } = require("./db");
+const SEALED = require("./server/mail/sealedMail");
 
 function s3Config(env = process.env) {
   const endpoint = env.PORTAL_ASSETS_S3_ENDPOINT;
@@ -137,8 +138,12 @@ class AssetStoreUnavailable extends Error {
 // a public page (the logo, a campaign hero, an event photo, a recruitment page
 // image). Everything else is private: a waiver, an application upload, a
 // conversation attachment, a grant document, a cheque, a face, a video.
-async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, isPublic = false }) {
-  const id = assetIdFor(orgId, kind, contentType, buffer);
+// SECURE-3: `seal` is passed for an attachment a mailbox read kept (a grant
+// document, a pledge form): the bytes are sealed (server/mail/sealedMail.js)
+// before they reach Postgres or the bucket, under an id of their own so they
+// never share a row with an unsealed upload of the same file.
+async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, isPublic = false, seal = false }) {
+  const id = assetIdFor(orgId, seal ? kind + ":sealed" : kind, contentType, buffer);
   const existing = await query(`SELECT id, deleted_at, is_public FROM portal_assets WHERE id = ?`, [id]);
   if (existing.length) {
     if (isPublic && !existing[0].is_public) await run(`UPDATE portal_assets SET is_public = TRUE WHERE id = ?`, [id]);
@@ -151,7 +156,11 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
     return { id, path: assetPath(id) };
   }
   const cfg = s3Config();
-  let storage = "db", s3Key = null, data = null;
+  let storage = "db", s3Key = null, data = null, sealedHeader = null, sealedKeyId = null, stored = buffer;
+  if (seal) {   // throws MailKeyMissing with no key: nothing is stored, never the plain bytes
+    const s = SEALED.sealBytes(buffer, { aad: SEALED.assetAad(orgId, id) });
+    stored = s.ct; sealedHeader = s.header; sealedKeyId = s.keyId;
+  }
   if (cfg) {
     // FIX-58 · WITH S3 CONFIGURED, EVERY UPLOAD GOES TO S3 OR FAILS. A put
     // that failed every try used to be written to Postgres (s3_fallback), and
@@ -162,7 +171,7 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
     // move later. Postgres storage is only for a stack with no bucket at all.
     s3Key = `${orgId}/${kind}/${id}`;
     try {
-      await s3PutWithRetry(cfg, s3Key, buffer, contentType);
+      await s3PutWithRetry(cfg, s3Key, stored, contentType);
     } catch (e) {
       console.error("[assetStore] CRITICAL: S3 put failed every try; the upload is refused:", e.message);
       s3PutFailedSinceBoot++;
@@ -171,11 +180,11 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
     }
     storage = "s3";
   }
-  if (storage === "db") data = buffer.toString("base64");
+  if (storage === "db") data = stored.toString("base64");
   await run(
-    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public, s3_fallback)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,FALSE) ON CONFLICT (id) DO NOTHING`,
-    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true]);
+    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public, s3_fallback, sealed_header, sealed_key_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,FALSE,?,?) ON CONFLICT (id) DO NOTHING`,
+    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true, sealedHeader, sealedKeyId]);
   return { id, path: assetPath(id) };
 }
 
@@ -195,6 +204,12 @@ async function getThemeAsset(id) {
     if (!buffer) return null;
   } else {
     buffer = Buffer.from(row.data || "", "base64");
+  }
+  // SECURE-3: a sealed attachment opens here, the one reader every door uses
+  // after its own check. A wrong or missing key throws: never the ciphertext.
+  if (row.sealed_header) {
+    try { buffer = SEALED.openBytes(row.sealed_header, buffer, { aad: SEALED.assetAad(row.org_id, row.id) }); }
+    catch (e) { console.error(`[assetStore] CRITICAL: sealed asset ${row.id} did not open (${e.code || e.name})`); throw e; }
   }
   return { id: row.id, orgId: row.org_id, isPublic: row.is_public === true, contentType: row.content_type, buffer };
 }
@@ -513,6 +528,45 @@ async function moveFallbackAssetsToS3({ limit = 50, skipOrgs = ASSET_MOVE_SKIP_O
   return out;
 }
 
+// SECURE-3 · the backfill (scripts/ops/seal-synced-mail.js). Seals one stored
+// file in place: same id, same URL. In Postgres it is one UPDATE; in S3 the
+// sealed bytes go to a new key, are read back and compared, and only then does
+// the row switch to them (the old object is deleted after), so a reader never
+// meets ciphertext without its header. Returns "sealed", "already" or "missing".
+async function sealAssetInPlace(id) {
+  const [row] = await query(`SELECT id, org_id, kind, content_type, storage, s3_key, data, sealed_header FROM portal_assets WHERE id = ?`, [id]);
+  if (!row) return "missing";
+  if (row.sealed_header) return "already";
+  const cfg = row.storage === "s3" ? s3Config() : null;
+  if (row.storage === "s3" && !cfg) throw new Error("a file is in S3 and PORTAL_ASSETS_S3_* is not set here");
+  const buffer = cfg ? await s3Get(cfg, row.s3_key) : Buffer.from(row.data || "", "base64");
+  if (!buffer || !buffer.length) return "missing";
+  const s = SEALED.sealBytes(buffer, { aad: SEALED.assetAad(row.org_id, row.id) });
+  if (!cfg) {
+    const r = await run(`UPDATE portal_assets SET data = ?, sealed_header = ?, sealed_key_id = ? WHERE id = ? AND sealed_header IS NULL`,
+      [s.ct.toString("base64"), s.header, s.keyId, row.id]);
+    return r && r.changes === 0 ? "already" : "sealed";
+  }
+  const key = `${row.s3_key}.sealed`;
+  await s3PutWithRetry(cfg, key, s.ct, row.content_type);
+  const back = await s3Get(cfg, key);
+  if (!back || !back.equals(s.ct)) throw new Error("the sealed bytes read back from S3 are not the bytes written");
+  const r = await run(`UPDATE portal_assets SET s3_key = ?, sealed_header = ?, sealed_key_id = ? WHERE id = ? AND sealed_header IS NULL`,
+    [key, s.header, s.keyId, row.id]);
+  if (r && r.changes === 0) return "already";
+  await s3Delete(cfg, row.s3_key).catch(e => console.error("[assetStore] the unsealed S3 object was not deleted:", e.message));
+  return "sealed";
+}
+// Rotation: the same bytes under the current mail key (only the data key is rewrapped).
+async function rewrapAsset(id) {
+  const [row] = await query(`SELECT id, org_id, sealed_header FROM portal_assets WHERE id = ? AND sealed_header IS NOT NULL`, [id]);
+  if (!row) return "missing";
+  const s = SEALED.rewrap(row.sealed_header, { aad: SEALED.assetAad(row.org_id, row.id) });
+  if (SEALED.keyIdOf(row.sealed_header) === s.keyId) return "already";
+  await run(`UPDATE portal_assets SET sealed_header = ?, sealed_key_id = ? WHERE id = ? AND sealed_header = ?`, [s.sealed, s.keyId, row.id, row.sealed_header]);
+  return "rewrapped";
+}
+
 function assetHealth() {
   return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, s3PutFailedSinceBoot, softDeleted: softDeletedRows };
 }
@@ -526,5 +580,5 @@ module.exports = {
   s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
   refreshAssetFallbackCount, refreshRetentionCounts, assetHealth, moveFallbackAssetsToS3, ASSET_MOVE_SKIP_ORGS,
   collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
-  assetIdFor, assetPath, ASSET_ID_RE, AssetStoreUnavailable,
+  assetIdFor, assetPath, ASSET_ID_RE, AssetStoreUnavailable, sealAssetInPlace, rewrapAsset,
 };

@@ -403,8 +403,15 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     try{
       const qs=new URLSearchParams();
       Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
-      const r=await apiFetch(`/donors/ids?${qs.toString()}`);
-      setMatchingIds(Array.isArray(r&&r.ids)?r.ids:[]);
+      // SECURE-3: the server answers a page at a time; gather every page.
+      const all=[];let offset=0;
+      for(let i=0;i<60&&offset!=null;i++){
+        qs.set("offset",String(offset));
+        const r=await apiFetch(`/donors/ids?${qs.toString()}`);
+        if(Array.isArray(r&&r.ids))all.push(...r.ids);
+        offset=r&&r.next!=null?r.next:null;
+      }
+      setMatchingIds(all);
     }catch(e){flash((e&&e.sentence)||errorMessage(e,"Steward could not gather everyone matching."));}
     setMatchingBusy(false);
   }

@@ -44,6 +44,7 @@ const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by ever
 // SCALE-2: org-wide figures are stored per org and served until something changes.
 const OS = require("../orgSummary");
 const lapseRule = require("../lapseRule");   // FIX-49: the one lapse rule
+const SEALED_MAIL = require("../server/mail/sealedMail");   // SECURE-3: a synced email's body opens only here
 // STAFF-MAIL-1: one person's morning email (sections, hour, days) and the
 // columns /me and the prefs route read for it.
 const { briefSettings, BRIEF_SECTIONS } = require("./email");
@@ -4660,7 +4661,8 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
 
   const d = rows[0];
   d.tags = DTAGS.visibleTags(d.tags);
-  d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [d.id, req.user.orgId]);
+  // SECURE-3: the timeline is the one reader that opens a synced email's body.
+  d.interactions = SEALED_MAIL.openInteractions(await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC NULLS LAST", [d.id, req.user.orgId]));
   // FIX-11 Part 1 — the gift carries its fund's NAME, not just its id. The
   // timeline line reads "$100,000.00 · General Operating · ACH", and a screen
   // that only had `fund_id` had to either print an id at a fundraiser or load
@@ -7128,6 +7130,9 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
   const b = req.body || {};
   const sets = [], vals = [];
   const fromCalendar = !!meta.calendar_event_id;
+  // SECURE-3: a sealed email is edited as she sees it (opened), and sealed again.
+  const shown = SEALED_MAIL.openInteraction(row);
+  if (shown.body_unreadable && b.note !== undefined) return res.status(409).json({ error: "sealed_unreadable", sentence: SEALED_MAIL.UNREADABLE });
   if (b.type !== undefined && b.type !== row.type) {
     if (fromCalendar) return res.status(409).json({ error: "calendar_owned", sentence: "This meeting came from a calendar. Change it in your calendar.", calendarUrl: calendarDayUrl(meta.provider, row.date) });
     if (!EDITABLE_TYPES.has(String(b.type))) return res.status(400).json({ error: "Unknown conversation type" });
@@ -7138,9 +7143,12 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date))) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
     sets.push("date=?"); vals.push(b.date);
   }
-  if (b.note !== undefined && String(b.note) !== String(row.note || "")) {
+  if (b.note !== undefined && String(b.note) !== String(shown.note || "")) {
     if (!String(b.note).trim()) return res.status(400).json({ error: "The note cannot be empty. Delete the entry instead." });
-    sets.push("note=?"); vals.push(String(b.note).slice(0, 20000));
+    if (row.body_sealed) {
+      const cols = SEALED_MAIL.resealEdited(orgId, row.id, String(b.note).slice(0, 20000));
+      sets.push("note=?", "body_sealed=?", "body_key_id=?"); vals.push(cols.note, cols.body_sealed, cols.body_key_id);
+    } else { sets.push("note=?"); vals.push(String(b.note).slice(0, 20000)); }
   }
   if (b.donorId !== undefined && b.donorId !== row.donor_id) {
     if (!(await orgOwns("donors", b.donorId, orgId))) return res.status(404).json({ error: "Donor not found" });
@@ -7157,7 +7165,7 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
     }
     if (JSON.stringify(next) !== JSON.stringify(meta)) { sets.push("metadata=?"); vals.push(JSON.stringify(next)); }
   }
-  if (!sets.length) return res.json({ ...row, unchanged: true });
+  if (!sets.length) return res.json({ ...shown, unchanged: true });
   const [u] = await query("SELECT name FROM users WHERE id=?", [userId]);
   sets.push("edited_at=NOW()", "edited_by=?", "edited_by_name=?");
   vals.push(userId, u?.name || req.user.email || "");
@@ -7171,7 +7179,7 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
   }
   const [out] = await query("SELECT * FROM interactions WHERE id = ?", [req.params.id]);
   if (out.donor_id) calcWealthScore(out.donor_id, orgId).catch(e => console.error("score recalc:", e.message));
-  res.json(out);
+  res.json(SEALED_MAIL.openInteraction(out));
 }));
 
 // Move a row into deleted_records and out of its table, in one transaction.
@@ -21480,12 +21488,12 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     "SELECT * FROM grants WHERE org_id=? AND status!='closed' ORDER BY deadline ASC LIMIT 5",
     [orgId]
   );
-  const recentInteractions = await query(
+  const recentInteractions = (await query(
     `SELECT i.*, d.name as donor_name FROM interactions i
      JOIN donors d ON d.id = i.donor_id
      WHERE i.org_id=? ORDER BY i.date DESC NULLS LAST LIMIT 10`,
     [orgId]
-  );
+  )).map(SEALED_MAIL.stubInteraction);   // SECURE-3: an org-wide list gets the line
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
   const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
   const lapsedDonors = await query(
@@ -27099,10 +27107,11 @@ app.delete("/gmail/disconnect", requireAuth, wrap(async (req, res) => {
 // GET /gmail/thread/:donorId — last 20 email interactions for AI context
 app.get("/gmail/thread/:donorId", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B
-  const rows = await query(
-    `SELECT id, type, note, date, created_at, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email' ORDER BY created_at DESC LIMIT 20`,
+  // SECURE-3: her own screen's email history, so it opens (the one reader).
+  const rows = SEALED_MAIL.openInteractions(await query(
+    `SELECT id, org_id, type, note, body_sealed, body_key_id, date, created_at, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email' ORDER BY created_at DESC LIMIT 20`,
     [req.user.orgId, req.params.donorId]
-  );
+  ));
   res.json(rows.map(r => {
     const meta = r.metadata ? (typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata) : {};
     const m = (r.note || "").match(/^Subject: (.+?)(?:\n\n([\s\S]*))?$/);
@@ -29463,7 +29472,9 @@ app.get("/org/export", requireAuth, requireAdmin, wrap(async (req, res) => {
     query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC NULLS LAST", [orgId]),
     query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY ea.created_at DESC", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),
-    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST", [orgId]),
+    // SECURE-3: the org's own export is its whole record, so a synced email is
+    // opened through the one reader, as it was in the clear before sealing.
+    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY i.date DESC NULLS LAST", [orgId]).then(rs => SEALED_MAIL.openInteractions(rs)),
     query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]),
     query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? AND (d.id IS NULL OR d.deleted_at IS NULL) ORDER BY t.due", [orgId]),

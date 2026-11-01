@@ -76,6 +76,9 @@ function isApiWrite(url, method, apiBase) {
   if (method === "GET" || method === "HEAD") return false;
   return typeof url === "string" && !!apiBase && url.startsWith(apiBase);
 }
+function isApiCall(url, apiBase) {
+  return typeof url === "string" && !!apiBase && url.startsWith(apiBase) && !url.startsWith(apiBase + "/api/migc");
+}
 function hasBearer(h) { return /^Bearer\s/i.test(h.get("Authorization") || ""); }
 
 // Installed once, from main.jsx, before anything renders.
@@ -86,6 +89,11 @@ export function installOrgBinding(apiBase) {
   window.fetch = async (input, init = {}) => {
     const url = typeof input === "string" ? input : (input instanceof URL ? input.href : null);
     const method = String((init && init.method) || "GET").toUpperCase();
+    // SECURE-3 Release A: every call to the API lets the browser keep and send
+    // the httpOnly session cookie the server now sets beside the token. The
+    // token (Bearer) still decides who is asking until Release B; the cookie
+    // only starts to count once the API is first-party (api.stewardapp.dev).
+    if (isApiCall(url, apiBase) && !(init && init.credentials)) init = { ...(init || {}), credentials: "include" };
     if (!pageOrg || !isApiWrite(url, method, apiBase)) return realFetch(input, init);
     const headers = new Headers((init && init.headers) || {});
     if (!hasBearer(headers)) return realFetch(input, init);

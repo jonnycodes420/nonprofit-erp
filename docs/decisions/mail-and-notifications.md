@@ -267,6 +267,17 @@ the morning email unless the person turned on its own reminder, so no step goes 
 - **BCC logging stays off behind `INBOUND_EMAIL_ENABLED` (404 off, 503 with no secret).** The org is the
   plus-address only, the sender must be an org user, inbound never creates a donor; no provider is chosen. (BUILD-87)
 
+- **Synced mail is sealed at rest (SECURE-3).** A mailbox read writes `note` as the one line
+  (`conversationNote`) and seals the body into `interactions.body_sealed` (+ `body_key_id`); an attachment
+  it keeps (grant document, capture card) is stored sealed (`portal_assets.sealed_header`). Envelope
+  encryption in `server/mail/sealedMail.js`: a random data key per row, wrapped by the mail key (`k1` =
+  `STEWARD_CREDENTIAL_KEY`, or the first entry of `STEWARD_MAIL_KEYS`), AAD `mail:<org>:<row id>`. No key
+  means the read fails, never a plaintext row. The body opens only through `openInteraction` on her own
+  screens about one person (the profile timeline, `PUT /interactions/:id`, `/gmail/thread`, the
+  relationship threads, the meeting brief) and the person export; everything else (search, Ask, reports,
+  Atlas and other server-side AI context, the org-wide export, the dashboard feed) gets the line. Subject,
+  addresses and metadata stay unsealed. Old rows: `scripts/ops/seal-synced-mail.js` (dry run by default),
+  which also rewraps after a key rotation.
 - **A connected mailbox is never just "Connected" (FIX-33).** Every mail read, calendar read and push writes one
   `mailbox_sync_runs` row, ok or not, with the one plain sentence of what went wrong. The health panel, the Home
   banner, `/health.mailboxSync` and the prod smoke read only those rows. A provider that refuses every request is a

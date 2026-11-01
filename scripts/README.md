@@ -37,17 +37,20 @@ Read-only SQL (paste into a console or `psql "$DATABASE_URL" -f <file>`):
 | `ops/list-vs-home-readonly.sql` | The Donors list and Home count the same people |
 | `ops/stale-deletions-readonly.sql` | People live again but still named by an open deletion record |
 | `sql/big-orgs.sql` | The largest orgs by rows, for scale planning |
+| `sql/rls-status.sql` | SECURE-3: every public table has row-level security on (not forced) and the deny policy, and nothing is granted to anon, authenticated or service_role. Every section should be empty. psql only (`\echo`); Jonathan runs it, never a builder |
 
 Node scripts:
 
 | Script | What it does | Command |
 |---|---|---|
+| `ops/restore-drill.js` | SECURE-3: the restore drill (docs/security/restore-steps.md). Read-only SQL on a restored copy, then a scratch backend against it, the smoke and the truth check, counts only. Dry run by default; refuses prod. Jonathan only, against a `steward-restore-` project | `node scripts/ops/restore-drill.js` (dry run), then `RESTORE_DATABASE_URL=… node scripts/ops/restore-drill.js --run --project steward-restore-… --i-am-jonathan` |
 | `ops/check-webhook-subscriptions.js` | READ-ONLY. Compares the Stripe webhook subscriptions with the events the code handles | `node scripts/ops/check-webhook-subscriptions.js` |
 | `ops/verify-paypal.js` | READ-ONLY. One PayPal token, then a transaction search; counts only | `railway run node scripts/ops/verify-paypal.js --i-know-this-is-prod` |
 | `ops/consistency-audit.js` | READ-ONLY cross-surface consistency audit (also `npm run test:audit`) | `node scripts/ops/consistency-audit.js` |
 | `ops/landing-prod-verify.js` | The marketing site's prod honesty and quality check | `node scripts/ops/landing-prod-verify.js` |
 | `ops/stripe-live-prices.js` | Creates the record-band prices in Stripe (test first; live needs `--live`) | `STRIPE_BILLING_SECRET_KEY=… node scripts/ops/stripe-live-prices.js` |
 | `ops/numbers1-campaign-window.js` | Moves gifts credited outside their campaign's dates to no campaign. Dry run by default | `node scripts/ops/numbers1-campaign-window.js --org <id>` then `--apply` |
+| `ops/seal-synced-mail.js` | SECURE-3. Seals synced email bodies and attachments stored before sealing, and rewraps rows under a rotated mail key. Counts only, never content. Dry run by default; never at deploy | `DATABASE_URL=… STEWARD_CREDENTIAL_KEY=… node scripts/ops/seal-synced-mail.js` then the same with `--apply --i-know-this-is-prod` (add `PORTAL_ASSETS_S3_*` when S3 is in use; `STEWARD_MAIL_KEYS` while rotating) |
 | `ops/backfill-campaign-attribution.js` | Backfills `campaign_id` on historical gifts. Dry run by default | `node scripts/ops/backfill-campaign-attribution.js` then `--apply` |
 | `ops/restore-asset.js` | Brings back a soft-deleted portal asset and its pointer | `node scripts/ops/restore-asset.js list <orgId>` / `restore <pa_id> [--repoint]` |
 | `ops/load-irs-ein-registry.js` | Loads the IRS Pub 78 list into `ein_registry` | `node scripts/ops/load-irs-ein-registry.js <pub78.txt \| --url>` |
@@ -63,6 +66,11 @@ Node scripts:
 | `ops/screenshot-matrix.js` | Layout screenshots and deep-link checks on the built client | see its header |
 | `ops/topbar-verify.js` | Top-bar search check on the built client | see its header |
 | `ops/seed-loadtest.js` | A 25,000-donor org on the local database, for load tests | `DATABASE_URL=postgresql://steward@localhost:5544/steward_loadtest node scripts/ops/seed-loadtest.js` |
+
+`ci/builder-access-check.js` (SECURE-3) is run by the battery (`tests/script-guards.test.js`): it fails if
+this environment holds a Railway token, a Supabase secret or a remote postgres URL, and warns about
+the machine's own Railway login and MCP (docs/security/builder-access.md). `node scripts/ci/builder-access-check.js`
+runs it by hand.
 
 The commands most builds use are `npm run status` (`ci/status.js`, prod smoke after a deploy),
 `node scripts/ci/tdz-scan.js` and `node scripts/ci/arch-check.js`.
