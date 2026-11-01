@@ -6,8 +6,14 @@
 //
 // It asks each surface through the real HTTP API, as an org admin, and throws
 // one Error listing every disagreement (surface A said x, surface B said y).
-// The database is the ground truth: people are `donors` rows with no
-// `deleted_at` (and not sample rows), money is their gifts. A deleted person
+// TRUTH-1: the ground truth is THE KEY (tests/keys/truthKey.js), computed
+// from the org's rows (tests/keys/fromDb.js) by definitions written out with
+// no app code: people are live, not sample rows; money is hard credit only (a
+// soft or matching credit is recognition); lapsed is by person, not by count;
+// a household counts once in a household count; a gift is deposited when a
+// deposit run holds it or a day it reached the bank is recorded. Every
+// surface is compared to the key AND to each other: two screens that agree
+// with each other and not with the key are a failure. A deleted person
 // appears in nothing and their gifts count toward nothing.
 //
 // ctx (every field optional except a way to sign in):
@@ -20,6 +26,15 @@
 //   label     a word for the messages ("after the undo"), so a red run says
 //             where in the suite it went red (`step` is read the same way)
 //   importId  accepted and ignored: every import's Move Report is checked
+//   fileKey   TRUTH-1: a key computed from a fixture FILE's cells
+//             (tests/keys/build-keys.js, committed under tests/keys/): its
+//             people, gifts and events must be what the org's key says, so a
+//             reader that bends the file is caught even when every screen
+//             agrees with the database
+//   plantKey  (key) => key: change the key before any check (a suite proves
+//             a check can go red)
+//   noKnown   true: a logged defect (tests/lib/knownDefects.js) fails like any
+//             other (by default it is printed as KNOWN and does not fail)
 //   soft      true: return { ok, diffs, facts, ms } and do not throw
 //   skip      [names] of checks to leave out, e.g. ["atlas"] for a suite
 //             whose org pauses Atlas. Names: people, gifts, thisYear,
@@ -32,13 +47,16 @@
 //   plantEvent (eventId, { rep, kiosk }) => { rep, kiosk }: change an event's
 //             bodies before its checks, to prove they can go red (FIX-59)
 //
-// Returns { ok: true, diffs: [], facts, ms } when every surface agrees.
+// Returns { ok, diffs, known, facts, ms }: ok when every disagreement is a
+// logged one (known, each printed as KNOWN <id>) or there is none.
 // Speed: the reads run in parallel; a small org takes well under a second or
 // two, so a suite can call it after every write that changes people.
 "use strict";
 const zlib = require("zlib");
 const H = require("../helpers");
 const orgTime = require("../../orgTime");
+const { computeKey, isCreditType } = require("../keys/truthKey");
+const { orgRows } = require("../keys/fromDb");
 
 const cents = v => Math.round(Number(v || 0) * 100);
 const money = c => `$${(c / 100).toFixed(2)}`;
@@ -109,34 +127,36 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     if (!u) throw new Error(`assertSurfacesAgree: ${orgId} has no admin to ask as; pass ctx.token`);
     email = u.email;
   }
-  const key = `${orgId}|${email}`;
-  const token = ctx.token || TOKENS.get(key) || await H.login(email, ctx.password || "loadtest1234");
-  if (!ctx.token) TOKENS.set(key, token);
+  const tokKey = `${orgId}|${email}`;
+  const token = ctx.token || TOKENS.get(tokKey) || await H.login(email, ctx.password || "loadtest1234");
+  if (!ctx.token) TOKENS.set(tokKey, token);
   const get = (path) => H.api("GET", path, token).then(r => r.body);
   const raw = (path) => fetch(H.BASE + path, { headers: { Authorization: "Bearer " + token } })
     .then(async r => ({ status: r.status, buf: Buffer.from(await r.arrayBuffer()) }));
   const diffs = [];
+  const known = [];   // TRUTH-1: logged defects (tests/lib/knownDefects.js), exactly as predicted
   const facts = {};
+  const KNOWN = require("./knownDefects").KNOWN;
+  const knownDiff = (id, line) => known.push(`KNOWN ${id} (${KNOWN[id].level}): ${line}`);
   // One fact, as several surfaces state it. Every value must equal the first.
-  const agree = (what, pairs, fmt = String) => {
+  // `kn` ({ surface: [defect id, the value that defect predicts] }) marks a
+  // surface's disagreement as a logged defect only when it is that value.
+  const agree = (what, pairs, fmt = String, kn = {}) => {
     const shown = pairs.filter(([, v]) => v !== undefined && v !== null && !Number.isNaN(v));
     facts[what] = Object.fromEntries(shown);
     const [, want] = shown[0] || [];
     for (const [name, v] of shown.slice(1)) {
-      if (v !== want) diffs.push(`${what}: ${shown[0][0]} says ${fmt(want)}, ${name} says ${fmt(v)}`);
+      if (v === want) continue;
+      const line = `${what}: ${shown[0][0]} says ${fmt(want)}, ${name} says ${fmt(v)}`;
+      if (!ctx.noKnown && kn[name] && kn[name][1] === v) knownDiff(kn[name][0], line); else diffs.push(line);
     }
   };
 
   // ── THE GROUND TRUTH, from the database ──────────────────────────────────
   const LIVE = `d.org_id = $1 AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`;
-  const [[people], [gifts], deleted, donorRows, imports, groupRows, eventRows, campaignRows, [org]] = await Promise.all([
-    q(`SELECT COUNT(*)::int AS n FROM donors d WHERE ${LIVE}`, [orgId]),
-    q(`SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS c,
-              COUNT(*) FILTER (WHERE g.date IS NULL)::int AS undated
-         FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE ${LIVE}`, [orgId]),
+  // TRUTH-1: people, gifts and money come from the key below, not from SQL here.
+  const [deleted, imports, groupRows, eventRows, campaignRows, [org]] = await Promise.all([
     q(`SELECT id, name, email FROM donors WHERE org_id = $1 AND deleted_at IS NOT NULL`, [orgId]),
-    q(`SELECT COUNT(*) FILTER (WHERE imported_total IS NOT NULL OR imported_gift_count IS NOT NULL)::int AS summarised
-         FROM donors d WHERE ${LIVE}`, [orgId]),
     q(`SELECT i.id, i.migration_source, i.gifts_created, i.shape,
               (SELECT COUNT(*)::int FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_rows,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g WHERE g.org_id = i.org_id AND g.import_id = i.id) AS gift_cents,
@@ -166,7 +186,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
                   AND COALESCE(a.status, 'invited') NOT IN ('cancelled','canceled')) AS invited,
               (e.date_unknown IS TRUE OR e.date IS NULL OR e.date::date <= (NOW() AT TIME ZONE COALESCE((SELECT timezone FROM orgs WHERE id = e.org_id), 'America/New_York'))::date) AS past
          FROM events e WHERE e.org_id = $1`, [orgId]),
-    q(`SELECT c.id, c.name, c.goal_amount,
+    q(`SELECT c.id, c.name, c.goal_amount, to_char(c.start_date,'YYYY-MM-DD') AS from_day, to_char(c.end_date,'YYYY-MM-DD') AS to_day,
               (SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                 WHERE g.org_id = c.org_id AND g.campaign_id = c.id AND d.deleted_at IS NULL
                   AND (c.start_date IS NULL OR g.date >= to_char(c.start_date,'YYYY-MM-DD'))
@@ -178,6 +198,12 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
                                WHERE g.giving_page_id = gp.id AND g.org_id = gp.org_id AND d.deleted_at IS NULL) AS raised
                               FROM giving_pages gp WHERE gp.org_id = $1`, [orgId]);
   const deletedIds = new Set(deleted.map(d => d.id));
+  // ── THE KEY (TRUTH-1): every definition from the rows, no app code ──────
+  const kr = await orgRows(q, orgId);
+  let key = computeKey(kr.rows, kr.opts);
+  if (typeof ctx.plantKey === "function") key = ctx.plantKey(key) || key;
+  facts.key = { asOf: key.asOf, fiscalYear: key.fiscalYear.label, people: key.people, households: key.households, units: key.units,
+    gifts: key.gifts, credits: key.credits, thisFiscalYear: key.thisFiscalYear, lapsed: key.lapsed.length, deposits: key.deposits.undeposited };
 
   // ── EVERY SURFACE, at once ───────────────────────────────────────────────
   const ASK_N = "How many donors do we have?", ASK_Y = "How much have we raised this year?";
@@ -238,7 +264,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const setupDonors = ((setup && setup.items) || []).find(i => i.key === "donors") || {};
   if (!skip.has("people")) {
     agree("people", [
-      ["the database (live, not sample)", people.n],
+      ["the key (live, not sample)", key.people],
       ["the Donors list total", list && list.total],
       ["the Donors count (/donors/counts)", counts && counts.total],
       ["the onboarding card", setupDonors.count],
@@ -254,25 +280,56 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     // The exports also carry a gift with no person on it (every row the org
     // holds is theirs); no screen counts one, so the comparison is of gifts
     // that have a person.
-    const wbGifts = workbook && Array.isArray(workbook.gifts) ? workbook.gifts.filter(g => g.donor_id) : null;
-    const zg = zipGifts ? parseCsv(zipGifts[1]).filter(r => r["Donor name"] || r["Donor email"]) : null;
+    // TRUTH-1: an export is every row, credit rows too (each says its type);
+    // its money is its hard-credit rows, read by the key's own word list.
+    const wbGifts = workbook && Array.isArray(workbook.gifts) ? workbook.gifts.filter(g => g.donor_id && !isCreditType(g.type)) : null;
+    const zg = zipGifts ? parseCsv(zipGifts[1]).filter(r => (r["Donor name"] || r["Donor email"]) && !isCreditType(r.Type)) : null;
     agree("gift count", [
-      ["the database (live people's gifts)", gifts.n],
+      ["the key (live people's hard-credit gifts)", key.gifts.count],
       ["the onboarding card", setupDonors.giftCount],
       ["Fundraising, all time", fund && fund.allTime ? fund.allTime.giftCount : undefined],
       ["the workbook export", wbGifts ? wbGifts.length : undefined],
       ["the export zip's gifts.csv", zg ? zg.length : undefined],
-    ]);
+    ], String, { "the onboarding card": ["D-7", key.gifts.count + key.credits.rows] });
     const listed = list && Array.isArray(list.donors) && list.donors.length === list.total ? list.donors : null;
-    const summarised = donorRows[0] && donorRows[0].summarised > 0;
+    const summarised = key.importedIds.length > 0;
     agree("total given", [
-      ["the database (live people's gifts)", Number(gifts.c)],
+      ["the key (live people's hard-credit gifts)", key.gifts.cents],
       ["Fundraising, all time", fund && fund.allTime ? cents(fund.allTime.raised) : undefined],
       ["the workbook export", wbGifts ? wbGifts.reduce((a, g) => a + cents(g.amount), 0) : undefined],
       // A person's lifetime folds in an imported total; only comparable when no one carries one.
       ["the Donors list (sum of lifetime)", listed && !summarised ? listed.reduce((a, d) => a + cents(d.total_giving), 0) : undefined],
       ["the CSV export (sum of Total giving)", csvRows && !summarised ? csvRows.reduce((a, r) => a + cents(r["Total giving"]), 0) : undefined],
     ], money);
+    // TRUTH-1: each person's lifetime is their hard credit, never a soft or
+    // matching credit (only where no imported total is folded in).
+    if (listed) {
+      const imported = new Set(key.importedIds);
+      const off = listed.filter(d => !imported.has(d.id) && key.lifetimeById[d.id] !== undefined && cents(d.total_giving) !== key.lifetimeById[d.id]);
+      for (const d of off.slice(0, 5)) diffs.push(`lifetime of ${d.name || d.id}: the key says ${money(key.lifetimeById[d.id])} (hard credit), the Donors list says ${money(cents(d.total_giving))}`);
+      if (off.length > 5) diffs.push(`lifetime: ${off.length - 5} more people's Donors-list lifetime differs from the key`);
+    }
+  }
+
+  // ── TRUTH-1 · A FIXTURE FILE'S OWN KEY ──────────────────────────────────
+  // The file's cells, read by tests/keys/build-keys.js with no app code. The
+  // org's key (from its rows) must be the file's: the rows are what the file said.
+  if (ctx.fileKey) {
+    const fk = ctx.fileKey;
+    if (fk.gifts) agree("the file's gifts (count)", [["the file's key", fk.gifts.count], ["the org's key", key.gifts.count]]);
+    if (fk.gifts) agree("the file's gifts (money)", [["the file's key", fk.gifts.cents], ["the org's key", key.gifts.cents], ...(fund && fund.allTime ? [["Fundraising, all time", cents(fund.allTime.raised)]] : [])], money);
+    if (fk.byCalendarYear) {
+      for (const [y, c] of Object.entries(fk.byCalendarYear)) agree(`the file's ${y} (money)`, [["the file's key", c], ["the org's key", key.between(`${y}-01-01`, `${y}-12-31`).cents]], money);
+    }
+    if (fk.units !== undefined) agree("the file's rows (a couple's row is one household)", [["the file's key", fk.units], ["the org's key (units)", key.units]]);
+    for (const [name, fe] of Object.entries(fk.events || {})) {
+      const ev = eventRows.find(e => e.name === name);
+      const ke = ev && key.events[ev.id];
+      if (!ke) { diffs.push(`the file's event "${name}": the org holds no such event`); continue; }
+      agree(`event "${name}" came (rows)`, [["the file's key", fe.came], ["the org's key", ke.came.parties]]);
+      agree(`event "${name}" came and gave (rows)`, [["the file's key", fe.cameGave], ["the org's key", ke.cameGave.parties]]);
+      agree(`event "${name}" came and didn't give (rows)`, [["the file's key", fe.cameNoGift], ["the org's key", ke.cameNoGift.parties]]);
+    }
   }
 
   // ── THIS YEAR, AND THE SAME DAYS LAST YEAR ───────────────────────────────
@@ -280,23 +337,23 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const fyStart = board && board.fiscalYear && board.fiscalYear.start;
   if (today && fyStart) {
     const w = orgTime.samePointLastYear(fyStart, board.fiscalYear.end, today);
-    const sumBetween = async (from, to) => Number((await q(
-      `SELECT COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS c FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE d.org_id = $1 AND d.deleted_at IS NULL AND g.date >= $2 AND g.date <= $3`, [orgId, from, to]))[0].c);
-    const thisYear = await sumBetween(fyStart, today);
-    const lastYear = w ? await sumBetween(w.from, w.to) : 0;
+    // TRUTH-1: the year is the org's setting, and the money is hard credit.
+    if (fyStart !== key.fiscalYear.from) diffs.push(`this fiscal year: the key's year from the org's setting is ${key.fiscalYear.label}; the Board's starts ${fyStart}`);
+    const thisYear = key.between(key.fiscalYear.from, today).cents;
+    const lastYear = w ? key.between(w.from, w.to).cents : 0;
     const metric = k => ((board.metrics || []).find(m => m.key === k) || {}).value;
     const atlasLine = b => (((b && b.request && b.request.lines) || []).find(l => l.kind === "answer") || {}).line || "";
     if (!skip.has("thisYear")) {
       const aY = MONEY_RE.exec(atlasLine(atlasY));
       const askYm = askY && askY.answered !== false ? MONEY_RE.exec(String(askY.sentence || "")) : null;
       agree("giving this year so far", [
-        [`the database (${fyStart} to ${today})`, thisYear],
+        [`the key (${key.fiscalYear.from} to ${today}, hard credit)`, thisYear],
         ["the Board's Giving this year", metric("revenueThisYear") !== undefined ? cents(metric("revenueThisYear")) : undefined],
         ["Fundraising's Raised tile", fund && fund.period && fund.yearMode === "fiscal" ? cents(fund.period.raised) : undefined],
         ["Atlas, asked how much this year", aY ? cents(num(aY[1])) : undefined],
         ["Ask, asked how much this year", askYm ? cents(num(askYm[1])) : undefined],
-      ], money);
+      ], money, (() => { const withCredits = thisYear + key.creditsBetween(key.fiscalYear.from, today).cents;
+        return { "Atlas, asked how much this year": ["D-3", withCredits], "Ask, asked how much this year": ["D-3", withCredits] }; })());
     }
     if (!skip.has("vsLastYear") && w) {
       // HOME-3: Home says pace once, in the greeting (lead.pace, numbers.vsLastYear).
@@ -313,7 +370,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       const annualCmp = annual && annual.span && annual.span.cut && annual.span.priorFrom === w.from && annual.span.priorTo === w.to;
       if (annual && annual.span && !annualCmp) diffs.push(`vs last year: the annual report compares ${annual.span.priorFrom} to ${annual.span.priorTo}; the Board compares ${w.from} to ${w.to}`);
       agree(`ahead of or behind the same days last year (${w.from} to ${w.to})`, [
-        ["the database", thisYear - lastYear],
+        ["the key (hard credit)", thisYear - lastYear],
         ["the Board", boardDiff ? cents(boardDiff.figure.value) : undefined],
         ["Fundraising's Raised tile", fp && fp.priorRaised > 0 && fp.delta !== undefined ? cents(fp.delta) : undefined],
         ["Reports' annual report", annual && annual.total !== undefined ? cents(annual.total) - cents(annual.priorTotal) : undefined],
@@ -323,7 +380,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
         const dbCents = /\./.test(door[1]) ? thisYear - lastYear : Math.round((thisYear - lastYear) / 100) * 100;
         facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's greeting"] = homeCents;
-        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the database says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
+        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
       }
       // Every "vs last year" says which days it compares.
       if (fp && fp.priorRaised > 0 && !(fundCmp && fundCmp.sentence && fundCmp.lastFrom === w.from && fundCmp.lastTo === w.to)) {
@@ -340,9 +397,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // ground truth, so a lost Finance line is caught.
   if (!skip.has("finance") && finance && Array.isArray(finance.byMonth) && finance.byMonth.length && finance.month) {
     const from = `${finance.byMonth[0].month}-01`, to = finance.month.to;
-    const [fin] = await q(`SELECT
-        (SELECT COALESCE(SUM(ROUND(g.amount*100)),0) FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-          WHERE g.org_id = $1 AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> '' AND g.date >= $2 AND g.date <= $3)
+    // TRUTH-1: the gifts half is the key's hard credit; a soft credit is not money in.
+    const [fin] = await q(`SELECT ${key.between(from, to).cents}::bigint
       + (SELECT COALESCE(SUM(ROUND((CASE WHEN r.decision = 'partly' THEN r.received ELSE (r.row_data->>'amount')::numeric END)*100)),0)
            FROM insight_reviews r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
           WHERE r.org_id = $1 AND r.decision IN ('not_gift','partly') AND (d.id IS NULL OR d.deleted_at IS NULL)
@@ -350,9 +406,9 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     // HOME-3: a row marked Partly a gift stays a gift at the rest; the value
     // received (insight_reviews.received) is the Finance line beside it.
     agree(`money in, gifts and the rows that were not gifts (${from} to ${to})`, [
-      ["the database (gifts + the rows marked Not a gift + the value received on rows marked Partly)", fin.c == null ? undefined : Number(fin.c)],
+      ["the key (hard-credit gifts) + the rows marked Not a gift + the value received on rows marked Partly", fin.c == null ? undefined : Number(fin.c)],
       ["Finance's money in by month", finance.byMonth.reduce((a, m) => a + Number(m.cents || 0), 0)],
-    ], money);
+    ], money, fin.c == null ? {} : { "Finance's money in by month": ["D-4", Number(fin.c) + key.creditsBetween(from, to).cents] });
   }
 
   // ── HOME'S SENTENCES: a count in a sentence equals the list beside it ────
@@ -373,10 +429,25 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // ── DRIFT AND RE-ENGAGE ──────────────────────────────────────────────────
   if (!skip.has("drift") && drift && !drift.__error) {
     agree("lapsed people", [
+      ["the key", key.lapsed.length],
       ["the Donors count (/donors/counts lapsed)", counts && counts.lapsed],
       ["the Donors list filtered to lapsed", lapsedList && lapsedList.total],
     ]);
-    if (drift.evaluated > people.n) diffs.push(`Drift evaluated ${drift.evaluated} people, the org holds ${people.n}`);
+    // TRUTH-1: the list, by person, not just its count.
+    if (lapsedList && typeof lapsedList.total === "number" && lapsedList.total <= 2000) {
+      const ids = [];
+      for (let off = 0; off < lapsedList.total; off += 200) {
+        const pg = await get(`/donors?lifecycle=lapsed&limit=200&offset=${off}`);
+        ids.push(...((pg && pg.donors) || []).map(d => d.id));
+      }
+      const want = new Set(key.lapsed), got = new Set(ids);
+      const missing = key.lapsed.filter(id => !got.has(id)), extra = ids.filter(id => !want.has(id));
+      if (missing.length || extra.length) {
+        const nm = async a => (await q(`SELECT id, name FROM donors WHERE org_id = $1 AND id = ANY($2)`, [orgId, a.slice(0, 5)])).map(r => r.name || r.id).join(", ");
+        diffs.push(`lapsed people: the Donors list filtered to lapsed ${missing.length ? `leaves out ${missing.length} the key calls lapsed (${await nm(missing)})` : ""}${missing.length && extra.length ? " and " : ""}${extra.length ? `lists ${extra.length} the key does not (${await nm(extra)})` : ""}`);
+      }
+    }
+    if (drift.evaluated > key.people) diffs.push(`Drift evaluated ${drift.evaluated} people, the org holds ${key.people}`);
   }
 
   // ── GROUPS, EVENTS, CAMPAIGNS ────────────────────────────────────────────
@@ -400,14 +471,18 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     for (const c of campaignRows) {
       const goal = ((fund && fund.goals) || []).find(x => x.id === c.id);
       const gr = goal ? (goal.giftRaised ?? goal.raised) : undefined;
-      if (gr !== undefined && cents(gr) !== Number(c.raised)) diffs.push(`campaign "${c.name}": Fundraising's goals say ${money(cents(gr))} raised, its live gifts in its dates are ${money(Number(c.raised))}`);
+      // TRUTH-1: the key's hard credit in the campaign's dates (c.raised, the
+      // old SQL, summed every row; it stays as the second witness)
+      const from = c.from_day || null, to = c.to_day || null;
+      const kc = key.sumHard(g => g.campaign === c.id && (!from || (g.d && g.d >= from)) && (!to || (g.d && g.d <= to)));
+      if (gr !== undefined) agree(`campaign "${c.name}" raised`, [["the key (hard credit in its dates)", kc], ["Fundraising's goals", cents(gr)]], money);
     }
   }
 
   if (!skip.has("campaigns")) {
     for (const p of pageRows) {
       const shown = ((fund && fund.givingPages && fund.givingPages.pages) || []).find(x => x.id === p.id);
-      if (shown && cents(shown.raised) !== Number(p.raised)) diffs.push(`giving page "${p.title}": Fundraising says ${money(cents(shown.raised))} raised, its live people's gifts are ${money(Number(p.raised))}`);
+      if (shown) agree(`giving page "${p.title}" raised`, [["the key (hard credit through it)", key.sumHard(g => g.page === p.id)], ["Fundraising", cents(shown.raised)]], money);
     }
   }
 
@@ -514,7 +589,12 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         ["the check-in door", kiosk ? kiosk.checkedIn : undefined], ["came, gave + came, didn't give", (fig("cameGave") || 0) + (fig("cameNoGift") || 0)]]);
       agree(`${name} declined`, [["the database", e.declined], ["its page", fig("declined")], ["its story", st.declined],
         ["its rows", decRows ? decRows.count : undefined], ["the figure drawer", fv(frDec)]]);
-      agree(`${name} came and didn't give`, [["its page", fig("cameNoGift")], ["its story", st.cameDidntGive], ["the figure drawer", fv(frNoGift)]]);
+      // TRUTH-1: came, came and gave, came and didn't, as the key counts people
+      // (each person once; a household gave when anyone in it gave there).
+      const ke = key.events[e.id];
+      agree(`${name} came and didn't give`, [...(ke ? [["the key (people)", ke.cameNoGift.people]] : []), ["its page", fig("cameNoGift")], ["its story", st.cameDidntGive], ["the figure drawer", fv(frNoGift)]]);
+      if (ke) agree(`${name} came and gave`, [["the key (people)", ke.cameGave.people], ["its page", fig("cameGave")], ["its story", st.cameGave]]);
+      if (ke) agree(`${name} came, as people`, [["the key (people)", ke.came.people], ["its page", fig("attended")]]);
       agree(`${name} invited`, [["the database", e.invited], ["its page", fig("invited")], ["its story", st.invited],
         ["registered + declined + no reply", (fig("registered") || 0) + (fig("declined") || 0) + (fig("noReply") || 0)]]);
       agree(`${name} no reply`, [["invited less registered less declined", e.invited - e.registered - e.declined], ["its page", fig("noReply")], ["its story", st.noReply]]);
@@ -636,8 +716,12 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   const askG = !skip.has("ask") && askN && askN.answered !== false ? gave(askN.sentence) : null;
   const atlasG = !skip.has("atlas") ? gave(answerLine(atlasN)) : null;
   if (!skip.has("ask") && askN && askN.answered === false) diffs.push(`Ask could not answer "${ASK_N}": ${askN.sentence}`);
-  agree("people who gave this year", [["the Board's People who gave", donorCount],
-    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]]);
+  // TRUTH-1: and the key's people who gave (a hard-credit gift above zero) from the year's first day to today
+  const kToday = (board && board.asOf) || key.asOf;
+  const kGave = key.giversBetween(key.fiscalYear.from, kToday).people, kRows = key.rowsBetween(key.fiscalYear.from, kToday).people;
+  agree("people who gave this year", [["the key", kGave], ["the Board's People who gave", donorCount],
+    ["Ask, asked how many donors", askG ? num(askG[1]) : undefined], ["Atlas, asked how many donors", atlasG ? num(atlasG[1]) : undefined]], String,
+    { "Ask, asked how many donors": ["D-3", kRows], "Atlas, asked how many donors": ["D-3", kRows] });
 
   // ── OPEN PLEDGES (IMPORT-5): the profile's open pledge, Fundraising's
   // open-pledge rows for that person and Home's pledge move say one number.
@@ -660,6 +744,91 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
         for (const [name, v] of shown.slice(1)) if (v !== Number(o.c)) diffs.push(`open pledge for ${o.name}: the database says ${money(Number(o.c))}, ${name} says ${v === undefined ? "nothing" : money(v)}`);
       }
     }
+  }
+
+  // ── TRUTH-1 · WHO GAVE, AND WHO GAVE FOR THE FIRST TIME, THIS FISCAL YEAR ──
+  // Reports' giving summary for the org's fiscal year: people who gave (a
+  // hard-credit gift above zero) and first-time (their first gift ever, the
+  // old system's history included, falls in it), the second by person.
+  if (!skip.has("units")) {
+    const fy = key.fiscalYear;
+    const gs = await get(`/reports/giving-summary?yearMode=fiscal&year=${fy.to.slice(0, 4)}`).catch(() => null);
+    const F = gs && gs.figures;
+    const fyLabel = Object.keys(key.firstTime)[0];
+    const firsts = key.firstTime[fyLabel] || [];
+    if (F && F.uniqueDonors && F.uniqueDonors.source && F.uniqueDonors.source.params && F.uniqueDonors.source.params.from === fy.from) {
+      agree(`people who gave in ${fy.label}`, [["the key", key.giversBetween(fy.from, fy.to).people], ["Reports' giving summary", Number(F.uniqueDonors.value)]]);
+      if (F.newDonors) {
+        agree(`first-time donors in ${fy.label}`, [["the key", firsts.length], ["Reports' giving summary", Number(F.newDonors.value)]]);
+        const ids = [];
+        for (let pg = 1; pg <= 50; pg++) {   // the drawer pages at its own size; read until a page is empty
+          const r = await get(`/figures/givers/rows?from=${fy.from}&to=${fy.to}&first=new&page=${pg}&pageSize=200`).catch(() => null);
+          const rows = (r && r.rows) || [];
+          ids.push(...rows.map(x => x.donorId || x.donor_id || x.id));
+          if (!rows.length || ids.length >= Number(F.newDonors.value)) break;
+        }
+        const want = new Set(firsts), got = new Set(ids);
+        const missing = firsts.filter(id => !got.has(id)), extra = ids.filter(id => !want.has(id));
+        if (missing.length || extra.length) diffs.push(`first-time donors in ${fy.label}: the giving summary's rows ${missing.length ? `leave out ${missing.length} the key names (${missing.slice(0, 3).join(", ")})` : ""}${missing.length && extra.length ? " and " : ""}${extra.length ? `list ${extra.length} the key does not (${extra.slice(0, 3).join(", ")})` : ""}`);
+      }
+    }
+  }
+
+  // ── TRUTH-1 · HOUSEHOLDS: once in a household count, each person in a people count ──
+  // Donors' households view, Ask and Atlas asked how many households, and
+  // Reports' top donors by household (each row a household or a person in
+  // none; its members the people who gave). Every count says which it is.
+  if (!skip.has("households")) {
+    const ASK_H = "How many households do we have?";
+    const yy = key.asOf.slice(0, 4);
+    const [hh, askH, atlasH, topH] = await Promise.all([
+      get("/households").catch(() => null),
+      skip.has("ask") ? null : H.api("POST", "/ask", token, { text: ASK_H }).then(r => r.body).catch(() => null),
+      skip.has("atlas") || (org && org.agent_paused_at) ? null : H.api("POST", "/atlas", token, { text: ASK_H }).then(r => r.body).catch(() => null),
+      get(`/reports/top-donors?scope=period&view=household&from=${yy}-01-01&to=${key.asOf}&limit=100`).catch(() => null),
+    ]);
+    const hIds = [atlasH].map(b => b && b.request && b.request.id).filter(Boolean);
+    if (hIds.length) {
+      await q(`DELETE FROM atlas_actions WHERE org_id = $1 AND request_id = ANY($2)`, [orgId, hIds]);
+      await q(`DELETE FROM voice_memos WHERE org_id = $1 AND id = ANY($2)`, [orgId, hIds]);
+      await q(`DELETE FROM agent_instructions WHERE org_id = $1 AND persona = 'atlas' AND text = $2 AND created_at >= $3`, [orgId, ASK_H, new Date(t0 - 1000).toISOString()]);
+    }
+    const lived = Array.isArray(hh) ? hh.filter(h => h.member_count > 0) : null;
+    const hn = s2 => { const m = /([\d,]+) households?\b/i.exec(String(s2 || "")); return m ? num(m[1]) : undefined; };
+    agree("households (each household once)", [["the key", key.households],
+      ["Donors' households (with a live member)", lived ? lived.length : undefined],
+      ["Ask, asked how many households", askH && askH.answered !== false ? hn(askH.sentence) : undefined],
+      ["Atlas, asked how many households", hn(answerLine(atlasH))]]);
+    agree("people in a household (each person once)", [["the key", key.peopleInHouseholds],
+      ["Donors' households (their members)", lived ? lived.reduce((n, h) => n + h.member_count, 0) : undefined]]);
+    // The report holds at most 100 rows: it is compared only when it holds them all.
+    const g = key.giversBetween(`${yy}-01-01`, key.asOf);
+    if (topH && Array.isArray(topH.rows) && (topH.rows.length < 100 || g.units < 100)) {
+      agree(`gave from ${yy}-01-01 to ${key.asOf}, a household once`, [["the key", g.units], ["Reports' top donors by household (rows)", topH.rows.length]]);
+      agree(`gave from ${yy}-01-01 to ${key.asOf}, each person`, [["the key", g.people], ["Reports' top donors by household (members)", topH.rows.reduce((n, r) => n + Number(r.memberCount || 0), 0)]]);
+      agree(`given from ${yy}-01-01 to ${key.asOf}, by household`, [["the key (hard credit)", key.between(`${yy}-01-01`, key.asOf).cents],
+        ["Reports' top donors by household (sum)", topH.rows.reduce((n, r) => n + cents(r.total), 0)]], money);
+    }
+  }
+
+  // ── TRUTH-1 · DEPOSITED: on a deposit run, or a day it reached the bank ──
+  // Finance's "Not yet on a deposit" is the key's undeposited banked gifts of
+  // the last ninety days, and no gift the bookkeeper's file calls "not
+  // matched to a deposit" is one the key says was deposited.
+  if (!skip.has("deposits") && finance && Array.isArray(finance.figures)) {
+    const un = finance.figures.find(f => f.key === "unmatched");
+    agree(`not yet on a deposit (banked gifts, ${key.deposits.undeposited.from} to ${key.deposits.undeposited.to})`, [
+      ["the key", key.deposits.undeposited.cents], ["Finance's Not yet on a deposit", un ? Number(un.cents) : undefined]], money);
+    const yy = key.asOf.slice(0, 4);
+    const bk = await get(`/reports/bookkeeper?from=${Number(yy) - 3}-01-01&to=${key.asOf}`).catch(() => null);
+    const nd = bk && Array.isArray(bk.issues) ? bk.issues.find(i => i.key === "no_deposit") : null;
+    const ndIds = nd ? (nd.ids || nd.giftIds || (nd.rows || []).map(r => r.id || r)).filter(Boolean) : [];
+    const deposited = new Set(key.deposits.depositedIds);
+    const wrong = ndIds.filter(id => deposited.has(id));
+    // D-6 is exactly a deposited gift with no deposit_ref; any other reason is new.
+    const asLogged = wrong.length && !ctx.noKnown && wrong.every(id => key.depositRefOf(id) === "");
+    if (wrong.length) (asLogged ? (l => knownDiff("D-6", l)) : (l => diffs.push(l)))(`deposited: the bookkeeper's file says ${wrong.length} gift${wrong.length === 1 ? " is" : "s are"} not matched to a deposit that the key says ${wrong.length === 1 ? "is" : "are"} on one (Finance agrees with the key); first ${wrong.slice(0, 3).join(", ")}`);
+    facts.deposits = { key: key.deposits, bookkeeperNoDeposit: ndIds.length };
   }
 
   // ── FIX-60 · A NUMBER IS THE RIGHT KIND OF NUMBER (tests/lib/units.js) ──
@@ -718,10 +887,15 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     else if (b && b.error) diffs.push(`${name} answered an error: ${JSON.stringify(b).slice(0, 200)}`);
   }
 
-  const out = { ok: diffs.length === 0, diffs, facts, ms: Date.now() - t0 };
+  // TRUTH-1: a disagreement logged in docs/defects.md (tests/lib/knownDefects.js),
+  // at exactly the value its defect predicts, is still found and still printed,
+  // every run, as KNOWN; anything else fails.
+  for (const k of known) console.log(`        ${k}${label ? ` (${label})` : ""}`);
+  const split = { fresh: diffs };
+  const out = { ok: diffs.length === 0, diffs, known, facts, ms: Date.now() - t0 };
   if (!out.ok && !ctx.soft) {
-    const e = new Error(`surfaces disagree${label ? ` (${label})` : ""} in ${orgId}:\n  - ${diffs.join("\n  - ")}`);
-    e.diffs = diffs; e.facts = facts;
+    const e = new Error(`surfaces disagree${label ? ` (${label})` : ""} in ${orgId}:\n  - ${split.fresh.join("\n  - ")}`);
+    e.diffs = split.fresh; e.facts = facts;
     throw e;
   }
   return out;

@@ -160,6 +160,7 @@ CORE=(
   fix52-import-undo
   fix54-deleted-stay-deleted
   surfaces-agree
+  truth-key
   org-bound-writes
   real-shaped
   fix59-event-import

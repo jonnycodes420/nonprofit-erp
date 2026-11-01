@@ -74,6 +74,8 @@ const DK = { personRows: DKEY.rows, totalsRows: 1, gifts: DKEY.received.rows, gi
   totals_row_3yr: DKEY.three_year_total_row, recurring: DKEY.recurring.rows, giftTypeMethods: DKEY.methods_that_are_gift_types };
 const PASSWORD = "loadtest1234";
 // ── the surfaces hook (HARDEN-1 item 3 writes tests/lib/surfacesAgree.js) ──
+// TRUTH-1: each file's key from its own cells (tests/keys/build-keys.js, no app code)
+const FILE_KEYS = require("./keys/build-keys");
 let assertSurfacesAgree = null;
 try { ({ assertSurfacesAgree } = require("./lib/surfacesAgree")); } catch {}
 async function surfaces(orgId, ctx) {
@@ -205,7 +207,7 @@ async function main() {
   ok("§1 per year, landed = the file's positive rows (2024 258,039.90 · 2025 239,318.07 · 2026 73,771.96)",
      Object.keys(posYear).every(y => landedYear[y] === posYear[y]) && landedYear["2024"] === 25803990 && landedYear["2025"] === 23931807 && landedYear["2026"] === 7377196,
      JSON.stringify({ landedYear, posYear }));
-  await surfaces(ORG, { step: "after gifts", importId: G_RUN });
+  await surfaces(ORG, { step: "after gifts", importId: G_RUN, fileKey: FILE_KEYS.load("gift-history-287") });
 
   // §2 a per-gift column lands on the gift
   const catCol = (GU.columns || []).find(c => c.header === "Category") || {};
@@ -465,7 +467,7 @@ async function main() {
   const g2 = await importJob(tok, gBody);
   const again = await one("SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::numeric AS s FROM gifts WHERE org_id=$1 AND import_id=$2", [ORG, g2.importId]);
   ok("§6 the gift file again, alone: the same 278 gifts and dollars", g2.end && g2.end.status === "done" && again.n === GK.gifts && centsOf(again.s) === centsOf(GK.gift_dollars), JSON.stringify(again));
-  await surfaces(ORG, { step: "after gifts again", importId: g2.importId });
+  await surfaces(ORG, { step: "after gifts again", importId: g2.importId, fileKey: FILE_KEYS.load("gift-history-287") });
   await api("POST", `/imports/${g2.importId}/reverse`, tok, {});
   d = snapDiff(S0, await snapshot(ORG));
   ok("§6 and its undo leaves the org exactly as it was empty", d.length === 0, d.join("\n"));
@@ -784,7 +786,7 @@ async function findingJoy() {
      !!v2 && v2.value === fig("cameNoGift") && v2.source && v2.source.params.event === evId && (await opened(v2.source.key, v2.source.params)).rows === K.attended_no_gift, a2.sentence);
 
   // the truth check, then Undo leaves the org as it was
-  await surfaces(ORG, { step: "after the Finding Joy workbook", token: tok });
+  await surfaces(ORG, { step: "after the Finding Joy workbook", token: tok, fileKey: FILE_KEYS.load("finding-joy-443") });
   const un = await api("POST", `/imports/${imp.importId}/reverse`, tok, {});
   const d = snapDiff(S0, await snapshot(ORG));
   ok("§FJ Undo leaves the org exactly as it was", un.status === 200 && d.length === 0, un.status + " " + d.join("\n"));

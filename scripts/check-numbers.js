@@ -244,7 +244,9 @@ async function checkOrg(orgId, opts = {}) {
     // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold), so the check reads pledges too
     const pledgesOf = await lapseRule.pledgesFor(query, orgId, null, today);
     for (const [donorId, gs] of byDonor) {
-      const pos = gs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
+      // TRUTH-1: a credit row is not a gift: it neither keeps anyone current nor counts toward a level
+      const hardGs = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));
+      const pos = hardGs.filter(g => c(g.amount) > 0 && day(g.date) <= today);
       if (!pos.length) continue;
       const last = pos.map(g => day(g.date)).sort().pop();
       const want = lapseRule.lapseState(last, today, rhythms.get(donorId) || null, pledgesOf.get(donorId) || null);
@@ -257,7 +259,7 @@ async function checkOrg(orgId, opts = {}) {
       if (!t) { add("lapse", { donor: donorId, want, shown: null }); continue; }
       if ((t.lifecycle === "lapsed") !== (want === "lapsed") || !!t.lapsing !== (want === "lapsing")) add("lapse", { donor: donorId, want, shown: [t.lifecycle, !!t.lapsing] });
       if (quiet.has(donorId) !== (want === "lapsed" || want === "lapsing")) add("quiet", { donor: donorId, want, shown: quiet.has(donorId) });
-      const last12 = gs.filter(g => day(g.date) >= lapseRule.bounds(today).lapsingFrom && day(g.date) <= today).reduce((x, g) => x + c(g.amount), 0);
+      const last12 = hardGs.filter(g => day(g.date) >= lapseRule.bounds(today).lapsingFrom && day(g.date) <= today).reduce((x, g) => x + c(g.amount), 0);
       const lvl = last12 >= cuts.majorCents ? "major" : last12 >= cuts.midCents ? "mid" : "general";
       if (t.level !== lvl) add("giving-level", { donor: donorId, want: lvl, shown: t.level });
     }
@@ -361,12 +363,12 @@ async function checkOrg(orgId, opts = {}) {
   // ── funds, the year, statements ──────────────────────────────────────
   const funds = await query(`SELECT id FROM fin_funds WHERE org_id = ?`, [orgId]);
   for (const f of funds) {
-    const want = gifts.filter(g => g.fund_id === f.id && g.date >= yearStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
+    const want = gifts.filter(g => g.fund_id === f.id && g.date >= yearStart && g.date <= today && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
     const v = await FS.figureValue(orgId, { key: "gifts", params: { from: yearStart, to: today, fund: f.id } }, {});
     if ((v.totalRows ? v.cents : 0) !== want) add("fund", { fund: f.id, shown: v.cents, gifts: want });
   }
   {
-    const want = gifts.filter(g => g.date >= yearStart && g.date <= today).reduce((s, g) => s + c(g.amount), 0);
+    const want = gifts.filter(g => g.date >= yearStart && g.date <= today && !CREDIT.has(String(g.type || "").trim().toLowerCase())).reduce((s, g) => s + c(g.amount), 0);
     const v = await FS.figureValue(orgId, { key: "gifts", params: { from: yearStart, to: today } }, {});
     if ((v.totalRows ? v.cents : 0) !== want) add("report-year", { shown: v.cents, gifts: want });
     const ft = await FS.footCheck(orgId, { key: "gifts", params: { from: yearStart, to: today } }, {});

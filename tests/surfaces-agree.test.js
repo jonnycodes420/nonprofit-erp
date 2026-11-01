@@ -32,7 +32,7 @@ const orgTime = require("../orgTime");
 
 const PASSWORD = "loadtest1234";
 const STAMP = require("crypto").randomBytes(5).toString("hex");
-const ORG_A = "org_hs1sa_" + STAMP, ORG_B = "org_hs1sb_" + STAMP, ORG_C = "org_hs1sc_" + STAMP;
+const ORG_A = "org_hs1sa_" + STAMP, ORG_B = "org_hs1sb_" + STAMP, ORG_C = "org_hs1sc_" + STAMP, ORG_D = "org_hs1sd_" + STAMP;
 
 async function freshOrg(id) {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,'active','team')`, [id, "Surfaces " + id, id.replace(/_/g, "-")]);
@@ -41,8 +41,8 @@ async function freshOrg(id) {
   return login(email, PASSWORD);
 }
 // One check, reported as a PASS or the precise list of disagreements.
-async function agrees(name, orgId, tok) {
-  const r = await assertSurfacesAgree(orgId, { token: tok, soft: true });
+async function agrees(name, orgId, tok, extra = {}) {
+  const r = await assertSurfacesAgree(orgId, { token: tok, soft: true, ...extra });
   ok(`${name} (${r.ms}ms)`, r.ok, r.diffs.length);
   for (const d of r.diffs) console.log("        " + d);
   return r;
@@ -139,6 +139,81 @@ async function main() {
   ok("B: Home's file line reads the file as it is now", !/3 people/.test(mv.homeLine || ""), mv.homeLine);
   await agrees("B: every surface agrees", ORG_B, tokB);
   await janFirst();
+  await blindSpots();
+}
+
+// ── ORG D: TRUTH-1, THE FOUR BLIND SPOTS ───────────────────────────────────
+// The truth check summed every gift row, so a soft or matching credit was
+// money; compared the lapsed count to a list that shares its code; had no
+// households; and never looked at deposits. Org D holds each, and the check
+// compares every surface to the key (tests/keys/truthKey.js), which is
+// computed from the rows with no app code:
+//   Ivy and Jon Hearth share a household; Ivy's check and Jon's cash came in
+//   from a file and she marks them already deposited (FIX-59); Ivy's later
+//   check is on no deposit, and soft-credits Kit (a pointer, recognition).
+//   Kit Worker gave long ago; his recent row is a Matching Gift Credit, so he
+//   is lapsed: the money is Lux Industries' Matching Gift.
+//   Moss Pledger gave long ago and has an open pledge: held, not lapsed.
+//   Nell Quiet gave 400 days ago: lapsed.
+//   Oona Credit's $5,000 this month is a Soft Credit row; her own giving is $50.
+//   A campaign holds Lux's matching gift and Kit's credit row; a giving page
+//   holds Ivy's later check and Oona's soft credit row.
+// HOW IT GOES RED ON MAIN: Kit and Oona read Current (a credit row counted as
+// a gift in the lifecycle), so the lapsed list leaves out two the key calls
+// lapsed; the Board's and Home's this year count $5,300 of credit rows as
+// money; Reports' giving summary counts Kit and Oona as people who gave.
+async function blindSpots() {
+  const today = civilToday();
+  const d = n => orgTime.addDays(today, n);
+  const tok = await freshOrg(ORG_D);
+  const RUN = "imp_hs1d_" + STAMP;
+  const people = ["Ivy Hearth", "Jon Hearth", "Kit Worker", "Lux Industries", "Moss Pledger", "Nell Quiet", "Oona Credit"]
+    .map((n, i) => ({ name: n, email: `d${i}@hs1.test` }));
+  const gifts = [
+    { donorIndex: 0, amount: 120, date: d(-10), paymentMethod: "check" },
+    { donorIndex: 1, amount: 80, date: d(-20), paymentMethod: "cash" },
+    { donorIndex: 2, amount: 300, date: d(-500), paymentMethod: "check" },
+    { donorIndex: 2, amount: 300, date: d(-30), type: "Matching Gift Credit" },
+    { donorIndex: 3, amount: 300, date: d(-30), type: "Matching Gift", paymentMethod: "check" },
+    { donorIndex: 4, amount: 200, date: d(-450), paymentMethod: "check" },
+    { donorIndex: 5, amount: 150, date: d(-400), paymentMethod: "check" },
+    { donorIndex: 6, amount: 5000, date: d(-15), type: "Soft Credit" },
+    { donorIndex: 6, amount: 50, date: d(-700), paymentMethod: "cash" },
+  ];
+  const r = await api("POST", "/donors/import-combined", tok, { importId: RUN, donors: people, gifts });
+  const ids = Object.fromEntries((await q(`SELECT id, name FROM donors WHERE org_id=$1`, [ORG_D])).map(x => [x.name, x.id]));
+  const hh = await api("POST", "/households", tok, { memberIds: [ids["Ivy Hearth"], ids["Jon Hearth"]], primaryDonorId: ids["Ivy Hearth"] });
+  const pl = await api("POST", `/donors/${ids["Moss Pledger"]}/pledges`, tok, { amount: 1000, dueDate: d(200) });
+  const marked = await api("POST", "/finance/imported-deposited", tok, { importId: RUN });
+  const later = await api("POST", `/donors/${ids["Ivy Hearth"]}/gifts`, tok, { amount: 40, date: d(-5), payment_method: "check",
+    softCredits: [{ donorId: ids["Kit Worker"], amount: 40 }] });
+  ok("D: the fixture lands (9 rows, a household, a pledge, three gifts marked deposited, one later check)",
+     r.status === 200 && hh.status === 201 && pl.status < 300 && marked.status === 201 && marked.body.marked === 3 && later.status < 300,
+     [r.status, hh.status, pl.status, marked.status, marked.body && marked.body.marked, later.status]);
+  // a matching campaign holding Lux's matching gift and Kit's credit row, and
+  // a giving page holding Ivy's later check and Oona's soft credit row
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date,created_by,created_by_name)
+           VALUES ($1,$2,'Spring Match','appeal','active',5000,$3,$4,'system:test','test')`, ["cmp_hs1d_" + STAMP, ORG_D, d(-60), d(60)]);
+  await q(`UPDATE gifts SET campaign_id=$1 WHERE org_id=$2 AND donor_id = ANY($3) AND date >= $4`, ["cmp_hs1d_" + STAMP, ORG_D, [ids["Lux Industries"], ids["Kit Worker"]], d(-60)]);
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,status,created_by,created_by_name) VALUES ($1,$2,$3,'Give in spring','active','system:test','test')`,
+    ["gp_hs1d_" + STAMP, ORG_D, "spring-" + STAMP]);
+  await q(`UPDATE gifts SET giving_page_id=$1 WHERE org_id=$2 AND donor_id = ANY($3) AND date >= $4`, ["gp_hs1d_" + STAMP, ORG_D, [ids["Ivy Hearth"], ids["Oona Credit"]], d(-16)]);
+  const f = await agrees("D: every surface agrees with the key (credits, lapsed by person, households, deposits, campaigns, first-time)", ORG_D, tok);
+  const k = f.facts.key || {};
+  const knownIds = new Set((f.known || []).map(x => /^KNOWN (D-\d+)/.exec(x)[1]));
+  ok("D: the logged defects (docs/defects.md) are found, each at exactly the value it predicts: D-3, D-4, D-6, D-7",
+     ["D-3", "D-4", "D-6", "D-7"].every(x => knownIds.has(x)) && knownIds.size === 4, [...knownIds]);
+  const strict = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, noKnown: true });
+  ok("D: with the logged defects counted as failures, the check is red (they are found, not hidden)", !strict.ok && strict.diffs.length >= 4, strict.diffs.length);
+  // the key is the reference: a key that says one more lapsed person, or one
+  // less household, turns the check red
+  const p1 = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, plantKey: K => ({ ...K, lapsed: [...K.lapsed, ids["Moss Pledger"] || "x"].sort() }) });
+  const p2 = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, plantKey: K => ({ ...K, households: K.households + 1 }) });
+  ok("D: the check goes red when the key and the screens part (a lapsed person, a household)",
+     p1.diffs.some(x => /^lapsed people/.test(x)) && p2.diffs.some(x => /^households/.test(x)), [p1.diffs, p2.diffs]);
+  ok("D: the key: 7 people, 1 household, 8 hard gifts $1,240.00, $5,300 of credit rows, $40 undeposited",
+     k.people === 7 && k.households === 1 && k.gifts && k.gifts.count === 8 && k.gifts.cents === 124000 && k.credits.cents === 530000
+     && k.deposits && k.deposits.cents === 4000, JSON.stringify(k));
 }
 
 // ── ORG C: HARDEN-1, A GIFT DATED JANUARY 1 COUNTS IN JANUARY ──────────────

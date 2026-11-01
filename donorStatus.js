@@ -29,6 +29,7 @@ const orgTime = require("./orgTime");
 const lapseRule = require("./lapseRule");
 
 const { IMPORTED_FIRST } = require("./donorSummary");
+const { NOT_CREDIT } = require("./creditTypes");   // TRUTH-1: a credit row is not a gift
 
 const IMP_FIRST = IMPORTED_FIRST("d");
 const DEFAULT_CUTS = Object.freeze({ midCents: 100000, majorCents: 1000000 });
@@ -162,7 +163,9 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS this_cy,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS last_cy
           FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
-         WHERE g.org_id = ? AND LEFT(g.date,10) <= ?${donorId ? " AND g.donor_id = ?" : ""}
+         -- TRUTH-1: a soft or matching credit row is recognition, never a
+         -- gift: it neither keeps someone off Lapsed nor counts toward a level.
+         WHERE g.org_id = ? AND LEFT(g.date,10) <= ? AND ${NOT_CREDIT("g")}${donorId ? " AND g.donor_id = ?" : ""}
          GROUP BY g.donor_id
         HAVING BOOL_OR(g.amount > 0)
       ) a`;
