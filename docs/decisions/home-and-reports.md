@@ -484,6 +484,27 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Home reads `/insights?view=deck` (the deck, no cards); panels read the cards when they open.
 
 
+## EVENTS-3 · an event counts the way the guest list does (2026-11-01)
+
+- An event's figures count **parties**, grouped by `COALESCE(household_id, donor id)` (a walk-in with no record by
+  its own guest row), with the **people** beside each: "172 came · 252 people". Where a sentence uses one number it
+  is parties ("95 came to the Finding Joy Dinner and didn't give"). Decided in FIX-60; this supersedes FIX-58/59's
+  "each person once" below, whose sums still hold, in parties.
+- One home: `shared/numbers/events.js` `eventFigures(query, orgId, { ids, from, to, asOf })`. Each list has a rule for
+  the party and for each person under it (invited, registered, came, came and gave, came without a gift, said yes,
+  declined, no reply, gave, gave without coming, gave without being invited). The guest predicates (EVENT_CAME,
+  EVENT_REGISTERED, ...) and EVENT_GIFT_MATCH live there; figureSources re-exports them. The event page, After the
+  event, `/events/:id/rows`, the Events list and single-event reads, the check-in door, Home's Grow and its week's
+  event, Fundraising's lead card (`eventStory`), Ask and the `event-*` / `events-year-*` sources read it. Money is
+  `numbers.eventsRaised`, unchanged.
+- A figure opens one row per party, named the way the household reads ("Kim and Robby King"), its people under it,
+  each a link; a party of one reads as that person. Grow makes one move per party.
+- After the event is one tile look (the white figure tiles), every tile a `<Figure>` with a source; First-time givers
+  (`event-first-time`) and Sponsors (`event-sponsors`) open their rows. Check-in: the door search is the page, the full
+  list folds under it ("Show all 195 guests").
+- The import reader's Import button leads with the people it will write and says the list's own count beside it
+  ("558 people, 443 on the list"): a couple's row is one entry on her list and two people in Steward.
+
 ## IMPORT-5 · the guests who came and didn't give (2026-10-29)
 
 - Who came and gave, who came and didn't, and who was invited and didn't come are one answer: `numbers.eventGuests`

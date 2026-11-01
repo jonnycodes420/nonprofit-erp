@@ -33,10 +33,22 @@ export default function EventRaised({ e, showName = true, style }) {
 // over all years, who came, who gave, and who came and did not give, each a
 // figure that opens its rows, from numbers.eventStory. The event page and
 // Fundraising's lead card draw it the same way.
+// EVENTS-3: a guest count is parties (a household once); its people sit
+// beside it, smaller: "172 came · 252 people". Said only when they differ.
+export const peopleLine = f => (f && f.people != null && f.people !== f.value
+  ? `${Number(f.people).toLocaleString("en-US")} ${f.people === 1 ? "person" : "people"}` : null);
+
+// "a, b and c" over the clauses that are there
+const joinClauses = parts => {
+  const p = parts.filter(Boolean);
+  return p.map((x, i) => <span key={i}>{i === 0 ? "" : i === p.length - 1 ? " and " : ", "}{x}</span>);
+};
+
 export function EventStory({ s, style, noGiftShownBelow }) {
   if (!s) return null;
   const tile = (k, label, kind = "money") => (
-    <Figure key={k} kind={kind} whole value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} figureKey={"event." + k} />
+    <Figure key={k} kind={kind} whole value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} figureKey={"event." + k}
+      sub={kind === "count" && s.peopleWords ? s.peopleWords[k] : null} />
   );
   const inline = (k, label) => (
     <Figure variant="inline" kind="count" value={s[k]} label={label} definition={s.definitions && s.definitions[k]} source={s.sources && s.sources[k]} why={false} />
@@ -51,7 +63,7 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {tile("attended", "Came", "count")}
       {tile("gave", "Gave", "count")}
       {noGiftShownBelow ? null : tile("cameDidntGive", "Came, didn't give", "count")}
-      {/* FIX-58: each count is people, once, and the line shows they add up */}
+      {/* FIX-58 + EVENTS-3: each count is parties, once, and the line shows they add up */}
       {s.addsUp ? (
         <div data-testid="event-story-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
           {inline("attended", "Came")} came: {inline("cameGave", "Came and gave")} gave and {inline("cameDidntGive", "Came, didn't give")} didn't.{" "}
@@ -61,8 +73,14 @@ export function EventStory({ s, style, noGiftShownBelow }) {
       {/* FIX-59: the list adds up too: invited = said yes or came + declined + no reply */}
       {s.listAddsUp ? (
         <div data-testid="event-story-list-adds-up" style={{ gridColumn: "1 / -1", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
-          {inline("invited", "Invited")} invited: {inline("registered", "Registered")} said yes or came, {inline("declined", "Declined")} declined, {inline("noReply", "No reply")} didn't reply.
-          {s.invitedDidntCome != null ? <> Of the {inline("registered", "Registered")}, {inline("attended", "Came")} came and {inline("invitedDidntCome", "Said yes, didn't come")} didn't.</> : null}
+          {/* EVENTS-3: a clause whose count is 0 is left out */}
+          {inline("invited", "Invited")} invited: {joinClauses([
+            s.registered ? <>{inline("registered", "Registered")} said yes or came</> : null,
+            s.declined ? <>{inline("declined", "Declined")} declined</> : null,
+            s.noReply ? <>{inline("noReply", "No reply")} didn't reply</> : null])}.
+          {s.invitedDidntCome != null && s.registered ? <> Of the {inline("registered", "Registered")}, {joinClauses([
+            s.attended ? <>{inline("attended", "Came")} came</> : null,
+            s.invitedDidntCome ? <>{inline("invitedDidntCome", "Said yes, didn't come")} didn't</> : null])}.</> : null}
         </div>
       ) : null}
     </div>

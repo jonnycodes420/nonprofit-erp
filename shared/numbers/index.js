@@ -12,4 +12,5 @@ module.exports = {
   retained: require("./retained"),
   deposited: require("./deposited"),
   donorTotals: require("./donorTotals"),
+  events: require("./events"),
 };

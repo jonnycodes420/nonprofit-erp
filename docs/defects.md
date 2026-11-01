@@ -4,6 +4,10 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## CI (EVENTS-3, 1 Nov 2026)
+
+- **P2 · The battery runs as one CI job and is close to its ceiling.** Since ARCH-1 the battery finds 192 suites and runs them as three shards inside one `test` job: PR #292 took 39m45s, and EVENTS-3's first run was cancelled at 40m15s. EVENTS-3 raised `timeout-minutes` from 40 to 60 to unblock merges; that only buys time. Suggested: a CI build splits the battery into a GitHub matrix of parallel jobs (one shard each, with an upload and a combine step, as ci.yml's comment on the earlier attempt describes).
+
 ## One home for every giving number (NUMBERS-3, 1 Nov 2026)
 
 - **P3 · Two gifts on one day from one import pick the "last" one by random id.** An import writes its rows with one `created_at`, so `LAST_GIFT_ORDER` (date, created_at, id) falls to the gift's random id: OAKVILLE Foundation's two gifts of 16 Dec 2025 ($20,000 and $5,000) show either as the Last gift, run to run. Seen on the real-shaped before-and-after capture. Suggested: the next imports build stamps each row's file position (or `created_at` plus its row number) so the later row is the last.
@@ -53,11 +57,8 @@ one deletes its line.
 
 ## Events and pledges (SWEEP-4, 29 Oct 2026; walk in docs/sweeps/sweep-4/walk.md)
 
-- **P3 · Two tile looks on After the event.** White figure tiles (Raised … Gave) above cream buttons (Invited … Sponsors) on one card; First-time givers and Sponsors open rows but are not `<Figure>`s with a source. Suggested: EVENTS-3.
-- **P3 · Check-in draws every guest on the event page.** 195 rows under the door search; the search is the door, the list could fold. Suggested: EVENTS-3.
 - **P3 · The open-pledge banner and the Next move repeat each other.** Both list the same installments on the profile. Suggested: the people sweep.
 
-- **P2 · An event's people figures count persons; the Finding Joy key counts guest-list rows.** The combined workbook's key says 443 people, 172 attended, 104 gave, 77 came and gave, 95 came without a gift; Steward makes a couple's row two people, so the event page, Home's Grow card, Fundraising and Ask say 252 came, 149 gave, 122 came and gave, 130 came without a gift (each opens to exactly the key's rows; money matches the key). Decided in FIX-60: an event's people figures count giving units (a household once), as the ladder does; not built in FIX-60's time. The plan is in FIX-60's report: `numbers.eventGuests` groups by `COALESCE(household_id, donor id)`, the four `event-*` sources open one row per unit, the Events list counts, the truth check's event truth, and the suites built on couples as two (fix59-event-import, fundraising2-screens, import5 §6, sweep4, real-shaped §FJ asserts the key directly). Suggested: EVENTS-3.
 
 ## Finance, Reports, Grants (SWEEP-5, 29 Oct 2026; walk in docs/sweeps/sweep-5/walk.md)
 

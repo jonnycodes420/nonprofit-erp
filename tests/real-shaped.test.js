@@ -664,9 +664,11 @@ async function homeThree() {
 // one workbook (People, Gifts); expected-finding-joy.json is Jonathan's key and
 // the source of every number here. The key counts the guest list's rows: a
 // couple's row ("Cleo & Lyle Underhill") is one entry. Steward makes a couple
-// two people and one household (§D), so each surface's people figure is opened
-// and its people counted by their row (their household, or themselves): the
-// 252 people who came are the key's 172 rows. Money is compared as it is.
+// two people and one household (§D), and EVENTS-3 counts an event by party (a
+// household once), so every surface says the key's own number: 172 came, with
+// "252 people" beside it. Money is compared as it is.
+// HOW IT GOES RED ON MAIN (EVENTS-3): the event page said 252 came, 149 gave,
+// 122 came and gave, 130 came without a gift: persons, not the key's rows.
 // Into a fresh org, the dinner dated Oct 22, 2026 (the import's date answer);
 // Home is asked as of that day through the insights test seam (asOf, honoured
 // only in TEST_MODE), so the battery's clock is not pinned.
@@ -701,6 +703,8 @@ async function findingJoy() {
   ok(`§FJ the preview's rows are the key's: ${K.people} rows, ${K.invited} invited, ${K.rsvp_yes} RSVP'd, ${K.attended} attended`,
      c.records === K.people && c.invitedRecords === K.invited && c.rsvpRecords === K.rsvp_yes && c.attendedRecords === K.attended,
      JSON.stringify([c.records, c.invitedRecords, c.rsvpRecords, c.attendedRecords]));
+  ok(`§FJ the reader leads with the key's ${K.people} on the list (SWEEP-2's 558 was its people, a couple's row two)`,
+     (u.button && u.button.importText || "").includes(`, ${K.people} on the list`) && c.records === K.people && c.persons > K.people, (u.button || {}).importText);
   ok(`§FJ the preview's money is the key's: ${K.gift_rows} gift rows, $${D(K.received)} received, $${D(K.not_yet_received)} pledged this year, $${D(K.dinner_total)} in all`,
      c.gifts + c.pledges === K.gift_rows && c.giftCents === K.received * 100 && c.pledgeThisYearCents === K.not_yet_received * 100 && c.rowCents === K.dinner_total * 100,
      JSON.stringify([c.gifts, c.pledges, c.giftCents, c.pledgeThisYearCents, c.rowCents]));
@@ -716,10 +720,12 @@ async function findingJoy() {
   const rowsOf = async ids => (await one(`SELECT COUNT(DISTINCT COALESCE(household_id, id))::int AS n FROM donors WHERE org_id=$1 AND id = ANY($2)`, [ORG, [...new Set(ids)]])).n;
   const opened = async (key, params) => {
     const qs = Object.entries({ ...params, event: evId }).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-    const ids = []; let page = 1, r, value;
-    do { r = (await api("GET", `/figures/${key}/rows?${qs}&page=${page}&pageSize=200`, tok)).body || {}; value = r.value; ids.push(...(r.rows || []).map(x => x.donorId).filter(Boolean)); page++; }
+    const ids = [], raw = []; let page = 1, r, value;
+    do { r = (await api("GET", `/figures/${key}/rows?${qs}&page=${page}&pageSize=200`, tok)).body || {}; value = r.value; raw.push(...(r.rows || []));
+         ids.push(...(r.rows || []).flatMap(x => x.people ? x.people.map(p => p.donorId) : [x.donorId]).filter(Boolean)); page++; }
     while (r.rows && r.rows.length === 200);
-    return { value: Number(value), people: new Set(ids).size, rows: await rowsOf(ids), ids };
+    return { value: Number(value), people: new Set(ids).size, rows: await rowsOf(ids), ids, raw, partyRows: raw.length,
+             peopleUnder: raw.reduce((n, x) => n + (x.people ? x.people.length : 1), 0) };
   };
   const everyone = (await q("SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL", [ORG])).map(r => r.id);
   ok(`§FJ ${K.people} rows came in, each person once (a couple two people, one household)`, await rowsOf(everyone) === K.people, everyone.length);
@@ -734,19 +740,42 @@ async function findingJoy() {
   ok(`§FJ the event page: $${D(K.dinner_total)} raised = $${D(K.received)} received + $${D(K.not_yet_received)} pledged`,
      centsOf(fig("raised")) === K.dinner_total * 100 && pm.raisedCents === K.dinner_total * 100 && pm.receivedCents === K.received * 100 && pm.pledgedCents === K.not_yet_received * 100,
      JSON.stringify([fig("raised"), pm.words]));
+  // EVENTS-3: every figure is the key's own number (parties: a couple's row is
+  // one), with its people beside it, and opens one row per party with its
+  // people under it. Red on main: 252 came against the key's 172.
   const S = st.sources || {};
-  const L = {
-    invited: await opened(S.invited.key, S.invited.params), attended: await opened(S.attended.key, S.attended.params),
-    gave: await opened(S.gave.key, S.gave.params), cameGave: await opened(S.cameGave.key, S.cameGave.params),
-    cameNoGift: await opened(S.cameDidntGive.key, S.cameDidntGive.params),
-  };
-  const raisedRows = await opened(S.raised.key, S.raised.params);
-  for (const [k, kk, f] of [["invited", "invited", "invited"], ["attended", "attended", "attended"], ["gave", "gave", "gave"], ["cameGave", "attended_and_gave", "cameGave"], ["cameNoGift", "attended_no_gift", "cameNoGift"]]) {
-    ok(`§FJ the event page's ${f} (${fig(f)} people) opens its people, and they are the key's ${K[kk]} rows`,
-       L[k].value === fig(f) && L[k].people === fig(f) && L[k].rows === K[kk], JSON.stringify({ figure: fig(f), opened: L[k].value, people: L[k].people, rows: L[k].rows, key: K[kk] }));
+  const src = (k, list) => S[k] || { key: "event-guests", params: { event: evId, list } };
+  const L = {};
+  for (const [k, sk, list] of [["invited", "invited", "invited"], ["registered", "registered", "registered"], ["attended", "attended", "came"], ["gave", "gave", "gave"],
+                               ["cameGave", "cameGave", "cameGave"], ["cameNoGift", "cameDidntGive", "cameNoGift"], ["gaveNotInvited", "gaveNotInvited", "gaveNotInvited"]]) {
+    L[k] = await opened(src(sk, list).key, src(sk, list).params);
   }
-  ok("§FJ the page's story says the same: came = came and gave + came and didn't", st.attended === fig("attended") && st.cameGave + st.cameDidntGive === st.attended && st.gave === fig("gave"),
-     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave]));
+  const raisedRows = await opened(S.raised.key, S.raised.params);
+  const figPeople = k => ((rep.figures || []).find(f => f.key === k) || {}).people;
+  for (const [k, kk, f] of [["invited", "invited", "invited"], ["registered", "rsvp_yes", "registered"], ["attended", "attended", "attended"], ["gave", "gave", "gave"],
+                            ["cameGave", "attended_and_gave", "cameGave"], ["cameNoGift", "attended_no_gift", "cameNoGift"], ["gaveNotInvited", "gave_not_invited", "gaveNotInvited"]]) {
+    ok(`§FJ the event page's ${f} is the key's ${K[kk]}, and opens ${K[kk]} rows, one per party (its ${figPeople(f)} people under them)`,
+       fig(f) === K[kk] && L[k].value === K[kk] && L[k].partyRows === K[kk] && L[k].rows === K[kk] && L[k].peopleUnder === figPeople(f) && L[k].peopleUnder >= K[kk],
+       JSON.stringify({ figure: fig(f), opened: L[k].value, partyRows: L[k].partyRows, rows: L[k].rows, people: figPeople(f), under: L[k].peopleUnder, key: K[kk] }));
+  }
+  ok(`§FJ the page says the people beside the parties: "${K.attended} came · ${figPeople("attended")} people"`,
+     ((rep.figures || []).find(f => f.key === "attended") || {}).peopleWords === `${figPeople("attended")} people` && figPeople("attended") > K.attended
+     && (st.peopleWords || {}).attended === `${figPeople("attended")} people`, JSON.stringify((st.peopleWords || {})));
+  ok("§FJ the page's story says the same: came = came and gave + came and didn't, in parties",
+     st.attended === K.attended && st.cameGave + st.cameDidntGive === st.attended && st.gave === K.gave && st.cameGave + st.gaveNotCame === st.gave
+     && st.addsUp.startsWith(`${K.attended} came: ${K.attended_and_gave} gave and ${K.attended_no_gift} didn't.`)
+     // a clause whose count is 0 is left out: nobody is "no reply" on this list
+     && st.listAddsUp === `${K.invited} invited: ${K.rsvp_yes} said yes or came and ${K.invited - K.rsvp_yes} declined. Of the ${K.rsvp_yes}, ${K.attended} came and ${K.rsvp_yes - K.attended} didn't.`,
+     JSON.stringify([st.attended, st.cameGave, st.cameDidntGive, st.gave, st.addsUp, st.listAddsUp]));
+  const couple = (L.attended.raw || []).find(r => (r.people || []).length === 2);
+  ok("§FJ a couple who came is one row, named the way the household reads, with both people under it",
+     !!couple && couple.type === "party" && /^\S.* and \S.* \S+$/.test(couple.name) && couple.people.every(x => x.donorId)
+     && !(L.attended.raw || []).some(r => /household of/i.test(r.name) || ((r.people || []).length === 1 && r.name !== r.people[0].name)),
+     JSON.stringify(couple));
+  // a party's row is all its people when it is saved as a group (a couple is two members)
+  const asGroup = (await api("GET", `/figures/${S.attended.key}/people?${Object.entries(S.attended.params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")}`, tok)).body || {};
+  ok(`§FJ "Save as a group" from Came takes its ${figPeople("attended")} people, both of a couple`,
+     (asGroup.donorIds || []).length === figPeople("attended") && asGroup.rows === K.attended, JSON.stringify([(asGroup.donorIds || []).length, asGroup.rows]));
   const notInvited = P.filter(r => gaveIds.has(r.ID) && !yes(r.Invited)).map(r => `${String(r.First).trim()} ${String(r.Last).trim()}`);
   const listed = new Set(L.invited.ids);
   const strays = (await q("SELECT id, name FROM donors WHERE org_id=$1 AND name = ANY($2)", [ORG, notInvited])).filter(d => listed.has(d.id));
@@ -761,14 +790,30 @@ async function findingJoy() {
      (line.words || "").includes(`$${K.dinner_total.toLocaleString("en-US")} raised ($${K.received.toLocaleString("en-US")} received, $${K.not_yet_received.toLocaleString("en-US")} pledged)`), line.words);
   const deck = (await api("GET", "/insights?view=deck&asOf=2026-10-22", tok)).body || {};
   const grow = (((deck.deck || deck).tabs) || []).flatMap(t => t.moves || []).find(m => m.kind === "came_no_gift" && m.group && m.group.eventId === evId);
-  ok(`§FJ Home's Grow: "Came to the Finding Joy Dinner, didn't give" counts the page's ${fig("cameNoGift")} people (the key's ${K.attended_no_gift} rows)`,
-     !!grow && grow.group.count === fig("cameNoGift") && L.cameNoGift.rows === K.attended_no_gift, JSON.stringify(grow && grow.group));
+  const growMoves = (((deck.deck || deck).tabs) || []).flatMap(t => t.moves || []).filter(m => m.kind === "came_no_gift" && m.eventId === evId);
+  ok(`§FJ Home's Grow: "Came to the Finding Joy Dinner, didn't give" counts the key's ${K.attended_no_gift}, and a couple is one move with both people`,
+     !!grow && grow.group.count === K.attended_no_gift && grow.group.people === figPeople("cameNoGift")
+     && growMoves.every(m => m.ids.length >= 1) && new Set(growMoves.flatMap(m => m.ids)).size === growMoves.reduce((n, m) => n + m.ids.length, 0),
+     JSON.stringify(grow && grow.group));
+  // the Events list and the door: the same parties, the people beside them
+  const evList = (await api("GET", "/events", tok)).body || [];
+  const card = (Array.isArray(evList) ? evList : []).find(e => e.id === evId) || {};
+  ok(`§FJ the Events list: ${K.attended} came, ${K.rsvp_yes} registered, ${K.invited} on the list (people beside them)`,
+     card.attendee_count === K.attended && card.registered_count === K.rsvp_yes && card.invited_count === K.invited
+     && card.people && card.people.came === figPeople("attended"), JSON.stringify([card.attendee_count, card.registered_count, card.invited_count, card.people]));
+  const door = (await api("GET", `/events/${evId}/kiosk`, tok)).body || {};
+  ok(`§FJ the check-in door: ${K.attended} of ${K.rsvp_yes} checked in, the people beside them`,
+     door.checkedIn === K.attended && door.expected === K.rsvp_yes && (door.sentence || "").startsWith(`${K.attended} of ${K.rsvp_yes} checked in (${figPeople("attended")} of ${figPeople("registered")} people).`), door.sentence);
+  // After the event: every tile opens its rows, First-time givers and Sponsors included
+  ok("§FJ After the event: every figure carries a source", (rep.figures || []).every(f => f.source && f.source.key), JSON.stringify((rep.figures || []).filter(f => !f.source).map(f => f.key)));
+  const ft = await opened("event-first-time", {});
+  ok("§FJ After the event: First-time givers opens exactly its count", ft.value === ((rep.figures || []).find(f => f.key === "firstTime") || {}).value && ft.partyRows === ft.value, JSON.stringify([ft.value, ft.partyRows]));
 
   // Fundraising: the lead card is the dinner, as its page tells it; the answer leads with received
   const fo = (await api("GET", "/fundraising/overview", tok)).body || {}, le = fo.leadEvent || {};
   ok("§FJ Fundraising's lead card is the dinner: the same money and the same people as its page",
      le.id === evId && le.raisedCents === K.dinner_total * 100 && le.receivedCents === K.received * 100 && le.pledgedCents === K.not_yet_received * 100
-     && le.attended === fig("attended") && le.cameGave === fig("cameGave") && le.cameDidntGive === fig("cameNoGift") && le.gave === fig("gave"),
+     && le.attended === K.attended && le.cameGave === K.attended_and_gave && le.cameDidntGive === K.attended_no_gift && le.gave === K.gave,
      JSON.stringify([le.id, le.raisedCents, le.receivedCents, le.attended, le.cameGave, le.cameDidntGive, le.gave]));
   const fr = (await api("GET", "/dashboards/fundraising", tok)).body || {};
   ok(`§FJ Fundraising's answer: received $${K.received.toLocaleString("en-US")}, $${K.not_yet_received.toLocaleString("en-US")} pledged due this year`,
@@ -782,8 +827,9 @@ async function findingJoy() {
      af.value && af.value.value === K.received && af.also && af.also.value === K.not_yet_received && af.value.value + af.also.value === K.dinner_total, a1.sentence);
   const a2 = (await api("POST", "/ask", tok, { text: "Who came to the Finding Joy Dinner and didn't give?" })).body || {};
   const v2 = a2.figures && a2.figures.value;
-  ok(`§FJ Ask, "Who came … and didn't give?": the page's ${fig("cameNoGift")} people, the key's ${K.attended_no_gift} rows`,
-     !!v2 && v2.value === fig("cameNoGift") && v2.source && v2.source.params.event === evId && (await opened(v2.source.key, v2.source.params)).rows === K.attended_no_gift, a2.sentence);
+  ok(`§FJ Ask, "Who came … and didn't give?": the key's ${K.attended_no_gift}, said in one number, the people beside it`,
+     !!v2 && v2.value === K.attended_no_gift && v2.source && v2.source.params.event === evId && (await opened(v2.source.key, v2.source.params)).partyRows === K.attended_no_gift
+     && (a2.sentence || "").startsWith(`${K.attended_no_gift} came to the Finding Joy Dinner`) && (a2.people || []).length === K.attended_no_gift, a2.sentence);
 
   // the truth check, then Undo leaves the org as it was
   await surfaces(ORG, { step: "after the Finding Joy workbook", token: tok, fileKey: FILE_KEYS.load("finding-joy-443") });

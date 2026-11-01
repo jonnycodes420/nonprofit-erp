@@ -191,6 +191,9 @@ async function eventsAndPledgesSayNothingWrong(browser) {
         await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,table_label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
           [`ea_${org}_${i}`, EV, org, `d_${org}_${i}`, `Walk Guest ${i}`, i === 2 ? null : `walk${i}@example.org`, i <= 4 ? "attended" : i === 5 ? "registered" : "declined", i <= 4 ? "Table 1" : null]);
       }
+      // EVENTS-3: guests 1 and 2 are one household, a couple who came together: one party
+      await q(`INSERT INTO households (id,org_id,name,created_by,created_by_name) VALUES ($1,$2,'Walk Guest household','system:test','test')`, [`hh_${org}_12`, org]);
+      await q(`UPDATE donors SET household_id=$1 WHERE org_id=$2 AND id = ANY($3)`, [`hh_${org}_12`, org, [`d_${org}_1`, `d_${org}_2`]]);
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,event_id,created_by,created_by_name) VALUES ($1,$2,$3,500,$4,$5,'system:test','test')`, [`g_${org}_1`, org, `d_${org}_1`, past, EV]);
       await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,event_id,created_by,created_by_name) VALUES ($1,$2,$3,3000,$4,'open',$5,'system:test','test')`, [`pl_${org}_1`, org, `d_${org}_3`, due, EV]);
       for (let k = 0; k < 3; k++)
@@ -239,6 +242,26 @@ async function eventsAndPledgesSayNothingWrong(browser) {
           const textRight = await tile.locator("button span").first().evaluate(el => { const r = document.createRange(); r.selectNodeContents(el); const rs = [...r.getClientRects()]; return Math.max(...rs.map(x => x.right)); });
           ok(`§sweep4 ${where}: "Pledged · first year" clears its "?"`, !!lb && !!qb && textRight <= qb.x + 1, { textRight, why: qb });
         } else ok(`§sweep4 ${where}: the Pledged · first year tile is drawn`, false);
+        // EVENTS-3: the couple is one party: "3 came · 4 people"; After the event's
+        // tiles are each a figure that opens its rows; the door search is the page
+        // and the list folds under it.
+        const came = page.locator('[data-testid="event-story"] .fig-tile:has([data-figure-key="event.attended"])').first();
+        const cameText = await came.innerText().catch(() => "");
+        ok(`§events3 ${where}: Came is 3 parties with its 4 people beside it`, /\b3\b/.test(cameText) && /4 people/.test(cameText), cameText);
+        const listLine = (await page.locator('[data-testid="event-story-list-adds-up"]').innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+        ok(`§events3 ${where}: the list's sentence leaves out a clause whose count is 0`,
+           /^5 invited: 4 said yes or came and 1 declined\. Of the 4, 3 came and 1 didn't\.$/.test(listLine.replace(/\s*\?\s*/g, " ").replace(/\s+([.,])/g, "$1").trim()), listLine);
+        const tiles = await page.locator('[data-testid="ev-report-tiles"] [data-figure]').evaluateAll(els => els.map(e => [e.getAttribute("data-figure"), e.getAttribute("data-source-key")]));
+        ok(`§events3 ${where}: After the event is one tile look, every tile opening its rows (First-time givers and Sponsors too)`,
+           tiles.length >= 4 && tiles.every(([, k]) => !!k) && tiles.some(([f]) => /firstTime/.test(f)) && tiles.some(([f]) => /sponsors/.test(f)), tiles);
+        const showAll = await page.locator('[data-testid="ev-kiosk-show-all"]').innerText({ timeout: 5000 }).catch(() => "");
+        const foldedRows = await page.locator('[data-testid="ev-kiosk-row"]').count();
+        const searchFirst = await page.evaluate(() => { const k = document.querySelector('[data-testid="ev-kiosk"]'); const s = k && k.querySelector('[data-testid="ev-kiosk-search"]');
+          const first = k && k.querySelector("input, button[data-testid='ev-kiosk-camera']"); return !!s && first === s; });
+        await page.locator('[data-testid="ev-kiosk-show-all"]').click().catch(() => {});
+        const openRows = await page.locator('[data-testid="ev-kiosk-row"]').count();
+        ok(`§events3 ${where}: check-in is the door search, the list folded under it ("Show all 5 people": 4 parties expected) and open on request`,
+           searchFirst && foldedRows === 0 && /^Show all 5 people$/.test(showAll.trim()) && openRows === 5, { searchFirst, foldedRows, showAll, openRows });
         await page.getByRole("button", { name: /Plan follow-up tasks|Follow-up tasks/ }).first().click().catch(() => {});
         await page.waitForFunction(() => { const el = document.querySelector('[data-testid="ev-followup-plan"]'); return el && !/Counting/.test(el.innerText); }, null, { timeout: 8000 }).catch(() => {});
         const plan = await page.locator('[data-testid="ev-followup-plan"]').innerText({ timeout: 5000 }).catch(() => "");

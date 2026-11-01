@@ -21,6 +21,7 @@ const FS = require("./figureSources");
 const orgTime = require("./orgTime");
 const money = require("./money");
 const { query } = require("./db");
+const EVF = require("./shared/numbers/events");   // EVENTS-3: an event's guests, by party
 
 const { CAMPAIGN_GIFT_MATCH, PUBLIC_BAR_GRANTS, inWindow, campaignWindowRefusal } = require("./campaignMatch");
 
@@ -231,50 +232,6 @@ async function eventsRaised(orgId, { ids = null, from = null, to = null, withMon
   return limit ? out.slice(0, limit) : out;
 }
 
-const EVENT_GUEST_DEFINITIONS = FS.EVENT_GUEST_WORDS;
-// IMPORT-5 · WHO CAME AND DIDN'T GIVE. One answer for the event page, Home's
-// Grow moves, Ask and Atlas. A guest "gave" when a gift (the event's own gift
-// match) or a pledge is tied to the event for them or anyone in their
-// household: a couple's gift sits on one of the two.
-// FIX-58 + FIX-59 · THE LIST ADDS UP, EACH PERSON ONCE (figureSources'
-// predicates). Invited = Registered + Declined + No reply; Registered = Came +
-// Said yes, didn't come; Came = came, gave + came, didn't give. "Said yes,
-// didn't come" (invitedNoShow) is shown once the event's day has passed.
-// A walk-in with no person record is a guest (keyed by the attendee row).
-async function eventGuests(orgId, { ids = null, asOf = null } = {}) {
-  const args = [orgId];
-  let where = "";
-  if (ids) { where = " AND e.id = ANY(?)"; args.push(ids); }
-  const rows = await query(
-    `SELECT DISTINCT ON (e.id, COALESCE(d.id, a.id)) e.id AS event_id, e.name AS event_name, LEFT(e.date::text, 10) AS date, e.date_unknown,
-            COALESCE(d.id, a.id) AS person_id, d.id AS donor_id, COALESCE(d.name, a.name) AS name,
-            ${FS.EVENT_CAME("a")} AS came, ${FS.EVENT_REGISTERED("a")} AS registered, ${FS.EVENT_DECLINED("a")} AS declined,
-            ${FS.EVENT_GUEST_GAVE("d", "e")} AS gave
-       FROM event_attendees a
-       JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
-       LEFT JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
-      WHERE a.org_id = ? AND ${FS.EVENT_INVITED("a")} AND ${FS.EVENT_GUEST_LIVE("a")}${where}
-      ORDER BY e.id, COALESCE(d.id, a.id), ${FS.EVENT_CAME("a")} DESC, ${FS.EVENT_REGISTERED("a")} DESC, ${FS.EVENT_DECLINED("a")} DESC`, args);
-  const byEvent = new Map();
-  for (const r of rows) {
-    const ev = byEvent.get(r.event_id) || byEvent.set(r.event_id, { id: r.event_id, name: r.event_name, date: r.date_unknown ? null : r.date,
-      past: r.date_unknown || !asOf || r.date <= asOf, cameGave: [], cameNoGift: [], saidYes: [], declined: [], noReply: [] }).get(r.event_id);
-    const person = { id: r.person_id, name: r.name, ...(r.donor_id ? {} : { noRecord: true }) };
-    if (r.came) (r.gave ? ev.cameGave : ev.cameNoGift).push(person);
-    else if (r.registered) ev.saidYes.push(person);
-    else if (r.declined) ev.declined.push(person);
-    else ev.noReply.push(person);
-  }
-  const byName = (a, b) => String(a.name).localeCompare(String(b.name));
-  return [...byEvent.values()].map(ev => {
-    for (const k of ["cameGave", "cameNoGift", "saidYes", "declined", "noReply"]) ev[k].sort(byName);
-    const came = ev.cameGave.length + ev.cameNoGift.length;
-    const registered = came + ev.saidYes.length;
-    return { ...ev, invitedNoShow: ev.past ? ev.saidYes : [], notYet: ev.saidYes,
-      came, registered, invited: registered + ev.declined.length + ev.noReply.length, definitions: EVENT_GUEST_DEFINITIONS };
-  });
-}
-
 // FUNDRAISING-2 · THE NIGHT'S STORY: what the event raised (eventsRaised),
 // who came, who gave or pledged there, and who came and did not give. The
 // event page and Fundraising's lead card read this one function; each count
@@ -287,52 +244,46 @@ async function todayFor(orgId) {
 async function eventStory(orgId, eventId) {
   const [money] = await eventsRaised(orgId, { ids: [eventId] });
   if (!money) return null;
-  const src = key => ({ key, params: { event: eventId } });
+  // EVENTS-3: every count is shared/numbers/events.js, in parties, with the
+  // people beside it ("172 came · 252 people").
+  const [G] = await EVF.eventFigures(query, orgId, { ids: [eventId], asOf: await todayFor(orgId) });
+  const c = k => (G ? G.counts[k] : { parties: 0, people: 0 });
+  const past = G ? G.past : true;
   const guestSrc = list => ({ key: "event-guests", params: { event: eventId, list } });
-  // "Came, didn't give" is IMPORT-5's one answer (event-guests, household-aware).
-  // FIX-58 + FIX-59: the list is numbers.eventGuests (invited, registered,
-  // declined, no reply, came); Gave is FIX-58's household-aware event-gave, and
-  // Gave = came and gave + gave and didn't come.
-  const gaveAwaySrc = { key: "event-gave", params: { event: eventId, came: "no" } };
-  const [[G], gave, gaveNotCame] = await Promise.all([eventGuests(orgId, { ids: [eventId], asOf: await todayFor(orgId) }),
-    FS.figureValue(orgId, src("event-gave")), FS.figureValue(orgId, gaveAwaySrc)]);
-  const g = G || { cameGave: [], cameNoGift: [], saidYes: [], declined: [], noReply: [], invitedNoShow: [], past: true, came: 0, registered: 0, invited: 0 };
-  const n = f => Number(f.value) || 0;
-  const people = k => `${k.toLocaleString("en-US")} ${k === 1 ? "person" : "people"}`;
-  const out = {
-    ...money,
-    invited: g.invited, registered: g.registered, declined: g.declined.length, noReply: g.noReply.length,
-    attended: g.came, cameGave: g.cameGave.length, cameDidntGive: g.cameNoGift.length,
-    invitedDidntCome: g.past ? g.saidYes.length : null, past: g.past,
-    gave: n(gave), gaveNotCame: n(gaveNotCame),
-    pledgedAll: Math.round((money.pledgedCents + money.laterCents)) / 100, pledgedAllCents: money.pledgedCents + money.laterCents,
-    sources: { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } },
-      invited: guestSrc("invited"), registered: guestSrc("registered"), declined: guestSrc("declined"), noReply: guestSrc("noReply"),
-      attended: src("event-attended"), gave: src("event-gave"), gaveNotCame: gaveAwaySrc,
-      cameGave: guestSrc("cameGave"), cameDidntGive: guestSrc("cameNoGift"), invitedDidntCome: guestSrc("invitedNoShow") },
-    definitions: {
-      ...money.definitions,
-      pledgedAll: "Every unpaid installment of an open pledge made at this event, in every year it falls due.",
-      invited: EVENT_GUEST_DEFINITIONS.invited,
-      registered: EVENT_GUEST_DEFINITIONS.registered,
-      declined: EVENT_GUEST_DEFINITIONS.declined,
-      noReply: EVENT_GUEST_DEFINITIONS.noReply,
-      attended: "Each person marked as having come to this event, or checked in at the door, once.",
-      gave: "Each person with a gift for this event or a pledge made at it, and each guest who came whose household gave, once.",
-      cameGave: EVENT_GUEST_DEFINITIONS.cameGave,
-      cameDidntGive: EVENT_GUEST_DEFINITIONS.cameNoGift,
-      gaveNotCame: "Each person who gave or pledged for this event and was not marked as having come.",
-      invitedDidntCome: EVENT_GUEST_DEFINITIONS.invitedNoShow,
-    },
+  const W = EVF.EVENT_GUEST_WORDS;
+  const KEYS = { invited: "invited", registered: "registered", declined: "declined", noReply: "noReply", attended: "came",
+                 cameGave: "cameGave", cameDidntGive: "cameNoGift", gave: "gave", gaveNotCame: "gaveNotCame",
+                 gaveNotInvited: "gaveNotInvited", invitedDidntCome: "invitedNoShow" };
+  const out = { ...money, past };
+  out.people = {};
+  for (const [k, list] of Object.entries(KEYS)) { out[k] = c(list).parties; out.people[k] = c(list).people; }
+  if (!past) { out.invitedDidntCome = null; out.people.invitedDidntCome = null; }
+  out.peopleWords = Object.fromEntries(Object.entries(KEYS).map(([k, list]) => [k, EVF.peopleWords(c(list))]));
+  out.pledgedAll = Math.round((money.pledgedCents + money.laterCents)) / 100;
+  out.pledgedAllCents = money.pledgedCents + money.laterCents;
+  out.sources = { ...money.sources, pledgedAll: { key: "event-pledged", params: { event: eventId, all: true } },
+    invited: guestSrc("invited"), registered: guestSrc("registered"), declined: guestSrc("declined"), noReply: guestSrc("noReply"),
+    attended: { key: "event-attended", params: { event: eventId } }, gave: { key: "event-gave", params: { event: eventId } },
+    gaveNotCame: { key: "event-gave", params: { event: eventId, came: "no" } }, gaveNotInvited: guestSrc("gaveNotInvited"),
+    cameGave: guestSrc("cameGave"), cameDidntGive: guestSrc("cameNoGift"), invitedDidntCome: guestSrc("invitedNoShow") };
+  out.definitions = {
+    ...money.definitions,
+    pledgedAll: "Every unpaid installment of an open pledge made at this event, in every year it falls due.",
+    invited: W.invited, registered: W.registered, declined: W.declined, noReply: W.noReply, attended: W.attended,
+    gave: W.gave, cameGave: W.cameGave, cameDidntGive: W.cameNoGift, gaveNotCame: W.gaveNotCame,
+    gaveNotInvited: W.gaveNotInvited, invitedDidntCome: W.invitedNoShow,
   };
-  // the one sentence that shows the figures add up
+  // the one sentence that shows the figures add up, in parties
+  const n = v => Number(v || 0).toLocaleString("en-US");
   out.addsUp = out.attended || out.gave
-    ? `${people(out.attended)} came: ${out.cameGave.toLocaleString("en-US")} gave and ${out.cameDidntGive.toLocaleString("en-US")} didn't. ${people(out.gave)} gave or pledged: ${out.cameGave.toLocaleString("en-US")} who came and ${out.gaveNotCame.toLocaleString("en-US")} who didn't.`
+    ? `${n(out.attended)} came: ${n(out.cameGave)} gave and ${n(out.cameDidntGive)} didn't. ${n(out.gave)} gave or pledged: ${n(out.cameGave)} who came and ${n(out.gaveNotCame)} who didn't.`
     : null;
   // FIX-59: the list's own sentence: who was asked, and what they answered
+  // EVENTS-3: a clause whose count is 0 is left out ("203 declined", never ", 0 didn't reply")
+  const said = parts => { const p = parts.filter(Boolean); return p.length > 1 ? `${p.slice(0, -1).join(", ")} and ${p[p.length - 1]}` : p.join(""); };
   out.listAddsUp = out.invited
-    ? `${people(out.invited)} invited: ${out.registered.toLocaleString("en-US")} said yes or came, ${out.declined.toLocaleString("en-US")} declined, ${out.noReply.toLocaleString("en-US")} didn't reply.`
-      + (out.invitedDidntCome != null ? ` Of the ${out.registered.toLocaleString("en-US")}, ${out.attended.toLocaleString("en-US")} came and ${out.invitedDidntCome.toLocaleString("en-US")} didn't.` : "")
+    ? `${n(out.invited)} invited: ${said([out.registered && `${n(out.registered)} said yes or came`, out.declined && `${n(out.declined)} declined`, out.noReply && `${n(out.noReply)} didn't reply`])}.`
+      + (out.invitedDidntCome != null && out.registered ? ` Of the ${n(out.registered)}, ${said([out.attended && `${n(out.attended)} came`, out.invitedDidntCome && `${n(out.invitedDidntCome)} didn't`])}.` : "")
     : null;
   return out;
 }
@@ -366,4 +317,4 @@ async function pledgeSummary(orgId, { yearEnd, today }) {
 // screen draws (scripts/ci/check-numbers.js). Empty in a bare script.
 const screens = {};
 
-module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, eventsRaised, eventGuests, screens, eventStory, pledgeSummary };
+module.exports = { importedWords, undatedWords, CAMPAIGN_GIFT_MATCH, inWindow, campaignWindowRefusal, donorGlance, campaignGiftTotals, goalRollupGiftTotals, publicBarRaised, lastYearSpan, vsLastYear, eventsRaised, screens, eventStory, pledgeSummary };

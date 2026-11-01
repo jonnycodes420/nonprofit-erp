@@ -1086,7 +1086,7 @@ function withDrift(deck, rows, { asOf, gone = new Set() } = {}) {
 }
 
 // IMPORT-5 · CAME, DIDN'T GIVE. Everyone marked as attending a recent event
-// with no gift or pledge tied to it (numbers.eventGuests, the one answer) is a
+// with no gift or pledge tied to it (shared/numbers/events.js, the one answer) is a
 // Grow move: a thank-you for coming, with no ask on the first touch. One
 // person, one move: someone who already leads a move gets an "also" line.
 // `gone` is the item keys done, set aside or snoozed past today.
@@ -1102,16 +1102,20 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
   for (const t of tabs) for (const m of t.moves) for (const id of m.ids || []) byId.set(id, m);
   const grow = tabs.find(t => t.key === "grow");
   const added = [], seen = new Set();
+  // EVENTS-3: one move per PARTY (a household who came together is one note),
+  // its people on the move; the count is parties, as the event page's is.
   for (const ev of recent) {
     const total = ev.cameNoGift.length;
     for (const p of ev.cameNoGift) {
+      const people = (p.people || [p]).filter(x => !x.noRecord);
       const key = `${ev.id}:${p.id}`;
-      // FIX-59: a walk-in with no person record has no profile to open
-      if (p.noRecord || gone.has(key) || seen.has(p.id)) continue;
+      // FIX-59: a walk-in with no person record has no profile to open. A
+      // move set aside for one of the party (before EVENTS-3) stays set aside.
+      if (!people.length || gone.has(key) || people.some(x => gone.has(`${ev.id}:${x.id}`)) || seen.has(p.id)) continue;
       seen.add(p.id);
       const what = `Came to the ${ev.name}${ev.date ? ` on ${longDate(ev.date)}` : ""} and didn't give. Thank them for coming.`;
       const facts = [["event", ev.name], ...(ev.date ? [["event date", longDate(ev.date)]] : []), ["came, didn't give", String(total)]];
-      const led = byId.get(p.id);
+      const led = people.map(x => byId.get(x.id)).find(Boolean);
       if (led) {
         led.also = [...(led.also || []), { kind: "came_no_gift", label: "Came, didn't give", line: what }];
         led.facts = [...(led.facts || []), ...facts];
@@ -1120,12 +1124,13 @@ function withEventGuests(deck, events, { asOf, gone = new Set() } = {}) {
       const when = windowWords(asOf, addDays(asOf, 14));
       added.push({
         id: `came_no_gift:${key}`, kind: "came_no_gift", itemKey: key, tab: "grow", label: "Grow · Came, didn't give",
-        name: p.name, lead: p.id, ids: [p.id], cents: 0, eventId: ev.id,
+        name: p.name, lead: people[0].id, ids: people.map(x => x.id), cents: 0, eventId: ev.id,
         what, why: CAME_WHY, who: null, channel: "Note", when: when.words, whenFrom: when.from,
         say: `${hello({ name: p.name })}, thank you for coming to the ${ev.name}. It meant a great deal to have you in the room.`,
         ask: null,
         action: { key: "draft", label: "Draft a thank-you for coming", taskKind: "write" },
-        group: { kind: "came_no_gift", title: `Came to the ${ev.name}, didn't give`, count: total, cents: null, eventId: ev.id, seeAll: `See all ${total}` },
+        group: { kind: "came_no_gift", title: `Came to the ${ev.name}, didn't give`, count: total, people: ev.counts ? ev.counts.cameNoGift.people : null,
+                 cents: null, eventId: ev.id, seeAll: `See all ${total}` },
         facts: [...facts, ["when", when.words]],
       });
     }

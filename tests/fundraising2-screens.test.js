@@ -135,8 +135,10 @@ async function main() {
   // who came, by the guest list's row (a couple's row is two people, one household)
   const cameRows = (await q(`SELECT COUNT(*)::int AS people, COUNT(DISTINCT COALESCE(d.household_id, d.id))::int AS rows FROM event_attendees a JOIN donors d ON d.id = a.donor_id
                                WHERE a.org_id=$1 AND a.event_id=$2 AND a.status='attended' AND d.deleted_at IS NULL`, [ORG, ev.id]))[0];
-  ok(`§4 the event page: $${KEY.dinner_total.toLocaleString("en-US")} raised, $104,050 pledged over all years, the key's ${KEY.attended} rows came`,
-     st.raisedCents === KEY.dinner_total * 100 && st.pledgedAllCents === 10405000 && st.attended === cameRows.people && cameRows.rows === KEY.attended, JSON.stringify([st.raisedCents, st.pledgedAllCents, st.attended, cameRows]));
+  // EVENTS-3: the page counts the key's rows (parties), the people beside them
+  ok(`§4 the event page: $${KEY.dinner_total.toLocaleString("en-US")} raised, $104,050 pledged over all years, the key's ${KEY.attended} came (${cameRows.people} people)`,
+     st.raisedCents === KEY.dinner_total * 100 && st.pledgedAllCents === 10405000 && st.attended === KEY.attended && cameRows.rows === KEY.attended
+     && st.people && st.people.attended === cameRows.people, JSON.stringify([st.raisedCents, st.pledgedAllCents, st.attended, st.people && st.people.attended, cameRows]));
   ok("§4 gave + came-and-didn't-give never exceeds the people involved; every count opens its people",
      st.cameDidntGive <= st.attended && st.sources && st.sources.attended && st.sources.gave && st.sources.cameDidntGive && st.sources.pledgedAll, JSON.stringify(st.sources || {}).slice(0, 300));
   const pl = (await api("GET", "/fundraising/pledges", tok));
@@ -228,14 +230,22 @@ async function eventList(tok) {
 
   const rep = (await api("GET", `/events/${EV}/report`, tok)).body || {};
   const f = Object.fromEntries((rep.figures || []).map(x => [x.key, x.value]));
+  const fp = Object.fromEntries((rep.figures || []).map(x => [x.key, x.people]));
   const st = rep.story || {};
+  // EVENTS-3: the page counts PARTIES. Everyone here is a party of one except
+  // cg9 and the spouse (sp), one household: sp gave and is not on the list,
+  // cg9 came. So the household is one party that came and gave: Gave is the
+  // fixture's 12 people in 11 parties, and Gave, didn't come is 2 (the spouse's
+  // household came, so their gift is under it, not here).
+  const PARTY = { gave: FIG.gave - 1, gaveNotCame: FIG.gaveNotCame - 1 };
   ok(`§7 Registered is ${FIG.registered} people who said yes or came (party sizes, the invited who never replied and the declined are not registrations)`,
      f.registered === FIG.registered && st.registered === FIG.registered, JSON.stringify([f.registered, st.registered]));
   ok(`§7 Declined is its own figure (${FIG.declined}), with its sentence and a source that opens its rows`,
      f.declined === FIG.declined && st.declined === FIG.declined && (rep.figures.find(x => x.key === "declined") || {}).sentence && st.sources && st.sources.declined, JSON.stringify(rep.figures && rep.figures.find(x => x.key === "declined")));
-  ok(`§7 Came ${FIG.came} = came, gave ${FIG.cameGave} + came, didn't give ${FIG.cameDidntGive}; gave or pledged ${FIG.gave}`,
-     f.attended === FIG.came && st.attended === FIG.came && f.cameGave === FIG.cameGave && f.cameNoGift === FIG.cameDidntGive && f.cameGave + f.cameNoGift === f.attended && st.gave === FIG.gave,
-     JSON.stringify([f.attended, st.attended, f.cameGave, f.cameNoGift, st.gave]));
+  ok(`§7 Came ${FIG.came} = came, gave ${FIG.cameGave} + came, didn't give ${FIG.cameDidntGive}; gave or pledged ${PARTY.gave} (${FIG.gave} people)`,
+     f.attended === FIG.came && st.attended === FIG.came && f.cameGave === FIG.cameGave && f.cameNoGift === FIG.cameDidntGive && f.cameGave + f.cameNoGift === f.attended
+     && st.gave === PARTY.gave && fp.gave === FIG.gave && st.people.gave === FIG.gave,
+     JSON.stringify([f.attended, st.attended, f.cameGave, f.cameNoGift, st.gave, fp.gave]));
   const lab = k => (rep.figures.find(x => x.key === k) || {}).label;
   ok(`§7 Said yes, didn't come is Registered less Came (${FIG.saidYesDidntCome}), under that name`,
      f.invitedNoShow === FIG.saidYesDidntCome && st.invitedDidntCome === FIG.saidYesDidntCome && f.registered === f.attended + f.invitedNoShow && lab("invitedNoShow") === "Said yes, didn't come",
@@ -244,9 +254,10 @@ async function eventList(tok) {
      f.invited === FIG.invited && st.invited === FIG.invited && f.noReply === FIG.noReply && st.noReply === FIG.noReply && f.invited === f.registered + f.declined + f.noReply
      && ["invited", "noReply"].every(k => (rep.figures.find(x => x.key === k) || {}).source && (rep.figures.find(x => x.key === k) || {}).sentence),
      JSON.stringify([f.invited, st.invited, f.noReply, st.noReply]));
-  ok(`§7 Gave ${FIG.gave} (household-aware) = came, gave ${FIG.cameGave} + gave, didn't come ${FIG.gaveNotCame}`,
-     f.gave === FIG.gave && st.gave === FIG.gave && st.gaveNotCame === FIG.gaveNotCame && st.cameGave + st.gaveNotCame === st.gave, JSON.stringify([f.gave, st.gave, st.cameGave, st.gaveNotCame]));
-  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} people invited: ${FIG.registered} said yes or came, ${FIG.declined} declined, ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
+  ok(`§7 Gave ${PARTY.gave} (a household once) = came, gave ${FIG.cameGave} + gave, didn't come ${PARTY.gaveNotCame}; the people beside them`,
+     f.gave === PARTY.gave && st.gave === PARTY.gave && st.gaveNotCame === PARTY.gaveNotCame && st.cameGave + st.gaveNotCame === st.gave
+     && fp.gaveNotCame === PARTY.gaveNotCame, JSON.stringify([f.gave, st.gave, st.cameGave, st.gaveNotCame, fp.gaveNotCame]));
+  ok("§7 the list's sentence says it plainly", st.listAddsUp === `${FIG.invited} invited: ${FIG.registered} said yes or came, ${FIG.declined} declined and ${FIG.noReply} didn't reply. Of the ${FIG.registered}, ${FIG.came} came and ${FIG.saidYesDidntCome} didn't.`, st.listAddsUp);
   const rows = async k => (await api("GET", `/events/${EV}/rows?rows=${k}`, tok)).body || {};
   const [regRows, decRows] = [await rows("registered"), await rows("declined")];
   const declinedIds = new Set(["d1", "d2", "d3", "d4"].map(k => ids[k]));
@@ -292,6 +303,17 @@ async function eventList(tok) {
     } });
     ok("§7 the truth check goes red when the page's Registered, Invited or Gave, or the door's count, is off by one",
        !planted.ok && ["registered", "came", "invited", "gave"].every(k => planted.diffs.some(x => new RegExp(`Marigold's Harvest Supper" ${k}\\b`).test(x))), JSON.stringify(planted.diffs).slice(0, 600));
+    // EVENTS-3, PLANTED: the household (cg9, who came, and the spouse, who gave)
+    // counted as two parties, on the page and in its story alike: Gave reads
+    // its 12 people, not its 11 parties. The truth check must go red.
+    const twice = await assertSurfacesAgree(ORG, { token: tok, soft: true, skip: ["atlas"], plantEvent: (id, b) => {
+      if (id !== EV) return b;
+      const rr = JSON.parse(JSON.stringify(b.rep));
+      const g = rr.figures.find(x => x.key === "gave"); g.value = g.people; rr.story.gave = rr.story.people.gave;
+      return { rep: rr, kiosk: b.kiosk };
+    } });
+    ok("§7 the truth check goes red when a couple is counted twice (Gave as people, page and story alike)",
+       !twice.ok && twice.diffs.some(x => /Marigold's Harvest Supper" gave\b/.test(x)), JSON.stringify(twice.diffs).slice(0, 600));
     let err = null;
     try { await assertSurfacesAgree(ORG, { token: tok, skip: ["atlas"] }); } catch (e) { err = e.message; }
     ok("§7 the surfaces agree on every event's list: database, page, rows, drawer, Events list, the door, Fundraising, Home, Ask", !err, err && err.slice(0, 800));

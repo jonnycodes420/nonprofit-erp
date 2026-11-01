@@ -157,7 +157,11 @@ jobs:
   # the `guards` job, and the battery waits on them.
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # EVENTS-3: 40 → 60. The battery finds 192 suites since ARCH-1 and took
+    # 39m45s on PR #292; EVENTS-3's first run was cancelled at 40m15s with
+    # suites still running. Splitting it into a matrix of jobs is its own CI
+    # build (docs/defects.md).
+    timeout-minutes: 60
     needs: [tree-check, guards]
     if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
 

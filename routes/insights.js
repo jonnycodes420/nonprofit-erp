@@ -65,7 +65,7 @@ async function deckWithDrift(req, deck, asOf) {
   } catch { /* the deck stands without Drift */ }
   // IMPORT-5: the guests who came and didn't give are Grow moves
   try {
-    const events = await require("../numbers").eventGuests(req.user.orgId, { asOf });
+    const events = await require("../shared/numbers/events").eventFigures(query, req.user.orgId, { asOf });
     const outs = await query(`SELECT DISTINCT ON (item_key) item_key, state, until::text AS until FROM insight_outcomes
                                WHERE org_id=? AND kind='came_no_gift' ORDER BY item_key, created_at DESC`, [req.user.orgId]);
     const gone = new Set(outs.filter(o => o.state !== "snoozed" || (o.until && o.until > asOf)).map(o => o.item_key));
