@@ -762,11 +762,11 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (F.newDonors) {
         agree(`first-time donors in ${fy.label}`, [["the key", firsts.length], ["Reports' giving summary", Number(F.newDonors.value)]]);
         const ids = [];
-        for (let pg = 1; pg <= 10; pg++) {
-          const r = await get(`/figures/givers/rows?from=${fy.from}&to=${fy.to}&first=new&page=${pg}&pageSize=500`).catch(() => null);
+        for (let pg = 1; pg <= 50; pg++) {   // the drawer pages at its own size; read until a page is empty
+          const r = await get(`/figures/givers/rows?from=${fy.from}&to=${fy.to}&first=new&page=${pg}&pageSize=200`).catch(() => null);
           const rows = (r && r.rows) || [];
           ids.push(...rows.map(x => x.donorId || x.donor_id || x.id));
-          if (rows.length < 500) break;
+          if (!rows.length || ids.length >= Number(F.newDonors.value)) break;
         }
         const want = new Set(firsts), got = new Set(ids);
         const missing = firsts.filter(id => !got.has(id)), extra = ids.filter(id => !want.has(id));
@@ -805,13 +805,10 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
     // The report holds at most 100 rows: it is compared only when it holds them all.
     const g = key.giversBetween(`${yy}-01-01`, key.asOf);
     if (topH && Array.isArray(topH.rows) && (topH.rows.length < 100 || g.units < 100)) {
-      const all = key.rowsBetween(`${yy}-01-01`, key.asOf);
-      agree(`gave from ${yy}-01-01 to ${key.asOf}, a household once`, [["the key", g.units], ["Reports' top donors by household (rows)", topH.rows.length]], String,
-        { "Reports' top donors by household (rows)": ["D-5", all.units] });
-      agree(`gave from ${yy}-01-01 to ${key.asOf}, each person`, [["the key", g.people], ["Reports' top donors by household (members)", topH.rows.reduce((n, r) => n + Number(r.memberCount || 0), 0)]], String,
-        { "Reports' top donors by household (members)": ["D-5", all.people] });
+      agree(`gave from ${yy}-01-01 to ${key.asOf}, a household once`, [["the key", g.units], ["Reports' top donors by household (rows)", topH.rows.length]]);
+      agree(`gave from ${yy}-01-01 to ${key.asOf}, each person`, [["the key", g.people], ["Reports' top donors by household (members)", topH.rows.reduce((n, r) => n + Number(r.memberCount || 0), 0)]]);
       agree(`given from ${yy}-01-01 to ${key.asOf}, by household`, [["the key (hard credit)", key.between(`${yy}-01-01`, key.asOf).cents],
-        ["Reports' top donors by household (sum)", topH.rows.reduce((n, r) => n + cents(r.total), 0)]], money, { "Reports' top donors by household (sum)": ["D-5", all.cents] });
+        ["Reports' top donors by household (sum)", topH.rows.reduce((n, r) => n + cents(r.total), 0)]], money);
     }
   }
 

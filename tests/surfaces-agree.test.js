@@ -201,10 +201,10 @@ async function blindSpots() {
   const f = await agrees("D: every surface agrees with the key (credits, lapsed by person, households, deposits, campaigns, first-time)", ORG_D, tok);
   const k = f.facts.key || {};
   const knownIds = new Set((f.known || []).map(x => /^KNOWN (D-\d+)/.exec(x)[1]));
-  ok("D: the logged defects (docs/defects.md) are found, each at exactly the value it predicts: D-1 to D-7",
-     ["D-1", "D-2", "D-3", "D-4", "D-5", "D-6", "D-7"].every(x => knownIds.has(x)) && knownIds.size === 7, [...knownIds]);
+  ok("D: the logged defects (docs/defects.md) are found, each at exactly the value it predicts: D-1 to D-4, D-6, D-7",
+     ["D-1", "D-2", "D-3", "D-4", "D-6", "D-7"].every(x => knownIds.has(x)) && knownIds.size === 6, [...knownIds]);
   const strict = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, noKnown: true });
-  ok("D: with the logged defects counted as failures, the check is red (they are found, not hidden)", !strict.ok && strict.diffs.length >= 7, strict.diffs.length);
+  ok("D: with the logged defects counted as failures, the check is red (they are found, not hidden)", !strict.ok && strict.diffs.length >= 6, strict.diffs.length);
   // the key is the reference: a key that says one more lapsed person, or one
   // less household, turns the check red
   const p1 = await assertSurfacesAgree(ORG_D, { token: tok, soft: true, plantKey: K => ({ ...K, lapsed: [...K.lapsed, ids["Moss Pledger"] || "x"].sort() }) });

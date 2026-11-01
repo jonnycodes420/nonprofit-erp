@@ -24239,7 +24239,9 @@ function reportYearLabel(y, p) {
   return FP ? FP.fyLabelFromEnd(y, p.fiscalStartMonth || 7) : `FY${y}`;
 }
 function reportGiftWhere(p, orgId, params) {
-  let sql = " g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?";
+  // TRUTH-1: a report's rows are money, so a soft or matching credit row is
+  // never in them (the same rule as the gifts source their figures open).
+  let sql = ` g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`;
   params.push(orgId, p.from, p.to);
   if (p.fundId) { sql += " AND g.fund_id = ?"; params.push(p.fundId); }
   if (p.campaignId) { sql += " AND g.campaign_id = ?"; params.push(p.campaignId); }
@@ -24657,6 +24659,8 @@ async function reportThreeYear(orgId, p) {
 // new vs returning, growth vs prior year, donor retention for the year, and
 // the by-fund / by-campaign breakdown — one page a board wants at year end.
 async function reportAnnual(orgId, p) {
+  // TRUTH-1: every query here is money, so a soft or matching credit row is in
+  // none of them (its rows foot to the gifts source, which leaves them out).
   // FIX-60: a year still running is cut at today and compared with the same
   // stretch of the year before (`priorSpan`), never with all of it. Retention
   // keeps the whole prior year: it asks who of LAST year's donors came back.
@@ -24668,40 +24672,40 @@ async function reportAnnual(orgId, p) {
             COUNT(DISTINCT g.donor_id)::int AS unique_donors,
             COALESCE(AVG(g.amount),0) AS avg_gift
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, cur.from, cur.to]);
   const [priorT] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
     [orgId, priorSpan.from, priorSpan.to]);
   const [split] = await query(
     `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?),
-          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
+                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}),
+          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts g WHERE org_id = ? AND ${NOT_CREDIT("g")} GROUP BY donor_id)
      SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
      FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
     [orgId, cur.from, cur.to, orgId, cur.from, cur.to]);
   // Retention: donors who gave in the prior year and gave again this year.
   const [ret] = await query(
     `WITH prior AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?)
+                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")})
      SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
             (SELECT COUNT(*) FROM prior pr WHERE EXISTS
-               (SELECT 1 FROM gifts g WHERE g.org_id=? AND g.donor_id=pr.donor_id AND g.date >= ? AND g.date <= ?))::int AS retained`,
+               (SELECT 1 FROM gifts g WHERE g.org_id=? AND g.donor_id=pr.donor_id AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}))::int AS retained`,
     [orgId, prior.from, prior.to, orgId, cur.from, cur.to]);
   const byFund = await query(
     `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   const byCampaign = await query(
     `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
-     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   // REPORTS-4: the year's figures through their sources; the page shows them.
   const yw = { from: cur.from, to: cur.to };
