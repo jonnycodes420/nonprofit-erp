@@ -89,16 +89,18 @@ async function timedPreview(base, token, body) {
   const ms = performance.now() - t0, trips = Number(r.headers.get("x-steward-round-trips"));
   return { status: r.status, body: json, ms, trips: Number.isFinite(trips) ? trips : null, atProd: ms + (Number.isFinite(trips) ? trips : 0) * ROUND_TRIP_MS };
 }
+const { withinBudget } = require("./budget");
 async function previewBudgets({ ok, base, token, XLSX }) {
   const out = [];
   for (const f of [...FILES, WORKBOOK]) {
     const sheets = await sheetsOf(f, XLSX), fileName = path.basename(f);
     const first = await timedPreview(base, token, { fileName, sheets, answers: {} });
     const again = await timedPreview(base, token, { fileName, fileKey: first.body.fileKey, answers: { eventDate: "2026-10-22", useEventDate: true } });
-    ok(`preview budget ${fileName}: first ${Math.round(first.atProd)}ms (${Math.round(first.ms)}ms + ${first.trips} round trips × ${ROUND_TRIP_MS}ms) under ${FIRST_MS}ms`,
-       first.status === 200 && first.trips != null && first.atProd < FIRST_MS, JSON.stringify({ status: first.status, ms: first.ms, trips: first.trips }));
-    ok(`preview budget ${fileName}: re-read ${Math.round(again.atProd)}ms (${Math.round(again.ms)}ms + ${again.trips} round trips) under ${REREAD_MS}ms`,
-       again.status === 200 && again.trips != null && again.atProd < REREAD_MS, JSON.stringify({ status: again.status, ms: again.ms, trips: again.trips }));
+    const timed = withinBudget(ok);
+    timed(`preview budget ${fileName}: first ${Math.round(first.atProd)}ms (${Math.round(first.ms)}ms + ${first.trips} round trips × ${ROUND_TRIP_MS}ms) under ${FIRST_MS}ms`,
+       { drew: first.status === 200 && first.trips != null, ms: first.atProd, budget: FIRST_MS, extra: JSON.stringify({ status: first.status, ms: first.ms, trips: first.trips }) });
+    timed(`preview budget ${fileName}: re-read ${Math.round(again.atProd)}ms (${Math.round(again.ms)}ms + ${again.trips} round trips) under ${REREAD_MS}ms`,
+       { drew: again.status === 200 && again.trips != null, ms: again.atProd, budget: REREAD_MS, extra: JSON.stringify({ status: again.status, ms: again.ms, trips: again.trips }) });
     out.push({ fileName, first, again });
   }
   return out;
