@@ -177,6 +177,20 @@ const giftId = async (donor, amount) => (await q(`SELECT id FROM gifts WHERE don
     const pf = await figs(O, p);
     ok(`§4 ${label} year: the profile's This year is $700`, pf.thisYear && pf.thisYear.value === 700, pf.thisYear);
   }
+  // ARCH-1 item 6: /annual-fund is a calendar year (its money and its months),
+  // and it handed that calendar year to the retention count as a FISCAL start
+  // year, so a July org's May gift was raised but its giver was not a donor.
+  {
+    const O = await makeOrg(7);
+    const p = await person(O, "May Giver");
+    const P = Number(today.slice(0, 4)) - 1;
+    await api("POST", `/donors/${p}/gifts`, O.tok, { amount: 500, date: `${P}-05-15` });
+    await api("POST", `/donors/${p}/gifts`, O.tok, { amount: 90, date: `${P - 1}-05-15` });
+    const af = (await api("GET", `/annual-fund?year=${P}`, O.tok)).body || {};
+    ok(`§4 July year: /annual-fund ${P} raised the May gift`, af.totalRaised === 500, af.totalRaised);
+    ok(`§4 July year: /annual-fund ${P} counts the May giver as a donor`, af.donors && af.donors.total === 1, af.donors);
+    ok(`§4 July year: /annual-fund ${P} counts them retained from ${P - 1}'s May`, af.donors && af.donors.retained === 1, af.donors);
+  }
 
   // ── §5 first gift date ─────────────────────────────────────────────────
   console.log("\n§5 First gift date after an add, a refund, a delete, a merge and an import");

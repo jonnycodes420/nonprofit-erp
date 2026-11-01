@@ -12446,7 +12446,7 @@ for (const k of Object.keys(RETENTION_FLOOR)) {
 // scope retention to just that user's assigned donors (same assigned_to
 // pattern as GET /dashboard/today) — /annual-fund never passes this, so its
 // behavior is unchanged.
-async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) {
+async function computeRetentionRate(orgId, { year = null, gifts, userId, startMonth = null } = {}) {
   // NUMBERS-2 · ONE RETENTION, the Fundraising Effectiveness Project's: of the
   // people who gave last fiscal year (the org's own year, Settings), the share
   // who have given again this fiscal year. A gift is above zero (a refund is
@@ -12454,9 +12454,10 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   // retention-window, so every screen that shows the rate shows one number.
   // `year` is the start year of the fiscal year (for a January year, the
   // calendar year); it defaults to the year today is in, in the org's time.
+  // `startMonth: 1` asks for calendar years instead (ARCH-1: /annual-fund).
   const tzOrg = await orgTz(orgId);   // ORG_TZ_SEAM_OK
   const today = orgToday(tzOrg);
-  const sm = orgTime.orgFiscalStartMonth(tzOrg);
+  const sm = startMonth || orgTime.orgFiscalStartMonth(tzOrg);
   const pad = n => String(n).padStart(2, "0");
   const fyOf = y => { const end = sm === 1 ? `${y}-12-31` : orgTime.addDays(`${y + 1}-${pad(sm)}-01`, -1); return { from: `${y}-${pad(sm)}-01`, to: end }; };
   if (year == null) { const t = orgTime.parseCivil(today); year = t.m < sm ? t.y - 1 : t.y; }

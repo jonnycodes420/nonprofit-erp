@@ -22833,7 +22833,8 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   // Shared with the Home dashboard's Retention Rate metric (see
   // computeRetentionRate) so the two can never disagree — pass the
   // already-fetched allGifts through rather than querying twice.
-  const retentionResult = await computeRetentionRate(orgId, { year, gifts: allGifts });
+  // `year` is a calendar year here, so retention counts calendar years too.
+  const retentionResult = await computeRetentionRate(orgId, { year, gifts: allGifts, startMonth: 1 });
   const totalDonors    = retentionResult.thisYearCount;
   const retained       = retentionResult.retained;
   const acquired       = totalDonors - retained;
