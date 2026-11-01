@@ -2160,6 +2160,8 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_by TEXT`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  // SECURE-3: a synced email's body, sealed (server/mail/sealedMail.js). Schema only; rows are sealed by scripts/ops/seal-synced-mail.js.
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS body_sealed TEXT, ADD COLUMN IF NOT EXISTS body_key_id TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS created_import_id TEXT`);
 
   // ── TRANS-1 Part 0 — THE MOVE. The state of an organisation's migration
@@ -4185,6 +4187,8 @@ async function runSchemaInit(pool) {
   // INT-PROD-1: true only on a row the S3-put catch wrote to Postgres, so the
   // /health fallback alarm counts failures, not the demo seed's own rows.
   await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS s3_fallback BOOLEAN NOT NULL DEFAULT FALSE`);
+  // SECURE-3: a synced email's attachment is stored sealed; the header holds its wrapped data key.
+  await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS sealed_header TEXT, ADD COLUMN IF NOT EXISTS sealed_key_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
   // FIX-20 Part 0: an asset is PRIVATE unless an admin placed it on a public
   // page. /portal-assets/:id serves a public one to anyone and a private one

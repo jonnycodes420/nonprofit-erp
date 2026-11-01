@@ -10101,6 +10101,7 @@ function syncErrorSentence(providerKey, what, e) {
 const APIC = require("./apiCheck");
 const MBF = require("./mailboxFetch");
 const CLIENT_SAFE = require("./clientSafe");
+const SEALED_MAIL = require("./server/mail/sealedMail");
 const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
 const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
 async function noteRetryAfter(conn, e) {
@@ -10273,13 +10274,15 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
     const screened = await CLIENT_SAFE.screenForStore(orgId, { subject: decision.subject, body: decision.body }, privacy);
     decision.subject = screened.subject; decision.body = screened.body;
     const note = ML.conversationNote(decision, { staffName });
-    const body = decision.body ? `${note}\n\n${decision.body}` : note;
+    // SECURE-3: `note` is the one line; the body is sealed with this row's id
+    // (server/mail/sealedMail.js). No key throws, and the run fails loudly.
     for (const donorId of decision.donorIds) {
       const intId = `int_${uuid().slice(0, 8)}`;
+      const sealedCols = SEALED_MAIL.sealedEmailColumns(orgId, intId, note, decision.body);
       await run(
-        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_at, created_by, logged_by_name, metadata)
-         VALUES (?,?,?,'email',?,?,?,?,?,?)`,
-        [intId, orgId, donorId, body, decision.date,
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, body_sealed, body_key_id, date, created_at, created_by, logged_by_name, metadata)
+         VALUES (?,?,?,'email',?,?,?,?,?,?,?,?)`,
+        [intId, orgId, donorId, sealedCols.note, sealedCols.body_sealed, sealedCols.body_key_id, decision.date,
          m.receivedAt || new Date().toISOString(), actorId, staffName,
          JSON.stringify({ message_id: String(m.id), provider: providerKey, direction: decision.direction,
                           subject: decision.subject, attachments: decision.attachmentCount,
@@ -10307,7 +10310,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
     // the one rule, shared with the BCC path). Anybody else: nothing on any grant.
     await require("./routes/grantMail").routeToFunderGrant({
       orgId, source: "mailbox", provider: providerKey, actorId, actorName: staffName,
-      ownerAddress: conn.address, staffEmails, note: body, attachmentCount: m.attachmentCount,
+      ownerAddress: conn.address, staffEmails, note, body: decision.body, sealAttachments: true, attachmentCount: m.attachmentCount,
       message: { id: String(m.id), from: m.from, to: m.to, cc: m.cc, subject: decision.subject,
                  sentOn: decision.date, receivedAt: m.receivedAt },
       loadAttachments: () => fetchMailboxAttachments(providerKey, token, m),

@@ -32,6 +32,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const grantDocs = require("../grantDocs");
+const SEALED_MAIL = require("../server/mail/sealedMail");
 
 // r0 is mounted with the other grant modules; r1 is mounted AHEAD of
 // routes/crm.js, because crm's GET /grants/:id answers 404 for any id and a
@@ -117,6 +118,10 @@ async function pickGrant(orgId, funderId) {
  * @param o.actorId      `system:mailbox/<provider>/<userId>` or `system:inbound-email`
  * @param o.actorName    the staff member whose mail it was
  * @param o.note         the timeline line already written for the donor side
+ * @param o.body         SECURE-3: the message text. When given it is sealed on
+ *                       the funder's row (server/mail/sealedMail.js) and `note`
+ *                       stays the one line; the BCC path passes none (unchanged)
+ * @param o.sealAttachments SECURE-3: the mailbox read's attachments are stored sealed
  * @param o.attachmentCount how many attachments the message says it has
  * @param o.loadAttachments async () => [{ fileName, contentType, buffer?, size? }] or null (not available)
  */
@@ -153,11 +158,13 @@ async function routeToFunderGrant(o) {
         WHERE org_id = ? AND donor_id = ? AND metadata->>'message_id' = ? RETURNING id`,
       [JSON.stringify(meta), orgId, f.funder_id, messageId]);
     if (!upd.length) {
-      const note = o.note || subject;
+      const intId = "int_" + C.uuid().slice(0, 8);
+      const cols = o.body ? SEALED_MAIL.sealedEmailColumns(orgId, intId, o.note || subject, o.body)
+        : { note: o.note || subject, body_sealed: null, body_key_id: null };
       await C.run(
-        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_at, created_by, logged_by_name, metadata)
-         VALUES (?,?,?,'email',?,?,?,?,?,?)`,
-        ["int_" + C.uuid().slice(0, 8), orgId, f.funder_id, note, sentOn || null,
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, body_sealed, body_key_id, date, created_at, created_by, logged_by_name, metadata)
+         VALUES (?,?,?,'email',?,?,?,?,?,?,?,?)`,
+        [intId, orgId, f.funder_id, cols.note, cols.body_sealed, cols.body_key_id, sentOn || null,
          m.receivedAt || new Date().toISOString(), o.actorId, o.actorName || null,
          JSON.stringify({ message_id: messageId, provider: o.provider || null, via: o.source,
                           direction: direction === "out" ? "outbound" : "inbound", subject,
@@ -186,7 +193,7 @@ async function routeToFunderGrant(o) {
       if (!loaded) { result.attachmentsUnavailable = true; out.push(result); continue; }
       for (const a of loaded) {
         const stored = await storeAttachment({ orgId, grantId, messageId, attachment: a, contact: f, sentOn, subject,
-          direction, actorId: o.actorId, actorName: o.actorName, source: o.source });
+          direction, actorId: o.actorId, actorName: o.actorName, source: o.source, seal: o.sealAttachments === true });
         if (stored.ok) result.documents++;
         else if (stored.reason) result.refused.push({ fileName: a.fileName || "", reason: stored.reason });
       }
@@ -198,7 +205,7 @@ async function routeToFunderGrant(o) {
   return { funders: out };
 }
 
-async function storeAttachment({ orgId, grantId, messageId, attachment: a, contact, sentOn, subject, direction, actorId, actorName, source }) {
+async function storeAttachment({ orgId, grantId, messageId, attachment: a, contact, sentOn, subject, direction, actorId, actorName, source, seal = false }) {
   const mime = mimeFor(a.contentType, a.fileName);
   if (!grantDocs.mimeAllowed(mime)) return { ok: false, reason: "type_not_stored" };
   const fileName = grantDocs.sanitizeFilename(a.fileName, mime);
@@ -213,7 +220,7 @@ async function storeAttachment({ orgId, grantId, messageId, attachment: a, conta
   // HTML is refused before anything is stored.
   if (!grantDocs.bytesMatchMime(buffer, mime)) return { ok: false, reason: "type_mismatch" };
 
-  const asset = await C.putThemeAsset({ orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime });
+  const asset = await C.putThemeAsset({ orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime, seal });
   const id = "gdoc_" + C.uuid().slice(0, 10);
   const way = direction === "out" ? "Sent to" : "Received from";
   const ins = await C.query(

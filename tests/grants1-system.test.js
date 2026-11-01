@@ -221,11 +221,41 @@ async function reset() {
   ok("§2 the grant's documents read back through the documents route", (await api("GET", "/grants/g_g1_open/documents", dana))
     .body?.documents?.some(d => d.fileName === "Spring Report 2026.pdf"), "missing");
 
+  // SECURE-3 · A SYNCED ATTACHMENT IS SEALED AT REST, AND OPENS THROUGH THE APP.
+  // Red on main: the bytes sit in portal_assets.data as plain base64.
+  const [asset] = pdf ? await q(`SELECT * FROM portal_assets WHERE id=$1`, [pdf.asset_id]) : [];
+  const storedBytes = asset && asset.data ? Buffer.from(asset.data, "base64") : Buffer.alloc(0);
+  ok("SECURE-3 the PDF's bytes are not readable in the table", !!asset && /^m1\.k1\./.test(asset.sealed_header || "")
+    && asset.sealed_key_id === "k1" && storedBytes.length > 0 && !storedBytes.includes(Buffer.from("%PDF-1.4")),
+    asset && { header: String(asset.sealed_header).slice(0, 6), head: storedBytes.subarray(0, 8).toString() });
+  const docList = await api("GET", "/grants/g_g1_open/documents", dana);
+  const docUrl = ((docList.body && docList.body.documents) || []).find(d => d.fileName === "Spring Report 2026.pdf")?.url;
+  const dl = docUrl ? await fetch(BASE + docUrl, { headers: { Authorization: "Bearer " + dana } }) : null;
+  const dlBytes = dl && dl.ok ? Buffer.from(await dl.arrayBuffer()) : null;
+  ok("SECURE-3 …and it downloads exactly as it arrived", !!dlBytes && dlBytes.equals(PDF), dl && dl.status);
+
   const funderInts = await q(`SELECT * FROM interactions WHERE org_id=$1 AND donor_id='d_g1_fdn' ORDER BY date`, [ORG]);
   ok("§2 both funder messages are on the funder's own timeline, with the grant",
     funderInts.length === 2 && funderInts.every(i => i.metadata && i.metadata.grant_id === "g_g1_open")
     && funderInts.every(i => i.created_by === `system:mailbox/google/${USER}`), funderInts.map(i => i.metadata));
   ok("§2 and on the officer's", (await q(`SELECT 1 FROM interactions WHERE org_id=$1 AND donor_id='d_g1_officer'`, [ORG])).length === 2, "missing");
+
+  // SECURE-3 · THE BODY IS SEALED ON BOTH WRITES (the sync's, on the officer;
+  // the grant routing's, on the funder) and the profile timeline opens it.
+  const BODY_OUT = "Ruth, the spring report is attached.";
+  const outRows = await q(`SELECT * FROM interactions
+                            WHERE org_id=$1 AND metadata->>'message_id'='m_g1_out' AND donor_id IN ('d_g1_fdn','d_g1_officer')`, [ORG]);
+  ok("SECURE-3 the email's text is not readable in the table, on the funder or the officer",
+    outRows.length === 2 && outRows.every(r => !String(r.note).includes(BODY_OUT) && /^m1\.k1\./.test(r.body_sealed || "")
+      && r.body_key_id === "k1" && !String(r.body_sealed).includes("spring report")),
+    outRows.map(r => ({ donor: r.donor_id, note: r.note, sealed: String(r.body_sealed || "").slice(0, 6) })));
+  for (const who of ["d_g1_fdn", "d_g1_officer"]) {
+    const prof = await api("GET", `/donors/${who}`, dana);
+    const line = ((prof.body && prof.body.interactions) || []).find(i => i.metadata && i.metadata.message_id === "m_g1_out");
+    ok(`SECURE-3 …and ${who}'s timeline reads it back whole, with no sealed column sent`,
+      !!line && line.note.includes(BODY_OUT) && line.note.startsWith("Dana Reyes wrote: Our spring report") && !("body_sealed" in line),
+      { status: prof.status, rows: ((prof.body && prof.body.interactions) || []).length, note: line && line.note });
+  }
 
   // The ordinary donor: her line as before, and nothing on any grant.
   const donorInts = await q(`SELECT * FROM interactions WHERE org_id=$1 AND donor_id='d_g1_donor'`, [ORG]);

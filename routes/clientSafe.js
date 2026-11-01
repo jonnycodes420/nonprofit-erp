@@ -219,9 +219,10 @@ app.post("/privacy/removals/:id/undo", requireAuth, checkWriteAccess, wrap(async
   if (r.purged_at || !r.rows) return res.status(410).json({ error: "gone", sentence: `That was more than ${CSV.REMOVAL_UNDO_DAYS} days ago, so it is gone for good.` });
   const rows = typeof r.rows === "string" ? JSON.parse(r.rows) : r.rows;
   for (const x of rows) {
-    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,created_at,logged_by_name,metadata)
-               VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
-      [x.id, orgId, x.donor_id, x.type, x.note, x.date, x.created_by, x.created_at, x.logged_by_name,
+    // SECURE-3: the sealed body goes back with its row (same id, same org, so it still opens).
+    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,body_sealed,body_key_id,date,created_by,created_at,logged_by_name,metadata)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
+      [x.id, orgId, x.donor_id, x.type, x.note, x.body_sealed || null, x.body_key_id || null, x.date, x.created_by, x.created_at, x.logged_by_name,
        x.metadata == null ? null : (typeof x.metadata === "string" ? x.metadata : JSON.stringify(x.metadata))]);
   }
   await run("UPDATE client_email_removals SET undone_at=NOW(), rows=NULL WHERE id=? AND org_id=?", [r.id, orgId]);
