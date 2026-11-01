@@ -6,7 +6,6 @@ one deletes its line.
 
 ## Donors, Data health and imports (SWEEP-2, 31 Oct 2026; walk in docs/sweeps/sweep-2/walk.md)
 
-- **P3 · smoke-walk's report reads race the report's figures.** On SWEEP-2's first CI run `units.feeTablesOnPage` read 0 rows from the bookkeeper's table that the next check read drawn (run 41249592761), and the "?"-between-a-count-and-its-noun check only sees a report's figures when they arrive before it reads (CI yes, locally no), which is how SWEEP-2's CI found four real misses that local runs pass. Suggested: the next tests build waits for a report's figures and rows before reading them, and proves it by planting one of the four back.
 - **P3 · On a phone the Donors toolbar fills the first screen.** Two chips, search, four view tabs, Log a call, + Add, Import & tools, five selects and three buttons come before the first donor at 390, and "Re-engage" breaks as "Re- / engage". Suggested: the people sweep folds the selects behind one Filters button on a phone, as Team and Data health already do.
 
 ## Staff mail (STAFF-MAIL-1, 30 Oct 2026; walk of Settings → My email and the morning email)
@@ -17,9 +16,9 @@ one deletes its line.
 
 - **P3 · Home's Set up Steward card in the right rail opens closed.** Jonathan wants its steps shown by default (each step with its sentence and action, as in his screenshot of Justin's Place), closing only when the person clicks Hide the steps, and staying closed for them after that. Today `SetupRailCard` (client/src/components/HomeSetup.jsx) starts with `useState(false)`, so it shows "Show all steps". `tests/smoke-walk.test.js` §home-4 pins "Show all steps" and would change with it. Suggested: SWEEP-1.
 
-## The battery on a weekend (STAFF-MAIL-2, 31 Oct 2026)
+## Days cut at the database's midnight (ARCH-1, 31 Oct 2026)
 
-- **P3 · Two suites fail only with the weekend clock pin.** With `STEWARD_TEST_NOW=2026-11-02T17:00:00Z` (the Monday-noon pin), `polish1-trust` §bare (the month-close banner reads the October close's other gifts) and `capture1-zero-day` §7 (time to thank reads 1.52 days, not 1.5: real-time stamps against the shifted database clock) fail on this branch; both pass unpinned, and neither reads anything STAFF-MAIL-2 changed. Suggested: the next tests-and-CI build makes both fixtures read the test clock.
+- **P2 · Some windows still cut the day at the database's midnight (UTC on prod), not the org's.** ARCH-1 put the org's midnight in one seam (`orgTime.orgDayWindowSql`) and moved the figure sources, Fundraising's started-not-finished list, the monthly-giving month, the mail-type and privacy counts, and the officer, pipeline and audit-log windows onto it. Not yet moved, each a timestamp or `CURRENT_DATE` read as a day: the rolling "last N days" lookbacks in routes/crm.js (`?::date - ?::int`, the thread-event finders near 13635–13773, and `CURRENT_DATE - ${days}` near 14725), `goingOut.js:127`, `qboSync.js:787`, routes/give.js:613, 5177, 5189, the `CURRENT_DATE` windows in routes/finance.js (135, 254, 301, 352, 376, 413, 1502), routes/surveys.js:190, 193, routes/volunteerScheduling.js:393, 449, groups.js:529, server.js:5076, 5086, and the task trigger in db.js:8650; Settings › Admin metrics (routes/billing.js:2428) reads the server's month for Steward's own figures. Each is off by up to a day between 8 PM and midnight in New York. Suggested: the next tests-and-CI or numbers build moves them through the same seam, with `scripts/build72-date-audit.js` as the list.
 
 ## Communications (SWEEP-3, 30 Oct 2026; walk in docs/sweeps/sweep-3/walk.md)
 

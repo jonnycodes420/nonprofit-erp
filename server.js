@@ -6015,12 +6015,12 @@ async function composeWeekInReview(orgId, win, officerId = null) {
   const asks = await query(
     `SELECT o.name AS opp_name, o.target_amount, o.officer_name, d.name AS donor_name, d.id AS donor_id FROM opportunities o
      JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
-     WHERE o.org_id = ? AND d.deleted_at IS NULL AND o.created_at >= ? AND o.created_at < (?::date + 1) ${dFilter}
+     WHERE o.org_id = ? AND d.deleted_at IS NULL AND ${orgTime.orgDayWindowSql("o.created_at", orgTime.orgTzSql("o.org_id"), "?", "?")} ${dFilter}
      ORDER BY o.target_amount DESC`, [orgId, start, end, ...dParam]);
   const moves = await query(
     `SELECT m.from_stage, m.to_stage, m.description, m.officer_name, d.name AS donor_name, d.id AS donor_id FROM moves m
      JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
-     WHERE m.org_id = ? AND d.deleted_at IS NULL AND m.created_at >= ? AND m.created_at < (?::date + 1) ${dFilter}
+     WHERE m.org_id = ? AND d.deleted_at IS NULL AND ${orgTime.orgDayWindowSql("m.created_at", orgTime.orgTzSql("m.org_id"), "?", "?")} ${dFilter}
      ORDER BY m.created_at DESC`, [orgId, start, end, ...dParam]);
   const tFilter = officerId ? "AND t.assigned_to = ?" : "";
   const pastDueTasks = await query(
@@ -6051,13 +6051,13 @@ async function composeWeekInReview(orgId, win, officerId = null) {
 async function composeOfficerMonthly(orgId, win, officer) {
   const { start, end } = win;
   const [made] = await query(
-    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND created_at >= ? AND created_at < (?::date + 1)",
+    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND ${orgTime.orgDayWindowSql("created_at", orgTime.orgTzSql("org_id"), "?", "?")}`,
     [orgId, officer.id, start, end]);
   const [movesMade] = await query(
-    "SELECT COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND officer_id=? AND created_at >= ? AND created_at < (?::date + 1)",
+    `SELECT COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND officer_id=? AND ${orgTime.orgDayWindowSql("created_at", orgTime.orgTzSql("org_id"), "?", "?")}`,
     [orgId, officer.id, start, end]);
   const [won] = await query(
-    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1)",
+    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND status='won' AND ${orgTime.orgDayWindowSql("closed_at", orgTime.orgTzSql("org_id"), "?", "?")}`,
     [orgId, officer.id, start, end]);
   const [portfolio] = await query(
     "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL",

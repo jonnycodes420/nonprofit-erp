@@ -30,15 +30,24 @@ const app = routers.r0;
 // The email Steward itself brought in: the mailbox read and the BCC address.
 const LOGGED_EMAIL_SQL = `(created_by LIKE 'system:mailbox/%' OR created_by = 'system:inbound-email')`;
 const MAX_MARK = 5000;
+// ARCH-1: "this month" is the org's month, from its first midnight, through
+// the one seam; date_trunc('month', NOW()) was the database's month (UTC).
+const ORG_TIME = require("../orgTime");
+async function thisMonthSql(orgId, col) {
+  const [o] = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
+  const tz = ORG_TIME.normalizeTimezone(o && o.timezone);
+  return { sql: ORG_TIME.orgDayWindowSql(col, "?", "?", null), args: [ORG_TIME.orgPeriodBounds({ timezone: tz }, "month", 0).start, tz] };
+}
 
 async function privacyPayload(orgId) {
   const C = await CS();
   await CSV.purgeRemovals(orgId).catch(() => {});
   const [org] = await query("SELECT client_privacy, client_privacy_changed_at, client_privacy_changed_by FROM orgs WHERE id=?", [orgId]);
   const [{ n: clients }] = await query("SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND is_client IS TRUE AND deleted_at IS NULL", [orgId]);
+  const month = await thisMonthSql(orgId, "created_at");
   const [{ n: held }] = await query(
     `SELECT COUNT(DISTINCT COALESCE(interaction_id, id))::int AS n FROM privacy_holds
-      WHERE org_id=? AND kind='health' AND created_at >= date_trunc('month', NOW())`, [orgId]);
+      WHERE org_id=? AND kind='health' AND ${month.sql}`, [orgId, ...month.args]);
   const gate = await aiGate(orgId);
   const on = !!org && org.client_privacy === true;
   return {
@@ -76,12 +85,13 @@ app.get("/privacy/clients", requireAuth, wrap(async (req, res) => {
 
 // Which emails had something held back, and when. Never what.
 app.get("/privacy/held", requireAuth, wrap(async (req, res) => {
+  const month = await thisMonthSql(req.user.orgId, "h.created_at");
   const rows = await query(
     `SELECT h.interaction_id, MIN(h.created_at) AS at, MIN(h.source) AS source,
             ARRAY_AGG(DISTINCT d.name) FILTER (WHERE d.name IS NOT NULL) AS people
        FROM privacy_holds h LEFT JOIN donors d ON d.id = h.donor_id AND d.org_id = h.org_id
-      WHERE h.org_id=? AND h.kind='health' AND h.created_at >= date_trunc('month', NOW())
-      GROUP BY COALESCE(h.interaction_id, h.id), h.interaction_id ORDER BY at DESC`, [req.user.orgId]);
+      WHERE h.org_id=? AND h.kind='health' AND ${month.sql}
+      GROUP BY COALESCE(h.interaction_id, h.id), h.interaction_id ORDER BY at DESC`, [req.user.orgId, ...month.args]);
   res.json({ sentence: "Emails this month where Steward held back a health detail. What was held back is not stored; open the email in your mailbox to read it.",
     rows: rows.map(r => ({ interactionId: r.interaction_id, at: r.at, source: r.source, people: r.people || [] })) });
 }));

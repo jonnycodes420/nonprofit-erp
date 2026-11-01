@@ -36,6 +36,11 @@ const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: whic
 const { LAST_GIFT_ORDER } = require("./donorSummary");
 const { CREDIT_TYPES, NOT_CREDIT, IS_CREDIT } = require("./creditTypes");   // FIX-49: credits are not money
 const orgTime = require("./orgTime");
+// ARCH-1: an instant tested against the org's civil days, and the org day it
+// falls on, through the one seam (orgTime.orgDayWindowSql); never `?::date`,
+// which cuts at the database's midnight.
+const inOrgDays = (col, a, from, to) => orgTime.orgDayWindowSql(col, orgTime.orgTzSql(`${a}.org_id`), from, to);
+const orgDayOf = (col, a) => `TO_CHAR(${col} AT TIME ZONE ${orgTime.orgTzSql(`${a}.org_id`)}, 'YYYY-MM-DD')`;
 const money = require("./money");
 const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 const auctionCore = require("./auctionCore");   // PARITY-2 Part 4: the one winner ordering
@@ -804,11 +809,11 @@ const SOURCES = {
       const args = [orgId, p.from, p.to];
       const where = p.assigned ? (args.push(p.assigned), " AND d.assigned_to = ?") : "";
       return {
-        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, TO_CHAR(g.acknowledgement_sent_at, 'YYYY-MM-DD') AS date,
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, ${orgDayOf('g.acknowledgement_sent_at', 'g')} AS date,
                      ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
                 FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.acknowledgement_sent_at IS NOT NULL
-                 AND g.acknowledgement_sent_at >= ?::date AND g.acknowledgement_sent_at < (?::date + 1)${where}`,
+                 AND ${inOrgDays('g.acknowledgement_sent_at', 'g', '?', '?')}${where}`,
         args,
       };
     },
@@ -839,11 +844,11 @@ const SOURCES = {
       const args = [orgId, p.from, p.to, p.kind];
       const where = p.owner ? (args.push(p.owner), " AND t.owner_id = ?") : "";
       return {
-        sql: `SELECT t.id, 'thread' AS type, t.donor_id, d.name, TO_CHAR(t.closed_at, 'YYYY-MM-DD') AS date, NULL::numeric AS amount,
+        sql: `SELECT t.id, 'thread' AS type, t.donor_id, d.name, ${orgDayOf('t.closed_at', 't')} AS date, NULL::numeric AS amount,
                      COALESCE(t.close_reason, t.next_step_label) AS detail
                 FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
                WHERE t.org_id = ? AND d.deleted_at IS NULL AND t.closed_at IS NOT NULL
-                 AND t.closed_at >= ?::date AND t.closed_at < (?::date + 1) AND t.close_kind = ?${where}`,
+                 AND ${inOrgDays('t.closed_at', 't', '?', '?')} AND t.close_kind = ?${where}`,
         args,
       };
     },
@@ -854,10 +859,10 @@ const SOURCES = {
     params: { since: "date:required" },
     sentence: (p, dd) => `Every milestone Steward noticed on or after ${dd(p.since)}.`,
     sql: (orgId, p) => ({
-      sql: `SELECT m.id, 'milestone' AS type, m.donor_id, d.name, TO_CHAR(m.created_at, 'YYYY-MM-DD') AS date,
+      sql: `SELECT m.id, 'milestone' AS type, m.donor_id, d.name, ${orgDayOf('m.created_at', 'm')} AS date,
                    NULL::numeric AS amount, m.subject AS detail
               FROM milestone_drafts m LEFT JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
-             WHERE m.org_id = ? AND m.created_at >= ?::date`,
+             WHERE m.org_id = ? AND ${inOrgDays('m.created_at', 'm', '?', null)}`,
       args: [orgId, p.since],
     }),
   },
@@ -1146,10 +1151,10 @@ const SOURCES = {
       const args = [orgId];
       let w = "";
       if (p.campaign) { w += " AND cr.campaign_id = ?"; args.push(p.campaign); }
-      if (p.from) { w += " AND cr.sent_at >= ?::date"; args.push(p.from); }
-      if (p.to) { w += " AND cr.sent_at < (?::date + 1)"; args.push(p.to); }
+      if (p.from) { w += ` AND ${inOrgDays("cr.sent_at", "cr", "?", null)}`; args.push(p.from); }
+      if (p.to) { w += ` AND ${inOrgDays("cr.sent_at", "cr", null, "?")}`; args.push(p.to); }
       return {
-        sql: `SELECT cr.id, 'email' AS type, d.id AS donor_id, COALESCE(d.name, cr.email) AS name, cr.sent_at::date AS date,
+        sql: `SELECT cr.id, 'email' AS type, d.id AS donor_id, COALESCE(d.name, cr.email) AS name, ${orgDayOf('cr.sent_at', 'cr')} AS date,
                      NULL::numeric AS amount, c.name AS detail
                 FROM campaign_recipients cr
                 JOIN campaigns c ON c.id = cr.campaign_id AND c.org_id = cr.org_id
@@ -1885,7 +1890,7 @@ const SOURCES = {
     params: { since: "date:required", measure: "measure" },
     sentence: (p, dd) => `Monthly gifts still giving whose card the bank updated by itself on or after ${dd(p.since)}, at what each brings in a month. A yearly gift counts as a twelfth of its amount.`,
     sql: (orgId, p) => ({
-      sql: `SELECT s.id, 'subscription' AS type, s.donor_id, d.name, TO_CHAR(u.at, 'YYYY-MM-DD') AS date,
+      sql: `SELECT s.id, 'subscription' AS type, s.donor_id, d.name, ${orgDayOf('u.at', 's')} AS date,
                    ${MONTHLY} AS amount,
                    'Card updated by the bank' || COALESCE(', ends ' || u.last4, '') || COALESCE(', exp ' || u.exp, '') AS detail
               FROM recurring_subscriptions s
@@ -1893,7 +1898,7 @@ const SOURCES = {
                            (ARRAY_AGG(pre.detail->>'last4' ORDER BY pre.created_at DESC))[1] AS last4,
                            (ARRAY_AGG(pre.detail->>'exp' ORDER BY pre.created_at DESC))[1] AS exp
                       FROM payment_recovery_events pre
-                     WHERE pre.org_id = ? AND pre.type = 'card_auto_updated' AND pre.created_at >= ?::date
+                     WHERE pre.org_id = ? AND pre.type = 'card_auto_updated' AND ${inOrgDays('pre.created_at', 'pre', '?', null)}
                      GROUP BY pre.subscription_id) u ON u.subscription_id = s.stripe_subscription_id
               LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
              WHERE s.org_id = ? AND s.status IN ('active','recovered')`,
@@ -1912,11 +1917,11 @@ const SOURCES = {
     sql: (orgId, p) => ({
       sql: `SELECT s.id, 'gift_start' AS type, dd.id AS donor_id,
                    COALESCE(NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''), s.email) AS name,
-                   TO_CHAR(s.started_at, 'YYYY-MM-DD') AS date, COALESCE(s.amount, 0) AS amount,
+                   ${orgDayOf('s.started_at', 's')} AS date, COALESCE(s.amount, 0) AS amount,
                    COALESCE(s.form_name, 'Giving page') || ' · ' || s.email AS detail
               FROM gift_starts s
               LEFT JOIN LATERAL (SELECT d.id FROM donors d WHERE d.org_id = s.org_id AND LOWER(d.email) = LOWER(s.email) AND d.deleted_at IS NULL ORDER BY d.created_at LIMIT 1) dd ON TRUE
-             WHERE s.org_id = ? AND s.started_at >= ?::date AND s.started_at < (?::date + 1) AND ${giftStartOpenSql("s")}`,
+             WHERE s.org_id = ? AND ${inOrgDays('s.started_at', 's', '?', '?')} AND ${giftStartOpenSql("s")}`,
       args: [orgId, p.from, p.to],
       order: "date DESC NULLS LAST, id",
     }),
@@ -1927,15 +1932,15 @@ const SOURCES = {
     params: { since: "date:required" },
     sentence: (p, dd) => `Monthly gifts started on or after ${dd(p.since)}, at what each adds a month, less those that ended in the same time.`,
     sql: (orgId, p) => ({
-      sql: `SELECT s.id || ':started' AS id, 'subscription' AS type, s.donor_id, d.name, TO_CHAR(s.created_at, 'YYYY-MM-DD') AS date,
+      sql: `SELECT s.id || ':started' AS id, 'subscription' AS type, s.donor_id, d.name, ${orgDayOf('s.created_at', 's')} AS date,
                    ${MONTHLY} AS amount, 'Started' AS detail
               FROM recurring_subscriptions s LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
-             WHERE s.org_id = ? AND s.created_at >= ?::date
+             WHERE s.org_id = ? AND ${inOrgDays('s.created_at', 's', '?', null)}
             UNION ALL
-            SELECT s.id || ':ended', 'subscription', s.donor_id, d.name, TO_CHAR(s.canceled_at, 'YYYY-MM-DD'),
+            SELECT s.id || ':ended', 'subscription', s.donor_id, d.name, ${orgDayOf('s.canceled_at', 's')},
                    -${MONTHLY}, 'Ended'
               FROM recurring_subscriptions s LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
-             WHERE s.org_id = ? AND s.canceled_at >= ?::date`,
+             WHERE s.org_id = ? AND ${inOrgDays('s.canceled_at', 's', '?', null)}`,
       args: [orgId, p.since, orgId, p.since],
     }),
   },
