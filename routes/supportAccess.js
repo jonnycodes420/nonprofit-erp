@@ -75,6 +75,8 @@ app.post("/support-session/end", requireAuth, supportOnly, wrap(async (req, res)
     [req.user.support.id, req.user.orgId]);
   req.audit.entity("support session", req.user.support.id, req.user.support.name);
   req.audit.action("ended the support session");
+  // SECURE-3: the support cookie goes; the super-admin's own session stays.
+  require("../server/auth/sessionCookie").clearSessionCookies(res, { supportOnly: true });
   res.json({ ended: true });
 }));
 

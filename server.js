@@ -430,7 +430,11 @@ const corsOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...extraCorsOrigins])]
 // SECURE-1: maxAge lets a browser keep a preflight's answer for two hours
 // (Chrome's ceiling), instead of asking again before every call: HARDEN-2
 // counted about sixty preflights behind one donor profile.
-app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200 }));
+app.use(cors({ origin: corsOrigins, credentials: true, maxAge: 7200, exposedHeaders: ["X-Steward-CSRF"] }));
+// SECURE-3 item 1: the staff session cookie stands in for the Bearer header,
+// and an answer that hands out a session sets the cookie (server/auth/sessionCookie.js).
+app.use(require("./server/auth/sessionCookie").readCookieSession());
+app.use(require("./server/auth/sessionCookie").deliverSessionCookie());
 
 // SECURE-1 · THE HEADERS EVERY API ANSWER CARRIES. nosniff: a body is read as
 // the type it says it is. Referrer-Policy: a link out of a Steward page never

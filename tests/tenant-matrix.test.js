@@ -1242,6 +1242,29 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const missing = await get(`/portal-assets/pa_${"0".repeat(24)}`);
   ok("§11 a refusal is byte-identical to a missing id", missing.status === 404 && missing.text === (await get(`/portal-assets/${waiver}`)).text);
 
+  // SECURE-3 item 6: the two old sign-up doors mint an account on the spot and
+  // say when an address is taken. Outside the battery's TEST_MODE they are not
+  // there for anyone but a signed-in super-admin. RED ON MAIN: 201, and 409
+  // "already registered" for a taken address.
+  console.log("\n§12 · the old sign-up doors are closed to the public");
+  {
+    const was = process.env.TEST_MODE; delete process.env.TEST_MODE;
+    try {
+      const taken = `admin-a@mx.local`;
+      const fresh = `s3-legacy-${Date.now()}@mx.local`;
+      for (const path of ["/auth/register", "/auth/register-org"]) {
+        for (const [who, tok] of [["signed out", null], ["an org admin", aAdmin]]) {
+          const t = await mfetch("POST", path, tok, { email: taken, password: "loadtest1234", orgName: "S3 Legacy", name: "S3", userName: "S3" });
+          const f = await mfetch("POST", path, tok, { email: fresh, password: "loadtest1234", orgName: "S3 Legacy", name: "S3", userName: "S3" });
+          ok(`§12 ${path}, ${who}: a taken and a fresh address both answer 404, the same`,
+             t.status === 404 && f.status === 404 && t.text === f.text, [t.status, f.status]);
+        }
+      }
+      const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM users WHERE email=$1`, [fresh]);
+      ok("§12 …and no account was created", n === 0, n);
+    } finally { if (was !== undefined) process.env.TEST_MODE = was; }
+  }
+
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
   ok("org B's rows hash byte-identical before and after ~1,000 hostile probes", bBefore === bAfter, { bBefore: bBefore.slice(0, 12), bAfter: bAfter.slice(0, 12) });

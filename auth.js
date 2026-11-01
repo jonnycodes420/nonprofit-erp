@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { query } = require("./db");
 const { sessionCache } = require("./sessionCache");
+const SC = require("./server/auth/sessionCookie");
 
 // SECURE-1 · THE SIGNING SECRET IS CHECKED BEFORE THE SERVER STARTS.
 // It signs every session, unsubscribe, file and pass link. It used to be
@@ -106,6 +107,16 @@ async function loadUserSession(userId) {
 // live read (BUILD-37) — correctness beats latency on that small route set.
 async function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
+  // SECURE-3: a session cookie that stops working is cleared on its 401, so the
+  // browser does not keep sending a dead one (server/auth/sessionCookie.js).
+  if (req.sessionViaCookie && !res.locals.__cookieClearHooked) {
+    res.locals.__cookieClearHooked = true;
+    const status = res.status.bind(res);
+    res.status = (code) => {
+      if (code === 401) { try { SC.clearSessionCookies(res, { supportOnly: req.sessionViaCookie === "support" }); } catch { /* sent */ } }
+      return status(code);
+    };
+  }
   if (!auth?.startsWith("Bearer ")) {
     return res.status(401).json({ error: "no_token", message: "No token provided" });
   }
@@ -144,6 +155,13 @@ async function requireAuth(req, res, next) {
       const st = await require("./twoFactor").sessionState(payload.sid, payload.userId);
       if (!st.ok && st.idle) return res.status(401).json({ error: "session_idle", message: "You were signed out after a while with no activity. Sign in again to pick up where you left off." });
       if (!st.ok) return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
+    }
+    // SECURE-3: a write made with the session cookie carries X-Steward-Org and
+    // this session's CSRF token, or nothing is written.
+    const csrfRefusal = SC.cookieWriteRefusal(req, res, payload);
+    if (csrfRefusal) {
+      if (req.audit) req.audit.skip(csrfRefusal.error);
+      return res.status(403).json(csrfRefusal);
     }
     // FIX-57 · A SUPPORT SESSION is in the org it was opened for, and only
     // that one, as an admin; read-only until its second confirm

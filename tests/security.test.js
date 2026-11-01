@@ -420,9 +420,10 @@ async function fixtures() {
     await q(`DELETE FROM users WHERE id='u_secure2_big'`).catch(() => {});
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_secure2_big',$1,'admin@secure2-big.example.org',$2,'Big Admin','admin')`, [BIG, bcrypt.hashSync("loadtest1234", 10)]);
     const big = await login("admin@secure2-big.example.org");
-    // /donors/ids is the select-all for bulk actions: ids only, capped at
-    // 25,000 by design (routes/donorList.js IDS_CAP). Named here, not hidden.
-    const BY_DESIGN = new Set(["/donors/ids"]);
+    // SECURE-3 item 6: /donors/ids (the select-all for bulk actions) used to be
+    // named here as answering up to 25,000 ids at once. It pages now, so it is
+    // held to the same 500 as every other list. RED ON MAIN: 25,000.
+    const BY_DESIGN = new Set([]);
     const inventory = require("./lib/routeInventoryFile").load().routes;   // ARCH-1: generated, not committed
     const gets = inventory.filter(r => r.method === "GET" && !r.path.includes(":") && !BY_DESIGN.has(r.path)
       && !/export|\.csv|download|pdf|zip|stream|oauth|callback|webhook|unsubscribe|^\/health|^\/admin\//i.test(r.path));

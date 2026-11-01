@@ -205,10 +205,31 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
 app.post("/auth/logout", requireAuth, wrap(async (req, res) => {
   if (req.user.sid) await require("../twoFactor").revokeSessions("id=? AND user_id=?", [req.user.sid, req.user.userId], req.user.userId);
   req.audit.action("signed out");
+  // SECURE-3: and the browser's session cookie goes with it.
+  require("../server/auth/sessionCookie").clearSessionCookies(res, { supportOnly: req.sessionViaCookie === "support" });
   res.json({ ok: true });
 }));
 
-app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
+// SECURE-3 item 6 · THE TWO OLD SIGN-UP DOORS ARE CLOSED TO THE PUBLIC.
+// /auth/register and /auth/register-org mint an account on the spot and say
+// when an address is taken. No page calls them: a person signs up through
+// /public/signup, which never says. Only the battery (TEST_MODE) and a
+// signed-in super-admin provisioning an org (scripts/once/ckrh-provision.js)
+// use them, so to anyone else they are not there (404, like any unknown path).
+const legacyRegisterGate = (req, res, next) => {
+  if (process.env.TEST_MODE === "1") return next();
+  const { requireAuth404 } = require("../auth");
+  return requireAuth404(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.user || !req.user.isSuperAdmin || req.user.support) {
+      if (req.audit) req.audit.skip("not_found");
+      return res.status(404).json({ error: "not_found" });
+    }
+    next();
+  });
+};
+
+app.post("/auth/register", legacyRegisterGate, registerLimiter, wrap(async (req, res) => {
   // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
   { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
@@ -362,7 +383,7 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
 }));
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
-app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
+app.post("/auth/register-org", legacyRegisterGate, registerLimiter, wrap(async (req, res) => {
   // SECURE-2 item 3: a real email (with a "did you mean" hint) and a phone in one format.
   { const cv = await require("../contactInputs").checkContact(req.body || {}, { email: ["email"] });
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });

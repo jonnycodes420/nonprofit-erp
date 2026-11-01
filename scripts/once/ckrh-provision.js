@@ -120,7 +120,14 @@ function logoDataUri() {
   // 1 · THE ORG AND HER LOGIN. `provisioned: true` is the whole difference
   //     between a signup and a handover: mail off, no drip, greeting armed.
   let token, orgId, userId, trialEndsAt, created = false;
-  let reg = await api("POST", "/auth/register-org", null, {
+  // SECURE-3: /auth/register-org opens only to a signed-in super-admin now.
+  let superTok = null;
+  if (process.env.SUPER_EMAIL && process.env.SUPER_PASSWORD) {
+    const su = await api("POST", "/auth/login", null, { email: process.env.SUPER_EMAIL, password: process.env.SUPER_PASSWORD, code: process.env.SUPER_CODE });
+    superTok = su.status === 200 ? su.body.token : null;
+  }
+  if (!superTok) console.log("  ! no super-admin session (SUPER_EMAIL / SUPER_PASSWORD / SUPER_CODE): creating the org will answer 404");
+  let reg = await api("POST", "/auth/register-org", superTok, {
     orgName: ORG_NAME, userName: OWNER_NAME, email: OWNER_EMAIL, password,
     provisioned: true,
     // Provisioned, but NOT a demonstration org: this account holds no invented
