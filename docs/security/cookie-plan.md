@@ -1,7 +1,31 @@
 # Plan: the session token to an httpOnly cookie, and synced mail sealed at rest
 
-*SECURE-2, 29 October 2026. **A plan only; nothing here is built.** Both parts become SECURE-3 if
-Jonathan says yes.*
+*SECURE-2, 29 October 2026. Jonathan said yes to both parts on 30 Oct.*
+
+> **Status (SECURE-3, 1 Nov 2026).** Part 1 **Release A is built**: the server sets `steward_session`
+> (and `steward_support`) beside the token, accepts either, and checks CSRF on cookie writes
+> (`server/auth/sessionCookie.js`). The client still sends Bearer from `npe_token`, and now sends
+> `credentials: "include"` so the cookie is kept. `api.stewardapp.dev` is live on Railway.
+> **Release B is not built**: it is a later brief, no sooner than seven days after the app's
+> `VITE_API_URL` becomes `https://api.stewardapp.dev`. Part 2 is built (see below).
+>
+> Two changes from the plan as written: (1) the CSRF defence is the header **and** a per-session
+> token (`X-Steward-CSRF`, an HMAC of the session id, handed back on every authenticated answer
+> as a response header), because the brief asked for both; (2) the cookie is host-only on
+> `api.stewardapp.dev` (no `Domain=stewardapp.dev`). The page and the API are same-site, so
+> SameSite=Lax still sends it, and no other subdomain receives it.
+>
+> **Rollback of Release A:** revert the PR. Nobody is signed out, because the client still uses
+> the Bearer token. Leaving `VITE_API_URL` on the new host is fine either way: it is the same
+> server.
+>
+> **Release B, for the brief that builds it:** `getToken()` and the ~40 places that read
+> `npe_token` go (one helper); the fetch wrapper adds `X-Steward-CSRF` from the last response
+> header and retries once on `csrf_token_invalid`; `deliverSessionCookie` drops `token` from the
+> body when the request has an Origin header; support sessions return through the
+> `steward_support` cookie (ending support clears only that one); the browser legs in `tests/`
+> and `scripts/ops/` sign in with `ctx.addCookies` instead of `localStorage.npe_token`; boot
+> deletes a leftover `npe_token`.
 
 ## Part 1 · The session token moves to an httpOnly cookie
 
