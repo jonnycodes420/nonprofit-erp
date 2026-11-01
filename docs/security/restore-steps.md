@@ -11,6 +11,31 @@ The rule is **restore into a new project, never over the live one.** Restoring i
 away every gift, note and audit row written since the restore point. A new project keeps prod
 untouched while we look.
 
+## The script (SECURE-3)
+
+`scripts/ops/restore-drill.js` does steps 2 to 5 below in order, and prints the clicks for step 1
+(the restore itself stays a dashboard step: the Management API's point-in-time endpoint restores
+the project **in place**, which is the one thing this must never do).
+
+```
+node scripts/ops/restore-drill.js                         # dry run: the plan and the clicks, connects to nothing
+read -s RESTORE_DATABASE_URL && export RESTORE_DATABASE_URL   # the NEW project's string, never in a file
+node scripts/ops/restore-drill.js --run --project steward-restore-YYYYMMDD-HHMM --i-am-jonathan \
+  --restore-time 2026-11-08T03:00:00Z [--org <org id>]
+```
+
+It runs the read-only SQL of step 2.4 **before** anything boots, then boots a scratch backend
+with a clean environment (dummy Resend and Stripe on closed local ports, no Anthropic key,
+`DISABLE_BACKGROUND_TICKS=1`, `TEST_MODE=1`, a fresh `JWT_SECRET`), runs the smoke and the truth
+check (`tests/lib/surfacesAgree.js`) for every org with an admin, prints counts only, and stops
+the backend by its own PID. It refuses prod: a project not named `steward-restore-`, a host or
+ref matching `PROD_DATABASE_URL` / `PROD_SUPABASE_REF` or the prod ref it knows by hash, a shell
+with `RAILWAY_*` variables or `NODE_ENV=production`, or a `.env` in the repo. Set
+`PROD_SUPABASE_REF` to prod's project ref when you run it, as a second lock. Builders rehearse it
+against local databases only (a `pg_dump` of a scratch database restored into a second one).
+
+The manual steps below are what the script does, for when you would rather do it by hand.
+
 ## Before you start
 
 - Confirm the plan has point-in-time recovery (Supabase dashboard, the prod project, Settings,
@@ -68,7 +93,7 @@ need both a check and an untouched copy, restore twice.
 
 ## Practise it
 
-Once a quarter, restore to a new project, run step 2, write the date and the counts on the line
-below, and delete the project.
+Once a quarter, restore to a new project, run `scripts/ops/restore-drill.js --run` against it
+(step 2), write the date and the counts it prints on the line below, and delete the project.
 
 - Last practised: not yet.

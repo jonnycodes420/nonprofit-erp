@@ -293,13 +293,22 @@ async function initSchema() {
     // hash, so a boot on an unchanged schema still brings them up to date
     // (one read when nothing is missing).
     const s = await ddlSession();
-    try { await require("./orgSummary").installTriggers(s); } finally { await s.release(); }
+    try { await require("./orgSummary").installTriggers(s); await lockDb(s); } finally { await s.release(); }
     return false;
   }
   const ddl = await ddlSession();
-  try { await runSchemaInit(ddl); }
+  try { await runSchemaInit(ddl); await lockDb(ddl); }
   finally { await ddl.release(); }
   return true;
+}
+
+// SECURE-3 · the database's own lock (server/admin/dbLock.js): RLS on every
+// public table, nothing granted to Supabase's API roles. LAST, on every boot,
+// so a table created since the last one is covered. A failure is loud and the
+// server still boots: the API never depended on it, only a leaked key would.
+async function lockDb(session) {
+  try { await require("./server/admin/dbLock").lockPublicSchema(session); }
+  catch (e) { console.error("[db-lock] CRITICAL: the database lock did not run:", e.message); }
 }
 
 // The DDL itself. `pool` here is the init session above, not the module pool.
