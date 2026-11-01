@@ -4,7 +4,7 @@
     "mode": "test",
     "recordedAt": "2026-08-17T03:25:20.774Z",
     "apiVersion": "2026-04-22.dahlia",
-    "drill": "scripts/build58-stripe-drill.js §C",
+    "drill": "scripts/ops/build58-stripe-drill.js §C",
     "note": "REAL charge.dispute.created from a pm_card_createDispute charge on a real test connected account. Hand-editing the payload voids its provenance — re-record instead."
   },
   "event": {

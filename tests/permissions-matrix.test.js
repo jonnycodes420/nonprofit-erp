@@ -14,7 +14,7 @@
 //         "open" = any 2xx.
 //
 // The UI-affordance half of Part 4 (a staff user sees no admin controls) is
-// covered for the donor profile + directory in scripts/build41-capture.js's
+// covered for the donor profile + directory in scripts/build41-capture.js's (removed by ARCH-1; docs/architecture/scripts-removed.md)
 // isAdmin gates and by locked-features.test.js's source asserts; a dedicated
 // browser affordance sweep is listed in FINDINGS as remaining work.
 

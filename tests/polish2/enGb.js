@@ -156,7 +156,7 @@ function scanEnGb(rootDir) {
 // includes/split/replace/indexOf/test (code looking FOR a dash).
 //
 // It fails when: someone writes "Raised — so far" in a screen, an email, a PDF,
-// a page title, a changelog line or the demo seed. scripts/fix45-no-em-dash.js
+// a page title, a changelog line or the demo seed. scripts/fix45-no-em-dash.js (removed by ARCH-1; docs/architecture/scripts-removed.md)
 // is the sweep that rewrites them.
 const DASH = /—|&mdash;|&#8212;/;
 const EM_ROOTS = [...new Set([...ROOTS, "scripts/seed"])];

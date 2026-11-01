@@ -2,7 +2,7 @@
 // preview was slow in: 2,000 people, 500 of them deleted, many of them sharing
 // names and emails with the real-shaped files, so the preview's matching does
 // the work it does on prod. Used by the preview budgets in tests/perf-app.spec.js
-// and by scripts/preview-perf.js, which prints the before-and-after numbers.
+// and by scripts/preview-perf.js (removed by ARCH-1; docs/architecture/scripts-removed.md), which prints the before-and-after numbers.
 "use strict";
 const fs = require("fs");
 const path = require("path");

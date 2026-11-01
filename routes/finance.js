@@ -2198,7 +2198,7 @@ async function audienceMembership(orgId, audienceIds) {
        FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
   // MAILCHIMP-1: DEMO PEOPLE NEVER LEAVE STEWARD. The sample rows carry
   // `is_sample`; the 1,000-donor demonstration file carries the tag
-  // `demo-file` instead (scripts/build89-demo-seed.js), and a demonstration
+  // `demo-file` instead (scripts/once/build89-demo-seed.js), and a demonstration
   // org is demonstration through and through. All three are sample here.
   const [orgFlags] = await query(`SELECT org_kind FROM orgs WHERE id=?`, [orgId]);
   const demoOrg = require("../orgKind").isDemoOrg(orgFlags);

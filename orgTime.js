@@ -17,7 +17,7 @@
 // ── THE RULE ───────────────────────────────────────────────────────────────
 // Never compare a civil date to `now()`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`
 // or a JavaScript `new Date()`. That comparison IS the bug, in all ~150 of the
-// forms `scripts/build72-date-audit.js` enumerates.
+// forms `scripts/build72-date-audit.js` (removed by ARCH-1; docs/architecture/scripts-removed.md) enumerates.
 //
 // BUILD-72 Part 0 captured it live. A task due today, on the day view, with
 // nothing changing but the wall clock:

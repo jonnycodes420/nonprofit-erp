@@ -38,7 +38,6 @@
     "tests/org-blindness.test.js": 1,
     "tests/parity2-qbo-sync.test.js": 1,
     "tests/parity4-show-me.test.js": 3,
-    "tests/parity4-started.test.js": 1,
     "tests/permissions-matrix.test.js": 1,
     "tests/pledge-math.test.js": 1,
     "tests/push1-instant.test.js": 15,
