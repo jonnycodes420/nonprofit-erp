@@ -210,7 +210,8 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
           {answer.people.slice(0, compact ? 5 : allPeople ? 50 : 10).map(p => (
             <div key={p.donorId} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 2px", borderTop: "1px solid " + T.bg2, fontSize: 13.5 }}>
               <DonorLink id={p.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{p.name}</DonorLink>
-              <span style={{ color: T.ink2, whiteSpace: "nowrap" }}>{fmtFull(p.cents / 100)}</span>
+              {/* SWEEP-1: "$0" beside each of 165 who came and didn't give says nothing */}
+              {p.cents > 0 && <span style={{ color: T.ink2, whiteSpace: "nowrap" }}>{fmtFull(p.cents / 100)}</span>}
             </div>
           ))}
           {!compact && !allPeople && answer.people.length > 10 && <button type="button" data-testid="ask-more-people" onClick={() => setAllPeople(true)}

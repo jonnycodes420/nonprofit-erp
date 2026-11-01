@@ -1210,6 +1210,91 @@ async function givingSideAndPhoneSayNothingWrong(browser) {
   await walk(PHONE, 390, true);
 }
 
+// SWEEP-1 · HOME, ON TWO ORGS, AT BOTH WIDTHS. Home on an org with 160
+// first-time givers (more Grow moves than the deck's 150 carries) and on an
+// empty org, at 1440 and 390, says nothing the bar names mechanically ("Not
+// set", undefined, NaN, null, a {{placeholder}}, a hole, an ALL-CAPS label, a
+// console error or dialog, an API 4xx/5xx), and each moves tab's "at stake"
+// is the server's total for that tab, every move (SWEEP-1 found Grow saying
+// $50,463 for the first 150 of 244 moves, $84,163). Then the Ask box: "Who
+// should I call this week?" opens an answer with nothing on fire.
+// HOW IT GOES RED: on main (37a702b) Grow's stake is the first 150 moves'
+// ($8,025 of $8,240 here). Proven by planting `t.left.reduce` back in Insights.jsx: red.
+async function homeSaysNothingWrong(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  const make = async (org, givers) => {
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,$2,$3,1,'active','team','America/New_York')`, [org, "Sweep1 " + org.slice(11), org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Walk','admin')`, ["u_" + org, org, `${org}@test.local`, bcrypt.hashSync("loadtest1234", 4)]);
+    const today = require("./clock").civilDay();
+    const day = n => new Date(Date.parse(today + "T12:00:00Z") - n * 864e5).toISOString().slice(0, 10);
+    for (let i = 1; i <= givers; i++) {
+      await q(`INSERT INTO donors (id,org_id,name,total_giving,person_types,created_by,created_by_name) VALUES ($1,$2,$3,$4,'["donor"]','system:test','test')`,
+        [`d_${org}_${i}`, org, `Walk Giver${String(i).padStart(3, "0")} Lane`, 20 + (i % 70)]);
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`,
+        [`g_${org}_${i}`, org, `d_${org}_${i}`, 20 + (i % 70), day(20 + (i % 200))]);
+    }
+    return (await api("POST", "/auth/login", null, { email: `${org}@test.local`, password: "loadtest1234" })).body;
+  };
+  const cases = [["160 first-time givers", await make("org_sweep1_home_walk", 160)], ["empty", await make("org_sweep1_home_none", 0)]];
+  const SAYS = [[/\bNot set\b/, "Not set"], [/\bundefined\b/, "undefined"], [/\bNaN\b/, "NaN"], [/\bnull\b/, "null"], [/\[object Object\]/, "[object Object]"],
+    [/\{\{[^}]*\}\}/, "a {{placeholder}}"], [/\[[A-Za-z][A-Za-z _]+\]/, "a placeholder"], [/ (?:for|to|with|from|of|by|about|in) \.(?:\s|$)/, "a hole"]];
+  const cents = t => Math.round(Number(String(t).replace(/[^0-9.]/g, "")) * 100);
+  for (const [what, a] of cases) {
+    const deck = (await api("GET", "/insights?view=deck", a.token)).body.deck;
+    for (const width of [1440, 390]) {
+      const ctx = await browser.newContext({ viewport: { width, height: width > 500 ? 1000 : 844 }, serviceWorkers: "block", ...(width < 500 ? { isMobile: true, hasTouch: true } : {}) });
+      await ctx.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+        [a.token, JSON.stringify(a.user), JSON.stringify(a.org)]);
+      const page = await ctx.newPage();
+      const trouble = [];
+      page.on("pageerror", e => trouble.push("threw: " + e.message.slice(0, 140)));
+      page.on("console", m => { if (m.type() === "error" && !IGNORABLE_URL.test((m.location() || {}).url || "") && !IGNORABLE_TEXT.test(m.text()) && !/\[SW\]/.test(m.text())) trouble.push("console: " + m.text().slice(0, 140)); });
+      page.on("response", r => { if (r.status() >= 400 && r.url().startsWith(BASE) && !EXPECTED_5XX.test(r.url())) trouble.push(`${r.status()} ${r.url().replace(BASE, "").slice(0, 90)}`); });
+      page.on("dialog", d => { trouble.push("a browser dialog: " + d.message().slice(0, 80)); d.dismiss().catch(() => {}); });
+      await page.goto(APP + "/app/dashboard", { waitUntil: "networkidle", timeout: 45000 }).catch(e => trouble.push("goto: " + e.message.slice(0, 80)));
+      await page.waitForSelector('[data-testid="home-rail"][data-ready="1"]', { timeout: 15000 }).catch(() => trouble.push("the rail never drew"));
+      await page.waitForTimeout(400);
+      const r = await page.evaluate(() => {
+        const roots = [...document.querySelectorAll(".no-caps")].filter(n => !n.parentElement || !n.parentElement.closest(".no-caps"));
+        const caps = [];
+        for (const root of roots) for (const el of root.querySelectorAll("*")) {
+          if (!el.offsetParent || el.children.length || !/[a-z]{2}/i.test(el.textContent || "")) continue;
+          if (getComputedStyle(el).textTransform === "uppercase") caps.push((el.textContent || "").trim().slice(0, 40));
+        }
+        const stakes = {};
+        for (const b of document.querySelectorAll('[data-testid^="moves-tab-"]')) stakes[b.getAttribute("data-testid").slice(10)] = (b.querySelector(".moves-stake") || {}).textContent || "";
+        return { text: (document.querySelector(".app-content") || document.body).innerText, caps: caps.slice(0, 6), stakes };
+      });
+      const said = [];
+      for (const line of r.text.split("\n")) for (const [re, w] of SAYS) if (re.test(line)) said.push(`${w}: ${line.trim().slice(0, 90)}`);
+      const where = `Home (${what}, ${width})`;
+      ok(`§sweep1 ${where} draws its screen`, r.text.trim().length > 80, r.text.slice(0, 80));
+      ok(`§sweep1 ${where} says nothing the bar names`, said.length === 0, said.slice(0, 4));
+      ok(`§sweep1 ${where} has no ALL-CAPS label`, r.caps.length === 0, r.caps);
+      ok(`§sweep1 ${where} has no console error, dialog or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
+      if (width === 1440 && deck) for (const t of deck.tabs.filter(x => x.count > 0 && x.key !== "planned"))
+        ok(`§sweep1 ${where}: ${t.label}'s "at stake" is every move's (${t.atStake}), not the first ${t.moves.length}`, cents(r.stakes[t.key]) === t.cents, { shown: r.stakes[t.key], server: t.atStake, count: t.count, carried: t.moves.length });
+      if (width === 1440 && what !== "empty") {
+        trouble.length = 0;
+        await page.getByPlaceholder(/Ask a question/).fill("Who should I call this week?");
+        await page.getByRole("button", { name: "Ask", exact: true }).first().click();
+        await page.waitForLoadState("networkidle").catch(() => {});
+        // the panel opens before its answer draws; under a loaded battery that is seconds
+        await page.waitForFunction(() => /Answer ready|can't answer/.test((document.querySelector('[role="dialog"]') || {}).innerText || ""), null, { timeout: 20000 }).catch(() => {});
+        const ans = await page.locator('[role="dialog"]').first().innerText({ timeout: 8000 }).catch(() => "");
+        ok(`§sweep1 ${where}: the Ask box answers "Who should I call this week?" with nothing on fire`, ans.length > 40 && !SAYS.some(([re]) => re.test(ans)) && trouble.length === 0, [ans.slice(0, 120), trouble.slice(0, 3)]);
+      }
+      await ctx.close();
+    }
+  }
+}
+
 // SWEEP-2 · DONORS, DATA HEALTH AND IMPORTS, EVERY SCREEN, ON TWO ORGS.
 // Directory, Team, Re-engage, Data health and Settings › Imports at 1440 and
 // 390, on an org with givers, a lapsed giver, a donor whose only giving is a
@@ -1367,7 +1452,7 @@ async function donorScreensSayNothingWrong(browser) {
 (async () => {
   console.log("smoke-walk");
   // SWEEP-6: SMOKE_LEG=<a leg below> runs that one leg alone (how a leg's red on main is watched).
-  const LEGS = { donorScreensSayNothingWrong, givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong };
+  const LEGS = { donorScreensSayNothingWrong, givingSideAndPhoneSayNothingWrong, commsScreensSayNothingWrong, moneyScreensSayNothingWrong, eventsAndPledgesSayNothingWrong, homeSaysNothingWrong };
   if (process.env.SMOKE_LEG) { const b = await chromium.launch(); await LEGS[process.env.SMOKE_LEG](b); await b.close(); await closeDb(); return summary("smoke-walk"); }
   const login = await api("POST", "/auth/login", null, DEMO);
   if (login.status !== 200) {
@@ -1853,6 +1938,7 @@ async function donorScreensSayNothingWrong(browser) {
   await givingSideAndPhoneSayNothingWrong(browser);
   await commsScreensSayNothingWrong(browser);
   await donorScreensSayNothingWrong(browser);
+  await homeSaysNothingWrong(browser);   // SWEEP-1
 
   // SECURE-2 item 5: the policy is really served (so a clean walk means
   // something), it runs no inline script and no eval, and nothing any leg

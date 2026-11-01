@@ -264,7 +264,7 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
               ? <span style={{ fontSize: 14, color: T.ink }}><Figure value={r.hours} kind="count" label={`${r.label}: hours`} definition={r.definition} source={r.source} variant="inline" unit={r.hours === 1 ? "hour" : "hours"} /></span>
               : r.measure === "count"
               ? <span />
-              : <Figure value={r.cents / 100} kind="money" label={r.label} definition={r.definition} source={r.source} variant="inline" />}
+              : <span style={{ fontSize: 14, color: T.ink, whiteSpace: "nowrap" }}><Figure value={r.cents / 100} kind="money" label={r.label} definition={r.definition} source={r.source} variant="inline" /></span>}
           </div>
         ))}
       </div>}

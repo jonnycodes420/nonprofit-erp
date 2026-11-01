@@ -280,7 +280,8 @@ function readClauseRaw(c) {
   if (/\b(monthly|recurring|subscription)\b/i.test(t) && /\b(change|cancel|pause|stop|raise|lower|bump|increase|decrease|move)\b/i.test(t)) {
     const m = t.match(new RegExp(NAME)); return { ...blank, kind: "recurring_change", who: m ? m[1].replace(/'s$/, "") : "" };
   }
-  if (/\?$/.test(c.trim()) || /^(who|what|how many|how much|when|where|why|which|did|does|is|are|has|have)\b/i.test(t)) return { ...blank, kind: "question", target: t };
+  // SWEEP-1: "how is the Annual Fund doing" is a question too (the clause has lost its "?")
+  if (/\?$/.test(c.trim()) || /^(who|what|how many|how much|how (?:is|are|was|were|did|do|does|has|have)|when|where|why|which|did|does|is|are|has|have)\b/i.test(t)) return { ...blank, kind: "question", target: t };
   // LIST-1: "donors in 40502 who came to Finding Joy", "show me people in
   // Lexington": a list asked for is a question, answered by the list's filter.
   if (/^(?:(?:show me|list|find|pull up|give me)\s+)?(?:all\s+|the\s+|my\s+|our\s+)?(?:donors|people|supporters)\b/i.test(t)) return { ...blank, kind: "question", target: t };
