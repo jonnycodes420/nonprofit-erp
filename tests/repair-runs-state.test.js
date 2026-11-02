@@ -14,6 +14,7 @@ const { execFileSync } = require("child_process");
 const path = require("path");
 const { ok, summary, q, closeDb } = require("./helpers");
 const { decide } = require("../scripts/ci/repair-runs-state");
+const { testNow } = require("./clock");
 
 const ORG = "org_fix30runs", OTHER = "org_fix30other";
 const SCRIPT = path.join(__dirname, "..", "scripts", "ci", "repair-runs-state.js");
@@ -43,7 +44,7 @@ async function agentWrote(org, id, before, minutesAgo, { undone = false } = {}) 
   await q(`INSERT INTO agent_writes (id,org_id,tool,entity_table,entity_id,before_row,after_row,cites,undone_at,created_at)
            VALUES ($1,$2,'update_contact','donors',$3,$4,$5,'[]',$6, NOW() - make_interval(mins => $7))`,
     ["aw_f30_" + (++n), org, id, JSON.stringify(before), JSON.stringify({ state: "runs", city: "Salem" }),
-     undone ? new Date() : null, minutesAgo]);
+     undone ? new Date(testNow()) : null, minutesAgo]);
 }
 async function personEdited(org, id, from, to, minutesAgo) {
   await q(`INSERT INTO fin_audit_log (id,org_id,user_id,user_name,actor_kind,action,entity_type,entity_id,before_fields,after_fields,created_at)

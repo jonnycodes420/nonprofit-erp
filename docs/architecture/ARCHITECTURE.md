@@ -153,10 +153,11 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
   ("Tuesday 4 Nov 2026, 2 PM ET") through `tests/clock.js`, never `Date.now()` or `new Date()`.
   Anything that reads a date gets boundary tests: midnight UTC (still yesterday in New York),
   the last day of a month at 11 PM ET, the last day of the fiscal year, and the DST change.
-  The `real-clock` ratchet (and `test-clock-seam` §5 with `audit/test-clock-direct.json`) counts
-  the tests that still read the real clock; the count may only go down. **The weekend pin**
-  (`STEWARD_TEST_NOW` set to Monday noon ET on a Saturday or Sunday) **stays until that count is
-  zero**, and then it goes.
+  The `real-clock` check is a hard rule since CLOCK-1: no file under `tests/` reads the real
+  clock (`tests/clock.js` gives `testNow`, `civilDay`, `dayOffset`, `civilYear`). The weekend pin
+  is gone with it: the battery gives the same result on any day and at any hour, proven by
+  running it at 11:45 PM ET on a Saturday and at 10 AM on a Tuesday. `tests/clock-boundaries.test.js`
+  holds the key figures at the boundaries.
 
 ## Where the rest goes
 
@@ -210,7 +211,7 @@ each one matches:
 | `number-copies` | per app file outside `shared/numbers/`, the lines with a donor label's own rule | a 90th percentile of lifetime, a comparison with `giving_level_major_cents`, a lapse window built from 365 days off a last gift, or a first gift from `MIN(LEFT(date,10)) FROM gifts` (NUMBERS-4) |
 | `fiscal-year` | per file, the lines that compute a fiscal-year boundary | a line reads `fiscal_year_start_month` / `orgFiscalStartMonth(` / `fiscalStartMonth` **and** builds a date from it, or is a known hand-rolled form (`fyOf`, `finPeriodBounds`, `windowsFor`); `orgTime.js` and `shared/fiscalPeriod.js` are exempt |
 | `scripts-root` | the files in the `scripts/` root | `git ls-files scripts/` with no further `/` (a README excepted); the list may only shrink |
-| `real-clock` | per test file, the real-clock reads | the lines of `tests/*.js` (not `clock.js`) with `Date.now()` or a bare `new Date()`, comments stripped |
+| `real-clock` | a hard rule since CLOCK-1: no test reads the real clock | the lines of every `.js` under `tests/` (not `clock.js`, `lib/browserClock.js` or fixtures) with `Date.now()` or a bare `new Date()`, comments stripped |
 | `org-specific` | per app file, lines naming one org | a quoted `org_<id>` literal, `org_slug === "…"`, or `orgId === "org_…"`, in app code (not tests, scripts, docs or audit) |
 | `crm-routes` | none (a hard rule, SPLIT-1) | a line of `routes/crm.js` that registers a route (`app.get(` … `routers.x.post(`) |
 | `big-images` | none (it is a hard rule, not a ratchet) | any committed image over 500 KB outside `client/src/assets/` and `assets/` |

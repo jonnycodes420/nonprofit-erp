@@ -27,4 +27,4 @@ Seeded by ARCH-1 (1 Nov 2026).
   or data. The `org-specific` ratchet counts org ids in app code and may only go down. (ARCH-1.)
 - **Tests set their own clock.** A test that depends on the date fixes its own date through
   `tests/clock.js`, with boundary tests for midnight UTC, month end at 11 PM ET, fiscal year end
-  and the DST change. The weekend pin stays until no test reads the real clock. (FIX-42, ARCH-1.)
+  and the DST change. No test reads the real clock, and there is no weekend pin. (FIX-42, ARCH-1, CLOCK-1.)

@@ -16,6 +16,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { testNow, civilDay } = require("../clock");
 
 const ROOT = path.join(__dirname, "..", "..");
 const STOCK = path.join(ROOT, "assets", "stock");
@@ -59,7 +60,7 @@ async function fingerprint(file) {
 function bitsApart(a, b) { let v = BigInt("0x" + a) ^ BigInt("0x" + b), n = 0; while (v) { n += Number(v & 1n); v >>= 1n; } return n; }
 async function perPhotoProblems(rows, files) {
   const problems = [], seen = new Map();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = civilDay();
   for (const r of rows) {
     if (!/^[A-Za-z0-9_-]{11}$/.test(r.photoId)) { problems.push(`${r.file}: no Unsplash photo ID ("${r.photoId}")`); continue; }
     if (seen.has(r.photoId)) problems.push(`${r.file}: photo ID ${r.photoId} is also ${seen.get(r.photoId)}`);
@@ -151,7 +152,7 @@ async function checkNewRowsGetStock({ base, token, mission, website, q } = {}) {
   const group = SP.missionGroup(mission, website);
   const groupAlts = new Set(SP.stockFor(group, 99).map(p => p.alt));
   const problems = [];
-  const stamp = Date.now().toString(36);
+  const stamp = testNow().toString(36);
 
   const gp = await api("POST", "/giving-pages", { title: "Stock check " + stamp });
   if (gp.status !== 201) problems.push(`POST /giving-pages answered ${gp.status}`);

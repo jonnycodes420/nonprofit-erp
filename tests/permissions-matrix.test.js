@@ -20,9 +20,10 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const T_ORG = "org_pm44_team", C_ORG = "org_pm44_core", R_ORG = "org_pm44_ro";
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = civilDay();
 
 async function mkOrg(id, plan, status) {
   for (const t of ["notification_sends", "workflow_runs", "workflows", "opportunities", "moves", "pledges", "tasks",

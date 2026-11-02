@@ -8626,7 +8626,8 @@ async function runSchemaInit(pool) {
         DELETE FROM tasks WHERE milestone_id = NEW.id AND org_id = NEW.org_id;
         RETURN NEW;
       END IF;
-      SELECT gr.officer_id, gr.created_by, gr.is_sample, gr.funder_donor_id, COALESCE(d.name, gr.funder) AS funder_name, o.grant_headsup_days
+      SELECT gr.officer_id, gr.created_by, gr.is_sample, gr.funder_donor_id, COALESCE(d.name, gr.funder) AS funder_name, o.grant_headsup_days,
+             COALESCE(NULLIF(o.timezone, ''), '${orgTime.DEFAULT_TZ}') AS org_tz
         INTO g
         FROM grants gr
         LEFT JOIN donors d ON d.id = gr.funder_donor_id AND d.org_id = gr.org_id AND d.deleted_at IS NULL
@@ -8663,7 +8664,8 @@ async function runSchemaInit(pool) {
            WHERE milestone_id = NEW.id AND link_kind = 'deadline_start'
              AND (due IS DISTINCT FROM to_char(start_due, 'YYYY-MM-DD') OR (is_done = 1 AND done <> 1)
                   OR title IS DISTINCT FROM 'Start ' || start_word || ' for ' || COALESCE(g.funder_name, 'the grant') OR voided_at IS NOT NULL);
-        ELSIF is_done = 0 AND start_due >= CURRENT_DATE THEN
+        -- CLOCK-1: a heads-up still ahead is judged by the org's today, not the database's.
+        ELSIF is_done = 0 AND start_due >= ${orgTime.orgTodaySql("g.org_tz")} THEN
           INSERT INTO tasks (id, org_id, title, due, priority, type, done, donor_id, grant_id, assigned_to, assigned_to_name,
                              milestone_id, link_kind, updated_at, created_by, created_by_name)
           VALUES ('t_gh_' || substr(md5(NEW.id), 1, 14), NEW.org_id, 'Start ' || start_word || ' for ' || COALESCE(g.funder_name, 'the grant'),

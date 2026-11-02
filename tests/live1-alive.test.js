@@ -35,6 +35,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")("sk_test_dummy");
 const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_live1alive";
 const ADMIN = "live1-admin@example.org";
@@ -63,7 +64,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   return r.status;
 }
 
-const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
+const runId = tag => `imp_live1${tag}${testNow().toString(36)}`;
 
 (async () => {
   console.log("LIVE-1: every import and every action feeds the machine\n");

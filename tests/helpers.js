@@ -36,7 +36,7 @@ async function login(email, password = "loadtest1234") {
   if (j.mfaSetupRequired && j.token) {
     const TOTP = require("../totp");
     const st = await post({ __path: "setup", payload: {} }, j.token);
-    const code = TOTP.hotp(st.secret, Math.floor(Date.now() / 30000));
+    const code = TOTP.hotp(st.secret, Math.floor(testNow() / 30000));
     const en = await post({ __path: "enable", payload: { code } }, j.token);
     if (!en.token) throw new Error("two-factor setup failed for " + email + ": " + JSON.stringify(en));
     RECOVERY.set(key, [...(en.recoveryCodes || [])]);
@@ -77,6 +77,7 @@ async function api(method, path, token, body) {
 // Wire-size measurement: node fetch transparently gunzips, so this uses raw
 // http to see what actually crosses the network (content-encoding + bytes).
 const http = require("http");
+const { testNow, civilDay } = require("./clock");
 function wireSize(path, token) {
   return new Promise((resolve, reject) => {
     const u = new URL(BASE + path);
@@ -125,7 +126,7 @@ const BILLING_MOCK_PORT = Number(process.env.BILLING_MOCK_PORT || 5604);
 // America/New_York) — a test that stamps a gift with UTC-today submits a
 // FUTURE date every evening after 8pm Eastern and the import refuses it.
 // Tests that date something "today" must use the same civil clock.
-const civilToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+const civilToday = () => civilDay();
 
 // N days from the ORG's civil today, as a civil date. THE ONE OF THESE, because
 // four suites had written their own and all four were wrong the same way.
@@ -201,11 +202,11 @@ async function leaks(payload, needles, { skipIds = true } = {}) {
 // first truthy value, or null on timeout, so the caller's own assertion still
 // reports the failure in its own words.
 async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
-  const deadline = Date.now() + timeout;
+  const deadline = testNow() + timeout;
   for (;;) {
     const v = await fn();
     if (v) return v;
-    if (Date.now() >= deadline) return null;
+    if (testNow() >= deadline) return null;
     await new Promise(r => setTimeout(r, interval));
   }
 }

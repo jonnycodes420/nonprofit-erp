@@ -17,6 +17,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks, waitFor } = require("./helpers");
+const { civilYear } = require("./clock");
 
 const ORG_A = "org_ob_a", SLUG_A = "blind-a";
 const ORG_B = "org_ob_b", SLUG_B = "blind-b";
@@ -25,7 +26,7 @@ const B_MARKERS = ["org_ob_b", "blind-b", "Blind Probe Org B", "d_obB", "777.77"
 // dof_ / donor_org_follows: BUILD-47 follow artifacts — a follow is
 // dashboard-side state and must be as invisible to the org as the account.
 const ACCOUNT_MARKERS = ["donor_account", "wren-alias@ob46.test", "dof_", "donor_org_follows"];
-const THIS_YEAR = String(new Date().getFullYear());
+const THIS_YEAR = String(civilYear());
 
 let mail = [];
 function startSink(port = SINK_PORT) {

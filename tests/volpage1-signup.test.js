@@ -20,9 +20,10 @@
 //   · the volunteer page reading a brand of its own → §5 "the volunteer page follows".
 
 const { ok, summary, api, q, closeDb } = require("./helpers");
+const { testNow, dayOffset } = require("./clock");
 
 (async () => {
-  const stamp = Date.now();
+  const stamp = testNow();
   const reg = await api("POST", "/auth/register-org", null, { orgName: "Volunteer Page Org", userName: "Page Tester", email: `volpage1-${stamp}@example.com`, password: "loadtest1234" });
   if (!reg.body.token) throw new Error("register-org failed: " + reg.text);
   const tok = reg.body.token, orgId = reg.body.org.id;
@@ -31,7 +32,7 @@ const { ok, summary, api, q, closeDb } = require("./helpers");
   await api("PUT", "/portal-settings", tok, { enabled: true, primaryColor: "#2A6F97", primary_color: "#2A6F97" });
 
   // A public role with one shift of two places, three weeks out.
-  const day = new Date(Date.now() + 21 * 86400000).toISOString().slice(0, 10);
+  const day = dayOffset(21);
   await q(`INSERT INTO volunteer_opportunities (id,org_id,name,slug,description,is_public,requires_waiver,commitment,skills,created_by,created_by_name)
            VALUES ($1,$2,'Food bank sort','food-bank-sort','Sorting donations into boxes.',TRUE,TRUE,'Three hours, once','None',$3,'test')`,
     [`vo_vp1_${stamp}`, orgId, "system:test"]);

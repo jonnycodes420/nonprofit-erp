@@ -48,6 +48,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const A = "org_f11inA", B = "org_f11inB";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -228,7 +229,7 @@ const post = async (payload, { secret = SECRET, svix = null } = {}) => {
   // secret: that would let anybody who learned the URL bypass the signature.
   const liar = await post(resendEvent("em_marion", {
     from: `Dana Reyes <dana@inbounda.local>`, to: [LOG_A, "marion-inbounda@example.com"], subject: "x" }),
-    { svix: { "svix-id": "msg_fake", "svix-timestamp": String(Math.floor(Date.now() / 1000)), "svix-signature": "v1,AAAA" } });
+    { svix: { "svix-id": "msg_fake", "svix-timestamp": String(Math.floor(testNow() / 1000)), "svix-signature": "v1,AAAA" } });
   ok("§5 a request claiming a signature it does not have is refused, secret or not",
     liar.status === 401, { status: liar.status, body: liar.body });
 

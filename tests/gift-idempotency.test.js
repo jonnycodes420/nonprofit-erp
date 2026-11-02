@@ -24,11 +24,12 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const ORG_A = "org_gi_a";
 const ORG_B = "org_gi_b";
 const iso = d => d.toISOString().slice(0, 10);
-const TODAY = iso(new Date());
+const TODAY = civilDay();
 
 async function fixture() {
   const CHILD = [

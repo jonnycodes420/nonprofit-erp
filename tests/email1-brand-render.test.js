@@ -40,6 +40,7 @@ const mock = http.createServer((req, res) => {
   });
 });
 const JPEG = "data:image/jpeg;base64," + require("fs").readFileSync(require("path").join(__dirname, "..", "scripts", "demo-assets", "demo-impact-studio.jpg")).toString("base64");
+const { testNow } = require("./clock");
 
 async function sendAndWait(tok, id) {
   const r = await api("POST", `/campaigns/${id}/send`, tok);
@@ -53,7 +54,7 @@ async function sendAndWait(tok, id) {
 
 (async () => {
   await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
-  const stamp = Date.now();
+  const stamp = testNow();
   const reg = await api("POST", "/auth/register-org", null, { orgName: "Email One Brand Org", userName: "Brand Tester", email: `email1-${stamp}@example.com`, password: "loadtest1234" });
   if (!reg.body.token) throw new Error("register-org failed: " + reg.text);
   const tok = reg.body.token, orgId = reg.body.org.id;

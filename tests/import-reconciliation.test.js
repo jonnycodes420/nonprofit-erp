@@ -32,6 +32,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_b72recon";
 const CSV = path.join(__dirname, "fixtures", "build72", "twins-matrix.csv");
@@ -199,9 +200,9 @@ function parseCsv(text) {
     }
   }
   const t5before = await dbTotals();
-  const t0 = Date.now();
+  const t0 = testNow();
   const big = await api("POST", "/donors/import-combined", tok, { donors: bigDonors, gifts: bigGifts });
-  const elapsed = Date.now() - t0;
+  const elapsed = testNow() - t0;
   ok("5,000-row import 200", big.status === 200, big.body?.error || big.status);
   ok("5,000 rows: reconciles", big.body.reconciliation.balanced === true, big.body.reconciliation);
   ok("5,000 rows: every row created", big.body.reconciliation.rows.created === 5000, big.body.reconciliation.rows);

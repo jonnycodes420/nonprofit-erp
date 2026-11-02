@@ -61,6 +61,7 @@ const LIVE_REALM_SQL = `(SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_conne
 // she marked deposited is never "waiting for its payout". Credit rows are not
 // money and are never sent (shared/numbers/money.js).
 const NUMBERS = require("./shared/numbers");
+const orgTime = require("./orgTime");   // CLOCK-1: "sent since a day" counts from the org's midnight
 const NON_CASH_SQL = [...NON_CASH_TYPES].map(t => `'${String(t).replace(/'/g, "''")}'`).join(",");
 
 // ── WHERE INTUIT IS ───────────────────────────────────────────────────────
@@ -791,7 +792,7 @@ async function sentSummary(orgId, sinceDate) {
       WHERE s.org_id=? AND s.vendor='${VENDOR}' AND s.status='synced'
         AND s.realm_id = (SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_connections bc
                            WHERE bc.org_id = s.org_id AND bc.vendor = '${VENDOR}' AND bc.status <> 'disconnected' LIMIT 1)
-        AND s.synced_at >= ?::date`, [orgId, sinceDate]);
+        AND ${orgTime.orgDayWindowSql("s.synced_at", orgTime.orgTzSql("s.org_id"), "?", null)}`, [orgId, sinceDate]);
   return { entries: Number(r && r.entries) || 0, gifts: Number(r && r.gifts) || 0,
            cents: Number(r && r.cents) || 0, lastAt: (r && r.last_at) || null };
 }

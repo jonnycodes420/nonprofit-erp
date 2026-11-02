@@ -27,6 +27,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_ask2plans";
 const freePort = () => new Promise(r => { const s = http.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
@@ -34,7 +35,7 @@ const cents = v => Math.round(Number(v || 0) * 100);
 const pad = n => String(n).padStart(2, "0");
 
 (async () => {
-  const now = new Date();
+  const now = new Date(testNow());
   const T = `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}`;
   const Y = now.getUTCFullYear();
   const back = k => { const d = new Date(Date.UTC(Y, now.getUTCMonth(), now.getUTCDate() - k)); const s = d.toISOString().slice(0, 10); return s < `${Y}-01-01` ? `${Y}-01-01` : s; };

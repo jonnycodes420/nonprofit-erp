@@ -170,7 +170,7 @@ for (const [line, why] of FINE) {
 // suite share (and STEWARD_TEST_NOW pins for a run). A test file may not read
 // the real clock (Date.now(), or new Date() with no argument) more times than
 // audit/test-clock-direct.json allows it; a file not listed may read it none.
-console.log("\n§5 · FIX-42 · real-clock reads may FALL, never rise");
+console.log("\n§5 · FIX-42, CLOCK-1 · no test reads the real clock");
 const DIRECT_RE = /Date\.now\(\s*\)|new Date\(\s*\)/g;
 const THE_CLOCK = "clock.js", SELF = path.basename(__filename);
 function directReads(sources = null) {

@@ -15,6 +15,7 @@
 // links depend on what donors do, so they are not counted before they happen.
 "use strict";
 const TYPES = require("./mailTypes");
+const orgTime = require("./orgTime");   // CLOCK-1: a sent-on window counts the org's days
 
 const DAY = 86400000;
 const PLEDGE_SCHEDULE_DAYS = [0, 3, 7, 14];   // server.js PLEDGE_REMINDER_SCHEDULE_DAYS
@@ -124,8 +125,8 @@ async function sentRows(ctx, orgId, { type = null, from = null, to = null, limit
   const rows = await ctx.query(
     `SELECT s.id, s.type_key, s.donor_id, s.subject, s.sent_at, d.name FROM auto_mail_sent s
        LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
-      WHERE s.org_id = ? AND (?::text IS NULL OR s.type_key = ?) AND (?::date IS NULL OR s.sent_at >= ?::date)
-        AND (?::date IS NULL OR s.sent_at < ?::date + 1)
+      WHERE s.org_id = ? AND (?::text IS NULL OR s.type_key = ?) AND (?::date IS NULL OR ${orgTime.orgDayWindowSql("s.sent_at", orgTime.orgTzSql("s.org_id"), "?", null)})
+        AND (?::date IS NULL OR ${orgTime.orgDayWindowSql("s.sent_at", orgTime.orgTzSql("s.org_id"), null, "?")})
       ORDER BY s.sent_at DESC LIMIT ?`, [orgId, type, type, from, from, to, to, limit]);
   return rows.map(r => ({ id: r.id, typeKey: r.type_key, typeName: (TYPES.BY_KEY[r.type_key] || {}).name || r.type_key,
     donorId: r.donor_id, name: r.name, subject: r.subject, sentAt: r.sent_at }));

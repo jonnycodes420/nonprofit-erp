@@ -25,6 +25,7 @@ const { ok, summary, login, api, q, closeDb, BASE, waitFor } = require("./helper
 const ORG_KIND = require("../orgKind");
 const mailPolicy = require("../mailPolicy");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
+const { testNow } = require("./clock");
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 
 const HQ = "org_acm_hq", PAY = "org_acm_paying", DEMO = "org_acm_demo", EMPTY = "org_acm_empty", JUNK = "org_acm_junk";
@@ -87,17 +88,17 @@ const snapshot = async () => JSON.stringify(await q(
   const supr = await login(SUPER);
 
   console.log("§2 · the webhook records what Stripe really charges");
-  const evt = "evt_acm_" + Date.now();
+  const evt = "evt_acm_" + testNow();
   const sub = await fireBilling(evt + "_sub", "customer.subscription.updated", {
     id: "sub_acm_paying", object: "subscription", customer: "cus_acm_paying", status: "active",
-    current_period_end: Math.floor(Date.now() / 1000) + 20 * 86400,
+    current_period_end: Math.floor(testNow() / 1000) + 20 * 86400,
     items: { data: [{ quantity: 1, price: { id: "price_test_team", unit_amount: 12300, recurring: { interval: "month", interval_count: 1 } } }] },
   });
   ok("the subscription event is accepted", sub.status === 200, sub.status + " " + JSON.stringify(sub.body));
   const inv = await fireBilling(evt + "_inv", "invoice.payment_succeeded", {
     id: "in_acm_paying_1", object: "invoice", customer: "cus_acm_paying", amount_paid: 12300, billing_reason: "subscription_cycle",
-    created: Math.floor(Date.now() / 1000) - 5 * 86400,
-    lines: { data: [{ amount: 12300, period: { start: Math.floor(Date.now() / 1000) - 10 * 86400, end: Math.floor(Date.now() / 1000) + 20 * 86400 },
+    created: Math.floor(testNow() / 1000) - 5 * 86400,
+    lines: { data: [{ amount: 12300, period: { start: Math.floor(testNow() / 1000) - 10 * 86400, end: Math.floor(testNow() / 1000) + 20 * 86400 },
                       price: { unit_amount: 12300, recurring: { interval: "month", interval_count: 1 } } }] },
   });
   ok("the paid invoice is accepted", inv.status === 200, inv.status);
@@ -134,7 +135,7 @@ const snapshot = async () => JSON.stringify(await q(
   ok("Metrics says in one line how many it left out",
      /^Left out \d+ org/.test(m.body.left_out_sentence || "") && m.body.left_out_count === (m.body.rows?.left_out || []).length,
      m.body.left_out_sentence);
-  const month = new Date().toISOString().slice(0, 7);
+  const month = new Date(testNow()).toISOString().slice(0, 7);
   const thisMonth = (m.body.by_month || []).find(r => r.month === month);
   ok("MRR by month counts the paid invoice this month", thisMonth && thisMonth.customers >= 1 && thisMonth.mrr_cents >= 12300, JSON.stringify(thisMonth));
   const dec = (m.body.by_month || []).find(r => r.month === "2026-12");
@@ -205,9 +206,9 @@ const snapshot = async () => JSON.stringify(await q(
 
   console.log("\n§6 · Jonathan's orgs never get billing mail");
   ok("billing mail to an internal test org is refused",
-     mailPolicy.orgMailDecision({ id: HQ, org_kind: "internal_test", onboarded_at: new Date() }, "billing").send === false);
+     mailPolicy.orgMailDecision({ id: HQ, org_kind: "internal_test", onboarded_at: new Date(testNow()) }, "billing").send === false);
   ok("…and to a fixture", mailPolicy.orgMailDecision({ id: JUNK, org_kind: "fixture" }, "billing").send === false);
-  ok("…but a customer still gets it", mailPolicy.orgMailDecision({ id: PAY, org_kind: "customer", onboarded_at: new Date() }, "billing").send === true);
+  ok("…but a customer still gets it", mailPolicy.orgMailDecision({ id: PAY, org_kind: "customer", onboarded_at: new Date(testNow()) }, "billing").send === true);
   ok("a +alias of Jonathan's address is Jonathan",
      ORG_KIND.inferKind({ id: "o", name: "Lit & culture" }, { users: [{ email: "xjca2006+lit@gmail.com" }] }).kind === "internal_test");
   const kindSet = await api("POST", `/admin/orgs/${EMPTY}/kind`, supr, { kind: "fixture" });

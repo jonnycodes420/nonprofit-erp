@@ -38,9 +38,10 @@ const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb } = require("./helpers");
+const { testNow, dayOffset, civilYear } = require("./clock");
 
 const ORG = "org_p4show";
-const Y = new Date().getUTCFullYear();
+const Y = civilYear();
 const freePort = () => new Promise(r => { const s = http.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
 const ids = rows => rows.map(r => r.id || r.donorId || r.donor_id).sort();
 
@@ -97,7 +98,7 @@ async function orgCounts() {
   await q(`UPDATE gifts SET campaign_id='c_p4show_now' WHERE org_id=$1 AND id='g_p4show_3'`, [ORG]);
   // An ask logged on a's timeline last month, and a proposal open for b.
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES ('i_p4show_ask',$1,'d_p4show_a','ask','Asked for a renewal',$2,'system:test')`,
-    [ORG, new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)]);
+    [ORG, dayOffset(-30)]);
   await q(`INSERT INTO opportunities (id,org_id,donor_id,target_amount,status,proposal_stage) VALUES ('o_p4show_b',$1,'d_p4show_b',5000,'open','cultivating')`, [ORG]);
 
   // THE HAND-BUILT FILTER: written here, not by the code under test.
@@ -192,7 +193,7 @@ async function orgCounts() {
 
     // §5 AI off, an unsupported question: refused, and nothing changed.
     await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]);
-    const REFUSE_Q = `show me donors with a zip code starting 019 p4show ${Date.now()}`;
+    const REFUSE_Q = `show me donors with a zip code starting 019 p4show ${testNow()}`;
     const c0 = await orgCounts();
     const a5 = await ask(REFUSE_Q);
     // The one audit write records the request itself (every POST is logged);

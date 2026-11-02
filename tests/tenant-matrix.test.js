@@ -70,6 +70,7 @@ const jwt = require("jsonwebtoken");
 const { ok, summary, q, closeDb } = require("./helpers");
 const { buildInventory } = require("../scripts/lib/routeInventory");
 const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
+const { testNow, civilDay } = require("./clock");
 
 const M = `http://localhost:${process.env.PORT}`;
 const A = "org_mxa", B = "org_mxb";
@@ -78,7 +79,7 @@ const A = "org_mxa", B = "org_mxb";
 const PRIV = ["zzmarkb", "6377.89", "63778"];
 
 const iso = d => d.toISOString().slice(0, 10);
-const TODAY = iso(new Date());
+const TODAY = civilDay();
 
 // FIX-20 Part 9: THE TEARDOWN IS DISCOVERED, NOT LISTED. It used to be a
 // hand-kept list of tables, and every build that added a table the battery
@@ -710,7 +711,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   // Every request the in-process server is handed, so a request it drops
   // without an answer can be named (read by mfetch below).
   const unanswered = [], serverEvents = [];
-  let lastAnswer = Date.now();
+  let lastAnswer = testNow();
   const httpEmit = require("http").Server.prototype.emit;
   require("http").Server.prototype.emit = function (ev, req, res) {
     if (ev === "connection") {
@@ -720,12 +721,12 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       // reuses it: ECONNRESET on /stripe/webhook, twice in a row on PR #212.
       // The server here is this suite's own; hold idle sockets for a minute.
       if (this.keepAliveTimeout < 60000) { this.keepAliveTimeout = 60000; this.headersTimeout = 61000; }
-      const sock = req, opened = Date.now();
-      sock.on("close", hadErr => serverEvents.push(`${Date.now() - lastAnswer}ms after last answer: server socket closed (open ${Date.now() - opened}ms, error=${hadErr})`));
+      const sock = req, opened = testNow();
+      sock.on("close", hadErr => serverEvents.push(`${testNow() - lastAnswer}ms after last answer: server socket closed (open ${testNow() - opened}ms, error=${hadErr})`));
     }
     if (ev === "clientError") serverEvents.push(`clientError ${req && (req.code || req.message)}`);
     if (ev === "request") {
-      res.on("finish", () => { lastAnswer = Date.now(); });
+      res.on("finish", () => { lastAnswer = testNow(); });
       let done = false;
       res.on("finish", () => { done = true; });
       res.on("close", () => { if (!done) unanswered.push(`${req.method} ${req.url} (headersSent=${res.headersSent})`); });
@@ -748,7 +749,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   // input and what the server saw. A bare "fetch failed" cost a day (18 Oct).
   const mfetch = async (method, p, token, body, raw) => {
     let r, text;
-    const t0 = Date.now(), lastAnswerBefore = lastAnswer;
+    const t0 = testNow(), lastAnswerBefore = lastAnswer;
     try {
       r = await fetch(M + p, {
         method, redirect: "manual",
@@ -981,7 +982,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
     id: "evt_matrix_x1", type: "payment_intent.succeeded", account: `acct_matrix_a`,
     data: { object: { id: "pi_matrix_x1", amount_received: 5000, receipt_email: `donor-zzmarkb@mx.local`, metadata: { donor_name: "Webhook Probe" } } },
   });
-  const ts = Math.floor(Date.now() / 1000);
+  const ts = Math.floor(testNow() / 1000);
   const sig = crypto.createHmac("sha256", process.env.STRIPE_WEBHOOK_SECRET).update(`${ts}.${evt}`).digest("hex");
   const wh = await fetch(M + "/stripe/webhook", { method: "POST", headers: { "Content-Type": "application/json", "stripe-signature": `t=${ts},v1=${sig}` }, body: evt });
   ok("webhook accepted (signature valid)", wh.status === 200, wh.status);

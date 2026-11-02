@@ -31,6 +31,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const { login, api, q, closeDb, civilToday } = require("../helpers");
 const CASES = require("./cases");
+const { testNow } = require("../clock");
 
 const ORG = "org_atlaseval", ADMIN = "atlas-eval@example.org";
 const OUT = process.env.OUT || "atlas-eval-summary.json";
@@ -82,9 +83,9 @@ const nameOf = id => { const p = PEOPLE.find(x => x[0] === id); return p ? p[1] 
 const sig = l => `${l.kind}/${l.state}/${l.who || ""}`;
 
 async function say(tok, c, ctx) {
-  const t0 = Date.now();
+  const t0 = testNow();
   let r = await api("POST", "/atlas", tok, { text: c.text, source: "typed" });
-  const firstMs = Date.now() - t0;
+  const firstMs = testNow() - t0;
   let req = r.body && r.body.request;
   const asked = req && req.questions ? req.questions.map(x => ({ kind: x.kind, said: String(x.said || "").toLowerCase(), options: x.options })) : [];
   if (req && req.status === "needs_answers") {
@@ -101,7 +102,7 @@ async function say(tok, c, ctx) {
     }
   }
   const lines = ((req && req.lines) || []).map(l => ({ kind: l.kind, state: l.state, who: l.donorId ? nameOf(l.donorId) : "", line: l.line }));
-  return { status: r.status, lines, asked, ms: Date.now() - t0, firstMs, request: req };
+  return { status: r.status, lines, asked, ms: testNow() - t0, firstMs, request: req };
 }
 
 function score(c, got, ctx, checkOk) {
@@ -151,7 +152,7 @@ function standIn() {
   // slow (a cold connection), and a live server is warm. The Undine case is
   // timed after it, and the cold time is reported beside it.
   let coldMs = null;
-  if (aiOn) { const t0 = Date.now(); await api("POST", "/atlas", tok, { text: "Find Tobias Fairweather", source: "typed" }); coldMs = Date.now() - t0; }
+  if (aiOn) { const t0 = testNow(); await api("POST", "/atlas", tok, { text: "Find Tobias Fairweather", source: "typed" }); coldMs = testNow() - t0; }
   const rows = [];
   for (const c of (aiOn ? CASES : [])) {
     const got = await say(tok, c, ctx);

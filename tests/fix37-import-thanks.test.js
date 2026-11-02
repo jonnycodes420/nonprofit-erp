@@ -27,6 +27,7 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor, importAutoSettle } = require("./helpers");
+const { testNow } = require("./clock");
 // This suite watches the background work run, so imports here do not wait for it.
 importAutoSettle(false);
 
@@ -43,7 +44,7 @@ async function wipe() {
   }
 }
 
-const runId = tag => `imp_fix37${tag}${Date.now().toString(36)}`;
+const runId = tag => `imp_fix37${tag}${testNow().toString(36)}`;
 // n people, one recent gift each (1 to 29 days ago); every other gift $300, the rest $100.
 const file = (tag, n, perDonor = 1) => ({
   donors: Array.from({ length: n }, (_, i) => ({ name: `Person ${tag} ${i}`, email: `${tag}${i}@${DOMAIN}` })),
@@ -74,9 +75,9 @@ const file = (tag, n, perDonor = 1) => ({
   }, { timeout, interval: 250 }).catch(() => null)) || { body: null };
   // One import, the way the screen does it: the rows, then the run recorded.
   const importFile = async (run, f, extra = {}) => {
-    const t0 = Date.now();
+    const t0 = testNow();
     const imp = await api("POST", "/donors/import-combined", tok, { importId: run, ...f, ...extra });
-    const ms = Date.now() - t0;
+    const ms = testNow() - t0;
     const rec = await api("POST", "/imports", tok, { id: run, name: `File ${run.slice(-6)}`, shape: "gift_file_with_donors",
       rowsIn: f.gifts.length, giftsCreated: f.gifts.length, donorsCreated: f.donors.length, summary: {},
       ...(extra.thanks ? { thanks: extra.thanks } : {}) });
@@ -153,9 +154,9 @@ const file = (tag, n, perDonor = 1) => ({
   const p1 = await api("GET", `/imports/${runE}/progress`, tok);
   ok("§4 progress is shown while it runs", p1.body?.status === "running" && p1.body?.total === 5000
      && /^(Thanking and checking|Checking) 5,000 recent gifts: [\d,]+ done$/.test(p1.body?.sentence || ""), p1.body);
-  const t0 = Date.now();
+  const t0 = testNow();
   const doneE = await settled(runE, 240000);
-  ok(`§4 it finishes (${Math.round((Date.now() - t0) / 1000)}s after the request)`, doneE.body?.status === "done" && doneE.body?.done === 5000, doneE.body);
+  ok(`§4 it finishes (${Math.round((testNow() - t0) / 1000)}s after the request)`, doneE.body?.status === "done" && doneE.body?.done === 5000, doneE.body);
   ok("§4 every gift is recorded", (await giftsOf(runE)) === 5000);
   ok("§4 the readout appears when it finishes", !!doneE.body?.readout?.id, doneE.body);
 

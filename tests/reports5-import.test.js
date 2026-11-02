@@ -23,10 +23,11 @@ const bcrypt = require("bcryptjs");
 const PDFDocument = require("pdfkit");
 const { ok, summary, q, closeDb, login, api } = require("./helpers");
 const FS = require("../figureSources");
+const { civilYear } = require("./clock");
 
 const ORG = "org_r5import";
 const ADMIN = "director@r5import.local";
-const Y = new Date().getFullYear();
+const Y = civilYear();
 const OLD = Y - 6;             // a year Steward has no gifts for
 const VIEW = OLD + 2;          // the three-year comparison that ends two years later
 

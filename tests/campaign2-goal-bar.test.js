@@ -28,6 +28,7 @@
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
 const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
+const { civilDay, dayOffset } = require("./clock");
 
 const ORG = "org_c2bar", SLUG = "c2bar-harbor-test";
 const uniq = () => Math.random().toString(36).slice(2, 8);
@@ -86,11 +87,11 @@ async function publicPage(pageSlug) {
 (async () => {
   await reset();
   const tok = (await api("POST", "/auth/login", null, { email: "c2bar@example.org", password: "demo1234" })).body.token;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = civilDay();
   // The gifts in §2 to §4 arrive BEFORE the match in §5, so "before" is a
   // different civil date rather than a different hour: `gifts.date` is a civil
   // date and an hour is not a thing it can hold.
-  const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const lastWeek = dayOffset(-7);
 
   // ════════════════════════════════════════════════════════════════════════
   console.log("\n§1 a campaign from a template stands up a page that can take a gift");

@@ -44,6 +44,7 @@ const fs = require("fs");
 const path = require("path");
 const JA = require("../jobAudit");
 const A = require("../auditTrail");
+const { testNow } = require("./clock");
 
 const ORG = "org_f11job";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -136,7 +137,7 @@ async function wipe(orgId) {
 
   // Driven: the approve route, then read the row's actor back.
   const tok = await login("dana@f11job.local");
-  const draftId = "ty_" + Date.now().toString(36);
+  const draftId = "ty_" + testNow().toString(36);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name)
            VALUES ($1,$2,$3,100,'2026-09-20','cash','u_test','Dana')`, [`g_${ORG}`, ORG, `d_${ORG}`]);
   // The real columns, and NOT swallowed: a fixture that fails silently makes

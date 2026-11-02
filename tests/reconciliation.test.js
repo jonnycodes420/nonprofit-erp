@@ -15,6 +15,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const { BASE, ok, summary, api, q, closeDb, login, STRIPE_MOCK_PORT } = require("./helpers");
+const { testNow, civilDay } = require("./clock");
 
 const ORG = "org_recon", ACCT = "acct_recon_x", SUPER = "recon-super@test.local";
 
@@ -55,8 +56,8 @@ function startStripeMock(port = STRIPE_MOCK_PORT) {
   });
 }
 
-const nowSec = () => Math.floor(Date.now() / 1000);
-const today = () => new Date().toISOString().slice(0, 10);
+const nowSec = () => Math.floor(testNow() / 1000);
+const today = () => civilDay();
 const runReconcile = token => api("POST", "/admin/reconcile/run", token);
 const healthRecon = async () => (await api("GET", "/health")).body.reconciliation;
 

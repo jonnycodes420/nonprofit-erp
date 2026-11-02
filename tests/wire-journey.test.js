@@ -48,6 +48,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const Stripe = require("stripe");
 const { BASE, ok, summary, login, api, q, closeDb, STRIPE_MOCK_PORT, civilToday, civilPlusDays } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_wire1p", ACCT = "acct_wire1p", USER = "u_wire1p", DANA = "dana@wire1p.local";
 const WREN = "wren.wirefield@wire1.test", FUNDER_MAIL = "grants@lanterntrust.test";
@@ -70,7 +71,7 @@ function startStripeMock() {
         const cu = req.url.match(/^\/v1\/customers\/([^/?]+)/);
         if (req.method === "GET" && cu) return res.end(JSON.stringify({ id: cu[1], object: "customer", email: CUSTOMERS[cu[1]] || null, name: "Wren Wirefield" }));
         const su = req.url.match(/^\/v1\/subscriptions\/([^/?]+)/);
-        if (req.method === "GET" && su) return res.end(JSON.stringify({ id: su[1], object: "subscription", status: "active", metadata: {}, items: { data: [{ id: "si_w", price: { currency: "usd", product: "prod_w" } }] }, current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400 }));
+        if (req.method === "GET" && su) return res.end(JSON.stringify({ id: su[1], object: "subscription", status: "active", metadata: {}, items: { data: [{ id: "si_w", price: { currency: "usd", product: "prod_w" } }] }, current_period_end: Math.floor(testNow() / 1000) + 30 * 86400 }));
         const iv = req.url.match(/^\/v1\/invoices\/([^/?]+)/);
         if (req.method === "GET" && iv) return res.end(JSON.stringify({ id: iv[1], object: "invoice", subscription: iv[1] === "in_wire1" ? "sub_wire1" : null,
           parent: { subscription_details: { subscription: iv[1] === "in_wire1" ? "sub_wire1" : null } } }));
@@ -83,12 +84,12 @@ function startStripeMock() {
 }
 const b64 = s => Buffer.from(s, "utf8").toString("base64");
 const MESSAGES = {
-  m_wren: { id: "m_wren", internalDate: String(Date.now() - 3600e3), payload: { mimeType: "text/plain", headers: [
+  m_wren: { id: "m_wren", internalDate: String(testNow() - 3600e3), payload: { mimeType: "text/plain", headers: [
     { name: "From", value: `Wren Wirefield <${WREN}>` }, { name: "To", value: DANA }, { name: "Subject", value: "Saturday tutoring" }], body: { data: b64("Thank you for having me on Saturday.") } } },
-  m_fund: { id: "m_fund", internalDate: String(Date.now() - 7200e3), payload: { mimeType: "text/plain", headers: [
+  m_fund: { id: "m_fund", internalDate: String(testNow() - 7200e3), payload: { mimeType: "text/plain", headers: [
     { name: "From", value: DANA }, { name: "To", value: FUNDER_MAIL }, { name: "Subject", value: "Our interim report" }], body: { data: b64("Please find our interim report.") } } },
 };
-const soon = h => new Date(Date.now() + h * 3600e3).toISOString();
+const soon = h => new Date(testNow() + h * 3600e3).toISOString();
 const CAL_EVENTS = [{ id: "ev_wren_coffee", status: "confirmed", summary: "Coffee with Wren", start: { dateTime: soon(30) }, end: { dateTime: soon(31) },
   attendees: [{ email: DANA }, { email: WREN }] }];
 const google = http.createServer((req, res) => {
@@ -314,7 +315,7 @@ async function agentDraftsLeg() {
   await fire({ id: "evt_wire1_cs", type: "checkout.session.completed", account: ACCT, data: { object: { mode: "subscription", id: "cs_wire1",
     customer_email: WREN, customer: "cus_wren", subscription: "sub_wire1", amount_total: 2500, metadata: { donor_name: "Wren Wirefield", frequency: "monthly" } } } });
   await fire({ id: "evt_wire1_inv", type: "invoice.payment_succeeded", account: ACCT, data: { object: { id: "in_wire1", amount_paid: 2500, customer: "cus_wren",
-    parent: { subscription_details: { subscription: "sub_wire1" } }, lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 30 * 86400 } }] } } } });
+    parent: { subscription_details: { subscription: "sub_wire1" } }, lines: { data: [{ period: { end: Math.floor(testNow() / 1000) + 30 * 86400 } }] } } } });
   // The charge itself is a payment_intent on the invoice, as Stripe sends it.
   await fire({ id: "evt_wire1_pi2", type: "payment_intent.succeeded", account: ACCT, data: { object: { id: "pi_wire1_sub", amount_received: 2500,
     receipt_email: WREN, invoice: "in_wire1", customer: "cus_wren", metadata: {} } } });

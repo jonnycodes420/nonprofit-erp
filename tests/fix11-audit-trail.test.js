@@ -63,6 +63,7 @@ const { ok, summary, q, closeDb } = require("./helpers");
 const { walkRouter } = require("../scripts/lib/routeInventory");
 const { coversRoute } = require("../middleware/auditTrail");
 const A = require("../auditTrail");
+const { testNow } = require("./clock");
 
 const M = "http://localhost:" + process.env.PORT;
 const ORG_A = "org_f11audit_a", ORG_B = "org_f11audit_b";
@@ -113,9 +114,9 @@ const rowsFor = orgId => q(
 // answer. So the suite waits for the row rather than assuming it, and a wait
 // that times out is a failure with the rows it did see.
 async function waitForRow(orgId, pred, label, ms = 4000) {
-  const t0 = Date.now();
+  const t0 = testNow();
   let seen = [];
-  while (Date.now() - t0 < ms) {
+  while (testNow() - t0 < ms) {
     seen = await rowsFor(orgId);
     const hit = seen.find(pred);
     if (hit) return hit;
@@ -372,7 +373,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
   const SECRET = "Sup3rSecret-f11-passphrase";
   await mfetch("POST", "/auth/login", null, { email: "admin-a@f11.local", password: SECRET });
   await mfetch("POST", "/auth/register", null,
-    { email: `reg${Date.now()}@f11.local`, password: SECRET, orgName: "Audit Reg", name: "Reg" });
+    { email: `reg${testNow()}@f11.local`, password: SECRET, orgName: "Audit Reg", name: "Reg" });
   await new Promise(r => setTimeout(r, 900));
   const everything = await q(`SELECT id, org_id, changes, before_fields, after_fields, summary, request_path FROM fin_audit_log`);
   const leaked = everything.filter(r => JSON.stringify(r).includes(SECRET));
@@ -399,7 +400,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
     ok("§8 a meeting was logged", conv.status === 201 && !!intId, { status: conv.status, body: conv.body });
     const logged = await waitForRow(ORG_A, r => r.entity_id === intId && r.action === "created",
       "§8 logging the meeting leaves a row naming the meeting");
-    const t0 = new Date();
+    const t0 = new Date(testNow());
     const ed = await mfetch("PUT", `/interactions/${intId}`, token,
       { date: "2026-10-01", note: "Coffee at the harbour. She asked for the impact report by Friday." });
     ok("§8 the meeting's date and note were edited", ed.status === 200 && ed.body.date === "2026-10-01", { status: ed.status, body: ed.body });
@@ -462,7 +463,7 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
     const askId = `opp_${ORG_A}_1`;
     await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,proposal_stage,status,created_by,created_by_name)
              VALUES ($1,$2,$3,'Scholarship fund',5000,'asked','open',$4,'Dana Reyes')`, [askId, ORG_A, donorId, `u_${ORG_A}_admin`]);
-    const t0 = new Date();
+    const t0 = new Date(testNow());
     const ed = await mfetch("PUT", `/proposals/${askId}`, token, { askAmount: 7500 });
     ok("§8b the ask's amount was changed", ed.status === 200, { status: ed.status, body: ed.body });
     const aRow = await waitForRow(ORG_A, r => r.entity_id === askId && r.action === "updated", "§8b the ask edit leaves a row");

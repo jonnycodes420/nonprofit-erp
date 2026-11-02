@@ -117,4 +117,14 @@ function earlierToday(h, ms = testNow(), tz = ZONE) {
   return Math.max(ms - h * 3600e3, sod + Math.floor((ms - sod) / 2));
 }
 
-module.exports = { testNow, civilDay, startOfDay, earlierToday, nyNoon, pinned: offset != null, RealDate };
+// The org's civil day n days from the run's today ("2026-11-04" for n = 2 on
+// the 2nd). Counted on the calendar, not in 24-hour steps, so it never slips a
+// day across a DST change or near midnight.
+function dayOffset(n, ms = testNow(), tz = ZONE) {
+  const [y, m, d] = civilDay(ms, tz).split("-").map(Number);
+  return new RealDate(RealDate.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+// The org's calendar year today, as a number.
+const civilYear = (ms = testNow(), tz = ZONE) => Number(civilDay(ms, tz).slice(0, 4));
+
+module.exports = { testNow, civilDay, dayOffset, civilYear, startOfDay, earlierToday, nyNoon, pinned: offset != null, RealDate };

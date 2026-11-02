@@ -39,8 +39,8 @@ const path = require("path");
 const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
-const { testNow } = require("./clock");
-const today = () => new Date().toISOString().slice(0, 10);
+const { testNow, civilDay, dayOffset } = require("./clock");
+const today = () => civilDay();
 
 // Capture sink on :5602 (the server's RESEND_BASE_URL). `mode` can be flipped
 // to "fail" so the provider rejects — the log-honesty leg.
@@ -290,7 +290,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     await q(`INSERT INTO volunteer_opportunities (id, org_id, name, slug, created_by, created_by_name)
              VALUES ($1,$2,'Pantry Shift',$3,'system:test','Test')`, [oppId, orgId, "pantry-" + uniq()]);
     for (let k = 0; k < 3; k++) {
-      const date = new Date(Date.now() + k * 86400000).toISOString().slice(0, 10);
+      const date = dayOffset(k);
       const slotId = "vs_" + uniq();
       await q(`INSERT INTO volunteer_slots (id, org_id, opportunity_id, date, start_time, end_time, created_by, created_by_name)
                VALUES ($1,$2,$3,$4,'09:00','12:00','system:test','Test')`, [slotId, orgId, oppId, date]);
@@ -395,7 +395,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
   console.log("\n§9 MAIL-1: nothing until the donor file is in");
   {
     const sentTo = addr => to(addr).length;
-    const monday = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
+    const monday = (() => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
     const keep = `m1-keep-${uniq()}@test.local`, gone = `m1-gone-${uniq()}@test.local`;
     const dKeep = (await api("POST", "/donors", m1Tok, { name: "Kit Keeps", email: keep })).body.id;
     await api("POST", "/donors", m1Tok, { name: "Gil Gone", email: gone });
@@ -425,7 +425,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§9a …and a password reset still goes", fp.status < 300 && sentTo(m1Admin) === 1, { s: fp.status, n: sentTo(m1Admin) });
 
     // §9b one real donor imported -> onboarded
-    const runId = "imp_m1" + Date.now().toString(36);
+    const runId = "imp_m1" + testNow().toString(36);
     const real = `m1-real-${uniq()}@test.local`;
     const im = await api("POST", "/donors/import-combined", m1Tok, { donors: [{ name: "Ivy Imported", email: real }], gifts: [], importId: runId });
     const rec = await api("POST", "/imports", m1Tok, { id: runId, name: "donors.csv", sourceFilename: "donors.csv", shape: "donors", donorsCreated: 1, rowsIn: 1 });
@@ -543,7 +543,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const MP = require("../mailPolicy");
     const sentTo = addr => to(addr).length;
     // Weeks §9 never sent, so a digest that does not arrive was refused, not deduplicated.
-    const mondayAgo = weeks => (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeks); return d.toISOString().slice(0, 10); })();
+    const mondayAgo = weeks => (() => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 7 * weeks); return d.toISOString().slice(0, 10); })();
     const supEmail = `f48-super-${uniq()}@test.local`;
     await fetch(BASE + "/auth/register-org", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName: "F48 HQ " + uniq(), userName: "F48 Super", email: supEmail, password: "loadtest1234" }) });
@@ -628,7 +628,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§12a …at 6 AM on weekdays with every section in, until she changes it",
       n.brief?.hour === 6 && n.brief?.days === "weekdays" && Object.values(n.brief?.sections || {}).every(v => v === true), n.brief);
 
-    const monday = (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 21); return d.toISOString().slice(0, 10); })();
+    const monday = (() => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) - 21); return d.toISOString().slice(0, 10); })();
     state.captured.length = 0;
     const dg = await api("POST", "/digests/run", tok, { type: "weekly", weekStart: monday });
     await settle();
@@ -636,7 +636,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
       to(email).length === 0 && (dg.body?.weekly?.skipped || []).some(s => s.reason === "opted_out"), { n: to(email).length, b: dg.body?.weekly });
 
     // A weekday and a Saturday after the test clock, and the person's hour.
-    const day = dow => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7 || 7)); return d.toISOString().slice(0, 10); };
+    const day = dow => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7 || 7)); return d.toISOString().slice(0, 10); };
     const wed = day(3), sat = day(6);
     const why = r => ((r.body?.skipped || []).find(x => x.recipientUserId === reg.user?.id || x.recipientUserId === me.body?.user?.id) || {}).reason || null;
     ok("§12c off until she turns it on: nothing comes", why(await api("POST", "/nudges/run", tok, { today: wed, hour: 9, dryRun: true })) === "opted_out");
@@ -679,7 +679,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
   console.log("\n§13 STAFF-MAIL-2: the weekly email is the default");
   {
     const civil = d => d.toISOString().slice(0, 10);
-    const monday = (() => { const d = new Date(testNow()); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return civil(d); })();
+    const monday = (() => { const d = new Date(civilDay() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return civil(d); })();
     const tuesday = (() => { const d = new Date(monday + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return civil(d); })();
     const wantNew = x => x && x.weekly === true && x.morningEmail === false
       && ["portfolioGifts", "taskAssignments", "stepReminder", "meetingBrief", "weekInReview", "monthlyReport", "connectionAlerts"].every(k => x[k] === false);

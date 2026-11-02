@@ -390,7 +390,7 @@ app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
     `SELECT d.id, d.name, d.email, d.total_giving,
             COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
                        WHERE vs.org_id=d.org_id AND vs.person_id=d.id
-                         AND vs.date >= date_trunc('year', CURRENT_DATE)::text),0)::float AS hours_this_year,
+                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text),0)::float AS hours_this_year,
             (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
                WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
        FROM donors d
@@ -446,7 +446,7 @@ app.get("/volunteer-hub/groups/:id/csv", requireAuth, wrap(async (req, res) => {
     `SELECT d.name, d.email,
             COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
                        WHERE vs.org_id=d.org_id AND vs.person_id=d.id
-                         AND vs.date >= date_trunc('year', CURRENT_DATE)::text),0)::float AS hours,
+                         AND vs.date >= date_trunc('year', ${orgTime.orgTodaySql(orgTime.orgTzSql("vs.org_id"))})::date::text),0)::float AS hours,
             (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
                WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
        FROM donors d

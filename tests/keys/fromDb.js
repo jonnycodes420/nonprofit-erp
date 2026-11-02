@@ -6,12 +6,13 @@
 // (vocabulary_json.fiscal_year_start_month, July when unset) and its today is
 // the civil date in its time zone, read here with Intl.
 "use strict";
+const { testNow } = require("../clock");
 
 function civilToday(tz) {
   const zone = tz && String(tz).trim() ? String(tz).trim() : "America/New_York";
   let parts;
-  try { parts = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()); }
-  catch { parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()); }
+  try { parts = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(testNow())); }
+  catch { parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(testNow())); }
   const v = t => parts.find(p => p.type === t).value;
   return `${v("year")}-${v("month")}-${v("day")}`;
 }

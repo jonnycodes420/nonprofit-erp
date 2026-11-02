@@ -25,6 +25,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { dayOffset } = require("./clock");
 
 const ORG = "org_fix28cal", ORG2 = "org_fix28cal2";
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 5618);
@@ -63,7 +64,7 @@ async function reset() {
   }
   const U = `u_${ORG}`;
   // Two weeks ahead, so nothing is in the past and no lead time has arrived.
-  const base = new Date(Date.now() + 40 * 864e5).toISOString().slice(0, 10);
+  const base = dayOffset(40);
   const plus = n => new Date(Date.parse(base + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
   const ins = (sql, args) => q(sql, args);
   await ins(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ('d_f28_p',$1,'Fixture Person','active','system:test','test')`, [ORG]);

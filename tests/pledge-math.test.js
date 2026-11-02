@@ -19,9 +19,10 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const ORG = "org_plmath";
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = civilDay();
 // Money is compared in integer cents. Floats are never asserted on directly.
 const cents = v => Math.round((Number(v) || 0) * 100);
 
