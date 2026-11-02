@@ -204,7 +204,10 @@ function scanEmDash(rootDir) {
         text = node.quasis.map((q) => q.value.cooked || q.value.raw).join(" ${} ");
         ranges = node.quasis.map((q) => [q.start, q.end]);
       }
-      if (text != null && !skip && DASH.test(text)) {
+      // PROFILE-3: a literal that is ONLY the dash is the profile's empty-value glyph
+      // (the brief asks for it), not a dash in a sentence; tests/no-emoji.test.js
+      // plants both kinds to prove the same line.
+      if (text != null && !skip && DASH.test(text) && text.trim() !== "\u2014") {
         hits.push({ file: rel, line: node.loc ? node.loc.start.line : 0, text: text.trim().slice(0, 160), ranges });
       }
       if (node.type === "StringLiteral" || node.type === "JSXText") return;

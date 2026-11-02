@@ -462,11 +462,18 @@ export function ProfileGroups({ donorId, isReadOnly, children }) {
     apiFetch(`/donors/${donorId}/groups`).then(setD).catch(() => setD(null));
   }, [donorId]);
   useEffect(() => { load(); }, [load]);
+  // PROFILE-3: the profile draws two of these (the rail's Groups and About's
+  // picker); adding in one re-reads the other.
+  useEffect(() => {
+    const on = e => { if (!e.detail || e.detail === donorId) load(); };
+    window.addEventListener("steward:groups-changed", on);
+    return () => window.removeEventListener("steward:groups-changed", on);
+  }, [donorId, load]);
   const asParts = typeof children === "function";
   if (!d || (!d.groups.length && !d.canJoin.length)) return asParts ? children([], null) : null;
   const add = () => {
     if (!pick) return;
-    apiFetch(`/groups/${pick}/members`, { method: "POST", body: JSON.stringify({ donorIds: [donorId] }) }).then(() => { setPick(""); load(); }).catch(() => {});
+    apiFetch(`/groups/${pick}/members`, { method: "POST", body: JSON.stringify({ donorIds: [donorId] }) }).then(() => { setPick(""); window.dispatchEvent(new CustomEvent("steward:groups-changed", { detail: donorId })); }).catch(() => {});
   };
   const out = gid => apiFetch(`/groups/${gid}/members/remove`, { method: "POST", body: JSON.stringify({ donorIds: [donorId] }) }).then(load).catch(() => {});
   if (asParts) {
