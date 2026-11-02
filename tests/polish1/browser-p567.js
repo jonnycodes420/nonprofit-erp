@@ -8,7 +8,7 @@ const fs = require("fs");
 const { pinBrowserClock } = require("../lib/browserClock");
 
 const ROOT = path.join(__dirname, "..", "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("../lib/dist");   // CI-2: this shard's dist
 
 function why(h) {
   if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built";

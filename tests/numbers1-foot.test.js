@@ -4,7 +4,7 @@
 // "$14,423.08 of 13 gifts", Largest at $15,000, and the gift counted toward
 // GivingTuesday 2026, which had not started. This suite proves the numbers
 // three ways:
-//   §1 the checker passes on every demo org and the boot fixture org (org_creo);
+//   §1 the checker passes on every org this suite made, read again at the end;
 //   §2 Margaret's case: a $25,000 gift moves Average (over 14) and Largest on
 //      the ONE read the header draws from, and a gift dated before a campaign
 //      starts is refused it and never counts toward it;
@@ -329,19 +329,7 @@ async function shrink(seq, today) {
   await wipe(`${PREFIX}%`);
   const today = civilToday();
 
-  // ── §1 every demo and fixture org on this database ─────────────────────
-  console.log("\n§1 the checker on every demo and fixture org");
-  // ARCH-1: the orgs this means, the demo orgs seed-demo writes (is_demo_org) and
-  // the boot fixture, and not whatever other suites left on a shared shard. The
-  // battery's order now comes from generated timings, and other suites' fixture
-  // orgs (raw gift inserts by design) made this pass or fail by shard luck.
-  const orgs = await q(`SELECT id FROM orgs WHERE (is_demo_org = true OR id = 'org_creo') AND id NOT LIKE $1 AND id NOT LIKE 'org_n1m_%' ORDER BY id`, [`${PREFIX}%`]);
-  const red = [];
-  for (const { id } of orgs) {
-    const r = await checkOrg(id, { screens: NUM.screens }).catch(e => ({ problems: [{ rule: "error", count: 1, examples: [e.message] }] }));
-    if (r.problems.length) red.push({ id, problems: r.problems.map(p => `${p.rule} x${p.count} ${JSON.stringify(p.examples.slice(0, 2))}`) });
-  }
-  ok(`§1 every rule holds on all ${orgs.length} demo and boot-fixture orgs here`, orgs.length > 0 && red.length === 0, red.slice(0, 5));
+  // §1 runs LAST (below): it checks the orgs this suite made, so it waits until they exist.
 
   // ── §2 Margaret's gift ─────────────────────────────────────────────────
   console.log("\n§2 a $25,000 gift to Margaret, and GivingTuesday");
@@ -417,7 +405,7 @@ async function shrink(seq, today) {
     const why = await runSequence(seq, today, log);
     if (log) console.log(`  ${n}: ${log.join(" | ")}`);
     if (why) failed = { n, seq, why }; else passed++;
-    if (n % 50 === 49) await wipe(`${PREFIX}${SEED}_%`);
+    if (n % 50 === 0 && n) await wipe(`${PREFIX}${SEED}_%`);   // the last fifty stay for §1
   }
   if (failed) {
     const small = await shrink(failed.seq, today);
@@ -428,6 +416,21 @@ async function shrink(seq, today) {
   }
   ok(`§3 ${passed} of ${SEQUENCES} random sequences (${steps} steps) kept every rule`, !failed && passed === SEQUENCES, failed && failed.why);
   console.log(`  ${Number((process.hrtime.bigint() - started) / 1000000000n)}s`);
+
+  // ── §1 the checker on every org this suite made ─────────────────────────
+  // CI-2: only the orgs this suite created, by its own prefix. It used to
+  // check the demo orgs and the boot fixture of whatever database it shared
+  // with other suites, and passed or failed by which suites ran before it in
+  // the shard (docs/defects.md). These are the last fifty sequences' orgs,
+  // each in the state its final step left it, read again from scratch.
+  console.log("\n§1 the checker on every org this suite made");
+  const orgs = await q(`SELECT id FROM orgs WHERE id LIKE $1 ORDER BY id`, [`${PREFIX}${SEED}_%`]);
+  const red = [];
+  for (const { id } of orgs) {
+    const r = await checkOrg(id, { screens: NUM.screens }).catch(e => ({ problems: [{ rule: "error", count: 1, examples: [e.message] }] }));
+    if (r.problems.length) red.push({ id, problems: r.problems.map(p => `${p.rule} x${p.count} ${JSON.stringify(p.examples.slice(0, 2))}`) });
+  }
+  ok(`§1 every rule holds on all ${orgs.length} orgs this suite made`, orgs.length > 0 && red.length === 0, red.slice(0, 5));
   await wipe(`${PREFIX}%`);
   await wipe("org_n1m_%");
   mock.close();

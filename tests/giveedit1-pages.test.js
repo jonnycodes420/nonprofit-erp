@@ -27,7 +27,7 @@ const { BASE, ok, summary, api, q, closeDb, browserLegOrSkip } = require("./help
 
 const ORG = "org_ge1pages", SLUG = "ge1-harbor-test";
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 

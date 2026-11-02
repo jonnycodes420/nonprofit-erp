@@ -14,6 +14,8 @@
 //      suite can go green by asserting less. The FIX leads compared counts by
 //      eye at the end of every build; this does it every run.
 //
+//   4. (CI-2) a suite discovered in this tree did not run exactly once.
+//
 // The baseline RATCHETS: a run whose counts are all >= the baseline rewrites
 // it upward, so today's numbers are tomorrow's floor. A count that must come
 // down (an assertion a brief deliberately removed) is an edit to
@@ -30,20 +32,18 @@ const BASELINE = flag("baseline", "audit/suite-counts.json");
 const ROOT = path.join(__dirname, "..", "..");
 const R = "\x1b[31m", G = "\x1b[32m", Y = "\x1b[33m", Z = "\x1b[0m";
 
-const problems = [];
-const suites = [];
-let seen = 0;
-for (let i = 1; i <= SHARDS; i++) {
-  const f = path.join(IN, `shard-${i}.json`);
-  if (!fs.existsSync(f)) { problems.push(`shard ${i} produced no result at all`); continue; }
-  let j;
-  try { j = JSON.parse(fs.readFileSync(f, "utf8")); }
-  catch (e) { problems.push(`shard ${i}'s result is unreadable (${e.message})`); continue; }
-  if (j.error) { problems.push(`shard ${i} did not run: ${j.error}`); continue; }
-  seen++;
-  for (const s of j.suites) suites.push({ ...s, shard: i });
-}
+// CI-2: one reader of the shard files (tests/lib/shardResults.js), shared
+// with tests/every-test-runs.test.js. A shard with no file is a problem here.
+const { read, ranOnce } = require("../../tests/lib/shardResults");
+const { discover } = require("../../tests/lib/suites");
+const got = read(IN, SHARDS);
+const problems = [...got.problems];
+const suites = got.results;
+const seen = SHARDS - got.problems.length;
 if (!seen) problems.push("no shard produced a result — the battery did not run");
+// 4. (CI-2) every suite this tree has ran exactly once, by name, across the shards.
+const once = ranOnce(discover().run, suites);
+if (seen === SHARDS && once.length) problems.push(`not every suite ran exactly once:\n    ` + once.join("\n    "));
 
 const failed = suites.filter(s => s.rc !== 0);
 const countOf = last => { const m = /(\d+)\s+passed/.exec(last || ""); return m ? Number(m[1]) : null; };

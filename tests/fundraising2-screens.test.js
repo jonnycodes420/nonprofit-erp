@@ -51,7 +51,7 @@ const RECEIVED_ROWS = FJ_GIFTS.filter(g => g.Status === "Received").length, PLED
 const ORG = "org_fr2screens", EMAIL = "admin@fr2screens.local", PASSWORD = "loadtest1234";
 const DINNER = { linkEvent: true, eventName: "Finding Joy Dinner", eventDate: civilPlusDays(-12), useEventDate: true, pledgeDue: "event" };
 const APP = process.env.APP_URL || "http://localhost:4173";
-const DIST = path.join(__dirname, "..", "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const cents = v => Math.round(Number(v || 0) * 100);
 let assertSurfacesAgree = null;
 try { ({ assertSurfacesAgree } = require("./lib/surfacesAgree")); } catch {}

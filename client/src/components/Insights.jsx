@@ -683,7 +683,7 @@ export function WhatWorked() {
 // Not now and Doesn't fit, and the ask on the right. No field labels and no
 // rung chips: the profile's one tag set is the header's. With no move it is
 // one quiet line, so the timeline moves up.
-export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn }) {
+export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn, quietNone = false }) {
   const [d, setD] = useState(undefined);
   const [copied, setCopied] = useState(false);
   const load = () => apiFetch(`/insights/donor/${encodeURIComponent(donorId)}`).then(setD).catch(() => setD(null));
@@ -691,7 +691,9 @@ export function ProfileNextMove({ donorId, firstName, isReadOnly, onDraft, aiOn 
   if (d === undefined) return <div data-testid="dp-next-move-loading" style={{ height: 22 }} />;
   const m = d && d.move;
   if (!m || !m.item) {
-    return <div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3, padding: "2px 2px" }}>
+    // PROFILE-3: a person with nothing logged gets the start card instead of this line.
+    if (quietNone) return null;
+    return <div data-testid="dp-next-move-none" style={{ fontSize: 14, color: T.ink3, padding: "2px 0" }}>
       {firstName ? `Nothing due for ${firstName} right now.` : "Nothing due right now."}</div>;
   }
   const how = m.item.how || {};

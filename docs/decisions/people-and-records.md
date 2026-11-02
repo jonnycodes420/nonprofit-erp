@@ -8,6 +8,25 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   two tags from the one tag set (`donorStatus.js`), never the ladder's rung chips; "this year" on the profile is
   the org's fiscal year, labelled with its dates, in every number and sentence. Where each old feature lives now:
   `docs/profile-1/inventory.md` (the `Now` column, walked by `tests/profile1-everything-clicks.test.js`).
+- **PROFILE-3 (2026-11-01): the profile's columns scroll on their own; every other page still scrolls as one page.**
+  Above 768px the profile fills the window under the top bar and the page itself never scrolls: the main column and
+  the rail are each a scroll box (`components/profile/columns.js`, the `.dp3-*` rules in `shared.jsx`), and the
+  header band, the numbers and the tabs stay pinned at the top of the main column. At 768 and under it is one column
+  that scrolls as a page, in PROFILE-2's phone order. This replaces PROFILE-2's one-page scroll for the profile only;
+  the event page, the grant profile and every other screen still scroll as one page. Held by
+  `tests/smoke-walk.test.js` (`everyPageScrolls` for the rest, `tests/lib/profileColumns.js` for the profile).
+- **PROFILE-3: one grid.** The main column has one left edge, 40px from the sidebar (`--dp-gutter`): the back link,
+  the avatar, the numbers' first column, the first tab and the timeline start on it; the name, the tags and the
+  contact line share a second edge; the actions sit on the name's row. Nothing else invents its own indent.
+- **PROFILE-3: empty is calm.** A number with no value is an em dash in ink at 40%, with nothing under it. A tab
+  shows a count only above zero. A person with nothing logged gets one start card in the main column, and no rail
+  section that would be empty is drawn, except Next step, Journeys and About (which carries "Add email or phone",
+  "Link someone" and the group picker until those sections have something). Every rail section is one white card
+  under a brass small-caps label (`RailSection`, `RAIL` in `ProfileRail.jsx`). A person with no gift carries no
+  giving tag and is not called a Donor on their own record.
+- **PROFILE-3: the profile is parts.** `DonorProfile.jsx` holds the state and the frame; the header, numbers, tabs,
+  dialogs, start card and each rail section are files in `components/profile/`, none over 1,500 lines. A suite that
+  reads the profile's source reads every part (`scripts/lib/readSource.js`).
 - **SECURE-2 (2026-10-29): a form's email and phone.** Forms refuse an email that is not one
   (`shared/contactCheck.js`, with a "did you mean") and store a phone in one format (`phoneNormal.js`).
   An import never refuses a row for this: it keeps the value, and the profile and the preview say

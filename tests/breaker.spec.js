@@ -48,7 +48,7 @@ let assertSurfacesAgree = null;
 try { ({ assertSurfacesAgree } = require("./lib/surfacesAgree")); } catch { /* another branch: the minimal check below still runs */ }
 
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PASSWORD = "loadtest1234";
 const FAST = process.env.BREAKER_FAST === "1";

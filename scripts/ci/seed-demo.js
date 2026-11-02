@@ -3676,6 +3676,10 @@ async function main() {
   {
     const E = require("../../engagement");
     const qq = (sql, args = []) => { let n = 0; return q(sql.replace(/\?/g, () => `$${++n}`), args); };
+    // CI-2: planned from no statistics, the scoring's meetings query ran for
+    // 25 minutes on five fresh shard databases seeding at once (autovacuum had
+    // not reached them). ANALYZE first, as the end of the seed does (PARITY-3 6b).
+    for (const t of require("../../middleware/analyzeAfterImport").TABLES) await q(`ANALYZE ${t}`).catch(() => {});
     const scored = await E.recomputeOrgScores(qq, ORG, TODAY);
     console.log(`[seed] engagement and generosity scored for ${scored} people`);
   }
