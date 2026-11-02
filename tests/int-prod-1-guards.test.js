@@ -102,7 +102,6 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   // answers 200 and one Gmail mailbox has not read in two hours. The smoke used
   // to read FAILING here. No address is on /health, so none is printed.
   const http = require("http");
-  const { testNow } = require("./clock");
   const lastRead = new Date(testNow() - 2.2 * 3600e3).toISOString();
   const stub = http.createServer((req, res) => {
     const send = (code, body, type = "application/json") => { res.writeHead(code, { "Content-Type": type }); res.end(typeof body === "string" ? body : JSON.stringify(body)); };
