@@ -195,7 +195,7 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   above the price is refused. The fair-market value is the org's number to enter, and Steward never
   estimates it. (BUILD-98)
 - **Record an unpaid sponsor as a pledge with one instalment, never as money.** (BUILD-98)
-- **Whoever logged an entry, or an admin, may edit or delete it** (`mayEditLogged`, routes/crm.js).
+- **Whoever logged an entry, or an admin, may edit or delete it** (`mayEditLogged`, server/shared/trash.js).
   Conversations (`PUT /interactions/:id`), next steps (`PUT/DELETE /threads/:id`) and tasks. An edit
   stamps `edited_at/edited_by/edited_by_name`; the previous values live only in the audit row, which
   the "Edited" marker reads (`GET /records/:id/history`). A calendar meeting's time and place belong

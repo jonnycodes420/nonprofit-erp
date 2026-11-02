@@ -16,7 +16,7 @@ no Agent page: Atlas, the one helper, opens over every page (AGENT-5, `shared/at
 Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, never deleted.
 
 - Frontend: React 18 + Vite, deployed on Vercel. Backend: Node + Express (`server.js`,
-  `db.js`, `routes/`, `shared/`), deployed on Railway. Database: PostgreSQL.
+  `db.js`, `routes/`, `server/<domain>/`, `shared/`), deployed on Railway. Database: PostgreSQL.
 - Email through Resend. Donations through Stripe Connect Express. Platform billing is a
   separate Stripe client. AI through the Anthropic SDK, for narrow tasks only (no chat).
 - App: https://www.stewardapp.dev · API: https://nonprofit-erp-production.up.railway.app

@@ -61,7 +61,10 @@ ok(/import PRICING from "\.\.\/\.\.\/\.\.\/pricing\.json"/.test(picker) && /useS
 ok(!/\b(Core|Team)\b/.test(picker) && !/\b249\b/.test(picker), "PlanPicker names no Core, no Team and no $249");
 // Server: no route is gated on a tier any more (only the Portal tier, which is
 // not the CRM, is refused the CRM).
-const serverAll = ["server.js", ...fs.readdirSync(path.join(__dirname, "..", "routes")).filter(f => f.endsWith(".js")).map(f => "routes/" + f)]
+// SPLIT-1: the CRM's routes live in server/<domain>/ now.
+const serverDirs = d => fs.readdirSync(path.join(__dirname, "..", d), { withFileTypes: true })
+  .flatMap(e => e.isDirectory() ? serverDirs(d + "/" + e.name) : e.name.endsWith(".js") ? [d + "/" + e.name] : []);
+const serverAll = ["server.js", ...fs.readdirSync(path.join(__dirname, "..", "routes")).filter(f => f.endsWith(".js")).map(f => "routes/" + f), ...serverDirs("server")]
   .map(f => read(f)).join("\n");
 ok(!/requirePlan\(/.test(serverAll), "no server route is wrapped in requirePlan()");
 ok(!/"plan_required"/.test(serverAll), "the server never answers plan_required");

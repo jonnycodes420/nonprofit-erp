@@ -29,6 +29,14 @@ and its tests. Today's files move there over the coming PRUNE builds, one domain
 verbatim the FIX-1 way. **New server code goes in `server/<domain>/` now.** A new file that
 belongs to no domain is a sign the domain list needs a line, so ask.
 
+**SPLIT-1 moved `routes/crm.js` into `server/`**, in the folders its brief named (MAP-1's lines):
+`server/events/`, `server/grants/`, `server/outreach/` (campaigns, journeys, thank-yous: mail),
+`server/imports/`, `server/tasks/`, `server/reports/`, `server/majorGifts/`, `server/memberships/`,
+`server/org/` (auth and orgs) and `server/donors/` (donors and giving). Each folder's `routes.js`
+holds its main routes, with sibling files where one file would pass 1,500 lines, and `helpers.js`
+for what two of its files share. What two domains share is in `server/shared/`, one file per job.
+`routes/crm.js` keeps only the mounting: the order its routers sit in, and `mount()`.
+
 ## The three patterns
 
 Steward is **one modular monolith**: one deployable, split inside by domain. Not microservices.
@@ -161,6 +169,11 @@ to grow by at most 50 lines in a build (so a fix can land while the split is sti
     `scripts/nightly-ai/`, `scripts/demo-sites/`, `scripts/demo-assets/`, `scripts/fixtures/`)
     stay where they are. `scripts/README.md` lists what Jonathan runs, with each command.
   - A deleted script is listed in `docs/architecture/scripts-removed.md`; `git show` brings it back.
+- **A new route goes in its domain's file** under `server/<domain>/`. `routes/crm.js` registers
+  none and only shrinks (the `crm-routes` check). A file that is moved verbatim keeps its ratchet
+  counts: `node scripts/ci/arch-check.js --update --moved <old file>` hands them to the new files,
+  and refuses unless they add up. A move-only build runs on a `split-*` branch, where
+  `scripts/ci/route-diff.js` must find no change in any route's method, path, middleware or order.
 - **Routes.** A route is deleted only when a person-readable search shows no caller in the
   client, the server, emails, templates, schedulers, scripts and outside services (Stripe,
   Resend, Mailchimp, PayPal, QuickBooks, Google, Microsoft), **and** its path carries none of
@@ -199,6 +212,7 @@ each one matches:
 | `scripts-root` | the files in the `scripts/` root | `git ls-files scripts/` with no further `/` (a README excepted); the list may only shrink |
 | `real-clock` | per test file, the real-clock reads | the lines of `tests/*.js` (not `clock.js`) with `Date.now()` or a bare `new Date()`, comments stripped |
 | `org-specific` | per app file, lines naming one org | a quoted `org_<id>` literal, `org_slug === "…"`, or `orgId === "org_…"`, in app code (not tests, scripts, docs or audit) |
+| `crm-routes` | none (a hard rule, SPLIT-1) | a line of `routes/crm.js` that registers a route (`app.get(` … `routers.x.post(`) |
 | `big-images` | none (it is a hard rule, not a ratchet) | any committed image over 500 KB outside `client/src/assets/` and `assets/` |
 
 A pattern match will miss things and catch some innocent lines. That is the trade: it is a

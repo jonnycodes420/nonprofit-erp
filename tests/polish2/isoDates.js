@@ -46,6 +46,7 @@ function scanIsoDates(rootDir) {
   const files = [
     ...walk(path.join(rootDir, "client", "src"), []),
     ...walk(path.join(rootDir, "routes"), []),
+    ...walk(path.join(rootDir, "server"), []),   // SPLIT-1: the CRM's routes moved here
     ...walk(path.join(rootDir, "shared"), []),
     path.join(rootDir, "server.js"),
   ].filter(f => fs.existsSync(f));

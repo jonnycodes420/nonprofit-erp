@@ -255,7 +255,7 @@ function zoneProbe(tz, Y) {
 // below are moments, not days: a CSV cell of any value, and a grant file's
 // saved-at stamp.
 const SCAN_SKIP = /(^|\/)(node_modules|dist[^/]*|tests|scripts|docs|audit|marketing|\.git|\.claude)(\/|$)/;
-const SCAN_ALLOW = [/^routes\/crm\.js: const cell = v => reportCsvCell\(v instanceof Date/, /^routes\/grantLibrary\.js: const iso = d => \(d instanceof Date/];
+const SCAN_ALLOW = [/^server\/shared\/csv\.js: const cell = v => reportCsvCell\(v instanceof Date/, /^routes\/grantLibrary\.js: const iso = d => \(d instanceof Date/];
 function localDayReads() {
   const fs = require("fs"), path = require("path");
   const FIELD = String.raw`(?:[\w$]+\??\.)*(?:date|due_date|dueDate|last_gift_date|first_gift_date|lastGift|firstGift|lastGiftDate|firstGiftDate|start_date|end_date|ends_on|endsOn|deadline|expected_close)`;

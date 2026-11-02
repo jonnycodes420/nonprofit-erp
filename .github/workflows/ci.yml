@@ -319,6 +319,16 @@ jobs:
       - name: Install client deps (locked)
         run: npm ci --prefix client
 
+      # SPLIT-1 — this PR's routes against main's: the same method, path and
+      # middleware chain, line for line, and two routes that can answer the
+      # same request still in the same order. It prints the diff on every PR;
+      # on a move-only build (a branch named split-*) the diff must be empty.
+      - name: Route diff against main
+        if: matrix.shard == 1 && github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          node scripts/ci/route-diff.js --against FETCH_HEAD ${{ startsWith(github.head_ref, 'split-') && '--strict' || '' }}
+
       # ── Playwright + Chromium, cached ────────────────────────────────────
       # Pinned to the same version Jonathan's ~/steward-qa runs, so a suite
       # that passes on the laptop and fails here is a real difference and not

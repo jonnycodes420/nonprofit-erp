@@ -14,7 +14,6 @@
     "figureSources.js": 3267,
     "routes/agent.js": 3401,
     "routes/billing.js": 3243,
-    "routes/crm.js": 30246,
     "routes/finance.js": 4875,
     "routes/give.js": 8126,
     "routes/volunteerScheduling.js": 2496,

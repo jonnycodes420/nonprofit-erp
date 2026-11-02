@@ -94,6 +94,15 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   `ctx.fileKey`. A disagreement logged in `docs/defects.md` is marked in `tests/lib/knownDefects.js` and passes
   only at exactly the value its defect predicts; it still prints as KNOWN. Change the key only when a definition
   changes, never to match a screen.
+- **A move that changes nothing proves it (SPLIT-1).** `scripts/ci/route-diff.js --against <ref>` boots both
+  trees on a loopback database and compares every route's method, path and middleware chain (each layer's name
+  and a hash of its source, a relative `require` read as its file's name), the `app.use()` layers above each
+  route, the order of every two routes that can answer one request, and the stitched `readSource("server.js")`.
+  CI runs it in shard 1 on every PR and prints the diff; on a `split-*` branch it is `--strict` and a line fails
+  the PR. Planted for SPLIT-1: a dropped `requireAdmin`, `/donors/:id` moved above `/donors/duplicates`, and a
+  changed statement each go red. `readSource` reads the pieces of `routes/crm.js` in crm.js's own order
+  (`splitOrder.json` "routes/crm.js"), wherever they now live, so a suite that reads server.js's source sees
+  the text it always did.
 
 ## Gotchas
 - **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
