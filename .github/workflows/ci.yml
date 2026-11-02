@@ -378,11 +378,6 @@ jobs:
       # tears everything down. A shard that holds a suite needing the demo
       # seeds its own (FIX-1 §11), and one that holds a browser suite builds
       # client/dist for its own API.
-      # CI-2 PLANT (reverted before merge): shard 4 crashes before it reports.
-      - name: CI-2 plant crash
-        if: matrix.shard == 4
-        run: exit 1
-
       - name: The battery (shard ${{ matrix.shard }} of 6)
         run: bash tests/run-all.sh
         env:
