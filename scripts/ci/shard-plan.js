@@ -3,6 +3,8 @@
 //
 // Longest-processing-time first: sort the suites by their recorded seconds,
 // descending, and drop each one into whichever shard is currently emptiest.
+// CI's matrix (one job per shard) and `SHARDS=n bash tests/run-all.sh` both
+// plan here, from the same timings, so they run the same shards (CI-2).
 // LPT is within 4/3 of optimal for this shape of problem and it is four lines;
 // anything cleverer would be harder to read than the thing it schedules.
 //
@@ -18,34 +20,23 @@
 const fs = require("fs");
 const path = require("path");
 
-// ── THE BROWSER LEGS SHARE ONE SHARD, BECAUSE THEY SHARE ONE BUILD ─────────
-// A browser suite checks that `client/dist` was built against ITS $BASE, and
-// SKIPS (cleanly, quietly) when it was not. Six shards have six different
-// API ports and there is one dist, so five shards' worth of browser legs
-// would skip and the run would be green with the browser coverage missing —
-// the exact silent-skip failure this battery has been bitten by before.
-//
-// So every suite that drives a browser goes in ONE shard, and run-all.sh
-// builds the dist against that shard's API. That shard is ~62% of the
-// battery, which CAPS what sharding can buy locally; splitting it needs a
-// dist per shard, which needs the browser suites to resolve their dist path
-// from an env var rather than the fixed client/dist. That is the next step
-// and it is written up in docs/chore-2-NOTES.md. Detected by reading the suite
-// files rather than by a hand-kept list, because a hand-kept list of which
-// suites touch the browser is a list that goes stale the first time somebody
-// adds one.
-// ANY suite that launches a browser, not just one that names client/dist.
-// The first cut of this matched `client/dist` only, and five suites that
-// drive Playwright through $APP_URL without ever naming the directory
-// (fix3-d-lock-flash, giving-page-builder, build102-embed…) were scattered
-// across the other shards, served a dist built for shard 1's API, and failed
-// as "the widgets she built are drawn" — which reads as a product bug and is
-// an environment one. The net is wide on purpose: a browser suite in the
-// wrong shard is a false failure, and a non-browser suite in this one costs
-// only balance.
-const NEEDS_DIST = /playwright|client\/dist|"client",\s*"dist"/;
+// ── THE BROWSER LEGS ───────────────────────────────────────────────────────
+// A browser suite walks a built client (client/dist) made for ITS shard's API.
+// Until CI-2 every browser suite was pinned to shard 1 because there was one
+// dist; that shard carried 2,095 s of PR #294's 2,770 s. Now a browser suite
+// is balanced like any other, and the plan names the shards that hold one
+// (`browserShards`), so tests/run-all.sh builds a dist for each of them.
+// Detected by reading the suite files, never a hand-kept list. The net is
+// wide on purpose: a non-browser suite flagged here only costs a dist.
+const NEEDS_DIST = /playwright|client\/dist|"client",\s*"dist"|lib\/dist/;
 function needsDist(name) {
   try { return NEEDS_DIST.test(fs.readFileSync(path.join(__dirname, "..", "..", "tests", `${name}.test.js`), "utf8")); }
+  catch { return false; }
+}
+// `// battery: last` suites (the load-heavy ones) run after the rest of their shard.
+const { MARK } = require("../../tests/lib/suites");
+function isLast(name) {
+  try { const m = fs.readFileSync(path.join(__dirname, "..", "..", "tests", `${name}.test.js`), "utf8").match(MARK); return !!m && m[1] === "last"; }
   catch { return false; }
 }
 
@@ -68,29 +59,43 @@ const known = names.map(n => timings[n]).filter(v => Number.isFinite(v)).sort((a
 const median = known.length ? known[Math.floor(known.length / 2)] : 1;
 const weightOf = n => (Number.isFinite(timings[n]) ? timings[n] : median);
 
-// Ties broken by NAME, so the same list always produces the same plan — a
-// plan that shuffles between runs makes a flake impossible to reproduce.
-const sorted = [...names].sort((a, b) => (weightOf(b) - weightOf(a)) || a.localeCompare(b));
+// --shuffle <seed>: a different, seeded, random plan: which suites share a
+// shard and their order in it. CI-2 uses it to prove the suites do not lean
+// on each other's leftovers (two batteries, two orders, the same results).
+// Without it the plan is a pure function of the suites and the timings, so a
+// run in CI and a run on a laptop with the same timings run the same shards.
+const shuffleSeed = flag("shuffle", "");
+let rand = null;
+if (shuffleSeed) {
+  let a = (parseInt(shuffleSeed, 10) || 1) >>> 0;
+  rand = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const shuffle = xs => { const out = [...xs]; for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; } return out; };
 
 const bins = Array.from({ length: shards }, () => ({ total: 0, suites: [] }));
-const browser = sorted.filter(needsDist);
-const rest = sorted.filter(n => !needsDist(n));
-
-// The browser group is placed FIRST, as one unit, into shard 1 — a fixed
-// shard rather than the emptiest one, so `run-all.sh` and CI can both know
-// which API port to build the dist against without reading the plan twice.
-const BROWSER_SHARD = 1;
-for (const name of browser) {
-  bins[BROWSER_SHARD - 1].suites.push({ name, secs: weightOf(name), dist: true });
-  bins[BROWSER_SHARD - 1].total += weightOf(name);
+const lightest = () => bins.reduce((a, b) => (b.total < a.total ? b : a));
+const place = name => { const bin = lightest(); bin.suites.push({ name, secs: weightOf(name), ...(needsDist(name) ? { dist: true } : {}) }); bin.total += weightOf(name); };
+const timed = names.filter(n => Number.isFinite(timings[n]));
+const untimed = names.filter(n => !Number.isFinite(timings[n])).sort();
+if (rand) {
+  // A random order into the lightest shard: still balanced, different neighbours.
+  for (const name of shuffle(timed)) place(name);
+} else {
+  // Longest first into the lightest shard (LPT). Ties broken by NAME, so the
+  // same list always produces the same plan: a plan that shuffles between
+  // runs makes a flake impossible to reproduce.
+  for (const name of [...timed].sort((a, b) => (timings[b] - timings[a]) || a.localeCompare(b))) place(name);
 }
-// Then everything else, longest first into the emptiest shard. The browser
-// shard is usually the heaviest already, so this fills around it.
-for (const name of rest) {
-  const bin = bins.reduce((a, b) => (b.total < a.total ? b : a));
-  bin.suites.push({ name, secs: weightOf(name) });
-  bin.total += weightOf(name);
+// A suite with no timing yet (new, or renamed) goes to the lightest shard,
+// weighed at the median so several new suites spread out.
+for (const name of untimed) place(name);
+// Within a shard: the `battery: last` suites at the end; otherwise in plan
+// order (or a random one, with --shuffle).
+for (const b of bins) {
+  const order = rand ? shuffle(b.suites) : b.suites;
+  b.suites = [...order.filter(s => !isLast(s.name)), ...order.filter(s => isLast(s.name))];
 }
+const browserShards = bins.map((b, i) => (b.suites.some(s => s.dist) ? i + 1 : 0)).filter(Boolean);
 
 const plan = {
   shards: bins.map(b => b.suites),
@@ -99,11 +104,15 @@ const plan = {
   median,
   knownTimings: known.length,
   generatedFrom: timingsPath,
-  browserShard: browser.length ? BROWSER_SHARD : null,
-  browserSuites: browser.length,
+  browserShards,
+  browserSuites: bins.reduce((n, b) => n + b.suites.filter(s => s.dist).length, 0),
+  untimed,
+  ...(shuffleSeed ? { shuffle: shuffleSeed } : {}),
 };
 if (outPath) fs.writeFileSync(outPath, JSON.stringify(plan, null, 1));
 const spread = plan.totals.length > 1 ? Math.max(...plan.totals) - Math.min(...plan.totals) : 0;
 console.log(`[shard-plan] ${names.length} suites → ${shards} shards · est ${plan.totals.join("s / ")}s · spread ${spread}s`
   + (known.length ? ` · ${known.length} timed, median ${median}s` : " · no timings yet, every suite weighed equally")
-  + (browser.length ? ` · ${browser.length} browser legs pinned to shard ${BROWSER_SHARD}` : ""));
+  + (untimed.length && known.length ? ` · ${untimed.length} with no timing yet, to the lightest shard` : "")
+  + (plan.browserSuites ? ` · ${plan.browserSuites} browser legs in shards ${browserShards.join(",")}` : "")
+  + (shuffleSeed ? ` · shuffled (seed ${shuffleSeed})` : ""));

@@ -29,7 +29,8 @@ const zlib = require("zlib");
 
 const PORT = Number(process.env.PORT || 4173);
 const API = (process.env.API || "http://localhost:5606").replace(/\/+$/, "");
-const DIST = path.join(__dirname, "..", "..", "client", "dist");
+// CI-2: STEWARD_DIST names this shard's own build (tests/run-all.sh); unset, client/dist.
+const DIST = process.env.STEWARD_DIST ? path.resolve(process.env.STEWARD_DIST) : path.join(__dirname, "..", "..", "client", "dist");
 
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(API)) {
   console.error(`REFUSED: API=${API} is not loopback. This is a LOCAL preview only.`);

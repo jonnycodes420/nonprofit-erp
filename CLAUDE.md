@@ -85,8 +85,8 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   in `tests/lib/surfacesAgree.js`. (HARDEN-1)
 - **Affected suites while you build; the full battery once, at the end.** A red run during
   edits tells you nothing, and a full run after every edit is the slowest way to learn that.
-  Nothing is done until that final battery is green, with no silent skips. It is 35 suites in
-  about a minute now (`bash tests/run-all.sh`, three shards; `SHARDS=1` for the serial run).
+  Nothing is done until that final battery is green, with no silent skips. It is 192 suites
+  (`bash tests/run-all.sh`, three shards; `SHARDS=1` for the serial run).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
@@ -134,8 +134,8 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   run prints one summary. Two tabs can run batteries side by side: the names, ports and logs
   come from the worktree folder, and a run drops only its own databases. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
   change the width. Balance comes from `.generated/suite-timings.json` (git-ignored), which the run refreshes.
-  CI runs the same three shards as a matrix and `combine` is the one gate the deploys wait
-  on: it fails on a dead shard and on any suite whose pass count dropped.
+  CI plans once and runs six shards as parallel jobs (`SHARDS=6` here runs the same plan); the
+  job named `test` is the one gate: a dead shard, a suite not run exactly once, a drop in a pass count.
 - **The tenant battery:** `node tests/tenant-matrix.test.js` (boots server.js in-process on
   :5697) and `node tests/tenant-isolation.test.js`. The route inventory is generated into
   `.generated/` on each run, never committed.

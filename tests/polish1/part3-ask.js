@@ -113,7 +113,7 @@ module.exports = async function part3(h) {
 async function browserLeg(h, tok, login, QUESTION) {
   const { ok, BASE, browserLegOrSkip } = h;
   const ROOT = path.join(__dirname, "..", "..");
-  const DIST = path.join(ROOT, "client", "dist");
+  const { DIST } = require("../lib/dist");   // CI-2: this shard's dist
   const APP = process.env.APP_URL || "http://localhost:4173";
   const assetDir = path.join(DIST, "assets");
   const distJs = fs.existsSync(assetDir) ? fs.readdirSync(assetDir).filter(f => f.endsWith(".js")) : [];

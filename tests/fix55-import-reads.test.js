@@ -52,7 +52,7 @@ const XLSX = require(path.join(ROOT, "client", "node_modules", "xlsx"));
 const WORKBOOK = path.join(__dirname, "fixtures", "import", "fix52", "event-workbook-shape.xlsx");
 const WKEY = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "import", "fix52", "expected.json"), "utf8"));
 const APP = process.env.APP_URL || "http://localhost:4173";
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const PASSWORD = "loadtest1234";
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "fix55-"));
 
