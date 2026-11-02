@@ -10,8 +10,9 @@
 
 function mount(ctx) {
 const {
-  actor, query, rbCentsEv,
+  actor, pruneUnreferencedAssets, query, rbCentsEv,
 } = ctx;
+const birthdayMod = () => import("../../shared/birthday.js");   // PARITY-3 6a
 
 // FIX-2 A — EVERY NUMBER OPENS. Each figure below is computed THROUGH its
 // source (figureSources.js): the value is the aggregate over the exact query
@@ -21,8 +22,24 @@ const {
 const figureSources = require("../../figureSources");
 // FIX-19: every user id that comes from the request is checked against the org here.
 const OU = require("../../orgUsers");
+// PARITY-1: giving level, lifecycle, retained and closeness, defined once.
+const DS = require("../../donorStatus");
 // PARITY-1 Part D: Groups (saved lists, static or by rule).
 const GR = require("../../groups");
+
+// The money in a sentence: whole dollars when there are no cents.
+function sentenceMoney(v) {
+  const c = Math.abs(Math.round((Number(v) || 0) * 100));
+  const whole = c % 100 === 0;
+  return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 });
+}
+
+// The hub's single read. One payload so the landing screen is one request
+// rather than five that arrive in a different order every time.
+// MAIL-1 Part 3: ONE SENTENCE ABOUT WHETHER HER EMAIL GOES, decided by the
+// mail policy (mailPolicy.js), never a raw flag. Before the donor file is in:
+// "Email turns on once your donor file is in." Once it sends: the From address.
+const mailPolicy = require("../../mailPolicy");
 
 function eventLevelPayload(l, taken = 0) {
   return { id: l.id, kind: l.kind, name: l.name, price: Number(l.price), fmv: Number(l.fmv),
@@ -40,7 +57,16 @@ async function staffWho(req) {
   const [u] = who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, req.user.orgId]) : [];
   return { id: who.id, name: (u && u.name) || who.name };
 }
-return { GR, OU, eventLevelPayload, figureSources, staffWho };
+async function pruneCampaignAssets(orgId) {
+  const rows = await query(`SELECT hero_image_url FROM campaigns WHERE org_id = ? AND hero_image_url IS NOT NULL`, [orgId]);
+  const keep = [];
+  for (const r of rows) {
+    const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(r.hero_image_url));
+    if (m) keep.push(m[1]);
+  }
+  await pruneUnreferencedAssets(orgId, "campaign", keep);
+}
+return { DS, GR, OU, birthdayMod, eventLevelPayload, figureSources, mailPolicy, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
