@@ -27,3 +27,12 @@ planned blind and weighed every suite the same.
   `DONOR_SUMMARY_UPDATE` instead of writing them.
 
 Shard count, wall times and the plants are in the PR and `.claude/reports/CI-2.md`.
+
+**Found on the way.**
+- The demo seed scored engagement before it ANALYZEd, so five shards seeding at once ran one
+  query for 25+ minutes from no statistics; it ANALYZEs first now.
+- Eight browser helpers built `client/dist` themselves and silently skipped their legs in any shard
+  but the first; they read `tests/lib/dist.js`, and every-test-runs fails on a new one.
+- The scratch Postgres (100 connections) holds about three local shards, not six.
+- The shuffled runs found one order-dependent red that is not a test's fault: `/sequences/process`
+  writes an active at_risk sequence into every org (docs/defects.md, CI-2).

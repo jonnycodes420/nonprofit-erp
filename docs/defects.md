@@ -4,6 +4,10 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
+## The battery as parallel jobs (CI-2, 1 Nov 2026)
+
+- **P1? · Any org's admin running `POST /sequences/process` makes an active "at risk" sequence in every org.** `autoEnroll` (server.js) calls `ensureAtRiskSequence`, which loops over `SELECT id FROM orgs` and inserts an `active` at_risk sequence in each org that has none, demo orgs included. A write in other orgs from one org's request, and an active sending sequence nobody in that org turned on. Found by CI-2's shuffled battery: mail-suppression (which calls the route) ran before fix39-campaigns in one shard, the demo org got the sequence, and fix39's browser leg read "⏸ Pause" on Sequences (an emoji in product copy, `Communications.jsx` legacy sequence row). The severity needs Jonathan's read: whether that sequence can reach a donor. Suggested: a SEND-GATE or tenant build scopes the sweep to the caller's org (the hourly job keeps the all-org pass) and creates the sequence off, and the editor build drops the ⏸/▶ glyphs.
+
 ## One home for every giving number (NUMBERS-3, 1 Nov 2026)
 
 - **P3 · Two gifts on one day from one import pick the "last" one by random id.** An import writes its rows with one `created_at`, so `LAST_GIFT_ORDER` (date, created_at, id) falls to the gift's random id: OAKVILLE Foundation's two gifts of 16 Dec 2025 ($20,000 and $5,000) show either as the Last gift, run to run. Seen on the real-shaped before-and-after capture. Suggested: the next imports build stamps each row's file position (or `created_at` plus its row number) so the later row is the last.
