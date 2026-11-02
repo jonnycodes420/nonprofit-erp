@@ -59,6 +59,11 @@ const TRASH_WITH = {
     schedule_ids: (await queryTx(client, "SELECT id FROM board_pack_schedules WHERE dashboard_id = ? AND org_id = ?", [id, orgId])).map(r => r.id),
   }),
 };
+// Who edited, for the edited_by / edited_by_name stamp.
+async function editStamp(req) {
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  return [req.user.userId, u?.name || req.user.email || ""];
+}
 async function trashRow(table, id, req) {
   if (!RESTORABLE.has(table)) throw new Error("not a restorable table: " + table);
   const who = actor(req);
@@ -78,7 +83,31 @@ async function trashRow(table, id, req) {
 }
 // FIX-45: a minute on the toast; Recent changes lists the trash row after that.
 const UNDO_SECONDS = 60;
-return { NOT_YOURS, RESTORABLE, UNDO_SECONDS, mayEditLogged, trashRow };
+
+// Validate a proposed member set: all ids exist in this org, none already in
+// a DIFFERENT household. Returns { error } (with status) or { ids, primary }.
+// ── BUILD-97 Part 2 — AN ORGANISATION IS NOT A PERSON, AND THE PERSON
+// SURFACES ARE WHERE THAT HAS TEETH ────────────────────────────────────────
+// BUILD-80 Part 7 gave `donors.kind` three values and used it to keep
+// organisations off Drift and the re-engage list, and stopped there. Two person
+// surfaces were left open, and both are the kind of wrong that reaches a donor:
+//
+//   · A HOUSEHOLD is a marriage or a family living at one address, combined for
+//     acknowledgment. "The Sunrise Foundation Household" is not a thing, and
+//     the combined figure it produces would put a foundation's grants on a
+//     person's giving record.
+//   · A PLANNED GIFT is a bequest, an estate, an IRA beneficiary designation, a
+//     life-insurance policy. Every one of them is a thing that happens because
+//     a PERSON died. A foundation does not leave a bequest, and a chip on its
+//     record saying it might is the product not knowing what it is looking at.
+//
+// One helper, one sentence, so the two refusals cannot drift apart. Kind NULL
+// is a legacy row and reads as a person (the BUILD-84 rule), so nothing that
+// predates the column is refused.
+const PERSON_ONLY_SENTENCE = (what, name) =>
+  `${name || "That record"} is an organization, not a person, so it cannot ${what}. ` +
+  `Organizations have their own list, with grant-cycle language rather than household and estate language.`;
+return { NOT_YOURS, PERSON_ONLY_SENTENCE, RESTORABLE, UNDO_SECONDS, editStamp, mayEditLogged, trashRow };
 }
 
 module.exports = { mount };

@@ -190,6 +190,18 @@ async function importHealth(orgId) {
   return { stats: st, caveat };
 }
 
+// ── BUILD-99 Part 1 — PROPOSALS ────────────────────────────────────────────
+// A proposal is one ask to one person or household: purpose, ask amount,
+// expected close, stage, a probability SHE set, the fund it lands in, the
+// officer who owns it, notes. shared/proposalShape.js holds every rule; these
+// routes are its only writers. Nothing here infers a capacity, a probability or
+// an amount — see that module's header for why the probability list is closed.
+//
+// The rows live in `opportunities` (BUILD-15's table, extended — db.js says
+// why), so the pipeline board's ask totals, wonThisPeriod and officer activity
+// keep reading THE SAME ROWS. One ask, one place.
+async function proposalMod() { return import("../../shared/proposalShape.js"); }
+
 // IMPORT-2: the interaction types that are records of money or machinery, not
 // of anybody talking to anybody. A person with nothing but these has no
 // history yet, which is a different fact from being distant.
@@ -266,6 +278,16 @@ async function markDonorsForGeocoding(orgId, { donorIds = null } = {}) {
   return { pending: toPending.length, noAddress: toNoAddress.length, scanned: rows.length };
 }
 
+// The badge's read of the assessment — minimal, and null unless the donor is
+// actually DRIFTING (an excluded/ok/lapsed/not-eligible donor gets no badge
+// by construction; the Part 1 exclusion assertions ride on this being the
+// only shape any list payload carries).
+function driftBadgeField(a) {
+  return a && a.state === "drifting"
+    ? { state: "drifting", confidence: a.confidence, reason: a.reason }
+    : null;
+}
+
 // ── Custom Fields (BUILD-78) ────────────────────────────────────────────────
 // The definitions table (custom_field_defs) is the ONLY authority on shape;
 // values live in a custom_fields JSONB column ON the donor/gift row. Every
@@ -324,7 +346,7 @@ async function pruneCampaignAssets(orgId) {
 }
 // CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
 giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
-return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, pruneCampaignAssets, sentenceMoney, staffWho };
+return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, driftBadgeField, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, proposalMod, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
