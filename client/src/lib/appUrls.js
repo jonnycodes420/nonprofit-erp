@@ -56,6 +56,8 @@ export const DONOR_LIST_KEYS = [
   ["sort", "sort"], ["household", "household"],
   // ENGAGE-1: the "Warm but not asked this year" panel is open.
   ["warmUnasked", "warm"],
+  // IMPORT-6: Everyone, Donors or Contacts, and the people one import brought in.
+  ["people", "people"], ["fromImport", "import"],
 ];
 
 export function donorsListHref(state) {

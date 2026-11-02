@@ -38,7 +38,7 @@ export const EXPORT_SHAPES = [
     columns: {
       "contact id": "externalId", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, else: "keep",
         reason: "the household account Salesforce makes for each person; Steward makes households from the people" },
-      "contact owner": "keep", "mobile": "phone", "mobile phone": "phone", "mailing country": "keep", "birthdate": "keep",
+      "contact owner": "keep", "mobile": "phone", "mobile phone": "phone", "mailing country": "country", "birthdate": "keep",
     },
   },
   {

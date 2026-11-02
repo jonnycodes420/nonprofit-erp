@@ -318,10 +318,10 @@ function BulkAutoEmail({ids,disabled,onDone}){
     </select>
   );
 }
-function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false}){
+function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold,sortDir="",setSort,listSetup,layout,setLayoutLocal,persistLayout,resetLayout,saveOrgLayout,where,setWhere,filterError="",views=[],activeViewId="",onPickView,onSaveView,onDeleteView,onPageSize,includeScreening=false,peopleView="donors",setPeopleView,roleCounts=null,fromImport="",clearFromImport,anyFilter=false}){
   // WIRE-1: the server-side filters on screen, as a Group rule, offered once
   // a filter beyond "donors" is set. The sort is not a filter.
-  const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).length>1?r:null;})();
+  const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).filter(k=>k!=="role").length>0?r:null;})();
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
@@ -575,8 +575,34 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     );
   }
 
+  // IMPORT-6: the empty list says why. A filter that finds nobody says so; a
+  // Donors view with no donors yet points at the contacts instead.
+  const contactsN=roleCounts?roleCounts.contacts:0;
+  const emptyList=anyFilter
+    ?<EmptyState title={peopleView==="contacts"?"No contacts found":peopleView==="everyone"?"No one found":"No donors found"} message="Try adjusting your filters or search term."/>
+    :peopleView==="donors"&&contactsN>0
+    ?<div data-testid="dir-empty-contacts" style={{textAlign:"center",padding:"40px 16px"}}>
+      <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,color:T.ink,marginBottom:8}}>No donors yet.</div>
+      <div style={{fontSize:14,color:T.ink,marginBottom:14}}>{`Your ${contactsN.toLocaleString("en-US")} ${contactsN===1?"contact is":"contacts are"} under Contacts.`}</div>
+      {setPeopleView&&<button type="button" data-testid="dir-empty-see-contacts" onClick={()=>setPeopleView("contacts")} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:10,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer"}}>See your contacts</button>}
+    </div>
+    :<EmptyState title={peopleView==="contacts"?"No contacts yet":"No one here yet"} message={peopleView==="contacts"?"A contact is anyone with no gift yet: a guest, a volunteer, a name on a mailing list.":"Bring in a spreadsheet from Import above, or add one name to begin."}/>;
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
+
+      {/* IMPORT-6 · Everyone · Donors · Contacts, each with its count */}
+      {setPeopleView&&<div role="tablist" aria-label="Who to show" data-testid="dir-people-switch" style={{display:"flex",gap:4,flexWrap:"wrap",background:T.ground||T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:3,alignSelf:"flex-start",maxWidth:"100%"}}>
+        {[["everyone","Everyone",roleCounts&&roleCounts.everyone],["donors","Donors",roleCounts&&roleCounts.donors],["contacts","Contacts",roleCounts&&roleCounts.contacts]].map(([k,l,nn])=>{const on=peopleView===k;return(
+          <button key={k} type="button" role="tab" aria-selected={on} data-testid={`dir-people-${k}`} onClick={()=>setPeopleView(k)}
+            style={{background:on?T.white:"transparent",color:T.ink,border:on?"1px solid "+T.bg3:"1px solid transparent",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:on?700:500,cursor:"pointer",whiteSpace:"nowrap"}}>
+            {l}{nn!=null&&<span data-testid={`dir-people-${k}-count`} style={{marginLeft:6,fontWeight:700}}>{Number(nn).toLocaleString("en-US")}</span>}
+          </button>);})}
+      </div>}
+      {fromImport&&<div data-testid="dir-from-import" style={{fontSize:13,color:T.ink,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        Showing the people one import brought in.
+        {clearFromImport&&<button type="button" onClick={clearFromImport} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Show everyone</button>}
+      </div>}
 
       {/* Toast */}
       {toast&&<div style={{background:T.ink,color:T.inkInverse,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,textAlign:"center"}}>{toast}</div>}
@@ -833,7 +859,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading donors…
         </div>
         :filtered.length===0
-        ?<EmptyState title="No donors found" message="Try adjusting your filters or search term."/>
+        ?emptyList
         :<div data-testid="dir-table" style={{background:T.white,borderRadius:14,overflowX:"auto",overflowY:"hidden",border:"1px solid "+T.bg3}}>
           {/* Header — light treatment (not a solid green fill) so Directory
               reads as its own surface instead of blurring into the Kanban

@@ -67,8 +67,11 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // role is refused (400 at the route) rather than quietly ignored, because an
   // ignored filter is a list that says "donors" and holds everybody.
   if (role !== undefined && role !== "") {
-    if (!PEOPLE_ROLES.includes(String(role))) return { badRole: true };
-    where.push(PT.typeSql(String(role)));
+    // IMPORT-6: the Directory's Contacts view is everyone who is not a donor
+    // (the same predicate, inverted, so contacts are never counted as donors)
+    if (String(role) === "contact") where.push(`NOT ${PT.donorOnlySql()}`);
+    else if (!PEOPLE_ROLES.includes(String(role))) return { badRole: true };
+    else where.push(PT.typeSql(String(role)));
   }
   if (search && String(search).trim()) {
     // WIRE-1: a phone number and an organisation's contact person find the
@@ -563,7 +566,7 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // give, and the list's own filter on any field (donorList.js).
   "zip", "zipMiles", "attendedNoGift", "where"];
 const KINDS = ["static", "dynamic"];
-const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
+const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board", contact: "contacts" };
 
 // Keep what is recognised and refuse what is wrong; never guess. A rule that
 // names a filter nobody understands must not quietly widen the group.
@@ -585,7 +588,7 @@ function normalizeRules(raw) {
   }
   if (rules.zip && !/^(\d{1,5}\*|\d{5}([,\s]+\d{5})*)$/.test(rules.zip)) errors.push("A zip is five digits, like 40502.");
   if (rules.zipMiles && !/^\d{5}:\d{1,3}(\.\d+)?$/.test(rules.zipMiles)) errors.push("Within miles takes a zip and a number of miles.");
-  if (rules.role && !PEOPLE_ROLES.includes(rules.role)) errors.push("A role is Donor, Volunteer, or Staff and board.");
+  if (rules.role && rules.role !== "contact" && !PEOPLE_ROLES.includes(rules.role)) errors.push("A role is Donor, Volunteer, Staff and board, or Contact.");
   if (rules.level && !DS.LEVELS[rules.level]) errors.push("A giving level is General, Mid or Major.");
   if (rules.lifecycle && !DS.LIFECYCLES[rules.lifecycle] && rules.lifecycle !== "lapsing") errors.push("A lifecycle is New, Current, Recaptured, Lapsing or Lapsed.");
   if (rules.closeness && !DS.CLOSENESS[rules.closeness]) errors.push("Closeness is Close, Warm, On track, Cooling or New.");

@@ -247,7 +247,7 @@ async function coupleRows(orgId, people) {
   const out = [];
   for (const d of people) {
     if (d.kind === "organization" || dismissed.has(`${d.id}:${d.name}`)) continue;
-    const f = R.commaCoupleFix(d.name, { imported: !!d.created_import_id });
+    const f = R.commaCoupleFix(d.name, { imported: !!d.created_import_id, together: !!d.household_id || !!(d.email && d.email2 && d.email.toLowerCase() !== d.email2.toLowerCase()) });
     if (f) out.push({ donorId: d.id, name: d.name, before: f.before, after: f.household, people: f.people });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));

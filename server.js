@@ -12714,7 +12714,7 @@ require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINAT
 require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
   recomputeScoresForOrg, orgToday, orgTz });
 require("./routes/sheetImport").mount({ query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recalcPledgePayment,
-  withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, orgToday, orgTz, recalcDonorSummary });
+  withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, orgToday, orgTz, recalcDonorSummary, getOrgAccessState });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

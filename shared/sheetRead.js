@@ -28,13 +28,15 @@ import { isGivenName } from "./givenNames.js";
 import { splitAddress, contactNoteFlags } from "./addressSplit.js";
 import { nearDuplicate, nameAndNotes } from "./nearNames.js";
 import { countLabel } from "./countWords.js";
+import { SECTION_LABEL_RE, noteLine as NOTE_LINE, fixZip, rowLedger as ledgerOf } from "./importRows.js";
+export { fixZip };
 export { pledgeMoneyWords };
 
 // ── vocabularies (declared before every reader, the TDZ rule) ─────────────
 const ROLE_LABELS = {
   name: "Full name", first: "First name", last: "Last name", lastFirst: "Name (Last, First)",
   org: "Organization", email: "Email", phone: "Phone", address: "Street address",
-  address2: "Address line 2", city: "City", state: "State", zip: "ZIP", amount: "Amount",
+  address2: "Address line 2", city: "City", state: "State", zip: "ZIP", country: "Country", amount: "Amount",
   date: "Date given", method: "Payment method", frequency: "How often", paid: "Paid yet? (yes/no)",
   status: "Status", type: "Transaction type", pledgeTotal: "Pledge total (all years)",
   fund: "Fund", campaign: "Campaign or appeal", note: "Note", giftNote: "On each gift's note", externalId: "Donor ID (old system)",
@@ -59,11 +61,19 @@ const HEADER_ROLES = [
   ["org", ["organization", "organisation", "company", "company name", "organization name", "business", "business name"]],
   ["email", ["email", "e-mail", "email address", "e-mail address", "from email address", "contact email", "primary email", "donor email", "email_address", "personal email"]],
   ["phone", ["phone", "phone number", "phone #", "mobile", "cell", "telephone", "home phone", "mobile phone", "primary phone"]],
-  ["address", ["address", "street", "address 1", "address1", "address line 1", "mailing address", "street address", "mailing street", "address_1", "addr1", "home street"]],
-  ["address2", ["address 2", "address2", "address line 2", "address_2", "apt", "suite"]],
-  ["city", ["city", "town", "mailing city", "home city"]],
-  ["state", ["state", "st", "province", "state/province", "mailing state/province", "mailing state", "home state", "region"]],
-  ["zip", ["zip", "zip code", "zipcode", "postal code", "postcode", "zip/postal code", "mailing zip/postal code", "home zip", "zip_code"]],
+  // IMPORT-6: each address family in its mailing, home, billing and primary forms, so
+  // "Mailing Zip" goes into the address and never into a custom field (1 Nov)
+  ["address", ["address", "street", "address 1", "address1", "address line 1", "mailing address", "street address", "mailing street", "address_1", "addr1", "home street",
+               "street 1", "street1", "street line 1", "mailing address 1", "mailing address line 1", "mailing street address", "mailing street 1", "home address", "home street address",
+               "billing street", "billing address", "billing address 1", "primary street", "primary address", "address street", "street/address"]],
+  ["address2", ["address 2", "address2", "address line 2", "address_2", "apt", "suite", "street 2", "street2", "mailing address 2", "mailing address line 2", "mailing street 2", "apt/suite", "unit"]],
+  ["city", ["city", "town", "mailing city", "home city", "billing city", "primary city", "address city", "city/town", "town/city"]],
+  ["state", ["state", "st", "province", "state/province", "mailing state/province", "mailing state", "home state", "region", "state province", "province/state",
+             "mailing province", "billing state", "billing state/province", "primary state", "address state", "state code", "home state/province"]],
+  ["zip", ["zip", "zip code", "zipcode", "postal code", "postcode", "zip/postal code", "mailing zip/postal code", "home zip", "zip_code", "mailing zip", "mailing zip code",
+           "mailing zipcode", "mailing postal code", "mailing postcode", "home zip code", "home postal code", "billing zip", "billing zip code", "billing postal code",
+           "primary zip", "address zip", "zip+4", "zip 4", "zip + 4", "postal", "postal/zip code", "postal code/zip", "zip/postal"]],
+  ["country", ["country", "mailing country", "home country", "billing country", "primary country", "address country", "country/region", "nation"]],
   ["amount", ["amount", "gift amount", "donation", "donation amount", "gross", "amount (total)", "gift", "payment amount", "amt", "gift_amount", "total amount", "received amount", "contribution", "amount received", "pledge amount", "gift $", "$"]],
   ["date", ["date", "received", "date of gift", "timestamp", "gift date", "donation date", "close date", "received date", "payment date", "datetime", "transaction date", "deposit date", "date received", "gift_date", "date given", "created at", "donated at"]],
   ["method", ["method", "payment method", "payment type", "pay method", "tender", "paid by", "payment", "pay type", "payment_method", "gift method", "how paid"]],
@@ -105,7 +115,7 @@ const PLEASE_REMOVE_RE = /\b(please remove|remove me|unsubscribe me|take me off|
 const OPT_OUT_WORDS = /^(unsubscribed?|opt(ed)?[- ]?out|remove|removed|no emails?|do not email|stop|off|bounced? and removed)$/i;
 const EVENT_WORD_RE = /\b(dinner|gala|lunch|luncheon|breakfast|auction|benefit|banquet|celebration|party|golf|walk|run|5k|concert|reception|fundraiser|night|brunch|tea|festival|open house)\b/i;
 // The roles that put a value on the person (core Steward fields).
-const PERSON_ROLES = new Set(["name", "first", "last", "lastFirst", "org", "email", "phone", "address", "address2", "city", "state", "zip", "externalId"]);
+const PERSON_ROLES = new Set(["name", "first", "last", "lastFirst", "org", "email", "phone", "address", "address2", "city", "state", "zip", "country", "externalId"]);
 const ENGAGE_ROLES = new Set(["invited", "rsvp", "attended", "table", "partySize", "logistics"]);
 const COMMS_ROLES = new Set(["mailingList", "optOut", "doNotEmail", "doNotMail", "doNotCall", "doNotContact", "deceased"]);
 const ROLE_FLAG_ROLES = new Set(["volunteer", "board", "staff"]);
@@ -227,9 +237,13 @@ const SURNAME_LIKE = new Set(("thomas lewis grant dean wade mitchell marshall ho
   + "warren wayne gordon curtis craig kelly ross ray jordan bruce henry george arthur martin owen wesley clay chase lance kent kirk "
   + "glenn dale mason logan tyler douglas stanley herbert vernon norman milton marion lynn neil neal bernard clifford calvin drew "
   + "frank franklin austin lloyd miles barry graham elliott gilbert harvey cooper nelson spencer fay grace rose joy").split(" "));
+// IMPORT-6: a middle initial, a suffix (Jr., III) or a title (Dr.) is one
+// person's ("Thomas, Anthony C" is Anthony C Thomas), never a sign of two.
+const ONE_PERSON_WORD = w => /^[A-Za-z]\.?$/.test(w) || PERSON_SUFFIX.has(w.toLowerCase().replace(/[.,]/g, "")) || TITLE_RE.test(w);
 function commaCouple(before, after) {
   const b = s(before).split(/\s+/).filter(Boolean), a = s(after).split(/\s+/).filter(Boolean);
   if (b.length !== 1 || a.length < 2 || a.length > 3) return null;
+  if (ONE_PERSON_WORD(b[0]) || ONE_PERSON_WORD(a[a.length - 1]) || ONE_PERSON_WORD(a[0])) return null;
   if (a.length === 3 && !/^[A-Za-z]\.?$/.test(a[1])) return null;
   if (!isGivenName(b[0]) || isGivenName(a[a.length - 1])) return null;
   if (!isGivenName(a[0]) && (a.length !== 2 || SURNAME_LIKE.has(b[0].toLowerCase()) || TITLE_RE.test(a[0])
@@ -239,14 +253,18 @@ function commaCouple(before, after) {
 // The same couple on a record already here, for Data health's review: written
 // as typed ("Alex, Brad Hollins"), or as the old reading left it ("Brad Hollins
 // Alex", only on a record an import made). Never applied without her click.
-export function commaCoupleFix(name, { imported = false } = {}) {
+// IMPORT-6 (1 Nov): with no comma and no joining word, three words are a couple
+// only when the first and last are both given names, neither is a common
+// surname, AND the record itself says two people (a household, or two emails).
+// "Anthony C Thomas" and "Erin Swanson Russell" are one person each.
+export function commaCoupleFix(name, { imported = false, together = false } = {}) {
   const n = s(name);
   let c = null;
   const m = n.match(/^([^,]+),\s*(.+)$/);
   if (m) c = commaCouple(m[1], m[2]);
-  else if (imported) {
+  else if (imported && together) {
     const w = n.split(/\s+/);
-    if (w.length === 3 && !isGivenName(w[1]) && isGivenName(w[2]) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
+    if (w.length === 3 && isGivenName(w[0]) && !isGivenName(w[1]) && isGivenName(w[2]) && !SURNAME_LIKE.has(w[2].toLowerCase()) && !isOrgName(n)) c = commaCouple(w[2], `${w[0]} ${w[1]}`);
   }
   // FIX-59: "Randy or Jessamy Barlow", "Conrad and Celia Hartwell" (or
   // "Or", as the older reading left it): the joining word makes two people,
@@ -345,7 +363,7 @@ function yesNo(v) {
 }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/;
-const ZIP_RE = /^\d{4,5}(-\d{4})?$/;
+const ZIP_RE = /^\d{4,5}([\s-]?\d{4})?$/;
 const STATE_RE = /^(A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|PR|GU|VI)$/i;
 
 // ── 0. any file → grids ───────────────────────────────────────────────────
@@ -439,9 +457,13 @@ function splitLine(line, d) {
 // above, section labels and totals inside, notes in the margin. Several
 // tables side by side are split at a column that is empty from top to bottom
 // of the block; several stacked are split where a new header row appears.
-function headerScore(row) {
+// IMPORT-6: a list of one column ("Full Name" and the names under it) has a
+// header of one cell, when that cell names a person's name or email.
+const ONE_COLUMN_HEADER_ROLES = new Set(["name", "lastFirst", "first", "last", "org", "email"]);
+function headerScore(row, { oneColumn = false } = {}) {
   const cells = row.map(s);
   const filled = cells.filter(Boolean);
+  if (oneColumn && filled.length === 1 && ONE_COLUMN_HEADER_ROLES.has(HEADER_INDEX.get(hnorm(filled[0])))) return 4;
   if (filled.length < 2) return 0;
   let known = 0, texty = 0;
   for (const c of filled) {
@@ -484,18 +506,21 @@ function tablesInBlock(sheetName, rows, c0, notes) {
   const out = [];
   let i = 0;
   const titles = [];
+  const oneColumn = rows.every(r => r.slice(1).every(isBlank));
   while (i < rows.length) {
     // find the next header row
     let hi = -1, bestScore = 0;
     for (let j = i; j < Math.min(rows.length, i + 40); j++) {
-      const sc = headerScore(rows[j]);
+      const sc = headerScore(rows[j], { oneColumn });
       if (!sc) {
         if (!rows[j].every(isBlank) && hi < 0) continue;
         continue;
       }
       // the row under a header holds data, not another header-like row of words only
       // the next rows hold data (a section label like "Checking" may sit between)
-      const next = rows.slice(j + 1, j + 6).find(r => r.filter(c => !isBlank(c)).length >= 2);
+      // IMPORT-6: under a header that names a person's column, a row of one name is data too
+      const nameHeader = oneColumn || rows[j].some(c => ONE_COLUMN_HEADER_ROLES.has(HEADER_INDEX.get(hnorm(c))));
+      const next = rows.slice(j + 1, j + 6).find(r => r.filter(c => !isBlank(c)).length >= (nameHeader ? 1 : 2));
       if (!next) continue;
       if (sc > bestScore) { bestScore = sc; hi = j; }
       break;
@@ -1118,10 +1143,14 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
           continue;
         }
       }
-      // a section label ("October 2026") or a stray line inside the table
+      // a section label ("October 2026") or a stray line inside the table.
+      // IMPORT-6: on a list of people, a row holding only a name is a person
+      // (1 Nov: the 317 name-only rows of a 1,697-row list were read as labels
+      // and vanished from the preview without a line).
       if (filled.length === 1 && !moneyCols.some(m => !isBlank(cells[m.index]))) {
         const lbl = filled[0];
-        if (!NUMERIC_TOTAL_RE.test(lbl)) { notes.push({ sheet: t.sheet, line: b.line, text: lbl, label: true }); continue; }
+        const aName = t.kind === "people" && nameCols.some(c => s(cells[c.index]) === lbl) && !SECTION_LABEL_RE.test(lbl) && !NOTE_LINE(lbl);
+        if (!aName && !NUMERIC_TOTAL_RE.test(lbl)) { notes.push({ sheet: t.sheet, line: b.line, text: lbl, label: true, ...(NOTE_LINE(lbl) ? { noteLine: true } : {}) }); continue; }
       }
       const moneyHere = moneyCols.filter(m => moneyOf(cellOf(t, b, m)) != null);
       // A row with no name is a total when it says so, or when it foots: its
@@ -1171,7 +1200,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       let email = s(get(b, "email")).toLowerCase();
       if (email && placeholder.email.has(email)) email = "";
       const extId = s(get(b, "externalId"));
-      if (!who.name && email) { who.kind = "person"; who.name = email; who.people = [{ name: "" }]; }
+      if (!s(who.name) && email) { who.kind = "person"; who.name = email; who.people = [{ name: "" }]; }
       const nameKey = who.kind + ":" + who.name.toLowerCase().replace(/[^a-z0-9& ]/g, "").replace(/\s+/g, " ");
       let pkey = null, linkedBy = null;
       if (extId && byId.has(extId.toLowerCase())) { pkey = byId.get(extId.toLowerCase()); linkedBy = "id"; }
@@ -1215,7 +1244,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       const fresh = { key: pkey, name: who.name, kind: who.kind, household: who.household || null, people: who.people,
                       email: email || null, phone: phonePlaceholder ? null : (phoneRaw || null), address: s(get(b, "address")) || null,
                       address2: s(get(b, "address2")) || null, city: s(get(b, "city")) || null, state: stateV || null,
-                      zip: fixZip(s(get(b, "zip")), stateV) || null, externalId: extId || null, lines: [],
+                      zip: fixZip(s(get(b, "zip")), stateV) || null, country: s(get(b, "country")) || null, externalId: extId || null, lines: [],
                       roles: new Set(), attendance: null, comms: {}, kept: {}, flags: [],
                       personNotes: [], rawName: rowName, firstTable: t.key, firstSheet: t.sheet, firstLine: b.line };
       if (oneColumnAddress && fresh.address) {
@@ -1234,7 +1263,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         if (nf.addressBad && fresh.address && !fresh.addressBad) fresh.addressBad = src;
       }
       const zipRaw = s(get(b, "zip"));
-      if (zipRaw && fresh.zip && fresh.zip !== zipRaw) fresh.flags.push(`ZIP ${zipRaw} read as ${fresh.zip} (the leading zero was lost)`);
+      if (zipRaw && fresh.zip && fresh.zip.replace(/\D/g, "").length > zipRaw.replace(/\D/g, "").length) fresh.flags.push(`ZIP ${zipRaw} read as ${fresh.zip} (the leading zero was lost)`);
       if (phonePlaceholder) fresh.flags.push(`the phone ${phoneRaw} is on ${contactNames.phone.get(phoneKey(phoneRaw)).size} different people in this file, so it was not copied`);
       if (s(get(b, "email")) && !email) fresh.flags.push(`the email ${s(get(b, "email"))} is on several different people in this file, so it was not copied`);
       // ── layers 2, 4, 5 on this row: roles, engagement, communication, kept
@@ -1309,8 +1338,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
         // IMPORT-5 (7c): a row read into someone already on this list of people is accounted for, never silently gone
         if (person !== fresh && t.kind === "people") merged.push({ sheet: t.sheet, line: b.line, name: who.name, into: person.name, intoLine: person.lines[0], by: linkedBy || "name" });
         // the address is one block: it comes from one row, never a street from one and a city from another
-        if (!person.address && fresh.address) for (const f of ["address", "address2", "city", "state", "zip", "addressFrom", "addressCheck", "addressBad"]) person[f] = fresh[f];
-        for (const f of ["email", "phone", "address", "address2", "city", "state", "zip", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
+        if (!person.address && fresh.address) for (const f of ["address", "address2", "city", "state", "zip", "country", "addressFrom", "addressCheck", "addressBad"]) person[f] = fresh[f];
+        for (const f of ["email", "phone", "address", "address2", "city", "state", "zip", "country", "externalId"]) if (!person[f] && fresh[f]) person[f] = fresh[f];
         // a bad-number note is about the number on its own row
         if (fresh.phoneBad && person.phone && phoneKey(person.phone) === phoneKey(fresh.phone) && !person.phoneBad) person.phoneBad = fresh.phoneBad;
         if (fresh.addressBad && person.address === fresh.address && !person.addressBad) person.addressBad = fresh.addressBad;
@@ -1635,6 +1664,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const members = p => Math.max(1, p.people.length);
   const comm = k => peopleList.filter(p => p.comms[k]).length;
   const persons = peopleList.reduce((a, p) => a + Math.max(1, p.people.length), 0);
+  // IMPORT-6 · EVERY ROW ACCOUNTED FOR (shared/importRows.js)
+  const rowLedger = ledgerOf({ tables, usable, aside, totals, notes, people, gifts, pledges, noteRows, fmt$ });
   // IMPORT-5 (7c): every row of a list of people is a person, a row merged into
   // one, or a row set aside, and the line says so: "656 rows · 650 people · 6 merged"
   const rowAccount = (() => {
@@ -1643,10 +1674,13 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
     const keys = new Set(pt.map(t => t.sheet));
     const rows = pt.reduce((a, t) => a + (t.readCount || 0), 0);
     const asideRows = aside.filter(x => keys.has(x.sheet)).length;
+    // IMPORT-6: the lines that are not rows of people (a label, a footer, the header again) are counted too
+    const otherLines = rowLedger.setAside.filter(x => keys.has(x.sheet) && !aside.some(a => a.sheet === x.sheet && a.line === x.line)).length;
     const parts = [plural(rows, "row"), plural(peopleList.length, "person", "people")];
     if (merged.length) parts.push(`${merged.length.toLocaleString("en-US")} merged with a near-duplicate`);
     if (asideRows) parts.push(`${asideRows.toLocaleString("en-US")} set aside`);
-    return { rows, people: peopleList.length, merged: merged.length, aside: asideRows, balanced: rows === peopleList.length + merged.length + asideRows, sentence: parts.join(" · ") };
+    if (otherLines) parts.push(`${plural(otherLines, "other line")} set aside (not people)`);
+    return { rows, people: peopleList.length, merged: merged.length, aside: asideRows, otherLines, balanced: rows === peopleList.length + merged.length + asideRows, sentence: parts.join(" · ") };
   })();
   // FIX-52 · THE SHEET'S OWN FIGURES. Counts written above a header ("People
   // 443", "Invited 422") are notes, never people, and the preview's counts are
@@ -1686,7 +1720,7 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
       columns: t.cols.map(c => ({ index: c.index, header: c.header, role: c.role, roleLabel: c.role ? ROLE_LABELS[c.role] : null, by: c.by,
         reason: c.disposition === "skipped" ? c.skipReason : c.reason, disposition: c.disposition, links: !!c.links, sample: c.profile.sample })),
       refused: t.refused })),
-    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, merged, rowAccount,
+    people: peopleList, gifts, pledges, aside, totals, flags, notes, questions, help, nearMisses, totalOfChecks, merged, rowAccount, rowLedger,
     nearDuplicates: nearDupes, noteRows, namesCleaned, giftsDeposited: answers.giftsDeposited === "no" ? "no" : "yes",
     addressExample: (() => { const p = peopleList.find(x => x.addressFrom); return p ? { from: p.addressFrom, address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip } : null; })(),
     columns: columnList, columnAccount, keptHeaders: [...keptHeaders.values()], notesSheets, figureChecks,
@@ -1742,16 +1776,6 @@ function truthy(v) {
   if (/^(declined|not coming|regrets|absent|no show|no-show)/.test(t)) return false;
   if (looksDate(v, { serials: true })) return true;
   return null;
-}
-// A ZIP that lost its leading zero ("2134") in a state whose ZIPs start with 0.
-const ZERO_ZIP_STATES = new Set(["CT", "MA", "ME", "NH", "NJ", "PR", "RI", "VT", "VI", "GU"]);
-function fixZip(z, state) {
-  if (!z) return z;
-  const m = z.match(/^(\d{4})(-\d{4})?$/);
-  if (!m) return z;
-  const st = s(state).toUpperCase();
-  if (st && !ZERO_ZIP_STATES.has(st)) return z;
-  return "0" + z;
 }
 function editDistance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array(b.length).fill(0)]);
