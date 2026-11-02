@@ -209,7 +209,7 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   `amount > 0`. `DONOR_COUNT_SENTENCE` in `shared/p2p.js` is its definition. (PARITY-2)
 - **The countdown runs to the campaign's end date, or `giving_pages.ends_on` on a page with no
   campaign**, through `countdownSentence` in `shared/campaignPage.js`, in the org's own day. (PARITY-2)
-- **One board query per kind (`p2pTeamBoard`, `p2pIndividualBoard` in routes/crm.js)** feeds both
+- **One board query per kind (`p2pTeamBoard` in server/shared/givingPagePayload.js, `p2pIndividualBoard` in server/org/publicPages.js)** feeds both
   the top ten on the page and "See all" (`GET /org/:org/giving-page/:page/leaderboard`), so they
   cannot rank differently. Public money on these pages is net of a covered fee, like the page's
   own bar. (PARITY-2)
@@ -245,7 +245,7 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   numbers is not overruled by a median. Fewer than eight gifts is not a distribution and the typed
   amounts stand. (GIVE-2 §3)
 - **`withSmartAmounts` wraps EVERY public form payload.** There are two — `/forms/:id/public` and
-  the giving-page payload in crm.js — and the first cut wired only one, so the page a donor actually
+  the giving-page payload in server/shared/givingPagePayload.js — and the first cut wired only one, so the page a donor actually
   opens still showed Steward's $25/$50/$100/$250 guess. The browser walk caught it. (GIVE-2 §3)
 - **A ladder rung missing from `FRIENDLY_CENTS` is a 150% jump.** The first cut skipped $2,000 and
   $3,000, so a donor whose largest gift was $2,000 was asked for $5,000. The list is 1/1.5/2/2.5/3.5

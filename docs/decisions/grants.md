@@ -7,7 +7,7 @@ Read this when you touch funders, grant deadlines, documents, restricted money, 
   `link_kind='deadline'` task ("[Funder]: [kind] due", the officer's, on the date, linking the grant) and, for a
   proposal, LOI or report, one `deadline_start` heads-up `orgs.grant_headsup_days` ahead (default 14, 0 = off).
   Done closes it, taking the deadline off deletes it, putting it back returns it. A task tick, date or Undo goes
-  back through `linkedTaskChange` (routes/crm.js) to `markMilestoneDone`/`reopenMilestone`, never the task alone.
+  back through `linkedTaskChange` (server/tasks/routes.js) to `markMilestoneDone`/`reopenMilestone`, never the task alone.
 - **A done deadline stays on the Calendar on its day, struck through with a check (FIX-31).** Only `skipped` leaves it.
 - **Use the eight canonical grant stages and never add a second `grant_stage` column.** researching
   (shown as Prospecting) · loi · invited · submitted · awarded · declined · reporting · closed; every older
@@ -28,7 +28,7 @@ Read this when you touch funders, grant deadlines, documents, restricted money, 
   Figures are stored when a report is built; outcomes must be confirmed by a person before submit (GRANTS-1).
 - **Drafting from the library is a draft.** It uses only the picked pieces and the funder's interests,
   refuses a reply with a number or an outcome claim the pieces do not hold, and saves nothing (GRANTS-1).
-- **Fixed GET paths under `/grants/` are two segments or mounted early.** crm.js's `GET /grants/:id` answers
+- **Fixed GET paths under `/grants/` are two segments or mounted early.** `GET /grants/:id` (server/grants/routes.js) answers
   404 for any single segment, so a new one-segment path is never reached (GRANTS-1).
 - **A grant is a request to an institution; refuse a person as a funder.** `funderProblem` says why at
   every door: an individual's cheque is a gift, and filing it as a grant puts it in the wrong half of

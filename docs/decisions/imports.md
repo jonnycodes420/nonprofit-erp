@@ -404,7 +404,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   keeps lateness for everyone (their rhythm comes from the file's dates). Later imports are unchanged.
 - The recent-gift work runs BEHIND THE SCREEN. In the import's own transaction the recent gifts are written
   as work rows (`import_recent_work`) under one job per run (`import_recent_jobs`); after the response,
-  `runRecentWork` in routes/crm.js records them through recordGift and then runs the after-change step for
+  `runRecentWork` in server/imports/recentGifts.js records them through recordGift and then runs the after-change step for
   everyone the run touched. Progress is `GET /imports/:id/progress`. A restart resumes running jobs from
   their work rows. Undo cancels the job, waits for the gift in flight, clears the work rows, then removes
   what was written. The readout is written by whichever of the job's end and `POST /imports` comes second

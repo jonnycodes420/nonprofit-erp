@@ -39,7 +39,7 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   next step is finished through how it went and what's next: `/tasks/:id/complete` refuses a bare tick
   (422 `needs_outcome`) and the Calendar opens Tasks' `FinishSheet`. A deadline's task keeps its plain tick.
 - **A task is in exactly one view, by one rule (TASKS-2).** `shared/taskShape.js viewOf` and `taskViewSql`
-  (routes/crm.js) say the same thing: today, upcoming (next 7 days), overdue, later, no date, done (last 30
+  (server/tasks/routes.js) say the same thing: today, upcoming (next 7 days), overdue, later, no date, done (last 30
   days). The list, `GET /tasks/counts` and Home's "Due today" read it; `tasks2-thread` §6 checks they agree.
   A call or meeting task with a person finishes only with an `interactionId` from
   `POST /donors/:id/conversations` (a next step or "No next step"); a linked next step still ticks as FIX-31.
@@ -206,7 +206,7 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   and opening a report opens its group (`groupOfReport`). The search box (`filterRail`) matches names across groups and
   drives the phone picker too. (FIX-3 E)
 - **"The same point last year" is one window, `orgTime.samePointLastYear`, read through one source,
-  `samePointLastYearSource` (routes/crm.js).** The Board and the giving summary both call it, so they agree in cents.
+  `samePointLastYearSource` (server/reports/handlers.js).** The Board and the giving summary both call it, so they agree in cents.
   A running period is cut at today and compared day for day, and a finished one with the same dates a year earlier.
   Reports read the org's fiscal start month too (`reportYearBounds(year, mode, startMonth)`). (FIX-3 E)
 - **A comparison of years counts the same days in every year, and says which (FIX-60).** The 3-year
@@ -265,7 +265,7 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   `meeting_effects` is the receipt and is in the merge's MERGE_REFS.
 
 - **A report names a fiscal year one way: FY 2026–27 (SWEEP-5).** Server labels go through
-  `reportYearLabel` (routes/crm.js), client labels through `fyLabelFromEnd`; both read
+  `reportYearLabel` (server/reports/handlers.js), client labels through `fyLabelFromEnd`; both read
   `shared/fiscalPeriod.js`. Never `FY${year}`.
 - **A blank figure reads "None yet" and keeps its reason under it; a blank cell says what is missing
   ("No email", "Nobody", "No date"). "Not set" never reaches a report (SWEEP-5).**
@@ -320,7 +320,7 @@ number that cannot open does not ship.
   the sentence saying what is missing and when it will appear, computed from the org's data (retention: the
   history floor and the prior-year cohort in `RETENTION_FLOOR`; the change on last year: a year after the first
   gift). Given `rows` instead, it is the older caller-supplied list Home's drill-downs use. There is no second panel.
-- **The endpoint.** `GET /figures/:source/rows?<params>&page&pageSize` (routes/crm.js, by the dashboards).
+- **The endpoint.** `GET /figures/:source/rows?<params>&page&pageSize` (server/reports/routes.js, by the dashboards).
   Tenant-scoped (the caller's org is the first argument of every source's query), read-only (a GET that writes
   nothing, proven by row counts), paginated (pageSize up to 200; the total is over every row, never the page), an
   unknown source is 404 and a malformed parameter is 400. Its shape: `{ key, params, measure, amountKind, label,
@@ -369,8 +369,8 @@ number that cannot open does not ship.
 - `client/src/lib/reportsRail.js` · `client/src/lib/reportFormat.js` — the one rail and its resolver · how a report cell reads
 - server.js `REPORT_HANDLERS`, `reportToCsv`, `sendReportCsv`, `reportBuntList`, `parseReportParams`
 - `drift.js` + server.js `computeDriftForDonors` — Drift · `orgTime.js` — `orgPeriodBounds`, `orgReportYear`
-- `shared/boardPack.js` — the pack's sections, the tile kinds, the schedule rules · routes/crm.js
-  `composeBoardPack`/`renderBoardPackPdf`/`runBoardPackScheduleForOrg` · `client/src/components/SavedDashboards.jsx`
+- `shared/boardPack.js` — the pack's sections, the tile kinds, the schedule rules · server/reports/helpers.js
+  `composeBoardPack`, server/reports/boardPack.js `renderBoardPackPdf`/`runBoardPackScheduleForOrg` · `client/src/components/SavedDashboards.jsx`
 
 ---
 
@@ -416,7 +416,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 ## REPORTS-4 · a report's numbers are its sources' numbers (2026-10-07)
 
 - A report never states a number it computed itself. It names each figure's source in `reportFigures`
-  (routes/crm.js), which returns the value, the source and the sentence, and the screen draws a `<Figure>` from it.
+  (server/reports/handlers.js), which returns the value, the source and the sentence, and the screen draws a `<Figure>` from it.
 - Footing has ONE rule, `figureSources.footCheck`: a sum to the cent, a count to the row, a mean as total over count,
   a median as the middle row, a percentage through its two halves. `tests/reports4-foot.test.js` walks every
   figure a report response carries (any `source`, any `figures` map, and the `*Source` / `*_source` fields) and
@@ -440,7 +440,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   forward; a plan with no date is left off, never guessed. Failed charges and cards expiring this month show one by one.
 - **No history yet is not cold.** A person with no conversation, note or meeting on file (gift lines do not count)
   reads "No history yet" on the profile, never "Engagement 0, Distant", and Home's "no recent contact" list skips
-  them. `NOT_HISTORY_TYPES` in routes/crm.js is the one list of interaction types that are not history. (IMPORT-2)
+  them. `NOT_HISTORY_TYPES` in server/shared/crmCommon.js is the one list of interaction types that are not history. (IMPORT-2)
 - **Calls to make skips no phone calls**, as well as deceased, do not contact and anonymous. It does NOT skip do not solicit: every row is a thank-you call, and thanking is not asking. Asking lists, appeals, Drift's re-engagement asks and the asking starters still leave do not solicit out (`solicitableSql`). (IMPORT-2, corrected by FIX-35)
 
 ## LIVE-1 · what an import told us, and what Steward learned (2026-10-12)

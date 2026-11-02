@@ -54,7 +54,7 @@ const WORDS = new RegExp(
   ].join("|") + ")\\b", "i");
 
 // The places a person reads.
-const ROOTS = ["client/src", "routes", "shared", "server.js", "scripts/ci/seed-demo.js",
+const ROOTS = ["client/src", "routes", "server", "shared", "server.js",   // SPLIT-1: server/ "scripts/ci/seed-demo.js",
   // Email and PDF builders that live at the root.
   "emailCompose.js", "readout.js", "grantDocs.js", "depositsFile.js", "memberCard.js",
   "why.js", "appealWhy.js", "prospectBrief.js", "timelineLine.js", "groups.js",
