@@ -1483,21 +1483,11 @@ async function donorScreensSayNothingWrong(browser) {
       const fj = await readerSays("real-shaped/jp-finding-joy-combined-443.xlsx");
       ok("§sweep2 the reader asks \"When was Finding Joy?\", not \"the Finding Joy\"", /When was Finding Joy\?/.test(fj) && !/the Finding Joy\b/.test(fj), (fj.match(/When was[^\n]*/) || [""])[0]);
     }
-    if (filled) {
-      // IMPORT-6: the preview lists every row set aside, each with its line and reason, and the list fits this width
-      trouble = [];
-      await page.goto(APP + "/donors", { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: /Import & tools/ }).click();
-      await page.getByText("Import a spreadsheet").click();
-      await page.locator('[role=dialog] input[type=file]').first().setInputFiles(path.join(FX, "people-shapes/with-chrome.csv"));
-      await page.locator('[data-testid="sheet-review"]').waitFor({ timeout: 30000 }).catch(() => {});
-      const ch = await page.locator("[role=dialog]").first().innerText().catch(() => "");
-      await page.locator('[data-testid="sheet-aside"] summary').click().catch(() => {}); const aside = await page.locator('[data-testid="sheet-aside-line"]').allInnerTexts().catch(() => []);
-      const fits = await page.evaluate(() => { const d = document.querySelector('[data-testid="sheet-aside"]'); return !!d && d.getBoundingClientRect().right <= window.innerWidth + 1 && d.scrollWidth <= d.clientWidth + 1; });
-      ok(`§import6 at ${width}: the preview lists each row set aside with its line and reason`, /Import 3 people/.test(ch) && aside.length === 3
-         && aside.some(t => /^Line 3: a section label \("Board members"\)/.test(t)) && aside.some(t => /^Line 5: the header row again/.test(t))
-         && aside.some(t => /^Line 6: a section label \("Page 2 of 3"\)/.test(t)) && fits, JSON.stringify({ aside, fits, said: ch.slice(0, 200) }));
-      ok(`§import6 at ${width}: the preview has no console error or API 4xx/5xx`, trouble.length === 0, trouble.slice(0, 4));
+    if (filled) { // IMPORT-6: the preview lists every row set aside, each with its line and reason, at this width
+      trouble = []; await page.goto(APP + "/donors", { waitUntil: "networkidle" }); await page.getByRole("button", { name: /Import & tools/ }).click(); await page.getByText("Import a spreadsheet").click();
+      await page.locator('[role=dialog] input[type=file]').first().setInputFiles(path.join(FX, "people-shapes/with-chrome.csv")); await page.locator('[data-testid="sheet-review"]').waitFor({ timeout: 30000 }).catch(() => {});
+      const ch = await page.locator("[role=dialog]").first().innerText().catch(() => ""); await page.locator('[data-testid="sheet-aside"] summary').click().catch(() => {}); const aside = await page.locator('[data-testid="sheet-aside-line"]').allInnerTexts().catch(() => []); const fits = await page.evaluate(() => { const d = document.querySelector('[data-testid="sheet-aside"]'); return !!d && d.getBoundingClientRect().right <= window.innerWidth + 1 && d.scrollWidth <= d.clientWidth + 1; });
+      ok(`§import6 at ${width}: the preview lists each row set aside with its line and reason, with no console error or 4xx/5xx`, /Import 3 people/.test(ch) && JSON.stringify(aside.map(t => t.slice(0, 7))) === '["Line 3:","Line 5:","Line 6:"]' && /"Board members"/.test(aside[0]) && /header row again/.test(aside[1]) && /"Page 2 of 3"/.test(aside[2]) && fits && !trouble.length, JSON.stringify({ aside, fits, trouble, said: ch.slice(0, 200) }));
     }
     await ctx.close();
   }
