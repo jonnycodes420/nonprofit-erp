@@ -356,7 +356,7 @@ app.get("/grants/:id/award-plan", requireAuth, wrap(async (req, res) => {
     `SELECT pi.id, pi.seq, pi.due_date, pi.amount, pi.paid_gift_id, pi.paid_at, gf.date AS gift_date, gf.amount AS gift_amount
        FROM pledge_installments pi LEFT JOIN gifts gf ON gf.id=pi.paid_gift_id AND gf.org_id=pi.org_id
       WHERE pi.org_id=? AND pi.pledge_id=? ORDER BY pi.seq`, [orgId, g.award_pledge_id]);
-  const [rec] = await query(`SELECT COALESCE(SUM(amount),0) AS s FROM gifts WHERE org_id=? AND pledge_id=?`, [orgId, g.award_pledge_id]);
+  const [rec] = await query(`SELECT COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id=? AND ${require("../shared/numbers/money").MONEY("g")}`, [orgId, g.award_pledge_id]);
   const receivedCents = cents(rec.s), awardedCents = cents(g.amount_awarded != null ? g.amount_awarded : (pl && pl.amount));
   const paid = inst.filter(i => i.paid_gift_id).length;
   const fmt = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -28,7 +28,7 @@ async function rowsFor(orgId) {
     query(`SELECT p.id, p.donor_id, p.amount, p.due_date::text AS due_date, p.status, p.frequency, p.installment_count, p.notes, p.gift_type,
                   LEAST(to_char(p.created_at, 'YYYY-MM-DD'), NULLIF(LEFT(p.due_date::text, 10), ''),
                         (SELECT MIN(NULLIF(LEFT(pi.due_date::text, 10), '')) FROM pledge_installments pi WHERE pi.pledge_id = p.id AND pi.org_id = p.org_id)) AS made_on,
-                  COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id AND g.org_id = p.org_id), 0) AS paid
+                  COALESCE(${require("./shared/numbers/pledges").PAID_OF("p")}, 0) AS paid
              FROM pledges p WHERE p.org_id=? AND COALESCE(p.is_shell,false)=false`, [orgId]),
     query(`SELECT pledge_id, seq, due_date::text AS due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? ORDER BY pledge_id, seq`, [orgId]),
     query(`SELECT name FROM programs WHERE org_id=?`, [orgId]).catch(() => []),

@@ -17,4 +17,5 @@ module.exports = {
   tags: require("./tags"),
   households: require("./households"),
   ask: require("./ask"),
+  pledges: require("./pledges"),
 };

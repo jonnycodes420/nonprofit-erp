@@ -3026,7 +3026,7 @@ async function processPledgeInstallmentReminders(opts = {}) {
       `SELECT i.id, i.pledge_id, i.due_date, i.amount, p.donor_id, p.amount AS pledge_amount,
               d.name AS donor_name, d.salutation AS donor_salutation, d.spouse_name AS donor_spouse, d.kind AS donor_kind,
               d.assigned_to, d.assigned_to_name,
-              COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id), 0) AS paid
+              COALESCE(${require("./shared/numbers/pledges").PAID_OF("p")}, 0) AS paid
          FROM pledge_installments i
          JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
          JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
@@ -3735,7 +3735,7 @@ async function recalcPledgePayment(pledgeId, orgId) {
   if (!rows.length) return null;
   const p = rows[0];
   const paidRows = await query(
-    "SELECT COALESCE(SUM(amount),0) AS paid FROM gifts WHERE pledge_id=? AND org_id=?",
+    `SELECT COALESCE(SUM(g.amount),0) AS paid FROM gifts g WHERE g.pledge_id=? AND g.org_id=? AND ${require("./shared/numbers/money").MONEY("g")}`,   // NUMBERS-4: money pays a pledge
     [pledgeId, orgId]);
   const paid = round2(parseFloat(paidRows[0].paid) || 0);
   const amount = round2(parseFloat(p.amount) || 0);
@@ -3769,7 +3769,7 @@ async function recalcPledgePayment(pledgeId, orgId) {
 // = amount − paid, so a partially-paid pledge counts only what is still
 // committed-but-unpaid (F-5). Every "pledged" figure reads this, not SUM(amount).
 const OPEN_PLEDGE_REMAINING_JOIN = `
-  LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pledge_paid
+  LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pledge_paid
     ON pledge_paid.pledge_id = pledges.id`;
 
 // Atomic — UPDATE...RETURNING, never SELECT MAX(n)+1, so two concurrent
@@ -9256,7 +9256,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
       const horizon = orgTime.addDays(todayStr, leadDays);
       const due = await query(
         `SELECT p.id, p.donor_id, p.amount, p.due_date,
-                COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id AND g.org_id = p.org_id), 0) AS paid
+                COALESCE(${require("./shared/numbers/pledges").PAID_OF("p")}, 0) AS paid
            FROM pledges p
           WHERE p.org_id = ? AND p.status = 'open'
             AND p.due_date >= ? AND p.due_date <= ?

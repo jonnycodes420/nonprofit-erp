@@ -57,7 +57,8 @@ const ENTITIES = {
       LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
       LEFT JOIN fin_funds fu ON fu.id = g.fund_id AND fu.org_id = g.org_id
       LEFT JOIN events ev ON ev.id = g.event_id AND ev.org_id = g.org_id`,
-    org: "g.org_id = ?", base: "d.deleted_at IS NULL AND g.amount > 0",
+    // NUMBERS-4: a gift is a gift (shared/numbers/money.js GIFT): a credit row is not one.
+    org: "g.org_id = ?", base: `d.deleted_at IS NULL AND ${require("./shared/numbers/money").GIFT("g")}`,
     person: "g.donor_id", amount: "g.amount",
     row: { id: "g.id", name: "d.name", date: "LEFT(g.date,10)", amount: "g.amount", detail: "COALESCE(NULLIF(c.name,''), NULLIF(g.campaign,''), fu.name, '')" },
     fields: {

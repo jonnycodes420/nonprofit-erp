@@ -346,7 +346,7 @@ function pledgesDueSql(orgId, day, op) {
           UNION ALL
           SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
             FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-            LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+            LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
            WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
              AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} ?)`,
@@ -2065,7 +2065,7 @@ const SOURCES = {
                    ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
               FROM pledges p
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-              LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+              LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp
                      ON pp.pledge_id = p.id
              WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}${p && p.donor ? " AND p.donor_id = ?" : ""}`,
       args: [orgId, orgId, ...(p && p.campaign ? [p.campaign] : []), ...(p && p.donor ? [p.donor] : [])],

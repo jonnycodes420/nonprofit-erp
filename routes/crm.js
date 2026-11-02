@@ -7624,7 +7624,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
             GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp
        ON pp.pledge_id = p.id
      WHERE p.id=?`, [req.user.orgId, pledgeRow.id]) : [];
   // BUILD-72 Part 3 — the response a payment returns says what the payment DID:
@@ -7852,7 +7852,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
     `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
             GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
      WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
     [req.user.orgId, req.params.id, req.user.orgId]
   );
@@ -11236,7 +11236,7 @@ app.get("/gifts/:id/extras", requireAuth, wrap(async (req, res) => {
     g.match_pledge_id ? query(
       `SELECT p.id, p.amount, p.status, p.due_date, d.name AS employer_name, COALESCE(pp.paid,0) AS paid
          FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
         WHERE p.id=? AND p.org_id=?`, [orgId, g.match_pledge_id, orgId]) : [],
   ]);
   res.json({
@@ -15942,7 +15942,7 @@ async function withGrantReceived(orgId, grants) {
   const pledged = grants.filter(g => g && g.award_pledge_id);
   if (!pledged.length) return grants;
   const sums = await query(
-    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts WHERE org_id=? AND pledge_id = ANY(?::text[]) GROUP BY pledge_id`,
+    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id = ANY(?::text[]) AND ${NUMBERS.money.MONEY("g")} GROUP BY pledge_id`,
     [orgId, pledged.map(g => g.award_pledge_id)]);
   const by = new Map(sums.map(r => [r.pledge_id, money.toDollars(money.toCents(r.s) || 0)]));
   for (const g of pledged) g.received = (by.get(g.award_pledge_id) || 0).toFixed(2);
@@ -21778,7 +21778,7 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
     query(
       `SELECT COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS total
        FROM pledges p
-       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+       LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
        WHERE p.org_id=? AND p.campaign_id=? AND p.status='open' AND ${NOT_DELETED("p")}`,
       [req.user.orgId, req.user.orgId, c.id]),
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM grants WHERE org_id=? AND campaign_id=? AND awarded_at IS NOT NULL`, [req.user.orgId, c.id]),
@@ -21901,7 +21901,7 @@ async function fundraisingCampaignRows(orgId) {
               COALESCE(SUM(GREATEST(p.amount - COALESCE(pp.paid,0), 0)), 0) AS pledged,
               COUNT(*) AS pledge_count
          FROM pledges p
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
         WHERE p.org_id = ? AND p.campaign_id IS NOT NULL AND p.status = 'open' AND ${NOT_DELETED("p")}
         GROUP BY p.campaign_id`,
       [orgId, orgId]
@@ -22313,7 +22313,7 @@ app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
               p.event_id, ev.name AS event_name, p.campaign_id, c.name AS campaign_name,
               COALESCE(pp.paid, 0) AS paid, GREATEST(p.amount - COALESCE(pp.paid, 0), 0) AS balance
          FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
          LEFT JOIN events ev ON ev.id = p.event_id AND ev.org_id = p.org_id
          LEFT JOIN campaigns c ON c.id = p.campaign_id AND c.org_id = p.org_id
         WHERE p.org_id = ? AND p.status = 'open'
@@ -24870,7 +24870,7 @@ async function reportSolicitations(orgId, p) {
   const pledgeRow = await query(
     `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS amt
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
      WHERE p.org_id=? AND p.status='open'`, [orgId, orgId]);
   return {
     from: p.from, to: p.to,

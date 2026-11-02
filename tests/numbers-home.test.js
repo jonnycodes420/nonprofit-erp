@@ -24,6 +24,7 @@
 //   §12 households: a household of two is one household, two people, one unit
 //   §13 ask: the one suggested-ask rule; a soft credit never sets "largest"
 //   §14 last gift: two gifts on one day from one import, by amount then the row
+//   §15 pledges: a credit row linked to a pledge pays nothing; a refund comes off
 "use strict";
 const { ok, summary, q, closeDb } = require("./helpers");
 const N = require("../shared/numbers");
@@ -257,6 +258,15 @@ const at = iso => new Date(iso);
   ok("§14 two of the same amount: the one further down the file", lastRow && lastRow.id === `g_${ORG}_r7`, lastRow);
   ok("§14 the same rule over rows", N.lastGift.lastOf([{ id: "z", date: "2025-12-16", amount: 100, import_row: 3 }, { id: "a", date: "2025-12-16", amount: 100, import_row: 7 }]).cents === 10000
     && N.lastGift.lastOf([{ id: "z", date: "2025-12-16", amount: 50 }, { id: "a", date: "2025-12-16", amount: 200 }]).cents === 20000);
+
+  // ── §15 pledges: what a pledge has been paid ─────────────────────────────
+  const PP = await person("pp");
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,status,created_by,created_by_name) VALUES ($1,$2,$3,1000,'open',${sys})`, [`p_${ORG}_pp`, ORG, PP]);
+  for (const [n, amt, type] of [[1, 300, null], [2, 500, "Matching gift credit"], [3, -100, null]])
+    await q(`INSERT INTO gifts (id,org_id,donor_id,date,amount,type,pledge_id,created_by,created_by_name) VALUES ($1,$2,$3,'2026-10-0${n}',$4,$5,$6,${sys})`,
+      [`g_${ORG}_pp${n}`, ORG, PP, amt, type, `p_${ORG}_pp`]);
+  const [pd] = await query(`SELECT ${N.pledges.PAID_OF("p")} AS a, pp.paid AS b FROM pledges p LEFT JOIN ${N.pledges.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id WHERE p.id = ?`, [ORG, `p_${ORG}_pp`]);
+  ok("§15 $300 paid, a $500 matching credit and a $100 refund: paid is $200, both ways", Number(pd.a) === 200 && Number(pd.b) === 200, pd);
 
   for (const t of ["pledges", "gifts", "imports", "donors", "households"]) await q(`DELETE FROM ${t} WHERE org_id = $1`, [ORG]);
   await q(`DELETE FROM orgs WHERE id = $1`, [ORG]);

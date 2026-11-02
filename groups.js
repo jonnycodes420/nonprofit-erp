@@ -251,7 +251,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     const scope = [], sargs = [];
     if (q.gaveEvent) { scope.push("go.event_id = ?"); sargs.push(String(q.gaveEvent)); }
     if (q.gaveFrom || q.gaveTo) { scope.push("LEFT(go.date,10) >= ? AND LEFT(go.date,10) <= ?"); sargs.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31")); }
-    where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND go.amount > 0${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
+    // NUMBERS-4: gifts (shared/numbers/money.js GIFT): a credit row is not one.
+    where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("go")}${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
     params.push(...sargs, n);
   }
   if (q.volQual) {
@@ -352,7 +353,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
       params.push(cur.from, cur.to, cur.from);
     }
     if (q.gaveMore === "1") {
-      const sum = `(SELECT COALESCE(SUM(gm.amount),0) FROM gifts gm WHERE gm.org_id = donors.org_id AND gm.donor_id = donors.id AND gm.date >= ? AND gm.date <= ?)`;
+      // NUMBERS-4: money (shared/numbers/money.js): credit rows out, refunds off.
+      const sum = `(SELECT COALESCE(SUM(gm.amount),0) FROM gifts gm WHERE gm.org_id = donors.org_id AND gm.donor_id = donors.id AND gm.date >= ? AND gm.date <= ? AND ${require("./shared/numbers/money").MONEY("gm")})`;
       where.push(`${sum} > 0 AND ${sum} > ${sum}`);
       params.push(prior.from, prior.to, cur.from, cur.to, prior.from, prior.to);
     }
