@@ -113,8 +113,10 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   (`tests/lib/shardResults.js`, also checked by `every-test-runs` with `SHARD_RESULTS`), a failed suite
   or a lower pass count is red. Timings live in the Actions cache; main's `timings` job copies a
   trusted run's into main's cache, because a PR's cache is visible to that PR only. Six because PR
-  #294's suites took 2,770 s and the longest one 396 s. Locally `SHARDS=6 bash tests/run-all.sh` plans
-  the same way; `SHARD_SHUFFLE=<seed>` gives a random plan to prove the suites are independent.
+  #294's suites took 2,770 s and the longest one 396 s. Locally `SHARDS=n bash tests/run-all.sh` plans
+  the same way; `SHARD_SHUFFLE=<seed>` gives a random plan to prove the suites are independent. The
+  scratch Postgres allows 100 connections, which holds about three shards beside other sessions: six
+  on one laptop fails with "too many clients already". CI has a Postgres per shard.
 - **A browser suite may sit in any shard (CI-2).** Each shard holding one walks its own dist: in CI it
   builds client/dist for its API; locally the first such shard gets client/dist and the rest a copy
   with the API origin rewritten (`scripts/ci/dist-for-shard.js`), named in `STEWARD_DIST`. A suite
