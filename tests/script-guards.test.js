@@ -102,7 +102,9 @@ const SELF_REFUSING = [
   "sweep2-walk-org",
   // BUILD-75 B.1 — the route-inventory walker. BOOTS server.js (schema init
   // runs), so it hard-refuses any non-loopback DATABASE_URL outright.
-  "build75-route-inventory", "seed-loadtest",  "build58-stripe-drill",
+  "build75-route-inventory", "seed-loadtest",
+  // SPLIT-1 — the route diff boots server.js twice the same way, and refuses the same way.
+  "route-diff",  "build58-stripe-drill",
   // BUILD-76 — the drift-vs-real-Stripe drill: same rig as build58's (scratch
   // server on :5621 + `stripe listen`), refuses any non-loopback BASE.
   "build76-drift-drill",

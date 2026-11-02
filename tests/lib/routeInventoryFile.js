@@ -15,7 +15,10 @@ const ROOT = path.join(__dirname, "..", "..");
 const FILE = path.join(ROOT, ".generated", "route-inventory.json");
 
 function newestSource() {
-  const files = ["server.js", ...fs.readdirSync(path.join(ROOT, "routes")).map(f => path.join("routes", f))];
+  // SPLIT-1: routes live in server/<domain>/ too
+  const walk = d => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true })
+    .flatMap(e => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+  const files = ["server.js", ...walk("routes"), ...walk("server")];
   return Math.max(...files.map(f => fs.statSync(path.join(ROOT, f)).mtimeMs));
 }
 

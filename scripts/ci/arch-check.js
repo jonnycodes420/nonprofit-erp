@@ -10,6 +10,10 @@
 //   node scripts/ci/arch-check.js --update   lower the baselines to today's counts;
 //                                            refuses if any count would go up
 //   node scripts/ci/arch-check.js --root <dir>  check another tree (the planted-defect test)
+//   node scripts/ci/arch-check.js --update --moved <file>
+//                                            SPLIT-1: <file>'s lines moved VERBATIM into
+//                                            new files, which take over its baseline; refused
+//                                            unless their counts sum to exactly what left it
 //
 // The checks are pattern matches, written down in ARCHITECTURE.md ("The ratchet").
 // They miss things and catch some innocent lines; because they are ratchets, an
@@ -26,6 +30,7 @@ const ROOT = path.resolve(flag("root") || path.join(__dirname, "..", ".."));
 const BASE_DIR = path.join(ROOT, "docs", "architecture", "baseline");
 const INIT = args.includes("--init");              // ARCH-1 only: write the first baselines
 const UPDATE = args.includes("--update") || INIT;
+const MOVED = flag("moved");
 
 const BIG = 1500, GROWTH = 50, IMAGE_MAX = 500 * 1024;
 
@@ -36,6 +41,8 @@ const lineCount = f => { const s = read(f); return s.length ? s.split("\n").leng
 const countLines = (f, re) => read(f).split("\n").filter(l => re.test(l)).length;
 
 const CODE = /\.(js|jsx|mjs|cjs)$/;
+// SPLIT-1: a route registration, the way crm.js's 561 were written.
+const CRM_ROUTE = /\b(app|router|routers\.\w+)\.(get|post|put|patch|delete|all)\(\s*["'`]/;
 
 // Gift SQL a route must not compute: a sum of an amount, or a window over a gift's date.
 const GIFT_SQL = /SUM\s*\([^)]*amount|\b(g|gifts|gi|g2)\.date\s*(>=|<=|<|>|BETWEEN)|LEFT\s*\(\s*(\w+\.)?date\s*,\s*4\s*\)/i;
@@ -126,6 +133,14 @@ const CHECKS = {
     measure: files => Object.fromEntries(files.filter(isAppCode).map(f => [f, countLines(f, ORG_SPECIFIC)]).filter(([, n]) => n > 0)),
     worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} lines naming one org (baseline ${base || 0}); make it a setting or data` : null,
   },
+  // SPLIT-1: routes/crm.js only shrinks. Its routes moved to server/<domain>/,
+  // and a new route goes in its domain's file (ARCHITECTURE.md "Routes").
+  "crm-routes": {
+    what: "routes registered in routes/crm.js (a hard rule: a new route goes in its domain's file under server/)",
+    hard: true,
+    measure: files => Object.fromEntries(files.filter(f => f === "routes/crm.js").map(f => [f, countLines(f, CRM_ROUTE)]).filter(([, n]) => n > 0)),
+    worse: (key, now) => `${key} registers ${now} route(s); put each in server/<domain>/`,
+  },
   "big-images": {
     what: `committed images over ${IMAGE_MAX / 1024} KB outside client/src/assets/ and assets/ (a hard rule)`,
     hard: true,
@@ -144,6 +159,17 @@ for (const [name, c] of Object.entries(CHECKS)) {
   let base = c.hard ? {} : (fs.existsSync(bPath) ? JSON.parse(fs.readFileSync(bPath, "utf8")).counts : null);
   if (base == null && INIT) base = { ...now };   // the first baseline is today, once
   if (base == null) { out.push(`  ✗ ${name}: no baseline at ${path.relative(ROOT, bPath)}`); failed++; continue; }
+  if (MOVED && UPDATE && !c.hard && name !== "big-files" && base[MOVED]) {
+    // what left the moved file is exactly what the new files hold, or nothing moves
+    const left = base[MOVED] - (now[MOVED] || 0);
+    const fresh = Object.keys(now).filter(k => !(k in base));
+    const got = fresh.reduce((n, k) => n + now[k], 0);
+    if (got !== left) { out.push(`  ✗ ${name}: ${left} line(s) left ${MOVED} but the new files hold ${got}; not moved`); failed++; continue; }
+    base = { ...base };
+    for (const k of fresh) base[k] = now[k];
+    if (now[MOVED]) base[MOVED] = now[MOVED]; else delete base[MOVED];
+    out.push(`  → ${name}: ${MOVED}'s ${left} line(s) moved to ${fresh.length} file(s)`);
+  }
   const bad = Object.keys(now).map(k => c.worse(k, now[k], base[k])).filter(Boolean);
   const total = o => Object.values(o).reduce((s, n) => s + n, 0);
   if (bad.length) {

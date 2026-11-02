@@ -145,7 +145,7 @@ const writes = async () => n(`SELECT ((SELECT COUNT(*) FROM tasks WHERE org_id=$
   const walk = d => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name);
     if (e.isDirectory()) { if (e.name !== "node_modules" && e.name !== "dist") walk(p); }
     else if (/\.(jsx?|mjs)$/.test(e.name) && /voice\/meetings|voiceMeeting|MeetingMode|Listen to this meeting/.test(fs.readFileSync(p, "utf8"))) callers.push(path.relative(ROOT, p)); } };
-  for (const d of ["client/src", "routes", "shared"]) walk(path.join(ROOT, d));
+  for (const d of ["client/src", "routes", "server", "shared"]) walk(path.join(ROOT, d));   // SPLIT-1: server/
   ok("§1 no screen, route or shared file mentions meeting mode", callers.length === 0, callers);
 
   // ── §2 before your meeting ───────────────────────────────────────────────

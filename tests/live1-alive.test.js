@@ -211,7 +211,8 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   const doors = log.body?.doors || [];
   ok("§4 the door list is the fourteen in the map", doors.length === 14, doors);   // CAPTURE-1 added `capture`, FIX-60 `pledge`
   const SRC = ["server.js", "qboRead.js", "meetingEffects.js", "routes/crm.js", "routes/webhooks.js", "routes/historyImport.js",
-               "routes/oldReports.js", "capture.js", "routes/capture.js"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
+               "routes/oldReports.js", "capture.js", "routes/capture.js",
+               ...require("../scripts/lib/readSource").FILES["server.js"].filter(f => f.startsWith("server/"))].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
   for (const d of doors) {
     if (ran.has(d)) ok(`§4 ${d}: driven, and the step ran for it`, true);
     else ok(`§4 ${d}: the code that runs this door calls the step with its name`,

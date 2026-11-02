@@ -54,7 +54,7 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   JOURNEYS-3 the hourly sweep's nine lifecycle triggers — so every rule about who goes in lives
   in one place. It is registered back
   to server.js at mount time (`registerJourneyEngine`) because `recordGift` lives there and
-  requiring crm.js from server.js would be a cycle; a null engine is a no-op, never a throw, so a
+  requiring routes/crm.js (and server/shared/journeyStart.js) from server.js would be a cycle; a null engine is a no-op, never a throw, so a
   broken journey can never refuse somebody's donation. (THREAD-2a)
 - **Who is never entered, and who an ask skips (JOURNEYS-4).** `maybeStartJourney` refuses a
   deceased or do-not-contact person by every door, a rule or a button, and names the reason. A
@@ -102,7 +102,7 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   undo` deletes those plans, their threads, drafts and timeline lines, restores moved steps and
   replaced exclusive plans, then re-advances each person. Never `window.alert`: it blocks React
   from drawing the new counts, which is how How it is going read 0 on Harborlight.
-- **The lifecycle triggers are one definition (`lifecycleRows`, routes/crm.js)**, used by the
+- **The lifecycle triggers are one definition (`lifecycleRows`, server/outreach/helpers.js)**, used by the
   hourly sweep and by "already qualify": membership ending (30 days), membership lapsed, monthly
   gift failed, cancelled, card expiring next month, volunteer hours (10/25/50/100, crossing in the
   window), grant awarded (on the funder), peer-to-peer goal; first event fires from attendance.
