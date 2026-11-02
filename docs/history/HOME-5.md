@@ -12,3 +12,5 @@ Home's header is the org, the greeting and the date. Fundraising and the Board k
 - Pledges toward the year (item 1) and the reworded sentence (item 2) were not built.
 - THE-PROCESS's quality-bar note was asked for, but no THE-PROCESS file exists in the repo; the rule is in
   `docs/decisions/home-and-reports.md`.
+
+- After merge, main CI went red twice on fix39-campaigns "§words Sequences: no emoji — ⏸": the Pause / Resume button in `Communications.jsx` (from FIX-60) shows only when the shard holds an active sequence, which CI-2's shard layout now produces. Follow-up PR: the button says "Pause" / "Resume" in words.
