@@ -10,9 +10,11 @@
 
 function mount(ctx) {
 const {
-  ALL_PIPELINE_STAGES, actor, geocode, orgTime, orgToday, orgTz, orgTzName, pruneUnreferencedAssets, query,
-  rbCentsEv, run, uuid, giftHooks, reportHooks,
+  ALL_PIPELINE_STAGES, MB_READY, actor, geocode, mbCents, orgTime, orgToday, orgTz, orgTzName,
+  pruneUnreferencedAssets, query, rbCentsEv, run, uuid, giftHooks, reportHooks,
 } = ctx;
+let MB = null;
+MB_READY.then(m => { MB = m; });
 // ARCH-1: a timestamp tested against the org's civil days (a fiscal year, a
 // report's from..to), cut at the ORG's midnight through the one seam, never at
 // the database's (`?::date`). Placeholders stay where they were: from, then to.
@@ -317,6 +319,19 @@ function eventLevelPayload(l, taken = 0) {
     benefits: Array.isArray(l.benefits) ? l.benefits : [],
     retired: !!l.retired_at };   // FIX-41: kept on every guest, hidden from new use
 }
+function membershipLevelPayload(l, counts = null) {
+  const priceCents = mbCents(l.price), fmvCents = mbCents(l.fmv);
+  return { id: l.id, name: l.name, price: priceCents / 100, fmv: fmvCents / 100, deductible: (priceCents - fmvCents) / 100,
+    term: l.term, termLabel: MB ? MB.TERM_LABEL[l.term] : l.term, scope: l.scope,
+    picture: l.picture || null,   // FIX-41
+    benefits: Array.isArray(l.benefits) ? l.benefits : [], active: l.active !== false,
+    // PARITY-2 Part 1: the card's words, whether it is on the public page,
+    // where it sorts, and the one frequency it may renew on by itself.
+    description: l.description || "", hidden: l.hidden === true, position: Number(l.position) || 0,
+    priceSuffix: MB ? MB.TERM_PRICE_SUFFIX[l.term] || "" : "",
+    autoRenewFrequency: MB ? MB.autoRenewFrequency(l.term) : null,
+    fmvSentence: MB ? MB.fmvSentence({ priceCents, fmvCents }) : null, counts };
+}
 
 // The Members screen: every membership, counts by level and status, sortable
 // by expiry (soonest first by default — that is the list someone works from).
@@ -346,7 +361,7 @@ async function pruneCampaignAssets(orgId) {
 }
 // CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
 giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
-return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, driftBadgeField, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, proposalMod, pruneCampaignAssets, sentenceMoney, staffWho };
+return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, driftBadgeField, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, membershipLevelPayload, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, proposalMod, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
