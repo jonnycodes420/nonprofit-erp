@@ -4243,26 +4243,9 @@ async function buildDonorListFilter(req) {
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  // IMPORT-6 · EVERYONE · DONORS · CONTACTS. ?roleCounts=1 answers the three
-  // counts under the same filters; role=auto is Donors once the org has a
-  // donor and Everyone before (a people-only import opens on its people).
-  let roleCounts = null, role = req.query.role, listReq = req;
-  if (String(req.query.roleCounts || "") === "1" || role === "auto") {
-    const countFor = async r => {
-      const f = await buildDonorListFilter({ ...req, query: { ...req.query, role: r } });
-      if (f.badFilter || f.badRole || f.badStatus) return null;
-      return parseInt((await query(`SELECT COUNT(*) AS c FROM donors WHERE ${f.whereSql}`, f.params))[0].c, 10);
-    };
-    const [everyone, donors] = await Promise.all([countFor(""), countFor("donor")]);
-    if (everyone != null && donors != null) roleCounts = { everyone, donors, contacts: everyone - donors };
-    if (role === "auto") {
-      // the org's own donors, not this search's: the view she opens on does not hop as she types
-      const [{ c }] = await query(`SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL AND archived_at IS NULL AND ${PT.donorOnlySql()}`, [req.user.orgId]);
-      role = parseInt(c, 10) > 0 ? "donor" : "";
-      listReq = { ...req, query: { ...req.query, role } };
-    }
-  }
-  const filter = await buildDonorListFilter(listReq);
+  // IMPORT-6 · Everyone · Donors · Contacts, each counted (groups.directoryRoles)
+  const { roleCounts, role } = await GR.directoryRoles(req.user.orgId, req.query, rq => buildDonorListFilter({ ...req, query: rq }));
+  const filter = await buildDonorListFilter(role === req.query.role ? req : { ...req, query: { ...req.query, role } });
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
