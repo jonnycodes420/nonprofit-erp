@@ -376,16 +376,11 @@ async function greetingFirst(browser, demoAuth) {
       const after = sel => [...root.querySelectorAll(sel)].every(el => day && (day.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
       return { root: true, day: !!day && day.tagName, first: firstText ? firstText.textContent.trim().slice(0, 60) : null,
         firstInHead: !!(firstText && head && head.contains(firstText.parentElement)),
-        greet: /Good (morning|afternoon|evening)/.test(head ? head.textContent : ""),
-        headText: day ? day.parentElement.innerText.replace(/\s+/g, " ").trim().slice(0, 200) : null,
-        behind: day ? /behind/i.test(day.parentElement.innerText) : null, paceEl: root.querySelectorAll('[data-testid="home-pace"]').length,
+        greet: /Good (morning|afternoon|evening)/.test(head ? head.textContent : ""), behind: day ? /behind/i.test(day.parentElement.innerText) : null, paceEl: root.querySelectorAll('[data-testid="home-pace"]').length,
         afterIt: after('[data-testid="home-moves"], [data-testid="home-setup-line"], [data-testid="ladder-strip"], .home-rail, .home-block') };
     });
     ok(`§home-3 Home ${what} at ${vp.width}: the greeting is first, the date is its heading, everything else follows`,
        r.root && r.firstInHead && r.greet && r.day === "H1" && r.afterIt, r);
-    // HOME-5: Home doesn't open with a comparison. The header is the org, the
-    // greeting and the date; no pace sentence, and never the word "behind".
-    ok(`§home-5 Home ${what} at ${vp.width}: the header has no pace sentence and never says "behind"`, r.root && r.behind === false && r.paceEl === 0, r);
     // HOME-4: the rail draws whole (Today with no zeros, at most three calls,
     // To confirm in one line), the deck's extras are chips hidden at zero, no
     // Drift section and no empty Thread, setup where the org is, and an org
@@ -411,18 +406,12 @@ async function greetingFirst(browser, demoAuth) {
     if (what === "empty") ok(`§home-4 the empty org at ${vp.width}: Set up Steward under Ask, one friendly card with Import and sample data, no tabs, no pace`,
        h.first === 1 && h.railSetup === 0 && /Bring in your donors/.test(h.noDonors || "") && /Import a spreadsheet/.test(h.noDonors || "") && /sample data/.test(h.noDonors || "")
        && h.tabs === 0 && h.pace === 0 && h.thread === 0, h);
-    // HOME-5: and nowhere on Home (rail, Ask, the Thread, every tab of the
-    // deck) says "behind". The comparison lives on Fundraising and the Board.
-    // every match, not the first: one "behind" must not hide another
-    const seen = async () => page.evaluate(() => [...document.body.innerText.matchAll(/.{0,60}\bbehind\b.{0,60}/gi)].map(m => m[0].replace(/\s+/g, " ")));
-    const behindAt = [];
-    const note = list => { for (const b of list) if (!behindAt.includes(b)) behindAt.push(b); };
-    note(await seen());
-    for (const tab of await page.$$('[data-testid^="moves-tab-"]')) {
-      await tab.click().catch(() => {}); await page.waitForTimeout(300);
-      note(await seen());
-    }
-    ok(`§home-5 Home ${what} at ${vp.width}: the word "behind" appears nowhere on the page, on any tab of the deck`, behindAt.length === 0, behindAt);
+    // HOME-5: Home doesn't open with a comparison: no pace sentence in the header, and "behind" nowhere on Home, on any tab of the deck (every match, so one can't hide another).
+    const seen = () => page.evaluate(() => [...document.body.innerText.matchAll(/.{0,60}\bbehind\b.{0,60}/gi)].map(m => m[0].replace(/\s+/g, " ")));
+    const behindAt = new Set(await seen());
+    for (const tab of await page.$$('[data-testid^="moves-tab-"]')) { await tab.click().catch(() => {}); await page.waitForTimeout(300); (await seen()).forEach(b => behindAt.add(b)); }
+    ok(`§home-5 Home ${what} at ${vp.width}: the header has no pace sentence and never says "behind"`, r.root && r.behind === false && r.paceEl === 0, r);
+    ok(`§home-5 Home ${what} at ${vp.width}: the word "behind" appears nowhere on the page, on any tab of the deck`, behindAt.size === 0, [...behindAt]);
     if (what === "mid-setup") ok(`§home-4 mid-setup at ${vp.width} (one step done): still the full setup card above Your moves`, h.first === 1 && h.railSetup === 0, h);
     await ctx.close();
   }
