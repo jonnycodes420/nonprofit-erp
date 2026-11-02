@@ -8,7 +8,11 @@
 // The lapse rule, the tags and the merge fields all read this date.
 "use strict";
 const { GIFT } = require("./money");
-const LAST_GIFT_ORDER = "g.date DESC NULLS LAST, g.created_at DESC, g.id DESC";
+// NUMBERS-4: one import writes every row with one created_at, so two gifts on
+// one day from one file were picked by a random id. Now: the larger, then the
+// one further down the file (gifts.import_row), and the id only for rows that
+// are the same in every way a person can see.
+const LAST_GIFT_ORDER = "g.date DESC NULLS LAST, g.created_at DESC, g.amount DESC, g.import_row DESC NULLS LAST, g.id DESC";
 
 // SQL: person `d`'s last gift date on file (no imported floor), or NULL.
 const LAST_ON_FILE = (d = "d") => `(SELECT MAX(lg.date) FROM gifts lg WHERE lg.org_id = ${d}.org_id AND lg.donor_id = ${d}.id AND lg.date IS NOT NULL AND ${GIFT("lg")})`;
@@ -32,11 +36,12 @@ async function lastGifts(query, orgId, ids) {
   }));
 }
 
-// The same rule over rows already read: [{ date, amount|cents, type, created_at?, id? }].
+// The same rule over rows already read: [{ date, amount|cents, type, created_at?, import_row?, id? }].
 function lastOf(rows, imported = null) {
   const { isGift, centsOf } = require("./money");
   const dated = (rows || []).filter(r => r.date && isGift(r)).sort((a, b) =>
-    String(b.date).slice(0, 10).localeCompare(String(a.date).slice(0, 10)) || String(b.created_at || "").localeCompare(String(a.created_at || "")) || String(b.id || "").localeCompare(String(a.id || "")));
+    String(b.date).slice(0, 10).localeCompare(String(a.date).slice(0, 10)) || String(b.created_at || "").localeCompare(String(a.created_at || ""))
+    || centsOf(b) - centsOf(a) || (b.import_row == null ? -1 : a.import_row == null ? 1 : b.import_row - a.import_row) || String(b.id || "").localeCompare(String(a.id || "")));
   const top = dated[0] ? { date: String(dated[0].date).slice(0, 10), cents: centsOf(dated[0]) } : null;
   if (imported && imported.date && (!top || imported.date > top.date)) return { date: imported.date, cents: imported.cents || 0 };
   return top;

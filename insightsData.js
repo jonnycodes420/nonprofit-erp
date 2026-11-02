@@ -32,7 +32,7 @@ async function rowsFor(orgId) {
     query(`SELECT pledge_id, seq, due_date::text AS due_date, amount, paid_gift_id FROM pledge_installments WHERE org_id=? ORDER BY pledge_id, seq`, [orgId]),
     query(`SELECT name FROM programs WHERE org_id=?`, [orgId]).catch(() => []),
     query(`SELECT name FROM fin_funds WHERE org_id=? AND restricted = true`, [orgId]).catch(() => []),
-    query(`SELECT name, ladder_major_line_cents, vocabulary_json FROM orgs WHERE id=?`, [orgId]),
+    query(`SELECT name, giving_level_mid_cents, giving_level_major_cents, vocabulary_json FROM orgs WHERE id=?`, [orgId]),
     query(`SELECT gift_id, decision FROM insight_reviews WHERE org_id=?`, [orgId]),
     query(`SELECT network_key, decision FROM insight_links WHERE org_id=?`, [orgId]),
     query(`SELECT DISTINCT ON (kind, item_key) kind, item_key, state, until::text AS until FROM insight_outcomes WHERE org_id=? ORDER BY kind, item_key, created_at DESC`, [orgId]),
@@ -41,7 +41,8 @@ async function rowsFor(orgId) {
   const inst = new Map();
   for (const i of installments) (inst.get(i.pledge_id) || inst.set(i.pledge_id, []).get(i.pledge_id)).push(i);
   return {
-    org: { name: org[0] && org[0].name, majorLineCents: org[0] && org[0].ladder_major_line_cents, fiscalStartMonth: org[0] ? require("./orgTime").orgFiscalStartMonth(org[0]) : 7 },
+    // NUMBERS-4: the ladder's major line is the org's Giving levels cut (shared/numbers/tags.js).
+    org: { name: org[0] && org[0].name, cuts: require("./shared/numbers/tags").cutsOf(org[0]), fiscalStartMonth: org[0] ? require("./orgTime").orgFiscalStartMonth(org[0]) : 7 },
     people, households, gifts,
     pledges: pledges.map(p => ({ ...p, installments: inst.get(p.id) || [] })),
     programs: [...programs, ...funds].map(r => r.name).filter(n => n && !/^general/i.test(n)),

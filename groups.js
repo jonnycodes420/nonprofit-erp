@@ -493,7 +493,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // arguments ahead of the WHERE's.
   // FIX-60: pledge_hold says a pledge keeps them off Lapsed (lapseRule.js),
   // so the list's Lapsed filter on the client reads the same rule.
-  const ph = require("./lapseRule").pledgeHoldSql("donors.id", today);
+  const ph = require("./shared/numbers/lapse").holdSql("donors.id", today);
   let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness, ${ph.sql} AS pledge_hold`;
   const selectArgs = [...cl.args, ...ph.args];
   // FIX-22 · Room to give, sorted on the server across the whole list: the

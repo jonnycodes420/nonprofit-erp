@@ -34,8 +34,7 @@ function scopeOf(req) {
 
 // The org's own "large": p90 of lifetime giving, the line threadRank uses.
 async function orgLine(orgId) {
-  const [r] = await query(`SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90 FROM donors
-                            WHERE org_id=? AND total_giving > 0 AND deleted_at IS NULL`, [orgId]);
+  const [r] = await query(require("../shared/numbers/tags").TOP_TENTH_SQL, [orgId]);   // NUMBERS-4: one line
   return num(r && r.p90);
 }
 
@@ -171,7 +170,7 @@ async function readFacts(req, nowMs) {
       const ly = { n: vs ? vs.lastYear : 0 }, ty = { n: vs ? vs.thisYear : 0 };
       const y = Number(today.slice(0, 4)) - 1;
       // FIX-60: somebody who has pledged since is not lapsed (lapseRule.js).
-      const _seasonHold = require("../lapseRule").pledgeHoldSql("d.id", today);
+      const _seasonHold = require("../shared/numbers/lapse").holdSql("d.id", today);
       const lapsedRows = await query(
         `SELECT d.id, d.name, SUM(g.amount) AS amount FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
           WHERE g.org_id=? AND g.date >= ? AND g.date <= ? AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE${M}

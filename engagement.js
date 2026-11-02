@@ -294,7 +294,7 @@ async function closenessNow(q, orgId, donorId, today, bandKey) {
   // FIX-60: a person held by a pledge (lapseRule.js pledgeHold) is on track,
   // the same as donorStatus.closenessSql says for lists.
   const LR = require("./lapseRule");
-  const held = LR.pledgeHold(await LR.pledgesFor(q, orgId, donorId, today), today) === "hold";   // past due is not on track
+  const held = LR.pledgeHold(await require("./shared/numbers/lapse").pledgesFor(q, orgId, donorId, today), today) === "hold";   // past due is not on track
   const pattern = held ? "on_track" : patternOf(gifts.filter(g => g.date && g.date <= today), today);
   const [fs] = await q(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [donorId, orgId]);
   const isNew = !!(fs && fs.first && String(fs.first).slice(0, 10) >= DS.windowsFor(today).newFrom);
@@ -397,12 +397,13 @@ async function partRows(q, orgId, donorId, today, score, part) {
 // year (usual gift times their own rhythm, drift.js), never from a one-time
 // gift: the ask beside "ask about monthly giving".
 async function suggestedAsk(q, orgId, donorId, opts = {}) {
-  const rows = await q(
-    `SELECT LEFT(g.date, 10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
-      ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, donorId]);
+  // NUMBERS-4: the one rule's gifts and inputs (shared/numbers/ask.js): a
+  // refund or a credit row never sets "largest".
+  const ASK = require("./shared/numbers/ask");
+  const rows = await q(ASK.GIFTS_SQL, [orgId, donorId]);
   if (!rows.length) return null;
-  const all = rows.map(r => cents(r.amount));
-  const SA = await import("./shared/smartAmounts.js");
+  const { largestCents, lastThreeCents } = ASK.inputsOf(rows);
+  const SA = await ASK.ready;
   if (opts.monthly) {
     const [{ timezone } = {}] = await q(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
     const today = require("./orgTime").orgToday({ timezone });
@@ -410,17 +411,17 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     if (a.cadenceDays > 0 && a.usualGift > 0) {
       const m = SA.monthlyAskCents({ usualGiftCents: cents(a.usualGift), giftsPerYear: 365 / a.cadenceDays,
         cadenceWords: a.seasonal && a.seasonal.kind === "month" ? "once a year" : driftEngine.humanCadence(a.cadenceDays) });
-      if (m) return { ...m, largestCents: Math.max(...all) };
+      if (m) return { ...m, largestCents };
     }
   }
-  let own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3) });
+  let own = SA.suggestedAskCents({ largestCents, lastThreeCents });
   if (own && own.rising) {
     const P = require("./prospect");
     const RT = await import("./shared/roomToGive.js");
     const f = (await P.loadFacts(orgId, [donorId], q)).get(donorId);
     const word = f ? RT.assess({ ...f, screening: opts.screening || null }).word : "unknown";
     if (word === "unknown") {
-      own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3), stepUp: false,
+      own = SA.suggestedAskCents({ largestCents, lastThreeCents, stepUp: false,
         holdWords: "their own level, because Room to give is not yet known" });
     }
   }

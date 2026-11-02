@@ -13,4 +13,8 @@ module.exports = {
   deposited: require("./deposited"),
   donorTotals: require("./donorTotals"),
   events: require("./events"),
+  lapse: require("./lapse"),
+  tags: require("./tags"),
+  households: require("./households"),
+  ask: require("./ask"),
 };

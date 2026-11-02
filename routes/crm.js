@@ -981,7 +981,7 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  // FIX-60: ctx.pledges (lapseRule.pledgesFor) holds a pledger off lapsing.
+  // FIX-60: ctx.pledges (shared/numbers/lapse.js pledgesFor) holds a pledger off lapsing.
   const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null, ctx.pledges || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
@@ -3321,7 +3321,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
   const tier = orgPlanTier(org);
 
   const [donorRow, giftRow, pageRow, threadRow, userRow, inviteRow] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
+    // NUMBERS-4: people, counted once (shared/numbers/households.js).
+    NUMBERS.households.counts(query, orgId).then(c => [{ n: c.people }]),
     // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [orgId]),
@@ -4315,7 +4316,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   // FIX-60: a pledge keeps a person off Lapsed (lapseRule.js), on every list.
-  const _sumHold = lapseRule.pledgeHoldSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
+  const _sumHold = require("../shared/numbers/lapse").holdSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -6177,7 +6178,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
     const giftParams = [], giftTuples = [];
     const rowByGid = new Map();
-    batch.forEach(g => {
+    batch.forEach((g, gi) => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
       giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign),
@@ -6185,8 +6186,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
-        g.paymentMethod || null, runId);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        g.paymentMethod || null, runId, bi + gi);   // NUMBERS-4: its place in the file (lastGift.js)
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -6200,7 +6201,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id,import_row)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -6405,7 +6406,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // 365-day lapsed line on a different day than their own calendar says.
       const _stageToday = orgToday(await orgTz(orgId));
       // FIX-60: a pledge holds a person off Lapsed (lapseRule.js pledgeHold).
-      const stageParams = [_stageToday, ...lapseRule.pledgeHoldSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
+      const stageParams = [_stageToday, ...require("../shared/numbers/lapse").holdSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
@@ -6419,7 +6420,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
-                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _stageToday).sql} THEN 'lapsed'
+                AND NOT ${require("../shared/numbers/lapse").holdSql("donors.id", _stageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -9277,7 +9278,8 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
   // in it yet" above 1,208 donors whose gifts came in another way. These are
   // the onboarding card's own two counts (/org/setup-status).
   const [[livePeople], [liveGifts]] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [req.user.orgId]),
+    // NUMBERS-4: people, counted once (shared/numbers/households.js).
+    NUMBERS.households.counts(query, req.user.orgId).then(c => [{ n: c.people }]),
     // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [req.user.orgId]),
@@ -10611,7 +10613,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
-                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
+                AND NOT ${require("../shared/numbers/lapse").holdSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -10626,7 +10628,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            AND stage IS NULL
            AND deleted_at IS NULL`,
         // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
-        [_giftStageToday, ...lapseRule.pledgeHoldSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
+        [_giftStageToday, ...require("../shared/numbers/lapse").holdSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
@@ -11876,7 +11878,7 @@ app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
   const _msToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
-  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await lapseRule.pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
+  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await require("../shared/numbers/lapse").pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
@@ -13647,7 +13649,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   // history). The event key is the last gift date, so each lapse fires once
   // and a new gift starts a new episode.
   if (key === "lapsed" || key === "lapsing") {
-    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
+    const st = require("../shared/numbers/lapse").sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
     const crossed = key === "lapsed" ? `(LEFT(d.last_gift_date, 10)::date + ${lapseRule.LAPSED_DAYS})`
       : `(LEFT(d.last_gift_date, 10)::date + INTERVAL '${lapseRule.LAPSING_MONTHS} months')::date`;
     return P(`SELECT d.id AS donor_id, '${key}:' || d.id || ':' || LEFT(d.last_gift_date, 10) AS event_key
@@ -20480,9 +20482,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // giving among donors who have given at all. A $5,000 ask is the year for
   // one organization and noise for another; ranking on absolute money is how
   // a CRM starts telling a food pantry its work is small.
-  const [{ p90 } = {}] = await query(
-    `SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
+  // NUMBERS-4: the top tenth by lifetime, one line (shared/numbers/tags.js).
+  const [{ p90 } = {}] = await query(require("../shared/numbers/tags").TOP_TENTH_SQL, [orgId]);
   majorThreshold = parseFloat(p90) || 0;
 
   // THREAD-2 · the org's named things (events, campaigns, journeys, groups)
@@ -21519,7 +21520,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     [orgId]
   )).map(SEALED_MAIL.stubInteraction);   // SECURE-3: an org-wide list gets the line
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
-  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
+  const lapsedRule = require("../shared/numbers/lapse").sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
   const lapsedDonors = await query(
     `SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count, 0) > 0
         AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsedRule.sql} ORDER BY last_gift_date ASC LIMIT 5`,
@@ -26936,8 +26937,8 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // or before the day nine months ago.
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
-  const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
-  const _quietPledge = lapseRule.pledgeHoldSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
+  const _quietAhead = require("../shared/numbers/lapse").rhythmAheadSql("d.id", _quietBounds.today);
+  const _quietPledge = require("../shared/numbers/lapse").holdSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its

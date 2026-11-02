@@ -3558,7 +3558,7 @@ async function autoLapseOrg(orgId) {
         AND d.gift_count > 0
         AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
         AND d.last_gift_date::date <= ?::date
-        AND NOT ${lapseRule.pledgeHoldSql("d.id", today).sql}
+        AND NOT ${require("./shared/numbers/lapse").holdSql("d.id", today).sql}
         AND d.stage NOT IN ('lapsed','solicit')
         AND NOT EXISTS (SELECT 1 FROM opportunities o
                           WHERE o.org_id=d.org_id AND o.donor_id=d.id AND o.status='open')
@@ -3567,7 +3567,7 @@ async function autoLapseOrg(orgId) {
                             AND m.officer_id IS NOT NULL AND m.to_stage <> 'lapsed'
                             AND m.created_at::date > d.last_gift_date::date)
       LIMIT 200`,
-    [orgId, cutoff, ...lapseRule.pledgeHoldSql("d.id", today).args]);
+    [orgId, cutoff, ...require("./shared/numbers/lapse").holdSql("d.id", today).args]);
   let moved = 0;
   const months = Math.round(LAPSE_DAYS / 30);
   for (const d of rows) {
@@ -3592,7 +3592,7 @@ async function autoLapseOrg(orgId) {
 // people one write touched (the after-change step); with none, the whole org.
 async function unlapseHeldByPledge(orgId, ids = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-  const hold = lapseRule.pledgeHoldSql("d.id", today);
+  const hold = require("./shared/numbers/lapse").holdSql("d.id", today);
   const rows = await query(
     `SELECT d.id FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.stage='lapsed'${ids ? " AND d.id = ANY(?)" : ""}
@@ -6506,9 +6506,8 @@ async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false
     `SELECT DISTINCT donor_id FROM recurring_subscriptions
       WHERE org_id = ? AND donor_id IN (${ph}) AND status IN ('past_due','recovering')`,
     [orgId, ...donorIds])) atRisk.add(r.donor_id);
-  const [{ p90 } = {}] = await query(
-    `SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
+  // NUMBERS-4: the top tenth by lifetime, one line (shared/numbers/tags.js).
+  const [{ p90 } = {}] = await query(require("./shared/numbers/tags").TOP_TENTH_SQL, [orgId]);
   const majorThreshold = parseFloat(p90) || 0;
 
   const L = await ItemRefs.links();
@@ -7431,7 +7430,7 @@ async function computeMilestoneCandidates(orgId) {
 // gift 9 to 12 months ago, on the org's calendar), not its own 300 days on
 // the server clock. The $5,000 floor is who is worth the email, not a lapse rule.
 async function computeAtRiskCandidates(orgId) {
-  const lapsing = lapseRule.sql("lapsing", "LEFT(d.last_gift_date, 10)", orgToday(await orgTz(orgId)), "d.id");   // ORG_TZ_SEAM_OK
+  const lapsing = require("./shared/numbers/lapse").sql("lapsing", "LEFT(d.last_gift_date, 10)", orgToday(await orgTz(orgId)), "d.id");   // ORG_TZ_SEAM_OK
   return query(
     `SELECT id, name, email, total_giving, last_gift_date, last_gift_amount
      FROM donors d
@@ -7893,7 +7892,7 @@ async function autoEnroll() {
         // FIX-51: both lapsed triggers are the one lapse rule (lapseRule.js),
         // 12 months and more since the last gift, in the org's own day. The
         // old 90- and 180-day clocks are gone; the stage still has to say it.
-        const lapsedNow = lapseRule.sql("lapsed", "last_gift_date", orgToday(await orgTz(seq.org_id)), "d.id");   // FIX-60: a pledge holds them
+        const lapsedNow = require("./shared/numbers/lapse").sql("lapsed", "last_gift_date", orgToday(await orgTz(seq.org_id)), "d.id");   // FIX-60: a pledge holds them
         donors = await query(
           `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND ${lapsedNow.sql}`,
           [seq.org_id, ...lapsedNow.args]

@@ -109,7 +109,7 @@ async function checkOrg(orgId, opts = {}) {
 
   // The gift rows, once. Everything below is worked out from these.
   const gifts = await query(
-    `SELECT g.id, g.donor_id, g.type, g.amount::text AS amount, g.date, g.created_at, g.campaign_id, g.campaign, g.fund_id,
+    `SELECT g.id, g.donor_id, g.type, g.amount::text AS amount, g.date, g.created_at, g.import_row, g.campaign_id, g.campaign, g.fund_id,
             COALESCE(g.cover_fee_amount, 0)::text AS cover, g.is_sample, g.dispute_status, g.deductible_amount::text AS deductible_amount
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]);
@@ -140,7 +140,9 @@ async function checkOrg(orgId, opts = {}) {
     const lifetime = (imp ? c(d.imported_total) : 0) + after.reduce((s, g) => s + c(g.amount), 0);
     // NUMBERS-3: the first and last gift are gifts: money above zero, so never a
     // refund or a soft or matching credit row (written out here, not read from the app).
-    const latest = realCash.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at) || (b.id > a.id ? 1 : -1)))[0];
+    // NUMBERS-4: on one day and one recording, the larger, then the later row on file.
+    const latest = realCash.filter(g => day(g.date)).sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : new Date(b.created_at) - new Date(a.created_at)
+      || c(b.amount) - c(a.amount) || (b.import_row == null ? -1 : a.import_row == null ? 1 : b.import_row - a.import_row) || (b.id > a.id ? 1 : -1)))[0];
     // Stored on the person: exactly what the gifts and the imported figure say.
     if (stored !== lifetime) add("donor-stored", { donor: d.id, what: "total_giving", stored, gifts: lifetime });
     const afterN = after.filter(g => c(g.amount) > 0).length;
@@ -247,7 +249,7 @@ async function checkOrg(orgId, opts = {}) {
     // INSIGHTS-1: lapsing respects the person's rhythm (lapseRule.js), so the check reads it too
     const rhythms = new Map((await query(`SELECT donor_id, rhythm, expected_next FROM donor_rhythm WHERE org_id = ?`, [orgId])).map(r => [r.donor_id, r]));
     // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold), so the check reads pledges too
-    const pledgesOf = await lapseRule.pledgesFor(query, orgId, null, today);
+    const pledgesOf = await require("../../shared/numbers/lapse").pledgesFor(query, orgId, null, today);
     for (const [donorId, gs] of byDonor) {
       // TRUTH-1: a credit row is not a gift: it neither keeps anyone current nor counts toward a level
       const hardGs = gs.filter(g => !CREDIT.has(String(g.type || "").trim().toLowerCase()));

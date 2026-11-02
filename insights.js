@@ -41,7 +41,7 @@ const RUNG_SENTENCE = {
 const STATUS_LABEL = { steady: "Steady", slipping: "Slipping", up: "Moving up" };
 // Cards rank by rung first, in this order, then by dollars at stake.
 const RANK_ORDER = ["retain", "second", "upgrade", "major", "planned"];
-const MAJOR_DEFAULT_CAP = 500000;   // $5,000
+const TAGS = require("./shared/numbers/tags");   // NUMBERS-4: one major rule
 const SECOND_BEST_DAYS = 90, SECOND_MAX_DAYS = 365;
 const OUTCOME_DAYS = 60;
 const LAPSING_MAX_DAYS = 548;   // 18 months
@@ -72,6 +72,17 @@ let SA = null;
 function naturalCents(c) {
   if (!SA) throw new Error("insights: await insights.ready before computeInsights");
   return SA.naturalAskCents(c);
+}
+// NUMBERS-4: every suggested ask on a card is shared/numbers/ask.js's one
+// rule, over the giving unit's gifts, as the profile's Suggested ask is over
+// the person's. A sponsorship renewal (the level's price) and a pledge (as
+// promised) are not suggested asks and keep their own amounts.
+const ASK = require("./shared/numbers/ask");
+function oneAsk(x) {
+  const a = ASK.askFor((x.dated || []).map(g => ({ date: g.date, amount_cents: g.amount_cents })));
+  if (!a) return null;
+  const why = a.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "");
+  return { cents: a.askCents, words: `Ask ${money(a.askCents)}: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`, rule: ASK.RULE };
 }
 // ", rounded" when rounding moved the figure, so the words never claim an exact amount
 const roundedWord = (ask, raw) => (ask === raw ? "" : ", rounded");
@@ -260,21 +271,16 @@ function isPersonUnit(u) {
   return u.people.every(p => !/^organi[sz]ation$|^company$|^foundation$/i.test(String(p.kind || "")) && !ORG_NAME.test(String(p.name || "")));
 }
 
-function majorLine(unitTotals, setting) {
-  if (setting && setting > 0) return { cents: setting, rule: `Your major-gift line: ${money(setting)} (set in Settings).` };
-  const sorted = unitTotals.filter(c => c > 0).sort((a, b) => b - a);
-  if (!sorted.length) return { cents: MAJOR_DEFAULT_CAP, rule: `Your major-gift line: ${money(MAJOR_DEFAULT_CAP)}.` };
-  const k = Math.max(1, Math.ceil(sorted.length * 0.05));
-  const top5 = sorted[k - 1];
-  const cents = Math.min(MAJOR_DEFAULT_CAP, top5);
-  const rule = cents === MAJOR_DEFAULT_CAP
-    ? `Your major-gift line: ${money(cents)} (the smaller of $5,000 and the ${money(top5)} your top 5% of donors reach).`
-    : `Your major-gift line: ${money(cents)} (what your top 5% of donors reach, below $5,000).`;
-  return { cents, rule };
+// NUMBERS-4: the major line is the org's own Giving levels cut, the one the
+// Major tag reads (shared/numbers/tags.js); it was a second rule here (the
+// smaller of $5,000 and the top 5%, or any single gift over it).
+function majorLine(cuts) {
+  const c = TAGS.cutsOf({ giving_level_major_cents: cuts && cuts.majorCents, giving_level_mid_cents: cuts && cuts.midCents });
+  return { cents: c.majorCents, cuts: c, rule: `Your major line: ${money(c.majorCents)} given in the last 12 months (Settings, Giving levels; the Major tag reads it too).` };
 }
 
 // ── THE ENTRY POINT ────────────────────────────────────────────────────────
-// input: { asOf, org: { name, majorLineCents }, people, households, gifts,
+// input: { asOf, org: { name, cuts }, people, households, gifts,
 //          pledges, programs, reviewed: { giftId: "keep" }, linksDismissed:
 //          Set(networkKey), outcomes: [{ card_key, state, until }],
 //          imports: { id: name } }
@@ -364,7 +370,7 @@ function computeInsights(input) {
     x.isPerson = isPersonUnit(u);
     U.push(x);
   }
-  const line = majorLine(U.map(x => x.lifetime), input.org && input.org.majorLineCents);
+  const line = majorLine(input.org && input.org.cuts);
 
   // the ladder
   for (const x of U) {
@@ -393,7 +399,7 @@ function computeInsights(input) {
     x.shrank = x.P12 > 0 && x.L12 < Math.round(x.P12 * 0.5);
 
     if (!x.count && !x.openPledges.length) x.rung = "new";
-    else if (x.L12 >= line.cents || x.largest >= line.cents) x.rung = "major";
+    else if (TAGS.isMajor(x.L12, line.cuts)) x.rung = "major";
     else if (x.occasions >= 2 && (x.grew || x.movedToFoundation || x.designated.length)) x.rung = "upgrade";
     else if (x.occasions >= 2) x.rung = "retain";
     else x.rung = "second";
@@ -421,7 +427,7 @@ function computeInsights(input) {
     // one made in the last 12 months, keeps a giver off "slipping" entirely.
     x.pledgeActive = x.openPledges.length > 0 || x.pledges.some(p => p.status !== "cancelled" && p.status !== "written_off" && p.made_on && ymd(p.made_on) >= L12from);
     x.status = x.grew || x.movedToFoundation ? "up"
-      : !x.pledgeActive && (x.timeQuiet || (x.shrank && !x.undated.length && !inWindow) || (x.yearBehind && (x.L12 >= line.cents || x.largest >= line.cents))) ? "slipping" : "steady";
+      : !x.pledgeActive && (x.timeQuiet || (x.shrank && !x.undated.length && !inWindow) || (x.yearBehind && TAGS.isMajor(x.L12, line.cuts))) ? "slipping" : "steady";
 
     x.signals = [];
     if (r.words) x.signals.push(r.words);
@@ -585,7 +591,7 @@ const whoFor = (x, rung) => (rung === "major" ? "The director" : x.owner || "You
 // "Mr & Mrs. Dunwell". greeting.js is an ES module; insightsData awaits
 // `ready` before it runs the engine.
 let GREET = null;
-const ready = Promise.all([import("./shared/greeting.js"), import("./shared/smartAmounts.js")]).then(([g, a]) => { GREET = g; SA = a; });
+const ready = Promise.all([import("./shared/greeting.js"), import("./shared/smartAmounts.js"), ASK.ready]).then(([g, a]) => { GREET = g; SA = a; });
 const hello = x => {
   const u = x.unit || { people: [] };
   const solo = u.people.length === 1 ? u.people[0] : null;
@@ -638,17 +644,19 @@ const LIBRARY = [
       const dec = x.dated.filter(g => g.date >= from && g.date <= to).reduce((n, g) => n + g.amount_cents, 0);
       const fy = x.dated.filter(g => g.date >= ctx.fyStart && g.date <= ctx.asOf).reduce((n, g) => n + g.amount_cents, 0);
       if (fy >= dec) return null;
-      const ask = naturalCents(dec - fy), askDec = naturalCents(dec);
+      // NUMBERS-4: the one rule's ask (shared/numbers/ask.js), less what they
+      // have already given this fiscal year (SWEEP-1), rounded the one way.
+      const one = oneAsk(x), ask = one ? (fy > 0 ? naturalCents(one.cents - fy) : one.cents) : null;
       const since = longDate(ctx.fyStart).replace(/, \d{4}$/, "");
       const when = ctx.asOf <= `${ctx.thisYear}-11-15` ? windowWords(ctx.asOf > season ? ctx.asOf : season, `${ctx.thisYear}-11-15`) : windowWords(ctx.asOf, `${ctx.thisYear}-12-15`);
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: dec - fy,
         what: fy > 0 ? `Gave ${money(dec)} in December ${y1}, and ${money(fy)} since ${since}. Nothing yet this year-end.` : `Gave ${money(dec)} in December ${y1}. Nothing yet this year-end.`,
-        facts: [[`December ${y1}`, money(dec)], ...(fy > 0 ? [[`since ${since}`, money(fy)], ["ask", money(ask)]] : [])],
+        facts: [[`December ${y1}`, money(dec)], ...(fy > 0 ? [[`since ${since}`, money(fy)]] : []), ...(ask ? [["ask", money(ask)]] : [])],
         how: { who: whoFor(x, x.rung), channel: dec >= 100000 ? "Call" : "Note", when,
           say: `${hello(x)}, thank you for your gift last December. It mattered. We're planning this year's year-end and hoped we could count on you again.`,
-          ask: x.noAsk ? null : fy > 0
-            ? { cents: ask, words: `Ask ${money(ask)}: last December's ${money(dec)}, less the ${money(fy)} given since ${since}${roundedWord(ask, dec - fy)}.`, rule: "Retain asks last year's amount, less what they have given this fiscal year, rounded to a natural amount." }
-            : { cents: askDec, words: askDec === dec ? `Ask ${money(askDec)}: last December's gift.` : `Ask ${money(askDec)}: last December's ${money(dec)}, rounded.`, rule: "Retain asks last year's amount, rounded to a natural amount." } } };
+          ask: x.noAsk || !one ? null : fy > 0
+            ? { cents: ask, words: `Ask ${money(ask)}: the suggested ${money(one.cents)} (${one.words.replace(/^Ask \$[\d,.]+: /, "").replace(/\.$/, "")}), less the ${money(fy)} given since ${since}${roundedWord(ask, one.cents - fy)}.`, rule: `${ASK.RULE} Retain takes off what they have given this fiscal year.` }
+            : one } };
     }).filter(Boolean);
     if (!items.length) return null;
     return {
@@ -720,7 +728,7 @@ const LIBRARY = [
         facts: [["last gift", money(g.amount_cents)], ["last gift date", longDate(g.date)], [`${yr} giving`, money(yearCents)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 100000 ? "Call" : "Note", when: windowWords(ctx.asOf, addDays(ctx.asOf, 14)),
           say: `${hello(x)}, thank you for your gift in ${monthYear(g.date)}. It did real good, and we'd love to have you with us again this year.`,
-          ask: x.noAsk ? null : (a => ({ cents: a, words: a === g.amount_cents ? `Ask ${money(a)}: their last gift.` : `Ask ${money(a)}: their last gift (${money(g.amount_cents)}), rounded.`, rule: "A lapsing donor is asked their last gift, rounded to a natural amount." }))(naturalCents(g.amount_cents)) } };
+          ask: x.noAsk ? null : oneAsk(x) } };
     });
     return {
       kind: "lapsing", rung: "retain", title: "Lapsing donors",
@@ -744,7 +752,7 @@ const LIBRARY = [
         facts: [["first gift", money(g.amount_cents)], ["first gift date", longDate(g.date)]],
         how: { who: whoFor(x, x.rung), channel: g.amount_cents >= 25000 ? "Call" : "Note", when,
           say: `${hello(x)}, your first gift in ${monthYear(g.date)} is already at work. Here's one thing it did. Would you give again before the year is out?`,
-          ask: x.noAsk ? null : (a => ({ cents: a, words: a === g.amount_cents ? `Ask ${money(a)}: their first gift, within 12 months of it.` : `Ask ${money(a)}: their first gift (${money(g.amount_cents)}), rounded, within 12 months of it.`, rule: "Second gift asks the first gift's amount, rounded to a natural amount, within 12 months of it." }))(naturalCents(g.amount_cents)) } };
+          ask: x.noAsk ? null : oneAsk(x) } };
     });
     return {
       kind: "second_gift", rung: "second", title: "First gift, no second yet",
@@ -760,7 +768,6 @@ const LIBRARY = [
     const xs = U.filter(x => reachable(x) && x.occasions >= 2 && x.status === "up" || (reachable(x) && x.occasions >= 2 && x.designated.length && x.status !== "slipping"));
     if (!xs.length) return null;
     const items = xs.map(x => {
-      const ask = naturalCents(Math.round(x.L12 * 1.5));
       const fdn = x.dated.find(g => g.date >= addDays(ctx.dataEnd, -364) && /\bfoundation\b/i.test(g.sig.text));
       const fdnName = fdn ? (String(fdn.sig.text).match(/((?:The\s+)?[A-Z][\w'&]*(?:\s+[A-Z][\w'&]*)*\s+Family Foundation|(?:The\s+)?[A-Z][\w'&]*(?:\s+[A-Z][\w'&]*)*\s+Foundation)/) || [])[1] : null;
       const before = x.days.filter(g => g.date < addDays(ctx.dataEnd, -364)).slice(-1)[0];
@@ -775,13 +782,13 @@ const LIBRARY = [
         facts,
         how: { who: whoFor(x, "upgrade"), channel: "Visit", when: windowWords(ctx.asOf, addDays(ctx.asOf, 30)),
           say: `${hello(x)}, thank you. Your gift${after ? ` of ${money(after.amount_cents)}` : ""}${fdnName ? ` through ${fdnName}` : ""}${x.designated.length ? ` for ${x.designated[0]}` : ""} went further than you might know. Could we show you what it did, in person?`,
-          ask: x.noAsk ? null : { cents: ask, words: `Ask ${money(ask)}: 1.5 times their last 12 months (${money(x.L12)}), rounded.`, rule: "Upgrade asks 1.5 times their last 12 months, rounded to a natural amount." } } };
+          ask: x.noAsk ? null : oneAsk(x) } };
     });
     return {
       kind: "upgraded", rung: "upgrade", title: "Upgraded on their own",
       what: c => `${plural(c.items.length, "donor")} gave much more in the last 12 months than the 12 before, moved into a family foundation, or designated a program.`,
       why: "A donor who raises their own gift is telling you they want to be closer. Thank them first, then invite them in.",
-      cardFacts: [["multiplier", "1.5"], ["months", "12"]], items,
+      cardFacts: [["months", "12"]], items,
       does: [{ action: "brief", label: "Build a visit briefing" }, { action: "task", label: "Create a task" }, { action: "draft", label: "Draft a thank-you" }],
     };
   },
@@ -792,14 +799,15 @@ const LIBRARY = [
     if (!xs.length) return null;
     const items = xs.map(x => {
       const last = x.byYear[y1] || 0, now = x.byYear[y0] || 0;
-      const lo = naturalCents(Math.round(last * 0.5)), hi = naturalCents(last);
+      // NUMBERS-4: the range runs from half the one rule's ask to the ask.
+      const one = oneAsk(x), hi = one ? one.cents : naturalCents(last), lo = naturalCents(Math.round(hi * 0.5));
       const decGiver = x.rhythm.kind === "year_end";
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: last - now,
         what: `${money(last)} in ${y1}, ${money(now)} so far in ${y0}: ${money(last - now)} behind.`,
         facts: [["giving by year", yearsLine(x)], [`${y1}`, money(last)], [`${y0} so far`, money(now)], ["behind", money(last - now)]],
         how: { who: "The director", channel: "Visit", when: decGiver ? windowWords(ctx.asOf <= `${y0}-11-01` ? `${y0}-11-01` : ctx.asOf, `${y0}-11-15`) : windowWords(ctx.asOf, addDays(ctx.asOf, 21)),
           say: `${hello(x)}, your support has carried this work${Object.keys(x.byYear).length > 1 ? " year after year" : ""}. Before we plan next year, I'd like to sit down and hear what matters most to you now.`,
-          ask: x.noAsk ? null : { range: [lo, hi], words: `History: ${yearsLine(x)}. A range to talk about: ${money(lo)} to ${money(hi)}.`, rule: "Major shows their history and suggests a range, never a single number." } } };
+          ask: x.noAsk ? null : { range: [lo, hi], words: `History: ${yearsLine(x)}. A range to talk about: ${money(lo)} to ${money(hi)}.`, rule: `Major shows their history and suggests a range, never a single number: half the suggested ask to the ask. ${ASK.RULE}` } } };
     });
     return {
       kind: "major_slipping", rung: "major", title: "Major donor slipping",
