@@ -17,6 +17,8 @@
 //     2,000 people with 500 deleted: the first preview under 4 s and each
 //     re-read after an answer under 2 s, at prod's database round trip
 //     (tests/lib/previewPerfOrg.js). No browser, so it runs before the skip.
+//   · NUMBERS-4: the 25,000-person workbook (messy-25k) imports whole in under
+//     2 minutes (tests/lib/workbookImportLeg.js; PERF-2: over 15). No browser.
 //
 // THE MACHINES. A phone is tests/lib/phone.js's (Moto G Power: DevTools slow
 // 4G, a CPU slowdown calibrated to this machine). A desktop is Lighthouse's desktop: 1350×940, CPU
@@ -34,7 +36,8 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, q, closeDb, api, login, BASE, browserLegOrSkip } = require("./helpers");
+const { ok, summary, q, closeDb, api, login, BASE, browserLegOrSkip, importWorkSettled } = require("./helpers");
+const { workbookImportLeg } = require("./lib/workbookImportLeg");
 const PREVIEW = require("./lib/previewPerfOrg");
 const timed = require("./lib/budget").withinBudget(ok);
 
@@ -190,6 +193,7 @@ function preloaderAllowed() {
 
 (async () => {
   await previewLeg();
+  await workbookImportLeg({ ok, timed, q, login, base: BASE, importWorkSettled });
   if (fs.existsSync(path.join(DIST, "app.html"))) preloaderAllowed();
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";

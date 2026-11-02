@@ -5182,10 +5182,12 @@ function duplicateGroupsFrom(rows) {
 async function keepImportedTotals(q, orgId, ids, sourceName) {
   if (!ids || !ids.length) return;
   const words = String(sourceName || "").replace(/\s+/g, " ").trim().slice(0, 80) || "your old system";
-  await q(require("../donorSummary").KEEP_IMPORTED_TOTAL, [orgId, ids, words, orgToday(await orgTz(orgId))]);   // ORG_TZ_SEAM_OK
+  // NUMBERS-4: in batches (donorSummary.js), so a 25,000-person file is linear.
+  const DS = require("../donorSummary");
+  await DS.keepImportedTotalsFor(q, orgId, ids, words, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   // FIX-49: and the one statement, so first_gift_date reads the old system's
   // first (or last) gift the moment the file is in, not at the next gift.
-  await q(require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, ids]);
+  await DS.recomputeSummaries(q, orgId, ids);
 }
 
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
@@ -5424,6 +5426,10 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   // touches the subscription — it records one notice and tells the admin.
   checkRecordBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
+
+// NUMBERS-4: from this many new people, a combined import refreshes the
+// planner's statistics once it commits (see after its transaction below).
+const IMPORT_ANALYZE_AT = 1000;
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
@@ -6299,6 +6305,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   ledger.assertBalanced();
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
+
+  // NUMBERS-4: a big file is most of an org the planner has never seen. Until
+  // autovacuum gets to it, every statement after this one (the recompute, the
+  // background job, the scores and rhythms) is planned as if the org had one
+  // person, and a join over 25,000 people planned that way is a loop of
+  // 25,000 by 25,000 (PERF-2). Two ANALYZEs (a sample, about a second) end
+  // that. A role that does not own the tables gets a warning, not an error.
+  if (created >= IMPORT_ANALYZE_AT) {
+    try { await query("ANALYZE donors"); await query("ANALYZE gifts"); }
+    catch (e) { console.error("[combined-import] analyze:", e.message); }
+  }
 
   // FIX-37: the recent gifts go through the one gift path BEHIND THE SCREEN
   // (runRecentWork). Totals for the file's older gifts are brought up to date
