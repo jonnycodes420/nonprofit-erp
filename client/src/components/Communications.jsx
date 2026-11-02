@@ -906,7 +906,7 @@ function SequencesPanel({ data }) {
                         {expandedEnr === seq.id ? "Hide" : "Enrollments"}
                       </button>
                       <button onClick={() => toggleStatus(seq)} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px" }}>
-                        {isActive ? "⏸ Pause" : "▶ Resume"}
+                        {isActive ? "Pause" : "Resume"}
                       </button>
                       <button onClick={() => openBuilder(seq)} style={{ ...S.btn("subtle"), fontSize: 11, padding: "5px 10px" }}>Edit</button>
                       <button onClick={() => deleteSeq(seq.id)} style={{ ...S.btn("danger"), fontSize: 11, padding: "5px 10px" }}>Delete</button>
