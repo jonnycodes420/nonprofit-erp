@@ -193,7 +193,7 @@ function preloaderAllowed() {
 
 (async () => {
   await previewLeg();
-  await workbookImportLeg({ ok, timed, q, login, base: BASE, importWorkSettled });
+  await workbookImportLeg({ ok, timed, q, login: require("./helpers").login, base: BASE, importWorkSettled });   // the helper (a `login` below shadows it)
   if (fs.existsSync(path.join(DIST, "app.html"))) preloaderAllowed();
   const why = (() => {
     if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built (bash scripts/ops/build-local-dist.sh)";

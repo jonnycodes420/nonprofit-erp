@@ -43,7 +43,7 @@ function countsOf(rows) {
 
 // The words a screen prints beside the counts.
 const WORDS = Object.freeze({
-  people: "People are everyone in your records who is not deleted and not sample data: donors, organisations and other people.",
+  people: "People are everyone in your records who is not deleted and not sample data: donors, organizations and other people.",
   households: "Households are counted once, however many of their people are here; a household whose people are all deleted is not counted.",
 });
 
