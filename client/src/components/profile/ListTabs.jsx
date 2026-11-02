@@ -15,7 +15,7 @@ function ListTabs({deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intAction
               "Everything with" chips, each its own tab with the Timeline / List
               switch. Files also holds what the Materials tab held, and the
               record's History (from the old Activity tab). */}
-          {TAB_KIND[dpTab]&&<div data-testid={"dp-tab-"+dpTab} style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+          {TAB_KIND[dpTab]&&<div data-testid={"dp-tab-"+dpTab} className="dp3-gutter" style={{padding:"24px var(--dp-gutter,40px)",display:"flex",flexDirection:"column",gap:16}}>
             {dpTab==="conversations"&&!isReadOnly&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <button onClick={()=>setStwOpen(v=>!v)} data-testid="dp-log-stewardship" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log stewardship</button>
               <button onClick={onLogTouchpoint} data-testid="dp-log-touchpoint" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log a touchpoint</button>

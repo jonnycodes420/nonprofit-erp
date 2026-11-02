@@ -19,30 +19,37 @@ import { ClientFlag } from "./PrivacyPanel";
 
 // Ink ground, light text. The greys are cream at reduced opacity, the design
 // system's own answer for secondary text on ink.
+// PROFILE-3: every rail section's body is one white card on the green. The
+// greys and the text are CSS variables, so the same section reads cream on the
+// green and ink inside its card (.dp3-rail-card in shared.jsx sets them).
 export const RAIL = {
-  bg:    T.railGreen,   // PROFILE-2: the profile rail's own deep green (Jonathan, 29 Oct)
-  panel: T.bgElevated,
-  line:  T.green650,
-  text:  T.inkInverse,
-  dim:   T.sage400,
+  bg:     T.railGreen,   // PROFILE-2: the profile rail's own deep green (Jonathan, 29 Oct)
+  panel:  `var(--rail-panel,${T.bgElevated})`,
+  line:   `var(--rail-line,${T.green650})`,
+  text:   `var(--rail-text,${T.inkInverse})`,
+  dim:    `var(--rail-dim,${T.sage400})`,
+  strong: `var(--rail-strong,${T.white})`,
 };
+// One look for a rail label: sentence case, small caps, brass.
+export const RAIL_LABEL = { margin: 0, fontSize: 12.5, fontWeight: 700, fontVariantCaps: "small-caps", letterSpacing: "0.04em", color: T.gold500, lineHeight: 1.3 };
 
 // One shape for every rail section: a hairline above it, an uppercase title,
 // an optional action beside the title, and an optional fold. A folded section
 // says how much is inside ON ITS LABEL, so folding never hides a count.
-export function RailSection({ title, actionNode, children, fold = false, foldOpenLabel = "Hide", foldShutLabel = "Show", testid, first = false }) {
+export const RAIL_CARD = { background: T.white, color: T.ink, borderRadius: 12, padding: "14px 16px", boxSizing: "border-box" };
+export function RailSection({ title, actionNode, children, fold = false, foldOpenLabel = "Hide", foldShutLabel = "Show", testid, first = false, bare = false }) {
   const [open, setOpen] = useState(!fold);
   const btn = { background: "none", border: "none", padding: 0, color: RAIL.dim, fontSize: 12, fontWeight: 600, letterSpacing: 0, textTransform: "none", cursor: "pointer", fontFamily: "inherit" };
   return (
     <section data-testid={testid} data-rail-section={fold ? (open ? "open" : "folded") : "plain"}
-      style={{ borderTop: first ? "none" : "1px solid " + RAIL.line, padding: first ? "0 0 16px" : "16px 0" }}>
-      <h4 style={{ margin: "0 0 10px", fontSize: 10.5, fontWeight: 800, color: T.gold500, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+      style={{ padding: first ? "0 0 16px" : "0 0 16px" }}>
+      <h4 style={{ ...RAIL_LABEL, margin: "0 0 8px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <span>{title}</span>
         {fold
           ? <button onClick={() => setOpen(o => !o)} aria-expanded={open} style={btn}>{open ? foldOpenLabel : foldShutLabel}</button>
           : (actionNode || null)}
       </h4>
-      {open && children}
+      {open && (bare ? children : <div className="dp3-rail-card" style={RAIL_CARD}>{children}</div>)}
     </section>
   );
 }
@@ -66,7 +73,7 @@ export function RhythmCard({ rhythm }) {
   if (!rhythm) return null;
   return (
     <RailSection title="Giving rhythm" testid="dp-rail-rhythm">
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.white }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: RAIL.strong }}>
         <Opens source={rhythm.source} title="Their gifts" explanation={rhythm.sentence} testid="dp-rail-rhythm-open">{rhythm.sentence}</Opens>
       </div>
       {rhythm.expectedNext && <div style={{ ...ROW, marginTop: 6 }}>
@@ -84,7 +91,7 @@ export function RecurringCard({ recurring }) {
   const r = recurring;
   return (
     <RailSection title="Recurring" testid="dp-rail-recurring">
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.white }}>{r.sentence}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: RAIL.strong }}>{r.sentence}</div>
       {r.given && <div style={{ ...ROW, marginTop: 6 }}>
         <span style={DIM}>Given through it</span>
         <Figure value={r.given.value} kind="money" label="Given through this plan" definition="Every gift this plan has charged, to the cent." source={r.source} variant="inline" figureKey="profile.rail.recurring" />
@@ -220,7 +227,7 @@ export function ContactExtras({ contact, donorId, isReadOnly }) {
 // because it was off, each with Send: that one message, after a confirm.
 const SMALL_BTN = { background: "none", border: "1px solid " + RAIL.line, borderRadius: 8, padding: "5px 10px", color: RAIL.text, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const GO_BTN = { ...SMALL_BTN, background: T.greenDk, border: "none", color: T.white };
-export function AutoEmailCard({ donorId, email, isReadOnly }) {
+export function AutoEmailCard({ donorId, email, isReadOnly, quietWhenDefault = false }) {
   const [st, setSt] = useState(null);
   const [asking, setAsking] = useState(false);
   const [sendAsk, setSendAsk] = useState(null);
@@ -229,6 +236,8 @@ export function AutoEmailCard({ donorId, email, isReadOnly }) {
   const load = () => apiFetch(`/donors/${donorId}/blocked-mail`).then(setSt).catch(() => setSt(null));
   useEffect(() => { if (donorId) load(); }, [donorId]);   // eslint-disable-line react-hooks/exhaustive-deps
   if (!st) return null;
+  // PROFILE-3: on a record with nothing logged, the default setting with nothing held is not drawn.
+  if (quietWhenDefault && st.mode === "follows" && !(st.blocked || []).length) return null;
   // SEND-GATE-2: three choices. Always include asks first; the others save at once.
   const setMode = async mode => {
     setBusy(true); setMsg("");
@@ -253,7 +262,7 @@ export function AutoEmailCard({ donorId, email, isReadOnly }) {
         {CHOICES.map(([m, label]) => (
           <button key={m} type="button" role="radio" aria-checked={st.mode === m} data-testid={`dp-auto-email-${m}`} disabled={busy}
             onClick={() => st.mode === m ? null : m === "always" ? setAsking(true) : setMode(m)}
-            style={{ ...SMALL_BTN, ...(st.mode === m ? { background: RAIL.line, color: T.white } : {}) }}>{label}</button>
+            style={{ ...SMALL_BTN, ...(st.mode === m ? { background: T.greenDk, color: T.white, borderColor: T.greenDk } : {}) }}>{label}</button>
         ))}
       </div>}
       {asking && <div data-testid="dp-auto-email-confirm" style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

@@ -18,16 +18,18 @@ import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
 import { AtlasNote } from "./AtlasNote";   // AGENT-5
 import { atlasName } from "../lib/atlas";
 import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
-import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
+import { ProfileNumbers } from "./profile/ProfileNumbers";
 import { ProfileNextMove } from "./Insights";   // INSIGHTS-1, PROFILE-2
-import { RAIL, RailSection } from "./ProfileRail";
+import { RAIL, RAIL_LABEL, RailSection } from "./ProfileRail";
 import { T, fmtFull, STAGES, donorScore, moveUrgency, Spin, AIPanel, Modal, firstNameOf } from "./shared";
 import { BriefPanel, useDonorProposals } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
-import { useStickyTop, useIsPhone } from "../lib/stickyRail";
+import { useIsPhone } from "../lib/stickyRail";
+import { useFrameHeight } from "./profile/columns";
+import { StartCard } from "./profile/StartCard";
 import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
@@ -49,6 +51,7 @@ import { ProfileDialogs } from "./profile/ProfileDialogs";
 import { ListTabs } from "./profile/ListTabs";
 import { RelatedModal } from "./profile/RelatedModal";
 import { GivingTab } from "./profile/GivingTab";
+import { ProfileHeader } from "./profile/ProfileHeader";
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialOpenCompose=false,initialOpenBrief=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
@@ -306,8 +309,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [whyStopOpen,setWhyStopOpen]=useState(false);
   const railRef=useRef(null);   // PROFILE-2 Part 1
   const [noteOpen,setNoteOpen]=useState(false);   // PROFILE-2: the header's Note
-  const railTop=useStickyTop(railRef);
+  const frameRef=useRef(null);   // PROFILE-3: the columns scroll on their own
   const isPhone=useIsPhone();   // PROFILE-2 Part 3
+  useFrameHeight(frameRef,!isPhone);
   // The window is the profile's scroller now: a profile opened from far down the list starts at its top.
   useEffect(()=>{if(typeof window!=="undefined")window.scrollTo(0,0);},[donor.id]);
   const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
@@ -1144,7 +1148,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const headName=displayName(donor.name,{isOrg:isOrgRec});
   // An organisation is called by its whole name ("Nothing is open for Darlie" was a foundation).
   const callName=isOrgRec?headName:(firstNameOf(donor.name)||donor.name);
-  const stTags=(status&&status.tags)||[];
+  // PROFILE-3: a person with no gifts carries no giving tag (Donor, New, a level):
+  // every donorStatus tag is about giving. NUMBERS-4's tag rule will say this on the server.
+  const lifeFig=(figs||donor.figures||{}).lifetime;
+  const noGifts=!giftLoading&&!giftReadErr&&gifts.length===0&&giftsFull.length===0&&!(lifeFig&&lifeFig.value);
+  const stTags=noGifts?[]:((status&&status.tags)||[]);
   const headStatusEls=statusTagItems({tags:stTags.map(t=>t.kind==="level"?{...t,label:t.key==="mid"?"Mid-level donor":`${t.label} donor`}:t)});
   const tagEl=k=>{const i=stTags.findIndex(t=>t.key===k);return i>=0?headStatusEls[i]:null;};
   const levelKey=(stTags.find(t=>t.kind==="level")||{}).key;
@@ -1167,7 +1175,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // ── PROFILE-2 Part 3 · three nodes that move on a phone: the next move and
   // the rail's Next step and Open pledge sit above the tabs at 390.
   const railNextNode=<div data-testid="dp-next" style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:12,color:T.gold}}>Next step</div>
+              <h4 style={RAIL_LABEL}>Next step</h4>
               {dpItems.length>0?(
                 <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
                   {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
@@ -1282,15 +1290,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </div>
               )}
             </div>;
-  const railPledgeNode=pledges.some(p=>p.status==="open"&&Number(p.balance)>0)?<RailSection title="Open pledge" testid="dp-rail-pledge"><div style={{background:T.white,color:T.ink,borderRadius:10,padding:"2px 2px"}}>
+  const railPledgeNode=pledges.some(p=>p.status==="open"&&Number(p.balance)>0)?<RailSection title="Open pledge" testid="dp-rail-pledge"><div style={{margin:"-2px -4px"}}>
           <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
             onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
         </div></RailSection>:null;
-  const nextMoveNode=<div className="dp2-nextmove"><ProfileNextMove donorId={donor.id} firstName={callName} isReadOnly={isReadOnly||!isTeam}
+  // PROFILE-3 · NOTHING LOGGED YET: no gift, pledge, conversation, email, note,
+  // task, file or meeting. The main column is one quiet start card, and the
+  // "Nothing due" line and the empty timeline are not drawn.
+  const nothingLogged=!!rel&&!giftLoading&&!giftReadErr&&gifts.length===0&&giftsFull.length===0&&pledges.length===0
+    &&Object.values(tlCounts).every(n=>!n)&&!(tasks||[]).length&&!(rel.upcoming||[]).length&&!rel.nextMeeting;
+  const nextMoveNode=<div className="dp2-nextmove"><ProfileNextMove donorId={donor.id} firstName={callName} isReadOnly={isReadOnly||!isTeam} quietNone={nothingLogged}
               aiOn={!!(org&&org.capabilities&&org.capabilities.ai)&&isTeam} onDraft={()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);}}/></div>;
 
   return(
-    <div className="fade-in page-takeover" data-testid="donor-profile" style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
+    <div className="fade-in page-takeover dp3-frame" data-testid="donor-profile" ref={frameRef} style={{position:"relative",background:T.bg,display:"flex",flexDirection:"column"}}>
       {/* PROFILE-2 Part 1: the profile is the page, not a fixed panel over it.
           HOTFIX-1 made it position:fixed with overflow:hidden, and once
           INSIGHTS-1 and IMPORT-5 grew the header to 540px nothing over it
@@ -1305,11 +1318,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             than inherited, because the rail beside it is defined as being on a
             CONTRASTING ground and a contrast between two inherited values is
             not a contrast anybody can check. See docs/decisions/design-system.md. */}
-        <div data-testid="dp-main-column" style={{background:T.bg,minWidth:0,display:"flex",flexDirection:"column"}}>
+        <div data-testid="dp-main-column" className="dp3-main" tabIndex={isPhone?undefined:0} aria-label={isPhone?undefined:"Record"} style={{background:T.bg,minWidth:0,display:"flex",flexDirection:"column"}}>
           {/* PROFILE-2 · THE WHITE BAND: the header, the four numbers, then the tabs
               as its bottom edge. It sits in the main column, so the rail beside it
               runs from the top of the profile. */}
-          <div data-testid="dp-band" style={{background:T.white}}>
+          {/* PROFILE-3 · THE PIN: the header band, the numbers and the tabs stay at the
+              top of the main column while the timeline scrolls under them. */}
+          <div className="dp3-pin" data-testid="dp-pin" style={{position:"sticky",top:0,zIndex:6,background:T.white,borderBottom:"1px solid "+T.bg3}}>
+          <div data-testid="dp-band" className="dp3-band" style={{background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
       {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
             below it the mark (photo or initials, one size) sits top-aligned with
             the name, and everything about the person is one column beside it.
@@ -1321,179 +1337,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             name: at most two tags here, the rest are in About on the rail. The
             roles line, closeness, drift and recurring sentences moved to the rail
             (About and Engagement), so the header is the person and what to do. */}
-        <div className="donor-profile-header dp2-head" data-testid="dp-head" style={{padding:"12px 28px 10px",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:18,rowGap:8,alignItems:"center"}}>
-          <div className="dph-backrow" style={{gridColumn:"1 / 3",gridRow:1,alignSelf:"center"}}>
-            <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:"none",border:"none",padding:"6px 0",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",minHeight:32}}>← Donors</button>
-          </div>
-          <div className="dph-avatar" style={{gridColumn:1,gridRow:2,alignSelf:"start"}}>
-            <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl} size={72}/>
-          </div>
-          <div className="dph-identity" data-testid="dp-identity" style={{gridColumn:"2 / -1",gridRow:2,minWidth:0,alignSelf:"start",paddingTop:4}}>   {/* POLISH-1: top-aligned with the face, photo or not */}
-            <h1 className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{margin:0,fontSize:38,fontWeight:400,color:T.ink,letterSpacing:"-0.015em",
-              fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.08,overflowWrap:"break-word"}}>{headName||"\u00a0"}</h1>
-          </div>
-          <div className="dph-tags" data-testid="dp-head-tags" style={{display:"contents"}}>
-            {headTags[0]&&<div className="dph-tag1" data-testid="dp-head-tag-1" style={{gridColumn:1,gridRow:3,justifySelf:"center",whiteSpace:"nowrap"}}>{headTags[0]}</div>}
-            {headTags[1]&&<div className="dph-tag2" data-testid="dp-head-tag-2" style={{gridColumn:"2 / -1",gridRow:3,justifySelf:"start",whiteSpace:"nowrap"}}>{headTags[1]}</div>}
-          </div>
-          {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
-              carried five actions across the top of the record, which is four
-              more than anybody presses in a row; at 390 the overflow already
-              existed and at 1440 it did not, so the same screen taught two
-              different habits. Now: Log a conversation (the one emerald), Plan
-              a follow-up when there is no open thread, and More — a real
-              BUTTON with a menu, never a link, because it does something on
-              this page rather than going somewhere. Everything that was in the
-              row is in the menu, so nothing was dropped. */}
-          <div className="dph-actions" style={{gridColumn:3,gridRow:1,display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative",flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
-                buttons in two different colours (a brass "Log a conversation" and
-                an emerald "Request Gift"), so nothing on it was the obvious thing
-                to press. Emerald means "this is the button" and exactly one thing
-                may mean that; the rest are outlines. */}
-            <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{whiteSpace:"nowrap",minHeight:40,background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-              Log a call
-            </button>
-            {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
-                because one open step per donor is the model and a second button
-                that can only 409 is a button that teaches people to distrust
-                buttons. */}
-            {/* PROFILE-2 — Note, Email and Task beside Log a call. Email opens her own
-              mail program to their address (Steward sends nothing); it is not
-              offered when there is no address, or Deceased or Do not contact is set. */}
-          <button type="button" onClick={()=>setNoteOpen(true)} disabled={isReadOnly} data-testid="dp-note" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Note</button>
-          {donor.email&&!donor.deceased&&!donor.doNotContact&&<a href={`mailto:${donor.email}`} data-testid="dp-email" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Email</a>}
-          {onAddTask&&<button type="button" onClick={onAddTask} disabled={isReadOnly} data-testid="dp-task" className="dph-act" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 13px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,minHeight:40,whiteSpace:"nowrap",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Task</button>}
-            {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
-            <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward"
-              style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"9px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7}}>
-              <MicGlyph size={15}/>{atlasName()}
-            </button>
-            {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
-                Code intact, re-enable by uncommenting.
-            <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
-              Voice memo
-            </button>
-            */}
-            <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" aria-haspopup="menu" aria-expanded={dpMoreOpen}
-              style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>More ▾</button>
-            {dpMoreOpen&&(
-              <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
-                {/* FIX-55 item 6: Request a gift needs card payments set up and
-                    Brief me needs AI; each is hidden when its service is not on,
-                    where they answered "Stripe not configured" / "brief_unavailable". */}
-                {[...(!dpThread?[["Plan a follow-up",()=>setPlanOpen(true),isReadOnly,"dp-plan-followup"]]:[]),
-                ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
-                  // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
-                  ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
-                    ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
-                    ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
-                    ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
-                  [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
-                  ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
-                  // PROSPECT-1 — a one-page prospect brief from the record, the
-                  // screening results and the public filing; saved to their files.
-                  ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
-                  ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
-                  // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
-                  ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
-                  // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record; for
-                  // somebody who is not a volunteer yet, the form that makes them one.
-                  isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
-                    :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
-                  // WHY-1 — only for a lapsed donor: the facts on their record
-                  // before they stopped, and the one touch that fits.
-                  ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
-                  ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
-                  [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
-                  /* MEMBERS-2 — the one page this person has: their membership,
-                     their tickets, their shifts and their giving. Staff send the
-                     link; they never see the token it carries, because somebody
-                     who could read it could open somebody else's page. */
-                  ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
-                  ["Edit record",onEdit,false],
-                  // TRUST-2 — a person's own data, in one file, when they ask.
-                  ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
-                  // FIX-14 Part 3 — Erase and Delete, at the bottom of More, never on the page.
-                  ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
-                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",!(!isReadOnly)]]:[])].map(([label,fn,disabled,tid,sep])=>(
-                  <button key={label} role="menuitem" disabled={disabled} data-testid={tid} onClick={()=>{setDpMoreOpen(false);fn();}}
-                    style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderTop:sep?"1px solid "+T.bg3:"none",marginTop:sep?4:0,borderRadius:sep?0:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
-                ))}
-              </div>
-            )}
-            {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
-            {makeVolOpen&&<AddVolunteerModal person={{id:donor.id,name:donor.name,email:donor.email,phone:donor.phone}} onClose={()=>setMakeVolOpen(false)} onDone={()=>{setMadeVol(true);if(onInteractionAdded)onInteractionAdded();}}/>}
-            {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
-            {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
-            {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
-            {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
-            {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
-            {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
-              return m.via==="thread_log"
-                ?<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} editing={editingInt} onSaved={onIntEdited} onClose={()=>setEditingInt(null)}/>
-                :<LogTouchpointModal donor={donor} editing={editingInt} onSave={onIntEdited} onClose={()=>setEditingInt(null)}/>;})()}
-            {noteOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} onNavigate={onNavigate} initialTouch="note_only"
-            onSaved={()=>{loadDpThread();loadRel();loadGiftsFull();if(onInteractionAdded)onInteractionAdded();}} onClose={()=>setNoteOpen(false)}/>}
-          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
-              onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
-                // FIX-14 Part 1 — every count on the record re-reads the one
-                // source: the header's figures, the rail, the rhythm, the timeline.
-                loadRel();loadGiftsFull();}}
-              onClose={()=>setConvoOpen(false)}/>}
-            {suggestOpen&&<Modal onClose={()=>setSuggestOpen(false)} width={640} title="Suggested">
-              <div data-testid="dp-suggested" style={{display:"flex",flexDirection:"column",gap:12}}>
-                {!SUGGEST_KINDS.some(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`])&&<div style={{fontSize:13,color:T.ink3}}>{loadingKey&&String(loadingKey).startsWith(donor.id+"_")?<Spin/>:"Nothing drafted yet. Pick a draft from More."}</div>}
-                {/* ── SUGGESTED ────────────────────────────────────────────
-                    What Steward drafted, beside the step it is about. Every
-                    line came through the HOTFIX-1 checker: a sentence naming
-                    somebody, stating a number or making a claim the record does
-                    not carry is dropped SILENTLY (the count goes to the
-                    console), timing that is already behind today is refused,
-                    and when nothing survives this renders nothing at all. */}
-                {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
-                  <div key={t} data-testid={`dp-suggested-${t}`}>
-                    <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
-                    <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
-                      From <button onClick={()=>{setSuggestOpen(false);setDpTab("conversations");}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
-                      {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
-                    </div>
-                  </div>
-                ):null)}
-
-                {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
-                    to be written into aiMap and rendered as though Steward had
-                    suggested it, carrying the HTTP status ("Stream failed: 503")
-                    into a panel headed "Suggested". It is its own row now, in the
-                    Agent room's voice, with the one control that helps. */}
-                {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
-                  <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
-                    style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
-                      background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
-                      borderRadius:14,padding:"12px 16px",marginTop:12}}>
-                    <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
-                      {aiErr[`${donor.id}_${t}`]}
-                    </span>
-                    <button data-testid={`dp-suggested-retry-${t}`}
-                      onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
-                      disabled={loadingKey===`${donor.id}_${t}`}
-                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
-                        padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
-                        cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
-                      {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
-                    </button>
-                  </div>
-                ):null)}
-              </div>
-            </Modal>}
-            {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
-              <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
-            </Modal>}
-            {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
-              onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
-          </div>
-      </div>
-        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures}/>}
+        <ProfileHeader {...{aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}}/>
+        {(figs||donor.figures)&&<ProfileNumbers figures={figs||donor.figures}/>}
           </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
               Directly under the header, left-aligned. It replaces the old six
@@ -1504,16 +1349,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {nextMoveNode}
             <div style={{background:RAIL.bg,color:RAIL.text,borderRadius:14,padding:"16px 16px 4px"}}>{railNextNode}{railPledgeNode}</div>
           </div>}
-          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,borderBottom:"1px solid "+T.bg3,position:"sticky",top:52,zIndex:5,padding:"0 16px 0 18px"}}>
-          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none"}}>
+          <div className="dp-tabs-row" style={{display:"flex",alignItems:"stretch",background:T.white,padding:"0 var(--dp-gutter,40px)"}}>
+          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"nowrap",overflowX:"auto",flex:1,minWidth:0,scrollbarWidth:"none",gap:24}}>
             {PROFILE_TABS.map(([id,label])=>{
               // PROFILE-2: Giving counts gifts AND pledges (a $50,000 pledge read "Gifts & pledges 0").
               const n=id==="giving"?(giftLoading||giftReadErr?null:giftCountReal+pledges.length)
                 :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0)
                 :id==="notes"?(tlCounts.note||0):id==="files"?(tlCounts.file||0):null;
-              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"13px 9px 11px",color:dpTab===id?T.ink:T.ink3,fontSize:13,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44}}>
+              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:"2px solid "+(dpTab===id?T.greenDk:"transparent"),padding:"12px 0 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13.5,fontWeight:dpTab===id?700:500,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",minHeight:44,display:"inline-flex",alignItems:"center"}}>
                 {label}
-                {n!=null&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
+                {/* PROFILE-3: a count only when there is something to count; never "0". */}
+                {n>0&&<span data-tab-count={id} style={{marginLeft:6,background:T.bg2,borderRadius:99,padding:"1px 7px",fontSize:10.5,fontWeight:700,color:T.ink3}}>{n}</span>}
               </button>;
             })}
           </div>
@@ -1525,6 +1371,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               style={{background:"none",border:"none",cursor:"pointer",padding:8,minWidth:40,minHeight:40,color:T.ink3,fontSize:17,lineHeight:1}}>{tlSearchOpen?"×":<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>}</button>
           </div>
           </div>
+          </div>{/* /dp3-pin */}
 
           {/* ── OVERVIEW (PROFILE-1 header) ──────────────────────────────
               Top to bottom: the next meeting, How did it go?, Lately, the ask,
@@ -1532,7 +1379,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               tab of its own now (docs/profile-1/inventory.md says where). */}
           {/* ── PROFILE-2 · ACTIVITY: the next move, Coming up, then everything
               that happened, by month. The other tabs filter the same timeline. */}
-          {dpTab==="activity"&&<div className="dp2-cream" data-testid="dp-tab-activity" style={{padding:"22px 28px 32px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="activity"&&<div className="dp2-cream" data-testid="dp-tab-activity" style={{padding:"24px var(--dp-gutter,40px) 40px",display:"flex",flexDirection:"column",gap:16}}>
+            {nothingLogged&&<StartCard name={callName} isReadOnly={isReadOnly} onCall={()=>setConvoOpen(true)} onNote={()=>setNoteOpen(true)} onGift={()=>{setDpTab("giving");setAddGiftOpen(true);}}/>}
             {!isPhone&&nextMoveNode}
             <ComingUpMain tasks={tasks} meetings={(rel&&rel.upcoming)||[]} onTaskToggle={onTaskToggle} isReadOnly={isReadOnly} onAddTask={onAddTask}/>
             {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} before={before&&before.meeting.id===rel.nextMeeting.id?before:null} onReload={()=>{loadRel();loadDpThread();}}/>}
@@ -1573,7 +1421,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 opening its record; "See everything" opens Conversations. */}
             {/* AGENT-5: what Atlas did for this person, in order, with Undo. */}
             <AtlasNote place="person" id={donor.id} onNavigate={onNavigate}/>
-            {rel&&<ProfileTimeline byMonth noChips search={tlSearch} heading="Everything, by month" extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&!nothingLogged&&<ProfileTimeline byMonth noChips search={tlSearch} heading="Everything, by month" extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
@@ -1600,7 +1448,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             emphasis (the quick actions). Nothing new enters the palette: the
             rail's greys are cream at reduced opacity (T.sage400/600), which
             is the design system's own answer for secondary text on ink. */}
-        <div data-testid="dp-right-rail" ref={railRef} className="dp-rail-sticky" style={{position:"sticky",top:railTop,alignSelf:"start",minHeight:"calc(100vh - 52px)",boxSizing:"border-box",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
+        <div data-testid="dp-right-rail" ref={railRef} className="dp-rail-sticky dp3-rail" tabIndex={isPhone?undefined:0} aria-label={isPhone?undefined:"About this person"} style={{minHeight:"calc(100vh - 52px)",boxSizing:"border-box",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
           {/* INT-BUILD-1 Part 3, FIX-14 Part 3 — the ONE next step (with Edit and
               Delete), then Rhythm: past touches and planned steps on one strip,
               and the journey chosen or changed in the same panel. */}
@@ -1621,15 +1469,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {!isPhone&&<div style={{paddingBottom:16}}>{railNextNode}</div>}
               {railErr&&<div data-testid="dp-rail-error" style={{fontSize:12.5,color:RAIL.dim,padding:"8px 0"}}>Some of this person's facts could not be loaded just now.</div>}
         {!isPhone&&railPledgeNode}
-              <div style={{borderTop:"1px solid "+RAIL.line,padding:"16px 0"}}>{rhythmNode}</div>
-              <RailAboutSections {...{R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status}}/>
-          <RailPersonCards {...{R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,onNavigate,rel}}/>
+              <RailSection title="Journeys" testid="dp-rail-journeys">{rhythmNode}</RailSection>
+              <RailAboutSections {...{R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit,noGifts,nothingLogged}}/>
+          <RailPersonCards {...{R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,onNavigate,rel,nothingLogged}}/>
 
 
             </>;
           })()}
 
-          <RailFacts {...{cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,isReadOnly,isTeam,localConf,localRationale,localScore,localTier,lockMajor,onCfSaved,recalcScore,scoreLoading,setCfData,setCfEditVal,setCfEditing,setCfError,setCfSaved,setCfShowAll}}/>
+          <RailFacts {...{nothingLogged,cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,isReadOnly,isTeam,localConf,localRationale,localScore,localTier,lockMajor,onCfSaved,recalcScore,scoreLoading,setCfData,setCfEditVal,setCfEditing,setCfError,setCfSaved,setCfShowAll}}/>
 
         </div>
       </div>

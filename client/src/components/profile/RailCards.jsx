@@ -4,7 +4,7 @@ import { displayDate } from "../../../../shared/displayDate";
 import { RailGroups } from "./profileShared";
 import { RelationshipRail } from "../MeetingPanels";
 
-function RailPersonCards({R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,onNavigate,rel}){
+function RailPersonCards({nothingLogged,R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,onNavigate,rel}){
   return <>
           {donorEvents.length>0&&(
             <RailSection title="Events" testid="dp-rail-events" fold foldOpenLabel="Hide" foldShutLabel={`Show ${donorEvents.length}`}>
@@ -34,9 +34,9 @@ function RailPersonCards({R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,
               <RecurringCard recurring={R.recurring}/>
               <ThankYousCard thankYous={R.thankYous} source={R.thankYousSource} donorId={donor.id}/>
               <ComingUpCard items={R.comingUp} onNavigate={onNavigate}/>
-              {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel} inboxConnected={inboxConnected} yearOnly/>}
+              {rel&&!nothingLogged&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel} inboxConnected={inboxConnected} yearOnly/>}
           {/* SEND-GATE-1: the person's automatic-email switch and what it held. */}
-          {donor&&donor.id&&<AutoEmailCard donorId={donor.id} email={donor.email} isReadOnly={isReadOnly}/>}
+          {donor&&donor.id&&<AutoEmailCard donorId={donor.id} email={donor.email} isReadOnly={isReadOnly} quietWhenDefault={nothingLogged}/>}
               <VolunteeringCard volunteering={R.volunteering}/>
               <ConnectedCard connected={R.connected}/>
   </>;

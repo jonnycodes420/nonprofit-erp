@@ -433,6 +433,25 @@ export function GlobalStyles() {
        (the margins undo .app-content's padding), and the window scrolls. */
     .page-takeover{margin:-20px -32px -28px -32px;min-height:calc(100vh - 52px);}
     @media (max-width:1365px){.dp2-body{--rail-w:320px;}}
+    /* PROFILE-3 - THE PROFILE'S COLUMNS SCROLL ON THEIR OWN (above 768).
+       The frame fills the window under the top bar (--dp-h, measured by
+       profile/columns.js) and the page never scrolls; the main column and the
+       rail are each a scroll box, and the header band and tabs are pinned at
+       the top of the main column. Every other page scrolls as one page. */
+    @media (min-width:769px){
+      .dp3-frame{height:var(--dp-h,calc(100vh - 52px));min-height:0!important;overflow:hidden;}
+      .dp3-frame .donor-profile-body{height:100%;min-height:0;}
+      .dp3-main,.dp3-rail{height:100%;min-height:0!important;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+      .dp3-rail{scrollbar-width:thin;scrollbar-color:rgba(240,237,230,0.28) transparent;}
+      .dp3-main{scrollbar-width:thin;}
+      .dp3-main:focus-visible,.dp3-rail:focus-visible{outline:2px solid ${T.gold500};outline-offset:-2px;}
+    }
+    @media (min-width:769px) and (max-height:700px){.dp3-pin{position:static!important;}}
+    /* PROFILE-3: inside a rail card the rail's text is ink (profile/ProfileRail RAIL). */
+    .dp3-rail-card{--rail-text:${T.ink};--rail-dim:rgba(15,26,18,0.6);--rail-panel:${T.bg};--rail-line:${T.bg3};--rail-strong:${T.ink};}
+    /* the header's quiet actions say their word when the header has room */
+    .dp3-head{container-type:inline-size;container-name:dphead;}
+    @container dphead (max-width:820px){.dph-act-label{display:none;}.dph-act{padding:0!important;width:40px;justify-content:center;}}
     .app-topbar{user-select:none;}
     /* POLISH-2 - A PLACEHOLDER LOOKS LIKE ONE. "She asked for the impact
        report." in the log-a-call box read as a note already written. Every
@@ -780,17 +799,25 @@ export function GlobalStyles() {
          name, the full-width Back bar wasted ~60px of a 700px fold. */
       /* PROFILE-2 Part 3: the header grid at 390: the face and the name, the
          two tags under them, then the actions as one row of 44px buttons. */
-      .donor-profile-header.dp2-head{grid-template-columns:56px minmax(0,1fr)!important;padding:8px 16px 12px!important;column-gap:12px!important;}
+      .donor-profile-header.dp2-head{grid-template-columns:56px minmax(0,1fr)!important;padding:8px 0 12px!important;column-gap:12px!important;}
+      .dp3-frame{height:auto!important;overflow:visible!important;}
+      .dp3-pin{position:static!important;}
+      .dp3-band,.dp-tabs-row{--dp-gutter:16px;}
+      .dp2-cream,.dp3-gutter{--dp-gutter:16px;}
+      .dp3-numbers{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+      .dp2-head .dph-avatar{grid-row:2 / span 2!important;}
+      .dp2-head .dph-contact{grid-column:1 / -1!important;grid-row:5!important;}
       .dp2-head .dph-name{font-size:28px!important;}
       .dp2-head .dph-avatar>*{transform:scale(0.78);transform-origin:left center;}
-      .dp2-head .dph-tags{display:flex!important;gap:6px;flex-wrap:wrap;grid-column:1 / -1;grid-row:3;}
+      .dp2-head .dph-tags{display:flex!important;gap:6px;flex-wrap:wrap;grid-column:2 / -1!important;grid-row:3!important;}
       .dp2-head .dph-tags>div{justify-self:auto!important;}
       .dp2-head .dph-primary{flex:0 0 auto!important;white-space:nowrap;}
       .dp2-head .dph-back{min-height:44px!important;}
       /* a tag is a small chip with a 44px reach around it */
       .dp2-head .dph-tags button{position:relative;}
       .dp2-head .dph-tags button::before{content:"";position:absolute;inset:-12px -2px;}
-      .dp2-head .dph-actions{grid-column:1 / -1!important;grid-row:4!important;justify-content:flex-start!important;flex-wrap:wrap!important;}
+      .dp2-head .dph-actions{grid-column:1 / -1!important;grid-row:6!important;justify-content:flex-start!important;flex-wrap:wrap!important;margin-top:12px;}
+      .dp2-head .dph-act{min-width:44px!important;}
       .dp2-head .dph-actions>button,.dp2-head .dph-actions>a{min-height:44px!important;flex-shrink:0;}
       .dp-tabs-row{position:static!important;padding:0 8px!important;}
       /* PROFILE-2 Part 3: at 390 the month sits above its cards, not beside them. */

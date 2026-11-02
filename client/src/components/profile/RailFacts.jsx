@@ -7,7 +7,7 @@ import { renderCustomValue } from "../../../../shared/customFieldShape";
 import { PlanPanel } from "../MajorGifts";
 import { WEALTH_SCORE_DEFINITION, WEALTH_SCORE_SOURCE } from "./profileShared";
 
-function RailFacts({cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,isReadOnly,isTeam,localConf,localRationale,localScore,localTier,lockMajor,onCfSaved,recalcScore,scoreLoading,setCfData,setCfEditVal,setCfEditing,setCfError,setCfSaved,setCfShowAll}){
+function RailFacts({nothingLogged,cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,isReadOnly,isTeam,localConf,localRationale,localScore,localTier,lockMajor,onCfSaved,recalcScore,scoreLoading,setCfData,setCfEditVal,setCfEditing,setCfError,setCfSaved,setCfShowAll}){
   return <>
           {cfData.length>0&&(()=>{
             // BUILD-78 5.1 — custom fields in position order, empty fields
@@ -108,9 +108,9 @@ function RailFacts({cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,i
           {/* BUILD-99 Part 3 — the cultivation plan. It moved off the reading
               column and into the rail with the rest of how-we-manage-them, and
               it is folded because most days she does not open it. */}
-          <RailSection title="Cultivation plan" testid="dp-rail-plan" fold foldOpenLabel="Hide" foldShutLabel="Show">
+          {!nothingLogged&&<RailSection title="Cultivation plan" testid="dp-rail-plan" fold foldOpenLabel="Hide" foldShutLabel="Show">
             <div>{lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
-          </RailSection>
+          </RailSection>}
 
 
           {/* BUILD-88a A.4 — THE WEALTH SCORE IS HIDDEN UNTIL IT CAN SAY WHAT
@@ -123,7 +123,7 @@ function RailFacts({cfData,cfEditVal,cfEditing,cfError,cfSaved,cfShowAll,donor,i
                   <>
                     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                       <div style={{textAlign:"center",border:"1px solid "+RAIL.line,borderRadius:10,padding:"10px 14px",minWidth:56,flexShrink:0}}>
-                        <div style={{fontSize:26,fontWeight:800,color:T.white,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
+                        <div style={{fontSize:26,fontWeight:800,color:RAIL.strong,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
                         <div style={{fontSize:9,color:RAIL.dim,fontWeight:600,marginTop:2}}>/ 10</div>
                       </div>
                       <div>

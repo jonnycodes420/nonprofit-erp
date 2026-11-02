@@ -608,10 +608,12 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
     } catch (e) { setMsg(e?.sentence || errorMessage(e, "Nothing was added to your calendar.")); }
     setBusy(false);
   };
-  const H = ({ children, gold }) => <div style={{ fontSize: 12, color: gold ? T.gold : T.sage400 }}>{children}</div>;
+  // PROFILE-3: on the profile's rail (yearOnly) this is one white card under a brass label, like every rail section.
+  const INK_ON = yearOnly ? T.ink : T.inkInverse, DIM_ON = yearOnly ? "rgba(15,26,18,0.6)" : T.sage400;
+  const H = ({ children, gold }) => <div style={{ fontSize: 12, color: gold ? T.gold : DIM_ON }}>{children}</div>;
   const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
   return (
-    <div data-testid="dp-rail-relationship" style={yearOnly ? { display: "flex", flexDirection: "column", gap: 16, padding: "16px 0", borderTop: "1px solid " + T.green650 } : { display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
+    <div data-testid="dp-rail-relationship" style={yearOnly ? { display: "flex", flexDirection: "column", gap: 8, padding: "0 0 16px" } : { display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
       {/* PROFILE-1 (header): yearOnly is the profile's rail, which draws Next
           step, Coming up and the journey as cards of its own. */}
       {!yearOnly && (nextSlot || <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -641,17 +643,18 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
         {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.date || e.startsAt)}</span>}/>)}
         {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing coming up, on a calendar or logged ahead.</div>}
       </div>}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <H>This fiscal year</H>
+      {yearOnly && <h4 style={{ margin: 0, fontSize: 12.5, fontWeight: 700, fontVariantCaps: "small-caps", letterSpacing: "0.04em", color: T.gold500, lineHeight: 1.3 }}>This fiscal year</h4>}
+      <div style={yearOnly ? { display: "flex", flexDirection: "column", gap: 12, background: T.white, color: T.ink, borderRadius: 12, padding: "14px 16px" } : { display: "flex", flexDirection: "column", gap: 12 }}>
+        {!yearOnly && <H>This fiscal year</H>}
         {(inboxConnected || y.emails?.value || n) ? <><Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this fiscal year" definition="Every email with this person on the record since the start of your fiscal year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
         <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this fiscal year" definition="Every meeting with this person since the start of your fiscal year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/></>
-          : <div data-testid="dp-rail-connect-inbox" style={{ fontSize: 14, color: T.sage400 }}>Connect your inbox to see emails and meetings.</div>}
+          : <div data-testid="dp-rail-connect-inbox" style={{ fontSize: yearOnly ? 13 : 14, color: DIM_ON }}>Connect your inbox to see emails and meetings.</div>}
         <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this fiscal year" definition="Every gift from this person since the start of your fiscal year, to the cent." source={y.given?.source} variant="inline"/>}/>
       </div>
       {!booking && <button type="button" data-testid="dp-book-visit" onClick={() => setBooking(true)}
-        style={{ padding: "14px 18px", minHeight: 48, border: "1.5px solid " + T.inkInverse, borderRadius: 10, background: "transparent", color: T.inkInverse, font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" }}>Book a visit on your calendar</button>}
+        style={yearOnly ? { padding: "0 14px", minHeight: 40, border: "1px solid " + T.bg3, borderRadius: 9, background: T.white, color: T.ink, font: "700 13px 'DM Sans',sans-serif", cursor: "pointer" } : { padding: "14px 18px", minHeight: 48, border: "1.5px solid " + T.inkInverse, borderRadius: 10, background: "transparent", color: T.inkInverse, font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" }}>Book a visit on your calendar</button>}
       {booking && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, color: T.inkInverse }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, color: INK_ON }}>
           <H>Book a visit</H>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Visit with ${donor.name}`} aria-label="Title" style={{ ...input, padding: 8 }}/>
           <input value={place} onChange={e => setPlace(e.target.value)} placeholder="Where (optional)" aria-label="Where" style={{ ...input, padding: 8 }}/>
@@ -671,7 +674,7 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
           <button type="button" onClick={() => setBooking(false)} style={{ background: "none", border: "none", color: T.sage400, cursor: "pointer", fontSize: 14, alignSelf: "flex-start" }}>Cancel</button>
         </div>
       )}
-      {msg && <div style={{ fontSize: 14, color: T.inkInverse, lineHeight: 1.5 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 14, color: INK_ON, lineHeight: 1.5 }}>{msg}</div>}
     </div>
   );
 }

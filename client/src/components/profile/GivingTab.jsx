@@ -31,7 +31,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
   return <>
           {/* ── PROFILE-2 · GIVING: the ask, then gifts and pledges, Funds, and
               Asks & pipeline, one tab. */}
-          {dpTab==="giving"&&<div className="dp2-cream" data-testid="dp-tab-giving-ask" style={{padding:"22px 28px 0",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div className="dp2-cream" data-testid="dp-tab-giving-ask" style={{padding:"24px var(--dp-gutter,40px) 0",display:"flex",flexDirection:"column",gap:16}}>
             {/* THE ASK — one card: the stage bar, the open ask, the suggested
                 next ask with Why?, Mark won and Update. Everything else the old
                 section held is on the Asks & pipeline tab. */}
@@ -154,7 +154,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
 
 
           {/* Gifts & Pledges tab */}
-          {dpTab==="giving"&&<div style={{padding:"20px 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"24px var(--dp-gutter,40px)",display:"flex",flexDirection:"column",gap:16}}>
             {/* POLISH-3 — the numbers that left the header head the Gifts tab:
                 Average, First / Largest, Last met and Last email. */}
             {(figs||donor.figures)&&<ProfileMoreNumbers figures={figs||donor.figures} glance={status&&status.glance}/>}
@@ -587,7 +587,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
 
           {/* Materials tab */}
           {/* Funds tab */}
-          {dpTab==="giving"&&<div style={{padding:"0 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"0 var(--dp-gutter,40px) 24px",display:"flex",flexDirection:"column",gap:16}}>
             {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
             {!fundLoading&&fundAffinity&&(()=>{
               const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds}=fundAffinity;
@@ -661,7 +661,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
           {/* ── ASKS & PIPELINE (PROFILE-1 header) — everything the old "The
               ask" section held that the Overview's card does not: every
               proposal row, moves and pipeline asks, New ask, the weighted line. */}
-          {dpTab==="giving"&&<div style={{padding:"20px 28px 24px",display:"flex",flexDirection:"column",gap:18}}>
+          {dpTab==="giving"&&<div className="dp3-gutter" style={{padding:"24px var(--dp-gutter,40px)",display:"flex",flexDirection:"column",gap:16}}>
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} data={propData||null} reload={reloadProps}
               title="Asks & pipeline" addLabel="+ New ask" testid="dp-the-ask"
               after={<div style={{marginTop:12}}>

@@ -8,7 +8,6 @@ import { errorMessage } from "../../lib/domainError";
 
 function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney,doneFor,doneNote,donor,isReadOnly,journey,journeyBusy,journeyList,journeyMenu,journeySuggest,onInteractionAdded,onNavigate,pickJourney,setAddErr,setDoneFor,setDoneNote,setJourney,setJourneyBusy,setJourneyMenu,setSkipFor,setSkipWhy,setStopAsk,skipFor,skipWhy,stopAsk,touchGap}){
   return <>
-              <div style={{fontSize:10.5,fontWeight:800,color:T.gold500}}>Journeys</div>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
               "Step 3 of 7 · Impact report · due Jan 3" and a small
               done / today / upcoming timeline, exactly as the direction
@@ -39,7 +38,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                 <div data-testid="dp-journey-position" style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
                   Step {pos} of {steps.length}
                 </div>
-                <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{cur?cur.label:"Finished"}</div>
+                <div style={{fontSize:14.5,fontWeight:700,color:RAIL.strong,marginTop:3}}>{cur?cur.label:"Finished"}</div>
                 {cur&&cur.dueDate&&(
                   <div data-testid="dp-journey-due" style={{fontSize:12.5,fontWeight:600,marginTop:2,color:late?T.gold500:RAIL.dim}}>
                     due {new Date(cur.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}
@@ -193,7 +192,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
               <div style={{fontSize:11.5,color:RAIL.dim}}>In {allJourneys.length} journeys. Their steps are at least {touchGap} days apart: a step already on the Thread keeps its day, then the higher-ranked journey goes first.</div>
               {allJourneys.map(j=>(
                 <div key={j.planId} data-testid="dp-journeys-row" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"9px 12px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.white}}>{j.name}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:RAIL.strong}}>{j.name}</div>
                   {j.next?(
                     <div style={{fontSize:12.5,color:RAIL.text,marginTop:2,lineHeight:1.45}}>
                       Next: {j.next.label}{j.next.dueDate?`, ${new Date(j.next.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}`:""}
@@ -219,7 +218,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
               {journeySuggest&&!(journey&&journey.status==="active")&&(
                 <div data-testid="dp-journey-suggest" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px",marginBottom:10}}>
                   <div style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>Suggested</div>
-                  <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{journeySuggest.name}</div>
+                  <div style={{fontSize:14.5,fontWeight:700,color:RAIL.strong,marginTop:3}}>{journeySuggest.name}</div>
                   <div style={{fontSize:12,color:RAIL.dim,marginTop:2,lineHeight:1.45}}>{journeySuggest.why}</div>
                   <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
                     {journeySuggest.steps.map((x,i)=>(
@@ -249,7 +248,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                   There are no journeys yet.{" "}
                   <button type="button" data-testid="dp-journey-setup"
                     onClick={()=>onNavigate&&onNavigate("journeys")}
-                    style={{background:"none",border:"none",padding:0,color:T.white,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>
+                    style={{background:"none",border:"none",padding:0,color:RAIL.strong,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>
                     Set one up
                   </button>{" "}and it takes ten minutes.
                 </div>
@@ -257,7 +256,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                 <>
                   <select data-testid="dp-journey-pick" aria-label="Start a journey" value={addPick} onChange={e=>pickJourney(e.target.value)}
                     style={{width:"100%",background:T.greenDk,border:"none",borderRadius:8,appearance:"none",WebkitAppearance:"none",
-                            padding:"9px 30px 9px 12px",color:T.white,fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",cursor:"pointer",
+                            padding:"9px 30px 9px 12px",color:RAIL.strong,fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",cursor:"pointer",
                             backgroundImage:"linear-gradient(45deg, transparent 50%, #FFFFFF 50%), linear-gradient(135deg, #FFFFFF 50%, transparent 50%)",
                             backgroundPosition:"calc(100% - 16px) 55%, calc(100% - 11px) 55%",backgroundSize:"5px 5px, 5px 5px",backgroundRepeat:"no-repeat"}}>
                     <option value="">Start a journey</option>
@@ -269,7 +268,7 @@ function RailJourneys({addErr,addPick,addPreview,allJourneys,confirmAddToJourney
                       <div style={{fontSize:10.5,fontWeight:700,color:RAIL.dim}}>
                         First step
                       </div>
-                      <div style={{fontSize:14,fontWeight:700,color:T.white,marginTop:3}}>
+                      <div style={{fontSize:14,fontWeight:700,color:RAIL.strong,marginTop:3}}>
                         {addPreview.firstStep?addPreview.firstStep.label:"No steps yet"}
                       </div>
                       {addPreview.firstStep&&addPreview.firstStep.dueDate&&(

@@ -151,7 +151,7 @@ function HeaderChips({status,donor,isReadOnly}){
   }}</ProfileGroups>;
 }
 const ROLE_CHIPS=PERSON_TYPES.filter(t=>t.key!=="other");
-function RoleLine({donor,isReadOnly,birthday=""}){
+function RoleLine({donor,isReadOnly,birthday="",noGifts=false}){
   const [types,setTypes]=useState(donor.personTypes||["donor"]);
   const [lock,setLock]=useState({locked:false,reason:null});
   // FIX-8 Part B.2 — the year the roles line says "since". It comes from the
@@ -200,7 +200,8 @@ function RoleLine({donor,isReadOnly,birthday=""}){
   const have=ROLE_CHIPS.filter(c=>types.includes(c.key));
   const missing=ROLE_CHIPS.filter(c=>!types.includes(c.key));
   const sinceYear=firstGiftYear;
-  const roleWords=have.map(c=>
+  // PROFILE-3: somebody with no gift is not called a Donor on their own record.
+  const roleWords=have.filter(c=>!(noGifts&&c.key==="donor")).map(c=>
     c.key==="donor"&&sinceYear?(sinceYear==="unknown"?"Donor since: unknown":`Donor since ${sinceYear}`):c.label).join(" · ");
   return (
     <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
@@ -274,9 +275,10 @@ const STAGE_BAR = ["prospect", "qualify", "cultivate", "solicit", "steward", "la
 // chips, with Add to a group. Hidden when there are none and nothing to add.
 function RailGroups({donorId,isReadOnly}){
   return <ProfileGroups donorId={donorId} isReadOnly={isReadOnly}>{(groupChips,addCtl)=>{
-    if(!groupChips.length&&!addCtl)return null;
+    // PROFILE-3: the section is drawn when they are in a group; "Add to a group" is in About until then.
+    if(!groupChips.length)return null;
     return <RailSection title="Groups" testid="dp-rail-groups">
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",background:T.white,borderRadius:10,padding:"10px 12px"}}>{groupChips}{addCtl}</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>{groupChips}{addCtl}</div>
     </RailSection>;
   }}</ProfileGroups>;
 }
