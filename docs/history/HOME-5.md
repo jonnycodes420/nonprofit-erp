@@ -7,6 +7,8 @@ Home's header is the org, the greeting and the date. Fundraising and the Board k
 
 - Removed: `paceLine` in `shared/homeLead.js`, `pace` on `GET /home/lead`, the `home-pace` paragraph in `Dashboard.jsx`.
 - The Why/What doors (`doors`) still compute and still go through the truth check; Home renders them off (`doors={false}`).
+- Then: no "behind" anywhere on Home. The one place it reached Home was the Major slipping move card
+  (`insights.js`), now "$X to match last year". The Why/What doors were already off on Home and stay off.
 - Pledges toward the year (item 1) and the reworded sentence (item 2) were not built.
 - THE-PROCESS's quality-bar note was asked for, but no THE-PROCESS file exists in the repo; the rule is in
   `docs/decisions/home-and-reports.md`.

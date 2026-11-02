@@ -6,7 +6,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Home doesn't open with a comparison (HOME-5).** Home's header is the org, the greeting and the date, for every
   org. Home leads with what's going well and the next step; gaps against last year live one click away, on
   Fundraising and the Board, which keep the full comparison (`numbers.vsLastYear`). Words on Home point to a
-  solution. `tests/smoke-walk.test.js` §home-5 fails if the header gains a pace sentence or the word "behind".
+  solution: no word "behind" anywhere on Home (a gap is said as what closes it, "$X to match last year").
+  `tests/smoke-walk.test.js` §home-5 fails if the header gains a pace sentence, or if "behind" shows anywhere on Home,
+  on any tab of the deck.
 - **The ladder and the cards are one engine (INSIGHTS-1).** `insights.js` is pure (every input, `asOf`
   included, is a parameter); `insightsData.js` reads; `routes/insights.js` serves Home, the first look, the
   profile, the Donors list's rung column and filter, and Ask (through the list's `rung`, `ladder_status` and
