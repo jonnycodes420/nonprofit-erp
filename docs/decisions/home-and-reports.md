@@ -3,6 +3,10 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Home doesn't open with a comparison (HOME-5).** Home's header is the org, the greeting and the date, for every
+  org. Home leads with what's going well and the next step; gaps against last year live one click away, on
+  Fundraising and the Board, which keep the full comparison (`numbers.vsLastYear`). Words on Home point to a
+  solution. `tests/smoke-walk.test.js` §home-5 fails if the header gains a pace sentence or the word "behind".
 - **The ladder and the cards are one engine (INSIGHTS-1).** `insights.js` is pure (every input, `asOf`
   included, is a parameter); `insightsData.js` reads; `routes/insights.js` serves Home, the first look, the
   profile, the Donors list's rung column and filter, and Ask (through the list's `rung`, `ladder_status` and
@@ -469,8 +473,8 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 
 ## HOME-3 · greeting first, then one move at a time (2026-10-28)
 
-- Nothing renders above Home's greeting except the trial banner: org and greeting, the date, the pace sentence, Ask, then Your moves. On a phone: greeting, tabs, the card, then Today.
-- Pace is said once, in the greeting, from `numbers.vsLastYear` over the org's fiscal year (`shared/homeLead.js paceLine`). The insights engine has no pace card. `assertSurfacesAgree` compares Home's greeting with the Board and Fundraising.
+- Nothing renders above Home's greeting except the trial banner: org and greeting, the date, Ask, then Your moves (HOME-5 took the pace sentence out). On a phone: greeting, tabs, the card, then Today.
+- ~~Pace is said once, in the greeting~~ (superseded by HOME-5: Home says no pace). The insights engine has no pace card.
 - The deck is `insights.js buildDeck`: Keep (year-end, pledges, sponsors, lapsing), Grow (second gift, moving up), Major, Planned. One person, one move (the highest-value one; Planned never outranks money); the rest are "also" lines. Planned counts people.
 - A move's button makes a task dated for its window (kind write, call or meeting) with the line and the ask in its notes, and records Done. Home never sends.
 - Sentences treat one giver's gifts on one day as one gift (`giftDays`). Planned excludes organisations, foundations, companies and funds.

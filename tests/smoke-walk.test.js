@@ -377,10 +377,15 @@ async function greetingFirst(browser, demoAuth) {
       return { root: true, day: !!day && day.tagName, first: firstText ? firstText.textContent.trim().slice(0, 60) : null,
         firstInHead: !!(firstText && head && head.contains(firstText.parentElement)),
         greet: /Good (morning|afternoon|evening)/.test(head ? head.textContent : ""),
+        headText: day ? day.parentElement.innerText.replace(/\s+/g, " ").trim().slice(0, 200) : null,
+        behind: day ? /behind/i.test(day.parentElement.innerText) : null, paceEl: root.querySelectorAll('[data-testid="home-pace"]').length,
         afterIt: after('[data-testid="home-moves"], [data-testid="home-setup-line"], [data-testid="ladder-strip"], .home-rail, .home-block') };
     });
     ok(`§home-3 Home ${what} at ${vp.width}: the greeting is first, the date is its heading, everything else follows`,
        r.root && r.firstInHead && r.greet && r.day === "H1" && r.afterIt, r);
+    // HOME-5: Home doesn't open with a comparison. The header is the org, the
+    // greeting and the date; no pace sentence, and never the word "behind".
+    ok(`§home-5 Home ${what} at ${vp.width}: the header has no pace sentence and never says "behind"`, r.root && r.behind === false && r.paceEl === 0, r);
     // HOME-4: the rail draws whole (Today with no zeros, at most three calls,
     // To confirm in one line), the deck's extras are chips hidden at zero, no
     // Drift section and no empty Thread, setup where the org is, and an org
