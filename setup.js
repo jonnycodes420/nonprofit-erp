@@ -506,11 +506,15 @@ const STEPS = {
       // Drift reads a pattern; a new file can be too young for one. The rest
       // come from the same rule Home uses for "gave last year, not this year".
       const yr = Number(String(ctx.today).slice(0, 4));
-      const more = await query(`SELECT d.id, d.name, MAX(g.date) AS last, SUM(ROUND(g.amount*100))::bigint AS cents
-          FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
-         WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.deceased,false)=false AND COALESCE(d.do_not_contact,false)=false
-         GROUP BY d.id, d.name HAVING MAX(g.date) < ? AND MAX(g.date) >= ?
-         ORDER BY SUM(g.amount) DESC LIMIT 10`, [ctx.orgId, `${yr}-01-01`, `${yr - 1}-01-01`]);
+      // NUMBERS-4: their last gift and lifetime are the one rule
+      // (shared/numbers): a refund or a credit row is never the last gift.
+      const N = require("./shared/numbers");
+      const more = await query(`SELECT x.id, x.name, x.last, x.cents FROM (
+          SELECT d.id, d.name, LEFT(${N.lastGift.LAST_DATE("d")}, 10) AS last, ROUND(${N.lifetime.LIFETIME("d")} * 100)::bigint AS cents
+            FROM donors d
+           WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.deceased,false)=false AND COALESCE(d.do_not_contact,false)=false) x
+         WHERE x.last < ? AND x.last >= ?
+         ORDER BY x.cents DESC LIMIT 10`, [ctx.orgId, `${yr}-01-01`, `${yr - 1}-01-01`]);
       for (const m of more) {
         if (calls.length >= 5 || calls.some(c => c.donorId === m.id)) continue;
         calls.push({ donorId: m.id, name: m.name, reason: `Gave ${dollars(Number(m.cents))} in all, last on ${String(m.last).slice(0, 10)}, and nothing yet this year.` });

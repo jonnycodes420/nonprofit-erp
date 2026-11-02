@@ -170,13 +170,16 @@ async function touchRows(q, orgId, today, donorId = null) {
 
 // ── GENEROSITY ROWS ─────────────────────────────────────────────────────────
 // Gifts in cents (by the one conversion), and the recurring gifts running now.
+// NUMBERS-4: money is shared/numbers/money.js's MONEY (a soft or matching
+// credit row is not money; a refund comes off). The parts are dated rows the
+// drawer opens, so an imported total with no rows behind it is not a part.
 async function givingRows(q, orgId, donorId = null) {
   const dF = donorId ? " AND d.id = ?" : "";
   const dA = donorId ? [donorId] : [];
   const gifts = (await q(
     `SELECT g.id, g.donor_id, LEFT(g.date, 10) AS date, g.amount::text AS amount FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''${dF}`, [orgId, ...dA]))
+      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> '' AND ${require("./shared/numbers/money").MONEY("g")}${dF}`, [orgId, ...dA]))
     .map(r => ({ id: String(r.id), donor_id: r.donor_id, date: civil(r.date), cents: cents(r.amount) }));
   const subs = (await q(
     `SELECT s.id, s.donor_id, s.amount::text AS amount, s.interval, s.created_at FROM recurring_subscriptions s

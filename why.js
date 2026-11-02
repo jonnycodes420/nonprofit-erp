@@ -17,6 +17,7 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 const AW = require("./appealWhy");
+const NUMBERS = require("./shared/numbers");   // NUMBERS-4: one home for every giving number
 
 let HN = null;
 const homeNote = async () => (HN = HN || await import("./shared/homeNote.js"));
@@ -677,7 +678,10 @@ async function more(orgId) {
 const PERSON_INTENTS = ["ask", "next", "changed"];
 async function person(orgId, { donor, intent = "ask", campaign, user } = {}, deps = {}) {
   if (!PERSON_INTENTS.includes(intent)) intent = "ask";
-  const [d] = await query(`SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, d.email FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL`, [orgId, donor || ""]);
+  // NUMBERS-4: their lifetime is the one rule (shared/numbers/lifetime.js:
+  // the old system's total in, refunds off, credit rows out).
+  const [d] = await query(`SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, d.email, ROUND(${NUMBERS.lifetime.LIFETIME("d")} * 100)::bigint AS lifetime_cents
+     FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL`, [orgId, donor || ""]);
   if (!d) return null;
   const t = await today(orgId);
   const H = await homeNote();
@@ -685,7 +689,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const [gifts, contact, steps, events, hours, subs] = await Promise.all([
     query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, g.acknowledgement_sent, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
              FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
-            WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]),
+            WHERE g.org_id = ? AND g.donor_id = ? AND ${NUMBERS.money.GIFT("g")} ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER}`, [orgId, d.id]),
     query(`SELECT id, type, LEFT(date,10) AS date, logged_by_name FROM interactions WHERE org_id = ? AND donor_id = ?
              AND type IN ('call','meeting','email','stewardship','note') ORDER BY date DESC NULLS LAST LIMIT 5`, [orgId, d.id]),
     query(`SELECT id, next_step_label, LEFT(due_date::text,10) AS due, owner_name FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
@@ -704,7 +708,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const reasons = [];
   const gRow = (g, detail) => row(g.id, "gift", d.id, name, g.date, toC(g.amount), detail || g.campaign || "Gift");
   const last = gifts[0];
-  const lifetime = gifts.reduce((s, g) => s + toC(g.amount), 0);
+  const lifetime = Number(d.lifetime_cents) || 0;
   const first = gifts[gifts.length - 1];
 
   // Where they stand against the thread's appeal.

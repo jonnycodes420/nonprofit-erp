@@ -162,7 +162,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // month"). "New" is first gift in the last 12 months, so "new and gave this
   // month" also took people whose first gift was in May.
   if (q.firstGiftFrom) {
-    where.push("(SELECT MIN(LEFT(gn.date,10)) FROM gifts gn WHERE gn.org_id = donors.org_id AND gn.donor_id = donors.id AND gn.amount > 0) >= ?");
+    // NUMBERS-4: the first gift is the one rule (shared/numbers/firstGift.js):
+    // the old system's first gift counts, a credit row does not.
+    where.push(`${require("./shared/numbers/firstGift").FIRST_DATE("donors")} >= ?`);
     params.push(dateOr(q.firstGiftFrom, "2999-12-31"));
   }
   // PARITY-4 Part 3 · SHOW ME. Five rules so a plain question ("donors who

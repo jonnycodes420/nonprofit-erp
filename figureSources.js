@@ -131,7 +131,9 @@ function funderTypeWords(t) {
 // FIX-49: the one list, in creditTypes.js; soft and matching credits are not
 // money anywhere (Lifetime, campaigns, goals, averages), not only here.
 const BOOKKEEPER_EXCLUDED_TYPES = CREDIT_TYPES;
-const FIRST_GIFT_IN = (from, to) => `AND (SELECT MIN(LEFT(g2.date,10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) BETWEEN ${from} AND ${to}`;
+// NUMBERS-4: the first gift is the one rule (shared/numbers/firstGift.js): a
+// refund or credit row is never a first gift, and the old system's first gift counts.
+const FIRST_GIFT_IN = (from, to) => `AND ${require("./shared/numbers/firstGift").FIRST_DATE("d")} BETWEEN ${from} AND ${to}`;
 // The one definition of a lapsed MEMBER (BUILD-101 Part 3): their latest
 // membership lapsed and they hold none now. Memberships' list and counts and
 // the `members` source all read this, so the count and the list agree.

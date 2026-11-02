@@ -355,7 +355,10 @@ function computeInsights(input) {
       noAsk: u.people.some(p => p.do_not_solicit),
       kind: u.people.length === 1 ? u.people[0].kind : "household",
       gifts: gs, dated, undated: gs.filter(g => !g.date), count: gs.length,
-      lifetime: sum(gs), largest: gs.reduce((m, g) => Math.max(m, g.amount_cents), 0),
+      // NUMBERS-4: a unit's lifetime is its people's Lifetime (the stored
+      // rollup, shared/numbers/lifetime.js's rule: the old system's total in,
+      // refunds off, credit rows out), added up; it summed gifts above zero.
+      lifetime: u.people.reduce((n, p) => n + (Number(p.lifetime_cents) || 0), 0), largest: gs.reduce((m, g) => Math.max(m, g.amount_cents), 0),
       L12: sum(inSpan(L12from, dataEnd)), P12: sum(inSpan(P12from, P12to)),
       byYear, first: dated[0] || null, last: dated[dated.length - 1] || null,
       pledges: ps, openPledges,

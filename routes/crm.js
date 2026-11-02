@@ -15891,7 +15891,7 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
             MAX(g.date) as last_date
      FROM gifts g
      LEFT JOIN fin_funds f ON f.id=g.fund_id
-     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != ''
+     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != '' AND ${NUMBERS.money.MONEY("g")}
      GROUP BY g.fund_id, f.name, f.restricted
      ORDER BY total DESC`,
     [req.params.id, orgId]
@@ -15899,7 +15899,9 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
 
   // Unrestricted (no fund_id)
   const unrestrictedGifts = await query(
-    `SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as gift_count FROM gifts WHERE donor_id=? AND org_id=? AND (fund_id IS NULL OR fund_id='')`,
+    // NUMBERS-4: the fund split is money (shared/numbers/money.js), as Lifetime
+    // is, so a soft or matching credit row no longer sits in a fund's share.
+    `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(*) as gift_count FROM gifts g WHERE g.donor_id=? AND g.org_id=? AND (g.fund_id IS NULL OR g.fund_id='') AND ${NUMBERS.money.MONEY("g")}`,
     [req.params.id, orgId]
   );
   const unrestrictedTotal = parseFloat(unrestrictedGifts[0]?.total || 0);
@@ -23829,8 +23831,14 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const qDays = orgTime.daysBetween(qMs, qThrough) + 1;
   let pqMe = orgTime.addDays(pqMs, qDays - 1);
   if (orgTime.compareCivil(pqMe, pqb.end) > 0) pqMe = pqb.end;
-  const ytdS = `${yr}-01-01`;
-  const ytdE = `${yr}-12-31`;
+  // NUMBERS-4: "this year" is the org's FISCAL year to date, labelled with its
+  // months (shared/numbers/fiscalYear.js). It was the calendar year, beside a
+  // Fundraising page and reports that all read the fiscal year.
+  const [_brOrgRow] = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
+  const _fy = NUMBERS.fiscalYear.fiscalYearToDate(_brOrgRow || {}, 0);
+  const _fyPrev = NUMBERS.fiscalYear.fiscalYear(_brOrgRow || {}, -1);
+  const ytdS = _fy.from;
+  const ytdE = _fy.to;
   const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
 
   console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
@@ -23865,7 +23873,9 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
        LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
        WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
        GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
-      [yr, ytdS, ytdE, orgId]
+      // NUMBERS-4: this block is a CALENDAR-basis budget (b.basis), so its
+      // actuals stay on that budget's calendar year, beside it.
+      [yr, `${yr}-01-01`, `${yr}-12-31`, orgId]
     ),
   ]);
 
@@ -23881,25 +23891,26 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const budgetVariance = totalBudget - totalActual;
 
   // Donors
-  const totalDonors  = allDonors.length;
+  // NUMBERS-4: people, counted once (shared/numbers/households.js).
+  const totalDonors  = (await NUMBERS.households.counts(query, orgId)).people;
   const lapsedDonors = allDonors.filter(d => d.stage === "lapsed").length;
   const newDonorsQ   = allDonors.filter(d => toDs(d.created_at) >= qMs && toDs(d.created_at) <= qMe).length;
   const top10        = [...allDonors].sort((a, b) => (b.total_giving || 0) - (a.total_giving || 0)).slice(0, 10);
 
   console.log("[board-report] step 5: fetching gift retention rows...");
-  const [thisYrRows, prevYrRows, qGiftRows, pqGiftRows] = await Promise.all([
-    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, ytdS, ytdE]),
-    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, `${yr - 1}-01-01`, `${yr - 1}-12-31`]),
-    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, qMs, qMe]),
-    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, pqMs, pqMe]),
+  // NUMBERS-4: retained is shared/numbers/retained.js (gave last fiscal year
+  // and this one, gifts only, live people) and the quarter's money is
+  // givingBetween (money: credit rows out, refunds off, never past today).
+  // They were their own SQL: calendar years, refunds and credits counted.
+  const [ret, qGive, pqGive] = await Promise.all([
+    NUMBERS.retained.retention(query, orgId, { from: _fy.from, to: _fy.to }, { from: _fyPrev.start, to: _fyPrev.end }),
+    NUMBERS.givingBetween.givingBetween(query, orgId, { from: qMs, to: qMe, today }),
+    NUMBERS.givingBetween.givingBetween(query, orgId, { from: pqMs, to: pqMe, today }),
   ]);
-  console.log("[board-report] step 5: retention OK — thisYr:", thisYrRows.length, "prevYr:", prevYrRows.length);
-  const prevYrIds     = new Set(prevYrRows.map(r => r.donor_id));
-  const thisYrIds     = new Set(thisYrRows.map(r => r.donor_id));
-  const retained      = [...thisYrIds].filter(id => prevYrIds.has(id)).length;
-  const retentionRate = prevYrIds.size > 0 ? Math.round(retained / prevYrIds.size * 100) : 0;
-  const raisedThisQ   = parseFloat(qGiftRows[0]?.total) || 0;
-  const raisedLastQ   = parseFloat(pqGiftRows[0]?.total) || 0;
+  console.log("[board-report] step 5: retention OK — retained:", ret.retained, "of", ret.prior);
+  const retentionRate = ret.prior > 0 ? Math.round(ret.retained / ret.prior * 100) : 0;
+  const raisedThisQ   = qGive.cents / 100;
+  const raisedLastQ   = pqGive.cents / 100;
 
   // Grants
   const activeGrants    = allGrants.filter(g => g.status === "active");
@@ -23952,7 +23963,7 @@ Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDon
 
 Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
-Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}.`,
+Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}. Year to date means the fiscal year to date, ${_fy.label}.`,
       }],
     });
     // FIX-28: an unfinished summary is never printed; the template paragraphs are used instead.
@@ -24011,7 +24022,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.addPage();
     doc.rect(0, 0, PW, 58).fill(GREEN);
     doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Financial Snapshot", 50, 18);
-    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(`Year to Date ${yr}`, 50, 42);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(`Fiscal year to date, ${_fy.label}`, 50, 42);
 
     y = 76;
     const mw = (PW - 100) / 4;
@@ -24403,6 +24414,9 @@ async function reportGivingSummary(orgId, p) {
     offlineTotal: fv("offlineTotal"),
     offlineCount: fv("offlineCount"),
     year: p.year, yearMode: p.yearMode, fiscalStartMonth: p.fiscalStartMonth,
+    // NUMBERS-4: this fiscal year, named as Reports names it (the year it ends
+    // in), on the org's calendar, so the browser never works it out.
+    fiscalYear: reportCurrentYear("fiscal", p.org),
     // The total opens too: the same gifts, through the same source.
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
@@ -26937,27 +26951,23 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // or before the day nine months ago.
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
-  const _quietAhead = require("../shared/numbers/lapse").rhythmAheadSql("d.id", _quietBounds.today);
-  const _quietPledge = require("../shared/numbers/lapse").holdSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
   // source, and the destination shows the same count and amount the chip claimed.
+  // NUMBERS-4: their last gift is the one rule (shared/numbers/lastGift.js:
+  // the old system's last gift counts, a refund or credit row never does),
+  // and lapsed or lapsing is the one fragment (shared/numbers/lapse.js).
+  const _quietLapsed = NUMBERS.lapse.lapsedSql("x.last_gift_date", _quietBounds.today, "x.id");
+  const _quietLapsing = NUMBERS.lapse.lapsingSql("x.last_gift_date", _quietBounds.today, "x.id");
   const pAtRiskDonors = query(
-    `SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount,
-            (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) AS last_gift_date
-       FROM donors d
-      WHERE d.org_id = ?
-        AND d.deleted_at IS NULL
-        AND d.total_giving > 0
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) IS NOT NULL
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
-        -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
-        AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
-        AND NOT ${_quietPledge.sql}
-      ORDER BY d.total_giving DESC
+    `SELECT x.id, x.name, x.amount, x.last_gift_date FROM (
+       SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount, LEFT(${NUMBERS.lastGift.LAST_DATE("d")}, 10) AS last_gift_date
+         FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0) x
+      WHERE x.last_gift_date IS NOT NULL AND (${_quietLapsed.sql} OR ${_quietLapsing.sql})
+      ORDER BY x.amount DESC
       LIMIT 50`,
-    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args, ..._quietPledge.args]
+    [orgId, ..._quietLapsed.args, ..._quietLapsing.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 
