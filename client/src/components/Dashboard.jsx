@@ -1461,7 +1461,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       {HL&&HL.boardRecurringLine({ onNavigate, recurringAttention, recurringFailed, surface })}
 
       {(()=>{
-      const cardsBlock=((HL?HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal }):null));
+      const cardsBlock=(HL?HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal }):null);
       // BUILD-89 — the shell owns the two columns now (see ONE PANEL above),
       // so the stack renders straight into it.
       return cardsBlock;
