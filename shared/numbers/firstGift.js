@@ -1,19 +1,36 @@
 // shared/numbers/firstGift.js · NUMBERS-3. A PERSON'S FIRST GIFT, AND FIRST-TIME IN A YEAR.
 //
 // The first gift is the earliest dated gift (money above zero, money.js) or
-// the old system's first gift (donorSummary.IMPORTED_FIRST: its first gift
-// date, or its last when it gave only that), whichever is earlier. Imported
-// history is giving, so a person whose old system says they gave in 2019 is
-// not first-time when their first gift in Steward lands this year. This is
-// the rule the `givers` source (first: new) and the New tag read.
+// the old system's first gift (IMPORTED_FIRST: its first gift date, or its
+// last when it gave only that), whichever is earlier. Imported history is
+// giving, so a person whose old system says they gave in 2019 is not
+// first-time when their first gift in Steward lands this year. A soft or
+// matching credit row is recognition, never a gift, so it is never anyone's
+// first gift (NUMBERS-4: seed 695574508 found the checker's key counting one).
 // First-time in a span: the first gift falls inside it.
+//
+// NUMBERS-4: every place that says it reads this file: "Donor since" and the
+// stored first_gift_date (donorSummary.js), the lifecycle tags and so the
+// Donors filters and groups (donorStatus.statusSql), the `givers` source
+// (first: new), the calls list and the groups' first-gift rule.
 "use strict";
 const { GIFT } = require("./money");
-const { IMPORTED_FIRST } = require("../../donorSummary");
+
+// FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
+// gave one; when it gave only a last gift date, that date, because the person
+// was already a donor on it (a file that gave no dates at all says nothing,
+// and the day of the import is not a gift, so imported_through is never used
+// here). Text, as stored.
+const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
+
+// SQL aggregate over gift rows `g` already narrowed to one person: their first
+// dated gift on file (YYYY-MM-DD), or NULL.
+const FIRST_ON_FILE_AGG = (g = "g") => `MIN(LEFT(${g}.date, 10)) FILTER (WHERE ${g}.date IS NOT NULL AND ${GIFT(g)})`;
+// SQL: the earlier of the first gift on file and the old system's (either may be NULL).
+const EARLIER = (onFile, imported) => `LEAST(${onFile}, LEFT(${imported}, 10))`;
 
 // SQL: person `d`'s first gift date (YYYY-MM-DD), or NULL.
-const FIRST_DATE = (d = "d") => `LEAST((SELECT MIN(LEFT(fg.date, 10)) FROM gifts fg WHERE fg.org_id = ${d}.org_id AND fg.donor_id = ${d}.id AND fg.date IS NOT NULL AND ${GIFT("fg")}),
-                                        LEFT(${IMPORTED_FIRST(d)}, 10))`;
+const FIRST_DATE = (d = "d") => EARLIER(`(SELECT ${FIRST_ON_FILE_AGG("fg")} FROM gifts fg WHERE fg.org_id = ${d}.org_id AND fg.donor_id = ${d}.id)`, IMPORTED_FIRST(d));
 
 // Each person's first gift date: Map id -> date or null.
 async function firstDates(query, orgId, ids) {
@@ -31,4 +48,4 @@ function firstOf(rows, importedFirst = null) {
 }
 const isFirstTimeIn = (first, span) => !!first && first >= span.from && first <= span.to;
 
-module.exports = { FIRST_DATE, firstDates, firstOf, isFirstTimeIn };
+module.exports = { IMPORTED_FIRST, FIRST_ON_FILE_AGG, EARLIER, FIRST_DATE, firstDates, firstOf, isFirstTimeIn };

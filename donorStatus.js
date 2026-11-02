@@ -28,7 +28,9 @@ const { query } = require("./db");
 const orgTime = require("./orgTime");
 const lapseRule = require("./lapseRule");
 
-const { IMPORTED_FIRST } = require("./donorSummary");
+// NUMBERS-4: the first gift is shared/numbers/firstGift.js's rule.
+const FG = require("./shared/numbers/firstGift");
+const { IMPORTED_FIRST } = FG;
 const { NOT_CREDIT } = require("./creditTypes");   // TRUTH-1: a credit row is not a gift
 
 const IMP_FIRST = IMPORTED_FIRST("d");
@@ -126,7 +128,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   // FIX-49: the old system's last gift is a gift they gave, so it counts for
   // lapsing and lapsed exactly as the stored last gift date does (lapseRule.js).
   const sql = `
-    SELECT a.donor_id, a.last12, LEAST(a.first_date, a.imp_first) AS first_date, GREATEST(a.last_date, a.imp_last) AS last_date,
+    SELECT a.donor_id, a.last12, ${FG.EARLIER("a.first_date", "a.imp_first")} AS first_date, GREATEST(a.last_date, a.imp_last) AS last_date,
            (GREATEST(a.last_date, a.imp_last)::date BETWEEN ?::date AND ?::date AND NOT ${ahead.sql} AND NOT ${hold.sql}) AS lapsing,
            CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
            CASE WHEN a.w0 AND a.prev_date IS NULL AND a.imp_prev IS NULL THEN 'new'
@@ -145,7 +147,7 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
       FROM (
         SELECT g.donor_id,
                ROUND(COALESCE(SUM(g.amount) FILTER (WHERE LEFT(g.date,10) BETWEEN ? AND ?), 0)::numeric, 2) AS last12,
-               MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS first_date,
+               ${FG.FIRST_ON_FILE_AGG("g")} AS first_date,
                MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS last_date,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
                MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,

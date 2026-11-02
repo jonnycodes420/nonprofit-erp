@@ -200,7 +200,10 @@ async function checkOrg(orgId, opts = {}) {
   // ── imported history in the tags (FIX-49) ───────────────────────────
   {
     const DS = require("../../donorStatus");
-    const imported = donors.filter(d => d.imported_total != null && (byDonor.get(d.id) || []).some(g => c(g.amount) > 0));
+    // NUMBERS-4 (seed 695574508): a soft or matching credit row is not a gift,
+    // so it is never anyone's first gift; this key counted one.
+    const giftsOf = id => (byDonor.get(id) || []).filter(g => c(g.amount) > 0 && !CREDIT.has(String(g.type || "").trim().toLowerCase()));
+    const imported = donors.filter(d => d.imported_total != null && giftsOf(d.id).length);
     if (imported.length) {
       const st = DS.statusSql(orgId, today, await DS.cutsFor(orgId));
       const tag = new Map((await query(st.sql, st.args)).map(r => [r.donor_id, r]));
@@ -210,7 +213,7 @@ async function checkOrg(orgId, opts = {}) {
         const t = tag.get(d.id);
         if (!impFirst || !t) continue;
         if (impFirst < w0From && t.lifecycle === "new") add("donor-since", { donor: d.id, what: "lifecycle", shown: "new", importedFirst: impFirst });
-        const realFirst = (byDonor.get(d.id) || []).filter(g => c(g.amount) > 0).map(g => day(g.date)).filter(Boolean).sort()[0];
+        const realFirst = giftsOf(d.id).map(g => day(g.date)).filter(Boolean).sort()[0];
         const want = [realFirst, impFirst].filter(Boolean).sort()[0];
         if (day(t.first_date) !== want) add("donor-since", { donor: d.id, what: "first", shown: day(t.first_date), want });
       }

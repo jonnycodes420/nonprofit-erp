@@ -38,12 +38,9 @@ const { NOT_CREDIT } = require("./creditTypes");
 const { GIFT } = require("./shared/numbers/money");
 const { LAST_GIFT_ORDER } = require("./shared/numbers/lastGift");
 
-// FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
-// gave one; when it gave only a last gift date, that date, because the person
-// was already a donor on it (a file that gave no dates at all says nothing,
-// and the day of the import is not a gift, so imported_through is never used
-// here). "Donor since", the lifecycle tags and first_gift_date all read this.
-const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
+// FIX-49 · THE OLD SYSTEM'S FIRST GIFT, and the first gift on file: one rule,
+// shared/numbers/firstGift.js ("Donor since", the tags and first_gift_date).
+const { IMPORTED_FIRST, FIRST_ON_FILE_AGG } = require("./shared/numbers/firstGift");
 
 // A gift on file that the imported total does not already cover.
 // IMPORT-4: an undated gift (date IS NULL) is never inside the old system's
@@ -62,7 +59,7 @@ const PERSON_X = (dd = "dd") => `(SELECT ${dd}.id AS donor_id, ${dd}.imported_to
                        SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_total,
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_n,
                        COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS before_n,
-                       MIN(g.date) FILTER (WHERE ${GIFT("g")}) AS row_first,
+                       ${FIRST_ON_FILE_AGG("g")} AS row_first,
                        MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
                        (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
                      FROM gifts g WHERE g.org_id = ${dd}.org_id AND g.donor_id = ${dd}.id) ga)`;

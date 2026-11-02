@@ -33,7 +33,7 @@
 
 const { query, querySetwise } = require("./db");
 const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
-const { LAST_GIFT_ORDER, IMPORTED_FIRST } = require("./donorSummary");
+const { LAST_GIFT_ORDER } = require("./donorSummary");
 const { CREDIT_TYPES, NOT_CREDIT, IS_CREDIT } = require("./creditTypes");   // FIX-49: credits are not money
 const orgTime = require("./orgTime");
 // ARCH-1: an instant tested against the org's civil days, and the org day it
@@ -531,8 +531,8 @@ const SOURCES = {
       // person whose only rows in the window are refunds did not give in it.
       // TRUTH-1: the old system's first gift (imported history) is a gift they
       // gave, as the New tag (donorStatus.js) has always read it.
-      if (p.first) { where += ` AND LEAST((SELECT MIN(LEFT(g2.date, 10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id AND g2.amount > 0 AND ${NOT_CREDIT("g2")}),
-                                          LEFT(${IMPORTED_FIRST("d")}, 10)) ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
+      // NUMBERS-4: the one rule, shared/numbers/firstGift.js.
+      if (p.first) { where += ` AND ${require("./shared/numbers/firstGift").FIRST_DATE("d")} ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
       const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
