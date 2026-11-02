@@ -150,8 +150,9 @@ function inventory() {
   const b = await open(h, "§browser");
   if (b) {
     const { browser, APP, signedIn } = b;
-    const src = fs.readdirSync(path.join(ROOT, "client/src/components")).filter(f => f.endsWith(".jsx"))
-      .map(f => fs.readFileSync(path.join(ROOT, "client/src/components", f), "utf8")).join("\n");
+    // PROFILE-3: the profile's parts live in components/profile/ too.
+    const src = ["client/src/components", "client/src/components/profile"].flatMap(dir => fs.readdirSync(path.join(ROOT, dir)).filter(f => f.endsWith(".jsx"))
+      .map(f => fs.readFileSync(path.join(ROOT, dir, f), "utf8"))).join("\n");
     const { ctx, page } = await signedIn(ADMIN);
     const errors = [];
     page.on("pageerror", e => errors.push(String(e.message || e)));
@@ -178,7 +179,7 @@ function inventory() {
       if (["activity", "giving", "conversations", "emails", "tasks", "notes", "files"].includes(where)) await tab(where);
       else await tab("activity");
       // PROFILE-2: Related is the rail's Household and related, opened from Manage.
-      if (where === "related") { await page.locator("[data-testid=dp-rail-related-manage]").click().catch(() => {}); await page.waitForTimeout(400); }
+      if (where === "related") { await page.locator("[data-testid=dp-rail-related-manage], [data-testid=dp-about-link]").first().click().catch(() => {}); await page.waitForTimeout(400); }
       if (where === "more" && !(await page.locator('[data-testid=dp-more-menu]').count())) { await page.locator('[data-testid=dp-more]').click(); await page.waitForTimeout(200); }
       const el = page.locator(r.probe).first();
       const there = await el.count() > 0;

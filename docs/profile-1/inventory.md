@@ -65,7 +65,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | fig-first | First gift (month under) | Figure → `donor-first-gift` {donor} (ProfileStatus `Tile`) | `[data-figure-key="profile.glance.first-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.first-gift"]` · source:donor-first-gift |
 | fig-largest | Largest gift (month under) | Figure → `donor-largest-gift` {donor} | `[data-figure-key="profile.glance.largest-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.largest-gift"]` · source:donor-largest-gift |
 | fig-average | Average gift ("of N gifts…" under) | Figure → `donor-average-gift` {donor}, measure `per_gift` | `[data-figure-key="profile.glance.average-gift"]` || giving · `[data-testid=dp-more-numbers] [data-figure-key="profile.glance.average-gift"]` · source:donor-average-gift |
-| fig-def | "?" beside Lifetime / Last gift / Last met / Last email | hover + keyboard title = census sentence (no click target) | `[data-testid=dp-tile-def-<Label>]` || header · `[data-testid=dp-header-figures] [data-testid="dp-tile-def-Lifetime"]` · exists |
+| fig-def | "?" beside Lifetime / Last gift / Last met / Last email | hover + keyboard title = census sentence (no click target) | `[data-testid=dp-tile-def-<Label>]` || header · `[data-testid=dp-header-figures] [data-testid="dp-tile-label-Lifetime"]` · exists |
 
 ## 3. Glance lines, Ask, Giving by year
 
@@ -88,7 +88,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | tab-overview | Overview | `dpTab=overview` | `.dp-tabs [role=tab]` "Overview" || tabs · `[data-tab=activity]` · tab:activity |
 | tab-gifts | Gifts & Pledges (count) | `dpTab=gifts` | "Gifts & Pledges" || tabs · `[data-tab=giving]` · tab:giving |
 | tab-funds | Funds | `dpTab=funds` → `GET /donors/:id/fund-affinity` | "Funds" || tabs · `[data-tab=giving]` · tab:giving |
-| tab-related | Related (count) | `dpTab=related` → `GET /donors/:id/relationships` | "Related" || rail · `[data-testid=dp-rail-related-manage]` · dialog |
+| tab-related | Related (count) | `dpTab=related` → `GET /donors/:id/relationships` | "Related" || rail · `[data-testid=dp-rail-related-manage], [data-testid=dp-about-link]` · dialog |
 | tab-materials | Materials (count) | `dpTab=materials` → `GET /donors/:id/materials` | "Materials" || tabs · `[data-tab=files]` · tab:files |
 | tab-activity | Activity | `dpTab=activity` | "Activity" || tabs · `[data-tab=conversations]` · tab:conversations |
 
@@ -231,7 +231,7 @@ carry, e.g. a calendar or a household; the test checks the profile's code still 
 | rail-journey-setup | Set one up (no journeys) | `onNavigate("journeys")` | `[data-testid=dp-journey-setup]` || rail · `[data-testid=dp-journey-setup]` · exists |
 | rail-journey-all | See all journeys or build your own | `onNavigate("journeys")` | `[data-testid=dp-journey-all]` || rail · `dp-journey-all` · code |
 | rail-contact | Contact: email, phone (tel: via `Phone`), birthday, recurring | phone is a `tel:` link; rest text | `[data-testid=dp-rail-contact]` || rail · `[data-testid=dp-rail-contact] a[href^="tel:"]` · exists |
-| rail-owner | Relationship owner · Reassign → Confirm (admin, team) | `PATCH /donors/:id/assign` + interaction | `[data-testid=dp-rail-owner]` "Reassign" || rail · `[data-testid=dp-rail-owner] h4 button` · exists |
+| rail-owner | Relationship owner · Reassign → Confirm (admin, team) | `PATCH /donors/:id/assign` + interaction | `[data-testid=dp-rail-owner]` "Reassign" || rail · `[data-testid=dp-rail-owner] button` · exists |
 | rail-cf | Custom fields Show/Hide, Edit → Save (when fields) | `PUT /donors/:id/custom-fields` | `[data-testid=dp-rail-custom-fields]` || rail · `dp-rail-custom-fields` · code |
 | rail-plan | Cultivation plan Show/Hide | `PlanPanel` → `/donors/:id/plan`, `/plan-steps/:id/skip`, `/plans/:id/stop` | `[data-testid=dp-rail-plan]` || rail · `[data-testid=dp-rail-plan]` · exists |
 | rail-events | Events Show n (when registered) | text rows from `GET /donors/:id/events` | `[data-testid=dp-rail-events]` || rail · `dp-rail-events` · code |

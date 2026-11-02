@@ -360,7 +360,8 @@ async function seed() {
     // PROFILE-2: seven tabs; Giving holds gifts, pledges, asks and funds, and Related is the rail's.
     ok("§1 the tabs are Activity · Giving · Conversations · Emails · Tasks · Notes · Files",
        JSON.stringify(tabs) === JSON.stringify(["Activity", "Giving", "Conversations", "Emails", "Tasks", "Notes", "Files"]), tabs);
-    const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim()).filter(Boolean));
+    // PROFILE-3: Note, Task and Atlas show their icon (and say their name to a screen reader) when the header is narrow.
+    const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim() || b.getAttribute("aria-label") || "").filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
 
     // FIX-45 1.5 · THE RECORD'S READ FAILS ONCE, SLOWLY. Margaret Chen's

@@ -816,6 +816,9 @@ export function GlobalStyles() {
       /* a tag is a small chip with a 44px reach around it */
       .dp2-head .dph-tags button{position:relative;}
       .dp2-head .dph-tags button::before{content:"";position:absolute;inset:-12px -2px;}
+      /* PROFILE-3: the contact line's copy buttons get the same 44px reach */
+      .dp2-head .dph-contact button{position:relative;}
+      .dp2-head .dph-contact button::before{content:"";position:absolute;inset:-12px -2px;}
       .dp2-head .dph-actions{grid-column:1 / -1!important;grid-row:6!important;justify-content:flex-start!important;flex-wrap:wrap!important;margin-top:12px;}
       .dp2-head .dph-act{min-width:44px!important;}
       .dp2-head .dph-actions>button,.dp2-head .dph-actions>a{min-height:44px!important;flex-shrink:0;}
