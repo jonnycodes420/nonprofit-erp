@@ -117,7 +117,37 @@ async function profileColumnsScroll(pw, auth, { ok, APP }) {
       await ctx.close();
     }
   }
+  // §pledger (PROFILE-3, Jonathan's follow-up): a person with an open pledge and no
+  // gift. The pledge is on the timeline (it read "Nothing here yet."), and the
+  // rail's Record a payment opens Giving with the payment form (it set the tab to
+  // "gifts", which is no tab, and the main column went blank).
+  // HOW IT GOES RED ON MAIN: no pledge card and "Nothing here yet."; after the
+  // click no tab is selected and there is no form.
+  const PLEDGER = "d_p3_pledger_" + String(orgId).slice(-8), PL = "pl_p3_" + String(orgId).slice(-8);
+  await q("DELETE FROM pledges WHERE id=$1 AND org_id=$2", [PL, orgId]).catch(() => {});
+  await q("DELETE FROM donors WHERE id=$1 AND org_id=$2", [PLEDGER, orgId]).catch(() => {});
+  await q(`INSERT INTO donors (id,org_id,name,person_types,created_by,created_by_name) VALUES ($1,$2,'Wilric Cranhurst','["donor"]','system:test','test')`, [PLEDGER, orgId]);
+  const due = `${Number(require("../clock").civilDay().slice(0, 4)) + 1}-03-01`;
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,created_by,created_by_name) VALUES ($1,$2,$3,200,$4,'open','system:test','test')`, [PL, orgId, PLEDGER, due]);
+  {
+    const { ctx, page } = await open(1440, 900, PLEDGER);
+    const t = await page.evaluate(() => ({ pledgeCards: document.querySelectorAll("[data-testid=dp-timeline] .tl-card[data-kind=pledge]").length,
+      text: (document.querySelector("[data-testid=dp-tab-activity]") || {}).innerText || "" }));
+    ok("§pledger the open pledge is on the timeline", t.pledgeCards === 1 && /Pledged \$200/.test(t.text), { cards: t.pledgeCards });
+    ok("§pledger …and the timeline does not say \"Nothing here yet.\"", !/Nothing here yet/.test(t.text), t.text.slice(0, 300));
+    const rec = page.locator("[data-testid=dp-right-rail] [data-testid=dp-pledge-record]").first();
+    if (await rec.count()) {
+      await rec.click();
+      await page.waitForTimeout(800);
+      const g = await page.evaluate(() => ({ tab: (document.querySelector("[data-testid=dp-tabs] [aria-selected=true]") || {}).dataset?.tab || null,
+        form: !!document.querySelector("[data-testid=dp-add-gift-form]") }));
+      ok("§pledger Record a payment opens Giving with the payment form", g.tab === "giving" && g.form, g);
+    } else ok("§pledger the rail offers Record a payment", false, "no dp-pledge-record");
+    await ctx.close();
+  }
   await br.close();
+  await q("DELETE FROM pledges WHERE id=$1 AND org_id=$2", [PL, orgId]).catch(() => {});
+  await q("DELETE FROM donors WHERE id=$1 AND org_id=$2", [PLEDGER, orgId]).catch(() => {});
   await q("DELETE FROM donors WHERE id=$1 AND org_id=$2", [EMPTY, orgId]).catch(() => {});
 }
 

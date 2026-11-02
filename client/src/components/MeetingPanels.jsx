@@ -178,7 +178,7 @@ const ICON = {
   email: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>,
   meeting: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>,
 };
-const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2, talk: T.white };
+const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2, pledge: T.bg2, talk: T.white };
 // FIX-14 Part 3 — calls, notes, asks and stewardship touches join the one
 // timeline (the old Touchpoint timeline is gone), with a speech-mark tile.
 ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
@@ -196,14 +196,14 @@ TILE_BG.task = T.white; TILE_BG.file = T.bg;
 // PARITY-3 — a volunteer shift: a hand, in the same stroke as the others.
 ICON.service = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11V6a1.5 1.5 0 0 1 3 0v5"/><path d="M10 10V4.5a1.5 1.5 0 0 1 3 0V10"/><path d="M13 10V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-2.7L3.5 14a1.5 1.5 0 0 1 2.5-1.7L7 14"/></svg>;
 TILE_BG.service = T.white;
-const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", task: "Task", file: "File", service: "Volunteer service" };
+const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", pledge: "Pledge", task: "Task", file: "File", service: "Volunteer service" };
 const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Letter", text: "Text" };
 
 // PROFILE-1 (header) — THE TIMELINE'S ROWS, BUILT ONCE. The profile's tabs
 // (Conversations, Emails, Tasks, Notes, Files) and the Overview's Lately list
 // are this one list filtered, and the tab row's counts are its lengths, so a
 // count and the tab it labels cannot disagree.
-export function buildTimelineItems({ rel, gifts = [], interactions = [], tasks = [], attachments = [], service = [] }) {
+export function buildTimelineItems({ rel, gifts = [], pledges = [], interactions = [], tasks = [], attachments = [], service = [] }) {
   if (!rel) return { items: [], fileItems: [] };
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
   const calendarMeetingIds = new Set((rel.past || []).map(e => e.id));
@@ -227,6 +227,9 @@ export function buildTimelineItems({ rel, gifts = [], interactions = [], tasks =
   }
   // IMPORT-4: a gift with no date sorts last and says "No date", never a day.
   for (const g of gifts || []) items.push({ kind: "gift", bucket: "gift", id: "g:" + g.id, date: String(g.date || "").slice(0, 10), undated: !g.date, g });
+  // PROFILE-3 · a pledge is on the timeline on the day it was made (the org's day, not UTC's): a pledger with no
+  // gift yet read "Nothing here yet." beside an open $200 pledge.
+  for (const p of pledges || []) if (p && p.id && !p.is_shell) items.push({ kind: "pledge", bucket: "gift", id: "p:" + p.id, date: p.created_at ? civilDayOf(new Date(p.created_at)) : String(p.due_date || "").slice(0, 10), undated: !(p.created_at || p.due_date), p });
   // WIRE-1 · on an employer, the gifts it matched: the employee's gift, said as matched.
   for (const g of rel.matchedGifts || []) items.push({ kind: "gift", bucket: "gift", id: "mg:" + g.id, date: String(g.date || "").slice(0, 10), g: { ...g, matched: true } });
   // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
@@ -261,7 +264,7 @@ export function timelineCounts(built) {
   return c;
 }
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
+export function RelationshipTimeline({ rel, donor, gifts = [], pledges = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
   tasks = [], attachments = [], service = [], canWrite = false, fixed = null, subChips = null, lately = 0, onSeeAll = null,
   byMonth = false, search = "", heading = null, noChips = false }) {
   // PROFILE-2: `byMonth` puts a small-caps month in a left gutter beside each
@@ -282,7 +285,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
   const filesBy = {};
   for (const f of attachments || []) (filesBy[f.interactionId] = filesBy[f.interactionId] || []).push(f);
-  const { items, fileItems } = buildTimelineItems({ rel, gifts, interactions, tasks, attachments, service });
+  const { items, fileItems } = buildTimelineItems({ rel, gifts, pledges, interactions, tasks, attachments, service });
   const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0), meeting: items.filter(i => i.kind === "meeting").length };
   // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
   const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
@@ -362,6 +365,15 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       body = `On a ${String(f.interactionType || "conversation").replace(/_/g, " ")}${f.interactionDate ? ` from ${relDay(f.interactionDate)}` : ""}.`;
       by = f.createdByName || "";
       meta = by ? `Attached by ${by}` : null;
+    } else if (it.kind === "pledge") {
+      // PROFILE-3: a promise, not money: what was pledged, when it is due, what has come in.
+      const p = it.p;
+      title = `Pledged ${fmtFull(Number(p.amount))}`;
+      const paid = Number(p.paid_amount || 0);
+      body = p.status === "fulfilled" || (Number(p.balance) === 0 && paid > 0) ? "Paid in full."
+        : [p.due_date ? `Due ${displayDate(String(p.due_date).slice(0, 10))}` : null, `${fmtFull(paid)} received`].filter(Boolean).join(" · ") + ".";
+      by = p.created_by_name && !String(p.created_by || "").startsWith("system:") ? p.created_by_name : "";
+      meta = by ? `Recorded by ${by}` : null;
     } else {
       const g = it.g;
       if (g.matched) {
@@ -452,7 +464,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
               border: it.kind === "talk" || it.kind === "task" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
-              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" ? "$" : ICON[it.kind]}</div>
+              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" || it.kind === "pledge" ? "$" : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}

@@ -304,7 +304,7 @@ function GivingTab({acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addP
               );
             })()}
 
-            {addGiftOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
+            {addGiftOpen&&<div data-testid="dp-add-gift-form" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
               <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                 <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>

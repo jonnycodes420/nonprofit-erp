@@ -324,6 +324,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     return ()=>{document.removeEventListener("mousedown",out);document.removeEventListener("keydown",esc);};
   },[dpMoreOpen]);
 
+  // PROFILE-3: the pledges, read by the timeline (tlCounts) and the Giving tab.
+  const [pledges,setPledges]=useState([]);
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
   // POLISH-1 — a refund is a row with a negative amount, not a gift: it comes
@@ -334,8 +336,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // counts and every list tab read this one list, with the tasks, files and
   // shifts read once beside it.
   const tlExtras=useTimelineExtras(donor.id, localInts??donor.interactions);
-  const tlCounts=useMemo(()=>timelineCounts(buildTimelineItems({rel,gifts:giftsFull,interactions:localInts??donor.interactions??[],...tlExtras})),
-    [rel,giftsFull,localInts,donor.interactions,tlExtras.tasks,tlExtras.attachments,tlExtras.service]);
+  const tlCounts=useMemo(()=>timelineCounts(buildTimelineItems({rel,gifts:giftsFull,pledges,interactions:localInts??donor.interactions??[],...tlExtras})),
+    [rel,giftsFull,pledges,localInts,donor.interactions,tlExtras.tasks,tlExtras.attachments,tlExtras.service]);
   // PROFILE-1 (header) — the rail's facts in one read (GET /donors/:id/rail).
   // A card whose fact is missing is not drawn; a failed read draws one line.
   const [railData,setRailData]=useState(null);
@@ -369,7 +371,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // due date). Past-due unfulfilled pledges get reminders on the same
   // cadence as the recurring-gift dunning system (see processPledgeReminders
   // in server.js).
-  const [pledges,setPledges]=useState([]);
+  // (PROFILE-3: pledges is declared above tlCounts, which puts them on the timeline)
   const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:orgTodayCivil(),notes:"",campaignId:""});
   const [addPledgeOpen,setAddPledgeOpen]=useState(false);
   const [pledgeSaving,setPledgeSaving]=useState(false);
@@ -1292,7 +1294,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>;
   const railPledgeNode=pledges.some(p=>p.status==="open"&&Number(p.balance)>0)?<RailSection title="Open pledge" testid="dp-rail-pledge"><div style={{margin:"-2px -4px"}}>
           <OpenPledgeBanner pledges={pledges} donorName={donor.name} donorId={donor.id} isReadOnly={isReadOnly}
-            onRecordPayment={(pl,next)=>{setDpTab("gifts");setAddGiftOpen(true);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
+            onRecordPayment={(pl,next)=>{setDpTab("giving");setAddGiftOpen(true);
+              // PROFILE-3: "gifts" stopped being a tab in PROFILE-2, so this blanked the main column. Giving, with the form in view.
+              setTimeout(()=>{const f=document.querySelector("[data-testid=dp-add-gift-form]");if(f&&f.scrollIntoView)f.scrollIntoView({block:"center"});},150);setAddGiftForm(f=>({...f,pledgeId:pl.id,amount:String(next?next.amount:pl.balance)}));}}/>
         </div></RailSection>:null;
   // PROFILE-3 · NOTHING LOGGED YET: no gift, pledge, conversation, email, note,
   // task, file or meeting. The main column is one quiet start card, and the
@@ -1421,7 +1425,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 opening its record; "See everything" opens Conversations. */}
             {/* AGENT-5: what Atlas did for this person, in order, with Undo. */}
             <AtlasNote place="person" id={donor.id} onNavigate={onNavigate}/>
-            {rel&&!nothingLogged&&<ProfileTimeline byMonth noChips search={tlSearch} heading="Everything, by month" extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&!nothingLogged&&<ProfileTimeline byMonth noChips search={tlSearch} heading="Everything, by month" extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} pledges={pledges} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
