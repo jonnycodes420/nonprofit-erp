@@ -332,15 +332,16 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   for i in $BSHARDS; do
     [ -n "${SHARD_ONLY:-}" ] && [ "$SHARD_ONLY" != "$i" ] && continue
     [ "${SHARD_BUILD_DIST:-1}" = "1" ] || break
-    bapi="http://localhost:$(( ${SHARD_PORT_BASE:-5700} + 10 * i ))"
+    bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * i ))
     if [ -z "$first_bshard" ]; then
       first_bshard="$i"
-      node scripts/ci/dist-fresh.js --rebuild --api "$bapi" \
+      node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
         || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
       DIST_FOR[$i]="client/dist"
     else
-      fapi="http://localhost:$(( ${SHARD_PORT_BASE:-5700} + 10 * first_bshard ))"
-      node scripts/ci/dist-for-shard.js --from client/dist --to ".generated/dist/shard-$i" --api-from "$fapi" --api-to "$bapi" \
+      fapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * first_bshard ))
+      node scripts/ci/dist-for-shard.js --from client/dist --to ".generated/dist/shard-$i" \
+        --api-from "http://localhost:$fapi" --api-to "http://localhost:$bapi" \
         && DIST_FOR[$i]=".generated/dist/shard-$i" \
         || echo "[run-all] WARNING: no dist for shard $i — its browser legs will skip"
     fi

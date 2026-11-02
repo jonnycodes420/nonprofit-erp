@@ -481,10 +481,12 @@ ok(nulFiles.length === 0,
     if (m) { cur = m[1]; jobs[cur] = ""; continue; }
     if (cur) jobs[cur] += line.replace(/#.*$/, "") + "\n";
   }
-  ok(/bash tests\/run-all\.sh/.test(jobs.test || ""), "ci.yml's test job runs the battery (so this guard runs there)");
-  for (const j of ["tree-check", "guards", "test"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
-  const dbUrl = ((jobs.test || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
-  ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's test job's DATABASE_URL is loopback");
+  // CI-2: the battery runs in the `shard` matrix job; `combine` (named `test`)
+  // reads the shards' results; `plan` writes the plan. None holds a secret.
+  ok(/bash tests\/run-all\.sh/.test(jobs.shard || ""), "ci.yml's shard job runs the battery (so this guard runs there)");
+  for (const j of ["tree-check", "guards", "plan", "shard", "combine"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
+  const dbUrl = ((jobs.shard || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
+  ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's shard job's DATABASE_URL is loopback");
   ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j)), "only a deploy job in ci.yml holds RAILWAY_TOKEN");
 }
 

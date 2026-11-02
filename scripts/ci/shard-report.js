@@ -83,8 +83,8 @@ const perShard = plan.shards.map((list, i) => {
   return mine.length ? `${i + 1}:${mine.reduce((a, b) => a + b.secs, 0)}s/${mine.length}` : `${i + 1}:—`;
 });
 console.log(`\nSuites: ${results.length - failed.length} passed, ${failed.length} failed`
-  + (wall !== null ? `  (wall ${wall}s` : "  (")
-  + `, ${plan.shards.filter(s => s.length).length} shards · ${perShard.join(" ")})`);
+  + (wall !== null ? `  (wall ${wall}s, ` : "  (")
+  + `${plan.shards.filter(s => s.length).length} shards · ${perShard.join(" ")})`);
 
 // Refresh the timings from this run so the next plan is balanced by fact.
 try {
