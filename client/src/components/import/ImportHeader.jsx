@@ -1,9 +1,12 @@
 import { T } from "../shared";
+import Uploader from "../Uploader";
+import { shapeLabel } from "../../../../shared/importShape";
+import SpreadsheetImport from "../SpreadsheetImport";
 
 export function ImportHeader({ onClose }) {
   return (
-<>
-{/* Header */}
+      <>
+        {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
@@ -31,6 +34,32 @@ export function ImportHeader({ onClose }) {
           </div>
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
-</>
+      </>
+  );
+}
+
+export function ImportFileTile({ adaptiveFile, bothMode, effectiveShape, handleFile, onImported, parsed, setAdaptiveFile, setBothMode, setErr, setParsed, setSrcFile, setWorkbook, setXlsxSheets, srcFile, workbook, xlsxSheets }) {
+  return (
+      <>
+        {/* The uploaded file as a tile — name, size, detected shape/row count.
+            Still a drop target: dropping a new file re-parses. */}
+        {srcFile && (parsed || xlsxSheets || bothMode || workbook) && (
+          <div style={{marginBottom:16}}>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Replace file"
+              fileMeta={srcFile ? {
+                name: srcFile.name, size: srcFile.size,
+                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${shapeLabel(effectiveShape)}`
+                  : bothMode ? "donors + gift history workbook"
+                  : workbook ? `${workbook.roled.length} sheets · one import`
+                  : `${(xlsxSheets || []).length} sheets`,
+              } : null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setBothMode(null);setWorkbook(null);setErr("");}}/>
+          </div>
+        )}
+
+        {adaptiveFile && <SpreadsheetImport file={adaptiveFile} onClose={()=>{setAdaptiveFile(null);setSrcFile(null);}} onImported={()=>{setAdaptiveFile(null);onImported&&onImported();}}/>}
+      </>
   );
 }

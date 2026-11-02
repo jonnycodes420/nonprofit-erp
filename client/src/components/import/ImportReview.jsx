@@ -9,8 +9,8 @@ import { ThanksQuestion } from "./ThanksQuestion";
 
 export function ImportReview({ cfDecisions, cfDefs, cfUndecided, donorCount, effectiveShape, emailsToCheck, err, giftCount, isTeam, loading, mapperPlan, payload, progress, setCfDecisions, setCfDefs, setThanks, setTxMap, setValueAnswers, shapeMemory, srcFile, stageBasis, stagePreview, thanks, txMap, tyPreview, valueAnswers, valueQuestions }) {
   return (
-<>
-{/* Validation summary */}
+        <>
+          {/* Validation summary */}
           <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
             <div style={{fontSize:13,fontWeight:700,color:T.ink}}>
               {donorCount>0
@@ -280,6 +280,6 @@ export function ImportReview({ cfDecisions, cfDefs, cfUndecided, donorCount, eff
             ?<ThanksQuestion preview={tyPreview} answer={thanks} onChange={setThanks}/>
             :<div data-testid="import-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{tyPreview.sentence}</div>)}
           {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
-</>
+        </>
   );
 }

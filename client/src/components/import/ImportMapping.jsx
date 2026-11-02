@@ -12,8 +12,8 @@ import { apiFetch } from "../../api";
 
 export function ImportMapping({ TX_ROLES, aiLoading, cfDefs, dateConvEvidence, dateConventionChoice, doAiMap, donorCfChoices, donorHeaders, effectiveShape, headersUnrecognized, mapRefusal, mapping, mcApplyTagTypes, mcDetect, mcFileStatus, mig, npsp, npspIs, onConventionChange, parsed, payload, setCfDefs, setDateConventionChoice, setDonorCfChoices, setMapRefusal, setMapping, setMcApplyTagTypes, setMcFileStatus, setTxMap, setYearCols, srcFile, takenDonorTargets, txMap, yearCols, yearConvention }) {
   return (
-<>
-{/* Column mapper — aggregate/wide use the donor-field grid; transaction uses gift roles */}
+        <>
+          {/* Column mapper — aggregate/wide use the donor-field grid; transaction uses gift roles */}
           {effectiveShape === "transaction" ? (
             <div style={{marginBottom:14}}>
               <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:10}}>
@@ -224,6 +224,6 @@ export function ImportMapping({ TX_ROLES, aiLoading, cfDefs, dateConvEvidence, d
               <YearDatesQuestion effectiveShape={effectiveShape} onConventionChange={onConventionChange} setYearCols={setYearCols} yearCols={yearCols} yearConvention={yearConvention}/>
             </div>
           )}
-</>
+        </>
   );
 }

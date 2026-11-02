@@ -472,24 +472,6 @@ export function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
   };
 }
 
-// ── DonorImport component ──────────────────────────────────────────────────
-// Exported so WelcomePage's onboarding flow can reuse it directly as the
-// centerpiece "Import your donors" step, rather than forking/rebuilding it.
-// `withHistory` (used only by onboarding — the regular Donors tab's "Import
-// Donors" button always omits it, so its behavior is unchanged): when true,
-// also derives one real `gifts` row per donor from their imported total/
-// last-gift-date and posts through /donors/import-combined instead of the
-// plain /donors/import. Without this, a brand-new org's donor records only
-// ever get aggregate fields — no queryable gifts/interactions rows — which
-// is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
-// immediately after onboarding for every org that isn't shown the OTHER
-// import button, buried in the regular Donors tab, after the fact.
-// FIX-32 · A REAL FILE REPLACES THE SAMPLE, AND SHE SAYS SO FIRST. An org
-// that explored the demo has 25 invented people in it; importing her own file
-// on top of them mixes fiction into every total. Before the importer opens,
-// the sample count is read from the same route the banner and the clear use,
-// and if there is any, she confirms the clear (or keeps the sample and
-// closes). Nothing is deleted without the click.
 // LIVE-1 · the payment methods a file can name that need no explaining.
 export const STANDARD_METHODS = new Set(["cash", "check", "cheque", "credit card", "card", "debit card", "ach", "bank transfer", "eft",
   "wire", "wire transfer", "stock", "securities", "daf", "donor advised fund", "paypal", "venmo", "zelle", "apple pay",

@@ -5,8 +5,8 @@ import { STAGE_COLORS } from "../donorShared";
 
 export function ImportReader({ applyParsed, bothMode, bothPayload, bothStagePreview, csvText, doImportBoth, doParse, err, handleFile, inp, loading, matchKey, moveAsked, moveLabel, moveSource, ownerRoutingUI, parsed, progress, setBothMode, setCsvText, setErr, setMatchKey, setMoveAsked, setSrcFile, setXlsxSheets, startImportBoth, workbook, workbookRoles, xlsxSheets }) {
   return (
-<>
-{/* ── Step 1a: Upload / Paste ── */}
+      <>
+        {/* ── Step 1a: Upload / Paste ── */}
         {!parsed && !xlsxSheets && !workbook && moveAsked && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Upload file</div>
@@ -152,6 +152,6 @@ export function ImportReader({ applyParsed, bothMode, bothPayload, bothStagePrev
             </button>
           </div>
         </>)}
-</>
+      </>
   );
 }

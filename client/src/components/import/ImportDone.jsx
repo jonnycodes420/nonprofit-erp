@@ -9,7 +9,7 @@ import { anyFieldLabel } from "./fields";
 
 export function ImportDone({ flaggedPage, hasBatchErrors, onClose, onImported, result, setErr, setFlaggedPage, setResult, setUndoBusy, undoBusy }) {
   return (
-<Modal className="commit-screen" onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      <Modal className="commit-screen" onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
         padding={28} ariaLabel={"Import result"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
         <div style={{textAlign:"center"}}>
           {/* BUILD-79 Part 3.3 — the check mark is EARNED: amount + date

@@ -10,7 +10,6 @@ import { newRunId } from "../../../shared/movePlan";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
-import Uploader from "./Uploader";
 import { detectMailchimpAudience, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { emailProblem, emailHint } from "../../../shared/contactCheck.js";
 import { detectNpsp, npspMapping, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
@@ -18,9 +17,8 @@ import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../.
 import { membershipColumns, buildMembershipRows, MEMBERSHIP_FIELDS } from "../../../shared/membershipImport.js";
 import { buildMapperPlan, buildColumnLedger, summarizeColumnLedger, generateFieldKey } from "../../../shared/customFieldShape";
 import { T, Modal } from "./shared";
-import { detectImportShape, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, classifyColumns, analyzeCsvText, assessAggregateCollapse, scanAmountShapedColumns, normalizeHeader, stageAssignmentBasis, validateMappingChoice, buildProposalRows, autoDetectTxMapping, inferDateConvention } from "../../../shared/importShape";
+import { detectImportShape, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, classifyColumns, analyzeCsvText, assessAggregateCollapse, scanAmountShapedColumns, normalizeHeader, stageAssignmentBasis, validateMappingChoice, buildProposalRows, autoDetectTxMapping, inferDateConvention } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
-import SpreadsheetImport from "./SpreadsheetImport";
 import { inferStage } from "./donorShared";
 import { countLabel } from "../../../shared/countWords.js";
 import { guessField, VALID_IMPORT_KEYS, CSV_STANDARD_FIELDS, plainFieldLabel, txRoleLabel } from "./import/fields";
@@ -33,9 +31,27 @@ import { ImportMapping } from "./import/ImportMapping";
 import { ImportDetection } from "./import/ImportDetection";
 import { ImportReader } from "./import/ImportReader";
 import { ImportDone } from "./import/ImportDone";
-import { ImportHeader } from "./import/ImportHeader";
+import { ImportHeader, ImportFileTile } from "./import/ImportHeader";
 export { plainFieldLabel, txRoleLabel, anyFieldLabel } from "./import/fields";
 
+// ── DonorImport component ──────────────────────────────────────────────────
+// Exported so WelcomePage's onboarding flow can reuse it directly as the
+// centerpiece "Import your donors" step, rather than forking/rebuilding it.
+// `withHistory` (used only by onboarding — the regular Donors tab's "Import
+// Donors" button always omits it, so its behavior is unchanged): when true,
+// also derives one real `gifts` row per donor from their imported total/
+// last-gift-date and posts through /donors/import-combined instead of the
+// plain /donors/import. Without this, a brand-new org's donor records only
+// ever get aggregate fields — no queryable gifts/interactions rows — which
+// is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
+// immediately after onboarding for every org that isn't shown the OTHER
+// import button, buried in the regular Donors tab, after the fact.
+// FIX-32 · A REAL FILE REPLACES THE SAMPLE, AND SHE SAYS SO FIRST. An org
+// that explored the demo has 25 invented people in it; importing her own file
+// on top of them mixes fiction into every total. Before the importer opens,
+// the sample count is read from the same route the banner and the clear use,
+// and if there is any, she confirms the clear (or keeps the sample and
+// closes). Nothing is deleted without the click.
 export function DonorImport(props) {
   const [gate, setGate] = useState("checking"); // checking | ask | open
   const [count, setCount] = useState(0);
@@ -1414,25 +1430,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
 
         <ImportHeader onClose={onClose}/>
 
-        {/* The uploaded file as a tile — name, size, detected shape/row count.
-            Still a drop target: dropping a new file re-parses. */}
-        {srcFile && (parsed || xlsxSheets || bothMode || workbook) && (
-          <div style={{marginBottom:16}}>
-            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
-              label="Replace file"
-              fileMeta={srcFile ? {
-                name: srcFile.name, size: srcFile.size,
-                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${shapeLabel(effectiveShape)}`
-                  : bothMode ? "donors + gift history workbook"
-                  : workbook ? `${workbook.roled.length} sheets · one import`
-                  : `${(xlsxSheets || []).length} sheets`,
-              } : null}
-              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
-              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setBothMode(null);setWorkbook(null);setErr("");}}/>
-          </div>
-        )}
-
-        {adaptiveFile && <SpreadsheetImport file={adaptiveFile} onClose={()=>{setAdaptiveFile(null);setSrcFile(null);}} onImported={()=>{setAdaptiveFile(null);onImported&&onImported();}}/>}
+        <ImportFileTile adaptiveFile={adaptiveFile} bothMode={bothMode} effectiveShape={effectiveShape} handleFile={handleFile} onImported={onImported} parsed={parsed} setAdaptiveFile={setAdaptiveFile} setBothMode={setBothMode} setErr={setErr} setParsed={setParsed} setSrcFile={setSrcFile} setWorkbook={setWorkbook} setXlsxSheets={setXlsxSheets} srcFile={srcFile} workbook={workbook} xlsxSheets={xlsxSheets}/>
         {/* ── BUILD-82: a workbook is ONE import (all xlsx land here) ── */}
         {workbook && (
           <WorkbookImport workbook={workbook} fileName={srcFile?.name}

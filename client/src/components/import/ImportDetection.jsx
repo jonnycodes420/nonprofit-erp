@@ -6,8 +6,8 @@ import { shapeLabel } from "../../../../shared/importShape";
 
 export function ImportDetection({ aggregateCollapse, effectiveShape, parseReport, parsed, setShapeOverride, shapeDetail, shapeOverride }) {
   return (
-<>
-{/* BUILD-79 Part 1.2/1.3/1.4 — report chrome is SHOWN, never imported,
+        <>
+          {/* BUILD-79 Part 1.2/1.3/1.4 — report chrome is SHOWN, never imported,
               never counted. Everything above the detected header, every repeated
               header / page line / TOTAL / end marker by line number, and any
               windows-1252 repair. */}
@@ -85,6 +85,6 @@ export function ImportDetection({ aggregateCollapse, effectiveShape, parseReport
               </button>
             </div>
           )}
-</>
+        </>
   );
 }

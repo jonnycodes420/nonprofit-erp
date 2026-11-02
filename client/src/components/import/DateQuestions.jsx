@@ -3,8 +3,8 @@ import { displayDate } from "../../../../shared/displayDate";
 
 export function YearDatesQuestion({ effectiveShape, onConventionChange, setYearCols, yearCols, yearConvention }) {
   return (
-<>
-{/* Wide: year → gift-date convention */}
+            <>
+              {/* Wide: year → gift-date convention */}
               {effectiveShape === "wide" && yearCols.length > 0 && (
                 <div style={{marginTop:10,background:T.bg,borderRadius:10,padding:"10px 14px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
@@ -25,14 +25,14 @@ export function YearDatesQuestion({ effectiveShape, onConventionChange, setYearC
                   </div>
                 </div>
               )}
-</>
+            </>
   );
 }
 
 export function MixedDatesQuestion({ dateConvEvidence, dateConventionChoice, setDateConventionChoice }) {
   return (
-<>
-{dateConvEvidence?.convention === "mixed" && (
+            <>
+              {dateConvEvidence?.convention === "mixed" && (
                 <div style={{background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.6}}>
                   <div style={{fontWeight:700,marginBottom:4}}>This date column mixes conventions, we won't guess.</div>
                   <div style={{color:T.ink2}}>
@@ -46,14 +46,14 @@ export function MixedDatesQuestion({ dateConvEvidence, dateConventionChoice, set
                   </div>
                 </div>
               )}
-</>
+            </>
   );
 }
 
 export function DateFormatNote({ dateConvEvidence }) {
   return (
-<>
-{/* BUILD-80 Part 2.2 — the date column has a convention, decided
+            <>
+              {/* BUILD-80 Part 2.2 — the date column has a convention, decided
                   at the column level and SAID here before the write. */}
               {dateConvEvidence && dateConvEvidence.slashCells > 0 && dateConvEvidence.convention === "dmy" && (
                 <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
@@ -67,6 +67,6 @@ export function DateFormatNote({ dateConvEvidence }) {
                     : `${dateConvEvidence.slashCells.toLocaleString()} slash dates are all ambiguous, read as US month/day/year by default.`}
                 </div>
               )}
-</>
+            </>
   );
 }

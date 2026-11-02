@@ -1,220 +1,38 @@
-import { useState, useEffect, Fragment, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
 import { apiFetch, adaptDonor, prefetch } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
-import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
-import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, loadContextPeople, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
+import { T, fmtFull, daysUntil, daysDiff, askClaude, buildContext, loadContextPeople, GoldMoment } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
-import { fmtDayLong } from "../lib/taskDue";
-import { SkeletonBar } from "./Skeleton";
 import { HOME_FIRST_READS, RAIL_READS, HOME_SCOPED_FIRST, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2, PERF-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
-import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
+import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
-import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { rowFigure } from "../../../shared/threadFigures";
-import { Figure } from "./Figure";
 import { paceOf } from "../../../shared/pace";
-import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
+import { makeT } from "../../../shared/vocabulary";
 import { greetingForHour } from "../lib/greeting";
-import FunnelChart from "./FunnelChart";
-import { ThreadDismissMenu, PutItOnMyCalendar } from "./ThreadMenus";   // PERF-2: the log form loads on its click
-import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
-import { SuggestedAskLine } from "./ScoreWhy";
+import { nextStepSuggestion } from "../../../shared/threadShape";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
 import { MorningBrief } from "./MorningBrief";   // PERF-2: not the meeting forms
 import { MailboxBanner } from "./MailboxBanner";   // PERF-2: not the inbox panels
 import { displayDateShort } from "../../../shared/displayDate";
-import { displayName } from "../../../shared/displayName.js";
-import { stepInSentence, ORG_NAME_RE } from "../../../shared/stepCase.js";
-import { DonorLink } from "./RecordLink";
-import { Linked, RefLink } from "./Linked";
-import { rowClick } from "../lib/appUrls";
 import { CallsToMake } from "./CallsToMake";
-import { AskHero } from "./AskRail";
-import { retryImport } from "../lib/lazyRetry";
-
-// SWEEP-6 (PERF-1): what Home opens on a click loads on that click, so a
-// phone's first look downloads Home and not its panels.
-const MetricBreakdownPanel = lazy(() => retryImport(() => import("./MetricBreakdownPanel")));
-const YourWords = lazy(() => retryImport(() => import("./YourWords")).then(m => ({ default: m.YourWords })));
-const PlanFollowUpModal = lazy(() => retryImport(() => import("./PlanFollowUp")).then(m => ({ default: m.PlanFollowUpModal })));
-const PinnedAnswers = lazy(() => retryImport(() => import("./AskPanel")).then(m => ({ default: m.PinnedAnswers })));
-// PERF-2: the moves deck (INSIGHTS-1, HOME-3) is below the fold on a phone, so
-// its code loads beside its read instead of holding Home's first look. Until it
-// is in, the deck's own "Reading your donors…" card holds its place.
-const HomeMoves = lazy(() => retryImport(() => import("./Insights")).then(m => ({ default: m.HomeMoves })));
-const MOVES_WAIT = <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14}}>Reading your donors…</section>;
-const LogConversationModal = lazy(() => retryImport(() => import("./LogConversation")).then(m => ({ default: m.LogConversationModal })));   // PERF-2
-const Breakdown = p => p.open ? <Suspense fallback={null}><MetricBreakdownPanel {...p}/></Suspense> : null;
-// Most orgs pin nothing: the pins' code loads only when there is a pin to draw.
-function PinsIfAny({ isReadOnly }) {
-  const [n, setN] = useState(0);
-  useEffect(() => { apiFetch("/ask/pins").then(r => setN(((r && r.pins) || []).length)).catch(() => {}); }, []);
-  return n ? <Suspense fallback={null}><PinnedAnswers isReadOnly={isReadOnly}/></Suspense> : null;   // PERF-2: it drew itself, and nothing drew it
-}
+import * as FL from "./home/HomeFirstLook";   // SCREENS-1: Home's first look
+import { useHomeLater } from "./home/useHomeLater";   // SCREENS-1: the rest, after the first paint
+import { PORTFOLIO_BREAKDOWNS, todayCivil, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
-import { openRecentChanges } from "./RecentChanges";
-import { atlasName } from "../lib/atlas";
-import { SetupChecklist, SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
+import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
-import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
-import { countLabel, countWords, plural } from "../../../shared/countWords";
-
-// The same civil "today" the log flow uses (LogConversation's todayLocal), so
-// a step proposed from a drift row and one proposed in the modal never differ.
-const todayCivil=()=>new Date().toISOString().split("T")[0];
-// SCALE-2: what Home reads when it opens, and what it reads once it knows the
-// scope, live in lib/homeReads.js since HARDEN-2 (main.jsx asks for them too).
-// "Next: send the proposal." keeps names and acronyms (shared/stepCase.js).
-
-// BUILD-34 — customizable Home. Sections render from a per-user ordered
-// [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
-// merge rule; GET/PUT /me/home-layout is the server-side per-user store).
-// Edit mode is reorder + show/hide of WHOLE sections only — deliberately not a
-// widget grid. The 150ms drag lift is the only motion, off under
-// prefers-reduced-motion.
-const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-// BUILD-87 F.3.4 — AN EMPTY STATE IS ONE LINE. Steward's empty states earned
-// their length honestly (BUILD-76: a bare zero cannot be told apart from a
-// silently failed import, so the zero shows its work) and then four of them
-// stacked up on one morning screen and the working answer — "No donors
-// drifting." — was the smallest text in its own card. The work is still there
-// and still says what was checked; it is one click away instead of always on.
-// NB the detail is UNMOUNTED when closed, not hidden with CSS: text that is
-// present but invisible is how an empty state quietly lies to a test.
-// FIX-3 A — `flush` inside Home's panel: the line starts on its section
-// heading's left edge (the panel's sections carry no padding of their own), and
-// "why" is a quiet emerald word, never an underlined link.
-function OneLineEmpty({line,detail,testId,flush=false}){
-  const [open,setOpen]=useState(false);
-  return(
-    <div data-testid={testId} className={flush?undefined:"dash-cpad"} style={{padding:flush?"16px 0 8px":"24px 32px"}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:14,color:T.ink}}>{line}</span>
-        {detail&&(
-          <button data-testid={testId?testId+"-why":undefined} onClick={()=>setOpen(o=>!o)}
-            aria-expanded={open}
-            style={{background:"none",border:"none",padding:0,fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer"}}>
-            {open?"less":"why"}
-          </button>
-        )}
-      </div>
-      {open&&detail&&(
-        <div style={{fontSize:12.5,color:T.ink3,marginTop:8,lineHeight:1.6,maxWidth:620}}>{detail}</div>
-      )}
-    </div>
-  );
-}
-// The shared scope toggle renders above the FIRST visible section that reads
-// it, wherever the user put that section.
-const SCOPED_SECTION_IDS = ["commandCenter", "retention", "work"];
-
-// One config-driven panel serves all 5 drillable My Portfolio stats below
-// (Portfolio itself isn't here — it navigates straight to the existing "My
-// Pipeline" Kanban view instead, per the donor-list-not-a-breakdown request)
-// rather than five near-identical state+fetch+JSX blocks.
-const PORTFOLIO_BREAKDOWNS = {
-  visits: { endpoint: "/dashboard/my-stats/visits/breakdown", title: "Visits YTD", explanation: "Meetings you've logged this fiscal year, most recent first." },
-  moves: { endpoint: "/dashboard/my-stats/moves/breakdown", title: "Moves Made", explanation: "Every meaningful contact you've logged this fiscal year, calls, meetings, emails, and stewardship touches (visits are the meeting subset of this list)." },
-  gifts: { endpoint: "/dashboard/my-stats/gifts/breakdown", title: "Gifts YTD", explanation: "Gifts received this fiscal year from donors assigned to you, largest first." },
-  pipeline: { endpoint: "/dashboard/my-stats/pipeline/breakdown", title: "Pipeline", explanation: "Your assigned donors still in an active stage, ranked by lifetime giving." },
-  lapsed: { endpoint: "/dashboard/my-stats/lapsed/breakdown", title: "Lapsed", explanation: "Donors assigned to you who've lapsed, ranked by lifetime giving." },
-};
-
-// The impact line. BUILD-73 Part 3 rewrote what it LEADS with, and the reason
-// is positioning, not data.
-//
-// It used to open "Steward has recovered $X in failed-card gifts and re-engaged
-// $Y from N lapsed donors." On a demo org with a decade of history that renders
-// as "$2M re-engaged from 610 lapsed donors" — and nobody reads that as a
-// description of the organization's own past. It reads as money STEWARD brought
-// in, on the first screen a prospect sees, which is invented social proof. If
-// a prospect later works out the number is synthetic, everything else said in
-// that meeting becomes suspect.
-//
-// THE RULE, now stated where it is easy to find: the value math describes the
-// SIZE OF THE PROBLEM, never Steward's results. So the lead figure is money AT
-// RISK — the lifetime giving of donors who have gone quiet — which is a fact
-// about the org's own file and claims nothing. Same vocabulary as the landing
-// page, on purpose: one language across the demo and the marketing.
-//
-// Pinned by tests/reserved-recovered.test.js, which fails the build on the
-// whole outcome-claim family ("recovered", "re-engaged", "recaptured",
-// "won back", "brought back"), not on one exact string.
-function ImpactLine({ impact }) {
-  const [open, setOpen] = useState(false);
-  if (!impact) return null;
-  // BUILD-83 Part 3.1/3.3 — the footer no longer opens with a risk figure, and
-  // it never staples "$38.7M at risk" to "No platform fee, no donor tip." Those
-  // were two unrelated sentences, and the second one is marketing inside the
-  // product. The quiet-donor cohort is gone entirely (see /impact).
-  const retried = impact.recoveredAmount || 0;
-  const returned = impact.reengagedAmount || 0;
-  const returnedDonors = impact.reengagedDonorCount || 0;
-  const watching = impact.watchingRecurringCount || 0;
-  const online = impact.onlineGivingProcessed || 0;
-  const hasRetried = retried > 0;
-  // Nothing to say yet → stay silent rather than manufacture a line.
-  if (!hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
-
-  const head = watching > 0
-      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring {plural(watching, "donor")} for failed cards, no platform fee, no donor tip, gifts settle in your own Stripe.</>
-      : <>No platform fee, no donor tip. <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
-
-  const row = (label, value, note) => (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "7px 0", borderTop: "1px solid " + T.bg3 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{label}</div>
-        <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.45, marginTop: 1 }}>{note}</div>
-      </div>
-      <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", fontFamily: "'DM Serif Display',serif" }}>{value}</div>
-    </div>
-  );
-
-  return (
-    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
-      <div {...interactive(() => setOpen(o => !o), { label: "Show what Steward has done for you" })}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px" }}>
-        <span aria-hidden style={{ color: T.gold500, fontSize: 14, lineHeight: 1 }}>◈</span>
-        <span style={{ flex: 1, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>{head}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{open ? "Hide" : "Details"}</span>
-      </div>
-      {open && (
-        <div style={{ padding: "2px 18px 14px", background: T.green100 }}>
-          {hasRetried && row(
-            "Failed cards, retried automatically",
-            fmt(retried),
-            `${countLabel(impact.recoveredCount, "gift")} whose card failed and which the dunning workflow retried. Tracked per gift, 100% attributable to a retry Steward actually ran.`
-          )}
-          {returned > 0 && row(
-            "Gifts after a year-long gap",
-            fmt(returned),
-            `${fmt(returned)} from ${countLabel(returnedDonors, "donor")} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries, never merged into them.`
-          )}
-          {row(
-            "Platform fees you paid Steward",
-            "$0",
-            "You process donations on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)"
-          )}
-          {online > 0 && row(
-            <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600 }}>· estimate</span></>,
-            "~" + fmt(impact.estimatedFeesElsewhere),
-            `Estimate, assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+import { countLabel, plural } from "../../../shared/countWords";
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
+  const HL=useHomeLater();   // SCREENS-1: null until the later half has loaded
   // SCALE-2: Home's first reads in one request. Asked during the first
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
@@ -400,13 +218,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [homeFold,setHomeFold]=useState(()=>{try{return JSON.parse(localStorage.getItem("steward_home_fold")||"{}")||{};}catch{return {};}});
   const toggleFold=k=>setHomeFold(f=>{const n={...f,[k]:!f[k]};try{localStorage.setItem("steward_home_fold",JSON.stringify(n));}catch{/* kept for this visit only */}return n;});
   // HOME-TIDY 2: where the header goes depends on the width (one copy only).
-  const foldBtn=(k,label)=>(
-    <button type="button" data-testid={"fold-"+k} aria-expanded={!homeFold[k]} aria-label={(homeFold[k]?"Show ":"Hide ")+label} onClick={()=>toggleFold(k)}
-      style={{background:"none",border:"1px solid "+T.bg3,borderRadius:999,width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",
-        cursor:"pointer",color:T.ink3,padding:0,flexShrink:0,transition:"transform .15s ease",transform:homeFold[k]?"rotate(-90deg)":"none"}}>
-      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-    </button>
-  );
+  const foldBtn=(HL?HL.foldBtn({ homeFold, toggleFold }):null);
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
@@ -899,28 +711,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const rowPad=onPanel?"9px 0":"9px 24px";
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
-  const MiniEmpty=({icon,text,cta,onCta})=>(
-    <div style={{...cPad,display:"flex",alignItems:"center",gap:12}}>
-      <div style={{fontSize:20,opacity:0.3,color:T.greenDk,flexShrink:0,lineHeight:1}}>{icon}</div>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>{text}</div>
-        {cta&&<button onClick={onCta} style={{...sLink,marginTop:3,fontSize:12}}>{cta}</button>}
-      </div>
-    </div>
-  );
+  const MiniEmpty=(HL?HL.MiniEmpty({ cPad, sLink }):null);
 
-  const Sparkline=({trend,color,width=100,height=30})=>{
-    if(!trend||trend.length<2)return null;
-    const vals=trend.map(t=>t.value);
-    const min=Math.min(...vals),max=Math.max(...vals);
-    const range=max-min||1;
-    const pts=trend.map((t,i)=>{
-      const x=(i/(trend.length-1))*width;
-      const y=height-((t.value-min)/range)*height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-    return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-  };
+  const Sparkline=(HL?HL.Sparkline():null);
 
   // The "who" behind a hero number — a clickable name+detail pill that goes
   // straight to that donor's profile, so a metric never requires a click
@@ -930,20 +723,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // optional so a caller with only a name still renders (initials), rather
   // than the chip disappearing because a payload forgot to include an id.
   // FIX-13 Part 6 — with an id the chip is a real link to the donor.
-  const DonorChip=({id,name,detail,onClick})=>{
-    const chipStyle={display:"flex",alignItems:"center",gap:6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px 3px 3px",cursor:"pointer",fontSize:11,maxWidth:180};
-    const inner=<>
-      <PersonMark id={id} name={name} size={20}/>
-      <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayName(name)}</span>
-      {detail&&<span style={{color:T.ink3,whiteSpace:"nowrap",flexShrink:0}}>{detail}</span>}
-    </>;
-    return id?<DonorLink id={id} onOpen={onClick} style={chipStyle}>{inner}</DonorLink>:<button onClick={onClick} style={chipStyle}>{inner}</button>;
-  };
-  const MoreChip=({count,onClick})=>(
-    <button onClick={onClick} style={{background:"transparent",border:"1px dashed "+T.bg3,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>
-      +{count} more →
-    </button>
-  );
+  const DonorChip=(HL?HL.DonorChip():null);
+  const MoreChip=(HL?HL.MoreChip():null);
   // Goal banner's right-hand column — real supporting stats (pace, days
   // left, recent activity) genuinely filling that width, not decoration.
   // Hero chips are drillable (attribution FIX, per the standing rule: every
@@ -951,14 +732,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // number the chip claimed). onClick routes through the ONE shared
   // interactive() treatment (dark variant — hover/cursor/focus ring/keyboard);
   // a chip with no destination (e.g. Time Left) stays visibly static.
-  const GoalStat=({label,value,valueColor,sub,onClick})=>(
-    <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined})}
-      style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"8px 12px"}}>
-      <div style={{fontSize:9,fontWeight:800,color:T.ink3,marginBottom:3}}>{label}</div>
-      <div style={{fontSize:14,fontWeight:700,color:valueColor||T.inkInverse,lineHeight:1.25}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>{sub}</div>}
-    </div>
-  );
+  const GoalStat=(HL?HL.GoalStat():null);
 
   // My Portfolio tile icons — a real path per stat (not a generic dot) so the
   // row reads as a designed panel rather than six plain numbers in a line.
@@ -973,9 +747,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     pipeline:<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
     lapsed:<><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L14.71 3.86a2 2 0 0 0-3.42 0Z"/></>,
   };
-  const StatIcon=({name,color})=>(
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{STAT_PATHS[name]}</svg>
-  );
+  const StatIcon=(HL?HL.StatIcon({ STAT_PATHS }):null);
 
   // BUILD-83 Part 3.5 — the funnel shows PLACED donors; with nobody placed it
   // shows the suggestion and says so.
@@ -1081,7 +853,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line
   // names the overage. The thermometer bar still uses the capped percent (a bar
   // can't be more than full). Only strictly-over goals get the "over" treatment.
-  const goalHeadSub=(rawPct,over)=>rawPct>100?(over>0?`Goal met · ${fmtFull(over)} over`:"Goal met · exceeded"):"of goal reached";
+  const goalHeadSub=(HL?HL.goalHeadSub():null);
 
   // BUILD-32 Part 3 — two LIVE figures for the hero's right-hand stack, added as
   // information (not decoration): this week's giving (a true Monday-based week
@@ -1107,31 +879,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-76 follow-up: never an em dash. "AT RISK —" is the worst possible
   // answer to the product's headline capability — a healthy file and a
   // broken import read identically. Words, always.
-  const reengStat=atRiskAmt>0
-    ? {label:"At risk",value:fmtFull(atRiskAmt),valueColor:T.gold,sub:`${countLabel(quietCount, "quiet donor")} · no gift in over ${quietPhrase(impact?.quietSinceDays)}`,onClick:()=>setReengBreakdownOpen(true)}
-    : driftData&&driftData.counts.driftingHigh>0
-      // Edge: a short-cadence drifter can exist before anyone crosses the
-      // 180-day quiet line — never claim "no donors drifting" over them.
-      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${countLabel(driftData.counts.driftingHigh,"donor")} past their own pattern${driftData.importCaveat?`. ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
-      // FIX-10 Part A — a medium flag still means someone is drifting. This
-      // chip said "No donors drifting" on a file where five donors were
-      // drifting at medium confidence, which is the one sentence a customer
-      // took at face value. The dollars stay high-confidence only; the early
-      // signs are named as early signs and they open their own list.
-      : driftCounts(driftData).medium>0
-        ? {label:"At risk",value:earlySignsPhrase(driftCounts(driftData).medium),valueColor:T.gold,
-           sub:`${EARLY_SIGNS_MEANING} · nothing confirmed yet`,
-           onClick:()=>openEarlySigns()}
-      : {label:"At risk",
-         // BUILD-79 Part 6 — a pattern needs gifts. An org with donors but $0
-         // of giving gets the truth, not "1,111 giving patterns checked".
-         value:driftData&&driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0?"No giving history yet":"No donors drifting",
-         sub:driftData
-           ?((driftData.giftedDonorCount??driftData.evaluated)===0
-              ?"no giving history on file yet, so nothing to check"
-              :`${countLabel(driftData.giftedDonorCount??driftData.evaluated,"giving pattern")} checked`)
-           :"checking giving patterns",
-         onClick:()=>setReengBreakdownOpen(true)};
+  const reengStat=(HL?HL.reengStat({ atRiskAmt, driftData, impact, openEarlySigns, quietCount, setReengBreakdownOpen }):null);
 
       /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
@@ -1168,143 +916,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   })():null;
   const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};
 
-  const heroSection=fundOverview===undefined?(
-        <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink3,fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
-      ):heroCtx?(<>
-          <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink}}>
-            <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
-              {/* LEFT — the roll-up (or the single goal) */}
-              <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:4}}>{many?"Fundraising, All Active Goals":"Fundraising Goal"}</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
-                  <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
-                  {isAdmin&&(
-                    <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:T.ink3,display:"inline-flex",alignItems:"center",flexShrink:0}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                    </button>
-                  )}
-                </div>
-                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
-                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold700,lineHeight:1}}>{rawPct}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold700:T.ink3}}>{goalHeadSub(rawPct,overAmt)}</div>
-                </div>
-                <div style={{background:T.bg2,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
-                  <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
-                </div>
-                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
-              </div>
-              {/* RIGHT — real supporting stats. Pace + the FY comparison are kept;
-                  this-week giving + money at risk are the two live
-                  BUILD-32 figures (both move week to week). "Active Goals" (a
-                  static count) was dropped — density here must be information. */}
-              <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"} onClick={()=>onNavigate("fundraising")}/>
-                <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt} onClick={()=>onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})}/>
-                <GoalStat {...twStat}/>
-                <GoalStat {...reengStat}/>
-              </div>
-            </div>
-          </div>
-        </>
-      ):(
-      <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink}}>
-        {goal===undefined?(
-          <div style={{display:"flex",alignItems:"center",gap:8,color:T.ink3,fontSize:13}}><Spin/>Loading goal…</div>
-        ):goal?(
-          <>
-            <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
-              {/* LEFT — primary */}
-              <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:4}}>Fundraising Goal</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
-                  <span>{goal.label}</span>
-                  {isAdmin&&(
-                    <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:T.ink3,opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                    </button>
-                  )}
-                </div>
-
-                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
-                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold700,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold700:T.ink3}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
-                </div>
-                <div style={{background:T.bg2,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
-                  <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
-                </div>
-                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
-                {/* RECONCILE-1: what this goal is measured against. When Steward
-                    has no gifts for last year, the old report she chose stands
-                    in, and says so. */}
-                {goal.lastYear&&<div data-testid="goal-last-year" style={{fontSize:12.5,color:T.ink3,marginTop:4}}>
-                  Last year: <Figure variant="inline" kind="money" value={goal.lastYear.value} label={goal.lastYear.label} definition={goal.lastYear.note} source={goal.lastYear.source}/>{goal.lastYear.imported?", from your old system":""}
-                </div>}
-              </div>
-
-              {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving
-                  + money at risk (BUILD-73 Part 3) are the two live added figures,
-                  replacing the vaguer "recent momentum" text line. */}
-              <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
-                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${countLabel(daysLeftInPeriod, "day")}`:"Not set"} sub="left to reach this goal"/>
-                <GoalStat {...twStat}/>
-                <GoalStat {...reengStat}/>
-              </div>
-            </div>
-          </>
-        ):(
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:600,color:T.ink,marginBottom:2}}>No goal set for this period.</div>
-              <div style={{fontSize:12,color:T.ink3}}>Set a fundraising target to track progress here.</div>
-            </div>
-            {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
-          </div>
-        )}
-      </div>
-      );
+  const heroSection=(HL?HL.heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fundOverview, g0, goal, goalAmt, goalHeadSub, heroCtx, heroPace, heroPaceCol, isAdmin, isReadOnly, many, onNavigate, openEditGoal, openSetGoal, overAmt, paceLabel, paceSub, pct, period, raised, rawPct, reengStat, twStat }):null);
 
   /* Top-level goal breakdown — umbrella (children nested) + standalone.
      Card count matches the header's top-level count; children live inside
      their umbrella, not as flat peers (display-consistency FIX). BUILD-34:
      its own orderable/hideable section, split from the hero banner. */
-  const goalCardsSection=heroCtx&&(activeTop.length>=2||activeTop.some(g=>g.isOverarching))?(
-            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
-              {activeTop.map(g=>{
-                const over=g.isOverarching;
-                const m=catMeta(g.goalCategory);
-                const gp=g.rolledPercent||0;
-                const kids=over?fgGoals.filter(x=>g.childIds.includes(x.id)):[];
-                return(
-                  <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${over?T.gold:m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
-                    {over
-                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
-                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
-                    <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
-                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
-                    <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${gp}%`,background:over?T.gold:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
-                    </div>
-                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
-                    {over&&(
-                      <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
-                        <span style={{fontSize:10,fontWeight:800,color:T.ink3}}>Rolls up {countLabel(g.childCount, "goal")}</span>
-                        {kids.map(c=>(
-                          <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
-                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                            <span style={{color:T.ink3,flexShrink:0}}>{fmtFull(c.raised)} · {c.rawPercent??c.percent??0}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-  ):null;
+  const goalCardsSection=(HL?HL.goalCardsSection({ activeTop, catMeta, catPaceColor, fgGoals, heroCtx, onNavigate, paceText }):null);
 
       /* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card
@@ -1312,18 +930,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           initial default, so it never flashes the wrong state. BUILD-32 Part 4:
           also hidden unless 2+ officers have assigned donors — otherwise "My
           donors" and "Whole org" are the same list (a single-value picker). */
-  const scopeToggle=scope!==undefined&&homeData?.multiOfficer?(
-        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
-          <span style={{fontSize:11,color:T.ink3}}>Showing:</span>
-          <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
-            {[["mine","My donors"],["all","Whole org"]].map(([v,l])=>(
-              <button key={v} onClick={()=>setScope(v)} style={{background:scope===v?T.white:"transparent",border:"none",borderRadius:99,padding:"5px 14px",fontSize:12,fontWeight:700,color:scope===v?T.ink:T.ink3,cursor:"pointer",boxShadow:scope===v?T.shadow:"none",transition:"background 0.12s"}}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-      ):null;
+  const scopeToggle=(HL?HL.scopeToggle({ homeData, scope, setScope }):null);
 
       /* ── Command center (BUILD-16 Part 1) ──────────────────────────────
           The four headers a fundraiser opens the app to see: Portfolio [Team],
@@ -1342,57 +949,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-83 Part 3.4 — an unassigned org reads "no one assigned to you yet",
   // never "0 donors · $0 lifetime giving" the screen after importing 25,034.
   const portfolioEmpty=!!myStats&&!(myStats.portfolioCount>0);
-  const myPortfolioSection=myStats?(
-        // De-emphasized wrapper (BUILD-31 Part 5.3): no colored left-accent box —
-        // the "MY PORTFOLIO" heading + spacing define the group. A neutral hairline
-        // only, so it reads as a quiet section, not a decorated template card.
-        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
-          <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:9,fontWeight:800,color:T.ink3,background:T.bg2,padding:"3px 8px",borderRadius:99}}>My portfolio</span>
-              <span data-testid="home-year-range" style={{fontSize:12,color:T.ink3}}>{(myStats&&myStats.yearLabel)||"This year"}</span>
-            </div>
-            <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
-          </button>
-          {portfolioOpen&&(() => {
-            // Genuinely zero because nobody has logged a call/meeting yet is
-            // expected first-day state, not a broken metric — but only once
-            // there's real donor/gift history to have contacted in the first
-            // place (an org with zero donors gets its own separate empty
-            // state elsewhere, not this copy). Never fabricates interaction
-            // data; this only changes how an honest zero is captioned.
-            const noOutreachYet = myStats.orgHasGiftHistory && !myStats.orgHasInteractions;
-            return (<>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
-                {[
-                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("pipeline")},
-                  {label:"Visits YTD",icon:"visits",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
-                  {label:"Moves Made",icon:"moves",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
-                  {label:"Gifts YTD",icon:"gifts",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
-                  {label:"Pipeline",icon:"pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
-                  {label:"Lapsed",icon:"lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
-                ].map((m,i)=>(
-                  <div key={m.label} onClick={m.onClick}
-                    onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
-                    style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
-                      <StatIcon name={m.icon} color={m.warn?T.terracotta:T.greenDk}/>
-                      <span style={{fontSize:9,fontWeight:700,color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
-                    </div>
-                    <div style={{fontSize:20,fontWeight:800,color:m.warn?T.terracotta:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
-                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
-                  </div>
-                ))}
-              </div>
-              {noOutreachYet&&(myStats.visitsYtd===0||myStats.madeYtd===0)&&(
-                <div style={{padding:"8px 14px",borderTop:"1px solid "+T.bg3,fontSize:11,color:T.ink3,textAlign:"center",background:T.bg}}>
-                  No outreach logged yet. This is normal right after import. Log your first call from a donor's profile to start tracking this.
-                </div>
-              )}
-            </>);
-          })()}
-        </div>
-      ):null;
+  const myPortfolioSection=(HL?HL.myPortfolioSection({ StatIcon, hoveredStat, myStats, onNavigate, openPortfolioBreakdown, portfolioOpen, setHoveredStat, setPortfolioOpen }):null);
 
       /* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
@@ -1405,159 +962,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // stay demoted further as chips. At $0 drift the card keeps Retention as
   // hero — an honest zero is not a headline.
   const heroIsDrift=!!(driftData&&driftData.atRiskAmount>0&&driftData.counts.driftingHigh>0);
-  const retentionSection=stewardMetrics?(
-        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
-          {heroIsDrift&&(
-            <div onClick={()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
-              className="card-click" style={{cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
-              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>At Risk From Drift</div>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{fmtFull(driftData.atRiskAmount)}</div>
-                <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{countLabel(driftData.counts.driftingHigh,"donor")} drifting</span>
-              </div>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:430}}>
-                {/* BUILD-77 Part 4 — ONE headline, the other two figures
-                    reconciled into it as subsets, in plain language. The
-                    widest "at risk" pool (lifetime giving of everyone quiet
-                    past {quietPhrase}) is the outer number; drifting is the
-                    high-confidence, still-reachable subset; lapsed is the
-                    window-closed subset — never three competing figures. */}
-                {false
-                  ?null
-                  :<>Giving from donors quietly past their own pattern. Each is on the Drifting list below, with the reason, while a call still works.</>}
-              </div>
-            </div>
-          )}
-          {/* Donor Retention Rate — the pre-BUILD-76 hero metric, kept and
-              demoted below the drift headline (it remains the number
-              fundraisers benchmark against; the sector-average line already
-              lived in the onboarding drip email). */}
-          <div style={heroIsDrift?{borderTop:"1px solid "+T.bg3,paddingTop:14}:undefined}>
-            <div onClick={openRetentionBreakdown} className="card-click" style={{display:"flex",flexWrap:"wrap",gap:20,alignItems:"center",cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
-              <div style={{flex:"1 1 220px",minWidth:0}}>
-                <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
-                <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                  <div style={{fontSize:retentionThin?17:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1.2}}>
-                    {retentionTooEarly?"Not set":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
-                  </div>
-                  {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
-                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?T.greenDk:T.terracotta}}>
-                      {stewardMetrics.retentionRate.deltaVsTrendStart===0
-                        ?"No change vs 3 weeks ago"
-                        :`${stewardMetrics.retentionRate.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago`}
-                    </span>
-                  )}
-                </div>
-                {/* Context line carries more of the weight here than the
-                    numeral above it — a sentence about what the number means
-                    for donor relationships, not a bare "vs. X%" field label. */}
-                {/* IMPORT-4: retention leaves out gifts with no date, and says so; the count opens them. */}
-                {stewardMetrics.undated&&stewardMetrics.undated.count>0&&(
-                  <div data-testid="home-retention-undated" onClick={e=>e.stopPropagation()} style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                    <Figure variant="inline" kind="count" value={stewardMetrics.undated.count} suffix={stewardMetrics.undated.count===1?" gift":" gifts"} label="Gifts with no date"
-                      definition="Gifts that came in with no date. They count in Lifetime and their event or campaign, and in no figure for a span of time, retention included, because their year is not known."
-                      source={stewardMetrics.undated.source} figureKey="home.undated"/> with no date not counted
-                  </div>
-                )}
-                <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
-                  {/* A brand-new org gets an expectant "too early" line, never
-                      the below-sector-average verdict (QA_FRESH_ORG R2) —
-                      mirrors First-Touch Delay's day-one handling below. */}
-                  {retentionThin
-                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history, this file has ${countLabel(stewardMetrics.retentionRate.prevYearCount, "prior-year donor")} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} ${plural(Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44), "month")} so far. The number will appear when it can mean something.`
-                    :retentionTooEarly
-                    ?!myStats?.orgHasGiftHistory
-                      ?`Too early to measure, import your donors to start tracking.`
-                      :stewardMetrics.retentionRate.prevYearCount>0
-                        ?`Too early to measure, as this year's gifts land, you'll see how many of last year's ${countLabel(stewardMetrics.retentionRate.prevYearCount, "donor")} stick with you.`
-                        :`Too early to measure, you'll see this once there's a prior year of giving to compare against.`
-                    :(()=>{
-                      // BUILD-77 Part 4 — STATE THE WINDOW AND DENOMINATOR, and
-                      // remove the congratulation. Steward reports numbers; it
-                      // does not tell an organisation it is doing well four
-                      // minutes after meeting them. What the rate means is a
-                      // fact ("N of M last-year donors gave again"), not a verdict.
-                      const rr=stewardMetrics.retentionRate;
-                      // NUMBERS-2: the org's own fiscal years, by the names the server gives them.
-                      const py=rr.prevYearLabel||(rr.prevYear?`FY ${rr.prevYear}`:null), cy=rr.yearLabel||(rr.year?`FY ${rr.year}`:null);
-                      const denom=rr.prevYearCount||0, kept=rr.retained||0;
-                      const window=py&&cy?`${py} → ${cy}`:"year over year";
-                      const same=rr.sameDatesLastYear&&rr.sameDatesLastYear.current!=null?` At this point last year it was ${rr.sameDatesLastYear.current}%.`:"";
-                      return `${kept.toLocaleString()} of ${countLabel(denom, "donor")} who gave in ${py||"the prior year"} gave again (${window}).${same}${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
-                    })()}
-                </div>
-              </div>
-              {!retentionThin&&stewardMetrics.retentionRate.trend.length>=2&&(
-                <Sparkline trend={stewardMetrics.retentionRate.trend} color={retentionColor} width={120} height={36}/>
-              )}
-            </div>
-            {/* Who this number is actually about — top donors who gave last
-                year but haven't renewed, right where the rate is, not one
-                click away behind a generic link. */}
-            {(retentionBreakdownLoading&&!retentionBreakdown)?(
-              <div style={{fontSize:11,color:T.ink3,marginTop:10}}>Loading who's not renewing…</div>
-            ):retentionBreakdown?.rows?.length>0&&(
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
-                {retentionBreakdown.rows.slice(0,3).map(r=>(
-                  <DonorChip key={r.donorId} id={r.donorId} name={r.donorName} detail={fmtFull(r.lastGiftAmount)} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
-                ))}
-                {retentionBreakdown.nonRetainedCount>3&&(
-                  <MoreChip count={retentionBreakdown.nonRetainedCount-3} onClick={openRetentionBreakdown}/>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Signals (BUILD-16 Part 1) — First-Touch Delay and Stewardship
-              Debt are demoted from headline sections to small clickable chips.
-              They're clever composite metrics, not what a fundraiser opens the
-              app to see (that's the command center above) — so they sit here as
-              secondary signals that expand into their detail on click. */}
-          <div style={{borderTop:"1px solid "+T.bg3,paddingTop:14,display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setFirstTouchOpen(v=>!v)}
-              aria-expanded={firstTouchOpen} aria-label="First-touch delay detail"
-              style={{display:"flex",alignItems:"baseline",gap:7,background:firstTouchOpen?T.bg2:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>First-touch delay</span>
-              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"Not set"}</span>
-              <span style={{fontSize:11,color:T.ink3}}>{firstTouchOpen?"▲":"▼"}</span>
-            </button>
-            <button onClick={openDebtBreakdown}
-              aria-label="Stewardship debt detail"
-              style={{display:"flex",alignItems:"baseline",gap:7,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>Stewardship debt</span>
-              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
-              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&stewardMetrics.stewardshipDebt.deltaVsTrendStart!==0&&(
-                <span style={{fontSize:11,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:T.greenDk}}>
-                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"}{Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()}
-                </span>
-              )}
-              <span style={{fontSize:11,color:T.greenDk,fontWeight:700}}>→</span>
-            </button>
-          </div>
-
-          {/* First-touch delay — expands inline to its real detail: the average
-              plus the newest donor(s) still waiting on a first personal touch. */}
-          {firstTouchOpen&&(
-            <div style={{borderTop:"1px dashed "+T.bg3,paddingTop:14}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink2,lineHeight:1.4,maxWidth:420}}>
-                {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
-                  ? "No outreach logged yet, that's normal right after import. Log your first call from a donor's profile to start tracking this."
-                  : <>New donors wait <b>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current} days`:"Not set"}</b> on average before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
-              </div>
-              {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
-                <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
-                  {stewardMetrics.firstTouchDelay.newestUntouched.map(d=>(
-                    <DonorChip key={d.donorId} id={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
-                  ))}
-                  {stewardMetrics.firstTouchDelay.untouchedCount>stewardMetrics.firstTouchDelay.newestUntouched.length&&(
-                    <span style={{fontSize:11,color:T.ink3}}>+{stewardMetrics.firstTouchDelay.untouchedCount-stewardMetrics.firstTouchDelay.newestUntouched.length} more waiting</span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ):null;
+  const retentionSection=(HL?HL.retentionSection({ DonorChip, MoreChip, Sparkline, driftData, firstTouchOpen, heroIsDrift, myStats, onNavigate, openDebtBreakdown, openRetentionBreakdown, retentionBreakdown, retentionBreakdownLoading, retentionColor, retentionCurrent, retentionThin, retentionTooEarly, setFirstTouchOpen, stewardMetrics }):null);
 
   // ── BUILD-76 Part 2 — the Drifting section, first in the work column ──────
   // The one thing the product is named for, above Needs Your Attention (not
@@ -1587,245 +992,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const s=nextStepSuggestion("call_reached",todayCivil(),line);
     setDriftStep(s?{label:s.label,due:s.due,source:s.source}:null);
   };
-  const submitDriftDone=async(donorId,note)=>{
-    if(driftBusy)return;
-    setDriftBusy(true);
-    try{
-      const label=sanitizeStepLabel(driftStep&&driftStep.label);
-      const nextStep=label?{type:nextStepTypeForLabel(label),label,due:driftStep.due,source:driftStep.source?.from||null}:{skipped:true};
-      await apiFetch(`/drift/${donorId}/done`,{method:"POST",body:JSON.stringify({note:note||"",nextStep})});
-      setDriftLineFor(null);setDriftLine("");setDriftStep(null);setDriftStepDirty(false);
-      await loadDrift();
-    }catch{/* leave the row; nothing was recorded */}
-    finally{setDriftBusy(false);}
-  };
+  const submitDriftDone=(HL?HL.submitDriftDone({ driftBusy, driftStep, loadDrift, setDriftBusy, setDriftLine, setDriftLineFor, setDriftStep, setDriftStepDirty }):null);
   // BUILD-76 follow-up: the section RENDERS EVEN AT ZERO, with an empty
   // state that shows its work — how many patterns were checked and who was
   // excluded and why. An absent section reads as a broken feature; a bare
   // zero is indistinguishable from a silently failed import. Both defects,
   // regardless of the data.
-  const driftEmptyState=(()=>{
-    if(!driftData)return null;
-    const ex=driftData.excluded||{};
-    const exParts=[
-      ex.singleGift>0&&`${ex.singleGift.toLocaleString()} single-gift (no pattern yet)`,
-      ex.activeRecurring>0&&`${ex.activeRecurring.toLocaleString()} on active recurring`,
-      ex.unlinkedSustainer>0&&`${countLabel(ex.unlinkedSustainer,"sustainer")} not yet reconnected`,
-      ex.deceased>0&&`${ex.deceased.toLocaleString()} deceased`,
-      ex.doNotSolicit>0&&`${ex.doNotSolicit.toLocaleString()} do-not-solicit`,
-      ex.doNotContact>0&&`${ex.doNotContact.toLocaleString()} do-not-contact`,
-      ex.pledgeCadence>0&&`${ex.pledgeCadence.toLocaleString()} on pledge schedules`,
-    ].filter(Boolean);
-    if(driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0)return{
-      head:"No giving history on file yet, so nothing to check.",
-      body:`${countLabel(driftData.evaluated, "donor")} are on file with zero gifts between them, a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
-    };
-    if(driftData.evaluated===0)return{
-      head:"No donors to evaluate yet.",
-      body:"Steward watches every donor's own giving pattern here. Once donors and their gift history are in, anyone quietly past their pattern surfaces on this list, if you just imported and this still reads zero donors, the import didn't land.",
-    };
-    if(driftData.counts.driftingHigh>0&&driftRows.length===0)return{
-      head:"Everyone drifting has been contacted.",
-      body:`All ${countWords(driftData.counts.driftingHigh,"drifting donor")} had outreach logged in the last 30 days, they stay off this list while the conversation is fresh, and come back if no gift follows.`,
-    };
-    // FIX-10 Part A — THE SENTENCE A CUSTOMER BELIEVED. This read "No donors
-    // drifting." on a file with five donors drifting at medium confidence.
-    // No surface says that while anyone is drifting at any confidence.
-    const med=driftCounts(driftData).medium;
-    if(med>0&&driftHighRows.length===0)return{
-      head:`${earlySignsPhrase(med)}, and no confirmed drift.`,
-      body:`${med===1?"One donor is":`${med.toLocaleString()} donors are`} a little past their own giving rhythm, `
-        +`not far enough past it to be sure: they are listed under ${EARLY_SIGNS_HEADING}, and they are not counted in the money at risk above. `
-        +`Checked ${countLabel(driftData.giftedDonorCount??driftData.evaluated,"donor")} with giving history`
-        +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
-        +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
-        +".",
-    };
-    return{
-      head:"No donors drifting.",
-      body:`Checked ${countLabel(driftData.giftedDonorCount??driftData.evaluated,"donor")} with giving history: `
-        +`${(driftData.onPattern||0).toLocaleString()} giving on their own pattern`
-        +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
-        +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
-        +". A gap in anyone's own rhythm will surface here.",
-    };
-  })();
-  const driftSection=driftData?(
-      <div id="dash-drifting" style={{...cardWrap,scrollMarginTop:64}}>
-        <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-          <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <span style={sSerif}>Drift</span>
-            {surface==="home"&&foldBtn("drift","the Drift list")}
-            <span style={{fontSize:11.5,color:T.ink3}}>
-              {driftData.counts.driftingHigh>0
-                ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${countLabel(driftData.counts.driftingHigh, "donor")} past their own pattern`
-                :"watching every donor's own giving pattern"}
-              {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
-              {/* POLISH-1 Part 6: when the count moved overnight with nothing
-                  new, the line says who crossed and who left. */}
-              {driftSinceYesterday(driftData.sinceYesterday) && <span data-testid="drift-since-yesterday"> · {driftSinceYesterday(driftData.sinceYesterday)}</span>}
-            </span>
-          </span>
-          <select aria-label="Order the drift list" data-testid="drift-sort" value={driftSort}
-            onChange={e=>{const v=e.target.value;setDriftSort(v);if(driftAllData){apiFetch(`/drift?all=1&includeMedium=1${driftQs(v)?"&"+driftQs(v):""}`).then(setDriftAllData).catch(()=>{});}else loadDrift(v);}}
-            style={{marginLeft:"auto",marginRight:10,border:"1px solid "+T.bg3,borderRadius:8,padding:"4px 8px",fontSize:12,background:T.white,color:T.ink,fontFamily:"inherit"}}>
-            <option value="">Most at risk first</option>
-            <option value="engagement">Closest first</option>
-          </select>
-          {(driftData.total>driftData.list.length||driftCounts(driftData).medium>0)&&!driftAllData&&(
-            <button onClick={openEarlySigns} style={sLink}>
-              See all {driftCounts(driftData).total} →
-            </button>
-          )}
-          {driftAllData&&(
-            <button onClick={()=>setDriftAllData(null)} style={sLink}>Show top {driftData.cap}</button>
-          )}
-        </div>
-        {/* FIX-10 Part A — one quiet line, under the high-confidence card.
-            Home is allowed to lead with the confirmed drifters; it is not
-            allowed to leave the early ones with no door. */}
-        {!homeFold.drift&&driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
-          <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
-            {`${earlySignsPhrase(driftCounts(driftData).medium)}, ${EARLY_SIGNS_MEANING}. `}
-            <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
-          </div>
-        )}
-        {driftRows.length===0&&driftEmptyState&&(
-          <OneLineEmpty flush={onPanel} testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
-        )}
-        {driftRows.length>0&&!(surface==="home"&&homeFold.drift)&&(
-        <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
-          {driftRows.map((r,i)=>{
-            const lineOpen=driftLineFor===r.donorId;
-            return(
-              <Fragment key={r.donorId}>
-              {/* FIX-10 Part A — the group heading, and the sentence that says
-                  what an early sign is. It appears once, above the first
-                  medium row, never when there are none. */}
-              {i===driftEarlyStart&&(
-                <li style={{borderTop:"1px solid "+T.bg3,padding:"11px 20px",background:T.bg2}}>
-                  <span style={{fontSize:11,fontWeight:800,color:T.ink3}}>{EARLY_SIGNS_HEADING}</span>
-                  {" "}
-                  <span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{EARLY_SIGNS_MEANING}</span>
-                </li>
-              )}
-              <li style={{borderBottom:i<driftRows.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.gold500}}>
-                <div style={{display:"flex",alignItems:"stretch"}}>
-                  <a className="attn-row-main" href={`/donors/${r.donorId}`}
-                    style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"13px 20px",textDecoration:"none",color:"inherit"}}
-                    onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donorId});}}>
-                    <PersonMark id={r.donorId} name={r.donorName} size={38}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{displayName(r.donorName)}</div>
-                      <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
-                      {/* ENGAGE-1 — engagement on the row; an early sign says when they have gone quiet too. */}
-                      {r.engagement!=null&&<div style={{fontSize:11.5,color:r.earlySign?T.gold700:T.ink3,marginTop:2}}>{r.earlySign||`Engagement ${r.engagement}`}</div>}
-                      {r.meetingSet&&<div data-testid="drift-meeting-set" style={{fontSize:11.5,color:T.greenDk,fontWeight:700,marginTop:2}}>{r.meetingSet}</div>}
-                    </div>
-                    {/* BUILD-83 Part 4 — the figure is the donor's USUAL gift, the
-                        amount their own sentence names, and it carries its label.
-                        Baker Community Foundation shows $2,500, not the one
-                        $25,000 it gave once. */}
-                    <div style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2}}>
-                      <div style={{fontSize:13.5,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{fmtFull(r.usualGift||0)}</div>
-                      {/* FIX-10 Part A — the headline sums high confidence only,
-                          so a medium row may not label its dollars "at risk":
-                          that money is not in the number above it. It says
-                          what the figure actually is. */}
-                      <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>{r.confidence==="medium"?"usually gives":"at risk"}</div>
-                    </div>
-                  </a>
-                  {!lineOpen&&(
-                    <div style={{display:"flex",alignItems:"center",padding:"8px 20px 8px 8px",flexShrink:0}}>
-                      {/* BUILD-83 Part 4 — "Log the call" opens the Thread's log
-                          step for this donor: nothing on this list ends without a
-                          record. Dismiss is secondary and writes its reason. */}
-                      <button onClick={()=>onNavigate("donors",{selectDonorId:r.donorId,openConversation:true})} disabled={isReadOnly}
-                        title={isReadOnly?"Reactivate your subscription to make changes.":"Log the call and the next step comes back"}
-                        className="attn-row-action" style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 12px",color:T.greenDk,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
-                        Log the call
-                      </button>
-                      <button onClick={()=>openDriftLine(r.donorId)} disabled={isReadOnly}
-                        title="Say in one line why they are fine. They leave this list for 30 days, the line goes on their record, and they come back if they stay quiet."
-                        style={{background:"transparent",border:"none",padding:"7px 4px",marginLeft:6,color:T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
-                        They're fine, hide this
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {lineOpen&&(
-                  <div style={{padding:"0 20px 13px 72px"}}>
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <input autoFocus value={driftLine} onChange={e=>{setDriftLine(e.target.value);proposeDriftStep(e.target.value);}}
-                      onKeyDown={e=>{if(e.key==="Enter"&&driftLine.trim())submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")setDriftLineFor(null);}}
-                      placeholder="Why are they fine? One line. They leave this list for 30 days (Enter saves, Esc cancels)"
-                      style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
-                    <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy||!driftLine.trim()}
-                      title={!driftLine.trim()?"A reason is what makes this a record instead of a disappearance":""}
-                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:(driftBusy||!driftLine.trim())?"not-allowed":"pointer",opacity:driftLine.trim()?1:0.45}}>Save</button>
-                    <button onClick={()=>setDriftLineFor(null)} disabled={driftBusy}
-                      style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Cancel</button>
-                  </div>
-                  {/* The step this line is about to open — an input, not a
-                      preview: one click into it and it is yours. Clearing it
-                      saves the line with no next step at all. */}
-                  {driftStep&&(
-                    <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
-                      <span style={{fontSize:11,fontWeight:700,color:T.ink3,whiteSpace:"nowrap"}}>Next step</span>
-                      <input className="drift-step-input" value={driftStep.label} maxLength={NEXT_STEP_LABEL_MAX}
-                        onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,label:e.target.value}));}}
-                        aria-label="Next step" placeholder="Leave blank for no next step"
-                        style={{flex:"1 1 180px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
-                      <input type="date" className="drift-step-due" value={driftStep.due||""}
-                        onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,due:e.target.value}));}}
-                        aria-label="Next step due date"
-                        style={{flex:"0 0 auto",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.ink,background:T.bg,outline:"none"}}/>
-                    </div>
-                  )}
-                  {driftStep?.source&&!driftStepDirty&&(
-                    <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-                      {driftStep.source.why}{driftStep.source.matched?<span style={{fontStyle:"italic"}}>{", \u201c"+driftStep.source.matched+"\u201d"}</span>:null}
-                    </div>
-                  )}
-                  </div>
-                )}
-              </li>
-              </Fragment>
-            );
-          })}
-        </ul>
-        )}
-        {surface==="home"&&!homeFold.drift&&!driftAllData&&driftRowsAll.length>5&&(
-          <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:12,borderTop:"1px solid "+T.bg3}}>
-            <button data-testid="drift-more" onClick={()=>setDriftExpanded(v=>!v)} style={{...sLink,padding:0}}>
-              {driftExpanded?"Show the first five":`Show the other ${driftRowsAll.length-5}`}
-            </button>
-          </div>
-        )}
-        {/* BUILD-80 Part 7 — INSTITUTIONAL GIVING: a foundation's grant cycle
-            is not a person's giving cadence. Their own list, grant-cycle
-            language, and never a Re-engage button. */}
-        {driftData.institutional?.length > 0 && (
-          <div style={{...cPad,...(onPanel?{marginTop:12,paddingTop:14}:{}),borderTop:"1px solid "+T.bg3}}>
-            <div style={{fontSize:12,fontWeight:800,color:T.ink3,marginBottom:6}}>
-              Institutional giving: foundations, donor-advised funds, churches and businesses
-            </div>
-            {driftData.institutional.slice(0,8).map(inst=>(
-              <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
-                <DonorLink id={inst.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:inst.donorId})} data-testid="institution-link"
-                  style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.gold700,fontWeight:600,textDecoration:"underline",
-                    textDecorationColor:"rgba(138,109,31,0.4)",textUnderlineOffset:3,background:"none",border:"none",padding:0,font:"inherit",cursor:"pointer",textAlign:"left"}}>{inst.name}</DonorLink>
-                <span style={{flexShrink:0,fontVariantNumeric:"tabular-nums",color:T.ink3}}>
-                  {/* FIX-1 — the server's word (a grant only from a foundation or DAF) and the date as it reads */}
-                  {fmtFull(inst.totalGiving)}{inst.lastGiftLabel?` · ${inst.lastWord||"last gift"} ${inst.lastGiftLabel}`:""}
-                </span>
-              </div>
-            ))}
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organizations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
-          </div>
-        )}
-      </div>
-  ):null;
+  const driftEmptyState=(HL?HL.driftEmptyState({ driftData, driftHighRows, driftRows }):null);
+  const driftSection=(HL?HL.driftSection({ cPad, cardWrap, driftAllData, driftBusy, driftData, driftEarlyStart, driftEmptyState, driftExpanded, driftHighRows, driftLine, driftLineFor, driftQs, driftRows, driftRowsAll, driftSort, driftStep, driftStepDirty, foldBtn, homeFold, isReadOnly, loadDrift, onNavigate, onPanel, openDriftLine, openEarlySigns, proposeDriftStep, sHdr, sHdrPad, sLink, sSerif, setDriftAllData, setDriftExpanded, setDriftLine, setDriftLineFor, setDriftSort, setDriftStep, setDriftStepDirty, submitDriftDone, surface }):null);
 
   // The two-column queue/briefing + funnel/grant/recurring grid — one section.
   // ── BUILD-81 — THE THREAD, first. A thread is a donor plus an open next
@@ -1843,16 +1017,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // report a week ago." now, and the touch type, the exact date and the person
   // move to hover — they are the answer to a question she has not asked yet.
   // Presentation only: every value here is already on the row.
-  const threadClause=t=>{
-    const lt=t.lastTouch||{};
-    const base=lt.line
-      ?String(lt.line).trim().replace(/[.\s]+$/,"")
-      :lt.kind==="gift"&&lt.amount!=null?`${fmtFull(lt.amount)} received`
-      :lt.kind==="none"?"Planned"
-      :(TOUCH_WORD[lt.type]||"Logged");
-    const on=lt.date||t.openedOn;
-    return on?`${base} ${agoPhrase(daysDiff(on))}.`:`${base}.`;
-  };
+  const threadClause=(HL?HL.threadClause({ TOUCH_WORD }):null);
   // BUILD-85 — a row now carries its REASON. shared/threadRank.js decided the
   // order; this prints the sentence that order was built from, so the queue can
   // always answer "why this one first?" without the reader guessing. The score
@@ -1876,15 +1041,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // FIX-34 — Done on a TASK row (a meeting's prep, "How did it go?") finishes
   // that task only, with Undo, and the row moves to the donor's next step. A
   // thread row, or a task that needs an outcome (422), logs the conversation.
-  const finishRow=async t=>{
-    const convo=()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
-    if(t.kind!=="task"||!t.doneRoute) return convo();
-    try{
-      await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:true})});
-      loadThreads();
-      offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
-    }catch(e){ if(e&&e.error==="needs_outcome") convo(); }
-  };
+  const finishRow=(HL?HL.finishRow({ loadThreads, setConvoFor }):null);
 
   // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
   // First thing takes threadList[0] and says it properly, so the rest of the
@@ -1904,6 +1061,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // A step logged today also shows, even when its day is next week: she
   // just wrote it, and a Thread that hides what she just wrote reads as lost.
   // Newest first among what she logged today, then threadRank's own order.
+  // SCREENS-1: declared above the Thread's rows, which pass it to their late render functions.
+  const openRailDonor=(donorId,threadId)=>setRailView({kind:"donor",donorId,threadId});
   const rowSource = homeCalm
     ? [...threadList.filter(t=>t.daysOpen===0),...threadList.filter(t=>t.daysOpen!==0&&t.band!=="ahead")]
     : threadList;
@@ -1950,105 +1109,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // BUILD-86 C.2 — the `attn-*` hooks stay. BUILD-45 D-1 proved a row's left
     // region must be a real <a href="/donors/:id"> with the action button as a
     // SIBLING, never nested (keyboard and new-tab both break otherwise).
-    <li key={t.id} className="attn-row"
-      data-railsel={railView.kind==="donor"&&railView.donorId===t.donorId?"1":undefined}
-      style={{display:"flex",alignItems:"stretch",borderBottom:i<rowSource.length-1?"1px solid "+T.bg2:"none",
-              borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
-      {/* BUILD-89 — a plain click opens the donor in the RAIL, beside the list,
-          instead of throwing the whole screen away and landing on a profile. It
-          is still a real anchor to /donors/:id, so cmd-click and middle-click
-          still open the record in a new tab (BUILD-45 D-1 is the reason that
-          anchor exists and it is not being undone). A comment may not sit
-          between an element's attributes. */}
-      {/* THREAD-2: EVERY NAME IS A LINK. The row held one <a> around the
-          whole sentence, and an anchor cannot hold another, so nothing it
-          named could open. The NAME is the real /donors/:id anchor now (the
-          D-1 keyboard and new-tab promise, kept), the row still opens the
-          rail on a plain click (rowClick), and what opened the thread, the
-          step and anything the words name are their own links. */}
-      <div className="attn-row-main"
-        style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",color:"inherit",cursor:"pointer"}}
-        onClick={rowClick(`/donors/${t.donorId}`,()=>{if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});})}>
-        {/* BUILD-94 Part 1 — the face, and now literally so when the org has
-            one. The mark used to be a first letter tinted brass-when-late; the
-            row's own left edge already carries that signal, and a mark that
-            changes colour by status is not the same mark everywhere. */}
-        <PersonMark id={t.donorId} name={t.donorName} size={38}/>
-        <div style={{flex:1,minWidth:0}}>
-          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
-            <DonorLink id={t.donorId} onOpen={()=>{if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>{displayName(t.donorName)}</DonorLink>
-          </div>
-          {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two
-              columns saying one thing between them; a person says it in a
-              breath, so the row does too. */}
-          <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {t.lastTouch?.ref?<RefLink refItem={t.lastTouch.ref}>{threadClause(t).replace(/\.$/,"")}</RefLink>:<Linked text={threadClause(t).replace(/\.$/,"")} refs={t.refs}/>}{"."}{" "}
-            <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {t.stepRef
-              ?<RefLink refItem={t.stepRef} data-testid="thread-step-link">{stepInSentence(t.nextStep.label,[t.donorName])}</RefLink>
-              :<Linked text={stepInSentence(t.nextStep.label,[t.donorName])} refs={t.refs}/>}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
-            {t.journey&&<span style={{color:T.ink3,fontSize:12.5}}>{" "}From the <RefLink refItem={t.journey}/> journey.</span>}
-            {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-steps-more" aria-expanded={moreOpen===t.donorId}
-              onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
-              onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}
-              style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",cursor:"pointer"}}>{t.moreSteps.length} more for {ORG_NAME_RE.test(String(t.donorName||""))?t.donorName:(firstNameOf(t.donorName)||t.donorName)}</span></>}
-          </div>
-          {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
-            <ul data-testid="thread-steps-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
-              {t.moreSteps.map(m=><li key={m.id}>{m.stepRef?<RefLink refItem={m.stepRef}>{m.label}</RefLink>:m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
-            </ul>)}
-          {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
-          {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
-          {/* BUILD-85 — the row still answers "why this one first?", and F.3.3's
-              record still arrives on hover. Both live under the sentence now
-              rather than competing with it on the right. */}
-          {/* BUILD-85's reason, MINUS the one the right-hand fact already
-              states. "Overdue 14 days" on the right and "Overdue 14 days"
-              underneath is the same duplication this row was rebuilt to end —
-              the same class as BUILD-85's own `supersedes` rule. */}
-          {t.rank?.why&&!/^(Overdue |\d+ days? late)/i.test(t.rank.why)&&(
-            <div style={{fontSize:12,color:t.overdue?T.gold700:T.ink3,marginTop:3,fontWeight:500}}>{t.rank.why}</div>
-          )}
-          <div className="attn-meta" style={{marginTop:3,fontSize:11,color:T.ink3}}>
-            {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Logged")}
-            {(t.lastTouch?.date||t.openedOn)?` · ${displayDateShort(t.lastTouch?.date||t.openedOn,new Date())}`:""}
-            {/* Who logged it, then who owns it — and one name when they are
-                the same person, which in a one-officer shop they always are.
-                "Mike · Mike" is the software talking to itself. */}
-            {[firstNameOf(t.lastTouch?.actor),firstNameOf(t.owner?.name)]
-              .filter((n,i,a)=>n&&a.indexOf(n)===i).map(n=>` · ${n}`).join("")}
-            {/* A deferred step says so, and says what it was first promised
-                for. Moving the due date without saying you moved it would be
-                the product quietly editing somebody's commitment. */}
-            {t.nextStep.originalDue?` · moved from ${displayDateShort(t.nextStep.originalDue,new Date())}`:""}
-          </div>
-        </div>
-        {/* ONE FACT ON THE RIGHT, with its label under it — Drift puts the
-            money there; a queue's fact is how late it is. It is not repeated
-            in the sentence any more. */}
-        <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
-          <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:t.overdue?T.gold700:T.ink}}>
-            {/* FIX-1 §9 — the badge, the header's "oldest" and the Home
-                sentence read ONE figure (shared/threadFigures.js). When the
-                row has been open longer than it has been late, the figure is
-                how long it has waited, and the label says so. */}
-            {t.overdue?`${rowFigure(t)} ${plural(rowFigure(t), "day")}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
-          </div>
-          <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>
-            {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
-          </div>
-        </div>
-      </div>
-      <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-        <button className="attn-row-action" onClick={()=>finishRow(t)} disabled={isReadOnly}
-          title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
-          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
-        {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
-            keep, and hers lives in Outlook. Three links and a file; nothing
-            syncs, and the menu says so. */}
-        <PutItOnMyCalendar threadId={t.id}/>
-        <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
-      </div>
-    </li>);
+    (HL?HL.threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, moreOpen, onNavigate, openRailDonor, railView, rowSource, setMoreOpen, surface, t, threadClause }):null));
   });
 
   // ── HOME-CALM · THE STOPPED CARD IS A ROW ─────────────────────────────
@@ -2072,42 +1133,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const failedOn=f.lastFailedAt||f.firstFailedAt||null;
       const age=failedOn?daysDiff(failedOn):-1;
       const el=(
-        <li key={"stopped-"+f.subId} className="attn-row"
-          style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,
-                  borderLeft:"3px solid "+T.gold500}}>
-          {/* THREAD-2: the name and the monthly gift are links (the row's own
-              <a> could hold neither), and the row still opens the rail. */}
-          <div className="attn-row-main"
-            style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,
-                    padding:"14px 16px 14px 13px",color:"inherit",cursor:"pointer"}}
-            onClick={rowClick(`/donors/${f.donorId}`,()=>openRailDonor(f.donorId))}>
-            <PersonMark id={f.donorId} name={f.donorName} size={38}/>
-            <div style={{flex:1,minWidth:0}}>
-              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>
-                <DonorLink id={f.donorId} onOpen={()=>openRailDonor(f.donorId)}>{displayName(f.donorName)}</DonorLink>
-              </div>
-              <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-                <RefLink refItem={{kind:"plan",id:f.subId,donorId:f.donorId}}>{f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift`:"Their recurring gift"}</RefLink>{" stopped"}
-                {failedOn?` ${agoPhrase(age)}`:""} when the card was declined.{" "}
-                <span style={{color:T.gold700,fontWeight:600}}>Next: send her a link to update it.</span>
-              </div>
-            </div>
-            <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
-              <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
-                {age>=1?`${countLabel(age, "day")}`:age===0?"Today":""}
-              </div>
-              <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>
-                stopped
-              </div>
-            </div>
-          </div>
-          <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-            <button className="attn-row-action" data-testid="home-stopped-card"
-              onClick={()=>onNavigate("fundraising",{frSection:"recurring"})}
-              style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",
-                      color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Send the link</button>
-          </div>
-        </li>);
+        (HL?HL.threadStoppedRow({ age, f, failedOn, onNavigate, openRailDonor }):null));
       // By age, among the rows that have one. A card stopped nine days ago
       // sits between the twelve-day row and the eight-day row, which is the
       // only ordering that lets one list be read straight down.
@@ -2124,30 +1150,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   if(homeCalm&&latestReadout){
     const ro=latestReadout;
     homeRows.unshift({age:-1,el:(
-      <li key={"readout-"+ro.id} className="attn-row" data-testid="home-readout-row"
-        style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk}}>
-        <a href="/app" className="attn-row-main"
-          style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
-          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();openRecentChanges();}}>
-          <div style={{flex:1,minWidth:0}}>
-            {/* Not attn-donor-name: a readout is not a person, and that class
-                is how the smoke walk finds the names that must open a profile. */}
-            <div className="attn-readout-title" style={{fontSize:15,fontWeight:700,color:T.ink}}>{ro.title}</div>
-            <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-              {ro.lines.filter(l=>l.kind!=="data_problems").slice(0,2).map(l=>l.sentence).join(", ")}.{" "}
-              <span style={{color:T.ink,fontWeight:600}}>Next: see who, and what to do about each.</span>
-            </div>
-          </div>
-          <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
-            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{displayDateShort(ro.forDate,new Date())}</div>
-            <div style={{fontSize:10,fontWeight:700,color:T.ink3,marginTop:1}}>readout</div>
-          </div>
-        </a>
-        <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>openRecentChanges()}
-            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>See who</button>
-        </div>
-      </li>)});
+      (HL?HL.threadReadoutRow({ ro }):null))});
   }
 
   // The thank queue items fold into the thread rows themselves once a gift
@@ -2172,264 +1175,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // HOME-CALM — the crossover's Home rendering, defined once here and placed
   // at the foot of the panel. Silent when there is nothing to say.
-  const homeCrossoverCard = surface==="home"&&crossover&&crossover.nextStep ? (
-    <button data-testid="home-volunteer-crossover"
-      onClick={()=>onNavigate&&onNavigate("volunteers")}
-      style={{textAlign:"left",width:"100%",background:T.white,border:"1px solid "+T.bg3,borderRadius:12,
-              padding:"13px 16px",cursor:"pointer",fontFamily:"inherit",display:"flex",gap:12,
-              alignItems:"center",flexWrap:"wrap",marginTop:8}}>
-      <span style={{flex:1,minWidth:0}}>
-        <span style={{display:"block",fontSize:13.5,fontWeight:700,color:T.ink}}>{crossover.nextStep.label}</span>
-        <span style={{display:"block",fontSize:12.5,color:T.ink3,marginTop:2,lineHeight:1.5}}>{crossover.nextStep.why}</span>
-      </span>
-      <span style={{fontSize:12.5,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Volunteers →</span>
-    </button>
-  ) : null;
+  const homeCrossoverCard = (HL?HL.homeCrossoverCard({ crossover, onNavigate, surface }):null);
 
   const threadSection=(
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {/* ── VOL-1 · THE CROSSOVER ─────────────────────────────────────
-              The thing nobody else does: the people who already say yes with
-              their time and have never been asked for a gift.
-
-              HOME-CALM — IT IS NOT ABOVE THE WORK ANY MORE. VOL-1 put it
-              there reasoning that a next step belongs above the Thread, and
-              that was true of a next step somebody is waiting on. This one
-              is an IDEA — a good one, worth having, and worth having after
-              the four people who are actually waiting rather than in front
-              of them, with a green bar making it the brightest thing on a
-              screen opened at 7:40. On Home it renders once, plain, at the
-              very bottom (see homeCrossoverCard). The Dashboard keeps it
-              here, where it reads as one of the board's standing ideas. */}
-          {surface!=="home"&&crossover&&crossover.nextStep&&(
-            <button data-testid="home-volunteer-crossover"
-              onClick={()=>onNavigate&&onNavigate("volunteers")}
-              style={{textAlign:"left",background:T.white,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,
-                      borderRadius:10,padding:"11px 14px",cursor:"pointer",fontFamily:"inherit"}}>
-              <div style={{fontSize:13.5,fontWeight:700,color:T.ink}}>{crossover.nextStep.label}</div>
-              <div style={{fontSize:12.5,color:T.ink3,marginTop:2,lineHeight:1.5}}>{crossover.nextStep.why}</div>
-            </button>
-          )}
-          {/* ABOVE the Thread, not inside it. The Thread is the work; this is
-              a note about whose work it is, and it outranks the first row. */}
-          {surface==="home"&&sampleStatus?.hasSampleData&&!(sampleStatus.realDonorCount>0)&&(
-            <div data-testid="home-sample-line"
-              style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
-              You're looking at sample data. Your own donors arrive when Jonathan loads your file.
-            </div>
-          )}
-          {/* TRANS-1 Part 5 — ONE line, and only while the move is running.
-              Never alongside the sample-data line: they answer the same
-              question and two answers is worse than either. */}
-          {surface==="home"&&!(sampleStatus?.hasSampleData&&!(sampleStatus.realDonorCount>0))&&moveLine&&(
-            <div data-testid="home-move-line"
-              style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
-              {moveLine}
-            </div>
-          )}
-          {/* HOME-4 — on Home, the Thread draws only when it has conversations
-              to show; nothing logged (or nothing waiting) is no section at all. */}
-          {!(surface==="home"&&threadsData&&!threadsData.failed&&threadList.length===0&&!dhNotice)&&(
-          <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
-            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-              <span style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
-                <span style={{display:"flex",alignItems:"center",gap:10,alignSelf:"flex-start"}}>
-                  <span style={sSerif}>The Thread</span>
-                  {surface==="home"&&foldBtn("thread","the Thread")}
-                </span>
-                {/* HOME-CALM — THE MORNING SENTENCE IS GONE FROM HOME, and it
-                    is gone because First thing says the same thing better. It
-                    read "Four people are waiting on you; Underhill has been
-                    waiting a month" forty pixels above a row that said
-                    Underhill had been waiting a month. Every fact it carried
-                    still has a place: the people waiting ARE the rows, the
-                    stopped card is now a row of its own, and the donors who
-                    have gone quiet keep their own section further down.
-                    homeNote() itself is untouched — the digest email and the
-                    Dashboard still use it. */}
-              </span>
-              <span className="thread-hdr-tools" style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
-                    shop with more than one officer (the BUILD-32 standing rule:
-                    hide a picker whose options all resolve to the same view). */}
-                {threadsData?.canViewAll&&threadsData?.stat?.unowned!==undefined&&homeData?.multiOfficer&&(
-                  <span style={{display:"inline-flex",border:"1px solid "+T.bg3,borderRadius:99,overflow:"hidden"}}>
-                    {[["mine","Mine"],["all","Everyone"]].map(([k,lbl])=>(
-                      <button key={k} aria-pressed={threadScope===k} onClick={()=>{setThreadScope(k);loadThreads(k);}}
-                        style={{border:"none",padding:"3px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",
-                                background:"transparent",color:T.ink3,...activeMark(threadScope===k,"bottom")}}>{lbl}</button>
-                    ))}
-                  </span>
-                )}
-                {/* HOME-CALM — "10 open · 4 overdue · oldest 82 days" is a
-                    tally, not a decision: the machine showing its arithmetic
-                    beside a list that already shows every one of those rows
-                    with its own age on the right. It stays on the Dashboard,
-                    where counting IS the job. */}
-                {surface!=="home"&&threadStat&&threadStat.open>0&&(
-                  <span style={{fontSize:11.5,color:T.ink3}}>
-                    {/* "oldest 0 days" is the same non-phrase as "day 0": a
-                        queue planned this morning has no age yet, and saying
-                        so in numerals is a machine counting. */}
-                    {threadStat.open} open · {threadStat.overdue} overdue
-                    {threadStat.oldestDays>=1?` · oldest ${countLabel(threadStat.oldestDays, "day")}`:""}
-                  </span>
-                )}
-                <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
-                  style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",
-                          color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                  Plan a follow-up
-                </button>
-              </span>
-            </div>
-            {/* ASK-3 — Why and What, at the top of the Thread: each opens a
-                rail of questions the org's own records can answer. An
-                answer's step lands on this Thread. */}
-            {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <PinsIfAny isReadOnly={isReadOnly}/>
-            </div>}
-            {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
-            {threadsData&&!threadsData.failed&&threadList.length===0&&(
-              threadsData.hasAny
-                ?<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="Nothing waiting."
-                    detail={`Every conversation has its next step scheduled${threadStat?.snoozed>0?`, and ${threadStat.snoozed} are set aside to revisit later`:""}.`}/>
-                :<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="No conversations logged yet."
-                    detail="Log your first call from a donor's record, and its next step comes back to you here on the day it's due."/>
-            )}
-            {/* ── FIX-8 Part E · HOME SAYS ONE THING AT A TIME ──────────────
-                From the approved mockup. Ten Thread rows, each three lines and
-                four controls, put 5,940 characters on the screen somebody
-                opens at 7:40, and nothing on it was first. So the top row gets
-                said properly, in a sentence, with the three things you can do
-                to it; the rest fold to one line each and open in place.
-                NOTHING IS REMOVED, and nothing is recomputed: the first row is
-                threadList[0], which is shared/threadRank.js's own answer to
-                "why this one first", and the fold counts are the bands the
-                server already returns. On the Dashboard surface (the board
-                view) the list stays as it was: this is Home's problem. */}
-
-            {/* HOME-CALM — AND THEN THE LIST, on the screen. Part E folded it
-                behind two "Show them" links, which made the one thing she
-                opened Home for the one thing not on it. */}
-            {surface==="home"&&dhNotice&&(
-              <div data-testid="home-data-health-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{dhNotice.sentence}</span>
-                <button onClick={()=>onNavigate&&onNavigate("donors",{view:"health"})}
-                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{dhNotice.step}</button>
-                <button aria-label="Hide this" disabled={isReadOnly}
-                  onClick={()=>apiFetch(`/data-health/notice/${dhNotice.id}/dismiss`,{method:"POST",body:"{}"}).then(()=>setDhNotice(null)).catch(()=>{})}
-                  style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
-              </div>)}
-            {/* PARITY-4 Part 2: one quiet line when gifts were started on the
-                org's own forms and not finished, and nobody has looked yet. */}
-            {surface==="home"&&gsNotice&&(
-              <div data-testid="home-unfinished-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{gsNotice.sentence}</span>
-                <button onClick={()=>onNavigate&&onNavigate("fundraising",{frSection:"unfinished"})}
-                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{gsNotice.step}</button>
-                <button aria-label="Hide this" disabled={isReadOnly}
-                  onClick={()=>apiFetch("/gift-starts/notice/seen",{method:"POST",body:"{}"}).then(()=>setGsNotice(null)).catch(()=>{})}
-                  style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
-              </div>)}
-            {/* AUTO-1: the night before, the one line saying what goes out on its own. */}
-            {surface==="home"&&jsNotice&&(
-              <div data-testid="home-auto-send-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{jsNotice.sentence}</span>
-                <button onClick={()=>onNavigate&&onNavigate("journeys",{})}
-                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{jsNotice.step}</button>
-              </div>)}
-            {homeCalm&&homeRows.length>0&&!homeFold.thread&&(<>
-              <ul data-testid="home-thread-list" style={{listStyle:"none",margin:0,padding:0}}>
-                {(threadExpanded?homeRows:homeRows.slice(0,5)).map(r=>r.el)}
-              </ul>
-              {homeRows.length>5&&(
-                <div style={{...cPad,paddingTop:10,paddingBottom:4}}>
-                  <button data-testid="thread-more" onClick={()=>setThreadExpanded(v=>!v)} style={{...sLink,padding:0}}>
-                    {threadExpanded?"Show fewer":`Show ${homeRows.length-5} more`}
-                  </button>
-                </div>
-              )}
-            </>)}
-            {/* Next week is still folded, because next week is not this
-                morning's work. */}
-            {homeCalm&&threadList.length>0&&(()=>{
-              const bands=threadsData?.bands||[];
-              const ahead=(bands.find(x=>x.key==="ahead")?.count||0)-threadList.filter(t=>t.band==="ahead"&&t.daysOpen===0).length;
-              if(ahead<=0)return null;
-              return (
-                <div style={{...cPad,paddingTop:0,paddingBottom:12}}>
-                  <button data-testid="home-fold" onClick={()=>setThreadAllOpen(true)}
-                    style={{textAlign:"left",background:"none",border:"none",borderTop:"1px solid "+T.bg2,
-                      width:"100%",padding:"11px 0 0",fontSize:12.5,color:T.ink2,cursor:"pointer",fontFamily:"inherit"}}>
-                    {ahead} {ahead===1?"is":"are"} coming up · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
-                  </button>
-                </div>);
-            })()}
-            {threadList.length>0&&!homeCalm&&(
-              <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
-            )}
-            {surface==="home"&&threadAllOpen&&threadList.length>0&&(
-              <div style={{...cPad,paddingBottom:12}}>
-                <button data-testid="home-fold-shut" onClick={()=>setThreadAllOpen(false)}
-                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,
-                    cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Show one at a time</button>
-              </div>)}
-            {/* THE CAP IS THE FEATURE, and the remainder is STATED. A list you
-                cannot finish is a list you stop opening; a list that hides its
-                own size is worse. */}
-            {threadsData?.more>0&&(
-              <div style={{...cPad,paddingTop:10,paddingBottom:10,fontSize:11.5,color:T.ink3,borderTop:"1px solid "+T.bg3}}>
-                and {threadsData.more} more open. The {threadList.length} above are the ones that cost the most to leave.
-              </div>
-            )}
-          {/* BUILD-86 C.2 — "NEEDS YOUR ATTENTION" IS GONE FROM HOME.
-              Home is exactly the note, the Thread, Drift and the failing
-              monthly gifts. That list duplicated the queue directly above it (a
-              gift not yet thanked IS a thread whose next step is thank) and
-              carried a "Mark done" button, which is the tasks vocabulary this
-              product deliberately left behind. The two things it showed that
-              the four sections do not both have homes already, and neither
-              belongs on the screen she reads at 7:40 — milestone drafts sit in
-              Communications with their own count, and the un-receipted-gift
-              prompt in Settings → Tax Receipts. */}
-          </div>
-          )}
-
-          {/* BUILD-83 Part 3.1 — "Today's Suggested Outreach" is GONE. The
-              Thread and Drift are the outreach; a button that generates a third
-              list of names is noise beside two lists the product already stands
-              behind. */}
-      </div>
+      (HL?HL.threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gsNotice, homeCalm, homeData, homeFold, homeRows, isReadOnly, jsNotice, loadThreads, moveLine, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, sampleStatus, setDhNotice, setGsNotice, setPlanFor, setThreadAllOpen, setThreadExpanded, setThreadScope, surface, threadAllOpen, threadExpanded, threadList, threadRows, threadScope, threadStat, threadsData }):null)
   );
 
   // ── BUILD-83 Part 5.3 — YOUR MONTHLY DONORS, between the Thread and Drift.
   // The closer from the Sept-6 positioning, and it was not on Home at all: the
   // org's own file says how many monthly donors it has and how many stopped,
   // and that is a fact Stripe never needed to confirm.
-  const monthlySection=(recurringHealth&&(recurringHealth.fromFile||0)>0)?(
-    <div style={{...cardWrap}}>
-      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <span style={sSerif}>Your {t("monthly_giver",2)}</span>
-        <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
-      </div>
-      <div style={{padding:"14px 20px",display:"flex",alignItems:"baseline",gap:18,flexWrap:"wrap"}}>
-        <div style={{fontSize:13.5,color:T.ink,lineHeight:1.6}}>
-          <strong style={{fontSize:22,fontFamily:"'DM Serif Display',serif"}}>{(recurringHealth.fromFile||0).toLocaleString()}</strong> in your file
-          {" · "}<strong>{(recurringHealth.givingFromFile||0).toLocaleString()}</strong> giving
-          {(recurringHealth.stoppedFromFile||0)>0&&<> · <strong style={{color:T.terracotta}}>{recurringHealth.stoppedFromFile.toLocaleString()}</strong> stopped</>}
-        </div>
-        {(recurringHealth.stoppedFromFile||0)>0&&(
-          <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})}
-            style={{background:T.gold500,border:"none",borderRadius:9,padding:"9px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-            Send reconnect links →
-          </button>
-        )}
-      </div>
-      {(recurringHealth.stoppedWithoutEmail||0)>0&&(
-        <div style={{padding:"0 20px 12px",fontSize:11.5,color:T.ink3}}>{recurringHealth.stoppedWithoutEmail} have no email on file and can't be sent a link.</div>
-      )}
-    </div>
-  ):null;
+  const monthlySection=(HL?HL.monthlySection({ cPad, cardWrap, onNavigate, recurringHealth, sHdr, sHdrPad, sLink, sSerif, t }):null);
 
   // ── BUILD-88b B.3 — THE THANK-YOU QUEUE ──────────────────────────────────
   // "Six thank-yous ready." Steward wrote them; she sends them. Three actions
@@ -2445,70 +1201,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // only when it has something in it, so a single row has nothing under it.
   const TY_WORDS=["no","one","two","three","four","five","six","seven","eight","nine"];
   const tyFooter=!!thankYous&&(thankYous.drafts.length>6||thankYous.allOpened||!!tyErr);
-  const thankYouSection=(thankYous&&thankYous.count>0)?(
-    <div style={{...cardWrap}} data-testid="thank-you-queue">
-      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <div style={{minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}}>
-          <span style={sSerif}>{thankYous.headline}</span>
-          {thankYous.voice&&!thankYous.voice.ready&&(
-            <div data-testid="ty-voice-line" style={{fontSize:12,lineHeight:1.5,color:T.ink3}}>
-              Plain for now. Paste {TY_WORDS[thankYous.voice.needs]||thankYous.voice.needs} of your own thank-yous and Steward will write like you.
-            </div>
-          )}
-        </div>
-        {thankYous.voice&&!thankYous.voice.ready&&(
-          <button data-testid="ty-voice-link" /* FIX-55: the voice screen itself */ onClick={()=>onNavigate("settings",{section:"account",focus:"voice"})} style={{...sLink,whiteSpace:"nowrap"}}>Teach Steward your voice →</button>
-        )}
-      </div>
-      <div style={{display:"flex",flexDirection:"column"}}>
-        {thankYous.drafts.slice(0,tyShowAll?thankYous.drafts.length:6).map(d=>(
-          <div key={d.id} data-thank-you={d.id} style={{padding:onPanel?"12px 0":"12px 24px",borderTop:"1px solid "+T.bg2}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              <PersonMark id={d.donorId} name={d.donorName} size={30}/>
-              <div style={{flex:"1 1 180px",minWidth:0,display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <DonorLink id={d.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:d.donorId})}
-                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{displayName(d.donorName)}</DonorLink>
-                <span style={{fontSize:13,color:T.ink2,fontVariantNumeric:"tabular-nums"}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
-                {d.giftDate&&<span style={{fontSize:12.5,color:T.ink3}}>{displayDateShort(d.giftDate,new Date())}</span>}
-                {d.opened&&<span style={{fontSize:11.5,color:T.ink3}}>opened</span>}
-              </div>
-              <button onClick={()=>tyOpen===d.id?setTyOpen(null):tyOpenDraft(d)} data-testid="ty-open" aria-expanded={tyOpen===d.id}
-                style={{flexShrink:0,background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                {tyOpen===d.id?"Close":"Read the draft"}
-              </button>
-            </div>
-            {tyOpen===d.id&&(
-              <div style={{marginTop:10}}>
-                <textarea readOnly value={d.body} aria-label={`Thank-you for ${d.donorName}`}
-                  style={{width:"100%",minHeight:130,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.55,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
-                <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
-                  <button onClick={()=>tyCopy(d)} data-testid="ty-copy"
-                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{tyCopied===d.id?"Copied ✓":"Copy"}</button>
-                  <button onClick={()=>tyAct(d.id,"sent")} data-testid="ty-sent"
-                    style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Mark sent</button>
-                  <button onClick={()=>tyAct(d.id,"skip")} data-testid="ty-skip"
-                    style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Skip</button>
-                  <span style={{fontSize:11.5,color:T.ink3,alignSelf:"center"}}>Steward does not send this. It goes from your own mail.</span>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      {tyFooter&&(
-      <div style={{padding:onPanel?"10px 0 0":"10px 24px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-        {thankYous.drafts.length>6&&(
-          <button onClick={()=>setTyShowAll(v=>!v)} style={sLink}>{tyShowAll?"Show fewer":`and ${thankYous.drafts.length-6} more`}</button>
-        )}
-        {thankYous.allOpened&&(
-          <button onClick={tyMarkAll} data-testid="ty-mark-all"
-            style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>Mark all as sent</button>
-        )}
-        {tyErr&&<span role="alert" style={{fontSize:12,color:T.terracotta}}>{tyErr}</span>}
-      </div>
-      )}
-    </div>
-  ):null;
+  const thankYouSection=(HL?HL.thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, setTyOpen, setTyShowAll, thankYous, tyAct, tyCopied, tyCopy, tyErr, tyFooter, tyMarkAll, tyOpen, tyOpenDraft, tyShowAll }):null);
 
   // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
   const driftHomeSection=driftSection;
@@ -2527,62 +1220,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const agentWaiting=(agentDaily&&agentDaily.waiting)||0;
   const agentEmpty=!agentText.trim();
   const agentSection=(
-    <div style={{...cardWrap}} data-testid="agent-box">
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        {/* BUILD-96 Part 3 — A GATED ORG GETS A SENTENCE, NOT AN INPUT.
-            The agent sends this organisation's rows and vocabulary to
-            Anthropic, and there are two reasons it may not: no key is
-            configured on Steward's side, or this org turned it off. Either
-            way she gets the reason instead, and nothing to type into. */}
-        {agentDaily&&agentDaily.available===false?(
-          <div style={{display:"flex",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
-            <span data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
-              {agentDaily.message||"Not enabled for this organization yet."}
-            </span>
-            <button onClick={()=>openTellSteward(null)} style={sLink}>Open {atlasName()} →</button>
-          </div>
-        ):(<>
-        {agentDaily&&agentDaily.line&&(
-          <div data-testid="agent-daily-line"
-            {...interactive(()=>openTellSteward(null),{label:agentDaily.line+" Open "+atlasName()+"."})}
-            style={{alignSelf:"flex-start",fontSize:13.5,lineHeight:1.5,color:T.ink,borderRadius:6}}>
-            {agentDaily.line}
-          </div>
-        )}
-        <form onSubmit={e=>{e.preventDefault();agentAsk();}} style={{display:"flex",gap:8,alignItems:"center"}}>
-          <input data-testid="agent-input" value={agentText} onChange={e=>setAgentText(e.target.value)}
-            aria-label={`Tell ${atlasName()} what to do. Enter asks ${atlasName()}.`}
-            placeholder={`Tell ${atlasName()} what to do…`}
-            style={{flex:"1 1 auto",minWidth:0,boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,background:T.white,
-                    padding:"10px 12px",fontSize:14,fontFamily:"inherit",color:T.ink}}/>
-          <button data-testid="agent-ask" type="submit" disabled={agentEmpty} aria-label={`Go. ${atlasName()} does it here.`}
-            style={{flexShrink:0,background:T.greenDk,border:"1px solid "+T.greenDk,borderRadius:10,padding:"10px 20px",color:T.white,
-                    fontSize:14,fontWeight:700,cursor:agentEmpty?"not-allowed":"pointer"}}>
-            Go
-          </button>
-        </form>
-        </>)}
-      </div>
-    </div>
+    (HL?HL.agentSection({ agentAsk, agentDaily, agentEmpty, agentText, cardWrap, sLink, setAgentText }):null)
   );
 
-  const sequencesSection=(seqLines&&seqLines.length)?(
-    <div style={{...cardWrap}}>
-      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <span style={sTitle}>Sequences</span>
-        <button onClick={()=>onNavigate("communications",{subtab:"sequences"})} style={sLink}>Open →</button>
-      </div>
-      <div style={{padding:"10px 20px 14px",display:"flex",flexDirection:"column",gap:8}}>
-        {seqLines.map(s=>(
-          <div key={s.id} data-testid="home-sequence-line"
-            style={{fontSize:13.5,lineHeight:1.55,color:s.failedCount>0?T.gold700:T.ink}}>
-            {s.line}
-            {s.status!=="active"&&<span style={{color:T.ink3}}> · off</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  ):null;
+  const sequencesSection=(HL?HL.sequencesSection({ cPad, cardWrap, onNavigate, sHdr, sHdrPad, sLink, sTitle, seqLines }):null);
 
   // BUILD-83 Part 3.1/3.4 — retention and the pipeline funnel, ONE demoted card
   // at the bottom of Home. The funnel labels itself a SUGGESTION until a human
@@ -2592,90 +1233,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // only one of the Thread card's three numbers she cannot act on before her
   // first coffee. That makes it board-shaped. Home keeps the two counts that
   // LABEL the named rows beneath them; this one goes where numbers go.
-  const threadHealthLine=(threadHealth&&threadHealth.continuationRate!=null)?(
-    <div style={{...cardWrap}}>
-      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <span style={sTitle}>Follow-up, last 30 days</span>
-      </div>
-      <div style={{padding:"14px 20px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
-        <strong style={{fontSize:22,fontFamily:"'DM Serif Display',serif"}}>{threadHealth.continuationRate}%</strong> of the
-        conversations you closed led straight to the next step
-        {" · "}{threadHealth.closed} closed
-        {threadHealth.medianDaysToClose!=null?` · typically ${countLabel(threadHealth.medianDaysToClose, "day")} to close`:""}
-      </div>
-    </div>
-  ):null;
+  const threadHealthLine=(HL?HL.threadHealthLine({ cPad, cardWrap, sHdr, sHdrPad, sTitle, threadHealth }):null);
 
   const retentionPipelineSection=(
-      <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {retentionSection}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-              <span style={sTitle}>Pipeline Funnel</span>
-              <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
-            </div>
-            <div style={{padding:"16px 20px"}}>
-              <FunnelChart counts={countsByStage} onStageClick={s=>onNavigate("donors",{stageFilter:s})}
-                drift={driftData&&driftData.counts.driftingHigh>0?{
-                  count:driftData.counts.driftingHigh,
-                  amount:driftData.atRiskAmount,
-                  onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"}),
-                }:null}/>
-            </div>
-          </div>
-
-          <div onClick={nextGrant?()=>onNavigate("grants",{grantId:nextGrant.id}):undefined} className={nextGrant?"card-click":""} style={{...cardWrap,cursor:nextGrant?"pointer":"default"}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
-              <span style={sTitle}>Next Grant Deadline</span>
-            </div>
-            {!nextGrant&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines.</div>}
-            {nextGrant&&(()=>{
-              const d=daysUntil(nextGrant.deadline);
-              const urgColor=d<14?T.terracotta:T.greenMid;
-              return(
-                <div style={{padding:"14px 20px"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nextGrant.funder}</div>
-                  <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nextGrant.program}</div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-                    <span style={{background:urgColor+"15",border:"1px solid "+urgColor+"30",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:800,color:urgColor}}>{d<0?"past due":d+"d"}</span>
-                    <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmt(nextGrant.amount)}</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Recurring gift recovery — revenue-at-risk, not buried in a report */}
-          {recurringHealth&&recurringHealth.activeCount>0&&(
-            <div style={{...cardWrap,borderColor:recurringHealth.atRiskCount>0?T.terracotta+"30":T.bg3}}>
-              <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
-                <span style={sTitle}>Recurring Gifts</span>
-              </div>
-              <div style={{padding:"14px 20px"}}>
-                {recurringHealth.atRiskCount>0?(
-                  <>
-                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.terracotta,lineHeight:1}}>
-                      {fmt(recurringHealth.mrrAtRisk)}<span style={{fontSize:12,fontWeight:600,color:T.ink3}}>/mo at risk</span>
-                    </div>
-                    <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                      {countLabel(recurringHealth.atRiskCount, "donor")} with a failed card
-                      {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
-                    </div>
-                  </>
-                ):(
-                  <div style={{fontSize:13,color:T.ink3}}>
-                    All {countLabel(recurringHealth.activeCount, "recurring gift")} are current
-                    {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      (HL?HL.retentionPipelineSection({ cPad, cardWrap, countsByStage, driftData, nextGrant, onNavigate, recurringHealth, retentionSection, sHdr, sHdrPad, sLink, sTitle }):null)
   );
 
       /* Honest impact line (FIX) — quiet ROI stat, attributable amounts only.
@@ -2716,7 +1277,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     apiFetch("/donors/birthdays-near").then(rows=>{if(live)setBirthdayPeople((Array.isArray(rows)?rows:[]).map(adaptDonor));}).catch(()=>{});
     return()=>{live=false;};
   },[surface]);
-  const openRailDonor=(donorId,threadId)=>setRailView({kind:"donor",donorId,threadId});
   // FIX-22: BIRTHDAYS THIS WEEK. today and the six days after it, each a
   // civil date in the organisation's timezone (orgToday.js), matched against
   // the month and day on the record (a Feb 29 birthday falls on Feb 28 in a
@@ -2733,20 +1293,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     }
     return out.sort((x,y)=>x.at-y.at||String(x.name).localeCompare(String(y.name)));
   },[birthdayPeople]);
-  const railRow=(key,label,meta,onOpen)=>(
-    <div key={key} {...interactive(onOpen,{label})}
-      className="home-rail-row"
-      style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 12px",borderRadius:8,margin:"0 -12px"}}>
-      <span style={{flex:1,minWidth:0,fontSize:14,fontWeight:500,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
-      {meta&&<span style={{flexShrink:0,fontSize:12,color:T.ink3}}>{meta}</span>}
-    </div>
-  );
-  const railBack=(label)=>(
-    <button onClick={()=>setRailView({kind:"today"})}
-      style={{background:"transparent",border:"none",padding:0,margin:"0 0 14px",color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-      <span aria-hidden>{"\u2190"}</span>{label}
-    </button>
-  );
+  const railRow=(HL?HL.railRow():null);
+  const railBack=(HL?HL.railBack({ setRailView }):null);
   // HOME-4 — the rail's reads (the calls, the goal, To confirm, the email
   // line) and the ones Home already makes for it (follow-ups, tasks due, cards
   // failed, setup). The rail draws once all of them have settled. Each Today
@@ -2783,12 +1331,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const L=railListFor(railView.key);
       return (
         <div>
-          {railBack("Today")}
-          <span style={{...sSerif,display:"inline-block",marginBottom:16}}>{L.title}</span>
-          {L.rows.length===0
-            ?<div style={{fontSize:13.5,color:T.ink3,lineHeight:1.5}}>{L.empty}</div>
-            :<div>{L.rows.slice(0,12).map(r=>railRow(r.id,r.label,r.meta,r.onOpen))}</div>}
-          {L.rows.length>12&&<div style={{marginTop:10,fontSize:12,color:T.ink3}}>and {L.rows.length-12} more</div>}
+          {HL&&HL.railListView({ L, railBack, railRow, sSerif })}
         </div>
       );
     }
@@ -2801,50 +1344,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // "Lifetime giving $0" — found by looking at it, not by a test.
       const lifetime=d?(parseFloat(d.total)||0):null;
       return (
-        <div data-testid="rail-donor">
-          {railBack("Today")}
-          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,lineHeight:1.2,color:T.ink,marginBottom:2}}>{name}</div>
-          <div style={{fontSize:12.5,color:T.ink3,marginBottom:18}}>
-            {d?.stage?stageName(d.stage):"On file"}{d?.email?` \u00b7 ${d.email}`:""}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:18,marginBottom:18,borderBottom:"1px solid "+T.bg2}}>
-            {!!lifetime&&(
-              <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13.5}}>
-                <span style={{color:T.ink3}}>Lifetime giving</span><span style={{fontWeight:600,color:T.ink}}>{fmtFull(lifetime)}</span>
-              </div>
-            )}
-            {d?.lastGift&&(
-              <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:13.5}}>
-                <span style={{color:T.ink3}}>Last gift</span>
-                <span style={{fontWeight:600,color:T.ink}}>{fmtFull(d.lastAmount||0)} {agoPhrase(daysDiff(d.lastGift))}</span>
-              </div>
-            )}
-            {!lifetime&&!d?.lastGift&&(
-              <div style={{fontSize:13.5,color:T.ink3,lineHeight:1.5}}>No gift on file yet.</div>
-            )}
-          </div>
-          {th&&(
-            <div style={{marginBottom:18}}>
-              <div style={{fontSize:11,color:T.ink3,marginBottom:6}}>Next step</div>
-              <div style={{fontSize:14,fontWeight:600,color:th.overdue?T.gold700:T.ink,lineHeight:1.4}}>
-                {th.nextStep.label}{th.overdue?" \u00b7 overdue":` \u00b7 due ${displayDateShort(th.nextStep.due,new Date())}`}
-              </div>
-              {th.rank?.why&&<div style={{marginTop:6,fontSize:12.5,color:T.ink3,lineHeight:1.5}}>{th.rank.why}</div>}
-            </div>
-          )}
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {th&&(
-              <button onClick={()=>setConvoFor({donor:{id:th.donorId,name:th.donorName},thread:th})} disabled={isReadOnly}
-                style={{background:T.greenDk,border:"none",borderRadius:8,padding:"10px 14px",color:T.white,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                Log a call
-              </button>
-            )}
-            <DonorLink id={railView.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:railView.donorId})}
-              style={{background:"transparent",border:"1px solid "+T.bg2,borderRadius:8,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
-              Open the record
-            </DonorLink>
-          </div>
-        </div>
+        (HL?HL.railDonorView({ d, isReadOnly, lifetime, name, onNavigate, railBack, railView, setConvoFor, th }):null)
       );
     }
     // HOME-4 — THE RAIL, CALM. Setup (mid-way), Today as one card with no
@@ -2894,150 +1394,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // from a Thread row, so the two stay side by side); every section after the
   // Thread runs the full width of the panel below it. The board is not split.
   // Computed here, above the return, so both halves can be placed in the shell.
-  const sectionStack=layout!==undefined?(()=>{
-        // BUILD-35: the setup card renders only while the org is genuinely
-        // un-activated (and not explicitly hidden). On the completion
-        // TRANSITION — complete now, but previously seen incomplete — it
-        // renders one GoldMoment (self-gated once-per-org), then nothing,
-        // forever. An always-been-complete org never sees any of it.
-        const setupSection=(()=>{
-          if(!setupStatus)return null;
-          if(setupStatus.cardState==="hidden")return null;
-          if(setupStatus.complete){
-            if(!setupCelebrate)return null;
-            return <GoldMoment moment="setup_complete" title="Steward is set up."
-              line="Donors in, giving connected, automations watching. This card retires itself, everything it linked to lives in Settings."/>;
-          }
-          return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
-        })();
-        // ── BUILD-86 — THE FAILING MONTHLY GIFTS, WITH NAMES ────────────
-        // These were a COUNT inside the retention/pipeline card, next to a
-        // retention rate and a funnel. A failing gift is the most actionable
-        // thing on this screen and the least like a board metric, so it is its
-        // own row group beside the other two lists of people. Every row is a
-        // person, an amount, how long it has been failing, and one action.
-        const atRisk=recurringHealth?.atRisk||[];
-        const recurringSection=atRisk.length>0?(
-          <div id="dash-recurring" style={{...cardWrap,scrollMarginTop:64}}>
-            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-              <span style={sTitle}>{capitalize(t("monthly_giver",2))} that need you</span>
-              <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
-            </div>
-            <ul style={{listStyle:"none",margin:0,padding:0}}>
-              {atRisk.map((r,i)=>{
-                const days=r.first_failed_at?Math.max(0,Math.floor((Date.now()-new Date(r.first_failed_at).getTime())/86400000)):null;
-                return(
-                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.gold500,
-                                         borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
-                    <PersonMark id={r.donor_id} name={r.donor_name} size={34}/>
-                    <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
-                      onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
-                      <div style={{fontSize:11.5,color:T.gold700,marginTop:3,fontWeight:600}}>
-                        {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
-                        {days!=null?` · failing ${countLabel(days, "day")}`:""}
-                      </div>
-                    </a>
-                    <DonorLink id={r.donor_id} onOpen={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
-                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
-                      Open
-                    </DonorLink>
-                  </li>);
-              })}
-            </ul>
-          </div>
-        ):null;
-
-        const sections={hero:heroSection,setup:surface==="home"?null:setupSection,thread:threadSection,monthly:monthlySection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
-        // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
-        // stay a single per-user list (so BUILD-34's merge rule, its
-        // stale-config guarantee and move-to-top all keep working untouched);
-        // the surface is a filter over it at render time.
-        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null&&surfaceOf(r.id)===surface);
-        const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
-        const hiddenRows=layout.filter(r=>!r.visible&&surfaceOf(r.id)===surface);
-        const renderRow=(row,idx)=>{
-            const content=sections[row.id];
-            const toggle=!editMode&&row.id===firstScopedId?scopeToggle:null;
-            if(!editMode)return <Fragment key={row.id}>{toggle}<div className="home-block">{content}</div></Fragment>;
-            const meta=sectionMeta(row.id);
-            const dragging=dragSectionId===row.id;
-            return(
-              <div key={row.id} draggable
-                onDragStart={e=>onSectionDragStart(e,row.id)}
-                onDragEnd={onSectionDragEnd}
-                onDragOver={e=>onSectionDragOver(e,row.id)}
-                onDrop={onSectionDrop}
-                style={{position:"relative",borderRadius:16,cursor:"grab",
-                  outline:`1.5px dashed ${dragging?T.gold:T.bg3}`,outlineOffset:4,
-                  boxShadow:dragging?T.shadowLg:"none",
-                  transform:dragging&&!REDUCED_MOTION?"translateY(-2px)":"none",
-                  transition:REDUCED_MOTION?"none":"box-shadow .15s ease,transform .15s ease"}}>
-                <div style={{opacity:0.55,pointerEvents:"none"}} aria-hidden>{content}</div>
-                <div style={{position:"absolute",top:8,right:8,display:"flex",gap:6,zIndex:5}}>
-                  <button
-                    onKeyDown={e=>{
-                      if(e.key==="ArrowUp"){e.preventDefault();moveSection(row.id,-1);}
-                      else if(e.key==="ArrowDown"){e.preventDefault();moveSection(row.id,1);}
-                      else if(e.key==="Enter"){e.preventDefault();saveEdit();}
-                    }}
-                    aria-label={`Reorder ${meta?.label||row.id} position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
-                    title="Drag, or focus and use arrow keys, to reorder"
-                    style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
-                    <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
-                  </button>
-                  {moveToTop(layout,row.id)!==layout&&(
-                    <button onClick={()=>moveSectionToTop(row.id)}
-                      aria-label={`Move ${meta?.label||row.id} to the top`}
-                      title="Send this section to the top"
-                      style={{display:"flex",alignItems:"center",gap:4,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",boxShadow:T.shadow}}>
-                      <span aria-hidden="true">↑</span>Top
-                    </button>
-                  )}
-                  {meta?.hideable===false?(
-                    <span title="Home always shows the fundraising hero" style={{display:"flex",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink3,boxShadow:T.shadow}}>Always shown</span>
-                  ):(
-                    <button onClick={()=>setSectionVisible(row.id,false)}
-                      aria-label={`Hide ${meta?.label||row.id}`}
-                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.terracotta,cursor:"pointer",boxShadow:T.shadow}}>Hide</button>
-                  )}
-                </div>
-              </div>
-            );
-        };
-        const threadAt=rendered.findIndex(r=>r.id==="thread");
-        const splitAt=surface!=="home"?rendered.length:threadAt>=0?threadAt+1:Math.min(1,rendered.length);
-        const topRows=rendered.slice(0,splitAt),lowerRows=rendered.slice(splitAt);
-        const tail=(<>
-          {editMode&&(
-            <span role="status" aria-live="polite" style={{position:"absolute",width:1,height:1,padding:0,margin:-1,overflow:"hidden",clip:"rect(0 0 0 0)",whiteSpace:"nowrap",border:0}}>{layoutLiveMsg}</span>
-          )}
-          {editMode&&hiddenRows.length>0&&(
-            <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
-              <div style={{fontSize:10,fontWeight:800,color:T.ink3,marginBottom:8}}>Hidden, not shown on your Home</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {hiddenRows.map(r=>{
-                  const m=sectionMeta(r.id);
-                  return(
-                    <button key={r.id} onClick={()=>setSectionVisible(r.id,true)}
-                      aria-label={`Show ${m?.label||r.id} again`}
-                      style={{display:"inline-flex",alignItems:"baseline",gap:7,background:T.white,border:"1px solid "+T.bg3,borderRadius:99,padding:"6px 12px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"pointer"}}>
-                      {m?.label||r.id}<span style={{color:T.greenDk}}>Show</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </>);
-        return{
-          // INT-BUILD-1 Parts 4 and 5 — today's meetings with their briefs, and
-          // "how did it go" for a meeting that just ended. Not a layout row:
-          // it only exists on a day there is something on a connected calendar.
-          top:<>{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
-          lower:lowerRows.length?<>{lowerRows.map((row,i)=>renderRow(row,splitAt+i))}{tail}</>:null,
-        };
-  })():null;
+  const sectionStack=(HL?HL.sectionStack({ agentSection, cPad, cardWrap, dragSectionId, editMode, heroSection, impactSection, isAdmin, layout, layoutLiveMsg, monthlySection, moveSection, moveSectionToTop, myPortfolioSection, onNavigate, onSectionDragEnd, onSectionDragOver, onSectionDragStart, onSectionDrop, recurringHealth, retentionPipelineSection, sHdr, sHdrPad, sLink, sTitle, saveEdit, scopeToggle, sequencesSection, setSectionVisible, setSetupCardState, setupCelebrate, setupStatus, surface, t, thankYouSection, threadHealthLine, threadSection }):null);
 
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
@@ -3056,95 +1413,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   })();
   const setupDonors=(setupStatus?.items||[]).find(i=>i.key==="donors");
   const noDonorsYet=!!setupDonors&&!(setupDonors.count>0);
-  const homeHead=(<>
-      {/* Greeting lives on the page's own cream background, between the nav
-          and the goal card — not inside the dark card, where it read as a
-          stray line of card copy rather than a page-level welcome.
-          BUILD-13: when the org has set branding, the greeting leads with the
-          org's logo + name in their accent — the "this is OUR system" payoff
-          the moment they finish onboarding. Falls back to the plain greeting. */}
-      {/* BUILD-87 F.3.1 — THE HEADER IS A GREETING AND A SENTENCE, IN THAT
-          ORDER OF SIZE. It used to be the other way round: the org name at 16px
-          bold sat above the note, so the biggest thing on her morning screen was
-          the name of the place she already works. The org mark and the greeting
-          are now ONE small line (the BUILD-13 "this is OUR system" payoff is
-          kept, just demoted), and the note is the headline. */}
-      <div style={{display:"flex",alignItems:"flex-start",gap:11,padding:"0 2px"}}>
-        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:22,maxWidth:100,objectFit:"contain",borderRadius:4,marginTop:1}}/>}
-        <div style={{flex:1,minWidth:0}}>
-          {/* BUILD-88d — ONE GREETING LINE, 14px, warm grey. The org's name
-              keeps its place and loses its accent: on this line the brand
-              colour was a third colour competing with the headline under it,
-              and the org mark beside it already says whose system this is. */}
-          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",fontSize:14,lineHeight:1.35,color:T.ink3}}>
-            {data.org?.name&&<span style={{fontWeight:600,letterSpacing:"-0.01em"}}>{data.org.name}</span>}
-            <span style={{fontWeight:400}}>{greeting}{firstName?`, ${firstName}`:""}</span>
-          </div>
-          {/* ── BUILD-89 — THE HEADER IS WARM ─────────────────────────────
-              The morning sentence used to be a 34px serif headline, so the
-              first thing anybody read after logging in was what they had not
-              done: "Six people are waiting on you; Chen has been waiting two
-              months." That is an accusation before coffee. The sentence is not
-              deleted — it moved INTO the Thread's own header, where it is a
-              summary of the list under it rather than a verdict on the person
-              reading it. You get to the pressure when you go looking for it.
-              The header is the greeting and the day. */}
-          {surface==="home"&&!editMode&&(
-            <h1 className="home-day" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:44,fontWeight:400,lineHeight:1.08,letterSpacing:"-0.02em",color:T.ink,margin:"6px 0 0"}}>
-              {todayLongStr}
-            </h1>
-          )}
-          {/* HOME-5 — no pace sentence. Home's header is the org, the greeting
-              and the date. The comparison with last year lives on Fundraising
-              and the Board, one click away; Home doesn't open with a gap. */}
-          {/* The board screen says what it is and as of when, and nothing else
-              about itself. */}
-          {surface==="board"&&!editMode&&(
-            <div style={{fontSize:12.5,color:T.ink3,marginTop:4}}>
-              As of {todayStr}. Numbers a board can read.
-            </div>
-          )}
-        </div>
-        {/* BUILD-34 edit affordance — a quiet on-palette text button by the
-            greeting, not a floating pencil. Done saves optimistically
-            (rollback on error); Esc cancels; Reset restores the default. */}
-        {layout!==undefined&&(
-          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1}}>
-            {editMode?(
-              <>
-                <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
-                <button onClick={cancelEdit} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
-                <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
-              </>
-            ):(
-              <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
-                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* HOME-TIDY 2 — THE CALL TO ACTION, UNDER THE GREETING. One box to ask
-          a question or tell Steward what to do (the Agent's input moved here),
-          over the two doors, Why and What, each saying what it is. */}
-      {surface==="home"&&!editMode&&(
-        <div style={{padding:"0 2px"}}>
-          {/* HOME-3 — the old "For you today" card and the Why and What doors
-              are gone: pace is the sentence above, the moves are the deck below. */}
-          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)} day={homeDay} doors={false}
-            agent={{available:true,line:agentDaily&&agentDaily.line,
-              onSend:t=>openTellSteward(null,{text:t,send:true}),
-              onOpen:()=>openTellSteward(null)}}/>
-        </div>
-      )}
-      {surface==="home"&&!editMode&&(
-        <div style={{padding:"0 2px",marginTop:6}}>
-          {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
-          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet}
-            sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>
-        </div>
-      )}
-      </>);
+  const homeHead=FL.homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, firstName, greeting, homeDay, isReadOnly, layout, loadThreads, noDonorsYet, onNavigate, resetLayout, sampleStatus, saveEdit, setupFirst, surface, threadScope, todayLongStr, todayStr });
   return(
     <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
       {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
@@ -3189,83 +1458,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           nobody. It is a Thread row now — it names her, it says what to do,
           and it takes its place in the list by age like every other row. The
           Dashboard keeps the line, because the board is reading totals. */}
-      {surface!=="home"&&recurringAttention>0&&(
-        <div {...interactive(()=>onNavigate("fundraising",{frSection:"recurring"}),{label:"Open recurring giving"})}
-          style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",gap:10}}>
-          <span aria-hidden style={{color:T.terracotta,fontSize:13,lineHeight:1}}>◑</span>
-          <span style={{flex:1,fontSize:13,color:T.ink2}}>
-            {recurringFailed>0
-              ?<><strong style={{color:T.ink}}>{recurringFailed}</strong> {plural(recurringFailed, "card")} stopped this month.{recurringAttention>recurringFailed?<> {recurringAttention-recurringFailed} more recurring {plural(recurringAttention-recurringFailed, "item")} need{recurringAttention-recurringFailed===1?"s":""} a person.</>:null}</>
-              :<><strong style={{color:T.ink}}>{recurringAttention}</strong> recurring {plural(recurringAttention, "item")} need{recurringAttention===1?"s":""} a person: expiring cards or waiting proposals.</>}
-          </span>
-          <span style={{fontSize:12,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Recurring →</span>
-        </div>
-      )}
+      {HL&&HL.boardRecurringLine({ onNavigate, recurringAttention, recurringFailed, surface })}
 
       {(()=>{
-      const cardsBlock=(<>
-      {/* One-time gold moments (BUILD-08 Phase D) — the product's only
-          celebration pattern, each fires once per org (localStorage-keyed
-          inside GoldMoment). Goal completion keys on the goal id, so a NEW
-          goal reaching 100% next quarter gets its own single moment. */}
-      {goal&&goal.percent>=100&&(
-        <GoldMoment moment={`goal100_${goal.id||goal.periodEnd||"current"}`}
-          title={`You did it, ${goal.label}.`}
-          line={`${fmtFull(goal.currentAmount)} raised against ${fmtFull(goal.goalAmount)}. Worth a minute of feeling good before the next one.`}/>
-      )}
-      {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
-        <GoldMoment moment="first_recovery"
-          title="A failed card was fixed."
-          line="The gift resumed, money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
-      )}
-
-      {/* ── The section stack (BUILD-34) ─────────────────────────────────
-          Renders from the per-user ordered [{id,visible}] config (see
-          ../lib/homeLayout.js for the canonical list + stale-config merge).
-          Sections with no data render nothing and aren't offered in edit
-          mode; explicitly hidden ones collect in the tray below. Edit-mode
-          chrome is absolutely positioned (outline + floating pill) so
-          entering/leaving edit mode causes zero layout shift. */}
-      {sectionStack&&sectionStack.top}
-      {layoutError&&<div role="alert" style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:T.terracotta,color:T.white,padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:500,boxShadow:T.shadowLg,maxWidth:"90vw"}}>{layoutError}</div>}
-
-      {/* Set-goal modal */}
-      {showSetGoal&&(
-        <Modal onClose={()=>setShowSetGoal(false)} width={420} zIndex={300} padding={24}
-          ariaLabel={goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}
-          dialogStyle={{border:"1px solid "+T.bg3}}>
-          <div>
-            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>{goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}</div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Label</div>
-            <input value={goalForm.label} onChange={e=>setGoalForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Win back $50,000 in lapsed giving" style={inp}/>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Target amount ($)</div>
-            <input type="number" value={goalForm.goalAmount} onChange={e=>setGoalForm(f=>({...f,goalAmount:e.target.value}))} placeholder="25000" style={inp}/>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Goal type</div>
-            <div style={{display:"flex",gap:6,marginBottom:10}}>
-              {[["total_raised","Total raised"],["lapsed_recovery","Lapsed recovery"]].map(([v,l])=>(
-                <button key={v} aria-pressed={goalForm.goalType===v} onClick={()=>setGoalForm(f=>({...f,goalType:v}))} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(goalForm.goalType===v,"bottom")}}>{l}</button>
-              ))}
-            </div>
-            <div style={{display:"flex",gap:8,marginBottom:10}}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period start</div>
-                <input type="date" value={goalForm.periodStart} onChange={e=>setGoalForm(f=>({...f,periodStart:e.target.value}))} style={{...inp,marginBottom:0}}/>
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:4}}>Period end</div>
-                <input type="date" value={goalForm.periodEnd} onChange={e=>setGoalForm(f=>({...f,periodEnd:e.target.value}))} style={{...inp,marginBottom:0}}/>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:8,marginTop:6}}>
-              <button onClick={saveGoal} disabled={savingGoal||!goalForm.label.trim()||!goalForm.goalAmount} style={{flex:1,background:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?T.bg2:T.gold,border:"none",borderRadius:10,padding:"11px",color:T.ink,fontSize:14,fontWeight:700,cursor:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?"not-allowed":"pointer"}}>
-                {savingGoal?"Saving…":goalModalMode==="edit"?"Save changes":"Set goal"}
-              </button>
-              <button onClick={()=>setShowSetGoal(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
-            </div>
-          </div>
-        </Modal>
-      )}
-      </>);
+      const cardsBlock=((HL?HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal }):null));
       // BUILD-89 — the shell owns the two columns now (see ONE PANEL above),
       // so the stack renders straight into it.
       return cardsBlock;
@@ -3275,110 +1471,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
-      {surface==="home"&&(sectionStack?.lower||homeCrossoverCard||(wordsOffer&&!editMode))&&(
-      <div className="home-shell-lower">
-      {sectionStack?.lower}
-      {/* HOME-CALM — THE VOLUNTEER IDEA, LAST AND PLAIN. Same words, same
-          number, same route; no green bar, and below the work rather than
-          in front of it. It is the last thing she reads, which is where an
-          idea belongs on a morning screen. */}
-      {homeCrossoverCard}
-      {/* BUILD-89 — BUILD-86 Part B's one line, once, at the FOOT of the
-          panel. It used to sit between the day and the first card, so the
-          second thing anybody read on their own Home was Steward asking a
-          question about itself. */}
-          {wordsOffer&&!editMode&&(
-            <div style={{marginTop:8,fontSize:12.5,color:T.ink3,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-              <span>Steward calls them donors. What do you call them?</span>
-              <button onClick={()=>setWordsOpen(true)}
-                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"3px 10px",color:T.ink,fontSize:11.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                Set your words
-              </button>
-              <button onClick={()=>{setWordsDone(true);apiFetch("/org/vocabulary",{method:"PUT",body:JSON.stringify({skip:true})}).catch(()=>{});}}
-                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-                Keep Steward's words
-              </button>
-            </div>
-          )}
-      </div>
-      )}
+      {HL&&HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 
-      <Breakdown
-        open={debtBreakdownOpen}
-        onClose={()=>setDebtBreakdownOpen(false)}
-        title="Stewardship Debt"
-        explanation="Donors weighted by how long it's been since a real conversation, multiplied by how much they've given. The list below is ranked by who's contributing most to that number right now."
-        loading={debtBreakdownLoading}
-        total={debtBreakdown?.total?.toLocaleString()}
-        totalLabel="Debt score"
-        totalCount={debtBreakdown?.count}
-        rows={(debtBreakdown?.rows||[]).map(r=>({
-          donorId:r.donorId,
-          donorName:r.donorName,
-          detail:`${fmtFull(r.totalGiving)} total · ${r.daysSinceContact}d since contact`,
-          value:r.contribution.toLocaleString(),
-          percentOfTotal:r.percentOfTotal,
-        }))}
-        onSelectDonor={goToDonorFromBreakdown}
-      />
-
-      <Breakdown
-        open={retentionBreakdownOpen}
-        onClose={()=>setRetentionBreakdownOpen(false)}
-        title="Donor Retention Rate"
-        explanation={`Donors who gave in ${retentionBreakdown?.prevYear??"the prior year"} but haven't given again in ${retentionBreakdown?.year??"the current year"} the specific list dragging the rate down, not just the percentage.`}
-        loading={retentionBreakdownLoading}
-        total={retentionBreakdown?.thinData?"Not enough history yet":retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"Not set"}
-        totalLabel="Retention rate"
-        totalCount={retentionBreakdown?.nonRetainedCount}
-        rows={(retentionBreakdown?.rows||[]).map(r=>({
-          donorId:r.donorId,
-          donorName:r.donorName,
-          detail:r.lastGiftDate?`Last gave ${fmtDayLong(r.lastGiftDate)}`:"No gift date on file",
-          value:fmtFull(r.lastGiftAmount),
-        }))}
-        onSelectDonor={goToDonorFromBreakdown}
-      />
-
-      <Breakdown
-        open={reengBreakdownOpen}
-        onClose={()=>setReengBreakdownOpen(false)}
-        title="Money at risk"
-        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)}: lapsing or lapsed, the one lapse rule the pipeline's move suggestions and Communications use. Lapsing is the moment there is still the most to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
-        loading={false}
-        total={impact?.atRiskAmount!=null?fmtFull(impact.atRiskAmount):"Not set"}
-        totalLabel="At risk"
-        totalCount={impact?.quietDonorCount}
-        rows={(impact?.atRiskDonors||[]).map(r=>({
-          donorId:r.id,
-          donorName:r.name,
-          detail:r.lastGiftDate?`Last gave ${fmtDayLong(r.lastGiftDate)}`:"No gift date on file",
-          value:fmtFull(r.amount),
-        }))}
-        onSelectDonor={goToDonorFromBreakdown}
-      />
-
-      <Breakdown
-        open={portfolioBreakdown.open}
-        onClose={closePortfolioBreakdown}
-        title={PORTFOLIO_BREAKDOWNS[portfolioBreakdown.key]?.title||""}
-        explanation={PORTFOLIO_BREAKDOWNS[portfolioBreakdown.key]?.explanation}
-        loading={portfolioBreakdown.loading}
-        total={portfolioBreakdown.data?.total!=null?"$"+portfolioBreakdown.data.total.toLocaleString():undefined}
-        totalLabel="Total"
-        totalCount={portfolioBreakdown.data?.count}
-        rows={portfolioBreakdown.data?.rows||[]}
-        onSelectDonor={goToDonorFromPortfolio}
-      />
-
-      {convoFor&&<Suspense fallback={null}><LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
-        onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/></Suspense>}
-      {wordsOpen&&<Suspense fallback={null}><YourWords mode="first-run" onClose={()=>setWordsOpen(false)}
-        onDone={()=>{setWordsOpen(false);setWordsDone(true);if(setData)setData(d=>({...d,org:{...d.org,vocabularySetAt:new Date().toISOString()}}));}}/></Suspense>}
-      {planFor&&<Suspense fallback={null}><PlanFollowUpModal donor={planFor.donor}
-        onSaved={()=>{loadThreads();}} onClose={()=>setPlanFor(null)}/></Suspense>}
+      {HL&&HL.homeOverlays({ closePortfolioBreakdown, convoFor, data, debtBreakdown, debtBreakdownLoading, debtBreakdownOpen, goToDonorFromBreakdown, goToDonorFromPortfolio, impact, loadDrift, loadThreads, onNavigate, planFor, portfolioBreakdown, reengBreakdownOpen, retentionBreakdown, retentionBreakdownLoading, retentionBreakdownOpen, setConvoFor, setData, setDebtBreakdownOpen, setPlanFor, setReengBreakdownOpen, setRetentionBreakdownOpen, setWordsDone, setWordsOpen, wordsOpen })}
     </div>
   );
 }
