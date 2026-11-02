@@ -10,9 +10,10 @@
 //
 // Runs against the LOCAL scratch server + Postgres only (tests/README.md).
 const { BASE, ok, summary, api, login, q, closeDb } = require("./helpers.js");
+const { testNow } = require("./clock");
 
 async function registerOrg(label) {
-  const email = `sesspriv_${label}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}@example.com`;
+  const email = `sesspriv_${label}_${testNow()}_${Math.random().toString(36).slice(2, 7)}@example.com`;
   const r = await fetch(BASE + "/auth/register-org", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -33,7 +34,7 @@ async function cleanup(orgId) {
   // ── requireAdmin: role revocation takes effect on the next request ──────────
   {
     const a = await registerOrg("admin");
-    const invite = (n) => api("POST", "/auth/invite", a.token, { email: `inv_${n}_${Date.now()}@ex.com`, role: "staff" });
+    const invite = (n) => api("POST", "/auth/invite", a.token, { email: `inv_${n}_${testNow()}@ex.com`, role: "staff" });
 
     const before = await invite("before");
     ok("fresh admin token can hit a requireAdmin route", before.status === 200, before.status);
@@ -78,7 +79,7 @@ async function cleanup(orgId) {
   // A valid, unchanged admin keeps working (no false-positive lockout).
   {
     const a = await registerOrg("valid");
-    const r = await api("POST", "/auth/invite", a.token, { email: `ok_${Date.now()}@ex.com`, role: "staff" });
+    const r = await api("POST", "/auth/invite", a.token, { email: `ok_${testNow()}@ex.com`, role: "staff" });
     ok("an unchanged admin is NOT locked out by the revalidation", r.status === 200, r.status);
     await cleanup(a.orgId);
   }

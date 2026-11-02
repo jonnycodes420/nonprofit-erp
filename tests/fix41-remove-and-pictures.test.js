@@ -26,6 +26,7 @@ const path = require("path");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const h = require("./helpers");
+const { testNow } = require("./clock");
 const { ok, api, q, STRIPE_MOCK_PORT } = h;
 
 const ORG = "org_fix41_rm";
@@ -37,7 +38,7 @@ const L = { vip: "el_fix41_vip", ga: "el_fix41_ga", spare: "el_fix41_spare" };
 const D = { ada: "d_fix41_ada", ben: "d_fix41_ben", cy: "d_fix41_cy", dee: "d_fix41_dee" };
 const ROOT = path.join(__dirname, "..");
 // A datetime-local string a day either side of now, in the org's zone.
-const localStamp = off => new Date(Date.now() + off).toLocaleString("sv-SE", { timeZone: "America/New_York" }).replace(" ", "T").slice(0, 16);
+const localStamp = off => new Date(testNow() + off).toLocaleString("sv-SE", { timeZone: "America/New_York" }).replace(" ", "T").slice(0, 16);
 
 // Every request that reaches the Stripe stand-in. Removing anything must add none.
 const stripeSeen = [];
@@ -379,7 +380,7 @@ async function pictures(T) {
   // A page cover drafted in the editor names who saved it. Before FIX-41 only
   // Publish wrote the pointer history, so a draft cover had no author on record.
   await q(`INSERT INTO giving_pages (id,org_id,slug,title,story,image_url,status) VALUES ('gp_fix41_pic',$1,'fix41-pic','Spring','','','active')`, [ORG]);
-  const t0 = new Date();
+  const t0 = new Date(testNow());
   const ds = await api("PUT", "/giving-pages/gp_fix41_pic/page/settings", T, { settings: { imageUrl: up.body.url, imageMeta: { alt: "Boats", fx: 0.5, fy: 0.3 } } });
   const hist = await q(`SELECT actor_user_id, actor_email FROM asset_pointer_history
                          WHERE org_id=$1 AND entity='giving_page.draft_image' AND entity_id='gp_fix41_pic' AND created_at >= $2`, [ORG, t0]);

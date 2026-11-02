@@ -29,6 +29,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
+const { testNow } = require("../clock");
 
 const ORG = "org_c2src";
 const ADMIN = "admin@c2src-fixture.org";
@@ -38,7 +39,7 @@ const TABLES = ["merge_proposals", "data_health_dismissals", "data_health_runs",
                 "fin_transactions", "gifts", "giving_sources", "donors", "budgets", "accounts", "fin_funds", "users"];
 
 const civil = d => d.toISOString().slice(0, 10);
-const DAY = civil(new Date(Date.now() - 3 * 86400000));
+const DAY = civil(new Date(testNow() - 3 * 86400000));
 const ISO = `${DAY}T15:04:05Z`;
 
 // ── THE STAND-INS ──────────────────────────────────────────────────────────

@@ -28,6 +28,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, login, api, q } = require("../helpers");
+const { testNow } = require("../clock");
 
 const ORG = "org_fix34c";
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 6318);
@@ -47,7 +48,7 @@ const mock = http.createServer((req, res) => {
   req.on("end", async () => {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
-    S.calls.push({ method: req.method, path: p, search: u.search, at: Date.now() });
+    S.calls.push({ method: req.method, path: p, search: u.search, at: testNow() });
     const send = (code, obj, headers = {}) => { res.writeHead(code, { "Content-Type": "application/json", ...headers }); res.end(obj == null ? "" : JSON.stringify(obj)); };
     if (p.startsWith("/v1.0/")) {
       if (S.graph429 && req.method === "GET") return send(429, { error: { code: "TooManyRequests" } }, { "Retry-After": "120" });
@@ -99,7 +100,7 @@ async function setup() {
            ('mbx_fix34c_g',$1,$2,'google',$3,'active',$4,NOW() + INTERVAL '1 day',true,'system:test','test'),
            ('mbx_fix34c_m',$1,$2,'microsoft',$3,'active',$4,NOW() + INTERVAL '1 day',true,'system:test','test')`, [ORG, UID, ANN, sealed]);
 }
-const when = d => ({ startsAt: new Date(Date.now() + d * 864e5).toISOString(), endsAt: new Date(Date.now() + d * 864e5 + 3600e3).toISOString() });
+const when = d => ({ startsAt: new Date(testNow() + d * 864e5).toISOString(), endsAt: new Date(testNow() + d * 864e5 + 3600e3).toISOString() });
 const posts = since => S.calls.slice(since).filter(c => c.method === "POST");
 const toGoogle = cs => cs.some(c => c.path === "/calendar/v3/calendars/primary/events");
 const toGraph = cs => cs.some(c => c.path === "/v1.0/me/events");
@@ -166,7 +167,7 @@ async function run() {
     S.graph429 = true;
     await api("POST", "/mailbox/microsoft/sync", tok, { what: "mail" });
     const ra = (await q(`SELECT retry_after FROM mailbox_connections WHERE id='mbx_fix34c_m'`))[0];
-    const wait = ra && ra.retry_after ? new Date(ra.retry_after).getTime() - Date.now() : null;
+    const wait = ra && ra.retry_after ? new Date(ra.retry_after).getTime() - testNow() : null;
     ok("§5 a 429 with Retry-After 120 makes the connection wait about two minutes", wait != null && wait > 60e3 && wait <= 125e3, String(wait));
     S.graph429 = false;
     const before = (await q(`SELECT COUNT(*)::int AS n FROM mailbox_sync_runs WHERE org_id=$1 AND provider='microsoft'`, [ORG]))[0].n;
@@ -180,9 +181,9 @@ async function run() {
     const hid = (await q(`SELECT gmail_history_id FROM mailbox_connections WHERE id='mbx_fix34c_g'`))[0];
     ok("§6 a full Gmail read stores the history id", full.status === 200 && hid && hid.gmail_history_id === "500", JSON.stringify(hid));
     mark = S.calls.length;
-    const t0 = Date.now();
+    const t0 = testNow();
     const again = await api("POST", "/mailbox/google/sync", tok, { what: "mail" });
-    const ms = Date.now() - t0;
+    const ms = testNow() - t0;
     const mailCalls = S.calls.slice(mark).filter(c => c.path.startsWith("/gmail/") && c.path !== "/gmail/v1/users/me/profile");
     ok("§6 a read with nothing new is one history call and no message search", again.status === 200 && mailCalls.length === 1 && mailCalls[0].path === "/gmail/v1/users/me/history",
       `${mailCalls.map(c => c.path).join(" ")} (${ms}ms)`);

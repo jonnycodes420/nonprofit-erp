@@ -11,6 +11,7 @@
 
 const http = require("http");
 const { BASE, ok, summary, api: helperApi, SINK_PORT, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 // SEND-GATE-1: the people this suite mails are people the org turned
 // automatic email on for (every person starts off). It tests the other rules.
 const api = async (...a) => {
@@ -64,7 +65,7 @@ async function sendCampaign(reg, donorEmail) {
 
 (async () => {
   await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
-  const stamp = Date.now();
+  const stamp = testNow();
 
   console.log("\nOrg with receipt_address configured:");
   const orgA = await makeOrg("Footer Addressed Org", `footer-a-${stamp}@example.com`);

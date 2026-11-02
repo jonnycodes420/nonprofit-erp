@@ -44,6 +44,7 @@
 const stripe = require("stripe")("sk_test_dummy");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, q, closeDb, civilPlusDays, waitFor } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_s2same";
 const ADMIN = "s2same-admin@example.org";
@@ -264,11 +265,11 @@ async function fireStripe(evtId, piId, cents, email, name) {
   // change has overtaken, so it is run in a quiet moment, and again if a
   // write still lands while it runs.
   const quiet = async () => {
-    let last = await changeMark(), since = Date.now();
-    for (const t0 = Date.now(); Date.now() - t0 < 60000 && Date.now() - since < 3000;) {
+    let last = await changeMark(), since = testNow();
+    for (const t0 = testNow(); testNow() - t0 < 60000 && testNow() - since < 3000;) {
       await new Promise(r => setTimeout(r, 250));
       const m = await changeMark();
-      if (String(m) !== String(last)) { last = m; since = Date.now(); }
+      if (String(m) !== String(last)) { last = m; since = testNow(); }
     }
   };
   let c1, r1 = {};

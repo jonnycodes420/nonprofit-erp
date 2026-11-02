@@ -33,6 +33,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const ORG = "org_t2anosend";
 const ADMIN = "t2a-admin@t.local";
@@ -163,7 +164,7 @@ async function reset() {
   ok("a donor was created", dr.status === 201 || dr.status === 200, dr.status);
   const donorId = dr.body.id || dr.body.donor?.id;
 
-  const g1 = await api("POST", `/donors/${donorId}/gifts`, admin, { amount: 500, date: new Date().toISOString().slice(0, 10) });
+  const g1 = await api("POST", `/donors/${donorId}/gifts`, admin, { amount: 500, date: civilDay() });
   ok("a first gift was recorded", g1.status === 201 || g1.status === 200, g1.status + " " + JSON.stringify(g1.body).slice(0, 140));
   // The engine runs after the response; give it a moment to land.
   await new Promise(r => setTimeout(r, 1200));
@@ -227,7 +228,7 @@ async function reset() {
   // her in Major donor AS WELL AS the first-year journey, and Major donor's
   // sooner step takes her one open thread.
   console.log("\n— §5 · two journeys at once, spaced, and the sooner one on her Thread —");
-  const g2 = await api("POST", `/donors/${donorId}/gifts`, admin, { amount: 25000, date: new Date().toISOString().slice(0, 10) });
+  const g2 = await api("POST", `/donors/${donorId}/gifts`, admin, { amount: 25000, date: civilDay() });
   ok("a $25,000 gift was recorded", g2.status === 201 || g2.status === 200, g2.status);
   await new Promise(r => setTimeout(r, 1200));
 

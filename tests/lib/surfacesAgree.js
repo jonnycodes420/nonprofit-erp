@@ -57,6 +57,7 @@ const H = require("../helpers");
 const orgTime = require("../../orgTime");
 const { computeKey, isCreditType } = require("../keys/truthKey");
 const { orgRows } = require("../keys/fromDb");
+const { testNow } = require("../clock");
 
 const cents = v => Math.round(Number(v || 0) * 100);
 const money = c => `$${(c / 100).toFixed(2)}`;
@@ -116,7 +117,7 @@ function* leaves(v, path = "") {
 
 const TOKENS = new Map();   // orgId|email -> token, so repeated checks sign in once
 async function assertSurfacesAgree(orgId, ctx = {}) {
-  const t0 = Date.now();
+  const t0 = testNow();
   const q = ctx.q || H.q;
   const label = ctx.label || ctx.step || "";
   const skip = new Set(ctx.skip || []);
@@ -909,7 +910,7 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
   // every run, as KNOWN; anything else fails.
   for (const k of known) console.log(`        ${k}${label ? ` (${label})` : ""}`);
   const split = { fresh: diffs };
-  const out = { ok: diffs.length === 0, diffs, known, facts, ms: Date.now() - t0 };
+  const out = { ok: diffs.length === 0, diffs, known, facts, ms: testNow() - t0 };
   if (!out.ok && !ctx.soft) {
     const e = new Error(`surfaces disagree${label ? ` (${label})` : ""} in ${orgId}:\n  - ${split.fresh.join("\n  - ")}`);
     e.diffs = split.fresh; e.facts = facts;

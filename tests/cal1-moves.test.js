@@ -25,6 +25,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
+const { dayOffset } = require("./clock");
 // FIX-33: a move reaches the calendar as wall-clock time in the org's zone
 // (it used to be a UTC instant). The same INSTANT is what must match.
 function sameInstant(block, isoUtc) {
@@ -73,7 +74,7 @@ async function reset() {
            VALUES ('mbx_cal1',$1,$2,'google',$3,'active',$4,NOW() + INTERVAL '1 day',true,'system:test','test')`,
     [ORG, `u_${ORG}`, `dana@${ORG}.local`, sealBag({ accessToken: "tok_test", refreshToken: "ref_test", scope: null }, { aad: ORG })]);
   // The week: a Monday a little ahead, so nothing here is in the past.
-  const day = new Date(Date.now() + 9 * 864e5); day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  const day = new Date(dayOffset(9) + "T12:00:00Z"); day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
   const MON = day.toISOString().slice(0, 10);
   const plus = n => new Date(Date.parse(MON + "T12:00:00Z") + n * 864e5).toISOString().slice(0, 10);
   await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by,created_by_name)

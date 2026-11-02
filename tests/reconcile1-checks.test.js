@@ -33,12 +33,13 @@
 "use strict";
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, login, api, waitFor } = require("./helpers");
+const { testNow, civilYear } = require("./clock");
 
 const ORG = "org_rc1checks";
 const OTHER = "org_rc1other";
 const ADMIN = "director@rc1checks.local";
 const OTHER_ADMIN = "director@rc1other.local";
-const Y = new Date().getFullYear();
+const Y = civilYear();
 const OLD = Y - 3;             // the year Steward has gifts for
 const B2 = Y - 2, B1 = Y - 1;  // two years Steward has no gifts for
 const csvUrl = text => `data:text/csv;base64,${Buffer.from(text, "utf8").toString("base64")}`;
@@ -180,7 +181,7 @@ async function opensAndFoots(tok, src, cents, kind) {
   const checkedAt = (await api("GET", `/old-reports/${sheet}/check`, tok)).body.check.checkedAt;
   const imp = [["Eve Margin", "eve@rc1.test", "General Operating", 120], ["Fay Ledgerly", "fay@rc1.test", "General Operating", 80.4],
     ["Gus Accrual", "gus@rc1.test", "General Operating", 45], ["Ada Ledger", "ada@rc1.test", "Capital Fund", 2000], ["Ben Tally", "ben@rc1.test", "Capital Fund", 300]];
-  const run = `imp_rc1${Date.now().toString(36)}`;
+  const run = `imp_rc1${testNow().toString(36)}`;
   const r = await api("POST", "/donors/import-combined", tok, { importId: run,
     donors: imp.map(([name, email]) => ({ name, email })),
     gifts: imp.map(([, , fund, amount], i) => ({ donorIndex: i, amount, date: `${OLD}-08-0${i + 1}`, type: "cash", paymentMethod: "Check", fund, externalId: `RC1-${i}` })) });

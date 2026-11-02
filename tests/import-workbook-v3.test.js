@@ -9,6 +9,7 @@
 const { ok, summary } = require("./helpers");
 const path = require("path");
 const fs = require("fs");
+const { testNow } = require("./clock");
 
 (async () => {
   console.log("import-workbook-v3 (BUILD-82 golden, pure layer)");
@@ -16,7 +17,7 @@ const fs = require("fs");
   const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
   const FIXTURE = path.join(__dirname, "fixtures", "build82", "steward-messy-25k-v3.xlsx");
   const buf = fs.readFileSync(FIXTURE);
-  const t0 = Date.now();
+  const t0 = testNow();
   const wb = XLSX.read(buf, { type: "buffer", cellNF: true, cellFormula: true, cellStyles: true });
   const raw = IS.extractWorkbookFromSheetJS(wb, XLSX);
   const sheets = raw.map(s => {
@@ -380,6 +381,6 @@ const fs = require("fs");
      subDecoy.decoyOverlap > 6000 && subDecoy.refusals.filter(x => x.reason === "decoy_duplicate").length === subDecoy.decoyOverlap, subDecoy.decoyOverlap);
   ok("decoy rows that survive the dedupe are counted in the workbook equation", subDecoy.reconciliation.workbook.balanced, subDecoy.reconciliation.workbook);
 
-  console.log(`  (pipeline: ${((Date.now() - t0) / 1000).toFixed(1)}s, heap ${Math.round(process.memoryUsage().heapUsed / 1e6)}MB)`);
+  console.log(`  (pipeline: ${((testNow() - t0) / 1000).toFixed(1)}s, heap ${Math.round(process.memoryUsage().heapUsed / 1e6)}MB)`);
   summary("import-workbook-v3");
 })();

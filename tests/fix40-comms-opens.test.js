@@ -33,6 +33,7 @@ const bcrypt = require("bcryptjs");
 const h = require("./helpers");
 const { ok, api, q } = h;
 const B = require("./polish1/browser-p567");
+const { testNow, civilDay, civilYear } = require("./clock");
 
 const ORG = "org_fix40_comms";
 const OTHER = "org_fix40_other";
@@ -43,7 +44,7 @@ const DEMO_ORG = "org_b72demo";
 const D = { ada: "d_fix40_ada", ben: "d_fix40_ben", vol: "d_fix40_vol", noe: "d_fix40_noemail" };
 const MONEY = /^\$[\d,]+(\.\d\d)?$/;
 // The Spring letter went out on 20 April of the most recent April.
-const SENT = new Date(Date.UTC(new Date().getUTCFullYear() - (new Date().getUTCMonth() < 4 ? 1 : 0), 3, 20, 15));
+const SENT = new Date(Date.UTC(civilYear() - (Number(civilDay().slice(5, 7)) - 1 < 4 ? 1 : 0), 3, 20, 15));
 
 async function wipe() {
   const tables = (await q(`SELECT table_name FROM information_schema.columns
@@ -57,7 +58,7 @@ async function wipe() {
 }
 
 const iso = d => d.toISOString().slice(0, 10);
-const daysAgo = n => new Date(Date.now() - n * 864e5);
+const daysAgo = n => new Date(testNow() - n * 864e5);
 
 async function fixture() {
   for (const [org, name, slug, email, uid] of [[ORG, "FIX-40 Comms", "fix40-comms", ADMIN, "u_fix40"], [OTHER, "FIX-40 Other", "fix40-other", OTHER_ADMIN, "u_fix40_o"]]) {

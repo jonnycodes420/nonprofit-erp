@@ -25,9 +25,10 @@ const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb } = require("./helpers");
+const { civilYear } = require("./clock");
 
 const ORG = "org_why1b";
-const Y = new Date().getUTCFullYear() - 1;
+const Y = civilYear() - 1;
 const freePort = () => new Promise(r => { const s = http.createServer(); s.listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
 
 (async () => {

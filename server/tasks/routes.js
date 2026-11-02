@@ -217,10 +217,10 @@ async function taskCounts(orgId, scope) {
   const days = await taskDays(orgId);
   const rows = await query(
     `SELECT v, COUNT(*)::int AS n FROM (
-       SELECT ${taskViewSql} AS v, t.done, COALESCE(t.completed_at, t.updated_at, t.created_at) AS fin
+       SELECT ${taskViewSql} AS v, t.done, COALESCE(t.completed_at, t.updated_at, t.created_at) AS fin, t.org_id AS oid
          FROM tasks t LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
         WHERE t.org_id = ? AND t.voided_at IS NULL AND (t.donor_id IS NULL OR d.deleted_at IS NULL) ${scope.sql}) x
-      WHERE v <> 'done' OR fin >= ?::date
+      WHERE v <> 'done' OR ${inOrgDays("x.fin", "x.oid", "?", null)}   -- CLOCK-1: the same window as the list
       GROUP BY v`,
     [days.today, days.today, days.week, orgId, ...scope.params, days.monthAgo]);
   const out = { today: 0, upcoming: 0, overdue: 0, later: 0, nodate: 0, done: 0 };

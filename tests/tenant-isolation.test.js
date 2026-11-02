@@ -14,10 +14,11 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const A = "org_iso_a", B = "org_iso_b";
 const iso = d => d.toISOString().slice(0, 10);
-const TODAY = iso(new Date());
+const TODAY = civilDay();
 
 async function reset() {
   for (const org of [A, B]) {

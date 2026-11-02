@@ -19,6 +19,7 @@
 "use strict";
 const bcrypt = require("bcryptjs");
 const { ok, login, api, q } = require("../helpers");
+const { testNow } = require("../clock");
 
 const ORG = "org_fix34a_one";
 const TABLES = ["meeting_effects", "calendar_events", "interactions", "tasks", "threads", "donors", "users"];
@@ -49,7 +50,7 @@ async function run() {
 
     // A Wednesday at least a week out, 18:00 UTC (2pm in New York): the prep
     // lands on the Tuesday, the meeting and "How did it go?" on the Wednesday.
-    let start = new Date(Date.now() + 7 * 864e5);
+    let start = new Date(testNow() + 7 * 864e5);
     while (start.getUTCDay() !== 3) start = new Date(start.getTime() + 864e5);
     start.setUTCHours(18, 0, 0, 0);
     const day = nyDay(start.getTime());
@@ -73,7 +74,7 @@ async function run() {
     ok("FIX-34 A §1 the how-did-it-go task stays on the day", items.some(i => i.type === "step" && /^How did it go with Christopher\?$/.test(i.title)), items.map(i => i.title));
 
     // §2 THE THREAD (HOME): ONE ROW PER DONOR, WITH THE MORE-COUNT.
-    await api("POST", "/donors/d_f34a_ada/threads", T, { label: "Send the spring report", due: nyDay(Date.now() + 3 * 864e5) });
+    await api("POST", "/donors/d_f34a_ada/threads", T, { label: "Send the spring report", due: nyDay(testNow() + 3 * 864e5) });
     const thr = await api("GET", "/threads?scope=all", T);
     const rows = ((thr.body && thr.body.list) || []).filter(r => r.donorId === "d_f34a_chris");
     ok("FIX-34 A §2 one booked meeting gives ONE Thread row for the donor", thr.status === 200 && rows.length === 1, (thr.body.list || []).map(r => `${r.donorName}: ${r.nextStep.label}`));
@@ -98,7 +99,7 @@ async function run() {
       [dn.status, thOpen, rows2.map(r => ({ id: r.id, label: r.nextStep.label, more: r.moreSteps && r.moreSteps.length }))]);
 
     // §3 A CALL STEP TICKED FROM THE CALENDAR NEEDS AN OUTCOME.
-    const plan = await api("POST", "/donors/d_f34a_bo/threads", T, { label: "Call about the spring visit", due: nyDay(Date.now() + 2 * 864e5) });
+    const plan = await api("POST", "/donors/d_f34a_bo/threads", T, { label: "Call about the spring visit", due: nyDay(testNow() + 2 * 864e5) });
     const [st] = await q(`SELECT id FROM tasks WHERE org_id=$1 AND thread_id=$2 AND link_kind='next_step'`, [ORG, plan.body && plan.body.thread && plan.body.thread.id]);
     const bare = await api("POST", `/tasks/${st && st.id}/complete`, T, { done: true });
     ok("FIX-34 A §3 a bare tick of a call step is refused: say how it went and what's next", bare.status === 422 && bare.body.error === "needs_outcome", [bare.status, bare.body]);

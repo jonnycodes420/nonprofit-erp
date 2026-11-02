@@ -611,7 +611,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
         const x = await XSm.sentSummary(orgId, b.realm_id);
         const [m30] = await query(
           `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount_cents),0)::bigint AS cents FROM gift_bookkeeping_syncs
-            WHERE org_id=? AND vendor='xero' AND realm_id=? AND status='synced' AND synced_at >= ?::date`,
+            WHERE org_id=? AND vendor='xero' AND realm_id=? AND status='synced' AND ${orgTime.orgDayWindowSql("synced_at", orgTime.orgTzSql("gift_bookkeeping_syncs.org_id"), "?", null)}`,
           [orgId, String(b.realm_id || ""), since30]);
         sentN = Number(m30 && m30.n) || 0; sentCents = Number(m30 && m30.cents) || 0; heldN = 0;
         lastSent = x.lastAt || null;
@@ -5175,7 +5175,7 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
            ON rs.stripe_subscription_id = pre.subscription_id AND rs.org_id = pre.org_id
          JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
         WHERE pre.org_id = ? AND pre.type = 'payment_failed'
-          AND pre.created_at >= ?::date
+          AND ${orgTime.orgDayWindowSql("pre.created_at", orgTime.orgTzSql("pre.org_id"), "?", null)}
         ORDER BY rs.id, pre.created_at DESC`,
       [orgId, yearStart]),
     query(
@@ -5187,7 +5187,7 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
            ON rs.stripe_subscription_id = pre.subscription_id AND rs.org_id = pre.org_id
          JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
         WHERE pre.org_id = ? AND pre.type = 'payment_recovered'
-          AND pre.created_at >= ?::date
+          AND ${orgTime.orgDayWindowSql("pre.created_at", orgTime.orgTzSql("pre.org_id"), "?", null)}
         ORDER BY rs.id, pre.created_at DESC`,
       [orgId, yearStart]),
   ]);

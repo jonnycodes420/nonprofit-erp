@@ -13,6 +13,7 @@
 // on the same rule cannot disagree.
 const { query, querySetwise } = require("./db");
 const DS = require("./donorStatus");
+const orgTime = require("./orgTime");   // CLOCK-1: "has passed" is the org's today
 
 let _pt = null;
 async function personTypeMod() { return _pt || (_pt = await import("./shared/personType.js")); }
@@ -533,7 +534,7 @@ function eventGuestSql(kind, alias, eventParam = null) {
   if (kind === "attended") return `EXISTS (${base} AND (lower(COALESCE(eg.status,'')) = 'attended' OR eg.checked_in_at IS NOT NULL))`;
   if (kind === "no_show") return `EXISTS (${base} AND (lower(COALESCE(eg.status,'')) = 'no_show'
       OR (lower(COALESCE(eg.status,'')) IN ('registered','confirmed') AND eg.checked_in_at IS NULL
-          AND ev.date IS NOT NULL AND ev.date < CURRENT_DATE
+          AND ev.date IS NOT NULL AND ev.date < ${orgTime.orgTodaySql(orgTime.orgTzSql("eg.org_id"))}
           AND EXISTS (SELECT 1 FROM event_attendees x WHERE x.event_id = eg.event_id AND x.org_id = eg.org_id
                         AND (lower(COALESCE(x.status,'')) = 'attended' OR x.checked_in_at IS NOT NULL)))))`;
   return `(EXISTS (${base} AND eg.guest_of IS NOT NULL AND lower(COALESCE(eg.status,'')) NOT IN ('cancelled','declined'))

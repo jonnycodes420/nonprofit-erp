@@ -31,6 +31,7 @@ const crypto = require("crypto");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
 const assetStore = require("../assetStore");
 const { guardFailures, computeGuardsOk } = require("../guards");
+const { testNow } = require("./clock");
 
 const ORG = "org_intprod1g";
 
@@ -74,7 +75,7 @@ async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [O
   ok("§2 the error handler answers an asset-store refusal with a 503", /asset_store_unavailable[\s\S]{0,200}status\(503\)/.test(srvSrc));
 
   // ── §3 · THE FAILING GUARD BY NAME ─────────────────────────────────────
-  const now = Date.now();
+  const now = testNow();
   const clean = {
     bootAt: now - 60 * 60 * 1000,
     reconciliation: { checkedAt: new Date(now - 60000).toISOString(), unrecordedCharges: 0, orphanGifts: 0, accountsErrored: 0 },

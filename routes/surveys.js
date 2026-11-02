@@ -18,6 +18,7 @@
 const express = require("express");
 const SL = require("../surveyLinks");
 const GR = require("../groups");   // PARITY-1 Part D: a survey can be for a Group
+const orgTime = require("../orgTime");   // CLOCK-1: a look-back counts the org's days
 
 const routers = { r0: express.Router() };
 
@@ -187,10 +188,10 @@ app.post("/surveys/:id/drafts", requireAuth, checkWriteAccess, wrap(async (req, 
        AND d.id IN (${m.sql}) ORDER BY lower(d.name) LIMIT 200`, [orgId, ...m.args]);
   } else if (r.audience === "volunteers") {
     people = await query(`SELECT DISTINCT d.id, d.name, d.email FROM donors d JOIN volunteer_shifts s ON s.person_id = d.id AND s.org_id = d.org_id
-       WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.email,'') <> '' AND s.date >= (CURRENT_DATE - 365)::text LIMIT 200`, [orgId]);
+       WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.email,'') <> '' AND s.date >= (${orgTime.orgTodaySql(orgTime.orgTzSql("d.org_id"))} - 365)::text LIMIT 200`, [orgId]);
   } else {
     people = await query(`SELECT d.id, d.name, d.email FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.email,'') <> ''
-       AND EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= (CURRENT_DATE - 730)::text)
+       AND EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= (${orgTime.orgTodaySql(orgTime.orgTzSql("d.org_id"))} - 730)::text)
        ORDER BY d.last_gift_date DESC NULLS LAST LIMIT 200`, [orgId]);
   }
   const key = `survey:${r.id}`;

@@ -8,6 +8,11 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const lapseRule = require("../../lapseRule");   // FIX-49: the one lapse rule
+const { orgTzSql, orgDayWindowSql, orgDateOfSql } = require("../../orgTime");
+// CLOCK-1: a timestamp inside "the last w days" is tested against the ORG's
+// midnights, and a timestamp read as a day is the org's day of it.
+const SINCE = (col, org) => orgDayWindowSql(col, orgTzSql(org), "?::date - ?::int", null);
+const DAY_OF = (col, org) => orgDateOfSql(col, orgTzSql(org));
 
 function mount(ctx) {
 const {
@@ -119,20 +124,20 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
                 FROM donors d
                WHERE d.org_id=? AND ${LIVE_PERSON} AND COALESCE(d.gift_count, 0) > 0
                  AND d.last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${st.sql}
-                 AND ${crossed} >= d.created_at::date AND ${crossed} >= ?::date - ?::int`,
+                 AND ${crossed} >= ${DAY_OF("d.created_at", "d.org_id")} AND ${crossed} >= ?::date - ?::int`,
       [orgId, ...st.args, today, w]);
   }
   if (key === "recurring_failed") {
     return P(`SELECT rs.donor_id, 'recurring_failed:' || rs.id || ':' || COALESCE(to_char(rs.first_failed_at, 'YYYY-MM-DD'), '') AS event_key
                 FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
                WHERE rs.org_id=? AND rs.status IN ('past_due','failed','unpaid','recovering')
-                 AND rs.last_failed_at IS NOT NULL AND rs.last_failed_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND rs.last_failed_at IS NOT NULL AND ${SINCE("rs.last_failed_at", "rs.org_id")}`, [orgId, today, w]);
   }
   if (key === "recurring_cancelled") {
     return P(`SELECT rs.donor_id, 'recurring_cancelled:' || rs.id AS event_key
                 FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
                WHERE rs.org_id=? AND rs.status IN ('canceled','cancelled')
-                 AND rs.canceled_at IS NOT NULL AND rs.canceled_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND rs.canceled_at IS NOT NULL AND ${SINCE("rs.canceled_at", "rs.org_id")}`, [orgId, today, w]);
   }
   if (key === "card_expiring") {
     // "Next month" in the org's own calendar.
@@ -162,13 +167,13 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
                 JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
                WHERE ea.org_id=? AND lower(coalesce(ea.status,'')) = 'attended'
                GROUP BY ea.donor_id
-              HAVING MIN(COALESCE(e.date::date, ea.created_at::date)) >= ?::date - ?::int`, [orgId, today, w]);
+              HAVING MIN(COALESCE(e.date::date, ${DAY_OF("ea.created_at", "ea.org_id")})) >= ?::date - ?::int`, [orgId, today, w]);
   }
   if (key === "grant_awarded") {
     return P(`SELECT g.funder_donor_id AS donor_id, 'grant:' || g.id AS event_key
                 FROM grants g JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
                WHERE g.org_id=? AND g.status='awarded' AND g.awarded_at IS NOT NULL
-                 AND g.awarded_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND ${SINCE("g.awarded_at", "g.org_id")}`, [orgId, today, w]);
   }
   if (key === "p2p_goal") {
     return P(`SELECT f.person_id AS donor_id, 'p2p_goal:' || f.id AS event_key
@@ -186,7 +191,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
     return P(`SELECT p.donor_id, 'pledge:' || p.id AS event_key
                 FROM pledges p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id AND ${LIVE_PERSON}
                WHERE p.org_id=? AND COALESCE(p.status,'open') NOT IN ('cancelled','canceled','written_off')
-                 AND p.is_shell IS NOT TRUE AND p.created_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND p.is_shell IS NOT TRUE AND ${SINCE("p.created_at", "p.org_id")}`, [orgId, today, w]);
   }
   if (key === "pledge_late") {
     return P(`SELECT p.donor_id, 'pledge_late:' || i.id AS event_key
@@ -199,7 +204,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
     return P(`SELECT p.donor_id, 'pledge_paid:' || p.id AS event_key
                 FROM pledges p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id AND ${LIVE_PERSON}
                WHERE p.org_id=? AND p.status='fulfilled' AND p.fulfilled_at IS NOT NULL
-                 AND p.fulfilled_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND ${SINCE("p.fulfilled_at", "p.org_id")}`, [orgId, today, w]);
   }
   if (key === "page_first_gift") {
     return P(`SELECT g.donor_id, 'page_first_gift' AS event_key
@@ -210,7 +215,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   if (key === "p2p_created") {
     return P(`SELECT f.person_id AS donor_id, 'p2p_created:' || f.id AS event_key
                 FROM peer_fundraisers f JOIN donors d ON d.id=f.person_id AND d.org_id=f.org_id AND ${LIVE_PERSON}
-               WHERE f.org_id=? AND f.created_at >= ?::date - ?::int`, [orgId, today, w]);
+               WHERE f.org_id=? AND ${SINCE("f.created_at", "f.org_id")}`, [orgId, today, w]);
   }
   // The winner is the top bid by the one ordering (auctionCore TOP_BIDS_SQL),
   // and an item is closed when its own close or the auction's has passed.
@@ -222,14 +227,14 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
                                ORDER BY b.amount DESC, b.created_at ASC, b.id ASC LIMIT 1) tb ON true
                 JOIN auction_bidders bw ON bw.id=tb.bidder_id AND bw.org_id=ai.org_id
                 JOIN donors d ON d.id=bw.donor_id AND d.org_id=ai.org_id AND ${LIVE_PERSON}
-               WHERE ai.org_id=? AND ${AUCTION_CLOSE} <= NOW() AND ${AUCTION_CLOSE} >= ?::date - ?::int`, [orgId, today, w]);
+               WHERE ai.org_id=? AND ${AUCTION_CLOSE} <= NOW() AND ${SINCE(AUCTION_CLOSE, "ai.org_id")}`, [orgId, today, w]);
   }
   if (key === "auction_lost") {
     return P(`SELECT DISTINCT bd.donor_id, 'auction_lost:' || au.id AS event_key
                 FROM auctions au JOIN auction_bids b ON b.auction_id=au.id AND b.org_id=au.org_id
                 JOIN auction_bidders bd ON bd.id=b.bidder_id AND bd.org_id=au.org_id
                 JOIN donors d ON d.id=bd.donor_id AND d.org_id=au.org_id AND ${LIVE_PERSON}
-               WHERE au.org_id=? AND au.closes_at <= NOW() AND au.closes_at >= ?::date - ?::int
+               WHERE au.org_id=? AND au.closes_at <= NOW() AND ${SINCE("au.closes_at", "au.org_id")}
                  AND NOT EXISTS (SELECT 1 FROM auction_items ai
                                    JOIN LATERAL (SELECT b2.bidder_id FROM auction_bids b2 WHERE b2.org_id=ai.org_id AND b2.item_id=ai.id
                                                   ORDER BY b2.amount DESC, b2.created_at ASC, b2.id ASC LIMIT 1) tb ON true
@@ -238,20 +243,20 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   if (key === "auction_donated") {
     return P(`SELECT ai.donor_id, 'auction_donated:' || ai.id AS event_key
                 FROM auction_items ai JOIN donors d ON d.id=ai.donor_id AND d.org_id=ai.org_id AND ${LIVE_PERSON}
-               WHERE ai.org_id=? AND ai.created_at >= ?::date - ?::int`, [orgId, today, w]);
+               WHERE ai.org_id=? AND ${SINCE("ai.created_at", "ai.org_id")}`, [orgId, today, w]);
   }
   if (key === "event_registered") {
     return P(`SELECT DISTINCT ea.donor_id, 'event_registered:' || ea.event_id AS event_key
                 FROM event_attendees ea JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
                WHERE ea.org_id=? AND lower(coalesce(ea.status,'')) NOT IN ('cancelled','invited','declined')
-                 AND ea.created_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND ${SINCE("ea.created_at", "ea.org_id")}`, [orgId, today, w]);
   }
   if (key === "attended_event") {
     return P(`SELECT DISTINCT ea.donor_id, 'event:' || ea.event_id AS event_key
                 FROM event_attendees ea JOIN events e ON e.id=ea.event_id
                 JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
                WHERE ea.org_id=? AND (lower(coalesce(ea.status,'')) = 'attended' OR ea.checked_in_at IS NOT NULL)
-                 AND COALESCE(ea.checked_in_at::date, e.date::date, ea.created_at::date) >= ?::date - ?::int`, [orgId, today, w]);
+                 AND COALESCE(${DAY_OF("ea.checked_in_at", "ea.org_id")}, e.date::date, ${DAY_OF("ea.created_at", "ea.org_id")}) >= ?::date - ?::int`, [orgId, today, w]);
   }
   if (key === "event_no_show") {
     return P(`SELECT DISTINCT ea.donor_id, 'event_no_show:' || ea.event_id AS event_key
@@ -264,7 +269,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
     return P(`SELECT t.donor_id, 'task_outcome:' || t.id AS event_key, t.outcome
                 FROM tasks t JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id AND ${LIVE_PERSON}
                WHERE t.org_id=? AND t.done=1 AND t.outcome IS NOT NULL AND t.voided_at IS NULL
-                 AND t.completed_at >= ?::date - ?::int`, [orgId, today, w]);
+                 AND ${SINCE("t.completed_at", "t.org_id")}`, [orgId, today, w]);
   }
   if (key === "email_engaged_no_gift") {
     // Opened or clicked, 14 days ago or more (inside the window), and not a
@@ -276,16 +281,16 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
       `SELECT DISTINCT cr.donor_id, 'email_engaged:s:' || cr.campaign_id AS event_key
          FROM campaign_recipients cr JOIN donors d ON d.id=cr.donor_id AND d.org_id=cr.org_id AND ${LIVE_PERSON}
         WHERE cr.org_id=? AND cr.opened_at IS NOT NULL
-          AND cr.opened_at::date <= ?::date - ?::int AND cr.opened_at::date >= ?::date - ?::int - ?::int
-          AND ${noGiftSince("cr.opened_at::date")}`, [orgId, today, wait, today, wait, w]);
+          AND ${DAY_OF("cr.opened_at", "cr.org_id")} <= ?::date - ?::int AND ${DAY_OF("cr.opened_at", "cr.org_id")} >= ?::date - ?::int - ?::int
+          AND ${noGiftSince(DAY_OF("cr.opened_at", "cr.org_id"))}`, [orgId, today, wait, today, wait, w]);
     const mailchimp = await P(
       `SELECT DISTINCT a.donor_id, 'email_engaged:m:' || a.campaign_id AS event_key
          FROM email_marketing_activity a JOIN email_marketing_campaigns c ON c.id=a.campaign_id AND c.org_id=a.org_id
          JOIN donors d ON d.id=a.donor_id AND d.org_id=a.org_id AND ${LIVE_PERSON}
         WHERE a.org_id=? AND (a.opened OR a.clicked) AND COALESCE(a.occurred_at, c.sent_at) IS NOT NULL
-          AND COALESCE(a.occurred_at, c.sent_at)::date <= ?::date - ?::int
-          AND COALESCE(a.occurred_at, c.sent_at)::date >= ?::date - ?::int - ?::int
-          AND ${noGiftSince("COALESCE(a.occurred_at, c.sent_at)::date")}`, [orgId, today, wait, today, wait, w]);
+          AND ${DAY_OF("COALESCE(a.occurred_at, c.sent_at)", "a.org_id")} <= ?::date - ?::int
+          AND ${DAY_OF("COALESCE(a.occurred_at, c.sent_at)", "a.org_id")} >= ?::date - ?::int - ?::int
+          AND ${noGiftSince(DAY_OF("COALESCE(a.occurred_at, c.sent_at)", "a.org_id"))}`, [orgId, today, wait, today, wait, w]);
     return [...steward, ...mailchimp];
   }
   return [];

@@ -8,6 +8,7 @@
 // modules hand back. A relative require() or import() reads from this folder.
 // Tests read it through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { orgTzSql, orgTodaySql, orgDateOfSql } = require("../../orgTime");   // CLOCK-1: the org's day, not the database's
 const DTAGS = require("../../donorTags");   // FIX-33: internal flags never reach a screen as tags
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../../emailCompose");
@@ -794,15 +795,15 @@ const JOURNEY_ROW_SQL = {
              JOIN cultivation_plans p ON p.id=st.plan_id
              JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
             WHERE p.org_id=? AND p.template_id=? AND st.status='done'
-              AND st.closed_at IS NOT NULL AND st.closed_at::date <= st.due_date::date
+              AND st.closed_at IS NOT NULL AND ${orgDateOfSql("st.closed_at", orgTzSql("p.org_id"))} <= st.due_date::date
             ORDER BY d.name`,
   late: `SELECT DISTINCT d.id, d.name
            FROM cultivation_plan_steps st
            JOIN cultivation_plans p ON p.id=st.plan_id
            JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
           WHERE p.org_id=? AND p.template_id=?
-            AND ((st.status='done' AND st.closed_at::date > st.due_date::date)
-                 OR (st.status IN ('open','pending') AND st.due_date::date < CURRENT_DATE))
+            AND ((st.status='done' AND ${orgDateOfSql("st.closed_at", orgTzSql("p.org_id"))} > st.due_date::date)
+                 OR (st.status IN ('open','pending') AND st.due_date::date < ${orgTodaySql(orgTzSql("p.org_id"))}))
           ORDER BY d.name`,
   skipped: `SELECT DISTINCT d.id, d.name, st.skip_reason AS reason
               FROM cultivation_plan_steps st
@@ -876,7 +877,7 @@ async function qualifyingDonors(orgId, t, days, audience = {}) {
 async function qualifyingDonorsByTrigger(orgId, t, days, audience = {}) {
   const trigger = t.trigger_key;
   if (trigger === "by_hand") return [];
-  const cut = `(CURRENT_DATE - ${Number(days)})`;
+  const cut = `(${orgTodaySql(orgTzSql("d.org_id"))} - ${Number(days)})`;
   const a = audienceClauses(audience, "d");
   if (trigger === "first_gift") {
     return await query(
@@ -911,7 +912,7 @@ async function qualifyingDonorsByTrigger(orgId, t, days, audience = {}) {
          JOIN events e ON e.id=ea.event_id
         WHERE d.org_id=? AND d.deleted_at IS NULL
           AND lower(coalesce(ea.status,'')) = 'attended'
-          AND COALESCE(e.date::date, ea.created_at::date) >= ${cut}${a.sql}`,
+          AND COALESCE(e.date::date, ${orgDateOfSql("ea.created_at", orgTzSql("d.org_id"))}) >= ${cut}${a.sql}`,
       [orgId, ...a.params]).catch(() => []);
   }
   if (trigger === "became_member") {

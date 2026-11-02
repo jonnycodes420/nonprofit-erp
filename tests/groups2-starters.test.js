@@ -28,6 +28,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, importWorkSettled } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const ORG = "org_groups2", ORG2 = "org_groups2b";
 const TABLES = ["audiences", "gifts", "interactions", "tasks", "threads", "import_merges", "imports", "donors", "fin_transactions", "fin_funds", "accounts", "budgets", "users"];
@@ -154,7 +155,7 @@ const figureCount = b => Number(b && (b.value ?? b.count ?? (b.figure && b.figur
   ok("§4 a second starter adds", more0.status === 201, more0.status);
   const mover = lyRows.find(r => !dns.includes(r.id) && ids1.has(r.id) && Number(r.priorYearTotal) > 0);
   const amount = Math.round(Number(mover.priorYearTotal) + 100);
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+  const today = civilDay();
   const gift = await api("POST", `/donors/${mover.id}/gifts`, T, { amount, date: today < cur.to ? today : cur.to, type: "one-time" });
   ok("§4 a gift is recorded", gift.status === 200 || gift.status === 201, gift.status);
   const g2 = await api("GET", `/groups/${gid}`, T);

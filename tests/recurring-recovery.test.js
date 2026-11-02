@@ -20,6 +20,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const stripeLib = require("stripe");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { testNow, civilDay } = require("./clock");
 
 // Fixture ids are unique across the WHOLE battery on purpose: `u_rr` belongs
 // to reserved-recovered, and every suite deletes users by ITS OWN org, so a
@@ -121,7 +122,7 @@ const sub = (id, donorId, extra = {}) => q(
   await reset();
   const tok = await login(EMAIL, PASS);
 
-  const now = new Date();
+  const now = new Date(testNow());
   const thisMonth = { y: now.getUTCFullYear(), m: now.getUTCMonth() + 1 };
   const nextM = thisMonth.m === 12 ? { y: thisMonth.y + 1, m: 1 } : { y: thisMonth.y, m: thisMonth.m + 1 };
   const farOff = { y: thisMonth.y + 4, m: thisMonth.m };
@@ -213,7 +214,7 @@ const sub = (id, donorId, extra = {}) => q(
   ok("…and the donor becomes a PERSON'S JOB: one open thread", th.length === 1 && th[0].donor_id === "d_recrec2", th);
   ok("…owned by the officer who owns the donor", th[0].owner_id === "u_recrec" && th[0].owner_name === "RR Admin", th[0]);
   ok("…due TODAY, because it has already been failing a fortnight",
-    th[0].due_date === new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date()), th[0].due_date);
+    th[0].due_date === civilDay(), th[0].due_date);
   ok("…and the step says the money and the cadence, not a bare 'follow up'",
     /\$40/.test(th[0].next_step_label) && /monthly/.test(th[0].next_step_label) && /card failed/i.test(th[0].next_step_label),
     th[0].next_step_label);

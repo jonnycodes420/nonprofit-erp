@@ -15,6 +15,7 @@
 const bcrypt = require("bcryptjs");
 const TOTP = require("../totp");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_sec1";
 const EMAIL = "sec1-owner@sec1.local";
@@ -40,7 +41,7 @@ const sessionsFor = async () => Number((await q(`SELECT COUNT(*)::int n FROM use
   const setup = await api("POST", "/me/mfa/setup", first, {});
   const secret = setup.body?.secret;
   ok("setup hands over a secret and its QR code", !!secret && /^data:image\/png/.test(setup.body?.qr || ""), setup.status);
-  const on = await api("POST", "/me/mfa/enable", first, { code: TOTP.hotp(secret, Math.floor(Date.now() / 30000)) });
+  const on = await api("POST", "/me/mfa/enable", first, { code: TOTP.hotp(secret, Math.floor(testNow() / 30000)) });
   ok("two-factor turns on, with ten recovery codes shown once", on.status === 200 && on.body?.recoveryCodes?.length === 10, on.status);
   const stored = await q(`SELECT code_hash FROM mfa_recovery_codes WHERE user_id='u_sec1'`);
   ok("the recovery codes are stored hashed, never as typed", stored.length === 10 && !stored.some(r => on.body.recoveryCodes.map(c => c.replace("-", "")).includes(r.code_hash)), stored.length);

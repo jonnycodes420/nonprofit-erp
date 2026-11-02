@@ -20,9 +20,10 @@
 // removing `E.org` from whereFor's parts turned §1 red with org B's rows counted.
 const { ok, summary, q, closeDb } = require("./helpers");
 const AQ = require("../askQuery");
+const { civilDay } = require("./clock");
 
 const A = "org_ask4a", B = "org_ask4b";
-const today = new Date().toISOString().slice(0, 10);
+const today = civilDay();
 const yr = today.slice(0, 4);
 
 (async () => {

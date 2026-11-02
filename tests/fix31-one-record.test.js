@@ -30,6 +30,7 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { dayOffset } = require("./clock");
 
 const ORG = "org_fix31one", ORG2 = "org_fix31two";
 const TABLES = ["interactions", "tasks", "grant_milestones", "grants", "threads", "volunteer_profiles", "volunteers", "donors", "users"];
@@ -48,7 +49,7 @@ async function reset() {
     }
   }
 }
-const day = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+const day = n => dayOffset(n);
 const linked = (where, args) => q(`SELECT * FROM tasks WHERE ${where} ORDER BY link_kind`, args);
 
 (async () => {

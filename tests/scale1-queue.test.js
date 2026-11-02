@@ -23,6 +23,7 @@ const path = require("path");
 const net = require("net");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, waitFor } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ROOT = path.join(__dirname, "..");
 const ORG_A = "org_scale1qa", ORG_B = "org_scale1qb";
@@ -146,7 +147,7 @@ const settled = (keys) => waitFor(async () => {
   await reset();
   const flood = Array.from({ length: 30 }, (_, i) => ({ key: `scale1q:flood:${i}`, org: ORG_A, payload: { sleepMs: 400 } }));
   await enqueue(flood);
-  const tB = Date.now();
+  const tB = testNow();
   await enqueue([{ key: "scale1q:b-sync", org: ORG_B }]);
   await settled(["scale1q:b-sync"]);
   const bRun = (await runs()).find(r => r.key === "scale1q:b-sync");
