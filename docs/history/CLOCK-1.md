@@ -38,3 +38,12 @@ is, and checks the seam's three forms beside the old ones (which give the UTC an
 then runs the sent-mail window and the heads-up trigger live, and checks every listed site goes through
 the seam with no `CURRENT_DATE` left. The trigger's old `CURRENT_DATE` cannot be planted, so its live
 check stayed green on main's code; the source check is what holds it.
+
+**The proof.** The full battery ran with the clock planted at 10 AM ET on Tuesday 3 Nov and at 11:45 PM
+ET on Saturday 7 Nov (04:45 UTC Sunday). Every suite gave the same pass count at both times, except
+three. int-prod-1-guards was this build's own TDZ (a second, inner `require("./clock")` shadowed the new
+one) and incident-mail-gate was a dropped socket; both match Saturday's counts when rerun at Tuesday's
+pin. smoke-walk timed out loading one page on Saturday (a 45-second `goto`) and passed when rerun. perf-app
+is over its phone budget at both times (3,852 and 3,844 ms against 3,640), as it is on main on this
+machine. A first Saturday run stalled while another session ran the same two suites, which bind fixed
+mock ports; both passed alone at the same pin.
