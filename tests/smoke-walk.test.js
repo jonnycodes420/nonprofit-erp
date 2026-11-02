@@ -43,7 +43,7 @@ const { ok, summary, api, closeDb, browserLegOrSkip } = require("./helpers");
 const units = require("./lib/units");   // FIX-60: a money figure is money, a count a count
 
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const BASE = process.env.BASE || "http://localhost:5601";
 

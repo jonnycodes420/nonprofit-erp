@@ -39,7 +39,7 @@ const PREVIEW = require("./lib/previewPerfOrg");
 const timed = require("./lib/budget").withinBudget(ok);
 
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,

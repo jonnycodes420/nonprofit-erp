@@ -58,6 +58,42 @@ ok("every tests/*.test.js is run by the battery or says why not, and every .spec
 const { skipped } = discover();
 console.log(`  · ${listed.length} suites run; skipped: ${skipped.map(s => s.file).join(", ") || "none"}`);
 
+// ── CI-2 · a browser suite walks its own shard's dist ──────────────────────
+// Each shard holding a browser suite has a dist built for its own API, named
+// in STEWARD_DIST and read through tests/lib/dist.js. A suite (or a helper it
+// requires) that joins "client", "dist" itself reads shard 1's build from any
+// other shard and quietly skips its browser leg (five did, in CI-2's first
+// shuffled battery).
+const OWN_DIST = /["']client["']\s*,\s*["']dist["']|["']client\/dist["']/;
+function ownDist(dir) {
+  const out = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!["node_modules", "fixtures", "lib"].includes(e.name)) walk(p); continue; }
+      if (!/\.js$/.test(e.name) || p === __filename) continue;
+      const code = fs.readFileSync(p, "utf8").split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
+      if (OWN_DIST.test(code)) out.push(path.relative(dir, p));
+    }
+  })(dir);
+  return out;
+}
+const own = ownDist(testsDir);
+ok("no suite builds its own client/dist path (tests/lib/dist.js gives this shard's)", own.length === 0, own.join(", "));
+
+// ── CI-2 · the shards ran every suite exactly once ─────────────────────────
+// CI's combine job runs this with SHARD_RESULTS (the folder of every matrix
+// job's shard-<n>.json) and SHARD_COUNT: every suite discovered in this tree
+// ran exactly once across the shards, by name. In the battery itself there are
+// no shard results to read, and only the plants below run.
+const { read, ranOnce } = require("./lib/shardResults");
+if (process.env.SHARD_RESULTS) {
+  const got = read(process.env.SHARD_RESULTS, Number(process.env.SHARD_COUNT || 0));
+  ok(`every shard reported (${process.env.SHARD_COUNT} shards)`, Number(process.env.SHARD_COUNT) > 0 && got.problems.length === 0, got.problems.join("; "));
+  const once = ranOnce(listed, got.results);
+  ok(`every one of the ${listed.length} suites ran exactly once across the shards`, once.length === 0, once.slice(0, 10).join("; "));
+}
+
 // ── proven able to fail ────────────────────────────────────────────────────
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "every-test-runs-"));
 try {
@@ -70,6 +106,22 @@ try {
   fs.unlinkSync(path.join(tmp, "gamma.test.js"));
   fs.writeFileSync(path.join(tmp, "delta.spec.js"), "// a spec\n");
   ok("plant: a .spec.js with no wrapper goes red", problems(tmp, ["alpha", "beta"]).some(p => /delta\.spec\.js/.test(p)));
+  fs.writeFileSync(path.join(tmp, "epsilon.test.js"), 'const DIST = path.join(ROOT, "client", "dist");\n');
+  ok("plant: a suite that joins its own client/dist goes red", ownDist(tmp).includes("epsilon.test.js"));
+  fs.unlinkSync(path.join(tmp, "epsilon.test.js"));
+  // CI-2: the shard results. Two shards, alpha in one and beta in the other.
+  const shardDir = path.join(tmp, "shards"); fs.mkdirSync(shardDir);
+  const put = (n, suites) => fs.writeFileSync(path.join(shardDir, `shard-${n}.json`), JSON.stringify({ shard: n, suites }));
+  put(1, [{ name: "alpha", rc: 0 }]); put(2, [{ name: "beta", rc: 1 }]);
+  let r = read(shardDir, 2);
+  ok("plant: two shards that ran alpha and beta once each pass (a red suite still ran)", r.problems.length === 0 && ranOnce(["alpha", "beta"], r.results).length === 0);
+  put(2, [{ name: "beta", rc: 0 }, { name: "alpha", rc: 0 }]);
+  ok("plant: a suite that ran in two shards goes red", ranOnce(["alpha", "beta"], read(shardDir, 2).results).some(p => /alpha ran 2 times/.test(p)));
+  fs.unlinkSync(path.join(shardDir, "shard-2.json"));
+  r = read(shardDir, 2);
+  ok("plant: a shard that crashed before reporting goes red, and its suites never ran", r.problems.some(p => /shard 2 produced no result/.test(p)) && ranOnce(["alpha", "beta"], r.results).some(p => /beta never ran/.test(p)));
+  fs.writeFileSync(path.join(shardDir, "shard-2.json"), JSON.stringify({ shard: 2, error: "server did not start", suites: [] }));
+  ok("plant: a shard whose server never started goes red", read(shardDir, 2).problems.some(p => /shard 2 did not run/.test(p)));
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 
 console.log(`\n${pass} passed, ${fail} failed`);

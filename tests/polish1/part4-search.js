@@ -32,7 +32,7 @@ const MAC = { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/5
 
 module.exports = async function part4(h) {
   const ROOT = path.join(__dirname, "..", "..");
-  const DIST = path.join(ROOT, "client", "dist");
+  const { DIST } = require("../lib/dist");   // CI-2: this shard's dist
   const APP = process.env.APP_URL || "http://localhost:4173";
   const skip = why => h.browserLegOrSkip(why, "§4");
   if (!fs.existsSync(path.join(DIST, "index.html"))) return skip("client/dist not built");

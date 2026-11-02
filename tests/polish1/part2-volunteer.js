@@ -129,7 +129,7 @@ module.exports = async function part2(h) {
 
 async function browserLeg(h, handedUrl) {
   const ROOT = path.join(__dirname, "..", "..");
-  const DIST = path.join(ROOT, "client", "dist");
+  const { DIST } = require("../lib/dist");   // CI-2: this shard's dist
   const APP = process.env.APP_URL || "http://localhost:4173";
   const skip = why => h.browserLegOrSkip(why, "§2f");
   if (!fs.existsSync(path.join(DIST, "index.html"))) return skip("client/dist not built");
