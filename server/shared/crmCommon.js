@@ -10,8 +10,12 @@
 
 function mount(ctx) {
 const {
-  actor, geocode, orgToday, orgTz, pruneUnreferencedAssets, query, rbCentsEv, run, uuid, giftHooks,
+  actor, geocode, orgTime, orgToday, orgTz, pruneUnreferencedAssets, query, rbCentsEv, run, uuid, giftHooks,
 } = ctx;
+// ARCH-1: a timestamp tested against the org's civil days (a fiscal year, a
+// report's from..to), cut at the ORG's midnight through the one seam, never at
+// the database's (`?::date`). Placeholders stay where they were: from, then to.
+const inOrgDays = (col, orgCol, from, to) => orgTime.orgDayWindowSql(col, orgTime.orgTzSql(orgCol), from, to);
 const birthdayMod = () => import("../../shared/birthday.js");   // PARITY-3 6a
 
 // ── Gift date normalization ────────────────────────────────────────────────
@@ -173,7 +177,7 @@ async function pruneCampaignAssets(orgId) {
 }
 // CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
 giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
-return { CF_ENTITIES, DS, GR, OU, birthdayMod, cfEvent, cfShape, eventLevelPayload, figureSources, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgRow, pruneCampaignAssets, sentenceMoney, staffWho };
+return { CF_ENTITIES, DS, GR, OU, birthdayMod, cfEvent, cfShape, eventLevelPayload, figureSources, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgRow, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
