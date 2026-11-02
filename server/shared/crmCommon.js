@@ -10,7 +10,8 @@
 
 function mount(ctx) {
 const {
-  actor, geocode, orgTime, orgToday, orgTz, pruneUnreferencedAssets, query, rbCentsEv, run, uuid, giftHooks,
+  ALL_PIPELINE_STAGES, actor, geocode, orgTime, orgToday, orgTz, orgTzName, pruneUnreferencedAssets, query,
+  rbCentsEv, run, uuid, giftHooks, reportHooks,
 } = ctx;
 // ARCH-1: a timestamp tested against the org's civil days (a fiscal year, a
 // report's from..to), cut at the ORG's midnight through the one seam, never at
@@ -43,6 +44,81 @@ function normalizeGiftDate(raw) {
   const dim = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
   return d <= dim ? s : null;
 }
+// Stage-weighted forecast: a donor's current stage is a rough close-probability
+// for their open asks. Solicit is near the ask; prospect is far off.
+const STAGE_WEIGHT = { prospect: 0.1, qualify: 0.2, cultivate: 0.4, solicit: 0.7, steward: 0.9, lapsed: 0.05 };
+
+// ── assignment = portfolio = pipeline membership (BUILD-30, the ONE definition) ─
+// A donor assigned to an officer IS in that officer's portfolio, and a donor in
+// a portfolio IS on that officer's pipeline board. Assignment is the single
+// membership state — there is NO separate "on the board" flag (the old
+// `in_pipeline` column is retired/dormant; nothing reads or writes it). Every
+// count, label, and board render for portfolio/pipeline derives from this one
+// helper, so Home's Portfolio card, Home's Pipeline card, the Pipeline board,
+// and the Donors "My Pipeline"/Team views can never disagree again.
+//
+// Returns a SQL WHERE fragment (using the given table alias) + params selecting
+// an officer's portfolio, org-scoped. Unassigned donors match NOTHING here —
+// they live in the Directory only and never appear on any board (preserving the
+// "the board is not the whole donor list" guarantee). scope:
+//   'mine'      → the caller's own assigned donors (assigned_to = userId)
+//   'all'       → every assigned donor in the org (assigned_to IS NOT NULL)
+//   assignedTo  → one specific officer's portfolio (overrides scope)
+function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null, alias = "d" }) {
+  const a = alias ? alias + "." : "";
+  // stage ∈ the 6 canonical pipeline stages — every real donor has one (validation
+  // only permits these), so for real data "assigned" ⟺ "member". The clause is a
+  // belt-and-braces guard so a donor in some non-pipeline stage can never make the
+  // Portfolio card, the Pipeline card, and the board disagree — all three exclude
+  // it identically. It also keeps the board's per-stage columns exhaustive.
+  // BUILD-83 Part 3.5 — an imported donor's `stage` is NULL until a human
+  // places them, but assignment IS membership (BUILD-30's single definition):
+  // assigning someone from an import must never make them vanish off the board.
+  // So membership reads the placed stage OR the suggestion, and the CARD says
+  // which it is. Moving the card writes `stage` and the suggestion stops
+  // mattering for that donor.
+  const clauses = [`${a}org_id = ?`, `${a}deleted_at IS NULL`, `COALESCE(${a}stage, ${a}suggested_stage) = ANY(?)`];
+  const params = [orgId, ALL_PIPELINE_STAGES];
+  if (assignedTo) {
+    clauses.push(`${a}assigned_to = ?`); params.push(String(assignedTo));
+  } else if (scope === "all") {
+    clauses.push(`${a}assigned_to IS NOT NULL`);
+  } else {
+    clauses.push(`${a}assigned_to = ?`); params.push(String(userId));
+  }
+  return { where: clauses.join(" AND "), params };
+}
+
+// THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
+// owed for a gift that arrived before the product did: an imported file is
+// history. The first COMMITTED import is the honest boundary, and the honest
+// proxy for it is the earliest donor this org actually created, which is what
+// an import writes. Falls back to the org's own creation date.
+async function orgStewardStart(orgId) {
+  // TO_CHAR, not ::date — pg hands a DATE back as a JS Date object, and
+  // String()-then-slice on one yields "Tue Aug 12", which then compares
+  // against a TEXT ISO column as garbage and silently matches nothing. The
+  // count read zero and looked like good news. Format in SQL; the boundary
+  // leaves the database as the string it will be compared as.
+  // THE FIRST IMPORT, not the org row. An org can be created weeks before
+  // anybody loads a file, and using the earlier of the two counted a pile of
+  // imported history as thank-yous owed — which is exactly the thing 0.6's
+  // start date exists to prevent. The first donor this org created IS the
+  // first committed import; the org's own creation is only the fallback for a
+  // shop that has not imported yet.
+  // The DAY is the org's, not the database session's: TO_CHAR of a
+  // timestamptz formats in the session's zone, so on a UTC database a donor
+  // created at 9pm in New York started "tomorrow", and that evening's gifts
+  // were dropped from the thank-yous owed (found by RECONCILE-1's CI run).
+  const tz = await orgTzName(orgId);
+  const [row] = await query(
+    `SELECT TO_CHAR(COALESCE(
+        (SELECT MIN(created_at) FROM donors WHERE org_id = ?),
+        (SELECT created_at FROM orgs WHERE id = ?),
+        NOW()
+      ) AT TIME ZONE ?, 'YYYY-MM-DD') AS d`, [orgId, orgId, tz]);
+  return row && row.d ? String(row.d) : null;
+}
 
 // FIX-2 A — EVERY NUMBER OPENS. Each figure below is computed THROUGH its
 // source (figureSources.js): the value is the aggregate over the exact query
@@ -64,6 +140,13 @@ function sentenceMoney(v) {
   return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 });
 }
 
+// The org as the year arithmetic needs it: its timezone and the fiscal start
+// month it chose (vocabulary_json), which orgTz alone does not carry.
+async function orgForYears(orgId) {
+  const [row] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  return { ...(await orgTz(orgId)), vocabulary_json: row ? row.vocabulary_json : null };
+}
+
 async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE id=?", [orgId]); return o || {}; }
 
 // NUMBERS-2 · a total the file stated, with no gifts behind it, is kept as
@@ -79,12 +162,65 @@ async function keepImportedTotals(q, orgId, ids, sourceName) {
   await DS.recomputeSummaries(q, orgId, ids);
 }
 
+// ── Gift history bulk import ───────────────────────────────────────────────
+// Accepts pre-matched gifts (donorId already resolved by frontend) and inserts
+// them transactionally, then recalcs each affected donor's summary. Deduplicates
+// by exact (donor_id, amount, date) fingerprint so re-running is safe.
+// ── BUILD-80 Part 5/7 — the SEMANTIC rows an import carries besides gifts ──
+// One follow-up call after the chunked /donors/import-combined: pledge
+// commitments (never in totals — the pledges table), in-kind records (FMV +
+// description as an interaction, never a $0 gift), and relationship links
+// (soft credits, corporate-match attributions, DAF recommendations — the
+// money stays where it legally landed, the PERSON gets the relationship).
+// Donor resolution: email first, then a unique name match (both name tokens;
+// an ambiguous name never links — same rule as owner matching); a person who
+// exists only through links (a soft-credited spouse, a DAF advisor) is
+// created with no gift. Idempotent: pledges ride the BUILD-72
+// idempotency_key; links and in-kind check for their own row first.
+// BUILD-80 Part 9 — the last import's health, one read for every surface.
+async function importHealth(orgId) {
+  const [o] = await query("SELECT last_import_stats FROM orgs WHERE id=?", [orgId]);
+  let st = o?.last_import_stats;
+  if (typeof st === "string") { try { st = JSON.parse(st); } catch { st = null; } }
+  if (!st || !st.rows) return { stats: null, caveat: null };
+  const ratio = st.refused / st.rows;
+  const caveat = ratio > 0.05
+    ? `computed on ${(st.rows - st.refused).toLocaleString()} of ${st.rows.toLocaleString()} rows; ${st.refused.toLocaleString()} could not be read`
+    : null;
+  return { stats: st, caveat };
+}
+
+// IMPORT-2: the interaction types that are records of money or machinery, not
+// of anybody talking to anybody. A person with nothing but these has no
+// history yet, which is a different fact from being distant.
+const NOT_HISTORY_TYPES = ["gift", "payment", "email_open", "stage_change", "activity", "in_kind", "material"];
+
+// ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
+// The Fundraising tab is a home over primitives that already exist: org-level
+// goals (fundraising_goals), campaigns that carry a goal (campaigns.goal_amount),
+// and giving pages. Nothing here stores a "raised" total — every figure is a
+// live SUM over gifts, so a thermometer can never drift from reality. A
+// "fundraising campaign" is simply a campaigns row with goal_amount set; the
+// email lifecycle (campaigns.status) is untouched — fundraising lifecycle is
+// derived from the campaign's dates instead.
+//
+// computeFundraisingPace: shared pace/thermometer math. Degrades gracefully —
+// no goal → no thermometer (percent null); no dates → progress with no
+// "days left"/pace; goal met → celebratory state. Never invents a number.
+// FUNDRAISING-2: an org can take a gift through its own pages once Stripe
+// Connect is linked and Stripe has said it can charge (the webhook keeps
+// stripe_connected to Stripe's charges_enabled).
+const orgTakesGifts = org => !!(org && org.stripe_connected && org.stripe_account_id);
+
 // The hub's single read. One payload so the landing screen is one request
 // rather than five that arrive in a different order every time.
 // MAIL-1 Part 3: ONE SENTENCE ABOUT WHETHER HER EMAIL GOES, decided by the
 // mail policy (mailPolicy.js), never a raw flag. Before the donor file is in:
 // "Email turns on once your donor file is in." Once it sends: the From address.
 const mailPolicy = require("../../mailPolicy");
+// The day Home's "gifts not yet thanked" counts from (its first import, else
+// the fiscal year's start), so the thank-you starter is Home's own count.
+reportHooks.thanksSince = async orgId => (await orgStewardStart(orgId)) || (await reportHooks.yearWindows(orgId)).cur.from;
 
 // markDonorsForGeocoding(orgId, opts) — recompute every affected donor's
 // address key and set the status the key implies. A row whose key is unchanged
@@ -160,6 +296,17 @@ function eventLevelPayload(l, taken = 0) {
     retired: !!l.retired_at };   // FIX-41: kept on every guest, hidden from new use
 }
 
+// The Members screen: every membership, counts by level and status, sortable
+// by expiry (soonest first by default — that is the list someone works from).
+// ── BUILD-101 Part 3 — LAPSED MEMBERS ARE THEIR OWN LIST ──────────────────
+// A lapsed member and a lapsed donor are different people with different
+// asks. This list reads ONLY the memberships table (and, to say whether they
+// still give, the gifts that were not membership payments). Nothing here is
+// read by Drift, LYBUNT or SYBUNT, and nothing those compute is read here —
+// the suite proves both directions byte for byte. A person who lapsed as a
+// member and still gives is shown as both.
+const LAPSED_MEMBER_SQL = figureSources.LAPSED_MEMBER_SQL;   // REPORTS-4: one definition, in figureSources.js
+
 // The signed-in person as a timeline line names them: their id and their name.
 async function staffWho(req) {
   const who = actor(req);
@@ -177,7 +324,7 @@ async function pruneCampaignAssets(orgId) {
 }
 // CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
 giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
-return { CF_ENTITIES, DS, GR, OU, birthdayMod, cfEvent, cfShape, eventLevelPayload, figureSources, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgRow, pruneCampaignAssets, sentenceMoney, staffWho };
+return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
