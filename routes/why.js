@@ -22,6 +22,7 @@ const P = require("../prospect");
 const GR = require("../groups");
 const FS = require("../figureSources");
 const lapseRule = require("../lapseRule");   // FIX-51: the one lapse rule
+const NUMBERS = require("../shared/numbers");   // NUMBERS-4: one home for every giving number
 
 const routers = { r0: express.Router() };
 // POLISH-1: the conversation answer, for the Agent's read (set by mount).
@@ -781,12 +782,12 @@ async function orgWordsFor(orgId) {
 }
 async function candidatesFor(orgId, ids) {
   if (!ids.length) return [];
-  const rows = await query(`SELECT d.id, d.name, d.city, (SELECT g.amount FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 ORDER BY g.date DESC NULLS LAST LIMIT 1) AS last_amount,
-       (SELECT LEFT(MAX(g.date),10) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) AS last_date
-     FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL LIMIT 8`, [orgId, ids]);
+  const rows = await query(`SELECT d.id, d.name, d.city FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL LIMIT 8`, [orgId, ids]);
+  // NUMBERS-4: the last gift is the one rule (shared/numbers/lastGift.js).
+  const last = await NUMBERS.lastGift.lastGifts(query, orgId, rows.map(r => r.id));
   const order = new Map(ids.map((id, i) => [id, i]));
   rows.sort((a, b) => order.get(a.id) - order.get(b.id));
-  return rows.map(r => ({ donorId: r.id, name: r.name, city: r.city || "", lastGift: r.last_amount != null ? { cents: Math.round(Number(r.last_amount) * 100), date: r.last_date } : null }));
+  return rows.map(r => ({ donorId: r.id, name: r.name, city: r.city || "", lastGift: last.get(r.id) || null }));
 }
 async function resolvePerson(orgId, text, context, G) {
   const people = Array.isArray(context && context.people) ? context.people.filter(p => p && p.id && p.name).slice(0, 60) : [];
@@ -814,7 +815,7 @@ async function resolvePerson(orgId, text, context, G) {
     if (hits.length > 1) return { kind: "many", ids: hits.map(h => h.id), word: tok };
     const rows = await query(`SELECT d.id, d.name, COUNT(*) OVER () AS n FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND (LOWER(split_part(d.name, ' ', 1)) = ? OR LOWER(regexp_replace(d.name, '^.* ', '')) = ?)
-        ORDER BY (SELECT MAX(g.date) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) DESC NULLS LAST, d.name LIMIT 6`, [orgId, t, t]);
+        ORDER BY ${NUMBERS.lastGift.LAST_DATE("d")} DESC NULLS LAST, d.name LIMIT 6`, [orgId, t, t]);   // NUMBERS-4: the one last gift
     if (rows.length === 1) return { kind: "one", donor: rows[0] };
     if (rows.length > 1) return { kind: "many", ids: rows.map(r => r.id), word: tok, total: Number(rows[0].n) };
   }
@@ -1146,7 +1147,8 @@ app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   let donor = null;
   if (req.query.donor) {
-    const [d] = await query(`SELECT id, name, (SELECT MAX(LEFT(date,10)) FROM gifts g WHERE g.org_id = donors.org_id AND g.donor_id = donors.id AND g.amount > 0) AS last
+    // NUMBERS-4: the last gift is the one rule (shared/numbers/lastGift.js).
+    const [d] = await query(`SELECT id, name, LEFT(${NUMBERS.lastGift.LAST_DATE("donors")}, 10) AS last
        FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [String(req.query.donor), orgId]);
     if (!d) return res.status(404).json({ error: "Donor not found" });
     // "Why did they stop?" is offered only to someone who has: no gift in a year.

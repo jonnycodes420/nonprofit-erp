@@ -6179,7 +6179,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       `SELECT p.id, p.amount, p.due_date, p.status, p.notes,
               COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
        FROM pledges p
-       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL AND ${NUMBERS.money.MONEY("gifts")} GROUP BY pledge_id) pp
          ON pp.pledge_id = p.id
        WHERE p.org_id = ? AND p.donor_id = ANY(?) ORDER BY p.due_date ASC`,
       [org.id, org.id, donorIds]),
@@ -7906,6 +7906,8 @@ app.get("/account/tax-summary", requireDonorAccount, wrap(async (req, res) => {
        AND l.account_id = ? AND l.unlinked_at IS NULL
      JOIN orgs o ON o.id = g.org_id
      JOIN portal_settings ps ON ps.org_id = g.org_id AND ps.enabled = true AND ps.network_listed = true
+     -- NUMBERS-4: money (shared/numbers/money.js): a soft or matching credit row is not a gift they gave.
+     WHERE ${NUMBERS.money.MONEY("g")}
      GROUP BY LEFT(g.date,4), g.org_id, o.org_slug, org_name
      ORDER BY year DESC, total DESC`, [acct.id]);
   const receipts = await query(

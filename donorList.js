@@ -293,8 +293,9 @@ const has = (sql) => `EXISTS (${sql})`;
 const giftOf = a => `SELECT 1 FROM gifts ${a} WHERE ${a}.org_id = donors.org_id AND ${a}.donor_id = donors.id`;
 
 // The SQL behind This year, pledge balance and hours, shared by a column and a filter.
-const THIS_YEAR_SQL = `(SELECT COALESCE(SUM(gy.amount),0) FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND gy.date >= ? AND gy.date <= ?)`;
-const PLEDGE_BALANCE_SQL = `(SELECT COALESCE(SUM(GREATEST(px.amount - COALESCE((SELECT SUM(pg.amount) FROM gifts pg WHERE pg.org_id = px.org_id AND pg.pledge_id = px.id),0),0)),0)
+// NUMBERS-4: This year is money (shared/numbers/money.js): credit rows out, refunds off.
+const THIS_YEAR_SQL = `(SELECT COALESCE(SUM(gy.amount),0) FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND gy.date >= ? AND gy.date <= ? AND ${require("./shared/numbers/money").MONEY("gy")})`;
+const PLEDGE_BALANCE_SQL = `(SELECT COALESCE(SUM(GREATEST(px.amount - COALESCE(${require("./shared/numbers/pledges").PAID_OF("px")},0),0)),0)
    FROM pledges px WHERE px.org_id = donors.org_id AND px.donor_id = donors.id AND px.status = 'open')`;
 
 async function yearWindow(orgId) {
@@ -481,11 +482,11 @@ async function cellsFor(orgId, rows, columns) {
   const put = (rowsBack, key, fn = r => r.v) => { for (const r of rowsBack) if (out.has(r.id)) out.get(r.id)[key] = fn(r); };
   if (want.has("this_year")) reads.push(yearWindow(orgId).then(w => query(
     `SELECT g.donor_id AS id, COALESCE(SUM(g.amount),0)::text AS v FROM gifts g
-      WHERE g.org_id = ? AND g.donor_id = ANY(?) AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id`, [orgId, ids, w.from, w.to]))
+      WHERE g.org_id = ? AND g.donor_id = ANY(?) AND g.date >= ? AND g.date <= ? AND ${require("./shared/numbers/money").MONEY("g")} GROUP BY g.donor_id`, [orgId, ids, w.from, w.to]))
     .then(r => { for (const id of ids) out.get(id).this_year = 0; put(r, "this_year", x => Number(x.v)); }));
   if (want.has("pledge_balance")) reads.push(query(
     `SELECT p.donor_id AS id, COALESCE(SUM(GREATEST(p.amount - COALESCE(pp.paid,0),0)),0)::text AS v
-       FROM pledges p LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+       FROM pledges p LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp
          ON pp.pledge_id = p.id
       WHERE p.org_id = ? AND p.donor_id = ANY(?) AND p.status = 'open' GROUP BY p.donor_id`, [orgId, orgId, ids])
     .then(r => { for (const id of ids) out.get(id).pledge_balance = 0; put(r, "pledge_balance", x => Number(x.v)); }));

@@ -18,6 +18,7 @@
 
 const { query } = require("./db");
 const orgTime = require("./orgTime");
+const { FIRST_DATE } = require("./shared/numbers/firstGift");
 const WHY = require("./why");
 
 const FIRST_TIME_DAYS = 7;
@@ -50,9 +51,11 @@ function callsSql(orgId, today, floorCents) {
     sql: `WITH recent AS (
             SELECT DISTINCT donor_id FROM gifts
              WHERE org_id = ? AND amount > 0 AND date >= ? AND LEFT(date,10) >= ? AND LEFT(date,10) <= ?),
+          -- NUMBERS-4: first-time is the one first-gift rule (shared/numbers/
+          -- firstGift.js): the old system's first gift counts, a credit row does not.
           firsts AS (
-            SELECT donor_id, MIN(LEFT(date,10)) AS first_date FROM gifts
-             WHERE org_id = ? AND amount > 0 AND donor_id IN (SELECT donor_id FROM recent) GROUP BY donor_id),
+            SELECT d.id AS donor_id, ${FIRST_DATE("d")} AS first_date FROM donors d
+             WHERE d.org_id = ? AND d.id IN (SELECT donor_id FROM recent)),
           cand AS (
             SELECT g.id, g.donor_id, d.name, LEFT(g.date,10) AS date, g.amount,
                    (f.first_date = LEFT(g.date,10) AND f.first_date >= ?) AS first_time

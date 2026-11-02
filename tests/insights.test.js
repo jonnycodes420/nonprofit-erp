@@ -201,7 +201,8 @@ async function main() {
   const eng = engineStats(r1.body.stats);
   for (const k of Object.keys(BRIEF)) ok(`§2 the engine, by giving unit: ${k} = ${byUnit[k]} (by name ${byName[k]})`, eng[k] === byUnit[k], eng[k]);
   ok("§2 the coverage line says where the history ends", /Gift history ends Sep 30, 2026/.test(r1.body.coverage.sentence), r1.body.coverage.sentence);
-  ok("§2 the major-gift line is shown, with its rule", r1.body.majorLine && r1.body.majorLine.cents === 500000 && /\$5,000/.test(r1.body.majorLine.rule), r1.body.majorLine);
+  // NUMBERS-4: the line is the org's Giving levels major cut ($10,000 by default), the Major tag's own.
+  ok("§2 the major line is shown, with its rule (the Giving levels cut, as the Major tag)", r1.body.majorLine && r1.body.majorLine.cents === 1000000 && /\$10,000/.test(r1.body.majorLine.rule) && /Giving levels/.test(r1.body.majorLine.rule), r1.body.majorLine);
 
   // ── §3 named cards ──────────────────────────────────────────────────────
   const ms = itemNamed(card(r1, "major_slipping"), "Ulis & Verin Cranville Family Foundation");
@@ -212,7 +213,8 @@ async function main() {
   const f = Object.fromEntries((up && up.facts) || []);
   ok("§3 Upgrade names Ashham: $1,000 (January 2025), then $5,000 (December 2025) through The Ashham Family Foundation",
      !!up && f["earlier gift"] === "$1,000 (January 2025)" && f["recent gift"] === "$5,000 (December 2025)" && f.through === "The Ashham Family Foundation", up && up.facts);
-  ok("§3 …ask $7,500, with its rule", !!up && up.how.ask.cents === 750000 && /1\.5 times/.test(up.how.ask.rule), up && up.how.ask);
+  // NUMBERS-4: the one suggested-ask rule (shared/numbers/ask.js), which here also lands on $7,500.
+  ok("§3 …ask $7,500, with its rule (the one suggested-ask rule)", !!up && up.how.ask.cents === 750000 && /one rule/.test(up.how.ask.rule), up && up.how.ask);
   if (memoKept) ok("§M Ashham designated Stable Moments", !!up && f.designated === "Stable Moments", up && up.facts);
   else waiting("§M Ashham designated Stable Moments", "the scrubbed fixture has no program words");
 
@@ -490,14 +492,17 @@ async function main() {
   ok("§9 Done, Not now and Doesn't fit take the move off the deck, each recorded as its outcome",
      ![m1, m2, m3].some(m => after9.includes(m.id)) && ["done", "snoozed", "dismissed"].every(st => rec.some(r => r.state === st)), rec);
   ok("§9 …and Not now brings it back on its date", (await deckAfter("2026-11-20")).includes(m2.id), m2.id);
-  // the greeting's pace is the one number (numbers.vsLastYear), and the truth check fails if Home says another
+  // HOME-5: Home's greeting carries no pace; the comparison lives on Fundraising and the Board.
   const lead9 = (await api("GET", "/home/lead", tok)).body;
-  ok("§9 the greeting says pace in one sentence", !!lead9.pace && /^Giving this (fiscal )?year is (\$[\d,]+ (behind|ahead of)|on pace with) last year at this point\.$/.test(lead9.pace.line), lead9.pace && lead9.pace.line);
-  let paceCaught = false;
-  try {
-    await assertSurfacesAgree(ORG, { token: tok, step: "planted pace", plant: ({ lead }) => { if (lead && lead.pace) lead.pace.line = lead.pace.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
-  } catch (e) { paceCaught = /Home's greeting/.test(e.message); }
-  ok("§9 the truth check can fail: Home saying a different pace from the Board is caught", paceCaught, "");
+  ok("§9 Home's lead carries no pace sentence (HOME-5)", lead9 && !("pace" in lead9), lead9 && lead9.pace);
+  const d9 = lead9 && lead9.doors && (lead9.doors.why || lead9.doors.what);
+  if (d9) {
+    let doorCaught = false;
+    try {
+      await assertSurfacesAgree(ORG, { token: tok, step: "planted door", plant: ({ lead }) => { const d = lead && lead.doors && (lead.doors.why || lead.doors.what); if (d) d.line = d.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
+    } catch (e) { doorCaught = /Home's door/.test(e.message); }
+    ok("§9 the truth check can fail: Home's door saying a different gap from the Board is caught", doorCaught, "");
+  }
   }
 
   await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]).catch(() => {});

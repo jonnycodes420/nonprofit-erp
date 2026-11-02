@@ -17,6 +17,7 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 const AW = require("./appealWhy");
+const NUMBERS = require("./shared/numbers");   // NUMBERS-4: one home for every giving number
 
 let HN = null;
 const homeNote = async () => (HN = HN || await import("./shared/homeNote.js"));
@@ -273,7 +274,8 @@ async function call(orgId, { user } = {}, deps = {}) {
        AND TO_CHAR(c.starts_at AT TIME ZONE COALESCE((SELECT NULLIF(timezone,'') FROM orgs WHERE id = c.org_id),'America/New_York'), 'YYYY-MM-DD') = ?`,
     [orgId, user || "", user || "", tomorrow]);
   if (meetings.length) {
-    const yr = new Map((await query(`SELECT donor_id, SUM(amount)::text AS s FROM gifts WHERE org_id = ? AND donor_id = ANY(?) AND LEFT(date,10) > ? GROUP BY 1`,
+    // NUMBERS-4: money (shared/numbers/money.js): credit rows out, refunds off.
+    const yr = new Map((await query(`SELECT donor_id, SUM(amount)::text AS s FROM gifts g WHERE org_id = ? AND donor_id = ANY(?) AND LEFT(date,10) > ? AND ${NUMBERS.money.MONEY("g")} GROUP BY 1`,
       [orgId, meetings.map(m => m.donor_id), orgTime.addDays(t, -365)])).map(r => [r.donor_id, toC(r.s)]));
     for (const m of meetings) push("meeting", m.donor_id, yr.get(m.donor_id) || 0, tomorrow,
       `You meet them tomorrow${m.title ? ` (${m.title})` : ""}; they gave ${fmt(yr.get(m.donor_id) || 0)} in the last twelve months.`);
@@ -281,7 +283,7 @@ async function call(orgId, { user } = {}, deps = {}) {
   // Gave last year in this month, and nothing since.
   const ly = `${Number(t.slice(0, 4)) - 1}${t.slice(4, 7)}`;
   for (const g of await query(`SELECT donor_id, SUM(amount)::text AS s, MAX(LEFT(date,10)) AS d FROM gifts g
-     WHERE org_id = ? AND LEFT(date,7) = ? AND amount > 0
+     WHERE org_id = ? AND LEFT(date,7) = ? AND ${NUMBERS.money.GIFT("g")}
        AND NOT EXISTS (SELECT 1 FROM gifts h WHERE h.org_id = g.org_id AND h.donor_id = g.donor_id AND LEFT(h.date,7) > ?)
      GROUP BY donor_id`, [orgId, ly, ly]))
     push("season", g.donor_id, toC(g.s), g.d, `Gave ${fmt(toC(g.s))} in ${monthOf(ly + "-01")} last year and nothing since.`);
@@ -563,7 +565,7 @@ async function second(orgId) {
   const since = orgTime.addDays(t, -90);
   const rows = await query(`SELECT d.id, d.name, MIN(LEFT(g.date,10)) AS first, SUM(g.amount)::text AS s, COUNT(*)::int AS n,
        BOOL_OR(COALESCE(g.acknowledgement_sent,false)) AS thanked
-     FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0
+     FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id AND ${NUMBERS.money.GIFT("g")}
      WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.deceased,false) = false AND COALESCE(d.do_not_contact,false) = false
        AND COALESCE(d.kind,'') NOT IN ('organisation','anonymous')
      GROUP BY d.id, d.name HAVING COUNT(*) = 1 AND MIN(LEFT(g.date,10)) >= ?`, [orgId, since]);
@@ -677,7 +679,10 @@ async function more(orgId) {
 const PERSON_INTENTS = ["ask", "next", "changed"];
 async function person(orgId, { donor, intent = "ask", campaign, user } = {}, deps = {}) {
   if (!PERSON_INTENTS.includes(intent)) intent = "ask";
-  const [d] = await query(`SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, d.email FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL`, [orgId, donor || ""]);
+  // NUMBERS-4: their lifetime is the one rule (shared/numbers/lifetime.js:
+  // the old system's total in, refunds off, credit rows out).
+  const [d] = await query(`SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, d.email, ROUND(${NUMBERS.lifetime.LIFETIME("d")} * 100)::bigint AS lifetime_cents
+     FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL`, [orgId, donor || ""]);
   if (!d) return null;
   const t = await today(orgId);
   const H = await homeNote();
@@ -685,7 +690,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const [gifts, contact, steps, events, hours, subs] = await Promise.all([
     query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, g.acknowledgement_sent, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
              FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
-            WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 ORDER BY g.date DESC NULLS LAST, g.id`, [orgId, d.id]),
+            WHERE g.org_id = ? AND g.donor_id = ? AND ${NUMBERS.money.GIFT("g")} ORDER BY ${NUMBERS.lastGift.LAST_GIFT_ORDER}`, [orgId, d.id]),
     query(`SELECT id, type, LEFT(date,10) AS date, logged_by_name FROM interactions WHERE org_id = ? AND donor_id = ?
              AND type IN ('call','meeting','email','stewardship','note') ORDER BY date DESC NULLS LAST LIMIT 5`, [orgId, d.id]),
     query(`SELECT id, next_step_label, LEFT(due_date::text,10) AS due, owner_name FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
@@ -704,7 +709,7 @@ async function person(orgId, { donor, intent = "ask", campaign, user } = {}, dep
   const reasons = [];
   const gRow = (g, detail) => row(g.id, "gift", d.id, name, g.date, toC(g.amount), detail || g.campaign || "Gift");
   const last = gifts[0];
-  const lifetime = gifts.reduce((s, g) => s + toC(g.amount), 0);
+  const lifetime = Number(d.lifetime_cents) || 0;
   const first = gifts[gifts.length - 1];
 
   // Where they stand against the thread's appeal.

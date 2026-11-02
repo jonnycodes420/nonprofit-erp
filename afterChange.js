@@ -54,7 +54,8 @@ async function recalcDonorSummaryBatch(query, donorIds, orgId) {
   if (!ids.length) return;
   // NUMBERS-1: the one statement (donorSummary.js), which also zeroes a person
   // whose last gift was removed (the old one only touched people with gifts).
-  await query(require("./donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, ids]);
+  // NUMBERS-4: in batches, so 25,000 people after an import is linear.
+  await require("./donorSummary").recomputeSummaries(query, orgId, ids);
 }
 
 // Who is newly in a group by rule. Every group by rule is compared, not only

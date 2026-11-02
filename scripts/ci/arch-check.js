@@ -39,7 +39,24 @@ const CODE = /\.(js|jsx|mjs|cjs)$/;
 
 // Gift SQL a route must not compute: a sum of an amount, or a window over a gift's date.
 const GIFT_SQL = /SUM\s*\([^)]*amount|\b(g|gifts|gi|g2)\.date\s*(>=|<=|<|>|BETWEEN)|LEFT\s*\(\s*(\w+\.)?date\s*,\s*4\s*\)/i;
-const isRoute = f => /^routes\/.+\.js$/.test(f) || /^server\/[^/]+\/routes?[^/]*\.js$/.test(f);
+// NUMBERS-4: every file of server code, not only routes/ (the architect found
+// 153 hand-written SUM(amount) outside shared/numbers/, most of them outside
+// routes/; docs/architecture/money-sums.md lists and classes them). The home,
+// shared/numbers/, is exempt: it is where the rule lives.
+const isServerCode = f => /\.(js|cjs|mjs)$/.test(f) && !/^(client|tests|scripts|docs|audit|node_modules)\//.test(f)
+  && !/(^|\/)node_modules\//.test(f) && !f.startsWith("shared/numbers/");
+
+// NUMBERS-4 · A SECOND RULE FOR A DONOR LABEL. The shapes a copy of one of
+// shared/numbers' rules takes, so a new copy goes red here: a "major" or "top
+// tenth" line (the org's giving-level cut read, or a 90th percentile of
+// lifetime), a hand-built lapse window (LAPSED_DAYS or 365 days off a last
+// gift), or a first gift worked out from MIN over gift dates.
+const NUMBER_COPY = new RegExp([
+  String.raw`percentile_cont\(0\.9\)`,
+  String.raw`giving_level_major_cents\s*(>=|<=|>|<)|(>=|<=|>|<)\s*\w*\.?giving_level_major_cents`,
+  String.raw`(today|now|cutoff)\w*\s*-\s*(last_gift_date|lastGift)\w*\s*\)?\s*>=?\s*(365|LAPSED_DAYS)`,
+  String.raw`MIN\s*\(\s*LEFT\s*\(\s*\w+\.date\s*,\s*10\s*\)\s*\)\s*FROM\s+gifts`,
+].join("|"), "i");
 
 // A hand-rolled fiscal-year boundary: a month compared with the start month, a
 // date string built from the start month, or one of the known copies by name.
@@ -80,9 +97,14 @@ const CHECKS = {
       : now > base + GROWTH ? `${key} grew to ${now} lines (baseline ${base}, at most +${GROWTH})` : null,
   },
   "route-gift-sql": {
-    what: "lines in routes/ that sum an amount or window a gift's date",
-    measure: files => Object.fromEntries(files.filter(isRoute).map(f => [f, countLines(f, GIFT_SQL)]).filter(([, n]) => n > 0)),
+    what: "lines in server code (outside shared/numbers/) that sum an amount or window a gift's date",
+    measure: files => Object.fromEntries(files.filter(isServerCode).map(f => [f, countLines(f, GIFT_SQL)]).filter(([, n]) => n > 0)),
     worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} gift-SQL lines (baseline ${base || 0}); call the service or figure source` : null,
+  },
+  "number-copies": {
+    what: "a second rule for a donor label (major, top tenth, lapsed, first gift) outside shared/numbers/",
+    measure: files => Object.fromEntries(files.filter(f => isAppCode(f) && !f.startsWith("shared/numbers/")).map(f => [f, countLines(f, NUMBER_COPY)]).filter(([, n]) => n > 0)),
+    worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} line(s) with a donor label's own rule (baseline ${base || 0}); call shared/numbers/ (tags.js, lapse.js, firstGift.js)` : null,
   },
   "fiscal-year": {
     what: "hand-rolled fiscal-year boundaries outside orgTime.orgPeriodBounds",

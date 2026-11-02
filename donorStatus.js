@@ -28,11 +28,14 @@ const { query } = require("./db");
 const orgTime = require("./orgTime");
 const lapseRule = require("./lapseRule");
 
-const { IMPORTED_FIRST } = require("./donorSummary");
+// NUMBERS-4: the first gift is shared/numbers/firstGift.js's rule.
+const FG = require("./shared/numbers/firstGift");
+const { IMPORTED_FIRST } = FG;
 const { NOT_CREDIT } = require("./creditTypes");   // TRUTH-1: a credit row is not a gift
 
 const IMP_FIRST = IMPORTED_FIRST("d");
-const DEFAULT_CUTS = Object.freeze({ midCents: 100000, majorCents: 1000000 });
+const TAGS = require("./shared/numbers/tags");
+const DEFAULT_CUTS = TAGS.DEFAULT_CUTS;
 const NEW_DAYS = 90;
 
 const LEVELS = Object.freeze({
@@ -80,8 +83,8 @@ function tagLabel(key) {
 
 async function cutsFor(orgId) {
   const [o] = await query("SELECT giving_level_mid_cents, giving_level_major_cents, vocabulary_json FROM orgs WHERE id=?", [orgId]);
-  const mid = o && o.giving_level_mid_cents != null ? Number(o.giving_level_mid_cents) : DEFAULT_CUTS.midCents;
-  const major = o && o.giving_level_major_cents != null ? Number(o.giving_level_major_cents) : DEFAULT_CUTS.majorCents;
+  // NUMBERS-4: the cut points and the level are shared/numbers/tags.js's.
+  const { midCents: mid, majorCents: major } = TAGS.cutsOf(o);
   // FIX-49: the org's fiscal start month rides with the cut points, so every
   // caller of statusSql gets "Retained" on the org's own year.
   return { midCents: mid, majorCents: major, fyStartMonth: orgTime.orgFiscalStartMonth(o || {}) };
@@ -112,40 +115,43 @@ function windowsFor(today, cuts = null) {
 // retained. `donorId` narrows it to one person.
 function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   const w = windowsFor(today, cuts);
-  const ahead = lapseRule.rhythmAheadSql("a.donor_id", w.today);   // INSIGHTS-1: lapsing respects rhythm
-  // FIX-60: a pledge is giving activity (lapseRule.js pledgeHold). A person
-  // held by a pledge is never Lapsing, reads Current rather than Lapsed, and
-  // one with an installment past due carries pledge_overdue instead.
-  const hold = lapseRule.pledgeHoldSql("a.donor_id", w.today);
-  const overdue = lapseRule.pledgeOverdueSql("a.donor_id", w.today);
-  const args = [w.lapsingFrom, w.lapsingTo, ...ahead.args, ...hold.args, cuts.majorCents, cuts.midCents, w.w0From, ...hold.args,
-    ...overdue.args, w.w0From, ...hold.args,
+  // NUMBERS-4: lapsed, lapsing, pledge-held and pledge overdue are
+  // shared/numbers/lapse.js's one fragment (FIX-60: a pledge is giving
+  // activity; INSIGHTS-1: lapsing respects rhythm). A person held by a pledge
+  // is never Lapsing, reads Current rather than Lapsed, and one with an
+  // installment past due carries pledge_overdue instead.
+  const L = require("./shared/numbers/lapse");
+  // FIX-49: the old system's last gift is a gift they gave, so it counts for
+  // lapsing and lapsed exactly as a gift on file does.
+  const LAST = "GREATEST(a.last_date, a.imp_last)";
+  const lapsing = L.lapsingSql(LAST, w.today, "a.donor_id");
+  const lapsed = L.lapsedSql(LAST, w.today, "a.donor_id");
+  const held = L.pledgeHeldSql(LAST, w.today, "a.donor_id");
+  const overdue = L.overdueSql("a.donor_id", w.today);
+  const args = [...lapsing.args, ...TAGS.levelArgs(cuts), ...lapsed.args, ...overdue.args, ...held.args,
     w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.w0From, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
-  // FIX-49: the old system's last gift is a gift they gave, so it counts for
-  // lapsing and lapsed exactly as the stored last gift date does (lapseRule.js).
   const sql = `
-    SELECT a.donor_id, a.last12, LEAST(a.first_date, a.imp_first) AS first_date, GREATEST(a.last_date, a.imp_last) AS last_date,
-           (GREATEST(a.last_date, a.imp_last)::date BETWEEN ?::date AND ?::date AND NOT ${ahead.sql} AND NOT ${hold.sql}) AS lapsing,
-           CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
+    SELECT a.donor_id, a.last12, ${FG.EARLIER("a.first_date", "a.imp_first")} AS first_date, ${LAST} AS last_date,
+           ${lapsing.sql} AS lapsing,
+           ${TAGS.LEVEL_SQL("a.last12")} AS level,
            CASE WHEN a.w0 AND a.prev_date IS NULL AND a.imp_prev IS NULL THEN 'new'
                 -- The gift that brought them back is the first in the last 12
                 -- months; the one before it is the latest before the window.
                 -- A whole calendar year between them is a return.
                 WHEN a.w0 AND LEFT(a.first_w0, 4)::int - LEFT(GREATEST(a.prev_date, a.imp_prev), 4)::int >= 2 THEN 'recaptured'
                 WHEN a.w0 THEN 'current'
-                WHEN a.imp_last >= ? THEN 'current'
-                WHEN ${hold.sql} THEN 'current'
-                ELSE 'lapsed' END AS lifecycle,
+                WHEN ${lapsed.sql} THEN 'lapsed'
+                ELSE 'current' END AS lifecycle,
            ${overdue.sql} AS pledge_overdue,
            -- FIX-60: Current only because of a pledge (no gift in the last 12 months)
-           (NOT a.w0 AND NOT COALESCE(a.imp_last >= ?, false) AND ${hold.sql}) AS pledge_held,
+           ${held.sql} AS pledge_held,
            (a.this_cy AND a.last_cy) AS retained
       FROM (
         SELECT g.donor_id,
                ROUND(COALESCE(SUM(g.amount) FILTER (WHERE LEFT(g.date,10) BETWEEN ? AND ?), 0)::numeric, 2) AS last12,
-               MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS first_date,
+               ${FG.FIRST_ON_FILE_AGG("g")} AS first_date,
                MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS last_date,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
                MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,
@@ -205,8 +211,8 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
 function closenessSql(today, alias = "") {
   const a = alias ? alias + "." : "donors.";
   const w = windowsFor(today);
-  const hold = lapseRule.pledgeHoldSql(`${a}id`, today);
-  const late = lapseRule.pledgeOverdueSql(`${a}id`, today);   // a pledge past due is not on track
+  const hold = require("./shared/numbers/lapse").holdSql(`${a}id`, today);
+  const late = require("./shared/numbers/lapse").overdueSql(`${a}id`, today);   // a pledge past due is not on track
   const band = `COALESCE((SELECT ds.band FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id), 'distant')`;
   const pattern = `(SELECT ds.pattern FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id)`;
   // "Arrived" is their first activity on file: a gift, a conversation or a

@@ -88,17 +88,18 @@ rather than writing a second.
 | The fiscal year | `shared/numbers/fiscalYear.js`: `fiscalYear`, `fiscalYearToDate` (cut at the org's today), `period` (fiscal or calendar), `thisAndLast`, `yearStarting`. It wraps `orgTime.orgPeriodBounds` |
 | Lifetime giving | stored `donors.total_giving` (`donorSummary.js`), live `shared/numbers/lifetime.js` `LIFETIME(d)`; the profile opens `donor-lifetime` |
 | Giving in a span (this year, any window) | `shared/numbers/givingBetween.js`: `IN_SPAN(g)`, `givingBetween()`; never past the org's today |
-| Last gift | `shared/numbers/lastGift.js`: the latest dated gift above zero, never a refund or a credit row, the imported last gift as a floor. Stored on the person by `donorSummary.js`, live `donor-last-gift` |
+| Last gift | `shared/numbers/lastGift.js`: the latest dated gift above zero, never a refund or a credit row, the imported last gift as a floor; on one day the one recorded last, then the larger, then the one further down its file (`gifts.import_row`). Stored on the person by `donorSummary.js`, live `donor-last-gift` |
 | First gift and first-time | `shared/numbers/firstGift.js`: `FIRST_DATE(d)` (the old system's first gift counts), `isFirstTimeIn` |
 | Retained | `shared/numbers/retained.js`; `computeRetentionRate` (server.js) and the retention sources read it |
 | Deposited | `shared/numbers/deposited.js`: `DEPOSITED`, `NOT_DEPOSITED`, `BANKED`, `DEPOSIT_NAME` (Finance, month close, the bookkeeper's file, the deposits file, QuickBooks) |
 | A face's numbers (portal, account page, merge fields) | `shared/numbers/donorTotals.js` |
-| Lapsed and lapsing | `lapseRule.js` (the bounds and `lapseState`) and `donorStatus.statusSql` |
-| Major (and every computed tag) | `donorStatus.statusSql` |
+| Lapsed, lapsing, pledge-held, pledge overdue | `shared/numbers/lapse.js` (NUMBERS-4): one SQL fragment, `stateSql` and its conditions; `lapseRule.js` keeps the pure rule (the bounds, `lapseState`) the browser bundles |
+| Major and the giving level | `shared/numbers/tags.js` (NUMBERS-4): the org's Giving levels cut on the last 12 months (`cutsOf`, `levelOf`, `LEVEL_SQL`); the tag, filters, groups and the Insights ladder read it. "Top tenth by lifetime" is `TOP_TENTH_SQL`, not major |
+| Every other computed tag (lifecycle, retained) | `donorStatus.statusSql`, which reads `firstGift.js`, `lapse.js` and `tags.js` |
 | Pledge balance and due | `numbers.pledgeSummary()` and the figure sources `pledges-open`, `pledges-due`, `pledges-overdue`, `pledge-payments` |
 | An event's guests (invited, came, gave, ...) | `shared/numbers/events.js` `eventFigures()`: parties (a household once), people beside them; `numbers.eventStory()` for the page's story |
-| Suggested ask | `engagement.suggestedAsk` → `shared/smartAmounts.suggestedAskCents` |
-| People and households | the Donors list filter (`groups.buildDonorFilter`) for people; figure source `household-giving` for households |
+| Suggested ask | `shared/numbers/ask.js` (NUMBERS-4): one rule for the profile (`engagement.suggestedAsk`) and every Insights card, through `shared/smartAmounts.suggestedAskCents`, rounded by `naturalAskCents` |
+| People and households | `shared/numbers/households.js` (NUMBERS-4): `PERSON` (not deleted, not sample), `counts()` (people, households with a live person, giving units on EVENTS-3's `PARTY`) |
 | Net and fee | `shared/giftFooting.js` |
 
 Every number on a screen is a `<Figure>` with a `source` (CLAUDE.md), so the place that computes it
@@ -192,7 +193,8 @@ each one matches:
 | Check | Baseline | Method |
 |---|---|---|
 | `big-files` | every tracked `.js`/`.jsx` file over 1,500 lines, with its length | `git ls-files`, count `\n`. A file not in the list may not exceed 1,500; a listed file may not exceed its baseline + 50 |
-| `route-gift-sql` | per file in `routes/`, the lines that sum `amount` or window gift dates | a line matches `SUM(` … `amount`, or `g.date`/`gifts.date` compared with `>=`/`<=`/`BETWEEN`, or `LEFT(…date…, 4)`; counted per file |
+| `route-gift-sql` | per file of server code outside `shared/numbers/` (NUMBERS-4 widened it from `routes/`), the lines that sum `amount` or window gift dates | a line matches `SUM(` … `amount`, or `g.date`/`gifts.date` compared with `>=`/`<=`/`BETWEEN`, or `LEFT(…date…, 4)`; counted per file. `money-sums.md` classes every money sum |
+| `number-copies` | per app file outside `shared/numbers/`, the lines with a donor label's own rule | a 90th percentile of lifetime, a comparison with `giving_level_major_cents`, a lapse window built from 365 days off a last gift, or a first gift from `MIN(LEFT(date,10)) FROM gifts` (NUMBERS-4) |
 | `fiscal-year` | per file, the lines that compute a fiscal-year boundary | a line reads `fiscal_year_start_month` / `orgFiscalStartMonth(` / `fiscalStartMonth` **and** builds a date from it, or is a known hand-rolled form (`fyOf`, `finPeriodBounds`, `windowsFor`); `orgTime.js` and `shared/fiscalPeriod.js` are exempt |
 | `scripts-root` | the files in the `scripts/` root | `git ls-files scripts/` with no further `/` (a README excepted); the list may only shrink |
 | `real-clock` | per test file, the real-clock reads | the lines of `tests/*.js` (not `clock.js`) with `Date.now()` or a bare `new Date()`, comments stripped |

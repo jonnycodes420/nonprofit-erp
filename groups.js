@@ -165,7 +165,9 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // month"). "New" is first gift in the last 12 months, so "new and gave this
   // month" also took people whose first gift was in May.
   if (q.firstGiftFrom) {
-    where.push("(SELECT MIN(LEFT(gn.date,10)) FROM gifts gn WHERE gn.org_id = donors.org_id AND gn.donor_id = donors.id AND gn.amount > 0) >= ?");
+    // NUMBERS-4: the first gift is the one rule (shared/numbers/firstGift.js):
+    // the old system's first gift counts, a credit row does not.
+    where.push(`${require("./shared/numbers/firstGift").FIRST_DATE("donors")} >= ?`);
     params.push(dateOr(q.firstGiftFrom, "2999-12-31"));
   }
   // PARITY-4 Part 3 · SHOW ME. Five rules so a plain question ("donors who
@@ -252,7 +254,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     const scope = [], sargs = [];
     if (q.gaveEvent) { scope.push("go.event_id = ?"); sargs.push(String(q.gaveEvent)); }
     if (q.gaveFrom || q.gaveTo) { scope.push("LEFT(go.date,10) >= ? AND LEFT(go.date,10) <= ?"); sargs.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31")); }
-    where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND go.amount > 0${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
+    // NUMBERS-4: gifts (shared/numbers/money.js GIFT): a credit row is not one.
+    where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND ${require("./shared/numbers/money").GIFT("go")}${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
     params.push(...sargs, n);
   }
   if (q.volQual) {
@@ -353,7 +356,8 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
       params.push(cur.from, cur.to, cur.from);
     }
     if (q.gaveMore === "1") {
-      const sum = `(SELECT COALESCE(SUM(gm.amount),0) FROM gifts gm WHERE gm.org_id = donors.org_id AND gm.donor_id = donors.id AND gm.date >= ? AND gm.date <= ?)`;
+      // NUMBERS-4: money (shared/numbers/money.js): credit rows out, refunds off.
+      const sum = `(SELECT COALESCE(SUM(gm.amount),0) FROM gifts gm WHERE gm.org_id = donors.org_id AND gm.donor_id = donors.id AND gm.date >= ? AND gm.date <= ? AND ${require("./shared/numbers/money").MONEY("gm")})`;
       where.push(`${sum} > 0 AND ${sum} > ${sum}`);
       params.push(prior.from, prior.to, cur.from, cur.to, prior.from, prior.to);
     }
@@ -496,7 +500,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   // arguments ahead of the WHERE's.
   // FIX-60: pledge_hold says a pledge keeps them off Lapsed (lapseRule.js),
   // so the list's Lapsed filter on the client reads the same rule.
-  const ph = require("./lapseRule").pledgeHoldSql("donors.id", today);
+  const ph = require("./shared/numbers/lapse").holdSql("donors.id", today);
   let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness, ${ph.sql} AS pledge_hold`;
   const selectArgs = [...cl.args, ...ph.args];
   // FIX-22 · Room to give, sorted on the server across the whole list: the

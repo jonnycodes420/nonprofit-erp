@@ -1,0 +1,3 @@
+## NUMBERS-4 · The same recompute, once (2026-11-01)
+
+1. **One run of `scripts/once/numbers3-recompute-totals.js` now covers NUMBERS-3 and NUMBERS-4.** It runs the shared statement, which since NUMBERS-4 also settles two gifts on one day from one import by amount (then the row on file), so a stored last gift amount can move (on real-shaped gift history, the stored last-gift total moved $4,030). Nothing changes at deploy; each person catches up on their next write. Dry run first, then `--apply --i-know-this-is-prod`; org_creo is skipped. `DATABASE_URL=… node scripts/once/numbers3-recompute-totals.js`

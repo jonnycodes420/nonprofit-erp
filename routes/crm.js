@@ -981,7 +981,7 @@ function computeMoveSuggestions(donor, ctx = {}) {
   const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
   const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
   // FIX-51: the org's civil today, for the one lapse rule (the caller passes it).
-  // FIX-60: ctx.pledges (lapseRule.pledgesFor) holds a pledger off lapsing.
+  // FIX-60: ctx.pledges (shared/numbers/lapse.js pledgesFor) holds a pledger off lapsing.
   const quietState = lastGift && ctx.today ? lapseRule.lapseState(lastGift, ctx.today, ctx.rhythm || null, ctx.pledges || null) : null;
   // First gift in hand but still parked at prospect → qualify them.
   if (giftCount >= 1 && stage === "prospect") {
@@ -3321,7 +3321,8 @@ app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async 
   const tier = orgPlanTier(org);
 
   const [donorRow, giftRow, pageRow, threadRow, userRow, inviteRow] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
+    // NUMBERS-4: people, counted once (shared/numbers/households.js).
+    NUMBERS.households.counts(query, orgId).then(c => [{ n: c.people }]),
     // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [orgId]),
@@ -4334,7 +4335,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   // FIX-60: a pledge keeps a person off Lapsed (lapseRule.js), on every list.
-  const _sumHold = lapseRule.pledgeHoldSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
+  const _sumHold = require("../shared/numbers/lapse").holdSql("donors.id", orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
@@ -5201,10 +5202,12 @@ function duplicateGroupsFrom(rows) {
 async function keepImportedTotals(q, orgId, ids, sourceName) {
   if (!ids || !ids.length) return;
   const words = String(sourceName || "").replace(/\s+/g, " ").trim().slice(0, 80) || "your old system";
-  await q(require("../donorSummary").KEEP_IMPORTED_TOTAL, [orgId, ids, words, orgToday(await orgTz(orgId))]);   // ORG_TZ_SEAM_OK
+  // NUMBERS-4: in batches (donorSummary.js), so a 25,000-person file is linear.
+  const DS = require("../donorSummary");
+  await DS.keepImportedTotalsFor(q, orgId, ids, words, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   // FIX-49: and the one statement, so first_gift_date reads the old system's
   // first (or last) gift the moment the file is in, not at the next gift.
-  await q(require("../donorSummary").DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, ids]);
+  await DS.recomputeSummaries(q, orgId, ids);
 }
 
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
@@ -5443,6 +5446,10 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   // touches the subscription — it records one notice and tells the admin.
   checkRecordBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
+
+// NUMBERS-4: from this many new people, a combined import refreshes the
+// planner's statistics once it commits (see after its transaction below).
+const IMPORT_ANALYZE_AT = 1000;
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
@@ -6190,7 +6197,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
     const giftParams = [], giftTuples = [];
     const rowByGid = new Map();
-    batch.forEach(g => {
+    batch.forEach((g, gi) => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
       giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign),
@@ -6198,8 +6205,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
-        g.paymentMethod || null, runId);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        g.paymentMethod || null, runId, bi + gi);   // NUMBERS-4: its place in the file (lastGift.js)
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -6213,7 +6220,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id,import_row)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -6319,6 +6326,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
 
+  // NUMBERS-4: a big file is most of an org the planner has never seen. Until
+  // autovacuum gets to it, every statement after this one (the recompute, the
+  // background job, the scores and rhythms) is planned as if the org had one
+  // person, and a join over 25,000 people planned that way is a loop of
+  // 25,000 by 25,000 (PERF-2). Two ANALYZEs (a sample, about a second) end
+  // that. A role that does not own the tables gets a warning, not an error.
+  if (created >= IMPORT_ANALYZE_AT) {
+    try { await query("ANALYZE donors"); await query("ANALYZE gifts"); }
+    catch (e) { console.error("[combined-import] analyze:", e.message); }
+  }
+
   // FIX-37: the recent gifts go through the one gift path BEHIND THE SCREEN
   // (runRecentWork). Totals for the file's older gifts are brought up to date
   // here, in the request, so every screen reads them right away.
@@ -6407,7 +6425,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // 365-day lapsed line on a different day than their own calendar says.
       const _stageToday = orgToday(await orgTz(orgId));
       // FIX-60: a pledge holds a person off Lapsed (lapseRule.js pledgeHold).
-      const stageParams = [_stageToday, ...lapseRule.pledgeHoldSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
+      const stageParams = [_stageToday, ...require("../shared/numbers/lapse").holdSql("donors.id", _stageToday).args, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
@@ -6421,7 +6439,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
-                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _stageToday).sql} THEN 'lapsed'
+                AND NOT ${require("../shared/numbers/lapse").holdSql("donors.id", _stageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -7625,7 +7643,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
             GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp
        ON pp.pledge_id = p.id
      WHERE p.id=?`, [req.user.orgId, pledgeRow.id]) : [];
   // BUILD-72 Part 3 — the response a payment returns says what the payment DID:
@@ -7853,7 +7871,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
     `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
             GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
      WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
     [req.user.orgId, req.params.id, req.user.orgId]
   );
@@ -9279,7 +9297,8 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
   // in it yet" above 1,208 donors whose gifts came in another way. These are
   // the onboarding card's own two counts (/org/setup-status).
   const [[livePeople], [liveGifts]] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [req.user.orgId]),
+    // NUMBERS-4: people, counted once (shared/numbers/households.js).
+    NUMBERS.households.counts(query, req.user.orgId).then(c => [{ n: c.people }]),
     // NUMBERS-3 (D-7): a soft or matching credit row is not a gift on file.
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("g")}`, [req.user.orgId]),
@@ -10613,7 +10632,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) >= ${lapseRule.LAPSED_DAYS}
-                AND NOT ${lapseRule.pledgeHoldSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
+                AND NOT ${require("../shared/numbers/lapse").holdSql("donors.id", _giftStageToday).sql} THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
@@ -10628,7 +10647,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
            AND stage IS NULL
            AND deleted_at IS NULL`,
         // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
-        [_giftStageToday, ...lapseRule.pledgeHoldSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
+        [_giftStageToday, ...require("../shared/numbers/lapse").holdSql("donors.id", _giftStageToday).args, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
@@ -11236,7 +11255,7 @@ app.get("/gifts/:id/extras", requireAuth, wrap(async (req, res) => {
     g.match_pledge_id ? query(
       `SELECT p.id, p.amount, p.status, p.due_date, d.name AS employer_name, COALESCE(pp.paid,0) AS paid
          FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
         WHERE p.id=? AND p.org_id=?`, [orgId, g.match_pledge_id, orgId]) : [],
   ]);
   res.json({
@@ -11878,7 +11897,7 @@ app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
   const _msToday = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
-  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await lapseRule.pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
+  res.json({ suggestions: computeMoveSuggestions(rows[0], { today: _msToday, pledges: await require("../shared/numbers/lapse").pledgesFor(query, req.user.orgId, rows[0].id, _msToday) }) });
 }));
 
 // POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
@@ -13649,7 +13668,7 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
   // history). The event key is the last gift date, so each lapse fires once
   // and a new gift starts a new episode.
   if (key === "lapsed" || key === "lapsing") {
-    const st = lapseRule.sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
+    const st = require("../shared/numbers/lapse").sql(key, "LEFT(d.last_gift_date, 10)", today, "d.id");
     const crossed = key === "lapsed" ? `(LEFT(d.last_gift_date, 10)::date + ${lapseRule.LAPSED_DAYS})`
       : `(LEFT(d.last_gift_date, 10)::date + INTERVAL '${lapseRule.LAPSING_MONTHS} months')::date`;
     return P(`SELECT d.id AS donor_id, '${key}:' || d.id || ':' || LEFT(d.last_gift_date, 10) AS event_key
@@ -15891,7 +15910,7 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
             MAX(g.date) as last_date
      FROM gifts g
      LEFT JOIN fin_funds f ON f.id=g.fund_id
-     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != ''
+     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != '' AND ${NUMBERS.money.MONEY("g")}
      GROUP BY g.fund_id, f.name, f.restricted
      ORDER BY total DESC`,
     [req.params.id, orgId]
@@ -15899,7 +15918,9 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
 
   // Unrestricted (no fund_id)
   const unrestrictedGifts = await query(
-    `SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as gift_count FROM gifts WHERE donor_id=? AND org_id=? AND (fund_id IS NULL OR fund_id='')`,
+    // NUMBERS-4: the fund split is money (shared/numbers/money.js), as Lifetime
+    // is, so a soft or matching credit row no longer sits in a fund's share.
+    `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(*) as gift_count FROM gifts g WHERE g.donor_id=? AND g.org_id=? AND (g.fund_id IS NULL OR g.fund_id='') AND ${NUMBERS.money.MONEY("g")}`,
     [req.params.id, orgId]
   );
   const unrestrictedTotal = parseFloat(unrestrictedGifts[0]?.total || 0);
@@ -15940,7 +15961,7 @@ async function withGrantReceived(orgId, grants) {
   const pledged = grants.filter(g => g && g.award_pledge_id);
   if (!pledged.length) return grants;
   const sums = await query(
-    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts WHERE org_id=? AND pledge_id = ANY(?::text[]) GROUP BY pledge_id`,
+    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts g WHERE org_id=? AND pledge_id = ANY(?::text[]) AND ${NUMBERS.money.MONEY("g")} GROUP BY pledge_id`,
     [orgId, pledged.map(g => g.award_pledge_id)]);
   const by = new Map(sums.map(r => [r.pledge_id, money.toDollars(money.toCents(r.s) || 0)]));
   for (const g of pledged) g.received = (by.get(g.award_pledge_id) || 0).toFixed(2);
@@ -20482,9 +20503,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // giving among donors who have given at all. A $5,000 ask is the year for
   // one organization and noise for another; ranking on absolute money is how
   // a CRM starts telling a food pantry its work is small.
-  const [{ p90 } = {}] = await query(
-    `SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90
-       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
+  // NUMBERS-4: the top tenth by lifetime, one line (shared/numbers/tags.js).
+  const [{ p90 } = {}] = await query(require("../shared/numbers/tags").TOP_TENTH_SQL, [orgId]);
   majorThreshold = parseFloat(p90) || 0;
 
   // THREAD-2 · the org's named things (events, campaigns, journeys, groups)
@@ -21521,7 +21541,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     [orgId]
   )).map(SEALED_MAIL.stubInteraction);   // SECURE-3: an org-wide list gets the line
   // FIX-49: the one lapse rule, on the org's day (it read a status nothing wrote).
-  const lapsedRule = lapseRule.sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
+  const lapsedRule = require("../shared/numbers/lapse").sql("lapsed", "LEFT(last_gift_date, 10)", orgToday(await orgTz(orgId)), "donors.id");   // ORG_TZ_SEAM_OK (FIX-60: a pledge holds them)
   const lapsedDonors = await query(
     `SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count, 0) > 0
         AND last_gift_date ~ '^\\d{4}-\\d{2}-\\d{2}' AND ${lapsedRule.sql} ORDER BY last_gift_date ASC LIMIT 5`,
@@ -21777,7 +21797,7 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
     query(
       `SELECT COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS total
        FROM pledges p
-       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+       LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
        WHERE p.org_id=? AND p.campaign_id=? AND p.status='open' AND ${NOT_DELETED("p")}`,
       [req.user.orgId, req.user.orgId, c.id]),
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM grants WHERE org_id=? AND campaign_id=? AND awarded_at IS NOT NULL`, [req.user.orgId, c.id]),
@@ -21900,7 +21920,7 @@ async function fundraisingCampaignRows(orgId) {
               COALESCE(SUM(GREATEST(p.amount - COALESCE(pp.paid,0), 0)), 0) AS pledged,
               COUNT(*) AS pledge_count
          FROM pledges p
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
         WHERE p.org_id = ? AND p.campaign_id IS NOT NULL AND p.status = 'open' AND ${NOT_DELETED("p")}
         GROUP BY p.campaign_id`,
       [orgId, orgId]
@@ -22312,7 +22332,7 @@ app.get("/fundraising/pledges", requireAuth, wrap(async (req, res) => {
               p.event_id, ev.name AS event_name, p.campaign_id, c.name AS campaign_name,
               COALESCE(pp.paid, 0) AS paid, GREATEST(p.amount - COALESCE(pp.paid, 0), 0) AS balance
          FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
-         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+         LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
          LEFT JOIN events ev ON ev.id = p.event_id AND ev.org_id = p.org_id
          LEFT JOIN campaigns c ON c.id = p.campaign_id AND c.org_id = p.org_id
         WHERE p.org_id = ? AND p.status = 'open'
@@ -23830,8 +23850,14 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const qDays = orgTime.daysBetween(qMs, qThrough) + 1;
   let pqMe = orgTime.addDays(pqMs, qDays - 1);
   if (orgTime.compareCivil(pqMe, pqb.end) > 0) pqMe = pqb.end;
-  const ytdS = `${yr}-01-01`;
-  const ytdE = `${yr}-12-31`;
+  // NUMBERS-4: "this year" is the org's FISCAL year to date, labelled with its
+  // months (shared/numbers/fiscalYear.js). It was the calendar year, beside a
+  // Fundraising page and reports that all read the fiscal year.
+  const [_brOrgRow] = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
+  const _fy = NUMBERS.fiscalYear.fiscalYearToDate(_brOrgRow || {}, 0);
+  const _fyPrev = NUMBERS.fiscalYear.fiscalYear(_brOrgRow || {}, -1);
+  const ytdS = _fy.from;
+  const ytdE = _fy.to;
   const toDs = d => d ? (d instanceof Date ? orgTime.civilOf(d) : String(d)).slice(0, 10) : "";
 
   console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
@@ -23866,7 +23892,9 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
        LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
        WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
        GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
-      [yr, ytdS, ytdE, orgId]
+      // NUMBERS-4: this block is a CALENDAR-basis budget (b.basis), so its
+      // actuals stay on that budget's calendar year, beside it.
+      [yr, `${yr}-01-01`, `${yr}-12-31`, orgId]
     ),
   ]);
 
@@ -23882,25 +23910,26 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const budgetVariance = totalBudget - totalActual;
 
   // Donors
-  const totalDonors  = allDonors.length;
+  // NUMBERS-4: people, counted once (shared/numbers/households.js).
+  const totalDonors  = (await NUMBERS.households.counts(query, orgId)).people;
   const lapsedDonors = allDonors.filter(d => d.stage === "lapsed").length;
   const newDonorsQ   = allDonors.filter(d => toDs(d.created_at) >= qMs && toDs(d.created_at) <= qMe).length;
   const top10        = [...allDonors].sort((a, b) => (b.total_giving || 0) - (a.total_giving || 0)).slice(0, 10);
 
   console.log("[board-report] step 5: fetching gift retention rows...");
-  const [thisYrRows, prevYrRows, qGiftRows, pqGiftRows] = await Promise.all([
-    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, ytdS, ytdE]),
-    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, `${yr - 1}-01-01`, `${yr - 1}-12-31`]),
-    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, qMs, qMe]),
-    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, pqMs, pqMe]),
+  // NUMBERS-4: retained is shared/numbers/retained.js (gave last fiscal year
+  // and this one, gifts only, live people) and the quarter's money is
+  // givingBetween (money: credit rows out, refunds off, never past today).
+  // They were their own SQL: calendar years, refunds and credits counted.
+  const [ret, qGive, pqGive] = await Promise.all([
+    NUMBERS.retained.retention(query, orgId, { from: _fy.from, to: _fy.to }, { from: _fyPrev.start, to: _fyPrev.end }),
+    NUMBERS.givingBetween.givingBetween(query, orgId, { from: qMs, to: qMe, today }),
+    NUMBERS.givingBetween.givingBetween(query, orgId, { from: pqMs, to: pqMe, today }),
   ]);
-  console.log("[board-report] step 5: retention OK — thisYr:", thisYrRows.length, "prevYr:", prevYrRows.length);
-  const prevYrIds     = new Set(prevYrRows.map(r => r.donor_id));
-  const thisYrIds     = new Set(thisYrRows.map(r => r.donor_id));
-  const retained      = [...thisYrIds].filter(id => prevYrIds.has(id)).length;
-  const retentionRate = prevYrIds.size > 0 ? Math.round(retained / prevYrIds.size * 100) : 0;
-  const raisedThisQ   = parseFloat(qGiftRows[0]?.total) || 0;
-  const raisedLastQ   = parseFloat(pqGiftRows[0]?.total) || 0;
+  console.log("[board-report] step 5: retention OK — retained:", ret.retained, "of", ret.prior);
+  const retentionRate = ret.prior > 0 ? Math.round(ret.retained / ret.prior * 100) : 0;
+  const raisedThisQ   = qGive.cents / 100;
+  const raisedLastQ   = pqGive.cents / 100;
 
   // Grants
   const activeGrants    = allGrants.filter(g => g.status === "active");
@@ -23953,7 +23982,7 @@ Paragraph 2, Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDon
 
 Paragraph 3, Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
 
-Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}.`,
+Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}. Year to date means the fiscal year to date, ${_fy.label}.`,
       }],
     });
     // FIX-28: an unfinished summary is never printed; the template paragraphs are used instead.
@@ -24012,7 +24041,7 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.addPage();
     doc.rect(0, 0, PW, 58).fill(GREEN);
     doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Financial Snapshot", 50, 18);
-    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(`Year to Date ${yr}`, 50, 42);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(`Fiscal year to date, ${_fy.label}`, 50, 42);
 
     y = 76;
     const mw = (PW - 100) / 4;
@@ -24404,6 +24433,9 @@ async function reportGivingSummary(orgId, p) {
     offlineTotal: fv("offlineTotal"),
     offlineCount: fv("offlineCount"),
     year: p.year, yearMode: p.yearMode, fiscalStartMonth: p.fiscalStartMonth,
+    // NUMBERS-4: this fiscal year, named as Reports names it (the year it ends
+    // in), on the org's calendar, so the browser never works it out.
+    fiscalYear: reportCurrentYear("fiscal", p.org),
     // The total opens too: the same gifts, through the same source.
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
@@ -24857,7 +24889,7 @@ async function reportSolicitations(orgId, p) {
   const pledgeRow = await query(
     `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS amt
      FROM pledges p
-     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     LEFT JOIN ${require("../shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id=p.id
      WHERE p.org_id=? AND p.status='open'`, [orgId, orgId]);
   return {
     from: p.from, to: p.to,
@@ -26938,27 +26970,23 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // or before the day nine months ago.
   const _quietBounds = lapseRule.bounds(orgToday(await orgTz(orgId)));
   const _quietCutoff = _quietBounds.lapsingOnOrBefore;
-  const _quietAhead = lapseRule.rhythmAheadSql("d.id", _quietBounds.today);
-  const _quietPledge = lapseRule.pledgeHoldSql("d.id", _quietBounds.today);   // FIX-60: a pledge is giving activity
   // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
   const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
   // source, and the destination shows the same count and amount the chip claimed.
+  // NUMBERS-4: their last gift is the one rule (shared/numbers/lastGift.js:
+  // the old system's last gift counts, a refund or credit row never does),
+  // and lapsed or lapsing is the one fragment (shared/numbers/lapse.js).
+  const _quietLapsed = NUMBERS.lapse.lapsedSql("x.last_gift_date", _quietBounds.today, "x.id");
+  const _quietLapsing = NUMBERS.lapse.lapsingSql("x.last_gift_date", _quietBounds.today, "x.id");
   const pAtRiskDonors = query(
-    `SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount,
-            (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) AS last_gift_date
-       FROM donors d
-      WHERE d.org_id = ?
-        AND d.deleted_at IS NULL
-        AND d.total_giving > 0
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) IS NOT NULL
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) <= ?
-        -- INSIGHTS-1: a lapsing yearly giver whose usual time is still ahead is not at risk
-        AND NOT ((SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id AND g.amount > 0) > ? AND ${_quietAhead.sql})
-        AND NOT ${_quietPledge.sql}
-      ORDER BY d.total_giving DESC
+    `SELECT x.id, x.name, x.amount, x.last_gift_date FROM (
+       SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount, LEFT(${NUMBERS.lastGift.LAST_DATE("d")}, 10) AS last_gift_date
+         FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0) x
+      WHERE x.last_gift_date IS NOT NULL AND (${_quietLapsed.sql} OR ${_quietLapsing.sql})
+      ORDER BY x.amount DESC
       LIMIT 50`,
-    [orgId, _quietCutoff, _quietBounds.lapsedOnOrBefore, ..._quietAhead.args, ..._quietPledge.args]
+    [orgId, ..._quietLapsed.args, ..._quietLapsing.args]
   );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 

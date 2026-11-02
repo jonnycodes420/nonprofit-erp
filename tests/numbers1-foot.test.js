@@ -375,6 +375,24 @@ async function shrink(seq, today) {
     await wipe(m.org);
   }
 
+  // ── §3a the fixed cases: sequences a seed once broke, replayed every run ─
+  // NUMBERS-4: seed 695574508, sequence 146: a person imported with $552
+  // through 2026-02-24, then a matching gift credit dated 2025-12-15 on them.
+  // A credit row is not a gift, so their first gift is still 2026-02-24
+  // (shared/numbers/firstGift.js); the checker's key counted the credit.
+  const sequenceOf = (seed, n) => {
+    const t = rng(seed);
+    let seq = null;
+    for (let i = 0; i <= n; i++) seq = Array.from({ length: int(t, 1, 7) }, () => ({ kind: pick(t, KINDS), seed: Math.floor(t() * 1e9) }));
+    return seq;
+  };
+  for (const [seed, n, what] of [[695574508, 146, "a matching gift credit dated before an imported first gift"]]) {
+    const log = [];
+    const why = await runSequence(sequenceOf(seed, n), today, log);
+    ok(`§3a seed ${seed} sequence ${n} (${what}) keeps every rule`, !why, { steps: log, why });
+  }
+  await wipe(`${PREFIX}${SEED}_%`);
+
   // ── §3 random sequences ─────────────────────────────────────────────────
   console.log(`\n§3 ${SEQUENCES} random sequences, the checker after every step`);
   const top = rng(SEED);

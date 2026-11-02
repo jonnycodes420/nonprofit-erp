@@ -17,6 +17,14 @@
 //      always has a deposit name; one list of banked methods
 //   §9 donorTotals: the portal's, the account page's and the merge fields'
 //      numbers are these modules' (one core, many faces)
+// NUMBERS-4:
+//   §10 lapse: lapsing at 9 months to the day, lapsed at 12, a pledge holds
+//       them (pledge-held), a pledge past due is its own state; SQL and JS agree
+//   §11 tags: Major at the cut and Mid a cent under, the org's own cut
+//   §12 households: a household of two is one household, two people, one unit
+//   §13 ask: the one suggested-ask rule; a soft credit never sets "largest"
+//   §14 last gift: two gifts on one day from one import, by amount then the row
+//   §15 pledges: a credit row linked to a pledge pays nothing; a refund comes off
 "use strict";
 const { ok, summary, q, closeDb } = require("./helpers");
 const N = require("../shared/numbers");
@@ -179,7 +187,90 @@ const at = iso => new Date(iso);
   const byOrg = await N.donorTotals.totalsByOrg(query, [{ org_id: ORG, donor_id: A }, { org_id: ORG, donor_id: C }]);
   ok("§9 by org: a deleted person is in nothing", byOrg.get(ORG) && byOrg.get(ORG).lifetime === 130, byOrg.get(ORG));
 
-  for (const t of ["gifts", "imports", "donors"]) await q(`DELETE FROM ${t} WHERE org_id = $1`, [ORG]);
+  // ── §10 lapse (today 2 Nov 2026) ─────────────────────────────────────────
+  const L9 = await person("l9"); await gift(L9, "2026-02-02", 25);        // 9 months ago to the day
+  const L9b = await person("l9b"); await gift(L9b, "2026-02-03", 25);     // a day short of 9 months
+  const L12 = await person("l12"); await gift(L12, "2025-11-02", 25);     // 365 days ago
+  const L12b = await person("l12b"); await gift(L12b, "2025-11-03", 25);  // 364 days ago
+  const PH = await person("ph"); await gift(PH, "2024-05-01", 25);        // long quiet, an open pledge on schedule
+  const PO = await person("po"); await gift(PO, "2024-05-01", 25);        // long quiet, a pledge past due
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,status,due_date,created_at,created_by,created_by_name) VALUES
+             ($1,$3,$4,1000,'open','2027-03-01','2024-06-01',${sys}), ($2,$3,$5,1000,'open','2026-10-01','2024-06-01',${sys})`,
+    [`p_${ORG}_ph`, `p_${ORG}_po`, ORG, PH, PO]);
+  const LA = N.lapse;
+  const st = LA.stateSql(N.lastGift.LAST_DATE("d"), TODAY, "d.id"), held = LA.pledgeHeldSql(N.lastGift.LAST_DATE("d"), TODAY, "d.id");
+  const states = Object.fromEntries((await query(`SELECT d.id, ${st.sql} AS s, ${held.sql} AS h FROM donors d WHERE d.org_id = ?`, [...st.args, ...held.args, ORG]))
+    .map(r => [r.id, { s: r.s, h: r.h }]));
+  ok("§10 a last gift nine months ago to the day is lapsing", states[L9].s === "lapsing", states[L9]);
+  ok("§10 ...and a day short of nine months is giving", states[L9b].s === "giving", states[L9b]);
+  ok("§10 a last gift 365 days ago is lapsed", states[L12].s === "lapsed", states[L12]);
+  ok("§10 ...and 364 days ago is lapsing", states[L12b].s === "lapsing", states[L12b]);
+  ok("§10 an open pledge on schedule holds a long-quiet person: giving, pledge-held, not lapsed", states[PH].s === "giving" && states[PH].h === true, states[PH]);
+  ok("§10 a pledge past due is its own state, never lapsing or lapsed", states[PO].s === "pledge_overdue", states[PO]);
+  const LR = require("../lapseRule");
+  ok("§10 the pure rule (lapseRule.lapseState) says the same for the four dates",
+    LR.lapseState("2026-02-02", TODAY) === "lapsing" && LR.lapseState("2026-02-03", TODAY) === "giving"
+    && LR.lapseState("2025-11-02", TODAY) === "lapsed" && LR.lapseState("2025-11-03", TODAY) === "lapsing");
+  const lapsedCond = LA.sql("lapsed", N.lastGift.LAST_DATE("d"), TODAY, "d.id");
+  const lapsedIds = (await query(`SELECT d.id FROM donors d WHERE d.org_id = ? AND ${N.lastGift.LAST_DATE("d")} IS NOT NULL AND ${lapsedCond.sql}`, [ORG, ...lapsedCond.args])).map(r => r.id);
+  ok("§10 the condition form agrees: L12 is lapsed, the pledgers are not", lapsedIds.includes(L12) && !lapsedIds.includes(PH) && !lapsedIds.includes(PO) && !lapsedIds.includes(L12b), lapsedIds);
+
+  // ── §11 tags ─────────────────────────────────────────────────────────────
+  const T4 = N.tags, cuts = T4.cutsOf({});
+  ok("§11 the default cuts are $1,000 and $10,000", cuts.midCents === 100000 && cuts.majorCents === 1000000, cuts);
+  ok("§11 $10,000.00 in the last 12 months is Major; $9,999.99 is Mid", T4.levelOf(1000000, cuts) === "major" && T4.levelOf(999999, cuts) === "mid" && T4.levelOf(99999, cuts) === "general");
+  ok("§11 the org's own cut is the line", T4.levelOf(500000, T4.cutsOf({ giving_level_major_cents: 500000 })) === "major");
+  const [lv] = await query(`SELECT ${T4.LEVEL_SQL("10000.00")} AS a, ${T4.LEVEL_SQL("9999.99")} AS b`, [...T4.levelArgs(cuts), ...T4.levelArgs(cuts)]);
+  ok("§11 LEVEL_SQL agrees at the cut and a cent under", lv.a === "major" && lv.b === "mid", lv);
+
+  // ── §12 households ───────────────────────────────────────────────────────
+  const HH = `h_${ORG}_kim`;
+  await q(`INSERT INTO households (id,org_id,name) VALUES ($1,$2,'Kim and Robby King')`, [HH, ORG]);
+  const K1 = await person("k1"), K2 = await person("k2"), K3 = await person("k3", { deleted: true }), S1 = await person("s1");
+  await q(`UPDATE donors SET household_id = $1 WHERE id = ANY($2)`, [HH, [K1, K2, K3]]);
+  await q(`UPDATE donors SET is_sample = true WHERE id = $1`, [S1]);
+  const hc = await N.households.counts(query, ORG, { where: "d.id = ANY(?)", args: [[K1, K2, K3, S1, A]] });
+  ok("§12 a household of two (and one deleted) with A beside it: 3 people, 1 household, 2 units; sample data is no one", hc.people === 3 && hc.households === 1 && hc.units === 2, hc);
+  const hr = N.households.countsOf([{ id: "1", household_id: "h" }, { id: "2", household_id: "h" }, { id: "3" }, { id: "4", household_id: "h2", deleted_at: "x" }]);
+  ok("§12 the same over rows: a household whose people are all deleted is not one", hr.people === 3 && hr.households === 1 && hr.units === 2, hr);
+
+  // ── §13 ask ──────────────────────────────────────────────────────────────
+  await N.ask.ready;
+  const a1 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }, { date: "2025-01-01", amount: "10000", type: "Soft credit" }]);
+  ok("§13 largest $250 (the $10,000 soft credit is not a gift), last two average $175 and rising: one step up, $350",
+    a1 && a1.largestCents === 25000 && a1.avgLastThreeCents === 17500 && a1.rising && a1.askCents === 35000, a1);
+  const a2 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }], { stepUp: false });
+  ok("§13 held at their own level: $250", a2 && a2.askCents === 25000 && a2.held, a2);
+  const a4 = N.ask.askFor([{ date: "2024-10-21", amount: "1800" }, { date: "2024-10-21", amount: "225" }, { date: "2024-10-21", amount: "500" }, { date: "2024-10-21", amount: "192" }]);
+  ok("§13 four gifts on one day are not rising: $1,800 largest, held at $1,750", a4 && !a4.rising && a4.askCents === 175000, a4);
+  const a3 = N.ask.askFor([{ date: "2026-01-01", amount: "2442.40" }]);
+  ok("§13 one gift of $2,442.40 asks the natural $2,500", a3 && a3.askCents === 250000, a3);
+
+  // ── §14 last gift: one day, one import ───────────────────────────────────
+  const OJ = await person("oj");
+  const tie = async (amount, row) => { const id = `g_${ORG}_t${row}`; await q(`INSERT INTO gifts (id,org_id,donor_id,date,amount,import_row,created_at,created_by,created_by_name)
+      VALUES ($1,$2,$3,'2025-12-16',$4,$5,'2026-11-01T09:00:00Z',${sys})`, [id, ORG, OJ, amount, row]); return id; };
+  await tie(5000, 1); const big = await tie(20000, 2);
+  const lgT = (await N.lastGift.lastGifts(query, ORG, [OJ])).get(OJ);
+  ok("§14 $20,000 and $5,000 on 16 Dec from one import: the last gift is the $20,000, every time", lgT && lgT.cents === 2000000, lgT);
+  const OJ2 = await person("oj2");
+  for (const [row, ref] of [[3, "a"], [7, "b"]]) await q(`INSERT INTO gifts (id,org_id,donor_id,date,amount,import_row,notes,created_at,created_by,created_by_name)
+      VALUES ($1,$2,$3,'2025-12-16',100,$4,$5,'2026-11-01T09:00:00Z',${sys})`, [`g_${ORG}_r${row}`, ORG, OJ2, row, ref]);
+  const [lastRow] = await query(`SELECT g.id FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? ORDER BY ${N.lastGift.LAST_GIFT_ORDER} LIMIT 1`, [ORG, OJ2]);
+  ok("§14 two of the same amount: the one further down the file", lastRow && lastRow.id === `g_${ORG}_r7`, lastRow);
+  ok("§14 the same rule over rows", N.lastGift.lastOf([{ id: "z", date: "2025-12-16", amount: 100, import_row: 3 }, { id: "a", date: "2025-12-16", amount: 100, import_row: 7 }]).cents === 10000
+    && N.lastGift.lastOf([{ id: "z", date: "2025-12-16", amount: 50 }, { id: "a", date: "2025-12-16", amount: 200 }]).cents === 20000);
+
+  // ── §15 pledges: what a pledge has been paid ─────────────────────────────
+  const PP = await person("pp");
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,status,created_by,created_by_name) VALUES ($1,$2,$3,1000,'open',${sys})`, [`p_${ORG}_pp`, ORG, PP]);
+  for (const [n, amt, type] of [[1, 300, null], [2, 500, "Matching gift credit"], [3, -100, null]])
+    await q(`INSERT INTO gifts (id,org_id,donor_id,date,amount,type,pledge_id,created_by,created_by_name) VALUES ($1,$2,$3,'2026-10-0${n}',$4,$5,$6,${sys})`,
+      [`g_${ORG}_pp${n}`, ORG, PP, amt, type, `p_${ORG}_pp`]);
+  const [pd] = await query(`SELECT ${N.pledges.PAID_OF("p")} AS a, pp.paid AS b FROM pledges p LEFT JOIN ${N.pledges.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id WHERE p.id = ?`, [ORG, `p_${ORG}_pp`]);
+  ok("§15 $300 paid, a $500 matching credit and a $100 refund: paid is $200, both ways", Number(pd.a) === 200 && Number(pd.b) === 200, pd);
+
+  for (const t of ["pledges", "gifts", "imports", "donors", "households"]) await q(`DELETE FROM ${t} WHERE org_id = $1`, [ORG]);
   await q(`DELETE FROM orgs WHERE id = $1`, [ORG]);
   await closeDb();
   summary();

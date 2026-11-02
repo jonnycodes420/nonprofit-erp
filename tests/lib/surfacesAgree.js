@@ -360,8 +360,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       ], money);
     }
     if (!skip.has("vsLastYear") && w) {
-      // HOME-3: Home says pace once, in the greeting (lead.pace, numbers.vsLastYear).
-      const doorLine = (lead && lead.pace && lead.pace.line) || (lead && lead.doors && ((lead.doors.why && lead.doors.why.line) || (lead.doors.what && lead.doors.what.line))) || "";
+      // HOME-5: Home's greeting says no pace; the doors still carry vsLastYear.
+      const doorLine = (lead && lead.doors && ((lead.doors.why && lead.doors.why.line) || (lead.doors.what && lead.doors.what.line))) || "";
       const door = /is \$([\d,.]+) (behind|ahead of) last year/.exec(doorLine);
       const seasonal = /^Giving since /.test(doorLine);
       const boardDiff = board.answer && (board.answer.parts || []).find(p => p.figure && p.figure.key === "givingDifference");
@@ -383,8 +383,8 @@ async function assertSurfacesAgree(orgId, ctx = {}) {
       if (door && !seasonal) {
         const homeCents = (door[2] === "behind" ? -1 : 1) * cents(num(door[1]));
         const dbCents = /\./.test(door[1]) ? thisYear - lastYear : Math.round((thisYear - lastYear) / 100) * 100;
-        facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's greeting"] = homeCents;
-        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's greeting says ${money(homeCents)} ("${doorLine}")`);
+        facts[`ahead of or behind the same days last year (${w.from} to ${w.to})`]["Home's door"] = homeCents;
+        if (homeCents !== dbCents) diffs.push(`ahead of or behind the same days last year: the key says ${money(thisYear - lastYear)}, Home's door says ${money(homeCents)} ("${doorLine}")`);
       }
       // Every "vs last year" says which days it compares.
       if (fp && fp.priorRaised > 0 && !(fundCmp && fundCmp.sentence && fundCmp.lastFrom === w.from && fundCmp.lastTo === w.to)) {

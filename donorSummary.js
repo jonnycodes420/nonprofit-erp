@@ -38,53 +38,60 @@ const { NOT_CREDIT } = require("./creditTypes");
 const { GIFT } = require("./shared/numbers/money");
 const { LAST_GIFT_ORDER } = require("./shared/numbers/lastGift");
 
-// FIX-49 · THE OLD SYSTEM'S FIRST GIFT. The file's first gift date when it
-// gave one; when it gave only a last gift date, that date, because the person
-// was already a donor on it (a file that gave no dates at all says nothing,
-// and the day of the import is not a gift, so imported_through is never used
-// here). "Donor since", the lifecycle tags and first_gift_date all read this.
-const IMPORTED_FIRST = (a = "d") => `COALESCE(NULLIF(${a}.imported_first_gift_date, ''), NULLIF(${a}.imported_last_gift_date, ''))`;
+// FIX-49 · THE OLD SYSTEM'S FIRST GIFT, and the first gift on file: one rule,
+// shared/numbers/firstGift.js ("Donor since", the tags and first_gift_date).
+const { IMPORTED_FIRST, FIRST_ON_FILE_AGG } = require("./shared/numbers/firstGift");
 
 // A gift on file that the imported total does not already cover.
 // IMPORT-4: an undated gift (date IS NULL) is never inside the old system's
 // period, because nobody knows its day: it is always counted.
-const AFTER_IMPORT = "(dd.imported_through IS NULL OR g.date IS NULL OR g.date > dd.imported_through)";
+const AFTER_IMPORT = (dd = "dd") => `(${dd}.imported_through IS NULL OR g.date IS NULL OR g.date > ${dd}.imported_through)`;
 
-// The rollup each person should carry, one row per person in scope.
-const SUMMARY_ROWS = (scope = "") => `(SELECT x.donor_id,
+// One person's figures, read beside them (`dd` is their row): the imported
+// columns plus one pass over their own gifts, through the (org, person) index.
+// NUMBERS-4: always per person, never a join over the org's gifts. Joined, a
+// fresh org's people (not yet in the planner's statistics) read every gift in
+// the org once per person, and a 25,000-person import never finished (PERF-2).
+const PERSON_X = (dd = "dd") => `(SELECT ${dd}.id AS donor_id, ${dd}.imported_total AS imp_total, ${dd}.imported_gift_count AS imp_n,
+                       ${IMPORTED_FIRST(dd)} AS imp_first, ${dd}.imported_last_gift_date AS imp_last,
+                       ${dd}.imported_last_gift_amount AS imp_last_amt, ga.*
+                  FROM (SELECT
+                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_total,
+                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS after_n,
+                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT(dd)} AND ${NOT_CREDIT("g")}) AS before_n,
+                       ${FIRST_ON_FILE_AGG("g")} AS row_first,
+                       MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
+                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
+                     FROM gifts g WHERE g.org_id = ${dd}.org_id AND g.donor_id = ${dd}.id) ga)`;
+// The rollup a person should carry, from PERSON_X's columns.
+const SUMMARY_COLS = `x.donor_id,
                (COALESCE(x.imp_total, 0) + COALESCE(x.after_total, 0))::numeric(12,2) AS total,
                (COALESCE(x.imp_n, CASE WHEN x.imp_total IS NOT NULL THEN x.before_n END, 0) + x.after_n)::int AS n,
                NULLIF(LEAST(COALESCE(NULLIF(x.imp_first, ''), '9999-12-31'), COALESCE(x.row_first, '9999-12-31')), '9999-12-31') AS first_date,
                CASE WHEN x.row_last IS NOT NULL AND x.row_last >= COALESCE(NULLIF(x.imp_last, ''), '0000') THEN x.row_last ELSE NULLIF(x.imp_last, '') END AS last_date,
                (CASE WHEN x.row_last IS NOT NULL AND x.row_last >= COALESCE(NULLIF(x.imp_last, ''), '0000') THEN x.row_last_amt
-                     WHEN NULLIF(x.imp_last, '') IS NOT NULL THEN COALESCE(x.imp_last_amt, 0) ELSE 0 END)::numeric(12,2) AS last_amt
-          FROM (SELECT dd.id AS donor_id, dd.imported_total AS imp_total, dd.imported_gift_count AS imp_n,
-                       ${IMPORTED_FIRST("dd")} AS imp_first, dd.imported_last_gift_date AS imp_last,
-                       dd.imported_last_gift_amount AS imp_last_amt,
-                       SUM(g.amount) FILTER (WHERE ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_total,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS after_n,
-                       COUNT(g.id) FILTER (WHERE g.amount > 0 AND NOT ${AFTER_IMPORT} AND ${NOT_CREDIT("g")}) AS before_n,
-                       MIN(g.date) FILTER (WHERE ${GIFT("g")}) AS row_first,
-                       MAX(g.date) FILTER (WHERE ${GIFT("g")}) AS row_last,
-                       (ARRAY_AGG(g.amount ORDER BY ${LAST_GIFT_ORDER}) FILTER (WHERE g.date IS NOT NULL AND ${GIFT("g")}))[1] AS row_last_amt
-                  FROM donors dd LEFT JOIN gifts g ON g.donor_id = dd.id AND g.org_id = dd.org_id
-                 WHERE dd.org_id = $1 ${scope.replace(/\bd\./g, "dd.")}
-                 GROUP BY dd.id) x)`;
+                     WHEN NULLIF(x.imp_last, '') IS NOT NULL THEN COALESCE(x.imp_last_amt, 0) ELSE 0 END)::numeric(12,2) AS last_amt`;
+// One row per person in scope (for the read-only diff).
+const SUMMARY_ROWS = (scope = "") => `(SELECT ${SUMMARY_COLS}
+          FROM donors dd CROSS JOIN LATERAL ${PERSON_X("dd")} x
+         WHERE dd.org_id = $1 ${scope.replace(/\bd\./g, "dd.")})`;
+// Person `d`'s rollup, as one row.
+const SUMMARY_OF = (d = "d") => `(SELECT ${SUMMARY_COLS} FROM ${PERSON_X(d)} x)`;
 
+// NUMBERS-4: no join. Each person in scope is read once and their figures
+// computed beside them, so the time grows with the people whatever the
+// planner's statistics say (the old UPDATE ... FROM joined donors to itself).
 const DONOR_SUMMARY_UPDATE = (scope = "") => `
   UPDATE donors d SET
-    total_giving = s.total,
-    gift_count = s.n,
-    first_gift_date = s.first_date,
-    last_gift_date = s.last_date,
-    last_gift_amount = s.last_amt,
+    (total_giving, gift_count, first_gift_date, last_gift_date, last_gift_amount)
+      = (SELECT s.total, s.n, s.first_date, s.last_date, s.last_amt FROM ${SUMMARY_OF("d")} s),
     updated_at = NOW()
-  FROM ${SUMMARY_ROWS(scope)} s
-  WHERE d.id = s.donor_id AND d.org_id = $1
+  WHERE d.org_id = $1 ${scope}
     -- A person whose totals already agree is not written (an undone merge must
     -- leave the row exactly as it was, updated_at included).
-    AND (d.total_giving, d.gift_count, d.first_gift_date, d.last_gift_date, d.last_gift_amount)
-        IS DISTINCT FROM (s.total, s.n, s.first_date, s.last_date, s.last_amt)`;
+    AND NOT EXISTS (SELECT 1 FROM ${SUMMARY_OF("d")} s
+                     WHERE (d.total_giving, d.gift_count, d.first_gift_date, d.last_gift_date, d.last_gift_amount)
+                           IS NOT DISTINCT FROM (s.total, s.n, s.first_date, s.last_date, s.last_amt))`;
 
 // NUMBERS-3: the people whose stored rollup differs from what it should be,
 // read only (scripts/once/numbers3-recompute-totals.js counts these first).
@@ -106,20 +113,26 @@ const DONOR_SUMMARY_DIFF = (scope = "") => `
 // `$2` the people, `$3` the source's words, `$4` the org's today. Only a person
 // whose stated total stands above the gifts on file for them is touched, and
 // never one who already has an imported total.
+// NUMBERS-4: no join. The old form joined donors to itself and filtered both
+// sides with `= ANY($2)`; inside the import's transaction a fresh org's new
+// rows are not in the planner's statistics, so it looped over every donor for
+// every donor, and a 25,000-person workbook ran for over 15 minutes (PERF-2).
+// Now each person is read once and their gifts are one index lookup, so the
+// time grows with the people, whatever the statistics say. Callers with many
+// people go through keepImportedTotals below, in batches.
+const GIFTS_ON_FILE = what => `(SELECT ${what} FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND ${NOT_CREDIT("g")})`;
 const KEEP_IMPORTED_TOTAL = `
   UPDATE donors d SET
     imported_total = d.total_giving,
-    imported_gift_count = NULLIF(GREATEST(COALESCE(d.gift_count, 0), COALESCE(gs.n, 0)), 0),
+    imported_gift_count = NULLIF(GREATEST(COALESCE(d.gift_count, 0), ${GIFTS_ON_FILE("COUNT(*) FILTER (WHERE g.amount > 0)")}), 0),
     imported_first_gift_date = NULLIF(d.first_gift_date, ''),
     imported_last_gift_date = NULLIF(d.last_gift_date, ''),
     imported_last_gift_amount = CASE WHEN NULLIF(d.last_gift_date, '') IS NOT NULL THEN d.last_gift_amount END,
     imported_through = COALESCE(NULLIF(d.last_gift_date, ''), $4),
     imported_source = $3,
     imported_on = $4
-  FROM donors dd LEFT JOIN (SELECT donor_id, SUM(amount) AS t, COUNT(*) FILTER (WHERE amount > 0) AS n
-                              FROM gifts g WHERE g.org_id = $1 AND g.donor_id = ANY($2) AND ${NOT_CREDIT("g")} GROUP BY g.donor_id) gs ON gs.donor_id = dd.id
-  WHERE d.id = dd.id AND d.org_id = $1 AND dd.org_id = $1 AND d.id = ANY($2)
-    AND d.imported_total IS NULL AND d.total_giving > COALESCE(gs.t, 0)`;
+  WHERE d.org_id = $1 AND d.id = ANY($2)
+    AND d.imported_total IS NULL AND d.total_giving > COALESCE(${GIFTS_ON_FILE("SUM(g.amount)")}, 0)`;
 
 // A soft credit follows its gift when the gift's amount changes (an edit, a
 // split, a partial refund): a share stays that share of the new amount, a fixed
@@ -136,4 +149,19 @@ const SOFT_CREDIT_RESIZE = [
     WHERE g.id = sc.gift_id AND g.org_id = sc.org_id AND sc.gift_id = $1 AND sc.org_id = $2`,
 ];
 
-module.exports = { DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };
+// NUMBERS-4 · MANY PEOPLE, IN BATCHES. The scoped recompute and the kept
+// total are read for a set of people. Right after an import that set is a
+// fresh org's new rows, which the planner's statistics have not seen, and a
+// join over 25,000 people it thinks are one row is a loop of 25,000 by 25,000.
+// Run over BATCH people at a time, the worst plan is BATCH by BATCH, so the
+// time grows with the people (PERF-2: a 25,000-person workbook never finished).
+// `run(sql, params)` is the caller's query (inside its transaction or not).
+const BATCH = 500;
+async function inBatches(ids, fn) {
+  const all = [...new Set((ids || []).filter(Boolean))];
+  for (let i = 0; i < all.length; i += BATCH) await fn(all.slice(i, i + BATCH));
+}
+const recomputeSummaries = (run, orgId, ids) => inBatches(ids, part => run(DONOR_SUMMARY_UPDATE("AND d.id = ANY($2)"), [orgId, part]));
+const keepImportedTotalsFor = (run, orgId, ids, words, today) => inBatches(ids, part => run(KEEP_IMPORTED_TOTAL, [orgId, part, words, today]));
+
+module.exports = { BATCH, recomputeSummaries, keepImportedTotalsFor, DONOR_SUMMARY_UPDATE, DONOR_SUMMARY_DIFF, KEEP_IMPORTED_TOTAL, LAST_GIFT_ORDER, SOFT_CREDIT_RESIZE, IMPORTED_FIRST };

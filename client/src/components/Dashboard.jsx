@@ -3094,15 +3094,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {todayLongStr}
             </h1>
           )}
-          {/* HOME-3 — one sentence on pace: numbers.vsLastYear over the org's
-              fiscal year, the number Fundraising and the Board show. None
-              without a year of history. */}
-          {surface==="home"&&!editMode&&homeDay&&homeDay.pace&&(
-            <p data-testid="home-pace" data-pace-dir={homeDay.pace.dir} style={{margin:"12px 0 0",fontSize:18,lineHeight:1.5,color:T.ink,maxWidth:720}}>
-              {homeDay.pace.lead}{homeDay.pace.figure?<b><Figure variant="inline" kind="money" value={Math.round(homeDay.pace.amount)} label={homeDay.pace.dir==="behind"?"Behind last year":"Ahead of last year"}
-                definition={homeDay.pace.definition} source={homeDay.pace.source} figureKey="home-pace"/></b>:null}{homeDay.pace.tail}{homeDay.pace.after?<> {homeDay.pace.after}</>:null}
-            </p>
-          )}
+          {/* HOME-5 — no pace sentence. Home's header is the org, the greeting
+              and the date. The comparison with last year lives on Fundraising
+              and the Board, one click away; Home doesn't open with a gap. */}
           {/* The board screen says what it is and as of when, and nothing else
               about itself. */}
           {surface==="board"&&!editMode&&(

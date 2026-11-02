@@ -47,7 +47,7 @@ async function donorGlance(query, orgId, donorId) {
               COALESCE(SUM(g.amount) FILTER (WHERE g.amount < 0), 0)::text AS refunded,
               COALESCE(SUM(g.amount), 0)::text AS itemized
          FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL`, [orgId, donorId]),
+        WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND ${require("./shared/numbers/money").MONEY("g")}`, [orgId, donorId]),   // NUMBERS-4: money only
     FS.figureValue(orgId, src("donor-lifetime"), {}),
   ]);
   // NUMBERS-2: the imported total, its source and the last day it covers.
@@ -66,7 +66,7 @@ async function donorGlance(query, orgId, donorId) {
   const [ud] = await query(
     `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount), 0)::text AS t
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND g.date IS NULL`, [orgId, donorId]);
+      WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL AND g.date IS NULL AND ${require("./shared/numbers/money").MONEY("g")}`, [orgId, donorId]);   // NUMBERS-4: money only
   out.undated = ud && ud.n ? { count: ud.n, cents: money.toCents(ud.t) ?? 0, source: src("donor-undated-gifts"), words: undatedWords(ud.n) } : null;
   out.imported = imp ? { cents: money.toCents(imp.t) ?? 0, through: imp.imported_through, source: imp.imported_source || "your old system",
                          on: imp.imported_on || null, words: importedWords(imp) } : null;
