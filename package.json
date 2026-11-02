@@ -10,7 +10,7 @@
     "setup:hooks": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'",
     "status": "node scripts/ci/status.js",
     "test:load": "node tests/scale1-load.test.js",
-    "worker": "STEWARD_PROCESS=worker node server.js"
+    "worker": "node worker.js"
   },
   "keywords": [],
   "author": "Steward Software LLC",

@@ -3,6 +3,7 @@
 // See tests/README.md for the setup recipe.
 
 const BASE = process.env.BASE || "http://localhost:5601";
+const { drainQueue: drainQueueWith } = require("./lib/drainQueue");   // JOBS-1
 if (!/localhost|127\.0\.0\.1/.test(BASE)) {
   console.error("Refusing to run: BASE must be localhost (got " + BASE + ")");
   process.exit(1);
@@ -52,6 +53,8 @@ async function login(email, password = "loadtest1234") {
 // Returns { status, body (parsed json or raw text), ms, bytes }
 let autoSettleImports = true;   // FIX-37, see api() below
 function importAutoSettle(on) { autoSettleImports = !!on; }
+let autoDrain = true;   // JOBS-1, see api() below; a suite watching the queue run turns it off
+function queueAutoDrain(on) { autoDrain = !!on; }
 async function api(method, path, token, body) {
   const t0 = performance.now();
   const r = await fetch(BASE + path, {
@@ -71,6 +74,11 @@ async function api(method, path, token, body) {
       && /^\/(donors\/import-combined|gifts\/import-history)\b/.test(path)) {
     await importWorkSettled().catch(() => null);
   }
+  // JOBS-1: what follows a write (a gift's thank-you draft, its journeys, the
+  // after-change step) runs on the queue after the answer. A suite reads it as
+  // done, so a write waits here for it (tests/lib/drainQueue.js), as an import
+  // waits for its recent gifts above.
+  if (autoDrain && method !== "GET" && method !== "HEAD" && r.status < 500) await drainQueueWith(q).catch(() => null);
   return { status: r.status, body: parsed, text, ms: Math.round(ms), bytes: Buffer.byteLength(text) };
 }
 
@@ -215,11 +223,14 @@ async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
 // request answers. A suite that reads them waits for the work to finish: for
 // one org, or for every org when none is named. Null on timeout.
 async function importWorkSettled(orgId = null, { timeout = 60000 } = {}) {
-  return waitFor(async () => {
+  const settled = await waitFor(async () => {
     const [r] = await q(`SELECT COUNT(*)::int AS n FROM import_recent_jobs
                           WHERE ($1::text IS NULL OR org_id = $1) AND (status = 'running' OR (status = 'done' AND finished_at IS NULL))`, [orgId]);
     return r && r.n === 0;
   }, { timeout, interval: 100 });
+  // JOBS-1: and what follows the gifts it wrote (their thank-you drafts).
+  if (settled) await drainQueueWith(q, { orgId, timeout });
+  return settled;
 }
 
 // The twin, for asserting something did NOT arrive. A negative needs a wait
@@ -255,7 +266,8 @@ async function untilReady({ base = process.env.BASE || BASE, tries = 1200 } = {}
   throw new Error("the server never became ready at " + base);
 }
 
-module.exports = { untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+const drainQueue = (opts) => drainQueueWith(q, opts);
+module.exports = { drainQueue, queueAutoDrain, untilReady, mailTypesOn, mailTypesOnForDonor, BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is

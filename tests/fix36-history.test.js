@@ -29,7 +29,7 @@
 // QuickBooks stand-in tests/qboin/standin.js starts.
 
 const stripe = require("stripe")("sk_test_dummy");
-const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays, drainQueue } = require("./helpers");
 const { ORG, ADMIN, A_CONTRIB, STUB_PORT, day, startStub, reset, company } = require("./qboin/standin");
 
 const ACCT = "acct_fix36";
@@ -132,6 +132,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   // ── §4 · A LIVE STRIPE GIFT ────────────────────────────────────────────
   const wh = await fireStripe("evt_fix36_1", "pi_fix36_1", 4000, `lee@${DOMAIN}`, "Lee Live");
   ok("§4 a live Stripe gift is recorded", wh.status === 200, wh);
+  await drainQueue();   // JOBS-1: its journeys are its event's handler
   const lee = await donorByEmail(`lee@${DOMAIN}`);
   ok("§4 …and still starts the first-gift journey", lee && (await plansOf(lee.id)) === 1, lee);
 

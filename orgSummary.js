@@ -47,7 +47,7 @@ const FRESH = Symbol.for("steward.orgSummary.fresh");
 // Tables whose writes never move a figure a person sees: the queue, sessions,
 // logs of calls, and the store itself. Everything else with org_id is watched.
 const UNWATCHED = new Set([
-  "job_queue", "user_sessions", "portal_sessions", "supporter_sessions", "oauth_states",
+  "job_queue", "events_outbox", "user_sessions", "portal_sessions", "supporter_sessions", "oauth_states",
   "api_call_log", "ai_log", "ai_usage", "question_log", "fin_audit_log", "rate_limit_hits",
   "org_changes", "org_summary",
   // Each person's stored Drift answer: derived from gifts, which are watched.

@@ -183,7 +183,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     notes: notes || "", fundId: fundId || null, paymentMethod: paymentMethodIn,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
-    extras: giftExtras,
+    extras: giftExtras, thread: { id: req.user.userId, name: actor(req).name },
   });
   if (written.duplicate) {
     const dupGift = await query("SELECT * FROM gifts WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
@@ -226,11 +226,9 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
              displayStatus: pledgeDisplayStatus(paid, amount, fp.status) };
   })() : null;
   // BUILD-81 — a live gift is a touch: it opens a thread whose next step is
-  // "Thank" (+2 days) unless the donor already has one open. Fire-and-forget
-  // beside the response like the score recalc — the gift itself never waits.
-  openGiftThread(req.user.orgId, req.params.id, {
-    giftId: giftRows[0]?.id, actorId: req.user.userId, actorName: actor(req).name,
-  }).catch(() => {});
+  // "Thank" (+2 days) unless the donor already has one open: recordGift's
+  // `thread` above, opened by the gift's journeys handler after the journeys
+  // have had their turn (JOBS-1). The gift itself never waits.
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fpOut });
 }));
 

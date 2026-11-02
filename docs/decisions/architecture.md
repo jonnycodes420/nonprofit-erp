@@ -105,6 +105,17 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   for one org or one connection is `jobQueue.enqueue({ name, orgId, key })` with a `handle(name, fn)`.
   A job's `run` returns its promise and lets errors through, so the queue can retry it. Never add a
   `setInterval` that writes: a second replica would run it twice. (SCALE-1)
+- **What follows a change is an event and its handlers, never a call that logs and moves on.** A
+  door writes its event in the same transaction as its row (`recordGift`'s `gift.recorded` in the same
+  statement as the gift; `afterChange()` writes `donor.changed`), and `server/shared/outbox.js`
+  relays it onto the queue, one job per handler. A handler is one file under
+  `server/<domain>/handlers/`, registered with `OUTBOX.on(type, name, run, { applies })`, idempotent,
+  and throws on an error so the queue retries it; after its last try it shows on `/health`
+  (`queue.stopped`), `npm run status` and the Admin console's failed jobs. A screen whose figure
+  waits on a handler asks `OUTBOX.pending()` and says "Updating…". Tests wait with
+  `tests/lib/drainQueue.js`, never a fixed time. (JOBS-1)
+- **`worker.js` is the worker service's start command; `WORKER=off` on the web says the same as
+  `STEWARD_PROCESS=web`.** (JOBS-1)
 - **`STEWARD_PROCESS` decides the role:** unset runs the web and the jobs in one process (how prod
   ran before the worker service), `web` runs no jobs, `worker` runs the scheduler and the jobs. Code
   must work in all three. (SCALE-1)

@@ -50,7 +50,8 @@ Three patterns, each where it fits:
   a file; it does not edit the core.
 - **Events and a queue for background work**: anything slow, scheduled or retried (syncs,
   sweeps, big imports, digests) is a job on the queue (`jobQueue.js`), started by an event or a
-  schedule, never inside a request.
+  schedule, never inside a request. An event is a row in `events_outbox`, written with the change
+  it follows, and each reaction to it is a handler (`server/<domain>/handlers/`, JOBS-1).
 
 ## One core, many faces
 

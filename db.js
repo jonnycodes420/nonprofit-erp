@@ -7475,6 +7475,26 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_key ON job_queue (key) WHERE status = 'running'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_org ON job_queue (org_id) WHERE status = 'running'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_round ON job_queue (round) WHERE round IS NOT NULL`);
+  // JOBS-1 · THE OUTBOX (server/shared/outbox.js). A door writes the event in
+  // the same transaction as its row; the relay moves it onto job_queue, one
+  // job per handler. `ready` is false while the door is still writing the
+  // facts its handlers read; a row left not ready (the process died) is
+  // relayed anyway after a minute, and its handlers read the facts live.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events_outbox (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      donor_ids TEXT[] NOT NULL DEFAULT '{}',
+      ready BOOLEAN NOT NULL DEFAULT TRUE,
+      relayed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_outbox_unrelayed ON events_outbox (created_at) WHERE relayed_at IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_events_outbox_donors ON events_outbox USING GIN (donor_ids)`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS job_schedule (
       name TEXT PRIMARY KEY,

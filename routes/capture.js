@@ -271,7 +271,7 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
     if (!donorId) { await release(); return res.status(400).json({ error: "who", sentence: "Choose who this is from, or add them as a new person." }); }
     if (fundId && !fRows[0]) { await release(); return res.status(404).json({ error: "fund_not_found" }); }
 
-    let giftId = null, pledgeId = null, duplicateOf = null, sentence = "", later = null;
+    let giftId = null, pledgeId = null, duplicateOf = null, sentence = "", later = null, eventId = null;
     if (kind === "pledge") {
       const due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate || "")) ? b.startDate : date;
       const freq = String(b.frequency || "").toLowerCase();
@@ -342,7 +342,9 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
           // after-change step run straight after the answer (see below).
           deferTriggers: true,
         });
-        later = w.later || null; startLater = w.start || null;
+        later = w.later || null; startLater = w.start || null; eventId = w.eventId || null;
+        // JOBS-1: she is waiting on the draft (the card shows it), so it is written now.
+        if (!w.duplicate) await require("../server/shared/outbox").runNow(eventId, "thankYouDraft");
         if (w.duplicate) {
           const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, "capture:" + c.id]);
           giftId = g ? g.id : null;
@@ -375,6 +377,8 @@ app.post("/capture/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req,
       }
       if (later) await later;
       if (!giftId || duplicateOf) return;
+      // JOBS-1: the journeys are the gift's handler now; the Thread waits for them.
+      await require("../server/shared/outbox").handled(eventId, "journeys");
       if (giftHooks.autoUnlapseOnGift) await giftHooks.autoUnlapseOnGift(orgId, donorId).catch(() => {});
       if (callOnThread) {
         const tz = await orgTz(orgId);

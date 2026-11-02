@@ -127,6 +127,7 @@ const NOT_MOVED = {
   "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
   "insight_outcomes.donor_ids": "INSIGHTS-1: who a suggestion was about when she marked it Done, Not now or Doesn't fit; a record of what happened, never rewritten",
   "insight_shown.donor_ids": "INSIGHTS-1: who a suggestion showed when it was first shown, for What worked; a record of what happened, never rewritten",
+  "events_outbox.donor_ids": "JOBS-1: who a change was about when it happened, for the handlers that follow it (they run within moments and the rows go after a week); a record of what happened, never rewritten",
   "name_fixes.donor_id": "IMPORT-5: the record a comma-couple fix renamed, for its Undo; a record of what that click did, never moved",
   "name_fixes.created_donor_id": "IMPORT-5: the second person a comma-couple fix made, for its Undo; a record of what that click did, never moved",
 };

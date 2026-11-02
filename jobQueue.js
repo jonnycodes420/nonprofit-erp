@@ -42,9 +42,12 @@ const WORKER_ID = `${os.hostname()}:${process.pid}`;
 const schedules = new Map();   // name -> { everyMs, firstMs, run }
 const handlers = new Map();    // name -> async (payload, job) => result
 
+// JOBS-1: WORKER=off on the web service says the same as STEWARD_PROCESS=web
+// (the worker service runs `node worker.js`).
 function role() {
   const r = String(process.env.STEWARD_PROCESS || "").trim().toLowerCase();
-  return r === "web" || r === "worker" ? r : "both";
+  if (r === "web" || r === "worker") return r;
+  return String(process.env.WORKER || "").trim().toLowerCase() === "off" ? "web" : "both";
 }
 const runsJobs = () => role() !== "web";
 
@@ -224,6 +227,8 @@ function start({ scheduler = true } = {}) {
     }
   };
   for (let i = 0; i < CONCURRENCY(); i++) lane();
+  // JOBS-1: the outbox's sweep relays any event its door could not.
+  require("./server/shared/outbox").startSweep();
   console.log(`[jobs] ${role() === "both" ? "this process runs the web and the jobs" : "worker"}: ${CONCURRENCY()} lanes, ${ORG_CAP()} per org`);
 }
 
@@ -245,8 +250,14 @@ async function refreshHealth() {
      SELECT EXTRACT(EPOCH FROM MAX(j.finished_at) - MIN(j.started_at))::int AS secs,
             (ARRAY_AGG(j.org_id ORDER BY j.finished_at - j.started_at DESC))[1] AS slowest
        FROM job_queue j JOIN r ON r.round = j.round`);
+  // JOBS-1: a handler (what follows a gift or a change) that stopped after
+  // its last try, by name, this week. Names and counts only: /health is public.
+  const stopped = (await query(
+    `SELECT name, COUNT(*)::int AS n FROM job_queue
+      WHERE status = 'dead' AND name LIKE 'handler:%' AND failed_at > NOW() - INTERVAL '7 days'
+      GROUP BY name ORDER BY name`)).map(r => ({ name: r.name.replace(/^handler:/, ""), n: r.n }));
   health = {
-    queue: { waiting: q.waiting, running: q.running, failedLastHour: q.failed, oldestWaitingSeconds: q.oldest },
+    queue: { waiting: q.waiting, running: q.running, failedLastHour: q.failed, oldestWaitingSeconds: q.oldest, role: role(), stopped },
     tick: { lastRunSeconds: t && t.secs != null ? t.secs : null, slowestOrg: t ? t.slowest || null : null },
   };
   return health;
@@ -279,4 +290,4 @@ async function keyBusy(key) {
 }
 
 module.exports = { define, handle, enqueue, start, startLocal, role, runsJobs, refreshHealth, healthNow, deadJobs, retry, keyBusy,
-  scheduleDue, claim, MAX_ATTEMPTS, WORKER_ID };
+  scheduleDue, claim, poke, MAX_ATTEMPTS, WORKER_ID };

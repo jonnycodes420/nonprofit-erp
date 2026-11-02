@@ -90,7 +90,7 @@ const TABLES = ["event_attendees", "email_suppressions", "pledge_installments", 
 // an import or an undo is allowed to leave (its own run, its job, the audit,
 // the work queue), scores recomputed from the rows, and the chart of accounts
 // every org gets with its first gift (setup, like the unrestricted fund).
-const NOT_STATE = new Set(["accounts", "imports", "sheet_import_jobs", "fin_audit_log", "ai_log", "ai_usage", "ai_fallbacks", "api_call_log", "job_queue", "user_sessions",
+const NOT_STATE = new Set(["accounts", "imports", "sheet_import_jobs", "fin_audit_log", "ai_log", "ai_usage", "ai_fallbacks", "api_call_log", "job_queue", "events_outbox", "user_sessions",
   "users", "question_log", "import_recent_jobs", "import_recent_work", "donor_scores", "donor_drift", "donor_rhythm", "metric_snapshots", "readouts",
   "readout_events", "deleted_records", "org_record_months", "agent_runs", "data_health_runs", "notification_sends", "notification_failures"]);
 const SNAP_SKIP = new Set(["updated_at", "last_scored_at", "score_updated_at", "engagement_updated_at"]);

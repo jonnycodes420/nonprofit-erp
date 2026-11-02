@@ -261,7 +261,8 @@ function FailedJobs() {
         <div style={SH}>Background jobs</div>
         <div style={{ fontSize: 13, color: A.secondary }}>
           {q.waiting ?? 0} waiting, {q.running ?? 0} running, {q.failedLastHour ?? 0} failed tries in the last hour.
-          {" "}A job that fails five times stops and is listed below until it is retried.
+          {" "}A job that fails five times stops and is listed below until it is retried
+          {q.stopped && q.stopped.length ? `; ${q.stopped.reduce((a, x) => a + x.n, 0)} of them this week followed a gift or a change (a thank-you draft, a journey, a recompute)` : ""}.
         </div>
       </div>
       {data.jobs.length === 0 ? (
@@ -278,7 +279,7 @@ function FailedJobs() {
           <tbody>
             {data.jobs.map(j => (
               <tr key={j.id} style={{ borderBottom: `1px solid ${A.borderSub}` }}>
-                <td style={{ padding: "12px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{j.name}</td>
+                <td style={{ padding: "12px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{/^handler:/.test(j.name) ? `What follows a change: ${j.name.slice(8)}` : j.name}</td>
                 <td style={{ padding: "12px 20px", fontSize: 13, color: A.secondary }}>{j.org_name || j.org_id || "Every org"}</td>
                 <td style={{ padding: "12px 20px", fontSize: 12, color: A.secondary, maxWidth: 420 }}>{j.last_error}</td>
                 <td style={{ padding: "12px 20px", fontSize: 12, color: A.muted, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmtDate(j.failed_at)}</td>
