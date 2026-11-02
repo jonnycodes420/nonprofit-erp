@@ -176,9 +176,7 @@ async function checkOrg(orgId, opts = {}) {
     if ((glance.average.count || 0) !== countedN || (countedN && glance.average.cents !== avgCents))
       add("donor-count-average", { donor: d.id, shown: [glance.average.cents, glance.average.count], gifts: [avgCents, countedN] });
     const realDated = realCash.filter(g => day(g.date));   // NUMBERS-3: a credit row is no one's first gift
-    // NUMBERS-4: on one day, the one recorded first, then higher up its file, then the larger.
-    const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.created_us).localeCompare(String(b.created_us))
-      || (a.import_row == null ? 1 : b.import_row == null ? -1 : a.import_row - b.import_row) || c(b.amount) - c(a.amount) || (a.id < b.id ? -1 : 1)))[0];
+    const first = [...realDated].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1))[0];
     const largest = real.reduce((m, g) => (c(g.amount) > m ? c(g.amount) : m), 0);
     if (realDated.length && (glance.first.cents !== c(first.amount) || day(glance.first.date) !== day(first.date)))
       add("donor-first-largest-last", { donor: d.id, what: "first", shown: glance.first.cents, gifts: c(first.amount) });
