@@ -24,6 +24,7 @@
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
 const DH = require("../dataHealth");
+const { testNow } = require("./clock");
 
 const ORGS = ["org_clean1x", "org_clean1y"];
 const people = org => [
@@ -57,7 +58,7 @@ const call = async (tok, method, path, body) => {
   const r = await fetch(BASE + path, { method, headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 };
-const waitFor = async (fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 100)); } return null; };
+const waitFor = async (fn, ms = 8000) => { const t0 = testNow(); while (testNow() - t0 < ms) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 100)); } return null; };
 
 (async () => {
   console.log("CLEAN-1 Test 2: duplicates stay inside one org, and \"Not a duplicate\" stays said\n");

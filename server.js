@@ -5076,7 +5076,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
     `SELECT round((amount - COALESCE(cover_fee_amount,0)) * 100)::bigint AS cents
        FROM gifts
       WHERE org_id = ? AND giving_page_id = ?
-        AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
+        AND date >= (${orgTime.orgTodaySql(orgTime.orgTzSql("gifts.org_id"))} - INTERVAL '24 months')::date::text
         AND amount > 0
       ORDER BY date DESC NULLS LAST LIMIT 2000`, [orgId, givingPageId]);
   let cents = rows.map(r => Number(r.cents));
@@ -5086,7 +5086,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
       `SELECT round((amount - COALESCE(cover_fee_amount,0)) * 100)::bigint AS cents
          FROM gifts
         WHERE org_id = ?
-          AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
+          AND date >= (${orgTime.orgTodaySql(orgTime.orgTzSql("gifts.org_id"))} - INTERVAL '24 months')::date::text
           AND amount > 0
         ORDER BY date DESC NULLS LAST LIMIT 2000`, [orgId]);
     if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organization"; }

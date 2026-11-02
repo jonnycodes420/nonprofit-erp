@@ -21,10 +21,11 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, login, api } = require("./helpers");
+const { civilYear } = require("./clock");
 
 const ORG = "org_why1a";
 const ADMIN = "staff@why1a.local";
-const Y = new Date().getUTCFullYear() - 1;   // both campaigns wholly in the past
+const Y = civilYear() - 1;   // both campaigns wholly in the past
 const C_NOW = "camp_why1a_now", C_LAST = "camp_why1a_last";
 
 (async () => {

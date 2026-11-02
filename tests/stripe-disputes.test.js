@@ -17,6 +17,7 @@ const { ok, summary, q, closeDb, BASE } = require("./helpers");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { testNow, civilDay } = require("./clock");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const uniq = () => Math.random().toString(36).slice(2, 8);
@@ -24,7 +25,7 @@ const settle = (ms = 500) => new Promise(r => setTimeout(r, ms));
 
 function signAndSend(type, object, account) {
   const payload = JSON.stringify({ id: "evt_" + uniq(), type, account, data: { object } });
-  const t = Math.floor(Date.now() / 1000);
+  const t = Math.floor(testNow() / 1000);
   const sig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(`${t}.${payload}`).digest("hex");
   return fetch(BASE + "/stripe/webhook", {
     method: "POST",
@@ -36,12 +37,12 @@ function signAndSend(type, object, account) {
 async function seedGift(orgId, donorId, piId, amount) {
   const giftId = "g_" + uniq();
   await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, type, stripe_payment_id) VALUES ($1,$2,$3,$4,$5,'cash',$6)`,
-    [giftId, orgId, donorId, amount, new Date().toISOString().slice(0, 10), piId]);
+    [giftId, orgId, donorId, amount, civilDay(), piId]);
   // one ledger stamp + one active receipt, the shape a real online gift leaves
   const [acct] = await q(`SELECT id FROM accounts WHERE org_id=$1 AND code='4010' LIMIT 1`, [orgId]);
   const [fund] = await q(`SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false LIMIT 1`, [orgId]);
   await q(`INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES ($1,$2,$3,'Online gift','D',$4,'income',$5,$6,$7,'online',$8)`,
-    ["ft_" + uniq(), orgId, new Date().toISOString().slice(0, 10), amount, acct.id, fund.id, donorId, giftId]);
+    ["ft_" + uniq(), orgId, civilDay(), amount, acct.id, fund.id, donorId, giftId]);
   await q(`INSERT INTO receipts (id,org_id,donor_id,gift_id,type,receipt_number,amount,deductible_amount,snapshot,pdf_data) VALUES ($1,$2,$3,$4,'gift',$5,$6,$6,'{}','')`,
     ["rcpt_" + uniq(), orgId, donorId, giftId, "2026-" + uniq(), amount]);
   await q(`UPDATE donors SET total_giving=total_giving+$1, gift_count=gift_count+1 WHERE id=$2`, [amount, donorId]);

@@ -93,6 +93,7 @@ let PG_DELAY = 0, PG_COUNT = 0;
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const { FAKE_ROUTING, FAKE_ACCOUNT, FIXTURES } = require("../scripts/ci/capture1-make-fixtures.js");
+const { testNow, dayOffset } = require("./clock");
 const FX = path.join(__dirname, "fixtures", "capture1");
 const dataUrl = (f, t) => `data:${t};base64,${fs.readFileSync(path.join(FX, f)).toString("base64")}`;
 
@@ -109,7 +110,7 @@ const gmailHits = [];
 const PDF_BYTES = fs.readFileSync(path.join(FX, "pledge-form.pdf"));
 const b64 = s => Buffer.from(s).toString("base64url");
 const GMAIL = {
-  m_cap_stranger: { id: "m_cap_stranger", internalDate: String(Date.now() - 3600e3), snippet: "pledge attached",
+  m_cap_stranger: { id: "m_cap_stranger", internalDate: String(testNow() - 3600e3), snippet: "pledge attached",
     payload: { mimeType: "multipart/mixed", headers: [{ name: "From", value: "Stranger <stranger@nowhere.example.com>" },
       { name: "To", value: ADMIN }, { name: "Subject", value: "My pledge" }],
       parts: [{ mimeType: "text/plain", filename: "", body: { data: b64("Pledge attached.") } },
@@ -227,7 +228,7 @@ async function reset() {
   const outAfter = OUTBOUND.slice(outBefore).filter(u => !u.startsWith(process.env.BASE) && !u.startsWith(process.env.ANTHROPIC_BASE_URL));
   ok("§2 nothing was sent to anyone: no receipt, no request out of this process", rc.n === 0 && outAfter.length === 0 && conf.body.receipt === "off",
     { rc, outAfter, receipt: conf.body.receipt });
-  ok("§2 received_at is set and not in the future", !!gifts[0].received_at && new Date(gifts[0].received_at) <= new Date(), gifts[0].received_at);
+  ok("§2 received_at is set and not in the future", !!gifts[0].received_at && new Date(gifts[0].received_at) <= new Date(testNow()), gifts[0].received_at);
 
   // ── §3 the same check also read from QuickBooks is not counted twice ─────
   console.log("\n§3 QuickBooks");
@@ -323,7 +324,7 @@ async function reset() {
 
   // The ORG's day, not the database's: thanked at 11:30pm in New York is that
   // New York day, even on a UTC database (CI's), where it is already tomorrow.
-  const nyDay = (offset = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + offset * 86400000));
+  const nyDay = (offset = 0) => dayOffset(offset);
   await q(`UPDATE gifts SET thanked_at = (((NOW() AT TIME ZONE 'America/New_York')::date - 1) + TIME '23:30') AT TIME ZONE 'America/New_York',
                             received_at = (((NOW() AT TIME ZONE 'America/New_York')::date - 3) + TIME '23:30') AT TIME ZONE 'America/New_York'
             WHERE org_id=$1 AND id=$2`, [ORG, dg.id]);

@@ -36,6 +36,7 @@ const http = require("http");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 const PORT = Number(process.env.MAILCHIMP_MOCK_PORT || 5618);
@@ -52,7 +53,7 @@ const TABLES = ["email_marketing_activity", "email_marketing_campaigns", "email_
 
 // ── THE STAND-IN ───────────────────────────────────────────────────────────
 const seen = { puts: [], auth: [] };
-const today = new Date().toISOString();
+const today = new Date(testNow()).toISOString();
 function mock(req, res) {
   const url = new URL(req.url, "http://x");
   const path = url.pathname.replace(/^\/mailchimp\/3\.0/, "");

@@ -32,6 +32,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 5618);
 const STRIPE_PORT = Number(process.env.STRIPE_MOCK_PORT || 0);
@@ -42,7 +43,7 @@ const USER = `u_${ORG}`, DANA = `dana@${ORG}.example.com`;
 const MARION = "marion@donor.example.com", FUNDER = "news@riverbend-fdn.example.com", PETER = "peter@donor.example.com";
 const ROSA = "rosa@donor.example.com", QUINN = "quinn@donor.example.com", STORE = "receipts@shop.example.com";
 const b64 = s => Buffer.from(s).toString("base64url");
-const DAY = 86400000, now = Date.now();
+const DAY = 86400000, now = testNow();
 // Four days back is past one business day whatever weekday this runs on.
 const OLD = now - 4 * DAY, ANSWERED = now - 3 * DAY, FRESH = now - 2 * 3600000;
 

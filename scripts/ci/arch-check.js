@@ -83,7 +83,11 @@ const isAppCode = f => CODE.test(f) && !/^(tests|scripts|docs|audit|node_modules
 // A test that reads the real clock instead of setting its own (the same count
 // tests/test-clock-seam.test.js §5 holds against audit/test-clock-direct.json).
 const REAL_CLOCK = /Date\.now\(\s*\)|new Date\(\s*\)/;
-const isTestFile = f => /^tests\/[^/]+\.js$/.test(f) && !/^tests\/(clock|test-clock-seam\.test)\.js$/.test(f);
+// CLOCK-1: every test file and helper under tests/, not only the top level.
+// The two clocks themselves (tests/clock.js, tests/lib/browserClock.js) and the
+// seam's own test read the real clock on purpose; fixtures are data.
+const isTestFile = f => /^tests\/.+\.js$/.test(f) && !/^tests\/fixtures\//.test(f)
+  && !/^tests\/(clock|test-clock-seam\.test|lib\/browserClock)\.js$/.test(f);
 const countClock = f => read(f).split("\n").filter(l => REAL_CLOCK.test(l.replace(/\/\/.*$/, ""))).length;
 
 // Code for one customer: an org id written into app code, or a branch on one
@@ -123,10 +127,12 @@ const CHECKS = {
     measure: files => Object.fromEntries(files.filter(f => /^scripts\/[^/]+$/.test(f) && !/README\.md$/.test(f)).map(f => [f, 1])),
     worse: (key, now, base) => base == null ? `${key} is new in the scripts/ root; put it in scripts/ops/, scripts/ci/ or scripts/once/` : null,
   },
+  // CLOCK-1: the count reached zero, so it is a hard rule now.
   "real-clock": {
-    what: "test files that read the real clock (Date.now(), new Date()) instead of setting their own",
+    what: "test files that read the real clock (Date.now(), new Date()) instead of setting their own (a hard rule)",
+    hard: true,
     measure: files => Object.fromEntries(files.filter(isTestFile).map(f => [f, countClock(f)]).filter(([, n]) => n > 0)),
-    worse: (key, now, base) => now > (base || 0) ? `${key}: ${now} real-clock reads (baseline ${base || 0}); set the test's own time through tests/clock.js` : null,
+    worse: (key, now) => `${key}: ${now} real-clock read(s); read the run's clock through tests/clock.js (testNow, civilDay, dayOffset)`,
   },
   "org-specific": {
     what: "app code naming one org (an org id or slug in code; tests, scripts and fixtures excepted)",

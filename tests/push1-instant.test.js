@@ -35,6 +35,7 @@ const crypto = require("crypto");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_push1";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -65,7 +66,7 @@ const S = {
   childBase: null,
 };
 const gm = (id, from, to, subject, text) => ({
-  id, threadId: "t_" + id, internalDate: String(Date.now()), labelIds: ["INBOX"], snippet: text,
+  id, threadId: "t_" + id, internalDate: String(testNow()), labelIds: ["INBOX"], snippet: text,
   payload: { headers: [{ name: "From", value: from }, { name: "To", value: to }, { name: "Subject", value: subject }],
              mimeType: "text/plain", body: { data: Buffer.from(text).toString("base64") } },
 });
@@ -76,14 +77,14 @@ const mock = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x");
     const p = decodeURIComponent(u.pathname);
     const body = raw ? (() => { try { return JSON.parse(raw); } catch { return raw; } })() : null;
-    S.calls.push({ method: req.method, path: p, search: u.search, body, at: Date.now() });
+    S.calls.push({ method: req.method, path: p, search: u.search, body, at: testNow() });
     const send = (code, obj) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(obj == null ? "" : JSON.stringify(obj)); };
     if (p === "/certs") {
       const jwk = google.publicKey.export({ format: "jwk" });
       return send(200, { keys: [{ ...jwk, kid: KID, alg: "RS256", use: "sig" }] });
     }
     // Gmail
-    if (p === "/gmail/v1/users/me/watch") return send(200, { historyId: String(S.historyId), expiration: String(Date.now() + 7 * 864e5) });
+    if (p === "/gmail/v1/users/me/watch") return send(200, { historyId: String(S.historyId), expiration: String(testNow() + 7 * 864e5) });
     if (p === "/gmail/v1/users/me/stop") return send(204, null);
     if (p === "/gmail/v1/users/me/profile") return send(200, { emailAddress: ANN, historyId: String(S.historyId) });
     if (p === "/gmail/v1/users/me/history") return send(200, { historyId: String(S.historyId), ...(S.gmailPending ? { history: [{ id: String(S.historyId) }] } : {}) });
@@ -93,12 +94,12 @@ const mock = http.createServer((req, res) => {
     if (p === "/calendar/v3/calendars/primary/events/watch") {
       const resourceId = "res_" + S.gcalChannels.length;
       S.gcalChannels.push({ ...body, resourceId });
-      return send(200, { kind: "api#channel", id: body.id, resourceId, expiration: String(Date.now() + 7 * 864e5) });
+      return send(200, { kind: "api#channel", id: body.id, resourceId, expiration: String(testNow() + 7 * 864e5) });
     }
     if (p === "/calendar/v3/channels/stop") { S.stopped.push(body); return send(204, null); }
     if (p === "/calendar/v3/calendars/primary/events" && req.method === "GET") {
       const sp = u.searchParams;
-      if (sp.get("syncToken")) { const items = S.gcalPending.map(id => ({ id })); S.gcalPending = []; return send(200, { kind: "calendar#events", items, nextSyncToken: "st_" + Date.now() }); }
+      if (sp.get("syncToken")) { const items = S.gcalPending.map(id => ({ id })); S.gcalPending = []; return send(200, { kind: "calendar#events", items, nextSyncToken: "st_" + testNow() }); }
       if (sp.get("updatedMin")) return send(200, { kind: "calendar#events", items: [] });
       if (sp.get("timeMin")) return send(200, { kind: "calendar#events", items: S.gcal });
       return send(200, { kind: "calendar#events", items: S.gcal.map(e => ({ id: e.id })), nextSyncToken: "st_first" });
@@ -154,8 +155,8 @@ async function setup() {
 }
 
 const waitFor = async (fn, ms = 15000, every = 250) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) { const v = await fn().catch(() => null); if (v) return v; await sleep(every); }
+  const end = testNow() + ms;
+  while (testNow() < end) { const v = await fn().catch(() => null); if (v) return v; await sleep(every); }
   return null;
 };
 const pushRows = () => q(`SELECT * FROM mailbox_push WHERE org_id=$1 ORDER BY kind`, [ORG]);
@@ -190,9 +191,9 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const health = async key => ((await mailbox()).find(p => p.key === key) || {}).health || {};
     const post = (p, body, headers = {}) => fetch(B + p, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: body == null ? undefined : JSON.stringify(body) });
     const claims = (over = {}) => ({ iss: "https://accounts.google.com", aud: B + "/push/google/gmail", email: SA, email_verified: true,
-      iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, sub: "1234", ...over });
+      iat: Math.floor(testNow() / 1000), exp: Math.floor(testNow() / 1000) + 3600, sub: "1234", ...over });
     const gmailNotice = (token, address = ANN) => post("/push/google/gmail",
-      { message: { data: Buffer.from(JSON.stringify({ emailAddress: address, historyId: S.historyId })).toString("base64"), messageId: "m" + Date.now() }, subscription: "projects/steward-test/subscriptions/gmail" },
+      { message: { data: Buffer.from(JSON.stringify({ emailAddress: address, historyId: S.historyId })).toString("base64"), messageId: "m" + testNow() }, subscription: "projects/steward-test/subscriptions/gmail" },
       token ? { Authorization: "Bearer " + token } : {});
 
     // §1
@@ -206,7 +207,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const subs = Object.values(S.graphSubs);
     ok("§1 three Graph subscriptions, each validated by echoing Graph's token", subs.length === 3 && S.graphValidated === 3
       && subs.map(s => s.resource).sort().join("|") === "me/events|me/mailFolders('Inbox')/messages|me/mailFolders('SentItems')/messages", JSON.stringify(subs.map(s => s.resource)));
-    const mins = subs.length ? (new Date(subs[0].expirationDateTime) - Date.now()) / 60e3 : 0;
+    const mins = subs.length ? (new Date(subs[0].expirationDateTime) - testNow()) / 60e3 : 0;
     ok("§1 Graph is asked for its documented maximum (just under 10,080 minutes)", mins > 10060 && mins <= 10080, String(mins));
     const all = JSON.stringify(await pushRows());
     const secrets = [ch0 && ch0.token, ...subs.map(s => s.clientState)].filter(Boolean);
@@ -238,7 +239,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const rs = await calNotice("sync");
     await sleep(800);
     ok("§3 a 'sync' notice is acknowledged and reads nothing", rs.status === 200 && (await runs("google", "calendar", "push")) === calPush0, String(rs.status));
-    const start = new Date(Date.now() + 2 * 864e5);
+    const start = new Date(testNow() + 2 * 864e5);
     S.gcal.push({ id: "gev_rosa", status: "confirmed", summary: "Coffee with Rosa", start: { dateTime: start.toISOString() },
       end: { dateTime: new Date(start.getTime() + 3600e3).toISOString() }, attendees: [{ email: ROSA }, { email: ANN }] });
     S.gcalPending = ["gev_rosa"];
@@ -254,7 +255,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const subOf = res => Object.values(S.graphSubs).find(s => s.resource === res);
     const graphNotice = (sub, over = {}) => post("/push/microsoft", { value: [{ subscriptionId: sub.id, clientState: sub.clientState, changeType: "created",
       resource: sub.resource, tenantId: "t1", subscriptionExpirationDateTime: sub.expirationDateTime, ...over }] });
-    const when = new Date().toISOString();
+    const when = new Date(testNow()).toISOString();
     S.inbox.push({ id: "ms_rosa1", subject: "Thank you", from: { emailAddress: { address: ROSA } }, toRecipients: [{ emailAddress: { address: ANN } }],
       ccRecipients: [], receivedDateTime: when, sentDateTime: when, body: { contentType: "text", content: "Thanks for the tour yesterday." },
       hasAttachments: false, conversationId: "conv_ms_rosa1", internetMessageHeaders: [] });
@@ -262,7 +263,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const r4 = await graphNotice(subOf("me/mailFolders('Inbox')/messages"));
     ok("§4 the verified Outlook notice is accepted (202)", r4.status === 202, String(r4.status));
     ok("§4 …and Rosa's Outlook email is on her record", !!(await waitFor(async () => (await logged("ms_rosa1")) === 1, 10000)), errs.slice(-300));
-    const s2 = new Date(Date.now() + 3 * 864e5);
+    const s2 = new Date(testNow() + 3 * 864e5);
     S.events.push({ id: "msev_rosa", subject: "Site visit", isCancelled: false, location: null,
       start: { dateTime: s2.toISOString().replace(/Z$/, ""), timeZone: "UTC" }, end: { dateTime: new Date(s2.getTime() + 3600e3).toISOString().replace(/Z$/, ""), timeZone: "UTC" },
       attendees: [{ emailAddress: { address: ROSA } }] });
@@ -282,7 +283,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
       ["a token signed by another key", await gmailNotice(jwt(claims(), forger.privateKey))],
       ["the wrong audience", await gmailNotice(jwt(claims({ aud: "https://elsewhere.example/push" })))],
       ["the wrong service account", await gmailNotice(jwt(claims({ email: "someone@evil.iam.gserviceaccount.com" })))],
-      ["an expired token", await gmailNotice(jwt(claims({ exp: Math.floor(Date.now() / 1000) - 3600 })))],
+      ["an expired token", await gmailNotice(jwt(claims({ exp: Math.floor(testNow() / 1000) - 3600 })))],
       ["a Calendar notice with the wrong channel token", await calNotice("exists", { "X-Goog-Channel-Token": "not-the-token" })],
       ["a Calendar notice for an unknown channel", await calNotice("exists", { "X-Goog-Channel-ID": "stw-unknown" })],
       ["a Graph notice with the wrong clientState", await graphNotice(subOf("me/mailFolders('Inbox')/messages"), { clientState: "guess" })],
@@ -305,7 +306,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
     const mark6 = S.calls.length;
     const renewed = await waitFor(async () => {
       const r = await pushRows();
-      return r.filter(x => ["graph_inbox", "gcal", "gmail"].includes(x.kind)).every(x => new Date(x.expires_at) - Date.now() > 6 * 864e5) ? r : null;
+      return r.filter(x => ["graph_inbox", "gcal", "gmail"].includes(x.kind)).every(x => new Date(x.expires_at) - testNow() > 6 * 864e5) ? r : null;
     }, 15000);
     ok("§6 the three channels near expiry now run a week ahead", !!renewed, JSON.stringify((await pushRows()).map(r => [r.kind, r.expires_at])));
     const c6 = S.calls.slice(mark6);

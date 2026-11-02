@@ -24,6 +24,7 @@ const http = require("http");
 const Stripe = require("stripe");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, api, q, closeDb, STRIPE_MOCK_PORT } = require("./helpers");
+const { testNow, civilDay, dayOffset } = require("./clock");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const stripeLib = new Stripe("sk_test_dummy");
@@ -227,14 +228,14 @@ const orgTotal = async () => {
   // nothing this year. Then a $100 gift from somebody else, soft-credited to
   // them, dated today.
   const DRIFTER = "d_p2p_drifter";
-  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  const thisYear = Number(new Date(testNow()).toISOString().slice(0, 4));
   await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
            VALUES ($1,$2,'Perpetua Quillon',$3,'steward','active','[]','system:test','p2p suite')`,
     [DRIFTER, ORG, `perpetua.quillon.${suffix}@p2p1.test`]);
   // FIX-49: twice a year, silent about 290 days. A once-a-year giver silent
   // fourteen months is lapsed under the one rule (lapseRule.js), not drifting;
   // past a twice-a-year rhythm inside the twelve months is drifting.
-  const lastGift = new Date(Date.now() - 290 * 864e5).toISOString().slice(0, 10);
+  const lastGift = dayOffset(-290);
   const yearBack = k => new Date(Date.parse(lastGift + "T12:00:00Z") - k * 182 * 864e5).toISOString().slice(0, 10);
   for (let k = 7; k >= 0; k--) {
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name)
@@ -267,7 +268,7 @@ const orgTotal = async () => {
      driftBefore.found, driftBefore);
 
   // Somebody else's $100, brought in by Perpetua, dated TODAY.
-  const TODAY_CIVIL = new Date().toISOString().slice(0, 10);
+  const TODAY_CIVIL = civilDay();
   await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
            VALUES ($1,$2,'Corwin Halloway',$3,'prospect','active','[]','system:test','p2p suite')`,
     [`d_p2p_giver_${suffix}`, ORG, `corwin.halloway.${suffix}@p2p1.test`]);

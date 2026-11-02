@@ -21,6 +21,7 @@ const bcrypt = require("bcryptjs");
 const http = require("http");
 const Stripe = require("stripe");
 const { BASE, ok, summary, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { testNow } = require("./clock");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const stripeLib = new Stripe("sk_test_dummy");
@@ -42,7 +43,7 @@ function startStripeMock(port = STRIPE_MOCK_PORT) {
         const cu = req.url.match(/^\/v1\/customers\/([^/?]+)/);
         if (req.method === "GET" && cu) { res.end(JSON.stringify({ id: cu[1], object: "customer", email: CUSTOMERS[cu[1]] || null, name: "Cust " + cu[1] })); return; }
         const su = req.url.match(/^\/v1\/subscriptions\/([^/?]+)/);
-        if (req.method === "GET" && su) { res.end(JSON.stringify({ id: su[1], object: "subscription", status: "active", metadata: SUBMETA[su[1]] || {}, items: { data: [{ id: "si_x", price: { currency: "usd", product: "prod_x" } }] }, current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400 })); return; }
+        if (req.method === "GET" && su) { res.end(JSON.stringify({ id: su[1], object: "subscription", status: "active", metadata: SUBMETA[su[1]] || {}, items: { data: [{ id: "si_x", price: { currency: "usd", product: "prod_x" } }] }, current_period_end: Math.floor(testNow() / 1000) + 30 * 86400 })); return; }
         const iv = req.url.match(/^\/v1\/invoices\/([^/?]+)/);
         if (req.method === "GET" && iv) { res.end(JSON.stringify({ id: iv[1], object: "invoice", subscription: null })); return; }
         res.end(JSON.stringify({ ok: true }));
@@ -75,9 +76,9 @@ const settle = (ms = 500) => new Promise(r => setTimeout(r, ms));
 // event builders
 const piEvt = (id, pi) => ({ id, type: "payment_intent.succeeded", account: ACCT, data: { object: pi } });
 const csEvt = (id, cs) => ({ id, type: "checkout.session.completed", account: ACCT, data: { object: { mode: "subscription", ...cs } } });
-const invPaidEvt = (id, sub, amount) => ({ id, type: "invoice.payment_succeeded", account: ACCT, data: { object: { id: "in_" + id, amount_paid: amount, customer: "cus_rec", parent: { subscription_details: { subscription: sub } }, lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 30 * 86400 } }] } } } });
-const invFailEvt = (id, sub, amount) => ({ id, type: "invoice.payment_failed", account: ACCT, data: { object: { id: "in_" + id, amount_due: amount, customer: "cus_ordfail", parent: { subscription_details: { subscription: sub, metadata: SUBMETA[sub] } }, lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 25 * 86400 }, pricing: { price_details: { recurring: { interval: "month" } } } }] } } } });
-const subUpdEvt = (id, sub, status) => ({ id, type: "customer.subscription.updated", account: ACCT, data: { object: { id: sub, status, items: { data: [{ id: "si_x", price: { currency: "usd", unit_amount: 500, product: "prod_x" }, current_period_end: Math.floor(Date.now() / 1000) + 30 * 86400 }] } } } });
+const invPaidEvt = (id, sub, amount) => ({ id, type: "invoice.payment_succeeded", account: ACCT, data: { object: { id: "in_" + id, amount_paid: amount, customer: "cus_rec", parent: { subscription_details: { subscription: sub } }, lines: { data: [{ period: { end: Math.floor(testNow() / 1000) + 30 * 86400 } }] } } } });
+const invFailEvt = (id, sub, amount) => ({ id, type: "invoice.payment_failed", account: ACCT, data: { object: { id: "in_" + id, amount_due: amount, customer: "cus_ordfail", parent: { subscription_details: { subscription: sub, metadata: SUBMETA[sub] } }, lines: { data: [{ period: { end: Math.floor(testNow() / 1000) + 25 * 86400 }, pricing: { price_details: { recurring: { interval: "month" } } } }] } } } });
+const subUpdEvt = (id, sub, status) => ({ id, type: "customer.subscription.updated", account: ACCT, data: { object: { id: sub, status, items: { data: [{ id: "si_x", price: { currency: "usd", unit_amount: 500, product: "prod_x" }, current_period_end: Math.floor(testNow() / 1000) + 30 * 86400 }] } } } });
 
 const subCount = s => q("SELECT COUNT(*)::int n FROM recurring_subscriptions WHERE org_id=$1 AND stripe_subscription_id=$2", [ORG, s]).then(r => r[0].n);
 const giftCount = p => q("SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [ORG, p]).then(r => r[0].n);

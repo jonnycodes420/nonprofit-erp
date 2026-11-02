@@ -19,6 +19,7 @@ const express = require("express");
 // live subscription is actually on rather than trusting a stale column.
 const { planFromSubscription } = require("../billingPlans");
 const ORG_KIND = require("../orgKind");
+const orgTime = require("../orgTime");   // CLOCK-1: Steward's own months
 
 const routers = {
   r0: express.Router(),
@@ -2385,8 +2386,13 @@ async function mrrTarget() {
   return v && v.start && v.start.month ? v : ORG_KIND.DEFAULT_TARGET;
 }
 
-const monthKey = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-const monthEnd = key => { const [y, m] = key.split("-").map(Number); return new Date(Date.UTC(y, m, 1) - 1); };
+// CLOCK-1: Steward's own months are cut at midnight in Steward's zone (the
+// default org zone, New York), not at the server's or the database's midnight.
+const STEWARD_CAL = { timezone: orgTime.DEFAULT_TZ };
+const monthKey = d => orgTime.orgToday(STEWARD_CAL, d).slice(0, 7);
+const monthStart = key => orgTime.localToInstant(`${key}-01T00:00`, STEWARD_CAL.timezone);
+const monthEnd = key => { const [y, m] = key.split("-").map(Number);
+  return new Date(monthStart(m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`).getTime() - 1); };
 
 // Paying customers and MRR at the end of each month, from paid Steward
 // invoices: an org counts in month M when a paid invoice's period covers the
@@ -2446,8 +2452,8 @@ app.get("/admin/metrics", requireAuth, requireSuperAdmin, wrap(async (req, res) 
     query("SELECT org_id, amount_paid_cents, monthly_cents, period_start, period_end, paid_at FROM platform_payments", []),
   ]);
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const startOfMonth = monthStart(monthKey(now));
+  const startOfLastMonth = monthStart(orgTime.orgPeriodBounds(STEWARD_CAL, "month", -1, now).start.slice(0, 7));
 
   const all = orgs.map(o => withKind(o, facts(o.id)));
   const counted = all.filter(o => o.counted);

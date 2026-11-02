@@ -28,6 +28,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { civilDay } = require("./clock");
 
 const ORG = "org_tasks2";
 const TABLES = ["interactions", "tasks", "threads", "calendar_events", "donors", "users"];
@@ -44,7 +45,7 @@ async function reset() {
 // Calendar days, not 24-hour steps: n*24h from 00:30 EDT the week before the
 // clock goes back lands on the previous evening, a day short.
 const orgDay = (n = 0) => {
-  const d = new Date(new Date(Date.now()).toLocaleDateString("en-CA", { timeZone: "America/New_York" }) + "T12:00:00Z");
+  const d = new Date(civilDay() + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };

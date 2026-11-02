@@ -30,6 +30,7 @@
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, login, api } = require("./helpers");
 const FS = require("../figureSources");
+const { civilYear } = require("./clock");
 
 const ORG = "org_r4foot";
 const ADMIN = "director@r4foot.local";
@@ -42,7 +43,7 @@ async function clear(org) {
   }
 }
 
-const Y = new Date().getFullYear();
+const Y = civilYear();
 const y = n => Y - n;   // y(1) is last year, the last complete one
 
 async function buildFixture() {

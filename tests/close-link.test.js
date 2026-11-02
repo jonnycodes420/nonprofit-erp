@@ -28,6 +28,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, BILLING_MOCK_PORT } = require("./helpers");
 const { CLOSE_PLANS, LEGACY_CLOSE_PLANS, TIER_CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams, checkoutNotice } = require("../closeLink");
 const { computeTrialEnd } = require("../trialEnd");
+const { testNow } = require("./clock");
 
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const ORG = "org_cl_home";                       // the super-admin's own org
@@ -243,7 +244,7 @@ async function reset() {
 
   console.log("\n— §4 · THE ONE TEST: a completion yields one org, one admin, one trialing subscription, no charge —");
   mails = [];
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(testNow() / 1000);
   SUB = {
     id: "sub_cl_1", object: "subscription", status: "trialing", customer: "cus_test_cl",
     trial_start: now, trial_end: now + 30 * 86400, current_period_end: now + 30 * 86400,
@@ -309,7 +310,7 @@ async function reset() {
      welcome && (welcome.html || "").match(/Your first charge[^<]*/));
   const tok = (await q(`SELECT * FROM password_reset_tokens WHERE user_id=$1`, [admins[0].id]))[0];
   ok("the token is real and long-lived — she may sit down with this on Friday",
-     tok && new Date(tok.expires_at).getTime() - Date.now() > 6 * DAY, tok && tok.expires_at);
+     tok && new Date(tok.expires_at).getTime() - testNow() > 6 * DAY, tok && tok.expires_at);
 
   console.log("\n— §6 · walking the same link twice does not mint a second organisation —");
   // Redelivery of the same event (Stripe retries), and a DIFFERENT event

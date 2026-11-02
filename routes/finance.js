@@ -19,6 +19,9 @@ const express = require("express");
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 const NUM = require("../shared/numbers");   // NUMBERS-3 — one home for every giving number
+const orgTime = require("../orgTime");
+// CLOCK-1: "today" in a window is the org's day, not the database's (UTC on prod).
+const TODAY = orgIdSql => orgTime.orgTodaySql(orgTime.orgTzSql(orgIdSql));
 const SEALED_MAIL = require("../server/mail/sealedMail");   // SECURE-3: a synced email's body opens only through it
 
 const routers = {
@@ -129,7 +132,7 @@ const ON_NO_DEPOSIT = NUM.deposited.NOT_DEPOSITED("g");
 // The gifts that came in as money somebody banked, in the last ninety days,
 // and are on no deposit: the "Not yet on a deposit" set.
 const BANKED_UNDEPOSITED = `${NUM.deposited.BANKED("g")} AND ${NUM.money.MONEY("g")}
-          AND g.date >= (CURRENT_DATE - ${NUM.deposited.UNDEPOSITED_DAYS})::text AND ${ON_NO_DEPOSIT}`;
+          AND g.date >= (${TODAY("g.org_id")} - ${NUM.deposited.UNDEPOSITED_DAYS})::text AND ${ON_NO_DEPOSIT}`;
 
 // The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
 // 31st belongs to that month, not to the next one in UTC.
@@ -249,7 +252,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
             COALESCE(SUM(ROUND(g.amount*100)),0)::bigint all_cents
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
       WHERE g.org_id=? AND d.deleted_at IS NULL
-        AND g.date >= (CURRENT_DATE - 365)::text`, [orgId]);
+        AND g.date >= (${TODAY("g.org_id")} - 365)::text`, [orgId]);
   if (noFund.n) {
     const share = Number(noFund.all_cents) > 0 ? Number(noFund.cents) / Number(noFund.all_cents) : 0;
     const why = share < 0.25 ? null
@@ -296,7 +299,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
        FROM grants g
       WHERE g.org_id=? AND g.status IN ('awarded','reporting')
         AND g.report_due IS NOT NULL AND g.report_due <> ''
-        AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
+        AND g.report_due::date >= ${TODAY("g.org_id")} AND g.report_due::date <= (${TODAY("g.org_id")} + 60)
       ORDER BY g.report_due LIMIT 25`, [orgId]);
   if (deadlines.length) needsYou.push({ key: "grantDeadline", label: "Restricted money with a deadline", count: deadlines.length,
     amount: null,
@@ -347,7 +350,7 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
       `SELECT g.id, g.date, g.amount, g.type, d.name AS who
          FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
-          AND g.date >= (CURRENT_DATE - 365)::text
+          AND g.date >= (${TODAY("g.org_id")} - 365)::text
         ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [orgId]);
     const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
     return res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
@@ -371,7 +374,7 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
       `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
          FROM grants g
         WHERE g.org_id=? AND g.status IN ('awarded','reporting') AND g.report_due IS NOT NULL AND g.report_due <> ''
-          AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
+          AND g.report_due::date >= ${TODAY("g.org_id")} AND g.report_due::date <= (${TODAY("g.org_id")} + 60)
         ORDER BY g.report_due LIMIT 100`, [orgId]);
     return res.json({ rows, count: rows.length, foots: true,
       sentence: `${rows.length} awarded ${rows.length === 1 ? "grant" : "grants"} with a report due inside sixty days.` });
@@ -408,7 +411,7 @@ app.post("/finance/imported-deposited", requireAuth, checkWriteAccess, wrap(asyn
       await client.query(`INSERT INTO deposit_marks (id, org_id, batch_id, gift_id, import_id, before_deposited_on, before_deposit_ref, created_by, created_by_name)
                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         ["dmk_" + uuid().replace(/-/g, "").slice(0, 14), orgId, batchId, g.id, g.import_id, g.deposited_on, g.deposit_ref, who.id, who.name]);
-      await client.query(`UPDATE gifts SET deposited_on = COALESCE(NULLIF(substring(date from 1 for 10), ''), to_char(CURRENT_DATE, 'YYYY-MM-DD')) WHERE id=$1 AND org_id=$2`, [g.id, orgId]);
+      await client.query(`UPDATE gifts SET deposited_on = COALESCE(NULLIF(substring(date from 1 for 10), ''), to_char(${TODAY("gifts.org_id")}, 'YYYY-MM-DD')) WHERE id=$1 AND org_id=$2`, [g.id, orgId]);
     }
     return gifts.rows.length;
   });
@@ -1498,7 +1501,7 @@ async function meetingBrief(orgId, donorId, beforeIso) {
 
   const [g] = await query(
     `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND COALESCE(acknowledgement_sent,false)=false
-        AND amount > 0 AND date >= (CURRENT_DATE - 365)::text ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, donorId]);
+        AND amount > 0 AND date >= (${TODAY("gifts.org_id")} - 365)::text ORDER BY date DESC NULLS LAST LIMIT 1`, [orgId, donorId]);
   const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `The ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
 
   const years = d.first_gift_date ? Math.max(1, new Date().getUTCFullYear() - Number(String(d.first_gift_date).slice(0, 4)) + 1) : null;

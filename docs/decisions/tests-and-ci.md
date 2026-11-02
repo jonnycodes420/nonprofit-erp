@@ -63,8 +63,10 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   needs an exact relation to now passes `testNow()` as a parameter instead of writing SQL `NOW()`.
   Prove a clock-relative suite at three times of day with `STEWARD_TEST_NOW=<instant>` (server,
   suites and the shard's database all move; the instant must not be earlier than the real clock)
-  and `STEWARD_TEST_DB_TZ=UTC TZ=UTC` for CI's zone. `test-clock-seam` §5 holds real-clock reads per
-  file to `audit/test-clock-direct.json`: a count may fall, never rise. (FIX-42)
+  and `STEWARD_TEST_DB_TZ=UTC TZ=UTC` for CI's zone. No test reads the real clock: the
+  `real-clock` arch-check is a hard rule over every file under `tests/`, and a "today" is the org's
+  day (`civilDay()`, `dayOffset(n)`), never `toISOString().slice(0, 10)`, which is the UTC day.
+  There is no weekend pin. (FIX-42, CLOCK-1)
 - **A real boundary is proven by a `SELF_REFUSING` drill against the real service, and an
   undrilled one is decided or goes in `NEEDS-JONATHAN.md` (never a new `BLOCKED-*.md`).** Examples are `scripts/ops/build58-stripe-drill.js`
   and `scripts/ops/build95-cheque-drill.js`. (BUILD-57, BUILD-58, BUILD-95)

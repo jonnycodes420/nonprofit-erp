@@ -27,6 +27,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { testNow } = require("./clock");
 
 const BASE = process.env.BASE || "http://localhost:5601";
 const ROOT = path.join(__dirname, "..");
@@ -263,7 +264,7 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
       });
       const up = await new Promise(res => { sink.once("error", () => res(false)); sink.listen(SINK_PORT, () => res(true)); });
       ok("§5 the mail sink is up on " + SINK_PORT, up);
-      const stamp = Date.now();
+      const stamp = testNow();
       const demo = { name: "Ada Marsh", email: `ada.demo.${stamp}@example.org`, organization: `Marsh Arts ${stamp}`,
         orgSize: "1,000 to 5,000", currentSystem: "A spreadsheet and an old CRM", ref: "book-a-demo" };
       const r = await post("/lost-and-found/lead", demo);

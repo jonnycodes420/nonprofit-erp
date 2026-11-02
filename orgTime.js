@@ -360,6 +360,18 @@ function orgDayWindowSql(col, tzSql, fromSql, toSql) {
   if (toSql) parts.push(`${col} < (((${toSql})::date + 1)::timestamp AT TIME ZONE ${tzSql})`);
   return parts.length ? `(${parts.join(" AND ")})` : "TRUE";
 }
+// CLOCK-1 · THE ORG'S TODAY, AND THE ORG'S DAY OF AN INSTANT, IN SQL. The two
+// companions of orgDayWindowSql for the windows that compare a civil date (a
+// gift's `date`, a grant's `report_due`) to "today": CURRENT_DATE is the
+// DATABASE's day (UTC on prod), a day ahead of New York from 8 PM, and it is a
+// keyword, so a test run's clock cannot move it either. NOW() moves with both.
+function orgTodaySql(tzSql) {
+  return `((NOW() AT TIME ZONE ${tzSql})::date)`;
+}
+// `ts::date` is the instant's day in the database's zone; this is the org's.
+function orgDateOfSql(col, tzSql) {
+  return `((${col}) AT TIME ZONE ${tzSql})::date`;
+}
 
 module.exports = {
   samePointLastYear, equalYearSpans,
@@ -369,5 +381,5 @@ module.exports = {
   orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,
   addDays, dayOfWeek, compareCivil, daysBetween, parseCivil, localToInstant,
   civilOf, civilLocale,
-  orgTzSql, orgDayWindowSql,
+  orgTzSql, orgDayWindowSql, orgTodaySql, orgDateOfSql,
 };

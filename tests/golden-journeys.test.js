@@ -81,13 +81,14 @@ const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, BILLING_MOCK_PORT, importWorkSettled } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_golden", USER = "u_golden_dana", DANA = "director@golden.harborlight.test", PW = "loadtest1234";
 const today = civilToday();
 const year = today.slice(0, 4);
 const monthStart = today.slice(0, 8) + "01";
 const cents = v => Math.round(Number(v || 0) * 100);
-const T0 = Date.now();
+const T0 = testNow();
 
 async function wipe(org = ORG) {
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
@@ -113,7 +114,7 @@ async function wipeSignup() {
 function billingMock() {
   const sessions = {};
   const SUB = { id: "sub_gj11", object: "subscription", status: "trialing",
-    trial_start: Math.floor(Date.now() / 1000), trial_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+    trial_start: Math.floor(testNow() / 1000), trial_end: Math.floor(testNow() / 1000) + 30 * 86400,
     items: { data: [{ price: { id: "price_test_r500m" } }] } };
   const srv = http.createServer((req, res) => {
     let b = ""; req.on("data", c => b += c);
@@ -267,7 +268,7 @@ async function agentLeg(H) {
   }));
   ok("J1 the parse layer reads the money as dollars and cents", items.map(i => cents(i.gift.amount)).join(",") === "125050,7525,200000,200000", items.map(i => i.gift.amount));
   const { donors, gifts } = IS.groupTransactions(items);
-  const runId = "imp_golden_" + Date.now().toString(36);
+  const runId = "imp_golden_" + testNow().toString(36);
   const imp = await api("POST", "/donors/import-combined", dana, { donors, gifts, importId: runId });
   ok("J1 the import went through and balanced", imp.status === 200 && imp.body.reconciliation && imp.body.reconciliation.balanced === true, imp.body);
   // FIX-37: the recent gifts are written behind the screen; wait for them.
@@ -538,7 +539,7 @@ async function agentLeg(H) {
     ok("J11 before she has paid, the page waits (it does not sign anybody in)", early.status === 202 && early.body.status === "pending" && !early.body.token, early);
     // She pays; Stripe completes the session and the webhook makes the org.
     sess.status = "complete";
-    const wh = await fireBilling("evt_gj11_" + Date.now().toString(36), "checkout.session.completed", sess);
+    const wh = await fireBilling("evt_gj11_" + testNow().toString(36), "checkout.session.completed", sess);
     ok("J11 the webhook took the completion", wh === 200, wh);
     const forged = await api("POST", "/public/checkout-signin", null, { sessionId: body11.sessionId, key: body11.key + "x" });
     ok("J11 a wrong key is refused", forged.status === 410 && !forged.body.token, forged);
@@ -566,7 +567,7 @@ async function agentLeg(H) {
     const g11 = IS.groupTransactions([{ key: "ivy@signup.golden.test",
       donor: { name: "Ivy Lantern", email: "ivy@signup.golden.test", stage: "prospect" },
       gift: { amount: 120.5, date: today, type: "cash", campaign: "", notes: "" } }]);
-    const imp11 = await api("POST", "/donors/import-combined", rae, { donors: g11.donors, gifts: g11.gifts, importId: "imp_gj11_" + Date.now().toString(36) });
+    const imp11 = await api("POST", "/donors/import-combined", rae, { donors: g11.donors, gifts: g11.gifts, importId: "imp_gj11_" + testNow().toString(36) });
     ok("J11 her real file imports", imp11.status === 200, imp11.body);
     await importWorkSettled(sorg[0].id);   // FIX-37
     const left11 = await q(`SELECT name FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [sorg[0].id]);
@@ -576,7 +577,7 @@ async function agentLeg(H) {
     await wipeSignup();
   }
 
-  const secs = Math.round((Date.now() - T0) / 1000);
+  const secs = Math.round((testNow() - T0) / 1000);
   console.log(`\ngolden journeys ran in ${secs}s`);
   ok("the eleven journeys finish well inside four minutes", secs < 240, secs);
   await closeDb();

@@ -10,6 +10,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { q, civilPlusDays, civilToday } = require("../helpers");
+const { testNow } = require("../clock");
 
 const ORG = "org_qboin";
 const ADMIN = "qboin-admin@example.org";
@@ -133,7 +134,7 @@ function startStub() {
         if (req.method !== "GET") writes.push(req.method + " " + u.pathname);
         const m = u.pathname.match(/^\/v3\/company\/([^/]+)\/query$/);
         if (req.method === "GET" && m && m[1] === REALM) {
-          res.end(JSON.stringify({ QueryResponse: runQuery(u.searchParams.get("query") || ""), time: new Date().toISOString() }));
+          res.end(JSON.stringify({ QueryResponse: runQuery(u.searchParams.get("query") || ""), time: new Date(testNow()).toISOString() }));
           return;
         }
         res.statusCode = 400; res.end(JSON.stringify({ Fault: { Error: [{ code: "2020", Message: "unsupported" }] } }));

@@ -34,6 +34,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
+const { testNow } = require("../clock");
 
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 
@@ -50,7 +51,7 @@ const TABLES = ["email_marketing_activity", "email_marketing_campaigns", "email_
                 "email_suppressions", "interactions", "gifts", "donors", "users"];
 
 const seen = { requests: [], signups: [] };
-const today = new Date().toISOString();
+const today = new Date(testNow()).toISOString();
 
 function mock(req, res) {
   const url = new URL(req.url, "http://x");

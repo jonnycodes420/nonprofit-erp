@@ -54,6 +54,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const ORG = "org_p2qbo";
 const ADMIN = "p2qbo-admin@example.org";
@@ -106,7 +107,7 @@ function startStub() {
         if (!m || m[1] !== REALM) { res.statusCode = 404; res.end(JSON.stringify({ Fault: { Error: [{ code: "404", Message: "not here" }] } })); return; }
         const kind = m[2];
         if (req.method === "GET" && kind === "query") {
-          res.end(JSON.stringify({ QueryResponse: runQuery(u.searchParams.get("query") || ""), time: new Date().toISOString() }));
+          res.end(JSON.stringify({ QueryResponse: runQuery(u.searchParams.get("query") || ""), time: new Date(testNow()).toISOString() }));
           return;
         }
         let body = {}; try { body = JSON.parse(b || "{}"); } catch { /* the stub is not under test */ }

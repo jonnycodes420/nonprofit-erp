@@ -49,6 +49,7 @@
 
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const A = "org_f11giA", B = "org_f11giB";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -167,7 +168,7 @@ const cents = n => Math.round(Number(n) * 100);
     { found: (codeOnly.match(/const amt = [^;]+;/g) || []).slice(0, 5) });
 
   // ── §2 · DRIVEN END TO END ──────────────────────────────────────────────
-  const runId = "imp_f11gift" + Date.now().toString(36);
+  const runId = "imp_f11gift" + testNow().toString(36);
   const res = await api("POST", "/donors/import-combined", tokA,
     { donors: built.donors, gifts: built.gifts, importId: runId });
   ok("§2 the combined import accepted the file", res.status < 300, { status: res.status, body: JSON.stringify(res.body).slice(0, 220) });
@@ -220,7 +221,7 @@ const cents = n => Math.round(Number(n) * 100);
   ok("§7 org B cannot reverse org A's import", crossOrg.status === 404, { status: crossOrg.status });
 
   // ── §6 · ANY OTHER SHAPE STILL REVERSES GIFT BY GIFT ────────────────────
-  const otherRun = "imp_f11other" + Date.now().toString(36);
+  const otherRun = "imp_f11other" + testNow().toString(36);
   await q(`INSERT INTO imports (id,org_id,name,shape,committed_at,actor_user_id)
            VALUES ($1,$2,'ordinary.csv','donors',NOW(),$3)`, [otherRun, A, `u_${A}_staff`]);
   const wrongShape = await api("POST", `/imports/${otherRun}/reverse`, tokA);

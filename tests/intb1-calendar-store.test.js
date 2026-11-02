@@ -21,6 +21,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const A = "org_intb1a", B = "org_intb1b";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -33,7 +34,7 @@ const SECRET_PERSON = "dr.okafor@mercy.invalid";
 const SECRET_DESC = "Bring the scan results";
 const OTHER_GUEST = "stranger@elsewhere.invalid";
 
-const soon = h => new Date(Date.now() + h * 3600e3).toISOString();
+const soon = h => new Date(testNow() + h * 3600e3).toISOString();
 const EVENTS = [
   { id: "ev_private", status: "confirmed", summary: SECRET_TITLE, location: SECRET_PLACE, description: SECRET_DESC,
     start: { dateTime: soon(20) }, end: { dateTime: soon(21) },

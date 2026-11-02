@@ -22,6 +22,7 @@
 const path = require("path");
 const fs = require("fs");
 const bcrypt = require("bcryptjs");
+const { dayOffset } = require("../clock");
 
 const ORG = "org_polish1ask";
 const NAME = "Wren Halloway";
@@ -42,7 +43,7 @@ module.exports = async function part3(h) {
   const wren = `d_${ORG}_wren`, other = `d_${ORG}_other`;
   for (const [id, name] of [[wren, NAME], [other, "Otto Quill"]])
     await q(`INSERT INTO donors (id,org_id,name,city,stage,created_by,created_by_name) VALUES ($1,$2,$3,'Salem','active','system:test','test')`, [id, ORG, name]);
-  const day = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const day = n => dayOffset(-n);
   const INTS = [
     [`i_${ORG}_call`, wren, "call", day(3), "She asked for the impact report and wants a tour of the studio in the spring, after the gala."],
     [`i_${ORG}_note`, wren, "note", day(9), "Prefers email to phone. Her daughter joined the youth choir this fall."],
