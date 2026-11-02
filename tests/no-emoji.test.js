@@ -97,7 +97,9 @@ if (offenders.length) {
       let text = null;
       if (n.type === "StringLiteral" || n.type === "JSXText") text = n.value;
       else if (n.type === "TemplateElement") text = n.value.cooked != null ? n.value.cooked : n.value.raw;
-      if (text && text.includes("\u2014")) dashes.push(`${rel}:${n.loc.start.line}  ${text.trim().slice(0, 80)}`);
+      // PROFILE-3: a literal that is ONLY the dash is the empty-value glyph (the
+      // profile's numbers band, by brief), not a dash in a sentence; it passes.
+      if (text && text.includes("\u2014") && text.trim() !== "\u2014") dashes.push(`${rel}:${n.loc.start.line}  ${text.trim().slice(0, 80)}`);
       // JOURNEYS-3 follow-up: the dash codemod turned SEPARATORS (" \u2014 " between two values)
       // into the words "Not set" ("charge of $199 Not set"). "Not set" is only ever a whole
       // placeholder: alone in its literal (JSX line breaks around it are fine) or the select
@@ -126,7 +128,8 @@ if (offenders.length) {
     const before = dashes.length;
     scanCopy("planted.jsx", 'const a = <p>Saved \u2014 thank you</p>; // a comment \u2014 is fine\nconst b = "x &mdash;";\n');
     scanCopy("planted2.jsx", 'const c = `ok ${1} \\u2014 done`;');
-    ok(dashes.length - before === 2, "the guard catches a planted em dash in JSX text and in a template, not in a comment",
+    scanCopy("planted4.jsx", 'const h = <span>\u2014</span>; const i = <span>\u2014 none</span>;');
+    ok(dashes.length - before === 3, "the guard catches a planted em dash in JSX text and in a template, and beside words, not in a comment or alone as the empty-value glyph",
        dashes.slice(before));
     dashes.length = before;
     const nsBefore = notSet.length;

@@ -691,6 +691,9 @@ async function publicPagesUnderTheCsp(browser) {
 // HOW IT GOES RED ON MAIN: the profile's window never moves (it is position
 // fixed) and dp-main-column / dp-right-rail / donor-profile-body scroll alone;
 // the event page's event-detail-body does the same.
+// PROFILE-3: the donor profile is the one exception, above 768: its main
+// column and its rail each scroll on their own and the page does not
+// (profileColumnsScroll below). At 390 it is one page again, and checked here.
 async function everyPageScrolls(pw, auth) {
   const { q } = require("./helpers");
   const orgId = auth.org && auth.org.id;
@@ -710,6 +713,7 @@ async function everyPageScrolls(pw, auth) {
       const page = await ctx.newPage();
       for (const where of pages) {
         const tag = `§scroll ${engine} ${w} ${where}`;
+        if (w > 768 && /^\/donors\/./.test(where)) continue;   // PROFILE-3: its columns scroll on their own (profileColumnsScroll)
         if (where === "event" || where === "grant") {
           const tab = where === "event" ? "events" : "grants";
           await page.goto(`${APP}/app/${tab}`, { waitUntil: "networkidle", timeout: 45000 }).catch(() => {});
@@ -832,7 +836,7 @@ async function profileLayout(pw, auth) {
     ok(`§layout ${w} the rail is the profile's green`, r.railBg === "rgb(18, 41, 28)", r.railBg);
     ok(`§layout ${w} the header has at most two tags and no ladder chips`, r.headTags <= 2 && r.rung === 0, r);
     ok(`§layout ${w} the seven tabs sit on one line`, r.tabRows === 1 && r.tabs.join() === "activity,giving,conversations,emails,tasks,notes,files", r);
-    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.evaluate(() => { const m = document.querySelector("[data-testid=dp-main-column]"); if (m) m.scrollTop = 1200; });
     await page.waitForTimeout(300);
     const stuck = await page.evaluate(() => { const b = document.querySelector("[data-testid=dp-right-rail]").getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), vh: innerHeight }; });
     ok(`§layout ${w} after a long scroll the rail is still in view`, stuck.top < stuck.vh && stuck.bottom > 0, stuck);
@@ -841,8 +845,10 @@ async function profileLayout(pw, auth) {
   if (none) {
     const { ctx, page } = await open(1440, 900, none.id);
     const n = await page.evaluate(() => ({ quiet: !!document.querySelector("[data-testid=dp-next-move-none]"), card: !!document.querySelector("[data-testid=profile-next-move]"),
-      text: (document.querySelector("[data-testid=dp-next-move-none]") || {}).innerText || "" }));
-    ok("§layout a person with no next move gets one quiet line, not a card", n.quiet && !n.card && /^Nothing due for .+ right now\.$/.test(n.text), n);
+      start: !!document.querySelector("[data-testid=dp-start-card]"), text: (document.querySelector("[data-testid=dp-next-move-none]") || {}).innerText || "" }));
+    // PROFILE-3: with nothing logged the one start card replaces the quiet line;
+    // a person who has something logged but nothing due still gets the line.
+    ok("§layout a person with no next move gets the start card or one quiet line, not a card", !n.card && (n.start ? !n.quiet : n.quiet && /^Nothing due for .+ right now\.$/.test(n.text)), n);
     await ctx.close();
   } else console.log("  SKIP  §layout no next move — every person in this org has a gift");
   {
@@ -856,12 +862,14 @@ async function profileLayout(pw, auth) {
     ok("§layout 390 the order is header, numbers, next move, Next step, tabs, timeline, then the rail", seq.every(v => v !== null) && seq.every((v, i) => i === 0 || v > seq[i - 1]), order);
     ok("§layout 390 no sideways page scroll", !order.wide, order);
     const small = await page.evaluate(() => [...document.querySelectorAll("[data-testid=dp-head] button, [data-testid=dp-head] a, [data-testid=dp-tabs] [role=tab]")]
-      .filter(e => e.offsetParent && !e.closest(".dph-tags")).map(e => ({ t: (e.innerText || e.getAttribute("aria-label") || "").slice(0, 20), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44 && x.t !== "+"));
+      .filter(e => e.offsetParent && !e.closest(".dph-tags,.dph-contact")).map(e => ({ t: (e.innerText || e.getAttribute("aria-label") || "").slice(0, 20), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44 && x.t !== "+"));
     ok("§layout 390 the header's buttons and the tabs are at least 44px tall", small.length === 0, small);
     await ctx.close();
   }
   await br.close();
 }
+
+// PROFILE-3 · the profile's grid, its columns and empty as calm: tests/lib/profileColumns.js
 
 // SWEEP-3 · COMMUNICATIONS, AUTOMATIC EMAIL, GOING OUT AND JOURNEYS, EVERY
 // SCREEN, ON TWO ORGS. Every Communications tab (Overview, Campaigns,
@@ -1893,9 +1901,10 @@ async function donorScreensSayNothingWrong(browser) {
     for (const tab of PROFILE_TABS) {
       trouble = [];
       if (tab === "related") {
-        const m = page.locator("[data-testid=dp-rail-related-manage]").first();
+        // PROFILE-3: Manage on the rail's section, or About's "Link someone" when no one is linked yet
+        const m = page.locator("[data-testid=dp-rail-related-manage], [data-testid=dp-about-link]").first();
         if (await m.count()) { await m.click(); await page.waitForTimeout(700); }
-        else { ok(`donor ${d.id} — Household and related opens from the rail`, false, "no Manage"); continue; }
+        else { ok(`donor ${d.id} — Household and related opens from the rail`, false, "no Manage or Link someone"); continue; }
         await look(`donor ${d.id} · related`);
         await page.keyboard.press("Escape").catch(() => {});
         continue;
@@ -1968,6 +1977,7 @@ async function donorScreensSayNothingWrong(browser) {
   await publicPagesUnderTheCsp(browser);
   await everyPageScrolls(PW_ALL, auth);
   await profileLayout(PW_ALL, auth);
+  await require("./lib/profileColumns").profileColumnsScroll(PW_ALL, auth, { ok, APP });
   await moneyScreensSayNothingWrong(browser);
   await givingSideAndPhoneSayNothingWrong(browser);
   await commsScreensSayNothingWrong(browser);

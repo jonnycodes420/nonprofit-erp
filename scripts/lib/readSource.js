@@ -32,6 +32,11 @@ const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..", "..");
 
+// PROFILE-3: the donor profile's parts, every file in components/profile/.
+const PROFILE_PARTS = (() => {
+  const dir = path.join(ROOT, "client", "src", "components", "profile");
+  try { return fs.readdirSync(dir).filter(f => /\.jsx?$/.test(f)).sort().map(f => "client/src/components/profile/" + f); } catch { return []; }
+})();
 // Where each split file's pieces live now. Each split commit adds its files.
 const FILES = {
   // FIX-9 — `routes/volunteerScheduling.js` and `routes/supporter.js` were
@@ -47,7 +52,10 @@ const FILES = {
   "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js"],
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
   "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
-    "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", "client/src/components/DonorDirectory.jsx"],
+    "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", ...PROFILE_PARTS, "client/src/components/DonorDirectory.jsx"],
+  // PROFILE-3 split DonorProfile.jsx into components/profile/; a suite that
+  // reads the profile's source reads every part of it.
+  "client/src/components/DonorProfile.jsx": ["client/src/components/DonorProfile.jsx", ...PROFILE_PARTS],
 };
 const ORDER_FILE = path.join(__dirname, "splitOrder.json");
 
