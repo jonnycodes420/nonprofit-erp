@@ -154,8 +154,7 @@ const cents = n => Math.round(Number(n) * 100);
   // gift-history import had been quietly wrong by up to 49 cents a row since
   // the surface was written, and no server test could see it. The browser walk
   // found it; this keeps it found.
-  const importSrc = require("fs").readFileSync(
-    require("path").join(__dirname, "..", "client", "src", "components", "DonorImport.jsx"), "utf8");
+  const importSrc = require("../scripts/lib/readSource").readSource("client/src/components/DonorImport.jsx");   // SCREENS-1: with its parts
   // Comment lines are stripped first: this file now EXPLAINS the defect, and a
   // guard that counted its own explanation would be permanently red.
   const codeOnly = importSrc.split("\n").filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");

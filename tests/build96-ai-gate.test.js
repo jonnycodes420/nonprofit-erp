@@ -182,7 +182,7 @@ const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
   ok("the Terms' section numbers are unique and in order",
      nums.length > 0 && nums.every((n, i) => n === i + 1), nums);
 
-  const settings = read("client/src/components/Settings.jsx");
+  const settings = require("../scripts/lib/readSource").readSource("client/src/components/Settings.jsx");   // SCREENS-1: with its cards
   ok("Settings carries the one line, verbatim",
      settings.includes("check photographs to suggest an") &&   // FIX-12: one switch for every AI feature, OpenAI named
      settings.includes("Voice memos") && settings.includes("transcribed by OpenAI") &&
