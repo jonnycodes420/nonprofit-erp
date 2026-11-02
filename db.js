@@ -2156,6 +2156,9 @@ async function runSchemaInit(pool) {
   // twenty-four hours, because a slip keyed wrong is discovered the same day
   // and unpicking eleven gifts by hand is how a total stops matching.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  // NUMBERS-4: the gift's place in its import's file, so two gifts on one day
+  // from one file have a "last" that never depends on a random id (lastGift.js).
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS import_row INTEGER`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_import ON gifts (org_id, import_id) WHERE import_id IS NOT NULL`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_by TEXT`);
@@ -2353,7 +2356,7 @@ async function runSchemaInit(pool) {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_org_donor ON pledges (org_id, donor_id)`);
   // FIX-60: the lapse rule asks "does this person hold an open pledge" by donor id
-  // (lapseRule.pledgeHoldSql), once per person in a list. Schema only.
+  // (shared/numbers/lapse.js holdSql), once per person in a list. Schema only.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_donor ON pledges (donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_reminder ON pledges (status, next_reminder_at)`);
   // BUILD-72 Part 2 — the same seam on PLEDGES. A pledge is a money row on a

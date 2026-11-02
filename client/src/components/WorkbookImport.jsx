@@ -77,6 +77,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const [linkPreview, setLinkPreview] = useState(null);            // gift-alone pre-write link counts (server dryRun)
   const [building, setBuilding] = useState(false);
   const [progressText, setProgressText] = useState("");
+  // NUMBERS-4: the write's one progress bar, by its three steps (the people
+  // and gifts, then the pledges and merges, then the import record). The
+  // server writes the file in batches inside one transaction, so the first
+  // step is all or nothing and one Undo takes it back.
+  const [writeStep, setWriteStep] = useState(0);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
   const [timing, setTiming] = useState(null);   // { toSummary, write } — two different measurements, both named
@@ -348,12 +353,14 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         setResult({ ...res, giftAlone: true });
         await recordRun(res, null, runId);
       } else {
-        setProgressText(`Writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts, one transaction, all or nothing…`);
+        setWriteStep(1);
+        setProgressText(`Step 1 of 3: writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts, one transaction, all or nothing…`);
         const donors = submission.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
         const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({
           donors, gifts: submission.gifts, identityResolved: true, importId: runId,
         })});
-        setProgressText("Routing pledges, merges and the import record…");
+        setWriteStep(2);
+        setProgressText("Step 2 of 3: routing pledges and merges…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
           importId: runId,   // FIX-60: Undo import takes these pledges with the gifts
           pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
@@ -367,6 +374,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           fileStats: submission.fileStats,
         })}).catch(e => ({ error: e.message }));
         setResult({ ...res, semantics: sem });
+        setWriteStep(3);
+        setProgressText("Step 3 of 3: saving the import record…");
         await recordRun(res, sem, runId);
       }
       setTiming(t => ({ ...(t || {}), write: (Date.now() - tWrite0) / 1000 }));
@@ -376,7 +385,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       console.error("workbook import failed:", e);
       setErr(errorMessage(e, "Import failed, nothing was written."));
     }
-    setBuilding(false); setProgressText("");
+    setBuilding(false); setProgressText(""); setWriteStep(0);
   };
 
   // ─────────────────────────── RENDER ───────────────────────────
@@ -718,6 +727,12 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {btn("← Back", () => setStep("mapper"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
+        {building && writeStep > 0 && (
+          <div data-testid="wb-progress" role="progressbar" aria-valuemin={0} aria-valuemax={3} aria-valuenow={writeStep - 1}
+               style={{ height: 6, background: T.bg3, borderRadius: 3, marginTop: 10, overflow: "hidden" }}>
+            <div style={{ width: `${((writeStep - 1) / 3) * 100}%`, height: "100%", background: T.green600, transition: "width .3s" }} />
+          </div>
+        )}
         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>One transaction: if anything fails mid-way, nothing lands, never a half-imported org.</div>
         {err && <div style={{ color: T.terracotta, fontSize: 12.5, marginTop: 8 }}>{err}</div>}
       </div>

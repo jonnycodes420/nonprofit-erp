@@ -201,7 +201,8 @@ async function main() {
   const eng = engineStats(r1.body.stats);
   for (const k of Object.keys(BRIEF)) ok(`§2 the engine, by giving unit: ${k} = ${byUnit[k]} (by name ${byName[k]})`, eng[k] === byUnit[k], eng[k]);
   ok("§2 the coverage line says where the history ends", /Gift history ends Sep 30, 2026/.test(r1.body.coverage.sentence), r1.body.coverage.sentence);
-  ok("§2 the major-gift line is shown, with its rule", r1.body.majorLine && r1.body.majorLine.cents === 500000 && /\$5,000/.test(r1.body.majorLine.rule), r1.body.majorLine);
+  // NUMBERS-4: the line is the org's Giving levels major cut ($10,000 by default), the Major tag's own.
+  ok("§2 the major line is shown, with its rule (the Giving levels cut, as the Major tag)", r1.body.majorLine && r1.body.majorLine.cents === 1000000 && /\$10,000/.test(r1.body.majorLine.rule) && /Giving levels/.test(r1.body.majorLine.rule), r1.body.majorLine);
 
   // ── §3 named cards ──────────────────────────────────────────────────────
   const ms = itemNamed(card(r1, "major_slipping"), "Ulis & Verin Cranville Family Foundation");
@@ -212,7 +213,8 @@ async function main() {
   const f = Object.fromEntries((up && up.facts) || []);
   ok("§3 Upgrade names Ashham: $1,000 (January 2025), then $5,000 (December 2025) through The Ashham Family Foundation",
      !!up && f["earlier gift"] === "$1,000 (January 2025)" && f["recent gift"] === "$5,000 (December 2025)" && f.through === "The Ashham Family Foundation", up && up.facts);
-  ok("§3 …ask $7,500, with its rule", !!up && up.how.ask.cents === 750000 && /1\.5 times/.test(up.how.ask.rule), up && up.how.ask);
+  // NUMBERS-4: the one suggested-ask rule (shared/numbers/ask.js), which here also lands on $7,500.
+  ok("§3 …ask $7,500, with its rule (the one suggested-ask rule)", !!up && up.how.ask.cents === 750000 && /one rule/.test(up.how.ask.rule), up && up.how.ask);
   if (memoKept) ok("§M Ashham designated Stable Moments", !!up && f.designated === "Stable Moments", up && up.facts);
   else waiting("§M Ashham designated Stable Moments", "the scrubbed fixture has no program words");
 

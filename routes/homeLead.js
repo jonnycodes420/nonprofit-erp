@@ -34,8 +34,7 @@ function scopeOf(req) {
 
 // The org's own "large": p90 of lifetime giving, the line threadRank uses.
 async function orgLine(orgId) {
-  const [r] = await query(`SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90 FROM donors
-                            WHERE org_id=? AND total_giving > 0 AND deleted_at IS NULL`, [orgId]);
+  const [r] = await query(require("../shared/numbers/tags").TOP_TENTH_SQL, [orgId]);   // NUMBERS-4: one line
   return num(r && r.p90);
 }
 
@@ -164,17 +163,18 @@ async function readFacts(req, nowMs) {
       // HARDEN-1: the season against the same days last year is the one
       // comparison every screen reads (numbers.vsLastYear).
       const [[r], vs, [lyAll]] = await Promise.all([
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND campaign_id=? AND date <= ?`, [orgId, c.id, today]),
+        // NUMBERS-4: money (shared/numbers/money.js): credit rows out, refunds off.
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND ${require("../shared/numbers/money").MONEY("g")} AND campaign_id=? AND date <= ?`, [orgId, c.id, today]),
         require("../numbers").vsLastYear(orgId, start, end, today),
-        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(end)]),
+        query(`SELECT COALESCE(SUM(amount),0) AS n FROM gifts g WHERE g.org_id=? AND ${NOT_DELETED("g")} AND ${require("../shared/numbers/money").MONEY("g")} AND date >= ? AND date <= ?`, [orgId, lastYear(start), lastYear(end)]),
       ]);
       const ly = { n: vs ? vs.lastYear : 0 }, ty = { n: vs ? vs.thisYear : 0 };
       const y = Number(today.slice(0, 4)) - 1;
       // FIX-60: somebody who has pledged since is not lapsed (lapseRule.js).
-      const _seasonHold = require("../lapseRule").pledgeHoldSql("d.id", today);
+      const _seasonHold = require("../shared/numbers/lapse").holdSql("d.id", today);
       const lapsedRows = await query(
         `SELECT d.id, d.name, SUM(g.amount) AS amount FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-          WHERE g.org_id=? AND g.date >= ? AND g.date <= ? AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE${M}
+          WHERE g.org_id=? AND g.date >= ? AND g.date <= ? AND ${require("../shared/numbers/money").MONEY("g")} AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE${M}
             AND NOT EXISTS (SELECT 1 FROM gifts n WHERE n.org_id=g.org_id AND n.donor_id=g.donor_id AND n.date >= ? AND n.date <= ?)
             AND NOT ${_seasonHold.sql}
           GROUP BY d.id, d.name ORDER BY SUM(g.amount) DESC, d.id`, [orgId, `${y}-12-01`, `${y}-12-31`, ...Ma, `${y + 1}-01-01`, today, ..._seasonHold.args]);

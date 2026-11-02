@@ -70,8 +70,10 @@ const CUR_CY = now.getFullYear();
 // FIX-3 E — the fiscal year is the ORG's (its start month comes back on the
 // giving summary, from the vocabulary the Board reads), labelled by the year
 // it ends in, as the server labels it. July until the server has said.
+// NUMBERS-4: which fiscal year is "this" one comes from the server too (the
+// giving summary's `fiscalYear`, on the org's own calendar), never from the
+// browser's clock; until it answers, the period reports wait (presetPending).
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const fyOf = start => (now.getMonth() + 1 < start ? now.getFullYear() : now.getFullYear() + 1);
 const fyLastMonth = start => MON[(start + 10) % 12];
 const fyRangeLabel = (y, start) => `${MON[start - 1]} ${y - 1} – ${fyLastMonth(start)} ${start === 1 ? y - 1 : y}`;
 // FIX-10 Part B — EVERY CHIP SAYS WHICH YEAR IT IS. Reports defaults itself to
@@ -286,6 +288,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [digestType, setDigestType] = useState("weekly"); // week-in-review: weekly | monthly
   const [downloading, setDownloading] = useState(false);
   const [fiscalStart, setFiscalStart] = useState(null); // the org's first fiscal month; null until the server says
+  const [serverFy, setServerFy] = useState(null); // NUMBERS-4: this fiscal year, as the server names it
 
   // The default period resolves from data, not the calendar: early in a new
   // fiscal year "This FY" is nearly empty (e.g. two weeks in), which makes a
@@ -321,7 +324,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const onStored = active === STORED_REPORTS_ID;
   const onWorked = active === WHAT_WORKED_ID;   // INSIGHTS-1
   const fsm = fiscalStart || 7;
-  const CUR_FY = fyOf(fsm);
+  const CUR_FY = serverFy || CUR_CY;
   const PRESETS = presetsFor(CUR_FY, fsm);
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
@@ -355,6 +358,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     apiFetch(`/reports/giving-summary?yearMode=${yearMode}`)
       .then(d => {
         setFiscalStart(Number(d.fiscalStartMonth) || 7);
+        if (Number(d.fiscalYear)) setServerFy(Number(d.fiscalYear));
         const lowVolume = d.prior.total > 0 && d.giftCount < 10 && d.total < d.prior.total * 0.01;
         setAutoDefault(lowVolume ? lastId : thisId);
       })

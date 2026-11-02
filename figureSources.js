@@ -33,7 +33,7 @@
 
 const { query, querySetwise } = require("./db");
 const { CAMPAIGN_GIFT_MATCH } = require("./campaignMatch");   // NUMBERS-1: which gifts count toward a campaign
-const { LAST_GIFT_ORDER, IMPORTED_FIRST } = require("./donorSummary");
+const { LAST_GIFT_ORDER } = require("./donorSummary");
 const { CREDIT_TYPES, NOT_CREDIT, IS_CREDIT } = require("./creditTypes");   // FIX-49: credits are not money
 const orgTime = require("./orgTime");
 // ARCH-1: an instant tested against the org's civil days, and the org day it
@@ -131,7 +131,9 @@ function funderTypeWords(t) {
 // FIX-49: the one list, in creditTypes.js; soft and matching credits are not
 // money anywhere (Lifetime, campaigns, goals, averages), not only here.
 const BOOKKEEPER_EXCLUDED_TYPES = CREDIT_TYPES;
-const FIRST_GIFT_IN = (from, to) => `AND (SELECT MIN(LEFT(g2.date,10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) BETWEEN ${from} AND ${to}`;
+// NUMBERS-4: the first gift is the one rule (shared/numbers/firstGift.js): a
+// refund or credit row is never a first gift, and the old system's first gift counts.
+const FIRST_GIFT_IN = (from, to) => `AND ${require("./shared/numbers/firstGift").FIRST_DATE("d")} BETWEEN ${from} AND ${to}`;
 // The one definition of a lapsed MEMBER (BUILD-101 Part 3): their latest
 // membership lapsed and they hold none now. Memberships' list and counts and
 // the `members` source all read this, so the count and the list agree.
@@ -344,7 +346,7 @@ function pledgesDueSql(orgId, day, op) {
           UNION ALL
           SELECT p.id, 'pledge', p.donor_id, d.name, p.due_date, ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2), 'Due'
             FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-            LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+            LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id
            WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM pledge_installments i2 WHERE i2.pledge_id = p.id)
              AND (${op === "<=" ? "p.due_date IS NULL OR p.due_date = '' OR " : ""}LEFT(p.due_date::text, 10) ${op} ?)`,
@@ -531,8 +533,8 @@ const SOURCES = {
       // person whose only rows in the window are refunds did not give in it.
       // TRUTH-1: the old system's first gift (imported history) is a gift they
       // gave, as the New tag (donorStatus.js) has always read it.
-      if (p.first) { where += ` AND LEAST((SELECT MIN(LEFT(g2.date, 10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id AND g2.amount > 0 AND ${NOT_CREDIT("g2")}),
-                                          LEFT(${IMPORTED_FIRST("d")}, 10)) ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
+      // NUMBERS-4: the one rule, shared/numbers/firstGift.js.
+      if (p.first) { where += ` AND ${require("./shared/numbers/firstGift").FIRST_DATE("d")} ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
       const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
@@ -2063,7 +2065,7 @@ const SOURCES = {
                    ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
               FROM pledges p
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
-              LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+              LEFT JOIN ${require("./shared/numbers/pledges").PAID_BY_PLEDGE} pp
                      ON pp.pledge_id = p.id
              WHERE p.org_id = ? AND p.status = 'open' AND d.deleted_at IS NULL${p && p.campaign ? " AND p.campaign_id = ?" : ""}${p && p.donor ? " AND p.donor_id = ?" : ""}`,
       args: [orgId, orgId, ...(p && p.campaign ? [p.campaign] : []), ...(p && p.donor ? [p.donor] : [])],

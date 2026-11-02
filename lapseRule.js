@@ -77,37 +77,10 @@ function pledgeHold(pledges, today) {
   if (pledges.some(p => p && p.status === "fulfilled" && p.madeOn && String(p.madeOn).slice(0, 10) >= from)) return "hold";
   return null;
 }
-// The same, in SQL, for a person whose id is `idExpr`. `made` is the pledge's
-// made-on day as YYYY-MM-DD text (LEAST skips NULLs).
-const PLEDGE_MADE = `LEAST(to_char(pp.created_at, 'YYYY-MM-DD'), NULLIF(LEFT(pp.due_date, 10), ''),
-  (SELECT MIN(NULLIF(LEFT(pi.due_date, 10), '')) FROM pledge_installments pi WHERE pi.pledge_id = pp.id AND pi.org_id = pp.org_id))`;
-const PLEDGE_OVERDUE = `(EXISTS (SELECT 1 FROM pledge_installments pi WHERE pi.pledge_id = pp.id AND pi.org_id = pp.org_id
-    AND pi.paid_gift_id IS NULL AND NULLIF(LEFT(pi.due_date, 10), '') < ?)
-  OR (NOT EXISTS (SELECT 1 FROM pledge_installments pi WHERE pi.pledge_id = pp.id AND pi.org_id = pp.org_id)
-    AND NULLIF(LEFT(pp.due_date, 10), '') < ?))`;
-function pledgeOverdueSql(idExpr, today) {
-  const t = String(today).slice(0, 10);
-  return { sql: `EXISTS (SELECT 1 FROM pledges pp WHERE pp.donor_id = ${idExpr} AND pp.status = 'open' AND ${PLEDGE_OVERDUE})`, args: [t, t] };
-}
-// Held off lapsing and lapsed by a pledge: any open pledge (on schedule or
-// overdue: overdue is its own state, not lapsing), or one fulfilled pledge
-// made in the last 12 months.
-function pledgeHoldSql(idExpr, today) {
-  return { sql: `EXISTS (SELECT 1 FROM pledges pp WHERE pp.donor_id = ${idExpr}
-      AND (pp.status = 'open' OR (pp.status = 'fulfilled' AND ${PLEDGE_MADE} >= ?)))`, args: [bounds(today).lapsingFrom] };
-}
-// One person's pledges as pledgeHold reads them, from the database; or, with
-// no donorId, a Map of every person's in the org.
-async function pledgesFor(query, orgId, donorId, today) {
-  const t = String(today).slice(0, 10);
-  const rows = await query(`SELECT pp.donor_id, pp.status, ${PLEDGE_MADE} AS "madeOn", ${PLEDGE_OVERDUE} AS overdue
-                  FROM pledges pp WHERE pp.org_id = ?${donorId ? " AND pp.donor_id = ?" : ""} AND pp.status IN ('open','fulfilled')`,
-    [t, t, orgId, ...(donorId ? [donorId] : [])]);
-  if (donorId) return rows;
-  const by = new Map();
-  for (const r of rows) (by.get(r.donor_id) || by.set(r.donor_id, []).get(r.donor_id)).push(r);
-  return by;
-}
+// NUMBERS-4: the same rule in SQL (the pledge hold and overdue, the rhythm
+// exception, lapsed, lapsing and pledge-held) is shared/numbers/lapse.js, once.
+// This file stays pure (no SQL a browser does not need): Lost & Found and the
+// Directory bundle it.
 
 // "lapsed", "lapsing", "giving" (gave in the last 9 months), "pledge_overdue",
 // or null when they have never given. `lastGiftDate` is their latest gift
@@ -124,39 +97,9 @@ function lapseState(lastGiftDate, today, rhythm = null, pledges = null) {
   if (last <= b.lapsingOnOrBefore) return usualTimeAhead(rhythm, today) ? "giving" : "lapsing";
   return "giving";
 }
-// The same exception in SQL, for a person whose id is `idExpr`.
-function rhythmAheadSql(idExpr, today) {
-  return { sql: `EXISTS (SELECT 1 FROM donor_rhythm rr WHERE rr.donor_id = ${idExpr} AND rr.rhythm IN ('yearly','year_end')
-                  AND rr.expected_next IS NOT NULL AND LEFT(rr.expected_next::text, 10) >= ?)`, args: [String(today).slice(0, 10)] };
-}
 const isLapsed = (last, today) => lapseState(last, today) === "lapsed";
 const isLapsing = (last, today) => lapseState(last, today) === "lapsing";
 
 
-// SQL over a civil-date expression (a column holding YYYY-MM-DD or a DATE).
-// Placeholders are `?`; the args to pass are returned beside the text.
-// `idExpr` (the person's id) brings in the rhythm exception for lapsing.
-// FIX-60: with `idExpr`, a pledge holds the person off both (pledgeHoldSql),
-// and "pledge_overdue" is the person with an open pledge past due.
-function sql(state, lastExpr, today, idExpr = null) {
-  const b = bounds(today);
-  const d = `(${lastExpr})::date`;
-  if (state === "pledge_overdue") {
-    if (!idExpr) throw new Error("lapseRule.sql: pledge_overdue needs the person's id");
-    return pledgeOverdueSql(idExpr, today);
-  }
-  const p = idExpr ? pledgeHoldSql(idExpr, today) : null;
-  if (state === "lapsed") {
-    if (!p) return { sql: `${d} <= ?::date`, args: [b.lapsedOnOrBefore] };
-    return { sql: `(${d} <= ?::date AND NOT ${p.sql})`, args: [b.lapsedOnOrBefore, ...p.args] };
-  }
-  if (state === "lapsing") {
-    if (!idExpr) return { sql: `${d} BETWEEN ?::date AND ?::date`, args: [b.lapsingFrom, b.lapsingOnOrBefore] };
-    const r = rhythmAheadSql(idExpr, today);
-    return { sql: `(${d} BETWEEN ?::date AND ?::date AND NOT ${r.sql} AND NOT ${p.sql})`, args: [b.lapsingFrom, b.lapsingOnOrBefore, ...r.args, ...p.args] };
-  }
-  throw new Error(`lapseRule.sql: unknown state ${state}`);
-}
-
-module.exports = { LAPSED_DAYS, LAPSING_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead, rhythmAheadSql,
-  pledgeHold, pledgeHoldSql, pledgeOverdueSql, pledgesFor, isLapsed, isLapsing, sql };
+module.exports = { LAPSED_DAYS, LAPSING_MONTHS, WORDS, shiftMonths, bounds, lapseState, usualTimeAhead,
+  pledgeHold, isLapsed, isLapsing };

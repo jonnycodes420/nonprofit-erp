@@ -1,0 +1,9 @@
+{
+  "check": "number-copies",
+  "what": "a second rule for a donor label (major, top tenth, lapsed, first gift) outside shared/numbers/",
+  "counts": {
+    "appealWhy.js": 1,
+    "donorStatus.js": 1,
+    "why.js": 1
+  }
+}

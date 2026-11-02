@@ -21,8 +21,15 @@ async function build(orgId, donorId) {
   const t = await P.today(orgId);
   const [d] = await query(`SELECT id, name, kind, email, phone, city, state, employer, spouse_name, stage, assigned_to_name, funder_ein,
       total_giving::text AS total_giving, created_at FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]);
-  const [g] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, MIN(LEFT(date,10)) AS first, MAX(LEFT(date,10)) AS last,
-      MAX(amount)::text AS largest FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, donorId]);
+  // NUMBERS-4: the person's own numbers (shared/numbers): lifetime with the
+  // old system's total and refunds off, the count the profile shows, the
+  // first and last gift by the one rule, the largest gift a gift (never a
+  // credit row). It summed every row above zero, credits in and refunds ignored.
+  const N = require("./shared/numbers");
+  const [g] = await query(`SELECT COALESCE(d.gift_count, 0)::int AS n, ${N.lifetime.LIFETIME("d")}::text AS s,
+      ${N.firstGift.FIRST_DATE("d")} AS first, LEFT(${N.lastGift.LAST_DATE("d")}, 10) AS last,
+      (SELECT MAX(lg.amount) FROM gifts lg WHERE lg.org_id = d.org_id AND lg.donor_id = d.id AND ${N.money.GIFT("lg")})::text AS largest
+      FROM donors d WHERE d.org_id = ? AND d.id = ?`, [orgId, donorId]);
   const contacts = await query(`SELECT type, LEFT(date,10) AS date FROM interactions WHERE org_id = ? AND donor_id = ?
       AND type IN ('call','meeting','email','visit','stewardship','note') ORDER BY date DESC NULLS LAST LIMIT 3`, [orgId, donorId]);
   const room = (await P.roomToGive(orgId, [donorId])).get(donorId);
@@ -43,8 +50,8 @@ async function build(orgId, donorId) {
 
   // Giving
   if (g && g.n > 0) {
-    line("Giving", `${g.n} ${g.n === 1 ? "gift" : "gifts"} totalling ${$(toC(g.s))}, from ${g.first} to ${g.last}.`, GIFTS);
-    line("Giving", `Largest single gift: ${$(toC(g.largest))}.`, GIFTS);
+    line("Giving", `${g.n} ${g.n === 1 ? "gift" : "gifts"} totalling ${$(toC(g.s))}${g.first && g.last ? `, from ${g.first} to ${g.last}` : ""}.`, GIFTS);
+    if (g.largest != null) line("Giving", `Largest single gift: ${$(toC(g.largest))}.`, GIFTS);
     line("Giving", `Given in the last twelve months: ${$(room.annualCents)}.`, GIFTS);
   } else notKnown.push("Giving: no gifts on file.");
 
