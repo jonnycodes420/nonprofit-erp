@@ -32,11 +32,17 @@ const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..", "..");
 
+// A split screen's parts: every file in its folder under components/.
+const partsIn = folder => {
+  const dir = path.join(ROOT, "client", "src", "components", folder);
+  try { return fs.readdirSync(dir).filter(f => /\.jsx?$/.test(f)).sort().map(f => `client/src/components/${folder}/` + f); } catch { return []; }
+};
 // PROFILE-3: the donor profile's parts, every file in components/profile/.
-const PROFILE_PARTS = (() => {
-  const dir = path.join(ROOT, "client", "src", "components", "profile");
-  try { return fs.readdirSync(dir).filter(f => /\.jsx?$/.test(f)).sort().map(f => "client/src/components/profile/" + f); } catch { return []; }
-})();
+const PROFILE_PARTS = partsIn("profile");
+// SCREENS-1: Settings' cards, the import wizard's steps and Home's later half.
+const SETTINGS_PARTS = partsIn("settings");
+const IMPORT_PARTS = partsIn("import");
+const HOME_PARTS = partsIn("home");
 // SPLIT-1: routes/crm.js's statements now live in server/<domain>/ modules,
 // each one marked "SPLIT-1: moved VERBATIM" in its header. They are pieces of
 // server.js the same way routes/crm.js was, found by that marker.
@@ -68,10 +74,14 @@ const FILES = {
   "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js", ...SPLIT1_PARTS],
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
   "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
-    "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", ...PROFILE_PARTS, "client/src/components/DonorDirectory.jsx"],
+    "client/src/components/DonorImport.jsx", ...IMPORT_PARTS, "client/src/components/DonorProfile.jsx", ...PROFILE_PARTS, "client/src/components/DonorDirectory.jsx"],
   // PROFILE-3 split DonorProfile.jsx into components/profile/; a suite that
   // reads the profile's source reads every part of it.
   "client/src/components/DonorProfile.jsx": ["client/src/components/DonorProfile.jsx", ...PROFILE_PARTS],
+  // SCREENS-1 split these three the same way.
+  "client/src/components/Settings.jsx": ["client/src/components/Settings.jsx", ...SETTINGS_PARTS],
+  "client/src/components/DonorImport.jsx": ["client/src/components/DonorImport.jsx", ...IMPORT_PARTS],
+  "client/src/components/Dashboard.jsx": ["client/src/components/Dashboard.jsx", ...HOME_PARTS],
 };
 const ORDER_FILE = path.join(__dirname, "splitOrder.json");
 
@@ -193,7 +203,7 @@ function fromRoutes(rel, spec) {
 }
 
 // A client file → its statements; the split's own lines dropped.
-const SIBLING = /^\.\/(DonorImport|DonorProfile|DonorDirectory|donorShared|Donors)$|^\.\/lib\/tabRegistry$/;
+const SIBLING = /^\.\/(DonorImport|DonorProfile|DonorDirectory|donorShared|Donors)$|^\.\/lib\/tabRegistry$|^\.\/(settings|import|home)\//;
 const PART_HEADER_END = /^[\s\S]*?\/\/ Tests read it through readSource\([^\n]*\n/;
 function clientPieces(rel, src, isPart) {
   const ast = parse(src, true);

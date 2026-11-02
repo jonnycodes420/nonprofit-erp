@@ -158,7 +158,7 @@ const lead = async (tok, iso) => {
     // §7 Ask, the Thread and the mic never move.
     const RAIL = new Set(["meetings", "thankClock", "mailbox", "firstThing", "tiles"]);
     ok("§7 the rail only orders its own five blocks", [d1, d2, d3, q4, o1].every(x => (x.body.rail || []).length === 5 && x.body.rail.every(k => RAIL.has(k))));
-    const src = f => fs.readFileSync(path.join(__dirname, "..", "client", "src", f), "utf8");
+    const src = f => require("../scripts/lib/readSource").readSource("client/src/" + f);   // SCREENS-1: Home with its parts
     const hero = src("components/AskRail.jsx"), dash = src("components/Dashboard.jsx"), app = src("App.jsx");
     ok("§7 the lead is drawn under the Ask box", hero.indexOf('data-testid="ask-hero-input"') > 0 && hero.indexOf('data-testid="ask-hero-input"') < hero.indexOf("{lead}"));
     ok("§7 the Ask box heads Home and the Thread stays in the work column", dash.indexOf("<AskHero") > 0 && dash.indexOf("<AskHero") < dash.indexOf("home-shell-main") && /homeHead/.test(dash));
