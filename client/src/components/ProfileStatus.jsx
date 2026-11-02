@@ -151,7 +151,7 @@ export function ClosenessLine({ status, onOpenDonor }) {
       {status.updating
         ? <span data-testid="dp-closeness-updating" title="Steward is recomputing this after the latest change." style={{ fontWeight: 700, color: T.ink3 }}>Updating…</span>
         : <span title={c.sentence} style={{ fontWeight: 700, color: c.key === "cooling" ? T.gold700 : T.ink }}>{c.label}</span>}
-      {c.facts.length ? ": " : ""}
+      {c.facts.length ? (status.updating ? " · " : ": ") : ""}
       {c.facts.map((f, i) => (
         <span key={i}>
           {i ? ", " : ""}
