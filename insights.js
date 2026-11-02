@@ -806,15 +806,15 @@ const LIBRARY = [
       const one = oneAsk(x), hi = one ? one.cents : naturalCents(last), lo = naturalCents(Math.round(hi * 0.5));
       const decGiver = x.rhythm.kind === "year_end";
       return { key: x.key, name: x.name, ids: x.ids, lead: x.lead, cents: last - now,
-        what: `${money(last)} in ${y1}, ${money(now)} so far in ${y0}: ${money(last - now)} behind.`,
-        facts: [["giving by year", yearsLine(x)], [`${y1}`, money(last)], [`${y0} so far`, money(now)], ["behind", money(last - now)]],
+        what: `${money(last)} in ${y1}, ${money(now)} so far in ${y0}: ${money(last - now)} to match last year.`,
+        facts: [["giving by year", yearsLine(x)], [`${y1}`, money(last)], [`${y0} so far`, money(now)], ["to match last year", money(last - now)]],
         how: { who: "The director", channel: "Visit", when: decGiver ? windowWords(ctx.asOf <= `${y0}-11-01` ? `${y0}-11-01` : ctx.asOf, `${y0}-11-15`) : windowWords(ctx.asOf, addDays(ctx.asOf, 21)),
           say: `${hello(x)}, your support has carried this work${Object.keys(x.byYear).length > 1 ? " year after year" : ""}. Before we plan next year, I'd like to sit down and hear what matters most to you now.`,
           ask: x.noAsk ? null : { range: [lo, hi], words: `History: ${yearsLine(x)}. A range to talk about: ${money(lo)} to ${money(hi)}.`, rule: `Major shows their history and suggests a range, never a single number: half the suggested ask to the ask. ${ASK.RULE}` } } };
     });
     return {
       kind: "major_slipping", rung: "major", title: "Major donor slipping",
-      what: c => `${plural(c.items.length, "major donor")} ${c.items.length === 1 ? "is" : "are"} far below last year: ${money(c.items.reduce((n, i) => n + i.cents, 0))} behind.`,
+      what: c => `${plural(c.items.length, "major donor")} ${c.items.length === 1 ? "is" : "are"} far below last year: ${money(c.items.reduce((n, i) => n + i.cents, 0))} to match it.`,
       why: `A major donor who slips is the largest single risk on the ladder. ${ctx.line.rule}`,
       cardFacts: [["line", money(ctx.line.cents)], ["line rule", ctx.line.rule]], items,
       does: [{ action: "brief", label: "Build a visit briefing" }, { action: "task", label: "Create a task" }],

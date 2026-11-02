@@ -492,14 +492,17 @@ async function main() {
   ok("§9 Done, Not now and Doesn't fit take the move off the deck, each recorded as its outcome",
      ![m1, m2, m3].some(m => after9.includes(m.id)) && ["done", "snoozed", "dismissed"].every(st => rec.some(r => r.state === st)), rec);
   ok("§9 …and Not now brings it back on its date", (await deckAfter("2026-11-20")).includes(m2.id), m2.id);
-  // the greeting's pace is the one number (numbers.vsLastYear), and the truth check fails if Home says another
+  // HOME-5: Home's greeting carries no pace; the comparison lives on Fundraising and the Board.
   const lead9 = (await api("GET", "/home/lead", tok)).body;
-  ok("§9 the greeting says pace in one sentence", !!lead9.pace && /^Giving this (fiscal )?year is (\$[\d,]+ (behind|ahead of)|on pace with) last year at this point\.$/.test(lead9.pace.line), lead9.pace && lead9.pace.line);
-  let paceCaught = false;
-  try {
-    await assertSurfacesAgree(ORG, { token: tok, step: "planted pace", plant: ({ lead }) => { if (lead && lead.pace) lead.pace.line = lead.pace.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
-  } catch (e) { paceCaught = /Home's greeting/.test(e.message); }
-  ok("§9 the truth check can fail: Home saying a different pace from the Board is caught", paceCaught, "");
+  ok("§9 Home's lead carries no pace sentence (HOME-5)", lead9 && !("pace" in lead9), lead9 && lead9.pace);
+  const d9 = lead9 && lead9.doors && (lead9.doors.why || lead9.doors.what);
+  if (d9) {
+    let doorCaught = false;
+    try {
+      await assertSurfacesAgree(ORG, { token: tok, step: "planted door", plant: ({ lead }) => { const d = lead && lead.doors && (lead.doors.why || lead.doors.what); if (d) d.line = d.line.replace(/\$([\d,]+)/, (x, n) => "$" + (Number(n.replace(/,/g, "")) + 2169).toLocaleString("en-US")); } });
+    } catch (e) { doorCaught = /Home's door/.test(e.message); }
+    ok("§9 the truth check can fail: Home's door saying a different gap from the Board is caught", doorCaught, "");
+  }
   }
 
   await q(`UPDATE orgs SET ai_enabled=false WHERE id=$1`, [ORG]).catch(() => {});
