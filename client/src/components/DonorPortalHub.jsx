@@ -15,7 +15,8 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, SectionLabel, Pill } from "./shared";
-import { ImpactUpdatesManager, PortalWebsiteSnippetCard } from "./Settings";
+import { ImpactUpdatesManager } from "./settings/ImpactUpdatesManager";   // SCREENS-1: Settings' cards are their own files
+import { PortalWebsiteSnippetCard } from "./settings/PortalWebsiteSnippet";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { countLabel } from "../../../shared/countWords.js";

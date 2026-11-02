@@ -114,7 +114,7 @@ async function main() {
       const m = /(kind:([a-z0-9_]+)|existing:([^@|]+))\s*@\s*(client\/[\w/.-]+\.jsx)/.exec(r);
       if (!m) { ok(`§inventory ${thing}: names how it is removed`, false, r.slice(0, 160)); continue; }
       const file = path.join(ROOT, m[4]);
-      const src = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      const src = fs.existsSync(file) ? require("../scripts/lib/readSource").readSource(m[4]) : "";   // SCREENS-1: a split screen with its parts
       if (m[2]) {
         ok(`§inventory ${thing}: kind ${m[2]} is in removal.js`, !!R.kindOf(m[2]));
         ok(`§inventory ${thing}: ${m[4]} removes it through the one Remove`, new RegExp(`kind[=:]\\s*["'{]*${m[2]}["'}]`).test(src) || src.includes(`"${m[2]}"`), m[4]);

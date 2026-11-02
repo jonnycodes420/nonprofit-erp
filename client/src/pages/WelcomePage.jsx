@@ -4,7 +4,7 @@ import { apiFetch } from "../api";
 import { peopleCounts } from "../lib/people";
 import { useAuth } from "../main";
 import SpreadsheetImport from "../components/SpreadsheetImport";
-import { GivingSourcesManager } from "../components/Settings";
+import { GivingSourcesManager } from "../components/settings/GivingSourcesManager";   // SCREENS-1
 // FIX-10 F — how many users a plan includes, from the one place that answers it.
 import { USERS_SENTENCE, SEAT_REFUSED_SENTENCE } from "../../../shared/seats";
 import { T } from "../components/shared";

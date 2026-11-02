@@ -21,7 +21,8 @@ const path = require("path");
 const { ok, summary, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
-const OUT = path.join(ROOT, ".generated", "screens1-parts");
+// The bundle is written outside the repo: the source scans read .generated/ too.
+const OUT = fs.mkdtempSync(path.join(require("os").tmpdir(), "screens1-parts-"));
 const skip = why => { browserLegOrSkip(why); console.log("\n0 passed, 0 failed (suite skipped)"); process.exit(0); };
 let chromium, esbuild;
 try { ({ chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"))); }
@@ -81,4 +82,5 @@ const FAKE = {
     ok(`${name} mounts and shows its text`, !r.error && re.test(r.text), (r.error || r.text).replace(/\s+/g, " ").slice(0, 200));
   }
   await browser.close();
+  fs.rmSync(OUT, { recursive: true, force: true });
 })().catch(e => ok("suite ran", false, e.stack)).finally(() => summary());
