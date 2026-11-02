@@ -90,6 +90,11 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
   }
   return { where: clauses.join(" AND "), params };
 }
+// ═══ SEC-1 · TWO-FACTOR AND SESSIONS ═══════════════════════════════════════
+// Every route below is the signed-in person's own, except the three marked
+// OWNER, which take an admin and a teammate in the same organisation. Every
+// one is audited by the trail above every router; the verbs are named here.
+const TF = require("../../twoFactor");
 
 // THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
 // owed for a gift that arrived before the product did: an imported file is
@@ -361,7 +366,7 @@ async function pruneCampaignAssets(orgId) {
 }
 // CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
 giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
-return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, birthdayMod, cfEvent, cfShape, driftBadgeField, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, membershipLevelPayload, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, proposalMod, pruneCampaignAssets, sentenceMoney, staffWho };
+return { CF_ENTITIES, DS, GR, LAPSED_MEMBER_SQL, NOT_HISTORY_TYPES, OU, STAGE_WEIGHT, TF, birthdayMod, cfEvent, cfShape, driftBadgeField, eventLevelPayload, figureSources, importHealth, inOrgDays, keepImportedTotals, mailPolicy, markDonorsForGeocoding, membershipLevelPayload, normalizeGiftDate, orgForYears, orgRow, orgStewardStart, orgTakesGifts, portfolioMembership, proposalMod, pruneCampaignAssets, sentenceMoney, staffWho };
 }
 
 module.exports = { mount };
