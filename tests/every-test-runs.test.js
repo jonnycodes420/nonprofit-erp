@@ -58,6 +58,29 @@ ok("every tests/*.test.js is run by the battery or says why not, and every .spec
 const { skipped } = discover();
 console.log(`  · ${listed.length} suites run; skipped: ${skipped.map(s => s.file).join(", ") || "none"}`);
 
+// ── CI-2 · a browser suite walks its own shard's dist ──────────────────────
+// Each shard holding a browser suite has a dist built for its own API, named
+// in STEWARD_DIST and read through tests/lib/dist.js. A suite (or a helper it
+// requires) that joins "client", "dist" itself reads shard 1's build from any
+// other shard and quietly skips its browser leg (five did, in CI-2's first
+// shuffled battery).
+const OWN_DIST = /["']client["']\s*,\s*["']dist["']|["']client\/dist["']/;
+function ownDist(dir) {
+  const out = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!["node_modules", "fixtures", "lib"].includes(e.name)) walk(p); continue; }
+      if (!/\.js$/.test(e.name) || p === __filename) continue;
+      const code = fs.readFileSync(p, "utf8").split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
+      if (OWN_DIST.test(code)) out.push(path.relative(dir, p));
+    }
+  })(dir);
+  return out;
+}
+const own = ownDist(testsDir);
+ok("no suite builds its own client/dist path (tests/lib/dist.js gives this shard's)", own.length === 0, own.join(", "));
+
 // ── CI-2 · the shards ran every suite exactly once ─────────────────────────
 // CI's combine job runs this with SHARD_RESULTS (the folder of every matrix
 // job's shard-<n>.json) and SHARD_COUNT: every suite discovered in this tree
@@ -83,6 +106,9 @@ try {
   fs.unlinkSync(path.join(tmp, "gamma.test.js"));
   fs.writeFileSync(path.join(tmp, "delta.spec.js"), "// a spec\n");
   ok("plant: a .spec.js with no wrapper goes red", problems(tmp, ["alpha", "beta"]).some(p => /delta\.spec\.js/.test(p)));
+  fs.writeFileSync(path.join(tmp, "epsilon.test.js"), 'const DIST = path.join(ROOT, "client", "dist");\n');
+  ok("plant: a suite that joins its own client/dist goes red", ownDist(tmp).includes("epsilon.test.js"));
+  fs.unlinkSync(path.join(tmp, "epsilon.test.js"));
   // CI-2: the shard results. Two shards, alpha in one and beta in the other.
   const shardDir = path.join(tmp, "shards"); fs.mkdirSync(shardDir);
   const put = (n, suites) => fs.writeFileSync(path.join(shardDir, `shard-${n}.json`), JSON.stringify({ shard: n, suites }));
