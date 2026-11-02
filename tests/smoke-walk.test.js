@@ -413,12 +413,14 @@ async function greetingFirst(browser, demoAuth) {
        && h.tabs === 0 && h.pace === 0 && h.thread === 0, h);
     // HOME-5: and nowhere on Home (rail, Ask, the Thread, every tab of the
     // deck) says "behind". The comparison lives on Fundraising and the Board.
-    const seen = async () => page.evaluate(() => { const t = document.body.innerText; const m = /.{0,60}\bbehind\b.{0,60}/i.exec(t); return m ? m[0].replace(/\s+/g, " ") : null; });
+    // every match, not the first: one "behind" must not hide another
+    const seen = async () => page.evaluate(() => [...document.body.innerText.matchAll(/.{0,60}\bbehind\b.{0,60}/gi)].map(m => m[0].replace(/\s+/g, " ")));
     const behindAt = [];
-    const b0 = await seen(); if (b0) behindAt.push(b0);
+    const note = list => { for (const b of list) if (!behindAt.includes(b)) behindAt.push(b); };
+    note(await seen());
     for (const tab of await page.$$('[data-testid^="moves-tab-"]')) {
       await tab.click().catch(() => {}); await page.waitForTimeout(300);
-      const b = await seen(); if (b && !behindAt.includes(b)) behindAt.push(b);
+      note(await seen());
     }
     ok(`§home-5 Home ${what} at ${vp.width}: the word "behind" appears nowhere on the page, on any tab of the deck`, behindAt.length === 0, behindAt);
     if (what === "mid-setup") ok(`§home-4 mid-setup at ${vp.width} (one step done): still the full setup card above Your moves`, h.first === 1 && h.railSetup === 0, h);
