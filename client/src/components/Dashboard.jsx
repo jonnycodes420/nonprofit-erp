@@ -23,7 +23,7 @@ import { MailboxBanner } from "./MailboxBanner";   // PERF-2: not the inbox pane
 import { displayDateShort } from "../../../shared/displayDate";
 import { CallsToMake } from "./CallsToMake";
 import * as FL from "./home/HomeFirstLook";   // SCREENS-1: Home's first look
-import { useHomeLater } from "./home/useHomeLater";   // SCREENS-1: the rest, after the first paint
+import * as HL from "./home/HomeLater";   // SCREENS-1: the rest of Home, imported with it
 import { PORTFOLIO_BREAKDOWNS, todayCivil, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
@@ -32,7 +32,6 @@ import { countLabel, plural } from "../../../shared/countWords";
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
-  const HL=useHomeLater();   // SCREENS-1: null until the later half has loaded
   // SCALE-2: Home's first reads in one request. Asked during the first
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
@@ -218,7 +217,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [homeFold,setHomeFold]=useState(()=>{try{return JSON.parse(localStorage.getItem("steward_home_fold")||"{}")||{};}catch{return {};}});
   const toggleFold=k=>setHomeFold(f=>{const n={...f,[k]:!f[k]};try{localStorage.setItem("steward_home_fold",JSON.stringify(n));}catch{/* kept for this visit only */}return n;});
   // HOME-TIDY 2: where the header goes depends on the width (one copy only).
-  const foldBtn=(HL?HL.foldBtn({ homeFold, toggleFold }):null);
+  const foldBtn=HL.foldBtn({ homeFold, toggleFold });
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
@@ -711,9 +710,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const rowPad=onPanel?"9px 0":"9px 24px";
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
-  const MiniEmpty=(HL?HL.MiniEmpty({ cPad, sLink }):null);
+  const MiniEmpty=HL.MiniEmpty({ cPad, sLink });
 
-  const Sparkline=(HL?HL.Sparkline():null);
+  const Sparkline=HL.Sparkline();
 
   // The "who" behind a hero number — a clickable name+detail pill that goes
   // straight to that donor's profile, so a metric never requires a click
@@ -723,8 +722,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // optional so a caller with only a name still renders (initials), rather
   // than the chip disappearing because a payload forgot to include an id.
   // FIX-13 Part 6 — with an id the chip is a real link to the donor.
-  const DonorChip=(HL?HL.DonorChip():null);
-  const MoreChip=(HL?HL.MoreChip():null);
+  const DonorChip=HL.DonorChip();
+  const MoreChip=HL.MoreChip();
   // Goal banner's right-hand column — real supporting stats (pace, days
   // left, recent activity) genuinely filling that width, not decoration.
   // Hero chips are drillable (attribution FIX, per the standing rule: every
@@ -732,7 +731,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // number the chip claimed). onClick routes through the ONE shared
   // interactive() treatment (dark variant — hover/cursor/focus ring/keyboard);
   // a chip with no destination (e.g. Time Left) stays visibly static.
-  const GoalStat=(HL?HL.GoalStat():null);
+  const GoalStat=HL.GoalStat();
 
   // My Portfolio tile icons — a real path per stat (not a generic dot) so the
   // row reads as a designed panel rather than six plain numbers in a line.
@@ -747,7 +746,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     pipeline:<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
     lapsed:<><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L14.71 3.86a2 2 0 0 0-3.42 0Z"/></>,
   };
-  const StatIcon=(HL?HL.StatIcon({ STAT_PATHS }):null);
+  const StatIcon=HL.StatIcon({ STAT_PATHS });
 
   // BUILD-83 Part 3.5 — the funnel shows PLACED donors; with nobody placed it
   // shows the suggestion and says so.
@@ -853,7 +852,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line
   // names the overage. The thermometer bar still uses the capped percent (a bar
   // can't be more than full). Only strictly-over goals get the "over" treatment.
-  const goalHeadSub=(HL?HL.goalHeadSub():null);
+  const goalHeadSub=HL.goalHeadSub();
 
   // BUILD-32 Part 3 — two LIVE figures for the hero's right-hand stack, added as
   // information (not decoration): this week's giving (a true Monday-based week
@@ -879,7 +878,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-76 follow-up: never an em dash. "AT RISK —" is the worst possible
   // answer to the product's headline capability — a healthy file and a
   // broken import read identically. Words, always.
-  const reengStat=(HL?HL.reengStat({ atRiskAmt, driftData, impact, openEarlySigns, quietCount, setReengBreakdownOpen }):null);
+  const reengStat=HL.reengStat({ atRiskAmt, driftData, impact, openEarlySigns, quietCount, setReengBreakdownOpen });
 
       /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
@@ -916,13 +915,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   })():null;
   const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};
 
-  const heroSection=(HL?HL.heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fundOverview, g0, goal, goalAmt, goalHeadSub, heroCtx, heroPace, heroPaceCol, isAdmin, isReadOnly, many, onNavigate, openEditGoal, openSetGoal, overAmt, paceLabel, paceSub, pct, period, raised, rawPct, reengStat, twStat }):null);
+  const heroSection=HL.heroSection({ GoalStat, daysLeftInPeriod, deltaTxt, fgRollup, fundOverview, g0, goal, goalAmt, goalHeadSub, heroCtx, heroPace, heroPaceCol, isAdmin, isReadOnly, many, onNavigate, openEditGoal, openSetGoal, overAmt, paceLabel, paceSub, pct, period, raised, rawPct, reengStat, twStat });
 
   /* Top-level goal breakdown — umbrella (children nested) + standalone.
      Card count matches the header's top-level count; children live inside
      their umbrella, not as flat peers (display-consistency FIX). BUILD-34:
      its own orderable/hideable section, split from the hero banner. */
-  const goalCardsSection=(HL?HL.goalCardsSection({ activeTop, catMeta, catPaceColor, fgGoals, heroCtx, onNavigate, paceText }):null);
+  const goalCardsSection=HL.goalCardsSection({ activeTop, catMeta, catPaceColor, fgGoals, heroCtx, onNavigate, paceText });
 
       /* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card
@@ -930,7 +929,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           initial default, so it never flashes the wrong state. BUILD-32 Part 4:
           also hidden unless 2+ officers have assigned donors — otherwise "My
           donors" and "Whole org" are the same list (a single-value picker). */
-  const scopeToggle=(HL?HL.scopeToggle({ homeData, scope, setScope }):null);
+  const scopeToggle=HL.scopeToggle({ homeData, scope, setScope });
 
       /* ── Command center (BUILD-16 Part 1) ──────────────────────────────
           The four headers a fundraiser opens the app to see: Portfolio [Team],
@@ -949,7 +948,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-83 Part 3.4 — an unassigned org reads "no one assigned to you yet",
   // never "0 donors · $0 lifetime giving" the screen after importing 25,034.
   const portfolioEmpty=!!myStats&&!(myStats.portfolioCount>0);
-  const myPortfolioSection=(HL?HL.myPortfolioSection({ StatIcon, hoveredStat, myStats, onNavigate, openPortfolioBreakdown, portfolioOpen, setHoveredStat, setPortfolioOpen }):null);
+  const myPortfolioSection=HL.myPortfolioSection({ StatIcon, hoveredStat, myStats, onNavigate, openPortfolioBreakdown, portfolioOpen, setHoveredStat, setPortfolioOpen });
 
       /* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
@@ -962,7 +961,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // stay demoted further as chips. At $0 drift the card keeps Retention as
   // hero — an honest zero is not a headline.
   const heroIsDrift=!!(driftData&&driftData.atRiskAmount>0&&driftData.counts.driftingHigh>0);
-  const retentionSection=(HL?HL.retentionSection({ DonorChip, MoreChip, Sparkline, driftData, firstTouchOpen, heroIsDrift, myStats, onNavigate, openDebtBreakdown, openRetentionBreakdown, retentionBreakdown, retentionBreakdownLoading, retentionColor, retentionCurrent, retentionThin, retentionTooEarly, setFirstTouchOpen, stewardMetrics }):null);
+  const retentionSection=HL.retentionSection({ DonorChip, MoreChip, Sparkline, driftData, firstTouchOpen, heroIsDrift, myStats, onNavigate, openDebtBreakdown, openRetentionBreakdown, retentionBreakdown, retentionBreakdownLoading, retentionColor, retentionCurrent, retentionThin, retentionTooEarly, setFirstTouchOpen, stewardMetrics });
 
   // ── BUILD-76 Part 2 — the Drifting section, first in the work column ──────
   // The one thing the product is named for, above Needs Your Attention (not
@@ -992,14 +991,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const s=nextStepSuggestion("call_reached",todayCivil(),line);
     setDriftStep(s?{label:s.label,due:s.due,source:s.source}:null);
   };
-  const submitDriftDone=(HL?HL.submitDriftDone({ driftBusy, driftStep, loadDrift, setDriftBusy, setDriftLine, setDriftLineFor, setDriftStep, setDriftStepDirty }):null);
+  const submitDriftDone=HL.submitDriftDone({ driftBusy, driftStep, loadDrift, setDriftBusy, setDriftLine, setDriftLineFor, setDriftStep, setDriftStepDirty });
   // BUILD-76 follow-up: the section RENDERS EVEN AT ZERO, with an empty
   // state that shows its work — how many patterns were checked and who was
   // excluded and why. An absent section reads as a broken feature; a bare
   // zero is indistinguishable from a silently failed import. Both defects,
   // regardless of the data.
-  const driftEmptyState=(HL?HL.driftEmptyState({ driftData, driftHighRows, driftRows }):null);
-  const driftSection=(HL?HL.driftSection({ cPad, cardWrap, driftAllData, driftBusy, driftData, driftEarlyStart, driftEmptyState, driftExpanded, driftHighRows, driftLine, driftLineFor, driftQs, driftRows, driftRowsAll, driftSort, driftStep, driftStepDirty, foldBtn, homeFold, isReadOnly, loadDrift, onNavigate, onPanel, openDriftLine, openEarlySigns, proposeDriftStep, sHdr, sHdrPad, sLink, sSerif, setDriftAllData, setDriftExpanded, setDriftLine, setDriftLineFor, setDriftSort, setDriftStep, setDriftStepDirty, submitDriftDone, surface }):null);
+  const driftEmptyState=HL.driftEmptyState({ driftData, driftHighRows, driftRows });
+  const driftSection=HL.driftSection({ cPad, cardWrap, driftAllData, driftBusy, driftData, driftEarlyStart, driftEmptyState, driftExpanded, driftHighRows, driftLine, driftLineFor, driftQs, driftRows, driftRowsAll, driftSort, driftStep, driftStepDirty, foldBtn, homeFold, isReadOnly, loadDrift, onNavigate, onPanel, openDriftLine, openEarlySigns, proposeDriftStep, sHdr, sHdrPad, sLink, sSerif, setDriftAllData, setDriftExpanded, setDriftLine, setDriftLineFor, setDriftSort, setDriftStep, setDriftStepDirty, submitDriftDone, surface });
 
   // The two-column queue/briefing + funnel/grant/recurring grid — one section.
   // ── BUILD-81 — THE THREAD, first. A thread is a donor plus an open next
@@ -1017,7 +1016,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // report a week ago." now, and the touch type, the exact date and the person
   // move to hover — they are the answer to a question she has not asked yet.
   // Presentation only: every value here is already on the row.
-  const threadClause=(HL?HL.threadClause({ TOUCH_WORD }):null);
+  const threadClause=HL.threadClause({ TOUCH_WORD });
   // BUILD-85 — a row now carries its REASON. shared/threadRank.js decided the
   // order; this prints the sentence that order was built from, so the queue can
   // always answer "why this one first?" without the reader guessing. The score
@@ -1041,7 +1040,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // FIX-34 — Done on a TASK row (a meeting's prep, "How did it go?") finishes
   // that task only, with Undo, and the row moves to the donor's next step. A
   // thread row, or a task that needs an outcome (422), logs the conversation.
-  const finishRow=(HL?HL.finishRow({ loadThreads, setConvoFor }):null);
+  const finishRow=HL.finishRow({ loadThreads, setConvoFor });
 
   // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
   // First thing takes threadList[0] and says it properly, so the rest of the
@@ -1109,7 +1108,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // BUILD-86 C.2 — the `attn-*` hooks stay. BUILD-45 D-1 proved a row's left
     // region must be a real <a href="/donors/:id"> with the action button as a
     // SIBLING, never nested (keyboard and new-tab both break otherwise).
-    (HL?HL.threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, moreOpen, onNavigate, openRailDonor, railView, rowSource, setMoreOpen, surface, t, threadClause }):null));
+    HL.threadRow({ TOUCH_WORD, finishRow, i, isReadOnly, loadThreads, moreOpen, onNavigate, openRailDonor, railView, rowSource, setMoreOpen, surface, t, threadClause }));
   });
 
   // ── HOME-CALM · THE STOPPED CARD IS A ROW ─────────────────────────────
@@ -1133,7 +1132,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const failedOn=f.lastFailedAt||f.firstFailedAt||null;
       const age=failedOn?daysDiff(failedOn):-1;
       const el=(
-        (HL?HL.threadStoppedRow({ age, f, failedOn, onNavigate, openRailDonor }):null));
+        HL.threadStoppedRow({ age, f, failedOn, onNavigate, openRailDonor }));
       // By age, among the rows that have one. A card stopped nine days ago
       // sits between the twelve-day row and the eight-day row, which is the
       // only ordering that lets one list be read straight down.
@@ -1150,7 +1149,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   if(homeCalm&&latestReadout){
     const ro=latestReadout;
     homeRows.unshift({age:-1,el:(
-      (HL?HL.threadReadoutRow({ ro }):null))});
+      HL.threadReadoutRow({ ro }))});
   }
 
   // The thank queue items fold into the thread rows themselves once a gift
@@ -1175,17 +1174,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // HOME-CALM — the crossover's Home rendering, defined once here and placed
   // at the foot of the panel. Silent when there is nothing to say.
-  const homeCrossoverCard = (HL?HL.homeCrossoverCard({ crossover, onNavigate, surface }):null);
+  const homeCrossoverCard = HL.homeCrossoverCard({ crossover, onNavigate, surface });
 
   const threadSection=(
-      (HL?HL.threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gsNotice, homeCalm, homeData, homeFold, homeRows, isReadOnly, jsNotice, loadThreads, moveLine, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, sampleStatus, setDhNotice, setGsNotice, setPlanFor, setThreadAllOpen, setThreadExpanded, setThreadScope, surface, threadAllOpen, threadExpanded, threadList, threadRows, threadScope, threadStat, threadsData }):null)
+      HL.threadSection({ cPad, cardWrap, crossover, dhNotice, foldBtn, gsNotice, homeCalm, homeData, homeFold, homeRows, isReadOnly, jsNotice, loadThreads, moveLine, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, sampleStatus, setDhNotice, setGsNotice, setPlanFor, setThreadAllOpen, setThreadExpanded, setThreadScope, surface, threadAllOpen, threadExpanded, threadList, threadRows, threadScope, threadStat, threadsData })
   );
 
   // ── BUILD-83 Part 5.3 — YOUR MONTHLY DONORS, between the Thread and Drift.
   // The closer from the Sept-6 positioning, and it was not on Home at all: the
   // org's own file says how many monthly donors it has and how many stopped,
   // and that is a fact Stripe never needed to confirm.
-  const monthlySection=(HL?HL.monthlySection({ cPad, cardWrap, onNavigate, recurringHealth, sHdr, sHdrPad, sLink, sSerif, t }):null);
+  const monthlySection=HL.monthlySection({ cPad, cardWrap, onNavigate, recurringHealth, sHdr, sHdrPad, sLink, sSerif, t });
 
   // ── BUILD-88b B.3 — THE THANK-YOU QUEUE ──────────────────────────────────
   // "Six thank-yous ready." Steward wrote them; she sends them. Three actions
@@ -1201,7 +1200,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // only when it has something in it, so a single row has nothing under it.
   const TY_WORDS=["no","one","two","three","four","five","six","seven","eight","nine"];
   const tyFooter=!!thankYous&&(thankYous.drafts.length>6||thankYous.allOpened||!!tyErr);
-  const thankYouSection=(HL?HL.thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, setTyOpen, setTyShowAll, thankYous, tyAct, tyCopied, tyCopy, tyErr, tyFooter, tyMarkAll, tyOpen, tyOpenDraft, tyShowAll }):null);
+  const thankYouSection=HL.thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, setTyOpen, setTyShowAll, thankYous, tyAct, tyCopied, tyCopy, tyErr, tyFooter, tyMarkAll, tyOpen, tyOpenDraft, tyShowAll });
 
   // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
   const driftHomeSection=driftSection;
@@ -1220,10 +1219,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const agentWaiting=(agentDaily&&agentDaily.waiting)||0;
   const agentEmpty=!agentText.trim();
   const agentSection=(
-    (HL?HL.agentSection({ agentAsk, agentDaily, agentEmpty, agentText, cardWrap, sLink, setAgentText }):null)
+    HL.agentSection({ agentAsk, agentDaily, agentEmpty, agentText, cardWrap, sLink, setAgentText })
   );
 
-  const sequencesSection=(HL?HL.sequencesSection({ cPad, cardWrap, onNavigate, sHdr, sHdrPad, sLink, sTitle, seqLines }):null);
+  const sequencesSection=HL.sequencesSection({ cPad, cardWrap, onNavigate, sHdr, sHdrPad, sLink, sTitle, seqLines });
 
   // BUILD-83 Part 3.1/3.4 — retention and the pipeline funnel, ONE demoted card
   // at the bottom of Home. The funnel labels itself a SUGGESTION until a human
@@ -1233,10 +1232,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // only one of the Thread card's three numbers she cannot act on before her
   // first coffee. That makes it board-shaped. Home keeps the two counts that
   // LABEL the named rows beneath them; this one goes where numbers go.
-  const threadHealthLine=(HL?HL.threadHealthLine({ cPad, cardWrap, sHdr, sHdrPad, sTitle, threadHealth }):null);
+  const threadHealthLine=HL.threadHealthLine({ cPad, cardWrap, sHdr, sHdrPad, sTitle, threadHealth });
 
   const retentionPipelineSection=(
-      (HL?HL.retentionPipelineSection({ cPad, cardWrap, countsByStage, driftData, nextGrant, onNavigate, recurringHealth, retentionSection, sHdr, sHdrPad, sLink, sTitle }):null)
+      HL.retentionPipelineSection({ cPad, cardWrap, countsByStage, driftData, nextGrant, onNavigate, recurringHealth, retentionSection, sHdr, sHdrPad, sLink, sTitle })
   );
 
       /* Honest impact line (FIX) — quiet ROI stat, attributable amounts only.
@@ -1293,8 +1292,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     }
     return out.sort((x,y)=>x.at-y.at||String(x.name).localeCompare(String(y.name)));
   },[birthdayPeople]);
-  const railRow=(HL?HL.railRow():null);
-  const railBack=(HL?HL.railBack({ setRailView }):null);
+  const railRow=HL.railRow();
+  const railBack=HL.railBack({ setRailView });
   // HOME-4 — the rail's reads (the calls, the goal, To confirm, the email
   // line) and the ones Home already makes for it (follow-ups, tasks due, cards
   // failed, setup). The rail draws once all of them have settled. Each Today
@@ -1331,7 +1330,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const L=railListFor(railView.key);
       return (
         <div>
-          {HL&&HL.railListView({ L, railBack, railRow, sSerif })}
+          {HL.railListView({ L, railBack, railRow, sSerif })}
         </div>
       );
     }
@@ -1344,7 +1343,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // "Lifetime giving $0" — found by looking at it, not by a test.
       const lifetime=d?(parseFloat(d.total)||0):null;
       return (
-        (HL?HL.railDonorView({ d, isReadOnly, lifetime, name, onNavigate, railBack, railView, setConvoFor, th }):null)
+        HL.railDonorView({ d, isReadOnly, lifetime, name, onNavigate, railBack, railView, setConvoFor, th })
       );
     }
     // HOME-4 — THE RAIL, CALM. Setup (mid-way), Today as one card with no
@@ -1394,7 +1393,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // from a Thread row, so the two stay side by side); every section after the
   // Thread runs the full width of the panel below it. The board is not split.
   // Computed here, above the return, so both halves can be placed in the shell.
-  const sectionStack=(HL?HL.sectionStack({ agentSection, cPad, cardWrap, dragSectionId, editMode, heroSection, impactSection, isAdmin, layout, layoutLiveMsg, monthlySection, moveSection, moveSectionToTop, myPortfolioSection, onNavigate, onSectionDragEnd, onSectionDragOver, onSectionDragStart, onSectionDrop, recurringHealth, retentionPipelineSection, sHdr, sHdrPad, sLink, sTitle, saveEdit, scopeToggle, sequencesSection, setSectionVisible, setSetupCardState, setupCelebrate, setupStatus, surface, t, thankYouSection, threadHealthLine, threadSection }):null);
+  const sectionStack=HL.sectionStack({ agentSection, cPad, cardWrap, dragSectionId, editMode, heroSection, impactSection, isAdmin, layout, layoutLiveMsg, monthlySection, moveSection, moveSectionToTop, myPortfolioSection, onNavigate, onSectionDragEnd, onSectionDragOver, onSectionDragStart, onSectionDrop, recurringHealth, retentionPipelineSection, sHdr, sHdrPad, sLink, sTitle, saveEdit, scopeToggle, sequencesSection, setSectionVisible, setSetupCardState, setupCelebrate, setupStatus, surface, t, thankYouSection, threadHealthLine, threadSection });
 
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
@@ -1458,10 +1457,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           nobody. It is a Thread row now — it names her, it says what to do,
           and it takes its place in the list by age like every other row. The
           Dashboard keeps the line, because the board is reading totals. */}
-      {HL&&HL.boardRecurringLine({ onNavigate, recurringAttention, recurringFailed, surface })}
+      {HL.boardRecurringLine({ onNavigate, recurringAttention, recurringFailed, surface })}
 
       {(()=>{
-      const cardsBlock=(HL?HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal }):null);
+      const cardsBlock=HL.cardsBlock({ goal, goalForm, goalModalMode, inp, layoutError, recurringHealth, saveGoal, savingGoal, sectionStack, setGoalForm, setShowSetGoal, showSetGoal });
       // BUILD-89 — the shell owns the two columns now (see ONE PANEL above),
       // so the stack renders straight into it.
       return cardsBlock;
@@ -1471,11 +1470,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
-      {HL&&HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
+      {HL.homeLower({ editMode, homeCrossoverCard, sectionStack, setWordsDone, setWordsOpen, surface, wordsOffer })}
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 
-      {HL&&HL.homeOverlays({ closePortfolioBreakdown, convoFor, data, debtBreakdown, debtBreakdownLoading, debtBreakdownOpen, goToDonorFromBreakdown, goToDonorFromPortfolio, impact, loadDrift, loadThreads, onNavigate, planFor, portfolioBreakdown, reengBreakdownOpen, retentionBreakdown, retentionBreakdownLoading, retentionBreakdownOpen, setConvoFor, setData, setDebtBreakdownOpen, setPlanFor, setReengBreakdownOpen, setRetentionBreakdownOpen, setWordsDone, setWordsOpen, wordsOpen })}
+      {HL.homeOverlays({ closePortfolioBreakdown, convoFor, data, debtBreakdown, debtBreakdownLoading, debtBreakdownOpen, goToDonorFromBreakdown, goToDonorFromPortfolio, impact, loadDrift, loadThreads, onNavigate, planFor, portfolioBreakdown, reengBreakdownOpen, retentionBreakdown, retentionBreakdownLoading, retentionBreakdownOpen, setConvoFor, setData, setDebtBreakdownOpen, setPlanFor, setReengBreakdownOpen, setRetentionBreakdownOpen, setWordsDone, setWordsOpen, wordsOpen })}
     </div>
   );
 }

@@ -5,7 +5,7 @@
 //
 // A Settings card or an import step is a component, mounted with its props.
 // A part of Home is a render function Dashboard calls with what it reads
-// (home/useHomeLater.js); `ctx` builds that argument: the names a case gives,
+// (home/HomeLater.js); `ctx` builds that argument: the names a case gives,
 // a no-op for every setter and handler, an empty style for every style.
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -65,7 +65,6 @@ import * as sectionStack from "../../client/src/components/home/sectionStack.jsx
 import * as threadRows from "../../client/src/components/home/threadRows.jsx";
 import * as threadSection from "../../client/src/components/home/threadSection.jsx";
 import * as HomeLater from "../../client/src/components/home/HomeLater.js";
-import * as useHomeLater from "../../client/src/components/home/useHomeLater.js";
 
 const noop = () => {};
 // What Dashboard hands a part of Home: the names given, then a no-op for every
@@ -137,7 +136,6 @@ export const CASES = [
   ["home/sectionStack", () => { const s = sectionStack.sectionStack(ctx({ ...wrap, layout: [{ id: "thread", visible: true }], editMode: false, threadSection: <div>The thread</div>, t: x => x })); return <div>{s && s.top}{s && s.lower}</div>; }, /The thread/],
   ["home/homeLower", () => homeLower.homeLower(ctx({ surface: "home", editMode: false, wordsOffer: true, sectionStack: null, homeCrossoverCard: null })), /What do you call them/],
   ["home/HomeLater", () => <div>{["threadSection", "driftSection", "sectionStack", "homeOverlays", "cardsBlock"].filter(k => typeof HomeLater[k] === "function").join(" ")}</div>, /threadSection driftSection sectionStack homeOverlays cardsBlock/],
-  ["home/useHomeLater", () => <div>{typeof useHomeLater.useHomeLater} {typeof useHomeLater.loadHomeLater}</div>, /function function/],
 ];
 
 class Boundary extends React.Component {

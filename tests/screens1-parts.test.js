@@ -1,7 +1,7 @@
 // screens1-parts — SCREENS-1. EVERY PART OF THE SPLIT SCREENS MOUNTS.
 //
 // SCREENS-1 moved Settings' cards into components/settings/, the import
-// wizard's steps into components/import/ and Home's later half into
+// wizard's steps into components/import/ and Home's parts into
 // components/home/, verbatim. Each part gets one small render here: mounted
 // with fake data in a real browser, it draws its main text and no error. The
 // cases are tests/lib/screens1Parts.jsx, bundled with the client's own esbuild
