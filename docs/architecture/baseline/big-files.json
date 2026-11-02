@@ -3,12 +3,9 @@
   "what": "files over 1500 lines (a listed file may grow by at most 50)",
   "counts": {
     "client/src/components/Communications.jsx": 2438,
-    "client/src/components/Dashboard.jsx": 3384,
-    "client/src/components/DonorImport.jsx": 4559,
     "client/src/components/Events.jsx": 1999,
     "client/src/components/Finance.jsx": 2012,
     "client/src/components/Fundraising.jsx": 1550,
-    "client/src/components/Settings.jsx": 4583,
     "client/src/components/shared.jsx": 1913,
     "client/src/components/VolunteersHub.jsx": 1507,
     "client/src/pages/AdminDashboard.jsx": 2007,

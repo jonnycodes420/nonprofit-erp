@@ -187,7 +187,7 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
   const { stepInSentence } = await import("../shared/stepCase.js");
   ok("§11 Meridian Foundation keeps its capital", stepInSentence("Meridian Foundation grant report", ["Meridian Foundation"]) === "Meridian Foundation grant report");
   ok("§11 a step still reads mid-sentence", stepInSentence("Send the proposal", ["Ana Ruiz"]) === "send the proposal");
-  ok("§11 Home uses it", fs.readFileSync(path.join(ROOT, "client/src/components/Dashboard.jsx"), "utf8").includes("stepInSentence(t.nextStep.label"));
+  ok("§11 Home uses it", require("../scripts/lib/readSource").readSource("client/src/components/Dashboard.jsx").includes("stepInSentence(t.nextStep.label"));
 
   // §14 FIX-58 — an org with no payments connected has no public form that can
   // take a gift: the org-wide form is "not open yet" like its giving pages, a

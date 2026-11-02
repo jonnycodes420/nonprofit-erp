@@ -523,7 +523,8 @@ async function main() {
 
   // §9 every import door opens the one reader, so the contacts file gives the
   // same preview (§5) from each: no screen renders the old mapper any more
-  const src = f => fs.readFileSync(path.join(__dirname, "..", "client", "src", f), "utf8");
+  // SCREENS-1: Settings and Home are read with their parts folders
+  const src = f => /^components\/(Settings|Dashboard)\.jsx$/.test(f) ? require("../scripts/lib/readSource").readSource("client/src/" + f) : fs.readFileSync(path.join(__dirname, "..", "client", "src", f), "utf8");
   const doors = ["components/Donors.jsx", "components/Settings.jsx", "pages/WelcomePage.jsx", "components/Dashboard.jsx", "App.jsx"];
   const oldDoors = doors.filter(f => /<(DonorImport|GiftHistoryImport|WorkbookImport)\b/.test(src(f)));
   ok("§9 no import door renders the old mapper (DonorImport, GiftHistoryImport, WorkbookImport)", oldDoors.length === 0, oldDoors);
