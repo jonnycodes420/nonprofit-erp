@@ -37,6 +37,22 @@ const PROFILE_PARTS = (() => {
   const dir = path.join(ROOT, "client", "src", "components", "profile");
   try { return fs.readdirSync(dir).filter(f => /\.jsx?$/.test(f)).sort().map(f => "client/src/components/profile/" + f); } catch { return []; }
 })();
+// SPLIT-1: routes/crm.js's statements now live in server/<domain>/ modules,
+// each one marked "SPLIT-1: moved VERBATIM" in its header. They are pieces of
+// server.js the same way routes/crm.js was, found by that marker.
+const SPLIT1_PARTS = (() => {
+  const out = [];
+  const walk = d => {
+    let es; try { es = fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }); } catch { return; }
+    for (const e of es.sort((a, b) => a.name.localeCompare(b.name))) {
+      const rel = d + "/" + e.name;
+      if (e.isDirectory()) walk(rel);
+      else if (e.name.endsWith(".js") && /^\/\/ SPLIT-1: moved VERBATIM/m.test(fs.readFileSync(path.join(ROOT, rel), "utf8").slice(0, 2000))) out.push(rel);
+    }
+  };
+  walk("server");
+  return out;
+})();
 // Where each split file's pieces live now. Each split commit adds its files.
 const FILES = {
   // FIX-9 — `routes/volunteerScheduling.js` and `routes/supporter.js` were
@@ -49,7 +65,7 @@ const FILES = {
   // MEMBERS-2's supporter surface, were outside the security battery while
   // reading as covered. Found when FIX-9 added three group routes and §1
   // passed without probing them.
-  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js"],
+  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js", ...SPLIT1_PARTS],
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
   "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
     "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", ...PROFILE_PARTS, "client/src/components/DonorDirectory.jsx"],
@@ -158,8 +174,22 @@ function modulePieces(rel, src) {
     const e = s.type === "ExpressionStatement" ? s.expression : s.type === "VariableDeclaration" && s.kind === "let" && s.declarations.length === 1 ? { type: "Decl", d: s.declarations[0] } : null;
     if (e && e.type === "AssignmentExpression" && e.left.name === "app" && e.right.type === "MemberExpression" && e.right.object.name === "routers") return false;
     if (e && e.type === "Decl" && e.d.id.name === "app" && e.d.init && e.d.init.type === "MemberExpression" && e.d.init.object.name === "routers") return false;
+    // SPLIT-1: a helper module hands its names back with `return { a, b };`
+    if (s.type === "ReturnStatement" && i === stmts.length - 1 && s.argument && s.argument.type === "ObjectExpression"
+      && s.argument.properties.every(p => p.shorthand)) return false;
     return true;
-  }).map(c => ({ ...c, text: c.text.replace(/\b(import|require)\((\s*)(["'`])\.\.\//g, "$1($2$3./") }));
+  }).map(c => ({ ...c, text: c.text.replace(/\b(import|require)\((\s*)(["'`])(\.\.?\/[^"'`]*)/g, (m, kw, sp, q, spec) => kw + "(" + sp + q + fromRoutes(rel, spec)) }))
+    .map(c => ({ ...c, text: c.text.replace(/\b(import|require)\((\s*)(["'`])\.\.\//g, "$1($2$3./") }));
+}
+
+// SPLIT-1: a module below server/ reads a relative path from its own folder;
+// read it back as it was written in routes/, where it was moved from.
+function fromRoutes(rel, spec) {
+  const dir = path.posix.dirname(rel);
+  if (dir === "routes") return spec;
+  let r = path.posix.relative("routes", path.posix.normalize(path.posix.join(dir, spec)));
+  if (!r.startsWith(".")) r = "./" + r;
+  return r;
 }
 
 // A client file → its statements; the split's own lines dropped.
@@ -178,6 +208,7 @@ function clientPieces(rel, src, isPart) {
 
 function piecesOf(target) {
   const out = [];
+  const crm = [];   // SPLIT-1: routes/crm.js and the modules it was split into
   for (const rel of FILES[target]) {
     const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
     if (target === "server.js") {
@@ -186,20 +217,26 @@ function piecesOf(target) {
         for (const c of tile(src, ast.body, 0)) if (!isServerWiring(c.node)) out.push({ ...c, file: rel });
       } else {
         const p = modulePieces(rel, src);
-        if (p) for (const c of p) out.push({ ...c, file: rel });
+        const group = rel === "routes/crm.js" || SPLIT1_PARTS.includes(rel);
+        if (rel === "routes/crm.js") out.push(crm);   // its place in the list
+        if (p) for (const c of p) (group ? crm : out).push({ ...c, file: rel });
       }
     } else {
       for (const c of clientPieces(rel, src, rel !== target)) out.push({ ...c, file: rel });
     }
   }
-  return out;
+  if (target !== "server.js") return out;
+  // SPLIT-1: the pieces of routes/crm.js, wherever they live now, in the order
+  // crm.js held them (splitOrder.json "routes/crm.js"), read as that one file.
+  const crmOrder = fs.existsSync(ORDER_FILE) ? (JSON.parse(fs.readFileSync(ORDER_FILE, "utf8"))["routes/crm.js"] || null) : null;
+  const seq = crmOrder ? arrange(crmOrder, crm, true) : crm;
+  return out.flatMap(x => x === crm ? seq.map(p => ({ ...p, file: "routes/crm.js" })) : [x]);
 }
 
-function assemble(target) {
-  const order = fs.existsSync(ORDER_FILE) ? (JSON.parse(fs.readFileSync(ORDER_FILE, "utf8"))[target] || null) : null;
-  const pieces = piecesOf(target);
-  const imports = [], rest = pieces;
-  if (!order) return rest.map(p => p.text).join("");
+// Lay `rest` out in `order`: by hash, then by name; a statement with no place
+// goes right after the one above it in its file. With `dropCopies`, a statement
+// that has a place but was already placed (a copy) is dropped.
+function arrange(order, rest, dropCopies) {
   const byHash = new Map(), byKey = new Map();
   rest.forEach((p, i) => {
     p.i = i; p.h = hash(p.text); p.k = keyOf(p.node) || "text:" + hash(p.stmt);
@@ -211,14 +248,23 @@ function assemble(target) {
   for (const e of order) { const p = take(byHash, e.h); placed.push(p || e); }
   for (let j = 0; j < placed.length; j++) if (!placed[j].text) { const p = placed[j].k ? take(byKey, placed[j].k) : null; placed[j] = p; }
   const seq = placed.filter(Boolean);
+  const ordered = dropCopies ? new Set(order.map(e => e.h)) : null;
   // statements with no place in the old order: right after the one above them in their file
   for (const p of rest) {
     if (used.has(p)) continue;
+    if (dropCopies && ordered.has(p.h) && seq.some(x => x.h === p.h)) { used.add(p); continue; }
     const prev = rest.slice(0, p.i).reverse().find(x => x.file === p.file && seq.includes(x));
     seq.splice(prev ? seq.indexOf(prev) + 1 : 0, 0, p);
     used.add(p);
   }
-  return [...imports, ...seq].map(p => p.text).join("");
+  return seq;
+}
+
+function assemble(target) {
+  const order = fs.existsSync(ORDER_FILE) ? (JSON.parse(fs.readFileSync(ORDER_FILE, "utf8"))[target] || null) : null;
+  const pieces = piecesOf(target);
+  if (!order) return pieces.map(p => p.text).join("");
+  return arrange(order, pieces, false).map(p => p.text).join("");
 }
 
 const cache = new Map();
@@ -247,4 +293,9 @@ function splitParts() {
   return new Set(Object.entries(FILES).flatMap(([t, fs_]) => fs_.filter(f => f !== t)));
 }
 
-module.exports = { readSource, FILES, orderOf, splitParts };
+// SPLIT-1: the order of a split module's own pieces (written once, by the split).
+function moduleOrderOf(rel, src) {
+  return modulePieces(rel, src).map(p => ({ h: hash(p.text), k: keyOf(p.node) || "text:" + hash(p.stmt) }));
+}
+
+module.exports = { readSource, FILES, orderOf, moduleOrderOf, splitParts };
