@@ -19,6 +19,8 @@ const {
 // figure leaves here carrying that `source`, and a blank carries the sentence
 // that says what is missing and when it will appear.
 const figureSources = require("../../figureSources");
+// FIX-19: every user id that comes from the request is checked against the org here.
+const OU = require("../../orgUsers");
 // PARITY-1 Part D: Groups (saved lists, static or by rule).
 const GR = require("../../groups");
 
@@ -38,7 +40,7 @@ async function staffWho(req) {
   const [u] = who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, req.user.orgId]) : [];
   return { id: who.id, name: (u && u.name) || who.name };
 }
-return { GR, eventLevelPayload, figureSources, staffWho };
+return { GR, OU, eventLevelPayload, figureSources, staffWho };
 }
 
 module.exports = { mount };

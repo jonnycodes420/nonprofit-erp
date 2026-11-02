@@ -10,8 +10,20 @@
 
 function mount(ctx) {
 const {
-  actor, queryTx, runTx, uuid, withTransaction,
+  actor, query, queryTx, runTx, uuid, withTransaction,
 } = ctx;
+
+// ── FIX-14 Part 2 — EDIT WHAT YOU LOGGED, AND UNDO A DELETE ────────────────
+// Whoever logged an entry may change it, and so may an admin. A conversation
+// is edited through the same fields it was created with; the audit row the
+// middleware writes for this request holds the before and after of every
+// field that moved, so the previous version is never lost.
+async function mayEditLogged(req, row) {
+  if (row && row.created_by && row.created_by === req.user.userId) return true;
+  const [u] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  return !!(u && u.role === "admin");
+}
+const NOT_YOURS = { error: "not_yours", sentence: "Only the person who logged this, or an admin, can change it." };
 
 // Move a row into deleted_records and out of its table, in one transaction.
 // Returns the trash id Undo needs, or null when there was no such row.
@@ -66,7 +78,7 @@ async function trashRow(table, id, req) {
 }
 // FIX-45: a minute on the toast; Recent changes lists the trash row after that.
 const UNDO_SECONDS = 60;
-return { RESTORABLE, UNDO_SECONDS, trashRow };
+return { NOT_YOURS, RESTORABLE, UNDO_SECONDS, mayEditLogged, trashRow };
 }
 
 module.exports = { mount };
