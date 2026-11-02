@@ -241,6 +241,8 @@ const at = iso => new Date(iso);
     a1 && a1.largestCents === 25000 && a1.avgLastThreeCents === 17500 && a1.rising && a1.askCents === 35000, a1);
   const a2 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }], { stepUp: false });
   ok("§13 held at their own level: $250", a2 && a2.askCents === 25000 && a2.held, a2);
+  const a4 = N.ask.askFor([{ date: "2024-10-21", amount: "1800" }, { date: "2024-10-21", amount: "225" }, { date: "2024-10-21", amount: "500" }, { date: "2024-10-21", amount: "192" }]);
+  ok("§13 four gifts on one day are not rising: $1,800 largest, held at $1,750", a4 && !a4.rising && a4.askCents === 175000, a4);
   const a3 = N.ask.askFor([{ date: "2026-01-01", amount: "2442.40" }]);
   ok("§13 one gift of $2,442.40 asks the natural $2,500", a3 && a3.askCents === 250000, a3);
 

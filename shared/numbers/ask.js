@@ -33,7 +33,11 @@ function inputsOf(rows) {
   const gifts = (rows || []).map(r => ({ date: r.date ? String(r.date).slice(0, 10) : "", cents: r.amount_cents != null ? Math.round(Number(r.amount_cents)) : centsOf(r), type: r.type }))
     .filter(g => g.cents > 0 && isMoney({ type: g.type }));
   gifts.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  return { largestCents: gifts.reduce((m, g) => Math.max(m, g.cents), 0), lastThreeCents: gifts.slice(0, 3).map(g => g.cents) };
+  // Gifts on one day are not a trend: the three are the newest, and within a
+  // day they are compared smallest first, so one day never reads as "rising"
+  // (four gifts on 21 Oct, the largest first, stepped an ask up a rung).
+  const three = gifts.slice(0, 3).sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.cents - b.cents);
+  return { largestCents: gifts.reduce((m, g) => Math.max(m, g.cents), 0), lastThreeCents: three.map(g => g.cents) };
 }
 // The ask for those rows: { askCents, sentence, largestCents, avgLastThreeCents, rising, held } or null.
 function askFor(rows, { stepUp = true, holdWords = "" } = {}) {
