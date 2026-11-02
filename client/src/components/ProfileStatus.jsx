@@ -20,13 +20,21 @@ import { countLabel } from "../../../shared/countWords.js";
 
 // FIX-27 Part 5: `stepKey` moves whenever a next step is saved, so the
 // summary's Next line is read again with the rail and The Ask, no reload.
+// JOBS-1: while what follows a change is still running on the queue
+// (`updating`), the summary is read again a moment later, a few times, until
+// it is current.
 export function useDonorStatus(donorId, refreshKey, stepKey) {
   const [status, setStatus] = useState(null);
   useEffect(() => {
-    let live = true;
+    let live = true, timer = null, tries = 0;
     if (!donorId) return undefined;
-    apiFetch(`/donors/${donorId}/status`).then(s => { if (live) setStatus(s || null); }).catch(() => { if (live) setStatus(null); });
-    return () => { live = false; };
+    const read = () => apiFetch(`/donors/${donorId}/status`).then(s => {
+      if (!live) return;
+      setStatus(s || null);
+      if (s && s.updating && tries++ < 15) timer = setTimeout(read, 2000);
+    }).catch(() => { if (live) setStatus(null); });
+    read();
+    return () => { live = false; clearTimeout(timer); };
   }, [donorId, refreshKey, stepKey]);
   return status;
 }
@@ -140,8 +148,10 @@ export function ClosenessLine({ status, onOpenDonor }) {
     : null;
   return (
     <div data-testid="dp-closeness" style={{ fontSize: 12.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
-      <span title={c.sentence} style={{ fontWeight: 700, color: c.key === "cooling" ? T.gold700 : T.ink }}>{c.label}</span>
-      {c.facts.length ? ": " : ""}
+      {status.updating
+        ? <span data-testid="dp-closeness-updating" title="Steward is recomputing this after the latest change." style={{ fontWeight: 700, color: T.ink3 }}>Updating…</span>
+        : <span title={c.sentence} style={{ fontWeight: 700, color: c.key === "cooling" ? T.gold700 : T.ink }}>{c.label}</span>}
+      {c.facts.length ? (status.updating ? " · " : ": ") : ""}
       {c.facts.map((f, i) => (
         <span key={i}>
           {i ? ", " : ""}

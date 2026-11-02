@@ -494,6 +494,12 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               // A donor who designated nothing has designated nothing.
               defaultFund: false,
               actorId: SYS_STRIPE.id, actorName: SYS_STRIPE.name,
+              // BUILD-81 — a live one-time gift opens a thread (next step
+              // "Thank", +2 days), after its journeys have had their turn
+              // (JOBS-1). Recurring charges are excluded: their thank-you path
+              // is transactional and automatic, and a thread per renewal
+              // would be noise, not remembering.
+              thread: recurringSubDbId ? null : SYS_STRIPE,
               ledgerDescription: "Online gift via Stripe", ledgerSource: "online",
               timelineNote: "Online donation via the giving page",
               source: "stripe",
@@ -621,15 +627,8 @@ app.post("/stripe/webhook", (req, res, next) => stripeWebhookRaw(req, res, err =
               entityType: "gift", entityId: giftId,
             }).catch(e => console.error("[workflow] gift_received:", e.message));
 
-            // BUILD-81 — a live one-time gift opens a thread (next step
-            // "Thank", +2 days). Recurring charges are excluded: their
-            // thank-you path is transactional and automatic, and a thread
-            // per renewal would be noise, not remembering.
-            if (!recurringSubDbId) {
-              openGiftThread(orgId, donorId, {
-                giftId, actorId: SYS_STRIPE.id, actorName: SYS_STRIPE.name,
-              }).catch(() => {});
-            }
+            // BUILD-81 — a live one-time gift opens a thread: recordGift's
+            // `thread` above, opened by the gift's journeys handler (JOBS-1).
           }
         }
       }

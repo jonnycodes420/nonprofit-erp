@@ -244,10 +244,13 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const [status, g3, [lifetime, latest], vhRows, meRows, tagRows, meetingMap, canSee] = await Promise.all([
     DS.statusFor(orgId, d.id, { today }), pGlance, pPair, pVh, pMe, pTags, pMeeting, pCanSee]);
   const glance = { lifetime, first: g3.first, latest, largest: g3.largest, average: g3.average };
-  const [hl, close, next] = await Promise.all([
+  const [hl, close, next, updating] = await Promise.all([
     highlights(orgId, d, today, w),
     closeness(orgId, d, today, w),
     nextAction(orgId, d, today, status, latest.value, canSee),
+    // JOBS-1: the closeness word reads the stored scores; while a change of
+    // theirs (or the org's scores) is still being recomputed it says so.
+    require("../server/shared/outbox").pending(orgId, [d.id]).catch(() => false),
   ]);
   // PARITY-3 — one plain line for a volunteer: "44 hours since 2023, last
   // served May 22", opening the shifts it adds up.
@@ -273,7 +276,7 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   // FIX-33 · a booked meeting answers "Cooling" and "Drifting" on the same
   // line, so nobody calls her twice.
   const meetingSet = meetingMap.get(d.id) || null;
-  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals, meetingSet });
+  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals, meetingSet, updating });
 }));
 
 // FIX-33 · the rows behind that line. The importer keeps each refused row

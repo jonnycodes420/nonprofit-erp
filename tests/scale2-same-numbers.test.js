@@ -43,7 +43,7 @@
 
 const stripe = require("stripe")("sk_test_dummy");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, q, closeDb, civilPlusDays, waitFor } = require("./helpers");
+const { BASE, ok, summary, login, q, closeDb, civilPlusDays, waitFor, drainQueue } = require("./helpers");
 const { testNow } = require("./clock");
 
 const ORG = "org_s2same";
@@ -230,6 +230,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
     const st = await act();
     ok(`§3 ${door}: the gift is recorded`, st === 200 || st === 201, st);
     if (runsStep) {
+      await drainQueue();   // JOBS-1: the after-change step is the gift's handler now
       const [row] = await q(`SELECT computed_for, assessment FROM donor_drift WHERE org_id=$1 AND donor_id=$2`, [ORG, `d_s2_${who}`]).catch(() => []);
       const a = row ? JSON.parse(row.assessment) : null;
       ok(`§3 ${door}: the after-change step already recomputed this person's Drift answer for today`,

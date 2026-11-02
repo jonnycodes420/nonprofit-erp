@@ -82,8 +82,8 @@ if (require.main === module) (async () => {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null, guards = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -165,6 +165,12 @@ if (require.main === module) (async () => {
   // never needs a hunt. Reported, not a smoke failure: a guard is a page.
   row("guards", !guards ? `${YELLOW}unverified${RESET}` : guards.ok === true ? `${GREEN}ok${RESET}` : `${RED}FALSE${RESET}`,
       guards && guards.ok !== true ? (Array.isArray(guards.failed) ? `failing: ${guards.failed.join(", ") || "none named"}` : "no guardsFailed on /health (older deploy)") : "");
+  // JOBS-1: what follows a gift or a change (a thank-you draft, a journey, the
+  // after-change step) that stopped after its last try. Reported, never silent;
+  // the Admin console's failed jobs has each one, with its org and its error.
+  const stopped = queue && Array.isArray(queue.stopped) ? queue.stopped : null;
+  row("handlers", !stopped ? `${YELLOW}unverified${RESET}` : stopped.length ? `${RED}${stopped.reduce((a, s) => a + s.n, 0)} STOPPED${RESET}` : `${GREEN}ok${RESET}`,
+      !stopped ? "no queue.stopped on /health (older deploy)" : stopped.length ? `${stopped.map(s => `${s.name} ×${s.n}`).join(", ")} this week · Admin → failed jobs` : `${queue.role || "?"} process answered`);
   row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────

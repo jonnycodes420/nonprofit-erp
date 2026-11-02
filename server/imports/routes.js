@@ -835,8 +835,14 @@ app.get("/imports/:id/progress", requireAuth, wrap(async (req, res) => {
     `SELECT id, headline FROM readouts WHERE org_id=? AND source_kind='import' AND source_id=? AND removed_at IS NULL ORDER BY created_at DESC LIMIT 1`,
     [orgId, req.params.id]) : [];
   const errors = typeof j.errors === "string" ? JSON.parse(j.errors) : (j.errors || []);
+  // JOBS-1: a gift's thank-you draft is its event's handler, written a moment
+  // after the gift, so the count is the drafts that exist for this run's gifts,
+  // read now, not a tally taken as each gift was written.
+  const [ty] = await query(
+    `SELECT COUNT(*)::int AS n FROM thank_you_drafts t JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
+      WHERE t.org_id = ? AND g.import_id = ?`, [orgId, req.params.id]);
   res.json({ status: recentJobStatus(j), total: Number(j.total) || 0, done: Math.min(Number(j.done) || 0, Number(j.total) || 0),
-             thankYouDrafts: Number(j.thank_yous) || 0, errors, sentence: recentProgressSentence(j),
+             thankYouDrafts: ty ? ty.n : 0, errors, sentence: recentProgressSentence(j),
              readout: ro ? { id: ro.id, headline: ro.headline } : null });
 }));
 

@@ -592,7 +592,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
   // LIVE-1 · the one after-change step (it recomputes the totals in one
   // statement; this was a loop of one recompute per person), then the readout.
   const AFTER = require("./afterChange");
-  const ac = await AFTER.afterChange(orgId, [...touched], { door: "qbo_read", history: true, runTag: importId });
+  const ac = await AFTER.afterChangeNow(orgId, [...touched], { door: "qbo_read", history: true, runTag: importId });
   if (newGiftIds.length) {
     await require("./readout").writeReadout(orgId, { sourceKind: "qbo", sourceId: importId, sourceName: "QuickBooks",
       giftIds: newGiftIds, donorIds: [...touched], crossings: ac.crossings, becameLate: ac.becameLate, today })

@@ -26,7 +26,7 @@
 // recordGift (§4). Drop `alreadyThanked` from recordGift and §1 drafts 300.
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor, importAutoSettle } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor, importAutoSettle, drainQueue } = require("./helpers");
 const { testNow } = require("./clock");
 // This suite watches the background work run, so imports here do not wait for it.
 importAutoSettle(false);
@@ -69,10 +69,17 @@ const file = (tag, n, perDonor = 1) => ({
   const plans = async run => Number((await q(
     `SELECT COUNT(*)::int AS n FROM cultivation_plans WHERE org_id=$1 AND started_import_id=$2`, [ORG, run]))[0].n);
   const giftsOf = async run => Number((await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, run]))[0].n);
-  const settled = async (run, timeout = 60000) => (await waitFor(async () => {
-    const r = await api("GET", `/imports/${run}/progress`, tok);
-    return r.body?.status === "done" ? r : null;
-  }, { timeout, interval: 250 }).catch(() => null)) || { body: null };
+  // JOBS-1: a gift's thank-you draft is its event's handler; done means its
+  // handlers have run too, so the count is read again after the queue drains.
+  const settled = async (run, timeout = 60000) => {
+    const r = await waitFor(async () => {
+      const p = await api("GET", `/imports/${run}/progress`, tok);
+      return p.body?.status === "done" ? p : null;
+    }, { timeout, interval: 250 }).catch(() => null);
+    if (!r) return { body: null };
+    await drainQueue({ timeout });
+    return api("GET", `/imports/${run}/progress`, tok);
+  };
   // One import, the way the screen does it: the rows, then the run recorded.
   const importFile = async (run, f, extra = {}) => {
     const t0 = testNow();

@@ -117,10 +117,7 @@ async function runRecentWork(orgId, runId, job) {
           ...recentGiftHints(gctx, g.donorId),
         });
         if (!w.duplicate) {
-          if (isNew) {
-            const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
-            if (ty) thankYous++;
-          }
+          // JOBS-1: the draft is the gift's event's handler; GET /imports/:id/progress counts the drafts that exist.
           if (g.customFields && Object.keys(g.customFields).length)
             await run("UPDATE gifts SET custom_fields=? WHERE id=? AND org_id=?", [JSON.stringify(g.customFields), w.gift.id, orgId]);
           if (g.credit) credits.push({ giftId: w.gift.id, g });
@@ -147,7 +144,7 @@ async function runRecentWork(orgId, runId, job) {
   const fromGifts = (await query(`SELECT DISTINCT donor_id AS id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, runId])).map(r => r.id);
   const touched = [...new Set([...(touchedRaw || []), ...fromGifts])];
   await importsIdle(orgId);
-  await withAdvisoryLock(`import:${orgId}`, () => require("../../afterChange").afterChange(orgId, touched, { door: "csv_import", history: true, runTag: runId }))
+  await withAdvisoryLock(`import:${orgId}`, () => require("../../afterChange").afterChangeNow(orgId, touched, { door: "csv_import", history: true, runTag: runId }))
     .catch(e => console.error("[import-recent] after-change:", e.message));
   const left = await query(`SELECT 1 FROM import_recent_work WHERE import_id=? LIMIT 1`, [runId]);
   if (left.length || job.cancelled) return;   // another chunk arrived; the loop runs again

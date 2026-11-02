@@ -157,7 +157,7 @@ async function rhythmFor(orgId, ids, { door, today }) {
 // free: it reads the gifts, then waits on the person's row, and if a merge
 // commits in between it writes the totals from before the merge (found by
 // wire-journey §8 on CI's slower runner).
-async function afterChange(orgId, donorIds, { door, history = false, fire = null, recalc = true, runTag = null } = {}) {
+async function afterChangeNow(orgId, donorIds, { door, history = false, fire = null, recalc = true, runTag = null } = {}) {
   const ids = [...new Set((donorIds || []).filter(Boolean))];
   // The run a readout will look for: "csv_import:imp_123" on every crossing
   // and every rhythm row this call wrote.
@@ -191,6 +191,29 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
   return result;
 }
 
+// JOBS-1 · THE DOOR WRITES THE EVENT; A HANDLER RUNS THE STEP. afterChange()
+// writes `donor.changed` (server/shared/outbox.js) and relays it onto the
+// queue, and server/donors/handlers/afterChange.js runs afterChangeNow() for
+// it, tried again when it fails. Inside an import's ambient transaction the
+// event commits, or not, with the import. The totals (`recalc`) are part of the
+// write, as recordGift's rollup is, so they are written here, before the
+// answer; what follows them (rhythm, Drift, groups, scores, the stored
+// figures) is the handler's. `fire` (a "joins a group" journey) travels as
+// `startsJourneys`. A door whose own readout needs the step's answer before it
+// is written (a giving-source read, a QuickBooks read, an import's recent
+// gifts, all background work already) calls afterChangeNow() itself.
+async function afterChange(orgId, donorIds, { door, history = false, fire = null, recalc = true, runTag = null } = {}) {
+  const ids = [...new Set((donorIds || []).filter(Boolean))];
+  const result = { door, history, recalc, donors: ids.length, crossings: [], becameLate: [], queued: false, ms: 0 };
+  if (!deps || !orgId || !ids.length) return result;
+  const started = Date.now();
+  if (recalc) await recalcDonorSummaryBatch(deps.query, ids, orgId);
+  const OUTBOX = require("./server/shared/outbox");
+  const id = await OUTBOX.write(orgId, "donor.changed", { door, history, runTag, startsJourneys: typeof fire === "function" }, { donorIds: ids });
+  await OUTBOX.relay([id]).catch(e => console.error("[after-change] relay (the sweep will):", e.message));
+  return { ...result, queued: true, eventId: id, ms: Date.now() - started };
+}
+
 // For a door that writes one row at a time (a shift, a synced email, a
 // check-in) and must not wait: the people are collected per org and door for
 // a moment and the step runs ONCE for all of them, so a 1,000-row hours file
@@ -213,4 +236,4 @@ function afterChangeSoon(orgId, donorIds, opts = {}) {
   for (const id of donorIds || []) if (id) p.ids.add(id);
 }
 
-module.exports = { ACTOR, DOORS, configure, afterChange, afterChangeSoon, recalcDonorSummaryBatch, LOG };
+module.exports = { ACTOR, DOORS, configure, afterChange, afterChangeNow, afterChangeSoon, recalcDonorSummaryBatch, LOG };
