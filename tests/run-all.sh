@@ -126,6 +126,14 @@ while IFS= read -r _suite; do [ -n "$_suite" ] && CORE+=("$_suite"); done < <(no
 # `bash tests/run-all.sh --list` prints what this run would run, and nothing else
 # (tests/every-test-runs.test.js compares it with the files on disk).
 if [ "${1:-}" = "--list" ]; then printf '%s\n' "${CORE[@]}"; exit 0; fi
+# CI-2: `bash tests/run-all.sh --plan <file>` writes the plan this run would use
+# for SHARDS shards (default 3) and nothing else. CI's `plan` job writes it once
+# and every matrix job runs its own shard of THAT plan (SHARD_PLAN, below).
+if [ "${1:-}" = "--plan" ]; then
+  node scripts/ci/shard-plan.js --shards "${SHARDS:-3}" --timings "${SHARD_TIMINGS:-.generated/suite-timings.json}" \
+    --out "${2:?usage: run-all.sh --plan <file>}" ${SHARD_SHUFFLE:+--shuffle "$SHARD_SHUFFLE"} "${CORE[@]}"
+  exit $?
+fi
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
 # an unknown name is a hard error so a typo can't silently skip verification).
@@ -182,8 +190,10 @@ mkdir -p "$LOGDIR"
 # database, server and port block, and then aggregates one summary.
 #
 #   SHARDS=1            the old serial run, unchanged, against $BASE
-#   SHARDS=6            the default locally
+#   SHARDS=3            the default locally
 #   SHARDS=<n> + SHARD_ONLY=<i>   run just shard i (this is what CI's matrix does)
+#   SHARD_PLAN=<file>   run that plan (from `run-all.sh --plan`) instead of planning
+#   SHARD_SHUFFLE=<seed> a seeded random plan: other neighbours, other orders
 #
 # BALANCE. Longest suite first into the emptiest shard (LPT), from
 # .generated/suite-timings.json (git-ignored; CI keeps it in its cache). A suite with no recorded time is assumed to be the
@@ -294,25 +304,47 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
 
   # The assignment is computed once, in one place, and written down — so a
   # failure can be reproduced with the exact list that shard was given.
-  node scripts/ci/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
-    || { echo "ERROR: could not plan the shards" >&2; exit 2; }
-
-  # THE BROWSER LEGS' DIST. They are all in one shard (see shard-plan.js) and
-  # each checks that client/dist was built against ITS $BASE, skipping quietly
-  # when it was not. So the dist is built ONCE, for that shard's API port, and
-  # only when there is no usable one already. Without this the browser legs
-  # skip and the run is green with the browser coverage missing.
-  #
-  # FIX-60 item 6: "usable" used to mean only "built against this port", so a
-  # dist from before a merge passed and the legs walked the old screens. It is
-  # now scripts/ci/dist-fresh.js: built against this port AND from HEAD AND with
-  # no uncommitted change to the client's inputs since. Stale means rebuild.
-  BSHARD=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.browserShard||""))' "$SHARD_OUT/plan.json")
-  if [ -n "$BSHARD" ] && [ "${SHARD_BUILD_DIST:-1}" = "1" ]; then
-    bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * BSHARD ))
-    node scripts/ci/dist-fresh.js --rebuild --api "http://localhost:$bapi" \
-      || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
+  if [ -n "${SHARD_PLAN:-}" ]; then
+    # CI-2: the plan CI's `plan` job wrote, so all the matrix jobs run one plan.
+    cp "$SHARD_PLAN" "$SHARD_OUT/plan.json" || { echo "ERROR: no plan at $SHARD_PLAN" >&2; exit 2; }
+    planned=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.shards.length))' "$SHARD_OUT/plan.json")
+    [ "$planned" = "$SHARDS" ] || { echo "ERROR: $SHARD_PLAN has $planned shards and SHARDS is $SHARDS" >&2; exit 2; }
+    echo "[run-all] the plan from $SHARD_PLAN"
+  else
+    node scripts/ci/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" \
+      ${SHARD_SHUFFLE:+--shuffle "$SHARD_SHUFFLE"} ${RUN[@]+"${RUN[@]}"} \
+      || { echo "ERROR: could not plan the shards" >&2; exit 2; }
   fi
+
+  # THE BROWSER LEGS' DISTS. A dist is built against one API, and each shard
+  # has its own API port, so every shard that holds a browser suite gets its
+  # own (CI-2; until then they were all pinned to one shard). client/dist is
+  # built for the first such shard here, through scripts/ci/dist-fresh.js:
+  # built against that port AND from HEAD AND with no uncommitted change to
+  # the client's inputs since (FIX-60 item 6); stale means rebuild. Every other
+  # browser shard gets a copy made for its own API (scripts/ci/dist-for-shard.js)
+  # and is told where it is in STEWARD_DIST. In CI each matrix job runs one
+  # shard, so client/dist is simply built for that shard. Without a dist the
+  # browser legs skip, and the run is green with the browser coverage missing.
+  BSHARDS=$(node -e 'const p=require(process.argv[1]);process.stdout.write((p.browserShards||[]).join(" "))' "$SHARD_OUT/plan.json")
+  DIST_FOR=()   # DIST_FOR[i] = the dist shard i walks
+  first_bshard=""
+  for i in $BSHARDS; do
+    [ -n "${SHARD_ONLY:-}" ] && [ "$SHARD_ONLY" != "$i" ] && continue
+    [ "${SHARD_BUILD_DIST:-1}" = "1" ] || break
+    bapi="http://localhost:$(( ${SHARD_PORT_BASE:-5700} + 10 * i ))"
+    if [ -z "$first_bshard" ]; then
+      first_bshard="$i"
+      node scripts/ci/dist-fresh.js --rebuild --api "$bapi" \
+        || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
+      DIST_FOR[$i]="client/dist"
+    else
+      fapi="http://localhost:$(( ${SHARD_PORT_BASE:-5700} + 10 * first_bshard ))"
+      node scripts/ci/dist-for-shard.js --from client/dist --to ".generated/dist/shard-$i" --api-from "$fapi" --api-to "$bapi" \
+        && DIST_FOR[$i]=".generated/dist/shard-$i" \
+        || echo "[run-all] WARNING: no dist for shard $i — its browser legs will skip"
+    fi
+  done
 
   echo "[run-all] $SHARDS shards · ${#RUN[@]} suites · plan $SHARD_OUT/plan.json"
   pids=()
@@ -320,12 +352,14 @@ if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
     [ -n "${SHARD_ONLY:-}" ] && [ "$SHARD_ONLY" != "$i" ] && continue
     list=$(node -e 'const p=require(process.argv[1]);process.stdout.write((p.shards[process.argv[2]-1]||[]).map(s=>s.name).join(" "))' "$SHARD_OUT/plan.json" "$i")
     [ -z "$list" ] && continue
-    SHARD_N="$i" SHARD_SUITES="$list" bash tests/shard.sh &
+    STEWARD_DIST="${DIST_FOR[$i]:-client/dist}" SHARD_N="$i" SHARD_SUITES="$list" bash tests/shard.sh &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do wait "$pid" || true; done
 
-  node scripts/ci/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
+  # SHARD_ONLY: this run reports its own shard only; the combine job reads them all.
+  node scripts/ci/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS" \
+    ${SHARD_ONLY:+--only "$SHARD_ONLY"}
   exit $?
 fi
 

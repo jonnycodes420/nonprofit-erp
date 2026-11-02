@@ -20,16 +20,20 @@ const OUT = flag("out", "");
 const PLAN = flag("plan", "");
 const STARTED = Number(flag("started", "0"));
 const TIMINGS = flag("timings", ".generated/suite-timings.json");
+// CI-2: --only <n> reports shard n alone (a CI matrix job runs one shard; the
+// combine job reports them all). Without it, every planned shard must report.
+const ONLY = Number(flag("only", "0")) || 0;
 const ROOT = path.join(__dirname, "..", "..");
 const G = "\x1b[32m", R = "\x1b[31m", Y = "\x1b[33m", Z = "\x1b[0m";
 
 const plan = JSON.parse(fs.readFileSync(PLAN, "utf8"));
-const planned = new Set(plan.shards.flat().map(s => s.name));
+const planned = new Set(plan.shards.filter((_, i) => !ONLY || i + 1 === ONLY).flat().map(s => s.name));
 
 const results = [];
 const missingShards = [];
 for (let i = 1; i <= plan.shards.length; i++) {
   if (!plan.shards[i - 1] || !plan.shards[i - 1].length) continue;
+  if (ONLY && i !== ONLY) continue;
   const f = path.join(OUT, `shard-${i}.json`);
   if (!fs.existsSync(f)) { missingShards.push(i); continue; }
   let j;

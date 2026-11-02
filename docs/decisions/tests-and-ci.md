@@ -106,6 +106,22 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **The real-AI run is started by hand only** (`gh workflow run nightly-ai.yml --ref main`, $2 cap, cost in the
   run's summary line). No schedule and no push trigger, pinned by `tests/script-guards.test.js`. The
   post-deploy prod AI smoke in ci.yml is the only AI call CI makes on its own. (FIX-44)
+- **CI's battery is a matrix of six jobs, planned once (CI-2).** A `plan` job writes the shard plan
+  from the cached timings and every `shard (n)` job runs its shard of THAT plan (`SHARD_PLAN`,
+  `SHARD_ONLY`), on its own runner, Postgres and client build. The job named `test` (the check main's
+  ruleset requires) reads every shard's result: a crashed shard, a suite that did not run exactly once
+  (`tests/lib/shardResults.js`, also checked by `every-test-runs` with `SHARD_RESULTS`), a failed suite
+  or a lower pass count is red. Timings live in the Actions cache; main's `timings` job copies a
+  trusted run's into main's cache, because a PR's cache is visible to that PR only. Six because PR
+  #294's suites took 2,770 s and the longest one 396 s. Locally `SHARDS=6 bash tests/run-all.sh` plans
+  the same way; `SHARD_SHUFFLE=<seed>` gives a random plan to prove the suites are independent.
+- **A browser suite may sit in any shard (CI-2).** Each shard holding one walks its own dist: in CI it
+  builds client/dist for its API; locally the first such shard gets client/dist and the rest a copy
+  with the API origin rewritten (`scripts/ci/dist-for-shard.js`), named in `STEWARD_DIST`. A suite
+  that reads the dist takes its path from `tests/lib/dist.js`, never a fixed `client/dist`.
+- **A suite never reads another suite's leftovers.** A check that sweeps "every org in the database"
+  checks only the orgs its own suite made, and a fixture's stored totals come from `donorSummary.js`,
+  never an INSERT. A shard's database is shared by whatever the plan put beside it. (CI-2)
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)
@@ -136,7 +152,7 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   boots its own servers: the sharded battery and any `SHARD_SELF=1` selection, even one suite. A
   second such run prints who holds it and waits; a lock whose pid is gone is taken over. A serial
   run against an already-booted `$BASE` (pre-push, `affected.sh`) boots nothing and takes none.
-  CI is unaffected (one runner, one machine). `BATTERY_LOCK=0` skips it.
+  CI is unaffected (one runner per shard). `BATTERY_LOCK=0` skips it.
 - **A run never removes a lock it does not own (FIX-58).** Every lock goes through
   `tests/lib/battery-lock.sh`: release checks the pid is ours, and a stale lock is taken over only
   under `<lock>.takeover` after re-reading its pid (two waiters on one dead owner used to delete

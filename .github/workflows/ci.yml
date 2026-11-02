@@ -139,31 +139,73 @@ jobs:
         run: node scripts/ci/audit-gate.js client
 
 
-  # ── CHORE-2 · THE BATTERY, SHARDED ────────────────────────────────────────
-  # ONE job, three shards INSIDE it. `bash tests/run-all.sh` splits the
-  # battery across three workers itself — each with its own database, its own
-  # server on its own port block and its own preview — and prints one summary.
-  #
-  # It was briefly a GitHub matrix of three jobs. That needs each job to
-  # upload its shard's result and a fourth job to combine them, and the first
-  # run showed the flaw plainly: every job ran the reporter, every reporter
-  # looked for all three results, and all three jobs failed with "shards that
-  # produced no result: 2, 3" while their own suites had passed. One runner
-  # doing all three shards needs none of that machinery, and the whole
-  # battery is about a minute now. The matrix is a follow-up, written up in
-  # docs/chore-2-NOTES.md.
-  #
-  # The guards that are not suites (lint, TDZ, npm audit) still run ONCE, in
-  # the `guards` job, and the battery waits on them.
-  test:
+  # ── CI-2 · THE PLAN, WRITTEN ONCE ─────────────────────────────────────────
+  # Which suites go in which shard, from the cached suite timings (ARCH-1's
+  # .generated/, never committed). Planned ONCE and handed to every matrix job
+  # as an artifact: six jobs each restoring "the latest" cache could restore
+  # different files if a run saved one in between, and two different plans
+  # would run some suites twice and others never. The same planner is what
+  # `SHARDS=6 bash tests/run-all.sh` runs on a laptop.
+  plan:
     runs-on: ubuntu-latest
-    # EVENTS-3: 40 → 60. The battery finds 192 suites since ARCH-1 and took
-    # 39m45s on PR #292; EVENTS-3's first run was cancelled at 40m15s with
-    # suites still running. Splitting it into a matrix of jobs is its own CI
-    # build (docs/defects.md).
-    timeout-minutes: 60
-    needs: [tree-check, guards]
+    timeout-minutes: 10
+    needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
+    env:
+      SHARDS: "6"
+    steps:
+      - uses: actions/checkout@v4
+      # The newest timings this ref can see: this PR's own last run, else
+      # main's (a PR's cache is visible to that PR only; main's to everyone).
+      # The key never matches exactly, so restore-keys picks the newest.
+      - name: Restore suite timings
+        id: timings
+        uses: actions/cache/restore@v4
+        with:
+          path: .generated/suite-timings.json
+          key: suite-timings-plan-${{ github.run_id }}
+          restore-keys: suite-timings-
+      - name: Plan the shards
+        run: |
+          mkdir -p /tmp/plan
+          bash tests/run-all.sh --plan /tmp/plan/plan.json
+          # The timings the plan came from ride along, so combine refreshes
+          # THEM with this run's seconds (a suite this run did not time keeps
+          # its old number).
+          if [ -f .generated/suite-timings.json ]; then cp .generated/suite-timings.json /tmp/plan/; fi
+          echo "Plan: $(node -e 'const p=require("/tmp/plan/plan.json");console.log(p.totals.map((t,i)=>`shard ${i+1} ${t}s/${p.shards[i].length}`).join(" · "), "· untimed:", p.untimed.length)')" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-plan
+          path: /tmp/plan/
+          retention-days: 7
+
+  # ── CI-2 · THE BATTERY, A MATRIX OF SIX JOBS ──────────────────────────────
+  # One job per shard, in parallel, each on its own runner with its own
+  # Postgres service, its own server and its own client build. Each runs
+  # `bash tests/run-all.sh` with SHARD_ONLY: the same entry point as a laptop,
+  # running one shard of the plan above, and uploads what it ran. A shard job
+  # is red when its own suites are; the `test` job below is the one that says
+  # whether the battery passed.
+  #
+  # SIX shards: PR #294's suites took 2,770 s between them, the longest one
+  # (numbers1-foot) 396 s. Six shards is ~460 s of suites each, plus about four
+  # minutes a job spends installing, building the client and booting the
+  # server: about ten minutes a shard. Five is ~550 s each (about thirteen
+  # minutes); seven gains little because numbers1-foot alone is 396 s.
+  #
+  # (CHORE-2's matrix failed because every job ran the reporter for ALL
+  # shards and found the others missing. A job now reports only its own
+  # shard; only `test` reads them all.)
+  shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [tree-check, guards, plan]
+    if: needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     services:
       postgres:
@@ -236,10 +278,12 @@ jobs:
       FOUNDER_EMAIL: jonathan@stewardapp.dev   # From on the close-link welcome + the 7-day reminder
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.
-      # CHORE-2 — this job runs ONE shard of the full battery. Between them
-      # the six shards run every suite in CORE; the combine job refuses the
-      # run if any planned suite did not.
-      SHARDS: "3"
+      # CI-2 — this job runs ONE shard of the plan. Between them the six
+      # shards run every suite; the `test` job refuses the run if any suite
+      # did not run exactly once.
+      SHARDS: "6"
+      SHARD_ONLY: ${{ matrix.shard }}
+      SHARD_PLAN: /tmp/plan/plan.json
       SHARD_PGUSER: steward
       PGPASSWORD: steward
       # ── GTM-1a A · THE BROWSER LEGS RUN HERE NOW ─────────────────────────
@@ -324,48 +368,139 @@ jobs:
           install_pw || { echo "Playwright install failed or hung; retrying once"; wait_dpkg; install_pw; }
           node -e "console.log('playwright', require('$GITHUB_WORKSPACE/.playwright/node_modules/playwright/package.json').version)"
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: shard-plan
+          path: /tmp/plan
+
       # tests/shard.sh creates this shard's database, boots its own server on
       # its own port block, waits for /health, runs its suites serially and
-      # tears everything down. FIX-1 §11's demo seed happens inside the shard
-      # that holds demo-shape, so it is seeded exactly once and never skipped.
-      # ARCH-1: suite timings are generated, not committed. The cache carries
-      # the last run's timings forward so the shards stay balanced; a miss
-      # only costs balance (an unrecorded suite is weighed at the median).
-      - name: Restore suite timings
-        uses: actions/cache@v4
-        with:
-          path: .generated/suite-timings.json
-          key: suite-timings-${{ github.run_id }}
-          restore-keys: suite-timings-
-
-      - name: The battery (three shards, one runner)
+      # tears everything down. A shard that holds a suite needing the demo
+      # seeds its own (FIX-1 §11), and one that holds a browser suite builds
+      # client/dist for its own API.
+      - name: The battery (shard ${{ matrix.shard }} of 6)
         run: bash tests/run-all.sh
         env:
           SHARD_OUT: /tmp/steward-shards
           SUITE_LOG_DIR: /tmp/steward-suite-logs
 
-      # THE COUNT RATCHET. A suite can go green by asserting less, so the
-      # per-suite pass counts are compared against audit/suite-counts.json and
-      # a DROP fails the build. Runs on the shard results the battery just
-      # wrote, in the same job.
-      - name: No suite may assert less than it did
-        run: node scripts/ci/shard-combine.js --in /tmp/steward-shards --shards 3 --baseline audit/suite-counts.json
-
-      - name: Server logs on failure
+      - name: Server log on failure
         if: failure()
         run: for f in /tmp/steward-shards/server-*.log; do echo "── $f"; tail -80 "$f"; done || true
 
-      # run-all.sh keeps every suite's full output in /tmp/steward-suite-logs
-      # (and already dumps a failing suite's output inline in the step log).
-      # Upload the whole dir so a red run's assertions are downloadable even
-      # when the inline log is long.
-      - name: Upload suite logs (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
+      # What this shard ran, for the `test` job: its result line per suite,
+      # and every suite's full output and the server log, so a red run's
+      # assertions are downloadable. Uploaded whatever happened; a shard that
+      # crashed before writing its result uploads none, and `test` says so.
+      - name: Gather this shard's results
+        if: always()
+        run: |
+          mkdir -p /tmp/shard-artifact/logs
+          cp /tmp/steward-shards/shard-*.json /tmp/steward-shards/server-*.log /tmp/shard-artifact/ 2>/dev/null || true
+          cp -R /tmp/steward-suite-logs/shard-* /tmp/shard-artifact/logs/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: suite-logs
-          path: /tmp/steward-suite-logs/
+          name: shard-${{ matrix.shard }}
+          path: /tmp/shard-artifact/
           if-no-files-found: ignore
+          retention-days: 7
+
+  # ── CI-2 · DID THE BATTERY PASS? (the one required check, named `test`) ───
+  # Reads every shard's result and refuses the run when a suite failed, a
+  # shard produced no result (it crashed, timed out or was cancelled), a suite
+  # discovered in this tree did not run exactly once, or a suite's pass count
+  # dropped below audit/suite-counts.json. Named `test` because that is the
+  # status check main's ruleset requires; the deploys wait on it.
+  # `always()` so a red or crashed shard still gets a verdict (a skipped
+  # required check would read as passed); a docs-only PR or an already-tested
+  # tree skips it, as before.
+  combine:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [tree-check, guards, plan, shard]
+    if: always() && needs.tree-check.outputs.skip != 'true' && needs.tree-check.outputs.docs_only != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: The plan and guards ran
+        run: |
+          echo "guards: ${{ needs.guards.result }} · plan: ${{ needs.plan.result }} · shards: ${{ needs.shard.result }}"
+          [ "${{ needs.guards.result }}" = "success" ] && [ "${{ needs.plan.result }}" = "success" ] \
+            || { echo "::error::the guards or the plan did not pass, so the battery is not green"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          name: shard-plan
+          path: /tmp/plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-[0-9]*
+          path: /tmp/steward-shards
+          merge-multiple: true
+      - name: Every suite, one summary
+        if: always()
+        env:
+          SUITE_LOG_DIR: /tmp/steward-shards/logs
+        run: |
+          mkdir -p .generated
+          if [ -f /tmp/plan/suite-timings.json ]; then cp /tmp/plan/suite-timings.json .generated/; fi
+          node scripts/ci/shard-report.js --out /tmp/steward-shards --plan /tmp/plan/plan.json --timings .generated/suite-timings.json
+      - name: Every suite ran exactly once
+        if: always()
+        run: SHARD_RESULTS=/tmp/steward-shards SHARD_COUNT=6 node tests/every-test-runs.test.js
+      # THE COUNT RATCHET. A suite can go green by asserting less, so the
+      # per-suite pass counts are compared against audit/suite-counts.json and
+      # a DROP fails the build.
+      - name: No suite may assert less than it did
+        if: always()
+        env:
+          REQUIRE_BROWSER: "1"
+        run: node scripts/ci/shard-combine.js --in /tmp/steward-shards --shards 6 --baseline audit/suite-counts.json
+      # The timings this run measured, for the next plan: in this ref's cache,
+      # and as an artifact, which main's `timings` job carries into main's cache
+      # when the tree check skips the battery after a squash.
+      - name: Save suite timings
+        if: always() && hashFiles('.generated/suite-timings.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .generated/suite-timings.json
+          key: suite-timings-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('.generated/suite-timings.json') != ''
+        with:
+          name: suite-timings
+          path: .generated/suite-timings.json
+          retention-days: 30
+
+  # ── CI-2 · MAIN'S TIMINGS ─────────────────────────────────────────────────
+  # A PR's cache is visible only to that PR, and a squash of a green PR skips
+  # the battery on main (tree-check). So without this no PR ever found timings
+  # and every plan was blind (PR #294: one shard 2,095 s, the others ~340 s).
+  # When main skips, its timings are the trusted run's: copied into main's
+  # cache, where every PR can read them.
+  timings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [tree-check]
+    if: github.event_name == 'push' && needs.tree-check.outputs.skip == 'true' && needs.tree-check.outputs.trusted != ''
+    steps:
+      - name: The trusted run's timings
+        id: get
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED: ${{ needs.tree-check.outputs.trusted }}
+        run: |
+          mkdir -p .generated
+          if gh run download "$TRUSTED" --repo "$GITHUB_REPOSITORY" --name suite-timings --dir .generated; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Run $TRUSTED kept no suite-timings artifact; main's cache is unchanged." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: steps.get.outputs.found == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .generated/suite-timings.json
+          key: suite-timings-${{ github.run_id }}-${{ github.run_attempt }}
 
   # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
   # Runs ONLY on push to main, ONLY after a green test job. The shared
@@ -378,11 +513,11 @@ jobs:
   deploy-railway:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: [tree-check, test]
+    needs: [tree-check, combine]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-      && (needs.test.result == 'success' || needs.tree-check.outputs.skip == 'true')
+      && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true')
     concurrency:
       group: deploy-main
       cancel-in-progress: false
@@ -463,11 +598,11 @@ jobs:
   deploy-vercel:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: [tree-check, test]
+    needs: [tree-check, combine]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-      && (needs.test.result == 'success' || needs.tree-check.outputs.skip == 'true') && vars.VERCEL_DEPLOY_ENABLED == 'true'
+      && (needs.combine.result == 'success' || needs.tree-check.outputs.skip == 'true') && vars.VERCEL_DEPLOY_ENABLED == 'true'
     concurrency:
       group: deploy-main
       cancel-in-progress: false

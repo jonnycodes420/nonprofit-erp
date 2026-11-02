@@ -69,6 +69,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { ok, summary, q, closeDb } = require("./helpers");
 const { buildInventory } = require("../scripts/lib/routeInventory");
+const { DONOR_SUMMARY_UPDATE } = require("../donorSummary");
 
 const M = `http://localhost:${process.env.PORT}`;
 const A = "org_mxa", B = "org_mxb";
@@ -438,6 +439,11 @@ async function seedOrg(o, tag) {
   // would take away a list somebody else built.
   await q(`INSERT INTO donor_list_views (id,org_id,user_id,name,created_by,created_by_name) VALUES ($1,$2,$3,'Probe view','system:test','test')
            ON CONFLICT (id) DO NOTHING`, [`lv_${o}`, o, `u_${o}_staff`]).catch(e => console.error("list view seed:", e.message));
+  // CI-2: the totals on each person come from the one statement that keeps
+  // them (donorSummary.js), never from the INSERT above. A stored total that
+  // no gift backs was read as a wrong number by any suite that checks every
+  // org in a shard's database (numbers1-foot §1, docs/defects.md).
+  await q(DONOR_SUMMARY_UPDATE(), [o]);
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -1034,8 +1040,10 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,'off2-a@mx.local',$3,'Officer Two','staff')`,
     [`u_${A}_off2`, A, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name,notes,tags)
-           VALUES ($1,$2,'Portfolio Two Donor','p2donor@mx.local','mid','cultivate',777,1,$3,$4,'Officer Two','officer two private-ish note','[]')`,
+           VALUES ($1,$2,'Portfolio Two Donor','p2donor@mx.local','mid','cultivate',0,0,$3,$4,'Officer Two','officer two private-ish note','[]')`,
     [`d_${A}_p2`, A, TODAY, `u_${A}_off2`]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type) VALUES ($1,$2,$3,777,$4,'cash')`, [`g_${A}_p2`, A, `d_${A}_p2`, TODAY]);
+  await q(DONOR_SUMMARY_UPDATE("AND d.id = $2"), [A, `d_${A}_p2`]);
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'call','p2 call note',$4,$5,'Officer Two')`,
     [`i_${A}_p2`, A, `d_${A}_p2`, TODAY, `u_${A}_off2`]);
   const off1 = aStaff; // u_${A}_staff owns d_${A}
