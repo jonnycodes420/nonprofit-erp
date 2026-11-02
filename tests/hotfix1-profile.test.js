@@ -49,7 +49,7 @@ const bcrypt = require("bcryptjs");
 const { ok, summary, api, q, closeDb, civilToday, civilPlusDays, login, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PORT = Number(new URL(APP).port || 80);
 const ORG = "org_hf1prof";

@@ -216,7 +216,8 @@ const EXEMPT = {
   // drops `steward_shard_<n>` on the loopback scratch Postgres.
   "shard-plan": "CHORE-2 — pure scheduling: reads .generated/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
   "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is .generated/suite-timings.json. No BASE, no DB, no network",
-  "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only write is that baseline file. No BASE, no DB, no app calls",
+  "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only writes are that baseline file and (CI-2) .generated/suite-timings.json. No BASE, no DB, no app calls",
+  "dist-for-shard": "CI-2 — copies a local client/dist and rewrites its loopback API origin to another shard's loopback API; both origins must be loopback and it writes only under .generated/. No BASE, no DB, no network",
   "dist-fresh": "FIX-60 item 6 — says whether client/dist was built from HEAD (and the uncommitted client edits) for a given loopback API; its only writes are the stamp file in client/dist and, with --rebuild, scripts/ops/build-local-dist.sh (loopback-only). No BASE, no DB, no network",
   "builder-access-check": "SECURE-3 item 5 — reads this process's environment variable NAMES (a value only to see whether it is a postgres URL to a remote host, never printed) and two config files in the home folder for a login's presence. No BASE, no DB, no network, no writes; checked below",
   "restore-drill": "SECURE-3 item 4 — Jonathan's restore drill. Boots server.js (so the copy's schema is migrated) against RESTORE_DATABASE_URL only after its own refusals: a non-loopback target needs --i-am-jonathan, a --project starting steward-restore-, a Supabase host whose ref is not prod's, and never a .env or a Railway shell; dry run by default. Its refusals are driven below",
@@ -480,10 +481,12 @@ ok(nulFiles.length === 0,
     if (m) { cur = m[1]; jobs[cur] = ""; continue; }
     if (cur) jobs[cur] += line.replace(/#.*$/, "") + "\n";
   }
-  ok(/bash tests\/run-all\.sh/.test(jobs.test || ""), "ci.yml's test job runs the battery (so this guard runs there)");
-  for (const j of ["tree-check", "guards", "test"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
-  const dbUrl = ((jobs.test || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
-  ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's test job's DATABASE_URL is loopback");
+  // CI-2: the battery runs in the `shard` matrix job; `combine` (named `test`)
+  // reads the shards' results; `plan` writes the plan. None holds a secret.
+  ok(/bash tests\/run-all\.sh/.test(jobs.shard || ""), "ci.yml's shard job runs the battery (so this guard runs there)");
+  for (const j of ["tree-check", "guards", "plan", "shard", "combine"]) ok(!/secrets\./.test(jobs[j] || ""), `ci.yml's ${j} job is given no secret`);
+  const dbUrl = ((jobs.shard || "").match(/DATABASE_URL:\s*(\S+)/) || [])[1] || "";
+  ok(/^postgres(ql)?:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/.test(dbUrl), "ci.yml's shard job's DATABASE_URL is loopback");
   ok(Object.keys(jobs).filter(j => /secrets\.RAILWAY_TOKEN/.test(jobs[j])).every(j => /^deploy-/.test(j)), "only a deploy job in ci.yml holds RAILWAY_TOKEN");
 }
 

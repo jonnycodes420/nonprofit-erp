@@ -145,9 +145,11 @@ SRV_PID=$(start_server)
 
 PREV_PID=""
 # The browser legs need the built client served on this shard's own port, with
-# the API rewrites pointed at this shard's API. One dist is shared (run-all.sh
-# builds it once); only the proxy target differs per shard.
-if [ -f client/dist/index.html ] && [ "${SHARD_PREVIEW:-1}" = "1" ]; then
+# the API rewrites pointed at this shard's API. CI-2: the dist is this shard's
+# own, built for its API (run-all.sh says where, in STEWARD_DIST), and the
+# suites read the same variable (tests/lib/dist.js).
+export STEWARD_DIST="${STEWARD_DIST:-client/dist}"
+if [ -f "$STEWARD_DIST/index.html" ] && [ "${SHARD_PREVIEW:-1}" = "1" ]; then
   API="http://localhost:$api" PORT="$preview" node scripts/ci/local-preview.js >"$OUT/preview-$N.log" 2>&1 &
   PREV_PID=$!
 fi

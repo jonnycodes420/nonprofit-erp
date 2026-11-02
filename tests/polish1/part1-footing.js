@@ -150,7 +150,7 @@ module.exports = async function partOne(h) {
 
 // The same reasons smoke-walk gives for not driving a browser.
 function browserWhy(BASE) {
-  const DIST = path.join(__dirname, "..", "..", "client", "dist");
+  const { DIST } = require("../lib/dist");   // CI-2: this shard's dist
   if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built";
   const assets = path.join(DIST, "assets");
   const origin = BASE.replace(/^https?:\/\//, "");

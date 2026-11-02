@@ -4,9 +4,9 @@ One line each: where, what, severity (P1 wrong number, data loss, sends or break
 looks wrong; P3 polish), which build found it, and the build it belongs in. A build that fixes
 one deletes its line.
 
-## CI (EVENTS-3, 1 Nov 2026)
+## The battery as parallel jobs (CI-2, 1 Nov 2026)
 
-- **P2 · The battery runs as one CI job and is close to its ceiling.** Since ARCH-1 the battery finds 192 suites and runs them as three shards inside one `test` job: PR #292 took 39m45s, and EVENTS-3's first run was cancelled at 40m15s. EVENTS-3 raised `timeout-minutes` from 40 to 60 to unblock merges; that only buys time. Suggested: a CI build splits the battery into a GitHub matrix of parallel jobs (one shard each, with an upload and a combine step, as ci.yml's comment on the earlier attempt describes).
+- **P1? · Any org's admin running `POST /sequences/process` makes an active "at risk" sequence in every org.** `autoEnroll` (server.js) calls `ensureAtRiskSequence`, which loops over `SELECT id FROM orgs` and inserts an `active` at_risk sequence in each org that has none, demo orgs included. A write in other orgs from one org's request, and an active sending sequence nobody in that org turned on. Found by CI-2's shuffled battery: mail-suppression (which calls the route) ran before fix39-campaigns in one shard, the demo org got the sequence, and fix39's browser leg read "⏸ Pause" on Sequences (an emoji in product copy, `Communications.jsx` legacy sequence row). The severity needs Jonathan's read: whether that sequence can reach a donor. Suggested: a SEND-GATE or tenant build scopes the sweep to the caller's org (the hourly job keeps the all-org pass) and creates the sequence off, and the editor build drops the ⏸/▶ glyphs.
 
 ## One home for every giving number (NUMBERS-3, 1 Nov 2026)
 
@@ -43,7 +43,6 @@ one deletes its line.
 - **P3 · Nothing schedules `sweepQuietConnections`** (server.js, near 2259); `POST /connections/sweep` is the only way it runs, and nothing calls that. Suggested: the next integrations build either schedules it on the tick or removes both.
 - **P3 · `GET /pos/attendance-drift` has no caller,** yet `scripts/seed-demo.js` seeds a fixture for it. Kept under amendment A1 (no deletion without Jonathan's yes); listed in `docs/architecture/routes-reviewed.md`. Suggested: the events build that next touches POS.
 
-- **P3 · numbers1-foot §1 depends on which suites share its shard.** §1 runs the numbers checker on every org in the shard's database. When agents1-persona-scope (which loads tenant-matrix's fixture, `org_mxa` and `org_mxb`, written straight to the tables) runs earlier in the same shard, §1 fails on those orgs' stored totals. TRUTH-1's second battery, with timings refreshed by the first, put the two together; with main's timings they are apart and §1 passes. Suggested: the next tests-and-CI build makes §1 skip fixture orgs that bypass the gift path, or has tenant-matrix's fixture recompute its totals.
 
 ## Communications (SWEEP-3, 30 Oct 2026; walk in docs/sweeps/sweep-3/walk.md)
 

@@ -44,7 +44,7 @@ const { BASE, ok, summary, api, q, closeDb, browserLegOrSkip, STRIPE_MOCK_PORT, 
 
 const ORG = "org_give3", SLUG = "give3-harbor-test", ACCT = "acct_give3test";
 const ROOT = path.join(__dirname, "..");
-const DIST = path.join(ROOT, "client", "dist");
+const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
 const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
