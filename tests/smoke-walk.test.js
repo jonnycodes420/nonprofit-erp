@@ -1489,7 +1489,7 @@ async function donorScreensSayNothingWrong(browser) {
       const fj = await readerSays("real-shaped/jp-finding-joy-combined-443.xlsx");
       ok("§sweep2 the reader asks \"When was Finding Joy?\", not \"the Finding Joy\"", /When was Finding Joy\?/.test(fj) && !/the Finding Joy\b/.test(fj), (fj.match(/When was[^\n]*/) || [""])[0]);
     }
-    await ctx.close();
+    if (filled) await require("./lib/importSetAsideLeg")({ page, width, ok, APP, BASE, ignoreUrl: IGNORABLE_URL, ignoreText: IGNORABLE_TEXT, expected5xx: EXPECTED_5XX }); await ctx.close();   // IMPORT-6: the set-aside list
   }
 }
 

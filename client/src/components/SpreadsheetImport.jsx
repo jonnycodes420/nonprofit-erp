@@ -9,7 +9,9 @@
 // blank "paid?" cell, a column it cannot name, which of two people). One
 // Import button; Undo removes the whole file.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
+import { donorsListHref } from "../lib/appUrls";
 import { dismissUndo } from "./EditHistory";
 import { T, Modal } from "./shared";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
@@ -176,6 +178,14 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   const [notice, setNotice] = useState("");   // what Bring them back did, kept past the re-read
   const [dragOver, setDragOver] = useState(false);
   const fileKeyRef = useRef("");
+  const navigate = useNavigate();
+  // IMPORT-6: a read-only account (a trial that ended) is told so before any file is read
+  const [readOnly, setReadOnly] = useState(false);
+  useEffect(() => {
+    let live = true;
+    apiFetch("/billing/status").then(b => { if (live && b && b.accessState === "read_only") setReadOnly(true); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   const suggestedDate = useMemo(() => {
     const t = file && file.lastModified ? new Date(file.lastModified) : null;
     return t && !isNaN(t) ? localIso(t) : null;
@@ -263,7 +273,7 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         if (!live) return;
         if (r.fileKey) fileKeyRef.current = r.fileKey;
         setU(r); setReadFor(asked); setMsg(""); setPhase("");
-      } catch (e) { if (live) setMsg(e?.body?.message || errorMessage(e, "Steward could not read that file.")); }
+      } catch (e) { if (live) { if (e?.body?.error === "read_only") { setReadOnly(true); setBusy(""); return; } setMsg(e?.body?.message || errorMessage(e, "Steward could not read that file.")); } }
       finally { if (live) { setBusy(""); setInFlight(false); } }
     })();
     return () => { live = false; };
@@ -313,6 +323,8 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   // same render, so Import can never be pressed on the last answer's plan
   const rereading = !!u && (inFlight || readFor !== JSON.stringify([answers, overrides]));
   const c = u && u.counts;
+  // IMPORT-6: every row set aside, each with its line and reason (labels, totals and repeated headers too)
+  const setAside = u ? ((u.rowLedger && u.rowLedger.setAside) || u.aside || []) : [];
   const acct = u && u.columnAccount;
   const eventQ = u ? u.questions.find(q => q.id === "event") : null;
   const dateQ = (u && u.questions.find(q => q.id === "date")) || (u && u.needsDate && !(u.event && u.event.named) ? dateAsked : null);
@@ -356,7 +368,16 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
       <div data-testid="sheet-import" style={{ display: "flex", flexDirection: "column", gap: 12, color: T.ink }}>
         {intoOrg && <div data-testid="sheet-import-org" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.2, fontFamily: "'DM Serif Display',Georgia,serif" }}>
           <span style={{ ...small, display: "block", fontFamily: "inherit", fontWeight: 400 }}>Importing into</span>{intoOrg}</div>}
-        {!file && (
+        {readOnly && !result && (
+          <div role="alert" data-testid="sheet-read-only" style={{ ...box, fontSize: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Your account is read-only, so nothing can be imported. Reactivate to continue.</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" data-testid="sheet-reactivate" style={btn(true)} onClick={() => { if (onClose) onClose(); navigate("/app/settings?section=account"); }}>Reactivate</button>
+              <button type="button" style={btn(false)} onClick={() => { if (onClose) onClose(); }}>Close</button>
+            </div>
+          </div>
+        )}
+        {!file && !readOnly && (
           // FIX-55: choose a file or drop it here; the same reader either way
           <label data-testid="sheet-drop" style={{ ...box, display: "block", cursor: "pointer", borderStyle: "dashed", borderWidth: 2,
               borderColor: dragOver ? T.greenDk : T.bg3, background: dragOver ? T.bg : T.white, textAlign: "center", padding: "26px 16px" }}
@@ -706,11 +727,12 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <Layer title="Everything else" testId="layer-kept"
                 main={(u.keptHeaders || []).length ? `${n(u.keptHeaders.length, "column")} kept on each person: ${u.keptHeaders.map(k => k.header).join(", ")}` : "Nothing left over"}
                 sub="A column Steward has no field for is kept under its own header, as a custom field on the person. Nothing is lost." />
-              {u.aside.length > 0 && (
+              {setAside.length > 0 && (
                 <details data-testid="sheet-aside" style={{ marginTop: 10 }} open={asideOpen} onToggle={e => setAsideOpen(e.currentTarget.open)}>
-                  <summary style={{ fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Set aside ({u.aside.length}), each with its reason</summary>
-                  {u.aside.slice(0, 200).map(a => <div key={a.sheet + a.line} style={small}>Row {a.line}{a.sheet !== "Sheet1" ? ` of ${a.sheet}` : ""}: {a.who ? a.who + ", " : ""}{a.reason}{a.cents != null ? ` (${money(a.cents)})` : ""}.</div>)}
-                  <button type="button" style={{ ...btn(false), marginTop: 6, padding: "5px 10px", fontSize: 12 }} onClick={() => downloadAside(u, file.name)}>Download the set-aside rows</button>
+                  <summary style={{ fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Set aside ({setAside.length.toLocaleString("en-US")}), each with its line and reason</summary>
+                  {setAside.slice(0, 200).map(a => <div key={a.sheet + a.line} data-testid="sheet-aside-line" style={{ ...small, overflowWrap: "anywhere" }}>Line {a.line}{a.sheet !== "Sheet1" ? ` of ${a.sheet}` : ""}: {a.who ? a.who + ", " : ""}{a.reason}{a.cents != null ? ` (${money(a.cents)})` : ""}.</div>)}
+                  {setAside.length > 200 && <div style={small}>The other {(setAside.length - 200).toLocaleString("en-US")} are in the download.</div>}
+                  <button type="button" style={{ ...btn(false), marginTop: 6, padding: "5px 10px", fontSize: 12 }} onClick={() => downloadAside(setAside, file.name)}>Download the set-aside rows</button>
                 </details>
               )}
               {u.notes.filter(x => !x.label).length > 0 && (
@@ -761,6 +783,13 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
             <div style={h3}>{undone ? "Undone" : "Imported"}</div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>{undone || result.sentence}</div>
             {!undone && result.giftLine && <ImportGiftLine line={result.giftLine} importId={result.importId} style={{ marginTop: 4 }} />}
+            {/* IMPORT-6: the receipt opens the people it brought in, under Everyone */}
+            {!undone && result.donorsCreated > 0 && result.importId && (
+              <button type="button" data-testid="sheet-see-people" style={{ ...linkBtn, marginTop: 6, fontSize: 13 }}
+                onClick={() => { const view = { people: "everyone", fromImport: result.importId }; finish(); window.dispatchEvent(new CustomEvent("steward:directory", { detail: view })); navigate(donorsListHref(view)); }}>
+                {`See the ${n(result.donorsCreated, "person", "people")} you brought in`}
+              </button>
+            )}
             {!undone && result.totalsSentence && result.totalsSentence.length > 0 && <div style={{ ...small, marginTop: 4 }}>{result.totalsSentence.join(" ")}</div>}
             {!undone && result.undatedGifts > 0 && (
               <div data-testid="sheet-undated" style={{ marginTop: 10, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
@@ -781,7 +810,14 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
               <button type="button" data-testid="sheet-done" style={btn(true)} onClick={finish}>Done</button>
             </div>
             {/* INSIGHTS-1: what the file says, before Home */}
-            {!undone && <div style={{ marginTop: 14 }}><FirstLook isReadOnly={false} /></div>}
+            {/* IMPORT-6: a file with no gifts gets one line and the next step, never a ladder of zeros */}
+            {!undone && !(result.giftsCreated || result.pledgesCreated || (result.giftLine && result.giftLine.gifts)) ? (
+              <div data-testid="sheet-no-gifts" style={{ marginTop: 14, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
+                <div style={{ fontSize: 14, color: T.ink }}>No gifts in this file yet. When you bring in gifts, Steward shows who to thank, keep and grow here.</div>
+                <button type="button" data-testid="sheet-import-gifts" style={{ ...btn(false), marginTop: 8 }}
+                  onClick={() => { told({ import: result.importId }); setResult(null); setUndone(""); setJob(null); setFailed(null); setU(null); setSheets(null); setFile(null); setAnswers({}); setOverrides({}); fileKeyRef.current = ""; }}>Import gifts</button>
+              </div>
+            ) : !undone && <div style={{ marginTop: 14 }}><FirstLook isReadOnly={false} /></div>}
           </div>
         )}
       </div>
@@ -845,10 +881,10 @@ function SampleCard({ p, eventName }) {
   );
 }
 
-function downloadAside(u, fileName) {
+function downloadAside(rows, fileName) {
   const cell = v => { const t = v == null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
   const lines = [["Sheet", "Row", "Who", "Amount", "Reason"].join(",")]
-    .concat(u.aside.map(a => [a.sheet, a.line, a.who || "", a.cents != null ? (a.cents / 100).toFixed(2) : "", a.reason].map(cell).join(",")));
+    .concat(rows.map(a => [a.sheet, a.line, a.who || "", a.cents != null ? (a.cents / 100).toFixed(2) : "", a.reason].map(cell).join(",")));
   const url = URL.createObjectURL(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }));
   const el = document.createElement("a");
   el.href = url; el.download = `Set aside from ${String(fileName || "your file").replace(/\.[a-z]+$/i, "")}.csv`;

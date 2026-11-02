@@ -3,6 +3,10 @@
 Read this when you touch file import (CSV, xlsx, workbooks), shape detection, the column mapper, money or date parsing, dedupe on import, exclusions, or export files.
 
 ## Rules
+- **Every row is accounted for (IMPORT-6).** `understand`'s `rowLedger`: rows read = written + set aside, and
+  every row set aside is on the preview with its line and reason. A row with only a name is a person. A new
+  rule that skips a row adds it to the set-aside list with its reason; `tests/import6.test.js` §1 runs the
+  invariant over every file in `tests/fixtures/import/`, so a new fixture is covered by adding it there.
 - **Who a row or a check is from is `donorMatch.js`'s answer (CHECK-2).** `matchDonor(orgId, { name | names,
   email, line1, postal })` returns matched (with the reasons and history in one sentence), choices, or none.
   Signals in order: email; every name on it against records of the SAME last name only (same first name with

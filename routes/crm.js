@@ -4243,7 +4243,9 @@ async function buildDonorListFilter(req) {
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const filter = await buildDonorListFilter(req);
+  // IMPORT-6 · Everyone · Donors · Contacts, each counted (groups.directoryRoles)
+  const { roleCounts, role } = await GR.directoryRoles(req.user.orgId, req.query, rq => buildDonorListFilter({ ...req, query: rq }));
+  const filter = await buildDonorListFilter(role === req.query.role ? req : { ...req, query: { ...req.query, role } });
   if (filter.badFilter) return res.status(400).json({ error: "bad_filter", sentence: filter.badFilter });   // LIST-1
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
@@ -4301,7 +4303,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const cells = cols.length ? await require("../donorList").cellsFor(req.user.orgId, donors, cols) : null;
   const out = donors.map(mapDonor(tpMap, driftMap));
   if (cells) for (const d of out) d.cells = cells.get(d.id) || {};
-  res.json({ donors: out, total: parseInt(cnt[0].c, 10) });
+  res.json({ donors: out, total: parseInt(cnt[0].c, 10), ...(roleCounts ? { roleCounts, role: role === "donor" ? "donors" : role === "contact" ? "contacts" : "everyone" } : {}) });
 }));
 
 // Lightweight whole-org list for consumers that need every donor but not the

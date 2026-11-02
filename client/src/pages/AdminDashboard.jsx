@@ -297,6 +297,33 @@ function FailedJobs() {
   );
 }
 
+// IMPORT-6 · NO BETA ORG IS LOCKED BY SURPRISE. Every org on a trial that ends
+// in the next seven days, soonest first, so Jonathan can reach them before the
+// account turns read-only (1 Nov: a beta org found out mid-import).
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+function TrialsEnding({ orgs }) {
+  const now = Date.now();
+  const rows = (orgs || []).filter(o => {
+    const st = o.subscription_status || "trialing";
+    const end = o.trial_ends_at ? new Date(o.trial_ends_at).getTime() : NaN;
+    return (st === "trialing" || st === "canceled" || st === "cancelled") && end > now && end - now <= WEEK_MS;
+  }).sort((a, b) => new Date(a.trial_ends_at) - new Date(b.trial_ends_at));
+  return (
+    <div data-testid="admin-trials-ending" style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "16px 20px" }}>
+      <div style={SH}>Trials ending in the next 7 days</div>
+      {!rows.length ? <div style={{ fontSize: 13, color: A.secondary }}>No trial ends in the next 7 days.</div> : rows.map(o => {
+        const days = Math.ceil((new Date(o.trial_ends_at).getTime() - now) / (24 * 3600 * 1000));
+        return (
+          <div key={o.id} data-testid="admin-trial-ending-row" style={{ display: "flex", gap: 12, justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderTop: `1px solid ${A.border}`, flexWrap: "wrap" }}>
+            <span style={{ fontWeight: 600 }}>{o.name || o.id}</span>
+            <span style={{ color: A.secondary }}>{`Ends ${new Date(o.trial_ends_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}, in ${days} ${days === 1 ? "day" : "days"}. Then read-only until a plan is chosen.`}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Overview({ metrics, orgs }) {
   const [open, setOpen] = useState(null);
   if (!metrics) return <div style={{ color: A.muted, padding: 40, fontSize: 13 }}>Loading metrics…</div>;
@@ -314,6 +341,7 @@ function Overview({ metrics, orgs }) {
         {metrics.left_out_count > 0 && <button onClick={() => setOpen({ title: "Left out", rows: metrics.rows?.left_out || [], sentence: metrics.definitions?.left_out })}
           style={{ background: "none", border: "none", color: A.green, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>See which</button>}
       </div>
+      <TrialsEnding orgs={orgs} />
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12 }}>
         <MetricCard label="MRR"         value={fmt$(metrics.mrr)}               valueColor={A.green}  accentColor={A.green} onOpen={opener("mrr", "MRR")} />

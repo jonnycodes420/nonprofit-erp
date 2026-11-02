@@ -25,8 +25,17 @@ const MAPPING_MODEL = "claude-haiku-4-5-20251001";
 
 function mount(ctx) {
 const { query, run, requireAuth, checkWriteAccess, wrap, uuid, actor, recordGift, recalcPledgePayment,
-        withAdvisoryLock, aiGate, anthropicFor, recordAiFallback } = ctx;
+        withAdvisoryLock, aiGate, anthropicFor, recordAiFallback, getOrgAccessState } = ctx;
 const app = routers.r0;
+// IMPORT-6 · A READ-ONLY ORG CAN'T START AN IMPORT. The preview and the write
+// both say so plainly (1 Nov: a beta org's trial had ended and the dialog
+// still opened, read the whole file, and only the Import button failed).
+const READ_ONLY_IMPORT = "Your account is read-only, so nothing can be imported. Reactivate to continue.";
+const importOpen = wrap(async (req, res, next) => {
+  const [o] = await query("SELECT subscription_status, grace_until, trial_ends_at FROM orgs WHERE id=?", [req.user.orgId]);
+  if (o && getOrgAccessState && getOrgAccessState(o) === "read_only") return res.status(402).json({ error: "read_only", sentence: READ_ONLY_IMPORT, message: READ_ONLY_IMPORT });
+  next();
+});
 const R = () => import("../shared/sheetRead.js");
 const PW = require("../pledgeWrite");   // FIX-60: the one writer of a pledge and its installments
 // CHECK-2's one matcher (email; names against the same last name, with
@@ -561,7 +570,7 @@ function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, ev
     ...u,
     button, sample: samplePerson(u),
     people: u.people.map(p => ({ key: p.key, name: p.name, kind: p.kind, household: p.household, email: p.email, lines: p.lines, roles: p.roles, flags: p.flags,
-      address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip, addressFrom: p.addressFrom || null, addressCheck: p.addressCheck || null,
+      address: p.address, address2: p.address2, city: p.city, state: p.state, zip: p.zip, country: p.country || null, addressFrom: p.addressFrom || null, addressCheck: p.addressCheck || null,
       phoneBad: !!p.phoneBad, addressBad: !!p.addressBad,
       members: matches.get(p.key).members.map(x => ({ name: x.name, status: x.status, id: x.id, by: x.by || null })) })),
     newPeople, matchedPeople, orgDonors, events, modelUsed: !!model.used, modelOff: !!model.off,
@@ -570,7 +579,7 @@ function publicView({ u, matches, model, orgDonors, newPeople, matchedPeople, ev
   };
 }
 
-app.post("/sheet-import/understand", requireAuth, wrap(async (req, res) => {
+app.post("/sheet-import/understand", requireAuth, importOpen, wrap(async (req, res) => {
   let body = readBody(req.body);
   const fileKey = typeof (req.body && req.body.fileKey) === "string" ? req.body.fileKey.slice(0, 64) : "";
   if (!body.sheets.length && fileKey) {
@@ -741,7 +750,7 @@ async function writePlan({ req, body, importId, who, report }) {
       if (x.id) { ids.push(x.id); matchedIds.add(x.id); continue; }
       const id = "d_" + uuid().replace(/-/g, "").slice(0, 10);
       const spouse = p.people[i] && p.people[i].spouse ? p.people[i].spouse : null;
-      newRows.push([id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip,
+      newRows.push([id, orgId, x.name || p.name, i === 0 ? p.email : null, i === 0 ? p.phone : null, p.address, p.address2, p.city, p.state, p.zip, p.country || null,
         i === 0 ? p.externalId : null, p.kind === "organization" ? "organisation" : (p.kind === "anonymous" ? "anonymous" : "person"), spouse,
         stageForRoles(p.roles), "active", "[]", JSON.stringify(p.personTypes || ["other"]), !!(c.optOut || c.doNotEmail), !!c.doNotContact, !!c.doNotMail,
         !!c.doNotCall, !!c.deceased, who.id, who.name, importId,
@@ -754,7 +763,7 @@ async function writePlan({ req, body, importId, who, report }) {
     personIds.set(p.key, ids);
     ids.forEach(id => touched.add(id));
   }
-  const DCOLS = ["id", "org_id", "name", "email", "phone", "address", "address2", "city", "state", "zip", "external_donor_id", "kind", "spouse_name",
+  const DCOLS = ["id", "org_id", "name", "email", "phone", "address", "address2", "city", "state", "zip", "country", "external_donor_id", "kind", "spouse_name",
     "stage", "status", "tags", "person_types", "do_not_email", "do_not_contact", "do_not_mail", "do_not_call", "deceased", "created_by", "created_by_name", "created_import_id",
     "phone_unreachable", "phone_unreachable_reason", "address_unmailable", "address_unmailable_reason", "address_unmailable_at"];
   for (let k = 0; k < newRows.length; k += JOB_BATCH) {
@@ -1043,7 +1052,7 @@ async function runJob(req, body, importId, who) {
   }
 }
 
-app.post("/sheet-import/commit", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+app.post("/sheet-import/commit", requireAuth, importOpen, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   // HARDEN-1: an import is bound to its preview. A preview read in one org
   // never commits into another, header or no header.

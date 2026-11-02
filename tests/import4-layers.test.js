@@ -402,9 +402,10 @@ async function commaCouples() {
   // records already here, as the old reading left them, and two that are not couples
   const ORG2 = "org_import4cc2";
   const tok2 = await freshOrg(ORG2, "Comma couples, already here (test)");
-  await q(`INSERT INTO donors (id, org_id, name, created_import_id, created_by, created_by_name) VALUES
-           ('d_cc_1',$1,'Brad Hollins Alex','imp_old','system:test','Test'), ('d_cc_2',$1,'Leslie, Kelly Dunlop',NULL,'system:test','Test'),
-           ('d_cc_3',$1,'Paul James Thomas','imp_old','system:test','Test'), ('d_cc_4',$1,'Brad Hollins Alex',NULL,'system:test','Test')`, [ORG2]);
+  // IMPORT-6: the old reading is a couple only when the record says two people (here, two emails)
+  await q(`INSERT INTO donors (id, org_id, name, email, email2, created_import_id, created_by, created_by_name) VALUES
+           ('d_cc_1',$1,'Brad Hollins Alex','brad.h@example.org','alex.h@example.org','imp_old','system:test','Test'), ('d_cc_2',$1,'Leslie, Kelly Dunlop',NULL,NULL,NULL,'system:test','Test'),
+           ('d_cc_3',$1,'Paul James Thomas',NULL,NULL,'imp_old','system:test','Test'), ('d_cc_4',$1,'Brad Hollins Alex',NULL,NULL,NULL,'system:test','Test')`, [ORG2]);
   await q(`INSERT INTO gifts (id, org_id, donor_id, amount, date, created_by, created_by_name) VALUES ('g_cc_1',$1,'d_cc_1',150,'2026-04-06','system:test','Test')`, [ORG2]);
   // the person's totals as the gift makes them, so the snapshot is the org's true state
   await q(`UPDATE donors SET total_giving=150, gift_count=1, last_gift_amount=150, first_gift_date='2026-04-06', last_gift_date='2026-04-06' WHERE id='d_cc_1'`);
