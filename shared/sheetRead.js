@@ -1547,9 +1547,14 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const evName = s(answers.eventName) || suggestedEventName || "";
   const fileHasDates = usable.some(t => t.cols.some(c => c.role === "date"));
   // a title row or a file name names the event only for a file with no dates:
-  // a dated gift export called "Gala gifts" is gifts, not an event to create
+  // a dated gift export called "Gala gifts" is gifts, not an event to create.
+  // NUMBERS-5: a file name alone never makes an event. A list of people called
+  // "walk-people.csv" is people (it read as an event called "Walk People"); the
+  // name speaks for an event only beside money the file gives no date for
+  // ("jp-dinner-gifts-106": the dinner's gifts and pledges, no dates).
+  const undatedMoney = gifts.length + pledges.length > 0;   // with no date column, none of it is dated by the file
   const eventNamed = !answers.notEvent && (hasEngagement || !!(answers.linkEvent && answers.eventName)
-    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || EVENT_WORD_RE.test(suggestedEventName)))));
+    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || (EVENT_WORD_RE.test(suggestedEventName) && undatedMoney)))));
   const eventWanted = eventNamed || (answers.linkEvent && answers.eventName);
   // the gifts that would take the event's date: no date of their own
   const eventGiftCount = gifts.filter(g => !g.date || g.datedBy === "event").length;
