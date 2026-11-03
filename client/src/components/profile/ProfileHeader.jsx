@@ -1,4 +1,5 @@
 // components/profile/ProfileHeader.jsx (PROFILE-3): part of the donor profile, cut from DonorProfile.jsx.
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AIPanel, Modal, Spin, T } from "../shared";
 import { DonorPhotoControl } from "./ProfilePhoto";
 import { ACT, ActIcon, ContactLine } from "./headerParts";
@@ -14,7 +15,75 @@ import { LogTouchpointModal } from "./modals";
 import { BriefPanel } from "../MajorGifts";
 import { PlanFollowUpModal } from "../PlanFollowUp";
 
-function ProfileHeader({setMergeOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
+// MENU-1 — More's menu. Its max height is the room between the button and the
+// screen's edge (or the phone's tab bar), less 12 px, and it scrolls inside; with more room above than
+// below it opens upward. From 900 px wide: Reach out and Plan on the left,
+// Know them and Their record on the right. Arrow keys walk the items in reading
+// order (left column, then right); Esc closes and hands focus back to More.
+const MENU_MARGIN=12, MENU_GAP=6;
+function MoreMenu({groups,onPick,onClose}){
+  const ref=useRef(null);
+  const [pos,setPos]=useState({up:false,maxHeight:320,wide:false,left:null});
+  useLayoutEffect(()=>{
+    const place=()=>{
+      const btn=document.getElementById("dp-more-btn");
+      if(!btn)return;
+      const r=btn.getBoundingClientRect(), vw=window.innerWidth;
+      // On a phone the bottom tab bar covers the last strip of the screen; the menu stops above it.
+      const bar=document.querySelector(".mobile-bottom-bar");
+      const vh=bar&&getComputedStyle(bar).display!=="none"?Math.min(window.innerHeight,bar.getBoundingClientRect().top):window.innerHeight;
+      const below=vh-r.bottom-MENU_GAP-MENU_MARGIN, above=r.top-MENU_GAP-MENU_MARGIN;
+      const up=above>below, wide=vw>=900;
+      // Narrow: under More (which wraps to the row's left), kept 16 px inside the screen.
+      let left=null;
+      const row=btn.offsetParent;
+      if(!wide&&row&&ref.current){
+        const rr=row.getBoundingClientRect(), w=ref.current.offsetWidth;
+        left=Math.max(16-rr.left,Math.min(r.left-rr.left,vw-16-w-rr.left));
+      }
+      setPos({up,maxHeight:Math.max(120,Math.floor(up?above:below)),wide,left});
+    };
+    place();
+    window.addEventListener("resize",place);
+    window.addEventListener("scroll",place,true);
+    return ()=>{window.removeEventListener("resize",place);window.removeEventListener("scroll",place,true);};
+  },[]);
+  useEffect(()=>{const first=ref.current&&ref.current.querySelector("[role=menuitem]:not([disabled])");if(first)first.focus({preventScroll:true});},[]);
+  const onKeyDown=e=>{
+    const items=[...ref.current.querySelectorAll("[role=menuitem]:not([disabled])")];
+    const i=items.indexOf(document.activeElement);
+    const go=n=>{e.preventDefault();const el=items[(n+items.length)%items.length];if(el){el.focus();el.scrollIntoView({block:"nearest"});}};
+    if(e.key==="ArrowDown")go(i+1);
+    else if(e.key==="ArrowUp")go(i<0?items.length-1:i-1);
+    else if(e.key==="Home")go(0);
+    else if(e.key==="End")go(items.length-1);
+    else if(e.key==="Escape"){e.preventDefault();onClose();const b=document.getElementById("dp-more-btn");if(b)b.focus();}
+  };
+  const left=groups.filter(g=>g[0]==="reach"||g[0]==="plan"), right=groups.filter(g=>g[0]==="know"||g[0]==="record");
+  const cols=pos.wide&&left.length&&right.length?[left,right]:[groups];
+  const group=([key,title,items])=>(
+    <div key={key} role="group" aria-labelledby={`dp-more-h-${key}`} data-testid={`dp-more-group-${key}`} style={{marginBottom:6}}>
+      <div id={`dp-more-h-${key}`} data-testid="dp-more-heading" style={{fontSize:11,fontWeight:700,color:T.ink3,padding:"8px 10px 4px",letterSpacing:"0.02em"}}>{title}</div>
+      {items.map(([label,fn,disabled,tid,sep])=>(
+        <div key={label}>
+          {sep&&<div role="separator" style={{borderTop:"1px solid "+T.bg3,margin:"6px 4px"}}/>}
+          <button role="menuitem" type="button" disabled={disabled} data-testid={tid} onClick={()=>onPick(fn)}
+            style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"8px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div ref={ref} className="dph-more-menu" role="menu" aria-label="More" data-testid="dp-more-menu" data-opens={pos.up?"up":"down"} onKeyDown={onKeyDown}
+      style={{position:"absolute",...(pos.up?{bottom:`calc(100% + ${MENU_GAP}px)`}:{top:`calc(100% + ${MENU_GAP}px)`}),...(pos.left!=null?{left:pos.left,right:"auto"}:{right:0}),zIndex:250,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",
+        minWidth:220,width:cols.length>1?480:"auto",maxWidth:"calc(100vw - 32px)",boxSizing:"border-box",maxHeight:pos.maxHeight,overflowY:"auto",overscrollBehavior:"contain",padding:6,
+        display:"grid",gridTemplateColumns:cols.length>1?"1fr 1fr":"1fr",columnGap:8,alignItems:"start"}}>
+      {cols.map((c,i)=><div key={i}>{c.map(group)}</div>)}
+    </div>
+  );
+}
+
+function ProfileHeader({setMergeOpen,setRelatedOpen,setRelPickerOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}){
   return <>
         <div className="donor-profile-header dp2-head dp3-head" data-testid="dp-head" style={{padding:"16px 0 0",display:"grid",gridTemplateColumns:"72px minmax(0,1fr) auto",columnGap:20,rowGap:0,alignItems:"start"}}>
           <div className="dph-backrow" style={{gridColumn:"1 / -1",gridRow:1,marginBottom:16}}>
@@ -72,55 +141,68 @@ function ProfileHeader({setMergeOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOp
               Voice memo
             </button>
             */}
-            <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" aria-haspopup="menu" aria-expanded={dpMoreOpen}
+            <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" id="dp-more-btn" aria-haspopup="menu" aria-expanded={dpMoreOpen}
               style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"0 14px",minHeight:40,boxSizing:"border-box",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>More ▾</button>
-            {dpMoreOpen&&(
-              <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
-                {/* FIX-55 item 6: Request a gift needs card payments set up and
-                    Brief me needs AI; each is hidden when its service is not on,
-                    where they answered "Stripe not configured" / "brief_unavailable". */}
-                {[...(!dpThread?[["Plan a follow-up",()=>setPlanOpen(true),isReadOnly,"dp-plan-followup"]]:[]),
-                ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
-                  // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
-                  ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
+            {dpMoreOpen&&(()=>{
+              /* MENU-1 — THE MENU, GROUPED, AND ON THE SCREEN. It was about
+                 eighteen items in one column, absolutely placed with no max
+                 height, so on a 13" laptop Merge with…, Edit record, Export and
+                 Delete sat below the bottom of the screen with no way to scroll
+                 to them. Now four groups (two columns from 900 px), a max height
+                 measured from the button, and its own scroll. Every capability
+                 and permission condition is the one it had; "Add a task" left
+                 because the Task button beside More is drawn on the same
+                 condition, and "Plan a follow-up" leaves only while the Next
+                 step's own button is on the screen. */
+              const sugN=SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length;
+              const planOnScreen=typeof document!=="undefined"&&!!document.querySelector("[data-testid=dp-next-plan]");
+              const groups=[
+                ["reach","Reach out",[
+                  // FIX-55 item 6: Request a gift needs card payments set up.
+                  ...(org?.capabilities?.stripe?[["Request a gift",()=>setShowGiftModal(true),false]]:[]),
+                  // FIX-14 Part 3 — the quick drafts live here.
+                  ...(isTeam?[["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
                     ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
-                    ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
                     ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
-                  [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
-                  ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
-                  // PROSPECT-1 — a one-page prospect brief from the record, the
-                  // screening results and the public filing; saved to their files.
-                  ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
-                  ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
+                  /* MEMBERS-2 — staff send the link; they never see the token it carries. */
+                  ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
                   // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
                   ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
-                  // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record; for
-                  // somebody who is not a volunteer yet, the form that makes them one.
+                ]],
+                ["plan","Plan",[
+                  // BUILD-85 — only when there is no open thread, and only when the Next step's button is not already showing.
+                  ...(!dpThread&&!planOnScreen?[["Plan a follow-up",()=>setPlanOpen(true),isReadOnly,"dp-plan-followup"]]:[]),
+                  ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false]]:[]),
+                  [`Suggested${sugN?` (${sugN})`:""}`,()=>setSuggestOpen(true),false],
+                  // WHY-1 — only for a lapsed donor.
+                  ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
+                ]],
+                ["know","Know them",[
+                  // FIX-55 item 6: Brief me needs AI.
+                  ...(org?.capabilities?.ai?[["Brief me",()=>setBriefOpen(true),false]]:[]),
+                  // PROSPECT-1 — a one-page prospect brief, saved to their files.
+                  ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
+                  ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
+                  [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
+                ]],
+                ["record","Their record",[
+                  ["Edit record",onEdit,false],
+                  // MENU-1 — the same picker as About's "Link someone" (POLISH-4's Owns · Gives through).
+                  ...(setRelatedOpen?[["Link to a person or business",()=>{setRelatedOpen(true);setRelPickerOpen&&setRelPickerOpen(true);},isReadOnly,"dp-link-someone"]]:[]),
+                  // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record, or the form that makes them one.
                   isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
                     :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
-                  // WHY-1 — only for a lapsed donor: the facts on their record
-                  // before they stopped, and the one touch that fits.
-                  ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
-                  ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
-                  [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
-                  /* MEMBERS-2 — the one page this person has: their membership,
-                     their tickets, their shifts and their giving. Staff send the
-                     link; they never see the token it carries, because somebody
-                     who could read it could open somebody else's page. */
-                  ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
-                  ["Edit record",onEdit,false],
                   // POLISH-4 — two records she knows are one person, merged by hand.
                   ...(setMergeOpen?[["Merge with…",()=>setMergeOpen(true),isReadOnly,"dp-merge-with"]]:[]),
                   // TRUST-2 — a person's own data, in one file, when they ask.
                   ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
-                  // FIX-14 Part 3 — Erase and Delete, at the bottom of More, never on the page.
+                  // FIX-14 Part 3 — Erase and Delete, at the bottom of More, under a rule, never on the page.
                   ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
-                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",!(!isReadOnly)]]:[])].map(([label,fn,disabled,tid,sep])=>(
-                  <button key={label} role="menuitem" disabled={disabled} data-testid={tid} onClick={()=>{setDpMoreOpen(false);fn();}}
-                    style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderTop:sep?"1px solid "+T.bg3:"none",marginTop:sep?4:0,borderRadius:sep?0:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
-                ))}
-              </div>
-            )}
+                  ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",isReadOnly]]:[]),
+                ]],
+              ].filter(g=>g[2].length);
+              return <MoreMenu groups={groups} onPick={fn=>{setDpMoreOpen(false);fn();}} onClose={()=>setDpMoreOpen(false)}/>;
+            })()}
             {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
             {makeVolOpen&&<AddVolunteerModal person={{id:donor.id,name:donor.name,email:donor.email,phone:donor.phone}} onClose={()=>setMakeVolOpen(false)} onDone={()=>{setMadeVol(true);if(onInteractionAdded)onInteractionAdded();}}/>}
             {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}

@@ -6,9 +6,11 @@ import { EditedMarker } from "../EditHistory";
 import { apiFetch } from "../../api";
 import { errorMessage } from "../../lib/domainError";
 import { Figure } from "../Figure";
-import { DONOR_RELATIONSHIP_LABELS } from "./profileShared";
+import { relationshipLabelsFor } from "./profileShared";
 
 function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}){
+  // MENU-1 — the types as this record reads them ("Gives through" on a person, "Owned by" on a business).
+  const DONOR_RELATIONSHIP_LABELS=relationshipLabelsFor(donor);
   return <>
           {/* Related tab — manual household/spouse/family/employer_match
               links. No auto-detection (matching last name, address, etc.) —
@@ -20,7 +22,7 @@ function RelatedModal({donor,household,isReadOnly,linkDonor,onSelectRelatedDonor
               <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
-                    <button key={v} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
+                    <button key={v} data-testid={`dp-rel-type-${v}`} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
                   ))}
                 </div>
                 <input value={relSearch} onChange={e=>setRelSearch(e.target.value)} placeholder="Search people and organizations by name…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
