@@ -352,13 +352,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   useEffect(()=>{setRailData(null);loadRail();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id,donor.interactions?.length||0]);
-  // ADDRESS-1: an edit to the mailing address reads the rail again, so About
-  // shows the new address without a refresh (and without blanking the rail).
-  const addrKey=[donor.address,donor.address2,donor.city,donor.state,donor.zip].map(x=>x||"").join("|");
-  const addrSeen=useRef(addrKey);
-  useEffect(()=>{if(addrSeen.current===addrKey)return;addrSeen.current=addrKey;loadRail();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[addrKey]);
+  const addrKey=[donor.address,donor.address2,donor.city,donor.state,donor.zip].map(x=>x||"").join("|"),addrSeen=useRef(addrKey);useEffect(()=>{if(addrSeen.current!==addrKey){addrSeen.current=addrKey;loadRail();}},[addrKey]);// eslint-disable-line react-hooks/exhaustive-deps -- ADDRESS-1: an address edit re-reads the rail (Contact), no refresh
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
