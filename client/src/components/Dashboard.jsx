@@ -294,23 +294,27 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
   const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
-  const [setupStatus,setSetupStatus]=useState(null);
+  // SHIFT-2: on Home the rail's bundle has usually parked the checklist by the
+  // time Home draws; taken here, a new org's setup card (above Your moves) is
+  // in the first frame instead of arriving after it and pushing the deck down.
+  const [setupParked]=useState(()=>surface==="home"?takeParked("/org/setup-status"):undefined);
+  const setupCelebrateFor=s=>{let seen=false,fired=false;try{seen=!!localStorage.getItem(`steward_setup_seen_${setupOrgId}`);fired=!!localStorage.getItem(`steward_gold_setup_complete_${setupOrgId}`);}catch{/* private mode */}return !!(s&&s.complete&&seen&&!fired);};
+  const [setupStatus,setSetupStatus]=useState(()=>setupParked===undefined?null:setupParked);
   // Whether THIS load is the completion moment. Decided ONCE at fetch time —
   // GoldMoment stamps its once-ever localStorage flag on mount, so a render
   // gate that re-read the flag would kill the banner on the very next
   // re-render (it did, in the live drive).
-  const [setupCelebrate,setSetupCelebrate]=useState(false);
+  const [setupCelebrate,setSetupCelebrate]=useState(()=>setupParked!==undefined&&setupCelebrateFor(setupParked));
   // HOME-3: on Home the checklist is one line under the deck until she opens it.
-  const [setupLoaded,setSetupLoaded]=useState(false);   // HOME-4: the rail waits for it
+  const [setupLoaded,setSetupLoaded]=useState(setupParked!==undefined);   // HOME-4: the rail waits for it
   useEffect(()=>{
-    apiFetch("/org/setup-status").then(s=>{
-      let seen=false,fired=false;
-      try{seen=!!localStorage.getItem(`steward_setup_seen_${setupOrgId}`);fired=!!localStorage.getItem(`steward_gold_setup_complete_${setupOrgId}`);}catch{/* private mode */}
+    (setupParked!==undefined?Promise.resolve(setupParked):apiFetch("/org/setup-status")).then(s=>{
+      const celebrate=setupCelebrateFor(s);
       // Remember this org was ever seen INCOMPLETE — it gates the completion
       // GoldMoment, so an org that was already fully set up before the card
       // existed never gets congratulated for it (don't nag, don't flatter).
       if(s&&!s.complete){try{localStorage.setItem(`steward_setup_seen_${setupOrgId}`,"1");}catch{/* private mode */}}
-      if(s&&s.complete&&seen&&!fired)setSetupCelebrate(true);
+      if(celebrate)setSetupCelebrate(true);
       setSetupStatus(s);
     }).catch(()=>{}).finally(()=>setSetupLoaded(true)); // offline/error → no card, Home unaffected
   // eslint-disable-next-line react-hooks/exhaustive-deps

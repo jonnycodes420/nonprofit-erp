@@ -49,3 +49,20 @@
 @font-face { font-family: 'DM Serif Fallback Times'; font-weight: 400; src: local('Times New Roman'), local('TimesNewRomanPSMT'), local('Liberation Serif'), local('LiberationSerif');
   size-adjust: 107.72%; ascent-override: 96.18%; descent-override: 31.1%; line-gap-override: 0%;
   unicode-range: U+0020-007E, U+00A0-0107, U+010C-0113, U+0116-011B, U+011E-011F, U+0122-0123, U+012A-012B, U+012E-0131, U+0136-0137, U+0139-0148, U+014C-014D, U+0150-015B, U+015E-0165, U+016A-016B, U+016E-0173, U+0178-017E, U+0218-021B, U+02C6-02C7, U+02DA, U+02DC-02DD, U+0304, U+0308, U+2013-2014, U+2018-201A, U+201C-201E, U+2020, U+2022, U+2026, U+2039-203A, U+2044, U+20AC, U+20BD, U+2122, U+2212, U+2215; }
+/* SHIFT-2 · Home's day (h1.home-day) has a face of its own: the same file as
+   DM Serif Display, with font-display optional, so the browser draws it only
+   when it is in by the first frame (a warm visit) and otherwise keeps the
+   fallback for the visit. The serif and any fallback wrap some dates
+   differently (Georgia's widths are 0.92 to 1.00 of the serif's, string by
+   string), so a swap could move everything under the day. Its fallback is
+   Georgia sized on the dates themselves (97%: fewest wraps unlike the serif's
+   across 280 to 420 px columns; ascent and descent as DM Serif Fallback's). */
+@font-face { font-family: 'DM Serif Display Day'; font-style: normal; font-weight: 400; font-display: optional;
+  src: url(/fonts/dm-serif-display-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'DM Serif Display Day'; font-style: normal; font-weight: 400; font-display: optional;
+  src: url(/fonts/dm-serif-display-latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'DM Serif Day Fallback'; font-weight: 400; src: local('Georgia');
+  size-adjust: 97%; ascent-override: 106.81%; descent-override: 34.54%; line-gap-override: 0%;
+  unicode-range: U+0020-007E, U+00A0-0107, U+010C-0113, U+0116-011B, U+011E-011F, U+0122-0123, U+012A-012B, U+012E-0131, U+0136-0137, U+0139-0148, U+014C-014D, U+0150-015B, U+015E-0165, U+016A-016B, U+016E-0173, U+0178-017E, U+0218-021B, U+02C6-02C7, U+02DA, U+02DC-02DD, U+0304, U+0308, U+2013-2014, U+2018-201A, U+201C-201E, U+2020, U+2022, U+2026, U+2039-203A, U+2044, U+20AC, U+20BD, U+2122, U+2212, U+2215; }

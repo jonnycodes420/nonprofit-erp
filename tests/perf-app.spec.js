@@ -20,7 +20,9 @@
 //     opens at 08:00, 14:00 and 20:00: the greeting's words change with the
 //     hour, and CI's morning once wrapped the greeting line and moved everything
 //     under it 27 px (CLS 0.139). The worst hour counts. The fixture org's name
-//     is the length that wrapped it. The day is the longest real date, which
+//     is the length that wrapped it. SHIFT-2: and once more at 08:00 with the
+//     reads that fill Home's header landing after it has painted (lateHeader),
+//     which is how CI's slower runner moved Your moves 68 px. The day is the longest real date, which
 //     takes two lines on a phone in the serif and in its fallback alike: on a
 //     shorter date the two can wrap differently, and a cold phone moves when
 //     the serif arrives (docs/history/SHIFT-1.md, left for the next brief).
@@ -52,8 +54,7 @@ const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, api, login, BASE, browserLegOrSkip, importWorkSettled } = require("./helpers");
 const { workbookImportLeg } = require("./lib/workbookImportLeg");
 const PREVIEW = require("./lib/previewPerfOrg");
-const { withinBudget, lenient } = require("./lib/budget");
-const timed = withinBudget(ok);
+const timed = require("./lib/budget").withinBudget(ok);
 
 const ROOT = path.join(__dirname, "..");
 const { DIST } = require("./lib/dist");   // CI-2: this shard's dist
@@ -100,7 +101,7 @@ async function seed() {
 
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
-async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14 } = {}) {
+async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14, late = false } = {}) {
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block", timezoneId: "UTC" });
   // SHIFT-1: the page's clock starts at the pinned hour and keeps ticking. Not
   // Playwright's clock.setFixedTime: a Date that never moves slowed the warm
@@ -169,6 +170,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   });
   const errors = [];
   page.on("pageerror", e => errors.push(String(e.message || e)));
+  if (late) await lateHeader(page);
   await page.goto(APP + url, { waitUntil: "load", timeout: 60000 });
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
@@ -196,6 +198,25 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   out.usable = r.readyAt ? Math.max(out.readyAt, out.longEnd, out.lcp, Math.round(r.netQuiet || 0)) : 0;
   await ctx.close();
   return out;
+}
+
+// SHIFT-2: CI's slower runner, on this page's terms. The reads that fill Home's
+// header land after Home has painted: its lead (Ask's suggestions) misses the
+// first bundle and comes alone LATE_MS later, and the agent's line, which is
+// always set after the first paint, has words (this org has no drafts, so on
+// its own it says nothing). On main the suggestions then arrived as a 68 px
+// row on a phone and pushed Your moves down (CLS 0.045, CI's own number).
+const LATE_MS = 1500;
+const LATE_LINE = "Steward did 3 things for you yesterday, and 2 drafts are waiting for you.";
+async function lateHeader(page) {
+  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/home/lead"), async r => {
+    const res = await r.fetch();
+    const b = await res.json();
+    b["/home/lead"] = { status: 503 };
+    if (b["/agent/daily-line"] && b["/agent/daily-line"].body) b["/agent/daily-line"].body.line = LATE_LINE;
+    await r.fulfill({ response: res, body: JSON.stringify(b) });
+  });
+  await page.route(u => u.href.startsWith(BASE + "/home/lead"), async r => { await new Promise(z => setTimeout(z, LATE_MS)); await r.continue(); });
 }
 
 async function measureN(browser, machine, auth, url, ready, rows, opts) {
@@ -282,6 +303,8 @@ function preloaderAllowed() {
     errors: byHour.flatMap(r => r.errors), fail5xx: byHour.flatMap(r => r.fail5xx), ready: byHour.every(r => r.ready) };
   console.log(`  Home, phone, CLS by hour: ${byHour.map(r => `${String(r.hour).padStart(2, "0")}:00 ${r.cls}`).join(", ")}`);
   const homeW = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { warm: true, hour: HOURS[0] });   // PERF-3
+  const homeL = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: HOURS[0], late: true });   // SHIFT-2
+  console.log(`  Home, phone, its header's reads late: CLS ${homeL.cls}`);
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
   const prof = await measureN(browser, DESKTOP, auth, `/donors/${top.id}`, '[data-testid="dp-right-rail"]');
   await browser.close();
@@ -303,7 +326,7 @@ function preloaderAllowed() {
       console.log(`  ${name.padEnd(17)} ${String(r.usable).padStart(9)} ${String(r.readyAt).padStart(9)} ${String(r.lcp).padStart(7)} ${String(r.longEnd).padStart(8)} ${String(r.net).padStart(7)} ${String(r.jsKB).padStart(6)} ${String(r.jsFirstKB).padStart(9)} ${String(r.totalKB).padStart(9)} ${String(r.requests).padStart(9)}  first ${r.firstKB} KB, CLS ${r.cls}`);
     console.log(`  Donors list, 100 rows, server: ${listServer} ms (median of 5)\n`);
   }
-  for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Home (phone, warm)", homeW], ["Donors list", list], ["donor profile", prof]])
+  for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Home (phone, warm)", homeW], ["Home (phone, header late)", homeL], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
   timed(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, { ms: homeD.usable, budget: BUDGET.homeDesktop });
   timed(`Home, its rail included, usable under ${BUDGET.homePhone / 1000} s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
@@ -311,21 +334,11 @@ function preloaderAllowed() {
   // PERF-3: the second visit, every byte of the first look, and nothing moving.
   timed(`Home, a second time, usable under ${WARM_MS / 1000} s on a phone (${homeW.usable} ms)`, { ms: homeW.usable, budget: WARM_MS });
   ok(`Home's first look downloads at most ${FIRST_KB} KB in all on a phone (${homeP.firstKB} KB)`, homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB, homeP.firstKB);
-  {
-    // SHIFT-2: strict on the local battery; in CI (tests/lib/budget.js's
-    // lenient()) a shift over the limit warns like the other perf budgets,
-    // naming the CLS, the hour and what moved by how much.
-    const name = `nothing on Home moves as it loads on a phone, at ${HOURS.map(h => `${h}:00`).join(", ")} UTC (CLS ${homeP.cls} cold at ${homeP.clsHour}:00, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS} each)`;
-    const still = homeP.cls < CLS_MAX && homeW.cls < CLS_MAX;
-    const moved = { cold: homeP.cls, coldHour: homeP.clsHour, warm: homeW.cls, coldMoved: homeP.shifts, warmMoved: homeW.shifts };
-    if (still || !lenient()) ok(name, still, moved);
-    else {
-      console.log(`  WARN  ${name}: over the ${CLS_MAX} limit (CI runner; strict on the local battery)`);
-      for (const s of homeP.shifts) console.log(`    cold at ${homeP.clsHour}:00 moved: ${s}`);
-      for (const s of homeW.shifts) console.log(`    warm moved: ${s}`);
-      ok(name, true);
-    }
-  }
+  // SHIFT-2: strict everywhere again, CI included (step 1 let it warn there
+  // while the shift was found), and held to a fourth load: the header's reads late.
+  ok(`nothing on Home moves as it loads on a phone, at ${HOURS.map(h => `${h}:00`).join(", ")} UTC, and when its header's reads land late (CLS ${homeP.cls} cold at ${homeP.clsHour}:00, ${homeW.cls} warm, ${homeL.cls} late; under ${CLS_MAX}; worst of ${RUNS} each)`,
+     homeP.cls < CLS_MAX && homeW.cls < CLS_MAX && homeL.cls < CLS_MAX,
+     { cold: homeP.cls, coldHour: homeP.clsHour, warm: homeW.cls, late: homeL.cls, coldMoved: homeP.shifts, warmMoved: homeW.shifts, lateMoved: homeL.shifts });
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
