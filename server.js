@@ -11936,8 +11936,10 @@ async function resolveWidgetsPublic(org, widgets, ctx = {}) {
             `SELECT COALESCE(SUM(g.amount),0)::float AS raised
                FROM gifts g JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
               WHERE g.org_id=? AND ${CAMPAIGN_GIFT_MATCH("g", "c")}
-                AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at,'YYYY-MM-DD'))`,
-            [ctx.campaignId, org.id]);
+                AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at AT TIME ZONE ?,'YYYY-MM-DD'))`,
+            // POLISH-4: the day the match began is the org's day, as a gift's date is
+            // (UTC put a gift given at 8 PM in New York on the night it began "before" it).
+            [ctx.campaignId, org.id, await orgTzName(org.id)]);   // ORG_TZ_SEAM_OK
           const since = Math.round((Number(sum?.raised) || 0) * 100);
           r.match = {
             potCents: pot, sponsor: c.match_sponsor || null,

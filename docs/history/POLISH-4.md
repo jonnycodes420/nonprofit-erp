@@ -58,3 +58,9 @@ in words; list subjects show "(first name)", never "Margaret"; the Journey switc
 (budget lines read "$1,750 ahead" / "$300 over", in brass), giving pages (Stripe said once; the
 switched-off portal names the org and links its giving page; "Your giving"), and the morning email's
 date in words (a P2). Left, with reasons, in defects.md.
+
+**Found by CI, fixed here.** campaign2-goal-bar went red on CI at 8 PM New York time: a matching
+challenge dated the day it began as the database's UTC day (`to_char(match_started_at)`), so a gift
+given that evening read as "before" the match and the public page said more of the match was left
+than was. It now reads the org's day (server.js, the matchchallenge widget). Red on main with a UTC
+database at 20:30 ET, green with the fix.
