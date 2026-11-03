@@ -746,7 +746,7 @@ app.get("/grants/:id/restricted", requireAuth, wrap(async (req, res) => {
        FROM grant_spend WHERE org_id=? AND grant_id=? ORDER BY spent_on DESC, created_at DESC`,
     [orgId, req.params.id]);
   const payments = rows[0].award_pledge_id ? await query(
-    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    `SELECT g.id, g.amount, g.date FROM gifts g WHERE g.org_id=? AND g.pledge_id=? AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date ASC`,   // NUMBERS-5: the rows behind received
     [orgId, rows[0].award_pledge_id]) : [];
   res.json({
     balance,
@@ -1096,7 +1096,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
 
   // 3 — WHAT THE FUNDER PAID: payments applied to the award, each its own row.
   for (const p of g.award_pledge_id ? await query(
-    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    `SELECT g.id, g.amount, g.date FROM gifts g WHERE g.org_id=? AND g.pledge_id=? AND ${NUMBERS.money.MONEY("g")} ORDER BY g.date ASC`,   // NUMBERS-5: the rows behind received
     [orgId, g.award_pledge_id]) : []) {
     refs.add(`payment:${p.id}`);
     lines.push(`payment:${p.id}, ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
@@ -1122,7 +1122,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     fundGifts = await query(
       `SELECT gi.id, gi.amount, gi.date, gi.donor_id, d.name AS donor_name
          FROM gifts gi LEFT JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
-        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("gi")}
           AND gi.date >= ? AND gi.date <= ?
         ORDER BY gi.amount DESC NULLS LAST, gi.id LIMIT 25`, [orgId, g.fund_id, start, end]);
     for (const gi of fundGifts) {
@@ -1131,11 +1131,12 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
         + `${gi.donor_name ? ` from ${gi.donor_name}` : ""}.`);
     }
     givers = await query(
-      `SELECT d.id, d.name, COUNT(gi.id) AS gifts, SUM(gi.amount) AS total
+      // NUMBERS-5: a fact the model may state, so it is money (credit rows out).
+      `SELECT d.id, d.name, COUNT(gi.id) FILTER (WHERE gi.amount > 0) AS gifts, ${NUMBERS.money.MONEY_SUM("gi")} AS total
          FROM gifts gi JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
-        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE AND ${NUMBERS.money.MONEY("gi")}
           AND gi.date >= ? AND gi.date <= ? AND d.deleted_at IS NULL
-        GROUP BY d.id, d.name ORDER BY SUM(gi.amount) DESC NULLS LAST, d.id LIMIT 12`,
+        GROUP BY d.id, d.name ORDER BY total DESC NULLS LAST, d.id LIMIT 12`,
       [orgId, g.fund_id, start, end]);
     for (const p of givers) {
       refs.add(`person:${p.id}`);

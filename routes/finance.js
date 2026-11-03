@@ -247,11 +247,11 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   // one line ("$500,811.46 with no fund" was 94% of a year, unexplained).
   const [noFund] = await query(
     `SELECT COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='')::int n,
-            COALESCE(SUM(ROUND(g.amount*100)) FILTER (WHERE COALESCE(g.fund_id,'')=''),0)::bigint cents,
+            ${NUM.money.MONEY_CENTS("g", "COALESCE(g.fund_id,'')=''")} cents,
             COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='' AND g.import_id IS NOT NULL)::int imported,
-            COALESCE(SUM(ROUND(g.amount*100)),0)::bigint all_cents
+            ${NUM.money.MONEY_CENTS("g")} all_cents
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-      WHERE g.org_id=? AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}   -- NUMBERS-5: credit rows are not giving
         AND g.date >= (${TODAY("g.org_id")} - 365)::text`, [orgId]);
   if (noFund.n) {
     const share = Number(noFund.all_cents) > 0 ? Number(noFund.cents) / Number(noFund.all_cents) : 0;
@@ -349,7 +349,7 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
     const rows = await query(
       `SELECT g.id, g.date, g.amount, g.type, d.name AS who
          FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-        WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')='' AND ${NUM.money.MONEY("g")}
           AND g.date >= (${TODAY("g.org_id")} - 365)::text
         ORDER BY g.date DESC NULLS LAST, g.id LIMIT 2000`, [orgId]);
     const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
@@ -486,9 +486,9 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
       WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
       GROUP BY 1,2,3
       UNION ALL
-     SELECT g.fund_id, 'donor', d.name, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint
+     SELECT g.fund_id, 'donor', d.name, ${NUM.money.MONEY_CENTS("g")}
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-      WHERE g.org_id=? AND g.fund_id IS NOT NULL AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND g.fund_id IS NOT NULL AND d.deleted_at IS NULL AND ${NUM.money.MONEY("g")}
       GROUP BY 1,2,3
       UNION ALL
      SELECT ft.fund_id, 'ledger', ft.vendor_donor, COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint
@@ -4617,7 +4617,8 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     // BUILD-33: same deleted_at IS NULL predicate as Reports — this figure's
     // whole job is "your giving history lives in Reports", so it must equal
     // what Reports actually shows (trashed donors' gifts excluded).
-    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL", [orgId]),
+    // NUMBERS-5: and Reports leaves credit rows out (money.js), so this does too.
+    query(`SELECT ${NUM.money.MONEY_SUM("g")} AS total, COUNT(*) FILTER (WHERE ${NUM.money.MONEY("g")})::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL`, [orgId]),
     query("SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event')", [orgId]),
   ]);
 

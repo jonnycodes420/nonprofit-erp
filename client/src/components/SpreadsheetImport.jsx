@@ -20,8 +20,9 @@ import ImportGiftLine from "./ImportGiftLine";   // FIX-58: one accounting
 import { FirstLook } from "./Insights";   // INSIGHTS-1 the first look
 import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
-import { decodeSpreadsheetBytesDetailed } from "../../../shared/importShape";
-import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords } from "../../../shared/sheetRead";
+import { decodeSpreadsheetBytesDetailed, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
+import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAsWorkbook } from "../../../shared/sheetRead";
+import { WorkbookImport } from "./WorkbookImport";
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
@@ -39,6 +40,7 @@ const n = (k, one, many) => `${Number(k).toLocaleString("en-US")} ${k === 1 ? on
 const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }); };
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
+// NUMBERS-5: a workbook of people and their gifts is read by the workbook screen
 
 // FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
 // this same reader with that file. Anything else dropped is not ours.
@@ -118,6 +120,23 @@ export async function readSheetFile(file) {
   return [{ name: "Sheet1", grid: gridFromText(dec.text) }];
 }
 
+// NUMBERS-5 · A WORKBOOK OF PEOPLE AND THEIR GIFTS. Each sheet given its role
+// the way the workbook screen gives it (BUILD-82: the file read once more with
+// its formats, hidden rows and fills), and whether that screen is the one that
+// reads it (sheetRead.readsAsWorkbook). Null for anything else.
+async function workbookRolesOf(file, sheets) {
+  if (!file || file.files || !/\.(xlsx|xlsm|xls)$/i.test(file.name || "")) return null;
+  if ((sheets || []).filter(sh => (sh.grid || []).length).length < 2) return null;
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", cellNF: true, cellFormula: true, cellStyles: true });
+  const roled = classifyWorkbookSheets(extractWorkbookFromSheetJS(wb, XLSX).map(sh => {
+    if (!sh.records.length) return { name: sh.name, headers: [], rows: [], typedRows: [], rowCount: 0, chromeRows: [], chromeAbove: [], meta: sh.meta, formulaCellRatio: sh.formulaCellRatio };
+    const a = analyzeWorkbookSheet(sh.records);
+    return { name: sh.name, ...a, rowCount: a.records, meta: sh.meta, formulaCellRatio: sh.formulaCellRatio };
+  }));
+  return readsAsWorkbook(sheets, roled) ? { roled } : null;
+}
+
 // HOME-3 item 4 · THE PAGES BEHIND THE WINDOW KEEP UP. The Donors page still
 // said "No donors yet" after a successful import until a reload: the window
 // was closed while the import was still writing (it runs as a job on the
@@ -153,6 +172,7 @@ function tellWhenDone(id, { inFlight = false } = {}) {
 export default function SpreadsheetImport({ file: fileProp, onClose, onImported }) {
   const [file, setFile] = useState(fileProp || null);
   const [sheets, setSheets] = useState(null);
+  const [workbook, setWorkbook] = useState(null);   // NUMBERS-5: read by the workbook screen
   const [u, setU] = useState(null);
   const [answers, setAnswers] = useState({});
   const [overrides, setOverrides] = useState({});
@@ -246,6 +266,10 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
         const s = await readSheetFile(file);
         if (!live) return;
         const rows = s.reduce((a, sh) => a + (sh.grid || []).length, 0);
+        setPhase(`Read ${n(rows, "row")}${s.length > 1 ? ` on ${n(s.length, "sheet")}` : ""}. Giving each sheet its role`);
+        const wbk = await workbookRolesOf(file, s);
+        if (!live) return;
+        if (wbk) { setWorkbook(wbk); setBusy(""); setPhase(""); return; }
         setPhase(`Read ${n(rows, "row")}${s.length > 1 ? ` on ${n(s.length, "sheet")}` : ""}. Matching the people in it with everyone already in Steward`);
         setSheets(s);
       }
@@ -362,6 +386,20 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
   // HARDEN-1: which org this file goes into, said at the top and on the button
   const intoOrg = (u && u.org && u.org.name) || pageOrgName() || "";
 
+  // NUMBERS-5: a workbook of people and their gifts, read whole by the workbook
+  // screen; its write is one transaction, its receipt has the one Undo
+  if (workbook) {
+    const closeWorkbook = () => { told({ import: "workbook" }); if (onClose) onClose(); };
+    return (
+      <Modal className="commit-screen" onClose={closeWorkbook} title="Import a spreadsheet" width={900} ariaLabel="Import a spreadsheet">
+        <div data-testid="sheet-import-workbook" style={{ color: T.ink }}>
+          <WorkbookImport workbook={workbook} fileName={file && file.name}
+            onClose={() => { setWorkbook(null); setFile(null); }}
+            onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); }} />
+        </div>
+      </Modal>
+    );
+  }
   return (
     <Modal className="commit-screen" onClose={finish} title="Import a spreadsheet" width={900} ariaLabel="Import a spreadsheet"
       subtitle="Steward reads your file the way you would, shows you what it understood, and asks only what it cannot tell.">

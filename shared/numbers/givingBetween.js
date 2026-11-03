@@ -16,6 +16,11 @@ function capped({ from, to }, today) {
 
 // SQL: gift `g` is money given in the span (placeholders, from then to).
 const IN_SPAN = (g = "g") => `(${MONEY(g)} AND ${g}.date >= ? AND ${g}.date <= ?)`;
+// SQL: the money given in the span by rows `g`, dollars (two placeholders, from
+// then to). A report's year column (NUMBERS-5).
+const SPAN_SUM = (g = "g") => `COALESCE(SUM(${g}.amount) FILTER (WHERE ${IN_SPAN(g)}), 0)`;
+// SQL: the same, in whole cents.
+const SPAN_CENTS = (g = "g") => `COALESCE(SUM(ROUND(${g}.amount * 100)) FILTER (WHERE ${IN_SPAN(g)}), 0)::bigint`;
 
 // Total given in cents for the org or one person: `gifts` the gifts above
 // zero, `rows` every money row (a refund included), `givers` the people.
@@ -32,4 +37,4 @@ async function givingBetween(query, orgId, { from, to, today, donorId = null }) 
   return { cents: Number(r.cents), gifts: Number(r.n), rows: Number(r.rows), givers: Number(r.givers), from: s.from, to: s.to };
 }
 
-module.exports = { capped, IN_SPAN, givingBetween };
+module.exports = { capped, IN_SPAN, SPAN_SUM, SPAN_CENTS, givingBetween };

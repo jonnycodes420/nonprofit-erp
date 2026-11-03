@@ -46,6 +46,7 @@ const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a p
 const auctionCore = require("./auctionCore");   // PARITY-2 Part 4: the one winner ordering
 // EVENTS-3: an event's guest predicates and its lists by party live in shared/numbers/events.js.
 const EVF = require("./shared/numbers/events");
+const NMONEY = require("./shared/numbers/money");   // NUMBERS-5: money in a total, and its sums
 const { EVENT_GIFT_MATCH, EVENT_GUEST_GAVE, EVENT_REGISTERED, EVENT_REGISTERED_STATUSES, EVENT_GUEST_LIVE, EVENT_INVITED,
         EVENT_DECLINED, EVENT_CAME, EVENT_NO_REPLY, EVENT_GUEST_WORDS } = EVF;
 // One event's lists, or every event dated in a window, read once per figure.
@@ -423,9 +424,9 @@ function giftsWhere(p, args) {
 function topGiversSql(orgId, p) {
   return {
     sql: `WITH t AS (
-            SELECT d.id, d.name, SUM(g.amount)::numeric AS v, MAX(g.date) AS last
+            SELECT d.id, d.name, ${NMONEY.MONEY_SUM("g")}::numeric AS v, MAX(g.date) AS last
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${require("./shared/numbers/givingBetween").IN_SPAN("g")}
              GROUP BY d.id, d.name),
           r AS (
             SELECT t.*, COALESCE(SUM(v) OVER (ORDER BY v DESC, id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS before,
@@ -567,8 +568,8 @@ const SOURCES = {
         : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 AND g.date < ?)";
       return {
         sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
-                     ROUND((SELECT COALESCE(SUM(g.amount), 0) FROM gifts g
-                             WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)::numeric, 2) AS amount,
+                     ROUND((SELECT ${require("./shared/numbers/givingBetween").SPAN_SUM("g")} FROM gifts g
+                             WHERE g.org_id = d.org_id AND g.donor_id = d.id)::numeric, 2) AS amount,
                      'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
                 FROM donors d
                WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${before}
@@ -1448,7 +1449,8 @@ const SOURCES = {
     sql: (orgId, p) => ({
       // IMPORT-4: the first gift is a dated one; with none, Donor since is unknown.
       // NUMBERS-3: a credit row is never anyone's first gift (shared/numbers/firstGift.js).
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY g.date ASC, g.id ASC LIMIT 1`,
+      // NUMBERS-5: on a day with two, the one order (firstGift.FIRST_GIFT_ORDER), never a random id.
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 AND ${NOT_CREDIT("g")} AND g.date IS NOT NULL ORDER BY ${require("./shared/numbers/firstGift").FIRST_GIFT_ORDER} LIMIT 1`,
       args: [orgId, p.donor],
     }),
   },
@@ -1630,12 +1632,14 @@ const SOURCES = {
     params: { from1: "date:required", to1: "date:required", measure: "measure", firstYear: "bool" },
     sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)}${p.firstYear ? " that was their first gift ever" : ""}: the people retention is measured against.${p.measure === "sum" ? " The amount is what they gave in that window." : ""}`,
     sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+      // NUMBERS-5: the people are those with a gift in the window (money above
+      // zero); their amount is the window's money, a refund taken off.
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(${NMONEY.MONEY_SUM("g")}::numeric, 2) AS amount,
                    'Given in the earlier window' AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NMONEY.MONEY("g")} AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
                ${p.firstYear ? FIRST_GIFT_IN("?", "?") : ""}
-             GROUP BY d.id, d.name`,
+             GROUP BY d.id, d.name HAVING bool_or(${NMONEY.GIFT("g")})`,
       args: [orgId, p.from1, p.to1, ...(p.firstYear ? [p.from1, p.to1] : [])],
       order: "amount DESC, id",
     }),
@@ -1646,14 +1650,14 @@ const SOURCES = {
     params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required", measure: "measure", firstYear: "bool" },
     sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)} who gave again ${dd(p.from0)} to ${dd(p.to0)}. The amount is what they gave in the later window.`,
     sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(${NMONEY.MONEY_SUM("g")}::numeric, 2) AS amount,
                    'Given in the later window' AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
-               AND EXISTS (SELECT 1 FROM gifts g1 WHERE g1.org_id = g.org_id AND g1.donor_id = g.donor_id AND g1.amount > 0
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NMONEY.MONEY("g")} AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
+               AND EXISTS (SELECT 1 FROM gifts g1 WHERE g1.org_id = g.org_id AND g1.donor_id = g.donor_id AND ${NMONEY.GIFT("g1")}
                              AND LEFT(g1.date,10) >= ? AND LEFT(g1.date,10) <= ?)
                ${p.firstYear ? FIRST_GIFT_IN("?", "?") : ""}
-             GROUP BY d.id, d.name`,
+             GROUP BY d.id, d.name HAVING bool_or(${NMONEY.GIFT("g")})`,
       args: [orgId, p.from0, p.to0, p.from1, p.to1, ...(p.firstYear ? [p.from1, p.to1] : [])],
       order: "amount DESC, id",
     }),
@@ -1734,7 +1738,7 @@ const SOURCES = {
       const when = p.from && p.to ? ` dated ${dd(p.from)} to ${dd(p.to)}` : p.from ? ` dated ${dd(p.from)} or later` : p.to ? ` dated up to ${dd(p.to)}` : ", ever";
       if (p.kind === "count") return `How many gifts the people in this group have given${when}. A refund is not a gift and is not counted.`;
       if (p.kind === "average") return `Every gift the people in this group have given${when}, added up and divided by how many there are, to the cent. A refund comes off the total and is not counted as a gift; soft and matching credits are not gifts.`;
-      return `Every gift the people in this group have given${when}, added up to the cent, with refunds taken off.`;
+      return `Every gift the people in this group have given${when}, added up to the cent, with refunds taken off. Soft and matching credits are not gifts.`;
     },
     sql: async (orgId, p) => {
       if (p.kind && !["total", "count", "average"].includes(p.kind)) throw new FigureParamError("kind is total, count or average.");
@@ -1745,7 +1749,8 @@ const SOURCES = {
       if (p.from) { w += " AND LEFT(g.date,10) >= ?"; args.push(p.from); }
       if (p.to) { w += " AND LEFT(g.date,10) <= ?"; args.push(p.to); }
       if (p.kind === "count") w += " AND g.amount > 0";
-      if (p.kind === "average") { w += " AND LOWER(TRIM(COALESCE(g.type,''))) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
+      // NUMBERS-5: a soft or matching credit row is not money in any of the three.
+      w += ` AND ${NMONEY.MONEY("g")}`;
       return {
         sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
                      COALESCE(f.name, 'Unrestricted') AS detail
@@ -3230,8 +3235,9 @@ async function groupFigureValues(orgId, m, sources) {
       if (p.to) { c.push("day <= ?"); own.push(p.to); }
       if (p.kind === "count") c.push("raw > 0");
       // NUMBERS-2: the average is per_gift (group-gifts): refunds come off the
-      // total and are not gifts; credit rows are not gifts.
-      if (p.kind === "average") c.push("NOT credit");
+      // total and are not gifts. NUMBERS-5: credit rows are not money in the
+      // total or the count either (group-gifts leaves them out of all three).
+      c.push("NOT credit");
       const w = c.join(" AND ");
       // The condition is written once for the count, once for the sum and, for
       // an average, once more for the gifts above zero.

@@ -694,7 +694,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   return(
     <SheetDropTarget disabled={isReadOnly} onFile={f=>setDroppedFile(f)} style={{display:"flex",flexDirection:"column",gap:8}}>
       {/* PROFILE-2 Part 1: an open profile is the whole page; the list's title and chips sat above it once the profile stopped being a fixed panel. */}
-      {!selected&&<PageTitle main="Your" accent="donors."/>}
+      {/* NUMBERS-5: the heading names the people the Directory shows (IMPORT-6's walk read "Your donors." over Everyone) */}
+      {!selected&&(view==="directory"&&(dirPeopleShown||dirPeople)==="everyone"?<PageTitle main="" accent="Everyone."/>
+        :view==="directory"&&(dirPeopleShown||dirPeople)==="contacts"?<PageTitle main="Your" accent="contacts."/>
+        :<PageTitle main="Your" accent="donors."/>)}
       {/* FIX-55: a spreadsheet dropped anywhere on Donors opens the one reader with it */}
       {droppedFile&&<SpreadsheetImport key={droppedFile.name+droppedFile.lastModified} file={droppedFile} onClose={()=>setDroppedFile(null)} onImported={()=>{reloadDonors();setDroppedFile(null);}}/>}
       {/* INT-BUILD-1 Part 6 — moves management: who has not been met. */}

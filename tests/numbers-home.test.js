@@ -25,6 +25,13 @@
 //   §13 ask: the one suggested-ask rule; a soft credit never sets "largest"
 //   §14 last gift: two gifts on one day from one import, by amount then the row
 //   §15 pledges: a credit row linked to a pledge pays nothing; a refund comes off
+// NUMBERS-5:
+//   §16 no giving tag without a gift: nobody, a refund, a credit row or a pledge
+//       alone gives no lifecycle (never "New"); a first gift this year is New
+//   §17 first gift: two on one day from one import, the larger, then the row
+//       higher up the file, every time; the checker's key agrees
+//   §18 ask: a rising donor whose Room to give is not known is held at their
+//       level on Home's cards and on the profile alike
 "use strict";
 const { ok, summary, q, closeDb } = require("./helpers");
 const N = require("../shared/numbers");
@@ -236,10 +243,10 @@ const at = iso => new Date(iso);
 
   // ── §13 ask ──────────────────────────────────────────────────────────────
   await N.ask.ready;
-  const a1 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }, { date: "2025-01-01", amount: "10000", type: "Soft credit" }]);
+  const a1 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }, { date: "2025-01-01", amount: "10000", type: "Soft credit" }], { roomKnown: true });
   ok("§13 largest $250 (the $10,000 soft credit is not a gift), last two average $175 and rising: one step up, $350",
     a1 && a1.largestCents === 25000 && a1.avgLastThreeCents === 17500 && a1.rising && a1.askCents === 35000, a1);
-  const a2 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }], { stepUp: false });
+  const a2 = N.ask.askFor([{ date: "2026-01-01", amount: "100" }, { date: "2026-05-01", amount: "250" }]);
   ok("§13 held at their own level: $250", a2 && a2.askCents === 25000 && a2.held, a2);
   const a4 = N.ask.askFor([{ date: "2024-10-21", amount: "1800" }, { date: "2024-10-21", amount: "225" }, { date: "2024-10-21", amount: "500" }, { date: "2024-10-21", amount: "192" }]);
   ok("§13 four gifts on one day are not rising: $1,800 largest, held at $1,750", a4 && !a4.rising && a4.askCents === 175000, a4);
@@ -269,6 +276,41 @@ const at = iso => new Date(iso);
       [`g_${ORG}_pp${n}`, ORG, PP, amt, type, `p_${ORG}_pp`]);
   const [pd] = await query(`SELECT ${N.pledges.PAID_OF("p")} AS a, pp.paid AS b FROM pledges p LEFT JOIN ${N.pledges.PAID_BY_PLEDGE} pp ON pp.pledge_id = p.id WHERE p.id = ?`, [ORG, `p_${ORG}_pp`]);
   ok("§15 $300 paid, a $500 matching credit and a $100 refund: paid is $200, both ways", Number(pd.a) === 200 && Number(pd.b) === 200, pd);
+
+  // ── §16 no giving tag without a gift ─────────────────────────────────────
+  const DS = require("../donorStatus");
+  const NG = await person("ng"), NR = await person("nr"), NC = await person("nc"), NP = await person("np"), NU = await person("nu");
+  await gift(NR, "2026-10-01", -20); await gift(NC, "2026-10-01", 500, { type: "Soft credit" }); await gift(NU, "2026-10-20", 40);
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,status,created_by,created_by_name) VALUES ($1,$2,$3,100,'open',${sys})`, [`p_${ORG}_np`, ORG, NP]);
+  const st16 = DS.statusSql(ORG, TODAY, await DS.cutsFor(ORG));
+  const srows = new Map((await query(st16.sql, st16.args)).map(r => [r.donor_id, r]));
+  ok("§16 nobody, a refund, a credit row or a pledge alone: no lifecycle, so never New", [NG, NR, NC, NP].every(id => !srows.has(id)),
+    [NG, NR, NC, NP].filter(id => srows.has(id)).map(id => srows.get(id)));
+  ok("§16 a first gift this year is New", srows.get(NU) && srows.get(NU).lifecycle === "new", srows.get(NU));
+
+  // ── §17 first gift: one day, one import ──────────────────────────────────
+  const FT = await person("ft"), FT2 = await person("ft2");
+  for (const [who, row, amt] of [[FT, 1, 125], [FT, 2, 500], [FT2, 7, 100], [FT2, 3, 100]])
+    await q(`INSERT INTO gifts (id,org_id,donor_id,date,amount,import_row,created_at,created_by,created_by_name) VALUES ($1,$2,$3,'2024-03-09',$4,$5,'2026-11-01T09:00:00Z',${sys})`,
+      [`g_${ORG}_f${row}${who === FT ? "a" : "b"}`, ORG, who, amt, row]);
+  const FS = require("../figureSources");
+  const f1 = await FS.figureValue(ORG, { key: "donor-first-gift", params: { donor: FT } }, {});
+  ok("§17 $125 and $500 on one first day from one import: the first gift is the $500, every time", f1 && f1.cents === 50000, f1);
+  const [firstRow] = await query(`SELECT g.id FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? ORDER BY ${N.firstGift.FIRST_GIFT_ORDER} LIMIT 1`, [ORG, FT2]);
+  ok("§17 two of the same amount: the one higher up the file", firstRow && firstRow.id === `g_${ORG}_f3b`, firstRow);
+  const chk = await require("../scripts/ci/check-numbers").checkOrg(ORG, { screens: require("../numbers").screens });
+  const firstProbs = (chk.problems || []).filter(p => p.rule === "donor-first-largest-last").flatMap(p => p.examples).filter(x => [FT, FT2].includes(x.donor));
+  ok("§17 the checker's key agrees", Array.isArray(chk.problems) && firstProbs.length === 0, firstProbs);
+
+  // ── §18 ask: Home and the profile hold alike ─────────────────────────────
+  const RS = await person("rs");
+  await gift(RS, "2025-01-10", 100); await gift(RS, "2025-06-10", 200); await gift(RS, "2026-01-10", 300);
+  const known = await N.ask.roomKnown(query, ORG, [RS]);
+  const rsRows = await query(N.ask.GIFTS_SQL, [ORG, RS]);
+  const card = N.ask.askFor(rsRows, { roomKnown: known.has(RS) });
+  const prof = await require("../engagement").suggestedAsk(query, ORG, RS);
+  ok("§18 rising, Room to give not known: the card and the profile both hold at $300", !known.has(RS) && card && prof && card.held && card.askCents === 30000 && prof.askCents === 30000, { card, prof });
+  ok("§18 once Room to give is known, the step up is the same rung", N.ask.askFor(rsRows, { roomKnown: true }).askCents > 30000);
 
   for (const t of ["pledges", "gifts", "imports", "donors", "households"]) await q(`DELETE FROM ${t} WHERE org_id = $1`, [ORG]);
   await q(`DELETE FROM orgs WHERE id = $1`, [ORG]);

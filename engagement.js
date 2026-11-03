@@ -418,15 +418,10 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     }
   }
   let own = SA.suggestedAskCents({ largestCents, lastThreeCents });
-  if (own && own.rising) {
-    const P = require("./prospect");
-    const RT = await import("./shared/roomToGive.js");
-    const f = (await P.loadFacts(orgId, [donorId], q)).get(donorId);
-    const word = f ? RT.assess({ ...f, screening: opts.screening || null }).word : "unknown";
-    if (word === "unknown") {
-      own = SA.suggestedAskCents({ largestCents, lastThreeCents, stepUp: false,
-        holdWords: "their own level, because Room to give is not yet known" });
-    }
+  // NUMBERS-5: held at their own level until Room to give is known, the one
+  // rule Home's cards read too (shared/numbers/ask.js).
+  if (own && own.rising && !(await ASK.roomKnown(q, orgId, [donorId], new Map([[donorId, opts.screening || null]]))).has(donorId)) {
+    own = SA.suggestedAskCents({ largestCents, lastThreeCents, stepUp: false, holdWords: ASK.HOLD_WORDS });
   }
   const s = opts.screening;
   if (!own || !s || s.capacityLowCents == null) return own;

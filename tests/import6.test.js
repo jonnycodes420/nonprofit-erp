@@ -12,7 +12,8 @@
 //      person, counted exactly; chrome on a list of people is set aside, listed.
 //   §2 address columns: each mailing/home/billing header family maps into the
 //      address (ZIP, state, street, city, country), never a custom field; ZIPs
-//      keep their zero and ZIP+4 reads 12345-6789.
+//      keep their zero and ZIP+4 reads 12345-6789. NUMBERS-5: "Mailing ..."
+//      alone is not Salesforce, and a file name alone makes no event.
 //   §0 contacts in the Directory: a people-only import, then Everyone and
 //      Contacts hold them, Donors reads 0, role=auto opens on Everyone, the
 //      receipt's import id opens exactly its people, and the truth check agrees.
@@ -158,6 +159,17 @@ async function addressColumns() {
      JSON.stringify([z["Ada Brightwater"], z["Tidewater Rowing Club"], z["Tom & Jane Halverson"], z["Kim & Lee Park"], z["Rosa Delgado-Vance"], z["Imani Okafor"]])
        === JSON.stringify([["01970", "United States"], ["03820", "United States"], ["04101-1234", "United States"], ["80202-1234", null], ["02840-1234", null], ["05401", null]])
      && !(mixed.keptHeaders || []).length, JSON.stringify(z));
+  // NUMBERS-5 (IMPORT-6's walk): a plain list with "Mailing ..." headers is not
+  // announced as a Salesforce export, and its file name makes no event. On main:
+  // "Read as a Salesforce Contacts export." and an event called "Walk People".
+  const walkList = await readText("Name,Mailing Street,Mailing City,Mailing State,Mailing Zip,Email\nAda Brightwater,12 Fenn St,Salem,MA,01970,ada@example.org\n"
+    + "Bo Carrow,4 Oak Ln,Lynn,MA,01902,bo@example.org\nCal Dunmore,9 Elm Rd,Salem,MA,01970,cal@example.org\n", "walk-people.csv");
+  ok("§2 a plain list with Mailing headers is not called a Salesforce export, and \"walk-people.csv\" makes no event called Walk People",
+     !walkList.knownShape && !walkList.event && !walkList.questions.some(x => x.id === "event") && walkList.people.length === 3,
+     JSON.stringify({ knownShape: walkList.knownShape, event: walkList.event }));
+  const sfList = await readText("Contact ID,First Name,Last Name,Mailing Street,Mailing City\n0035e00000AbCdE,Ada,Brightwater,12 Fenn St,Salem\n", "contacts.csv");
+  ok("§2 ...while a Salesforce Contacts file, with its Contact ID, still says so",
+     !!sfList.knownShape && sfList.knownShape.system === "Salesforce", JSON.stringify(sfList.knownShape));
 }
 
 // ── §5 couples written as one name ────────────────────────────────────────
