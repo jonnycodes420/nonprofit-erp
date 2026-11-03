@@ -4228,8 +4228,8 @@ app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
          JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
          LEFT JOIN fin_funds f ON f.id = rs.fund_id AND f.org_id = rs.org_id
          LEFT JOIN LATERAL (
-           SELECT SUM(amount) AS total, COUNT(*) AS cnt FROM gifts
-            WHERE org_id = rs.org_id AND recurring_subscription_id = rs.id
+           SELECT ${NUMBERS.money.MONEY_SUM("rg")} AS total, COUNT(*) FILTER (WHERE ${NUMBERS.money.GIFT("rg")}) AS cnt FROM gifts rg
+            WHERE rg.org_id = rs.org_id AND rg.recurring_subscription_id = rs.id
          ) g ON true
         WHERE rs.org_id = ?
         ORDER BY (rs.status IN ('past_due','recovering')) DESC, rs.last_failed_at DESC NULLS LAST, rs.created_at DESC`,
@@ -7906,14 +7906,16 @@ app.get("/account/tax-summary", requireDonorAccount, wrap(async (req, res) => {
   const acct = req.donorAccount;
   const rows = await query(
     `SELECT LEFT(g.date,4) AS year, g.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS org_name,
-            SUM(g.amount) AS total, COUNT(*)::int AS gifts
+            ${NUMBERS.money.MONEY_SUM("g")} AS total, (COUNT(*) FILTER (WHERE g.amount > 0))::int AS gifts
      FROM gifts g
      JOIN donor_account_links l ON l.org_id = g.org_id AND l.donor_id = g.donor_id
        AND l.account_id = ? AND l.unlinked_at IS NULL
+     JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND ${NUMBERS.money.LIVE("d")}
      JOIN orgs o ON o.id = g.org_id
      JOIN portal_settings ps ON ps.org_id = g.org_id AND ps.enabled = true AND ps.network_listed = true
      -- NUMBERS-4: money (shared/numbers/money.js): a soft or matching credit row is not a gift they gave.
-     WHERE ${NUMBERS.money.MONEY("g")}
+     -- NUMBERS-5: a record the org deleted is not theirs, and an undated gift is in no year.
+     WHERE ${NUMBERS.money.MONEY("g")} AND g.date IS NOT NULL AND g.date <> ''
      GROUP BY LEFT(g.date,4), g.org_id, o.org_slug, org_name
      ORDER BY year DESC, total DESC`, [acct.id]);
   const receipts = await query(

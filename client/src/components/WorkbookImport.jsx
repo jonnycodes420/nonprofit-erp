@@ -23,6 +23,7 @@ import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { displayDate } from "../../../shared/displayDate";
 import { buildMoveFileFacts, newRunId } from "../../../shared/movePlan";
 import { countLabel } from "../../../shared/countWords.js";
+import ImportUndo from "./ImportUndo";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? T.green600 : r === "pledges" || r === "recurring" ? T.gold600 : T.ink3;
@@ -812,6 +813,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
               ? `Recorded on this screen only, ${savedRecord.error}`
               : <>Saved as <strong style={{ color: T.ink }}>{savedRecord.name}</strong> find it again under Settings → Imports.</>}
           </div>
+        )}
+        {/* NUMBERS-5: the one Undo, the same as every import receipt's: the
+            whole workbook (people, gifts, pledges) comes out together. */}
+        {savedRecord && !savedRecord.error && savedRecord.id && (
+          <div style={{ marginBottom: 12 }}><ImportUndo importId={savedRecord.id} /></div>
         )}
         {checks.length > 0 && (
           <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? T.terra100 : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? T.terra200 : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>

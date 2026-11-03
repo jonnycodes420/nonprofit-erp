@@ -54,6 +54,18 @@ async function rowsFor(orgId) {
   };
 }
 
+// NUMBERS-5: whose Room to give is known, for the people an ask could step up
+// (their own last three rising, or in a household, whose unit's might): the
+// cards hold a rising unit at its level until it is, as the profile does.
+async function roomKnownFor(orgId, rows) {
+  const ASK = require("./shared/numbers/ask");
+  await ASK.ready;
+  const own = new Map();
+  for (const g of rows.gifts) if (g.date) (own.get(g.donor_id) || own.set(g.donor_id, []).get(g.donor_id)).push(g);
+  const ids = rows.people.filter(p => own.has(p.id) && (p.household_id || ASK.rising(own.get(p.id)))).map(p => p.id);
+  return ASK.roomKnown(query, orgId, ids);
+}
+
 const MEMO = new Map();   // orgId -> { key, asOf, result, at }
 const MEMO_MS = 60 * 1000;
 async function fingerprint(orgId) {
@@ -71,7 +83,8 @@ async function insightsFor(orgId, asOf) {
   if (m && m.key === key && m.asOf === asOf && Date.now() - m.at < MEMO_MS) return m.result;
   const rows = await rowsFor(orgId);
   await insights.ready;   // SWEEP-1: the greeting (shared/greeting.js) and the one ask rounding (shared/smartAmounts.js)
-  const result = insights.computeInsights({ ...rows, asOf });
+  const roomKnown = await roomKnownFor(orgId, rows);
+  const result = insights.computeInsights({ ...rows, asOf, roomKnown });
   MEMO.set(orgId, { key, asOf, result, at: Date.now() });
   return result;
 }

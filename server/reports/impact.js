@@ -276,12 +276,13 @@ app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(as
   // strictly earlier date", so the >365-day test, the totals and the top 50
   // come from one pass. Proven row-for-row identical on a 150,000-gift org.
   // The totals keep gifts whose donor row is gone (the old (1b) had no join);
-  // the list joins donors, as (1c) did.
+  // the list joins donors, as (1c) did. NUMBERS-5: a credit row is neither a
+  // return nor an earlier gift (money.js).
   const pReengBoth = query(
     `WITH day AS (
-       SELECT donor_id, date, SUM(amount) AS amt, COUNT(*) AS n,
+       SELECT donor_id, date, ${NUMBERS.money.MONEY_SUM("g")} AS amt, COUNT(*) AS n,
               LAG(date) OVER (PARTITION BY donor_id ORDER BY date) AS prev
-         FROM gifts g WHERE g.org_id = ? AND g.date IS NOT NULL AND ${NOT_DELETED("g")}
+         FROM gifts g WHERE g.org_id = ? AND g.date IS NOT NULL AND ${NOT_DELETED("g")} AND ${NUMBERS.money.MONEY("g")}
         GROUP BY donor_id, date),
      per AS (
        SELECT donor_id, COALESCE(SUM(amt),0) AS amount, SUM(n)::int AS gift_count, MAX(date) AS last_return_date

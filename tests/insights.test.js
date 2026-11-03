@@ -16,7 +16,9 @@
 //      engine's figure must equal the file's under that mapping, exactly.
 //   §3 Major slipping names Cranville: $100,000 (2024), $100,000 (2025),
 //      $25,577.60 (2026). Upgrade names Ashham: $1,000 (Jan 2025), $5,000
-//      (Dec 2025) through The Ashham Family Foundation; ask $7,500.
+//      (Dec 2025) through The Ashham Family Foundation; ask $5,000, held at
+//      their own level because Room to give is not yet known (NUMBERS-5: the
+//      profile's rule, so Home and the profile ask the same).
 //   §4 Review: rows that look like purchases are listed with a reason; nothing
 //      moves until she decides; Not a gift makes the row a Finance revenue line
 //      (out of every giving total, still money in) and the truth check agrees,
@@ -213,8 +215,10 @@ async function main() {
   const f = Object.fromEntries((up && up.facts) || []);
   ok("§3 Upgrade names Ashham: $1,000 (January 2025), then $5,000 (December 2025) through The Ashham Family Foundation",
      !!up && f["earlier gift"] === "$1,000 (January 2025)" && f["recent gift"] === "$5,000 (December 2025)" && f.through === "The Ashham Family Foundation", up && up.facts);
-  // NUMBERS-4: the one suggested-ask rule (shared/numbers/ask.js), which here also lands on $7,500.
-  ok("§3 …ask $7,500, with its rule (the one suggested-ask rule)", !!up && up.how.ask.cents === 750000 && /one rule/.test(up.how.ask.rule), up && up.how.ask);
+  // NUMBERS-4: the one suggested-ask rule (shared/numbers/ask.js). NUMBERS-5: rising, with Room
+  // to give not yet known, so held at their level ($5,000) as the profile holds, and it says why.
+  ok("§3 …ask $5,000, held, with its rule (the one suggested-ask rule)", !!up && up.how.ask.cents === 500000 && up.how.ask.held
+     && /Room to give is not yet known\.$/.test(up.how.ask.words) && /one rule/.test(up.how.ask.rule), up && up.how.ask);
   if (memoKept) ok("§M Ashham designated Stable Moments", !!up && f.designated === "Stable Moments", up && up.facts);
   else waiting("§M Ashham designated Stable Moments", "the scrubbed fixture has no program words");
 

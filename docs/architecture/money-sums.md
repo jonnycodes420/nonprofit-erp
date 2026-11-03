@@ -4,6 +4,8 @@ Every hand-written SQL `SUM(` over a money column in server code outside `shared
 
 ## Totals
 
+NUMBERS-5: the 52 below that were not on the rule are all on it now ("Moved onto shared/numbers in NUMBERS-5"); (a) is 123 on the rule, 0 partial, 0 not. The inventory's line numbers are NUMBERS-4's.
+
 - **248 money sums** in 31 files.
 - **(a) a total a person sees: 123.** On the rule: 71. Partly on it: 2. Not on it: 50.
 - **(b) a legitimate own sum: 125.**
@@ -444,103 +446,39 @@ Line numbers are from the worktree `nonprofit-erp-numbers4` (branch numbers-4, H
 |---|---|---|---|---|
 | `setup.js:659` | Setup readout: "N gifts ($X) are in Steward" | a | no (credits counted) | Shown as what her imports brought in; arguably a row inventory, so unsure. |
 
-## For NUMBERS-5
+## Moved onto shared/numbers in NUMBERS-5
 
-The (a) rows not on the rule (52: 50 no, 2 partial), in the order to move them: donor-facing first, then money totals on the main screens, then reports and figure sources, then the rest. Several are one fix each (a shared pledge-paid fragment, a shared grant-received fragment).
+All 52 (50 "no", 2 "partial") moved; none was reclassed as a legitimate own sum. One was on the rule already: `routes/homeLead.js:180` repeats a sum whose query already had `MONEY()` in its WHERE, so the ORDER BY now names the column, and its "gave this season" test reads `GIFT()`. NUMBERS-5 added the sums themselves to `shared/numbers/`, with the credit rule inside, so a caller cannot forget it: `money.js` `MONEY_SUM(g, where)` and `MONEY_CENTS(g, where)`, `givingBetween.js` `SPAN_SUM(g)` and `SPAN_CENTS(g)` (two placeholders, from then to), `pledges.js` `GRANT_RECEIVED(gr)`. `route-gift-sql` went from 348 lines to 296. Guarded by `tests/numbers5-money-sums.test.js` (16 of 18 red on main) and `tests/numbers-home.test.js`. Where each now lives (SPLIT-1 had moved most of `routes/crm.js` into `server/`):
 
-### 1. Donor-facing: the portal, the donor account, mail drafted to a donor
-
-| Where | Sums | Rule |
+| Was (NUMBERS-4) | Now | Reads |
 |---|---|---|
-| `routes/give.js:7903` | Donor account: tax summary, total per year per org | no (deleted-person and undated rows not handled; credit rows out since NUMBERS-4) |
-
-### 2. Pledge paid (one shared fragment fixes all of these)
-
-Every copy is `SUM(amount) FROM gifts WHERE pledge_id = ...` with no `NOT_CREDIT`. The home is `numbers.pledgeSummary()` and the `pledges-*` sources, which themselves use the unfiltered paid; moving the rule into one fragment in `shared/numbers/` and reading it everywhere is the fix.
-
-| Where | Sums | Rule |
-|---|---|---|
-| `shared/reportBuilder.js:100` | Report builder pledges: Paid | no (credits counted) |
-| `shared/reportBuilder.js:101` | Report builder pledges: Still to come | no (credits counted) |
-
-### 3. Main screens: Home, the Donors list, the profile
-
-| Where | Sums | Rule |
-|---|---|---|
-| `routes/homeLead.js:180` | Home lead: the same, as the ORDER BY | no (credits counted) |
-
-### 4. Grant received (one shared fragment)
-
-| Where | Sums | Rule |
-|---|---|---|
-| `server.js:4309` | grantMoneyRows: received on a grant's award pledge | no (credits counted) |
-| `shared/reportBuilder.js:153` | Report builder grants: Received | no (credits counted) |
-
-### 5. Fundraising and Finance
-
-| Where | Sums | Rule |
-|---|---|---|
-| `routes/crm.js:21920` | Fundraising campaigns: gifts given before a goal starts | no (credits counted) |
-| `routes/crm.js:21289` | Goal progress: last 7 days, lapsed-recovery | no (credits counted; deleted people counted) |
-| `routes/crm.js:21301` | Goal progress: last 7 days, any goal | no (credits counted; deleted people counted) |
-| `routes/finance.js:4617` | Finance summary: the whole giving history (vs the ledger) | no (credits counted) |
-| `routes/finance.js:247` | Finance "needs you": gifts with no fund in the last year | no (credits counted; uses CURRENT_DATE, not the org's today) |
-| `routes/finance.js:249` | Finance "needs you": the year's giving it is a share of | no (credits counted; CURRENT_DATE) |
-| `routes/finance.js:486` | Funds detail: restricted money by donor (gifts to a fund) | no (credits counted) |
-
-### 6. Reports, the board PDF, figure sources and the report builder
-
-| Where | Sums | Rule |
-|---|---|---|
-| `routes/crm.js:24675` | Three-year report: year 0 | no (credits counted) |
-| `routes/crm.js:24676` | Three-year report: year 1 | no (credits counted) |
-| `routes/crm.js:24677` | Three-year report: year 2 | no (credits counted) |
-| `routes/crm.js:24681` | Three-year report: ORDER BY year 0 | no (credits counted) |
-| `routes/crm.js:24682` | Three-year report: ORDER BY year 1 | no (credits counted) |
-| `routes/crm.js:24683` | Three-year report: ORDER BY year 2 | no (credits counted) |
-| `routes/crm.js:24543` | Retention report: each prior-year donor's dollars | no (credits counted; a refund-only row makes a donor) |
-| `routes/crm.js:24545` | Retention report: each current-year donor's dollars | no (credits counted) |
-| `routes/crm.js:24550` | Retention report: prior dollars | no (inherits the prior CTE) |
-| `routes/crm.js:24551` | Retention report: retained dollars | no (inherits the current CTE) |
-| `routes/crm.js:24509` | LYBUNT/SYBUNT report: prior year total | no (credits counted; refunds come off) |
-| `routes/crm.js:25452` | Members by level report: membership revenue | no (credits counted; deleted people counted) |
-| `routes/crm.js:25508` | Membership revenue report: membership cents by month | no (credits counted) |
-| `routes/crm.js:25509` | Membership revenue report: donation cents by month | no (credits counted) |
-| `figureSources.js:426` | top-givers (90% set): each giver's window total | no (credits counted; refunds come off) |
-| `figureSources.js:431` | top-givers: running total before each giver | no (inherits the per-giver sum above) |
-| `figureSources.js:432` | top-givers: the window's grand total | no (inherits the per-giver sum above) |
-| `figureSources.js:570` | lybunt/sybunt source: what they gave in the earlier year | no (credits counted; refunds come off) |
-| `figureSources.js:1633` | retention-window-prior: dollars in the earlier window | no (credits counted; refunds ignored: amount > 0) |
-| `figureSources.js:1649` | retention-window-kept: dollars in the later window | no (credits counted; refunds ignored: amount > 0) |
-| `figureSources.js:3238` | Group page in one read: group-gifts total / count / average | no (credit rows counted in total and count; excluded only for the average) |
-| `server.js:5817` | Report builder: column totals | no (the gifts entity's base has no NOT_CREDIT, so a gift-amount total counts credits) |
-| `server.js:5821` | Report builder: totals per group | no (same as the column totals) |
-
-### 7. Ask, Ask why and facts given to the model
-
-| Where | Sums | Rule |
-|---|---|---|
-| `askEngine.js:393` | Ask: first-year retention, prior-year cohort's dollars | partial (GIFT used: credits out, refunds not taken off) |
-| `askEngine.js:399` | Ask: first-year retention, dollars given again | partial (GIFT used: credits out, refunds not taken off) |
-| `routes/crm.js:17569` | Grant report facts for the AI: each giver's total to the fund | no (credits counted) |
-| `routes/crm.js:17573` | Same, as the ORDER BY | no (credits counted) |
-
-### 8. The rest
-
-| Where | Sums | Rule |
-|---|---|---|
-| `routes/crm.js:26893` | Impact: re-engaged donors, gifts per day | no (credits counted) |
-| `routes/crm.js:26898` | Impact: re-engaged donors, per person | no (inherits the per-day sum) |
-| `routes/crm.js:26902` | Impact: re-engaged donors, total | no (inherits the per-day sum) |
-| `routes/insights.js:161` | Insights "what worked": gifts within N days of a card | no (credits counted; refunds ignored: amount > 0) |
-| `routes/insights.js:159` | Insights "what worked": cents that followed, per kind | no (inherits the lateral sum below) |
-| `routes/give.js:4231` | Recurring roster: total given per subscription | no (credits counted) |
-| `setup.js:659` | Setup readout: "N gifts ($X) are in Steward" | no (credits counted) |
-| `reconcile.js:314` | Old-report check: each named person's Steward total | no (credits counted; refunds come off) |
-| `reconcile.js:463` | Old-report check: Steward's total this year for a person | no (credits counted; refunds come off) |
-| `reconcile.js:464` | Old-report check: last year for a person | no (credits counted) |
-| `reconcile.js:465` | Old-report check: before this year for a person | no (credits counted) |
-| `routes/dataHealth.js:740` | Merge: gifts after the covered day, to refold the imported total | no (credits counted) |
+| `routes/give.js:7903` tax summary | `routes/give.js` `/account/tax-summary` | `MONEY_SUM`; a deleted record and an undated gift are in no year; the count is gifts above zero |
+| `shared/reportBuilder.js:100,101` Paid, Still to come | the same | `pledges.PAID_OF` (the builder is an ES module only the server loads; it imports `shared/numbers`) |
+| `shared/reportBuilder.js:153`, `server.js:4309` grant received | the same | `pledges.GRANT_RECEIVED`; the grant's payment rows (`/grants/:id/restricted`, the grant report facts) leave credit rows out too, so the figure foots |
+| `server.js:5817,5821` builder column and group totals | `shared/reportBuilder.js` gifts entity | its base reads `MONEY("g")`: a credit row is not a gift in any builder report |
+| `routes/homeLead.js:180` | the same | on the rule (see above) |
+| `routes/crm.js:21920` gifts before a goal starts | `server/reports/helpers.js` | `MONEY_SUM`, count of gifts above zero |
+| `routes/crm.js:21289,21301` goal's last seven days | `server/reports/fundraising.js` `goalGiftsBetween` | the goal's own rule (`orgGoalRaised`), over the last seven days: credit rows and deleted people out |
+| `routes/finance.js:4617` whole giving history | the same | `MONEY_SUM`, rows that are money |
+| `routes/finance.js:247,249` no fund, and the year it is a share of | the same, and its rows (`/finance/overview/rows?key=noFund`) | `MONEY_CENTS` (the window is `TODAY(org) - 365`, the org's day already) |
+| `routes/finance.js:486` restricted money by donor | the same | `MONEY_CENTS` |
+| `routes/crm.js:24675-24683` three-year report | `server/reports/handlers.js` `reportThreeYear` | `SPAN_SUM` per year; the person columns now foot to the year totals the report shows (the `gifts` source) |
+| `routes/crm.js:24543-24551` retention report | `reportRetention` | `MONEY_SUM` in each year; a donor is someone with a gift (a refund or credit row alone is not), as `retained.js` and the sources say |
+| `routes/crm.js:24509` LYBUNT/SYBUNT prior-year total | `reportBuntList` | `SPAN_SUM` |
+| `routes/crm.js:25452` members by level revenue | `reportMembersByLevel` | `SPAN_CENTS`, deleted people out |
+| `routes/crm.js:25508,25509` membership revenue | `reportMembershipRevenue` | `MONEY_CENTS` beside `IN_SPAN` |
+| `figureSources.js:426-432` top-givers | the same | `MONEY_SUM` with `IN_SPAN` |
+| `figureSources.js:570` bunt source amount | the same | `SPAN_SUM` |
+| `figureSources.js:1633,1649` retention windows | the same | people with a gift (`GIFT`), their money `MONEY_SUM` |
+| `figureSources.js:3238` group page in one read | the same, and `group-gifts` | credit rows out of total, count and average alike |
+| `askEngine.js:393,399` first-year retention | the same | chosen by gifts, amount `MONEY_SUM` (a refund comes off) |
+| `routes/crm.js:17569,17573` grant report facts | `server/grants/routes.js` | `MONEY_SUM`; the fund's gift lines are money too |
+| `routes/crm.js:26893-26902` re-engaged | `server/reports/impact.js` | `MONEY_SUM`, and a credit row is neither a return nor an earlier gift |
+| `routes/insights.js:159,161` what worked | the same | `MONEY_CENTS`; who gave is a gift above zero |
+| `routes/give.js:4231` recurring roster | the same | `MONEY_SUM`, count of gifts |
+| `setup.js:659` setup readout | the same | `MONEY_CENTS`, count of gifts |
+| `reconcile.js:314,463-465` old-report check | the same | `MONEY_SUM` / `SPAN_SUM`; the "Steward counts matching gifts" cause now counts matching gifts (money), not credit rows, which are in neither side |
+| `routes/dataHealth.js:740` merge refold | the same | `MONEY_SUM`: the recompute adds back money rows only, so the fold takes off money rows only |
 
 ## Moved onto shared/numbers in NUMBERS-4
 

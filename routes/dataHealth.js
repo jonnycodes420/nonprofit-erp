@@ -46,6 +46,7 @@
 "use strict";
 const express = require("express");
 const DH = require("../dataHealth");
+const NMONEY = require("../shared/numbers/money");   // NUMBERS-5
 
 const routers = { r0: express.Router() };
 
@@ -744,7 +745,9 @@ function mergeInTx(orgId, keptId, mergedId, { choices, me, confidence, reasons, 
       const throughs = [kept, other].filter(x => x.imported_total != null && x.imported_through).map(x => String(x.imported_through).slice(0, 10)).sort();
       const through = throughs[0] || null;
       const [aft] = (await queryTx(client,
-        `SELECT COALESCE(SUM(amount), 0)::text AS t, (COUNT(*) FILTER (WHERE amount > 0))::int AS n FROM gifts
+        // NUMBERS-5: the recompute adds back only money rows (LIFETIME), so the
+        // fold takes off only money rows; a credit row was never in a Lifetime.
+        `SELECT ${NMONEY.MONEY_SUM("g")}::text AS t, (COUNT(*) FILTER (WHERE ${NMONEY.GIFT("g")}))::int AS n FROM gifts g
           WHERE org_id = $1 AND donor_id = $2 AND ($3::text IS NULL OR date IS NULL OR date > $3)`, [orgId, keptId, through]));
       const firsts = [kept.imported_first_gift_date, other.imported_first_gift_date].filter(Boolean).sort();
       const lasts = [kept, other].filter(x => x.imported_last_gift_date).sort((a, b) => (a.imported_last_gift_date < b.imported_last_gift_date ? 1 : -1));

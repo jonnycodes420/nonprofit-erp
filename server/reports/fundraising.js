@@ -257,24 +257,29 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
 // one function: the gifts dated inside the goal's own period, from people who
 // are not deleted, at the full amount paid, soft and matching credits left out.
 // A recovery goal counts only the gift that brought someone back after a year.
-async function orgGoalRaised(orgId, goal) {
+// NUMBERS-5: the goal's money in any span of days (its whole period, or the
+// last seven days of it), with the people who gave it; one rule for both.
+async function goalGiftsBetween(orgId, goal, from, to) {
   if (goal.goal_type === "lapsed_recovery") {
     const [r] = await query(
-      `SELECT COALESCE(SUM(g.amount),0) AS total
+      `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
        FROM gifts g
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
          AND ${NOT_CREDIT("g")}
          AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date) IS NOT NULL
          AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.org_id = g.org_id AND g2.date < g.date)::date >= ${lapseRule.LAPSED_DAYS}`,
-      [orgId, goal.period_start, goal.period_end]);
-    return parseFloat(r?.total) || 0;
+      [orgId, from, to]);
+    return { total: parseFloat(r?.total) || 0, donors: Number(r?.donors) || 0 };
   }
   const [r] = await query(
-    `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+    `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? AND ${NOT_CREDIT("g")}`,
-    [orgId, goal.period_start, goal.period_end]);
-  return parseFloat(r?.total) || 0;
+    [orgId, from, to]);
+  return { total: parseFloat(r?.total) || 0, donors: Number(r?.donors) || 0 };
+}
+async function orgGoalRaised(orgId, goal) {
+  return (await goalGiftsBetween(orgId, goal, goal.period_start, goal.period_end)).total;
 }
 
 // The checker reads the goal period rule through the function that draws it.
@@ -315,26 +320,11 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   const sevenDaysAgoStr = orgTime.addDays(today, -6);
   const recentStart = sevenDaysAgoStr > goal.period_start ? sevenDaysAgoStr : goal.period_start;
   if (recentStart <= today) {
-    if (goal.goal_type === "lapsed_recovery") {
-      const rows3 = await query(
-        `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id) AS donors
-         FROM gifts g
-         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-         WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
-           AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
-           AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date >= ${lapseRule.LAPSED_DAYS}`,
-        [req.user.orgId, recentStart, today]
-      );
-      recentAmount = parseFloat(rows3[0]?.total) || 0;
-      recentDonorCount = parseInt(rows3[0]?.donors, 10) || 0;
-    } else {
-      const rows3 = await query(
-        "SELECT COALESCE(SUM(amount),0) AS total, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?",
-        [req.user.orgId, recentStart, today]
-      );
-      recentAmount = parseFloat(rows3[0]?.total) || 0;
-      recentDonorCount = parseInt(rows3[0]?.donors, 10) || 0;
-    }
+    // NUMBERS-5: the recent line is the goal's own rule over the last seven
+    // days (credit rows out, deleted people out), so it agrees with raised.
+    const recent = await goalGiftsBetween(req.user.orgId, goal, recentStart, today);
+    recentAmount = recent.total;
+    recentDonorCount = recent.donors;
   }
 
   // RECONCILE-1 · LAST YEAR, FOR A TOTAL-RAISED GOAL. Steward's gifts for the

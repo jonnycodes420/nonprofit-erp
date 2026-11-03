@@ -319,8 +319,8 @@ async function reportBuntList(orgId, p, kind) {
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
             COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
-            (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
-              WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?) AS prior_year_total
+            (SELECT ${NUMBERS.givingBetween.SPAN_SUM("g")} FROM gifts g
+              WHERE g.org_id = d.org_id AND g.donor_id = d.id) AS prior_year_total
      FROM donors d
      WHERE d.org_id = ? AND d.deleted_at IS NULL
        AND ${bp0.sql}
@@ -353,10 +353,12 @@ async function reportRetention(orgId, p) {
     const cur = reportYearBounds(y, p.yearMode, p.fiscalStartMonth);
     const prior = reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth);
     const [r] = await query(
-      `WITH prior AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
-            cur AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
+      // NUMBERS-5: a donor in a year gave a gift in it (a refund alone is not
+      // giving), and their dollars are money (credit rows out, refunds off).
+      `WITH prior AS (SELECT g.donor_id, ${NUMBERS.money.MONEY_SUM("g")} AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY g.donor_id HAVING bool_or(${NUMBERS.money.GIFT("g")})),
+            cur AS (SELECT g.donor_id, ${NUMBERS.money.MONEY_SUM("g")} AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY g.donor_id HAVING bool_or(${NUMBERS.money.GIFT("g")})),
             firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
        SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
               (SELECT COUNT(*) FROM prior pr WHERE EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS retained_donors,
@@ -483,17 +485,14 @@ async function reportThreeYear(orgId, p) {
   const [y0, y1, y2] = sp.years;   // most recent (selected) year first, each cut to the same span
   await FP_READY;
   const label = y => reportYearLabel(y, p);
+  const YEAR_SUM = NUMBERS.givingBetween.SPAN_SUM("g");   // NUMBERS-5: each year's money (credit rows out)
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
-            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y0,
-            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y1,
-            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y2
+            ${YEAR_SUM} AS y0, ${YEAR_SUM} AS y1, ${YEAR_SUM} AS y2
      FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${NUMBERS.givingBetween.IN_SPAN("g")}
      GROUP BY d.id, d.name, d.email, d.assigned_to_name
-     ORDER BY (COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)
-             + COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)
-             + COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)) DESC`,
+     ORDER BY (${YEAR_SUM} + ${YEAR_SUM} + ${YEAR_SUM}) DESC`,
     [y0.from, y0.to, y1.from, y1.to, y2.from, y2.to, orgId, y2.from, y0.to,
      y0.from, y0.to, y1.from, y1.to, y2.from, y2.to]);
   const donors = rows.map(r => {
@@ -1180,8 +1179,9 @@ async function reportMembersByLevel(orgId) {
     `SELECT l.id, l.name, l.price,
             (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status IN ('active','grace')) AS current,
             (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}) AS lapsed,
-            (SELECT COALESCE(SUM(round(g.amount::numeric*100)),0)::bigint FROM gifts g JOIN memberships m ON m.gift_id=g.id AND m.org_id=g.org_id
-              WHERE g.org_id=l.org_id AND m.level_id=l.id AND g.date BETWEEN ? AND ?) AS revenue_cents
+            (SELECT ${NUMBERS.givingBetween.SPAN_CENTS("g")} FROM gifts g JOIN memberships m ON m.gift_id=g.id AND m.org_id=g.org_id
+               JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+              WHERE g.org_id=l.org_id AND m.level_id=l.id) AS revenue_cents
        FROM membership_levels l WHERE l.org_id=? ORDER BY l.position, l.price`, [fy.from, fy.to, orgId]);
   return { from: fy.from, to: fy.to,
     rows: rows.map(r => ({ name: r.name, price: Number(r.price), current: r.current, lapsed: r.lapsed, revenueCents: Number(r.revenue_cents) })),
@@ -1236,10 +1236,10 @@ async function reportMembershipRevenue(orgId) {
   const fy = reportYearBounds(reportCurrentYear("fiscal", yo), "fiscal", orgTime.orgFiscalStartMonth(yo));   // ORG_TZ_SEAM_OK
   const rows = await query(
     `SELECT LEFT(g.date, 7) AS month,
-            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE ${MB_GIFT_SQL}),0)::bigint AS membership_cents,
-            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE NOT ${MB_GIFT_SQL}),0)::bigint AS donation_cents
+            ${NUMBERS.money.MONEY_CENTS("g", MB_GIFT_SQL)} AS membership_cents,
+            ${NUMBERS.money.MONEY_CENTS("g", `NOT ${MB_GIFT_SQL}`)} AS donation_cents
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
-      WHERE g.org_id=? AND g.date BETWEEN ? AND ? GROUP BY 1 ORDER BY 1`, [orgId, fy.from, fy.to]);
+      WHERE g.org_id=? AND ${NUMBERS.givingBetween.IN_SPAN("g")} GROUP BY 1 ORDER BY 1`, [orgId, fy.from, fy.to]);
   const out = rows.map(r => ({ month: r.month, membershipCents: Number(r.membership_cents), donationCents: Number(r.donation_cents) }));
   return { from: fy.from, to: fy.to, rows: out,
     totals: { membershipCents: out.reduce((a, r) => a + r.membershipCents, 0), donationCents: out.reduce((a, r) => a + r.donationCents, 0) },
