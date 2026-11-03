@@ -17,10 +17,11 @@ export function reloadMailTypes() {
   return inflight;
 }
 
-// PERF-3: Home's rail draws once its mail types are in, and the boot has
-// parked both reads: taken now, the rail is ready in Home's first frame.
+// PERF-3: Home's rail draws once its mail types are in, and on the first
+// screen the boot has parked both reads: taken now, the rail is ready in Home's
+// first frame. True only then; otherwise the rail reloads them as it always has.
 export function mailTypesNow() {
-  if (page) return true;
+  if (page) return false;
   const p = takeParked("/mail-types"), s = takeParked("/mail-types/status");
   if (p === undefined || s === undefined) return false;
   page = p; status = s;
