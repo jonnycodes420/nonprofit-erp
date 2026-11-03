@@ -4,7 +4,7 @@
 //
 //   · Home, the first look after sign-in, its right rail included (HOME-4):
 //     usable under 1 s on a desktop, under PHONE_MS on a phone (PERF-2: 4.5 s
-//     at SWEEP-6, about 3.5 s now; the 3 s the bar asks is docs/defects.md's);
+//     at SWEEP-6, 3.5 s at PERF-3; the 3 s the bar asks is docs/defects.md's);
 //     no read the rail needs starts after Home's first paint; Home's first look
 //     downloads no more than JS_FIRST_KB of JavaScript (PERF-2's after + 5%);
 //     no bundle of Home's reads is asked for twice (app.html's preloader asks
@@ -51,11 +51,11 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
-const PHONE_MS = 3640;   // PERF-3 measured 3,540 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 240;   // PERF-3 measured 228 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
-const WARM_MS = 1460;   // PERF-3: Home on a phone a second time, measured 1,324 ms + 10% (main: 1,540)
-const FIRST_KB = 310;   // PERF-3: every byte of Home's first look, measured 295 KB + 5% (main: 314)
-const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in)
+const PHONE_MS = 3580;   // PERF-3 measured 3,480 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
+const JS_FIRST_KB = 239;   // PERF-3 measured 227 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
+const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
+const FIRST_KB = 309;   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
+const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in); now 0
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
 const BUDGET = { homeDesktop: 1000, homePhone: PHONE_MS, listServer: 1000, listDraw: 2000, profile: 2000 };

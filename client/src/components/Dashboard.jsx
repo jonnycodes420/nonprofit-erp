@@ -261,7 +261,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // to say. Failures are silent: Home keeps its frame without it.
   // PERF-3: the boot has parked it, so Home draws with it from the first frame
   // (Ask's suggestions under the box came a frame later and pushed Home down).
-  const [homeDay,setHomeDay]=useState(()=>surface==="home"?takeParked("/home/lead"):null);
+  const [homeDay,setHomeDay]=useState(()=>surface==="home"?takeParked("/home/lead")||null:null);
   const homeDayIn=useRef(homeDay!=null);
   const loadHomeDay=()=>apiFetch("/home/lead").then(setHomeDay).catch(()=>setHomeDay(null));
   useEffect(()=>{if(surface!=="home")return;if(homeDayIn.current){homeDayIn.current=false;return;}loadHomeDay();},[surface]);

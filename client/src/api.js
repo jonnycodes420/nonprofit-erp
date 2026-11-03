@@ -246,13 +246,13 @@ export async function apiFetch(path, options = {}) {
 // PERF-3: the answer to a GET the boot has already parked, handed over now
 // instead of a turn later, so a screen whose read is in draws its first frame
 // with it (Home's deck drew "Reading your donors…" for a frame, then pushed
-// the Thread down). Taken once, as apiFetch takes it; null when not yet in.
+// the Thread down). Taken once, as apiFetch takes it; undefined when not in.
 export function takeParked(path) {
   const key = getToken() + " " + path;
   const held = parked.get(key);
-  if (!held) return null;
+  if (!held) return undefined;
   parked.delete(key);
-  return Date.now() - held.at < PARKED_TTL_MS ? copy(held.value) : null;
+  return Date.now() - held.at < PARKED_TTL_MS ? copy(held.value) : undefined;
 }
 
 // PERF-3: settles when a read already asked for is in (taking nothing), or at

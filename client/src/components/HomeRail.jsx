@@ -9,11 +9,11 @@
 // confirm as one line, and the automatic email line as SEND-GATE-2 placed it.
 import { useEffect, useRef, useState } from "react";
 import { useStickyTop } from "../lib/stickyRail";
-import { apiFetch } from "../api";
+import { apiFetch, takeParked } from "../api";
 import { T } from "./shared";
 import { SkeletonBar } from "./Skeleton";
 import { openCheckSnap } from "./CheckSnap";
-import { reloadMailTypes } from "../lib/mailTypes";
+import { reloadMailTypes, mailTypesNow } from "../lib/mailTypes";
 
 const card = { border: "1px solid " + T.bg3, borderRadius: 14, padding: "12px 14px", background: T.white };
 const eyebrow = { fontSize: 10, fontWeight: 800, color: T.ink3, marginBottom: 6 };
@@ -23,19 +23,23 @@ const link = { background: "none", border: "none", padding: 0, fontFamily: "inhe
 // and the automatic email line. Each one settles (answer or failure) once, and
 // the rail is ready when all of them have.
 export function useRailReads() {
-  const [calls, setCalls] = useState(undefined);
-  const [goal, setGoal] = useState(undefined);
-  const [clock, setClock] = useState(undefined);
-  const [mail, setMail] = useState(false);
-  const [owners, setOwners] = useState(undefined);   // SWEEP-1
+  // PERF-3: what the boot has parked is drawn from the first frame (the rail
+  // used to draw a second time, a long task after Home's first paint); what
+  // it has not is read below as before.
+  const [first] = useState(() => ({ calls: takeParked("/home/calls"), goal: takeParked("/home/annual-goal"), owners: takeParked("/home/owners"), clock: takeParked("/thank-yous/clock"), mail: mailTypesNow() }));
+  const [calls, setCalls] = useState(first.calls === undefined ? undefined : first.calls || null);
+  const [goal, setGoal] = useState(first.goal === undefined ? undefined : first.goal && first.goal.goal ? first.goal.goal : null);
+  const [clock, setClock] = useState(first.clock === undefined ? undefined : first.clock || null);
+  const [mail, setMail] = useState(first.mail);
+  const [owners, setOwners] = useState(first.owners === undefined ? undefined : first.owners || null);   // SWEEP-1
   useEffect(() => {
     let alive = true;
     const loadClock = () => apiFetch("/thank-yous/clock").then(r => { if (alive) setClock(r || null); }).catch(() => { if (alive) setClock(null); });
-    apiFetch("/home/calls").then(r => { if (alive) setCalls(r || null); }).catch(() => { if (alive) setCalls(null); });
-    apiFetch("/home/annual-goal").then(r => { if (alive) setGoal(r && r.goal ? r.goal : null); }).catch(() => { if (alive) setGoal(null); });
-    apiFetch("/home/owners").then(r => { if (alive) setOwners(r || null); }).catch(() => { if (alive) setOwners(null); });
-    loadClock();
-    Promise.resolve(reloadMailTypes()).finally(() => { if (alive) setMail(true); });
+    if (first.calls === undefined) apiFetch("/home/calls").then(r => { if (alive) setCalls(r || null); }).catch(() => { if (alive) setCalls(null); });
+    if (first.goal === undefined) apiFetch("/home/annual-goal").then(r => { if (alive) setGoal(r && r.goal ? r.goal : null); }).catch(() => { if (alive) setGoal(null); });
+    if (first.owners === undefined) apiFetch("/home/owners").then(r => { if (alive) setOwners(r || null); }).catch(() => { if (alive) setOwners(null); });
+    if (first.clock === undefined) loadClock();
+    if (!first.mail) Promise.resolve(reloadMailTypes()).finally(() => { if (alive) setMail(true); });
     // CHECK-2: a check read from anywhere moves the waiting line at once.
     window.addEventListener("steward:capture-changed", loadClock);
     return () => { alive = false; window.removeEventListener("steward:capture-changed", loadClock); };

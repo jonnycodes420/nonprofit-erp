@@ -286,7 +286,7 @@ function useSeen(cards) {
 export function useInsights(view, skip) {
   const path = `/insights${view ? "?view=" + view : ""}`;
   // PERF-3: Home's deck read is parked by the boot; drawn from the first frame.
-  const [data, setData] = useState(() => (skip ? null : takeParked(path)));
+  const [data, setData] = useState(() => (skip ? null : takeParked(path) || null));
   const [err, setErr] = useState("");
   const had = useRef(data != null);
   const load = () => apiFetch(path).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.message || "Couldn't read the cards."));
