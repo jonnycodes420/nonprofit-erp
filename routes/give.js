@@ -4593,7 +4593,7 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
     const link = `${publicAppUrl()}/give/${org.org_slug}?${params.toString()}`;
     const amtStr = d.amount != null ? "$" + Number(d.amount).toLocaleString("en-US", { maximumFractionDigits: 0 }) + "/month" : "your monthly gift";
     const html = await brandEmailHeaderHtml(orgId)
-      + `<p>Hi ${escapeHtml((d.name || "there").split(" ")[0])},</p>
+      + `<p>${escapeHtml((await import("../shared/greeting.js")).greetingLine(d, { word: "Hi" }))}</p>
          <p>Thank you for being a faithful monthly supporter of <strong>${escapeHtml(dfName)}</strong>. We've moved to a new giving system, and because card details can't transfer between systems, we need you to reconnect your ${escapeHtml(amtStr)} gift.</p>
          <p>It takes about a minute, your amount is already filled in:</p>
          <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
@@ -5705,7 +5705,13 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
 // ── Public: portal config (the login page's theme) ─────────────────────────
 app.get("/portal/:orgSlug/config", wrap(async (req, res) => {
   const org = await portalOrgBySlug(req.params.orgSlug);
-  if (!org) return res.status(404).json({ error: "portal_not_found" });
+  if (!org) {
+    // POLISH-4: a portal switched off still names the org and points to its
+    // giving page (both already public on that page), never a bare refusal.
+    const [o] = typeof req.params.orgSlug === "string" && req.params.orgSlug.length <= 120
+      ? await query("SELECT name, org_slug FROM orgs WHERE org_slug = ?", [req.params.orgSlug]) : [];
+    return res.status(404).json({ error: "portal_not_found", ...(o ? { orgName: o.name, give: `/give/${o.org_slug}` } : {}) });
+  }
   // BUILD-54 §4 — the PUBLISHED page, resolved for public view. Null when the
   // org never published one (client renders the BUILD-45 fixed layout).
   // Public resolution carries ZERO donor data by construction: the mygiving

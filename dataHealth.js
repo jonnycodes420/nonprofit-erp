@@ -514,7 +514,70 @@ function readNcoaReturn(text) {
   return { entries };
 }
 
+// ── POLISH-4 · PEOPLE AND THEIR BUSINESSES ─────────────────────────────────
+// A person and an organization that look like one giving unit: the person
+// owns it, gives through it or works there. Proposed (never linked on its
+// own) when
+//   the organization's name holds the person's full last name AND they share
+//     an address, a phone or a work email domain; or
+//   the person's work email is at the organization's domain ("pat@cormanexc.com"
+//     and an organization whose email is @cormanexc.com), or at a domain that
+//     starts with the organization's name ("name@cmcenvironment.com" and "CMC, Inc").
+// A last name alone is never enough. Free mail (gmail.com and the rest) is no
+// one's work domain. `linked` and `dismissed` are pair keys to leave out.
+const FREE_MAIL = new Set(["gmail.com", "googlemail.com", "yahoo.com", "hotmail.com", "outlook.com", "aol.com", "icloud.com", "comcast.net",
+  "att.net", "msn.com", "live.com", "me.com", "mac.com", "verizon.net", "sbcglobal.net", "bellsouth.net", "charter.net", "cox.net",
+  "protonmail.com", "proton.me", "ymail.com", "rocketmail.com", "earthlink.net", "optonline.net", "frontier.com", "windstream.net", "mail.com", "gmx.com"]);
+const ORG_WORDS = new Set(["inc", "incorporated", "llc", "llp", "ltd", "co", "corp", "corporation", "company", "the", "pc", "pllc", "lp", "group", "and"]);
+const isOrgPerson = d => !!d && (["organisation", "organization"].includes(String(d.kind || "").toLowerCase())
+  || (Array.isArray(d.person_types) && d.person_types.includes("organization")));
+const workDomain = e => { const m = /@([^@\s]+)$/.exec(lowerEmail(e)); return m && !FREE_MAIL.has(m[1]) ? m[1] : null; };
+const orgCore = name => normName(name).split(" ").filter(t => t && !ORG_WORDS.has(t)).join("");
+function businessLinks(rows, { linked = new Set(), dismissed = new Set() } = {}) {
+  const orgs = rows.filter(isOrgPerson), people = rows.filter(d => !isOrgPerson(d));
+  const byWord = new Map(), byDomain = new Map(), byCore = new Map();
+  const add = (m, k, v) => { if (k) (m.get(k) || m.set(k, []).get(k)).push(v); };
+  for (const o of orgs) {
+    for (const t of new Set(normName(o.name).split(" ").filter(Boolean))) add(byWord, t, o);
+    for (const e of [o.email, o.email2]) add(byDomain, workDomain(e), o);
+    const core = orgCore(o.name);
+    if (core.length >= 3) add(byCore, core, o);
+  }
+  const out = new Map();
+  const propose = (p, o, reason) => {
+    const key = pairKey(p.id, o.id);
+    if (linked.has(key) || dismissed.has(key)) return;
+    const f = out.get(key) || out.set(key, { key, a: p.id, b: o.id, reasons: [] }).get(key);
+    if (!f.reasons.includes(reason)) f.reasons.push(reason);
+  };
+  for (const p of people) {
+    const domains = [...new Set([p.email, p.email2].map(workDomain).filter(Boolean))];
+    // 1. A work email at the organization's own domain, or at its name.
+    for (const dom of domains) {
+      for (const o of byDomain.get(dom) || []) propose(p, o, `${p.name}'s email is at ${dom}, ${o.name}'s domain`);
+      const label = dom.split(".")[0].replace(/[^a-z0-9]/g, "");
+      for (let n = 3; n <= label.length; n++) for (const o of byCore.get(label.slice(0, n)) || []) propose(p, o, `${p.name}'s email is at ${dom}, which starts with ${o.name}'s name`);
+    }
+    // 2. Their full last name in the organization's name, and something shared.
+    const toks = nameTokens(p.name);
+    if (toks.length < 2) continue;
+    const last = toks[toks.length - 1];
+    if (last.length < 2) continue;
+    const pAddr = addressKey(p), pPhones = new Set([p.phone, p.mobile].map(phoneKey).filter(Boolean));
+    for (const o of byWord.get(last) || []) {
+      const shared = [];
+      if (pAddr && pAddr === addressKey(o)) shared.push("an address");
+      if ([o.phone, o.mobile].map(phoneKey).some(k => k && pPhones.has(k))) shared.push("a phone number");
+      const oDomains = [o.email, o.email2].map(workDomain).filter(Boolean);
+      if (domains.some(d => oDomains.includes(d))) shared.push("an email domain");
+      if (shared.length) propose(p, o, `${o.name} carries the name ${p.name.trim().split(/\s+/).pop()}, and they share ${joinReasons(shared)}`);
+    }
+  }
+  return [...out.values()];
+}
+
 module.exports = {
+  businessLinks, isOrgPerson, FREE_MAIL,
   NICKNAMES, normName, nameRelation, judgePair, findDuplicatePairs, findPairs, pairKey, phoneKey, addressKey,
   MERGE_FIELDS, ADDRESS_GROUP, defaultChoices, resolveMergedValues,
   tidyAddress, oneLine, titleCase,

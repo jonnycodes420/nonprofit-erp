@@ -2,8 +2,8 @@
 import { ContactExtras, RAIL, RailSection, RhythmCard } from "../ProfileRail";
 import { RecordLink } from "../RecordLink";
 import { householdHref } from "../../lib/appUrls";
-import { ContactFlag, DONOR_RELATIONSHIP_LABELS, RoleLine } from "./profileShared";
-import { Phone, Pill, T, firstNameOf } from "../shared";
+import { ContactFlag, RoleLine, relationshipLine } from "./profileShared";
+import { Phone, Pill, T, firstNameOf, fmtFull } from "../shared";
 import { birthdayLabel } from "../../../../shared/birthday.js";
 import { ClosenessLine, ImportRefusalsLine, statusTagItems } from "../ProfileStatus";
 import { ScoreCard } from "../ScoreWhy";
@@ -12,7 +12,7 @@ import { PublicFilingBlock, RoomToGiveBlock } from "../RoomToGive";
 
 const QUIET={background:"none",border:"none",padding:0,font:"inherit",color:RAIL.dim,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer"};
 
-function RailAboutSections({nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
+function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
   const hasContact=!!(donor.email||donor.phone||contactPerson||cx.address||cx.preferred||cx.privacyOn||cx.isClient||(cx.flags||[]).length);
   return <>
@@ -24,7 +24,7 @@ function RailAboutSections({nothingLogged,noGifts,R,aboutStatusTags,canMajorGift
                 actionNode={<button type="button" data-testid="dp-rail-related-manage" onClick={()=>setRelatedOpen(true)} style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{household||relationships.length?"Manage":"Add"}</button>}>
                 {household&&<div style={{fontSize:13,marginBottom:6}}><RecordLink to={householdHref(household.id)} data-record-link="household" style={{color:RAIL.text,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink></div>}
                 {household&&(household.members||[]).filter(m=>m.id!==donor.id).map(m=><button key={"hh:"+m.id} type="button" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{m.name} <span style={{color:RAIL.dim}}>· household</span></button>)}
-                {relationships.filter(r=>!(household&&(household.members||[]).some(m=>m.id===r.relatedDonorId))).map(r=><button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{r.relatedDonorName} <span style={{color:RAIL.dim}}>· {(DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)||[])[1]||r.relationshipType}</span></button>)}
+                {relationships.filter(r=>!(household&&(household.members||[]).some(m=>m.id===r.relatedDonorId))).map(r=><button key={r.id} type="button" data-testid="dp-rail-related-row" onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{display:"block",background:"none",border:"none",padding:"4px 0",color:RAIL.text,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>{relationshipLine(r)}{r.side&&<span style={{color:RAIL.dim}}> · {fmtFull(r.relatedDonorTotalGiving)}</span>}</button>)}
               </RailSection>}
               {/* PROFILE-2 · 5 ABOUT: donor since and roles, the owner, the giving
                   pattern, how to reach them, and the tags the header did not show. */}
@@ -49,7 +49,7 @@ function RailAboutSections({nothingLogged,noGifts,R,aboutStatusTags,canMajorGift
                       would fill are not drawn while there is nothing in them. */}
                   {!isReadOnly&&(!hasContact||!(household||relationships.length))&&<div data-testid="dp-about-add" style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:4,fontSize:12.5}}>
                     {!hasContact&&onEdit&&<button type="button" data-testid="dp-about-add-contact" onClick={onEdit} style={QUIET}>Add email or phone</button>}
-                    {!(household||relationships.length)&&<button type="button" data-testid="dp-about-link" onClick={()=>setRelatedOpen(true)} style={QUIET}>Link someone</button>}
+                    {!(household||relationships.length)&&<button type="button" data-testid="dp-about-link" onClick={()=>{setRelatedOpen(true);setRelPickerOpen&&setRelPickerOpen(true);}} style={QUIET}>Link someone</button>}
                   </div>}
                   {!isReadOnly&&<ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(chips,addCtl)=>!chips.length&&addCtl?<div data-testid="dp-about-group" style={{fontSize:12.5}}>{addCtl}</div>:null}</ProfileGroups>}
                 </div>

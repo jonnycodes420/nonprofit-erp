@@ -16,6 +16,9 @@ import { tabHref, urlParam } from "../lib/appUrls";
 import { countLabel } from "../../../shared/countWords.js";
 import { fyLabelFromEnd } from "../../../shared/fiscalPeriod.js";
 import { budgetVarianceText, budgetMonthsElapsed } from "../lib/budgetWords";
+// POLISH-4: a budget line that needs her eye is brass, as overdue is; red is
+// only for a destructive confirm (the four-colour rule).
+const BEHIND = T.gold700;
 import { orgTodayCivil } from "../lib/orgToday";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -1483,7 +1486,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <tbody>
                   {rows.map((b) => {
                     const pct = b.budget > 0 ? Math.round(b.actual / b.budget * 100) : 0;
-                    const over = section === "expense" ? b.actual > b.budget : b.actual < b.budget * 0.5;
+                    const over = section === "expense" ? b.actual > b.budget : b.actual < b.budget * 0.5;   // the bar's colour
                     const projected = monthsElapsed > 0 && b.actual > 0 ? Math.round((b.actual / monthsElapsed) * 12) : b.actual;
                     const overProj = section === "expense" && b.budget > 0 && projected > b.budget;
                     return (
@@ -1513,16 +1516,16 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                           <div>{fmtFull(b.actual)}</div>
                           {b.budget > 0 && <div style={{ fontSize:10, color:T.ink3 }}>{pct}% of budget</div>}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(b.variance*100)===0?T.ink3:over?OUT:IN }}>
-                          {budgetVarianceText(b.variance, fmtFull)}
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(b.variance*100)===0?T.ink3:(section==="expense"?b.actual>b.budget:b.actual<b.budget)?BEHIND:IN }}>
+                          {budgetVarianceText(b.variance, fmtFull, section)}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?OUT:T.ink3 }}>
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?BEHIND:T.ink3 }}>
                           {fmtFull(projected)}
-                          {overProj && <div style={{ fontSize:10, color:OUT }}>over budget</div>}
+                          {overProj && <div style={{ fontSize:10, color:BEHIND }}>over budget</div>}
                         </td>
                         <td style={{ padding:"10px 12px" }}>
                           <div style={{ height:6, background:T.bg3, borderRadius:99, overflow:"hidden" }}>
-                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?OUT:IN, borderRadius:99 }}/>
+                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?BEHIND:IN, borderRadius:99 }}/>
                           </div>
                         </td>
                       </tr>
@@ -1535,7 +1538,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     <td/>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
-                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(totVar*100)===0?T.ink3:totVar>=0?IN:OUT }}>{budgetVarianceText(totVar, fmtFull)}</td>
+                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:Math.round(totVar*100)===0?T.ink3:(section==="expense"?totVar<0:totVar>0)?BEHIND:IN }}>{budgetVarianceText(totVar, fmtFull, section)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:T.ink3 }}>{fmtFull(monthsElapsed>0?Math.round((totActual/monthsElapsed)*12):totActual)}</td>
                     <td/>
                   </tr>

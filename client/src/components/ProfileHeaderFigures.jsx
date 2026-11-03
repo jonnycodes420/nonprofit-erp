@@ -98,7 +98,7 @@ function lastContact(F, today) {
   }
   const u = le.under;
   return { f: le, key: "profile.lastEmail", def: censusById("profile.lastEmail").sentence,
-    under: `Email ${u.direction === "replied" ? "replied" : u.direction === "sent" ? "sent" : "logged"} ${displayDateShort(u.date, today)}` };
+    under: `Email ${u.direction === "from_them" ? "from them" : u.direction === "sent" ? "sent" : "logged"} ${displayDateShort(u.date, today)}` };
 }
 
 // PROFILE-2 · the fiscal year the number counts, said with its dates:
@@ -180,7 +180,7 @@ export function ProfileMoreNumbers({ figures, glance }) {
         <One f={F.lastMet} kind="count" suffix=" days" label="Last met" def={censusById("profile.lastMet").sentence} figureKey="profile.lastMet" />
       </Cell>
       <Cell label="Last email" def={censusById("profile.lastEmail").sentence} testid="dp-fig-lastEmail"
-        under={le && le.date ? `${le.direction === "replied" ? "Replied" : le.direction === "sent" ? "Sent" : "Logged"} ${displayDateShort(le.date, today)}` : null}>
+        under={le && le.date ? `${le.direction === "from_them" ? "From them" : le.direction === "sent" ? "Sent" : "Logged"} ${displayDateShort(le.date, today)}` : null}>
         <One f={F.lastEmail} kind="count" suffix=" days" label="Last email" def={censusById("profile.lastEmail").sentence} figureKey="profile.lastEmail" />
       </Cell>
     </div>

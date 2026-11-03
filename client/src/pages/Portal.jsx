@@ -688,7 +688,7 @@ export default function Portal() {
   useEffect(() => {
     (async () => {
       const r = await pfetch(`/${orgSlug}/config`);
-      if (r.status !== 200) { setNotFound(true); setChecked(true); return; }
+      if (r.status !== 200) { setNotFound((r.body && r.body.orgName) ? r.body : true); setChecked(true); return; }
       setTheme(r.body.theme);
       setPage(r.body.page || null);
       try { sessionStorage.setItem("pt_theme_" + orgSlug, JSON.stringify(r.body.theme)); } catch { /* full/blocked storage is fine */ }
@@ -699,7 +699,11 @@ export default function Portal() {
 
   if (notFound) return (
     <div style={S.page}><PortalStyles /><div className="pt-wrap" style={{ paddingTop: 80, textAlign: "center" }}>
-      <p style={{ fontSize: 16 }}>This page isn't available.</p>
+      {/* POLISH-4: switched off, it still says whose page this is and where to give */}
+      {notFound && notFound.orgName
+        ? <><p style={{ fontSize: 16 }}>{notFound.orgName}'s donor page isn't open right now.</p>
+            <p style={{ fontSize: 15 }}><a href={notFound.give} style={{ color: "inherit", fontWeight: 700 }}>Give to {notFound.orgName}</a></p></>
+        : <p style={{ fontSize: 16 }}>This page isn't available.</p>}
     </div></div>
   );
   if (!theme || !checked) {

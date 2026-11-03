@@ -25,7 +25,7 @@ function startMonth(vocab) {
 
 // q: (sql, params) => rows. Returns { rows, opts } for computeKey.
 async function orgRows(q, orgId, { today } = {}) {
-  const [[org], people, gifts, soft, pledges, inst, att] = await Promise.all([
+  const [[org], people, gifts, soft, pledges, inst, att, links] = await Promise.all([
     q(`SELECT timezone, vocabulary_json FROM orgs WHERE id = $1`, [orgId]),
     q(`SELECT id, household_id, deleted_at IS NOT NULL AS deleted, COALESCE(is_sample, false) AS sample,
               imported_last_gift_date, imported_first_gift_date,
@@ -40,6 +40,8 @@ async function orgRows(q, orgId, { today } = {}) {
          FROM pledges WHERE org_id = $1`, [orgId]),
     q(`SELECT pledge_id, due_date, ROUND(amount * 100)::bigint AS cents, paid_gift_id FROM pledge_installments WHERE org_id = $1`, [orgId]),
     q(`SELECT id, event_id, donor_id, status, checked_in_at IS NOT NULL AS checked_in FROM event_attendees WHERE org_id = $1`, [orgId]),
+    // POLISH-4: a person and their business are one giving unit for lapse.
+    q(`SELECT donor_id_a, donor_id_b FROM donor_relationships WHERE org_id = $1 AND relationship_type IN ('owner','works_at')`, [orgId]),
   ]);
   const byPledge = new Map();
   for (const i of inst) (byPledge.get(i.pledge_id) || byPledge.set(i.pledge_id, []).get(i.pledge_id))
@@ -53,6 +55,7 @@ async function orgRows(q, orgId, { today } = {}) {
     pledges: pledges.map(p => ({ id: p.id, person: p.donor_id, cents: Number(p.cents), status: p.status, due: p.due_date,
       event: p.event_id, made: p.made, installments: byPledge.get(p.id) || [] })),
     attendance: att.map(a => ({ id: a.id, event: a.event_id, person: a.donor_id, status: a.status, checkedIn: a.checked_in })),
+    links: links.map(l => [l.donor_id_a, l.donor_id_b]),
   };
   return { rows, opts: { today: today || civilToday(org && org.timezone), fiscalStartMonth: startMonth(org && org.vocabulary_json) } };
 }

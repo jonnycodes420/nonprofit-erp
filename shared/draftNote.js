@@ -21,7 +21,7 @@
 // suites can drive it directly and nothing here can accidentally send.
 
 import { displayDate as dateWords, displayDateLong } from "./displayDate.js";
-import { greetingName } from "./greeting.js";
+import { greetingName, greetingLine } from "./greeting.js";
 export const VOICE_SAMPLE_MIN = 3;
 
 const money = cents => {
@@ -66,8 +66,9 @@ export function voiceFrom(samples = []) {
 // record reads both people, never the first word of "Desmond & Ruth Okafor".
 const who = (donorName, person) => greetingName({ ...(person || {}), name: donorName });
 function greetingFor(voice, donorName, person) {
-  const first = who(donorName, person) || "friend";
-  if (!voice.greeting) return `Dear ${first},`;
+  const first = who(donorName, person);
+  // POLISH-4: the one opening line; "Hello," when there is no name to use.
+  if (!voice.greeting || !first) return greetingLine({ ...(person || {}), name: donorName });
   const swapped = voice.greeting.replace(/\b(?:dear|hi|hello|hey)\s+([A-Z][\w'’-]*)/i, (m, g0) => m.replace(g0, first));
   return swapped === voice.greeting && !voice.greeting.toLowerCase().includes(first.toLowerCase())
     ? voice.greeting.replace(/[,:\s]*$/, "") + ` ${first},`
@@ -80,7 +81,7 @@ function greetingFor(voice, donorName, person) {
 // signThankYou, because whoever opens the queue is the one who sends it.
 export const PLAIN_SIGNOFF = "With thanks,";
 function wrap(voice, donorName, middle, orgName, person = null) {
-  if (!voice.ready) return [`Dear ${who(donorName, person) || "friend"},`, "", middle, "", [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n")].join("\n");
+  if (!voice.ready) return [greetingLine({ ...(person || {}), name: donorName }), "", middle, "", [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n")].join("\n");
   const tail = [voice.signoff || "Thank you", voice.signature || orgName || ""].filter(Boolean).join(",\n");
   return [greetingFor(voice, donorName, person), "", middle, "", tail].join("\n");
 }
@@ -185,7 +186,7 @@ export function thankYouDraft({
 export function signThankYou(body, { donorName, senderName, orgName, voiceUsed = "default", person = null } = {}) {
   let text = String(body || "");
   if (voiceUsed === "org_samples" || !text.trim()) return text;
-  if (!/^dear\b/i.test(text.trim())) text = `Dear ${who(donorName, person) || "friend"},\n\n${text.trim()}`;
+  if (!/^(dear|hi|hello)\b/i.test(text.trim())) text = `${greetingLine({ ...(person || {}), name: donorName })}\n\n${text.trim()}`;
   const close = [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n");
   if (!text.includes(PLAIN_SIGNOFF)) text = `${text.trimEnd()}\n\n${close}`;
   const name = String(senderName || "").trim();

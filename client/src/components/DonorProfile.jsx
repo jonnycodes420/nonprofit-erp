@@ -50,6 +50,7 @@ import { RailJourneys } from "./profile/RailJourneys";
 import { ProfileDialogs } from "./profile/ProfileDialogs";
 import { ListTabs } from "./profile/ListTabs";
 import { RelatedModal } from "./profile/RelatedModal";
+import { MergeWithModal } from "./profile/MergeWith";
 import { GivingTab } from "./profile/GivingTab";
 import { ProfileHeader } from "./profile/ProfileHeader";
 
@@ -181,7 +182,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [relLoading,setRelLoading]=useState(true);
   const [relPickerOpen,setRelPickerOpen]=useState(false);
   const [relSearch,setRelSearch]=useState("");
-  const [relType,setRelType]=useState("spouse");
+  // POLISH-4: an organization's first link is to its owner or a person who works there, not a spouse.
+  const [relType,setRelType]=useState(()=>/^organi[sz]ation$/i.test(String(donor.kind||""))||(donor.personTypes||[]).includes("organization")?"owner":"spouse");
   const [relSaving,setRelSaving]=useState(false);
   const [relErr,setRelErr]=useState("");
   const loadRelationships=()=>{
@@ -304,6 +306,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // what makes the hand-off one step rather than two.
   const [dpTab,setDpTab]=useState(initialAddGift?"giving":"activity");
   const [relatedOpen,setRelatedOpen]=useState(false);   // PROFILE-2: Related opens from the rail
+  // POLISH-4 — More → Merge with…; the kept record opens when she closes it.
+  const [mergeOpen,setMergeOpen]=useState(false);
+  const mergeKeptRef=useRef(null);
   const [tlSearch,setTlSearch]=useState("");   // PROFILE-2: the tabs' search
   const [tlSearchOpen,setTlSearchOpen]=useState(false);
   const [whyStopOpen,setWhyStopOpen]=useState(false);
@@ -1341,7 +1346,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             name: at most two tags here, the rest are in About on the rail. The
             roles line, closeness, drift and recurring sentences moved to the rail
             (About and Engagement), so the header is the person and what to do. */}
-        <ProfileHeader {...{aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}}/>
+        <ProfileHeader {...{setMergeOpen,aiErr,aiMap,briefOpen,canMajorGifts,convoOpen,copyDraftEmail,donor,downloadImpactSummary,dpMoreOpen,dpThread,draftCopied,editingInt,exportPersonData,filingLookupOpen,getAI,headName,headTags,impactPdfLoading,isAdmin,isReadOnly,isTeam,isVolunteer,loadDpThread,loadGiftsFull,loadRel,loadingKey,lockMajor,makeVolOpen,noteOpen,onAddTask,onClose,onDelete,onEdit,onIntEdited,onInteractionAdded,onNavigate,openForNextMove,org,photoUrl,planOpen,prospectBriefOpen,sendYourPageLink,setBriefOpen,setConvoOpen,setDpMoreOpen,setDpTab,setEditingInt,setEraseMsg,setEraseOpen,setEraseWord,setFilingLookupOpen,setLocalInts,setMadeVol,setMakeVolOpen,setNoteOpen,setPhotoUrl,setPlanOpen,setProspectBriefOpen,setPublicFiling,setShowGiftModal,setSuggestOpen,setVideoThanksOpen,setVolOpen,setWhyStopOpen,suggestOpen,videoThanksOpen,volOpen,whyStopOpen,yourPageMsg}}/>
         {(figs||donor.figures)&&<ProfileNumbers figures={figs||donor.figures}/>}
           </div>
           {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
@@ -1433,6 +1438,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           <GivingTab {...{acceptSuggestion,addAsk,addGift,addGiftForm,addGiftOpen,addPgOpen,addPlannedGift,addPledge,addPledgeOpen,addToPipeline,askAmt,askName,askOpen,campaigns,closeAsk,deleteGift,deletePlannedGift,deletePledge,dismissSuggestion,dismissedSug,donor,downloadReceiptPdf,dpItems,dpTab,exportGiftsCSV,figs,fundAffinity,fundLoading,giftCfDefs,giftCfEditStr,giftCountReal,giftEditForm,giftEditId,giftErr,giftLoading,giftMoreOpen,giftPeopleQ,giftReadErr,giftSaving,gifts,giftsFull,hasDesignation,household,isAdmin,isReadOnly,isTeam,loadGiftsFull,lockMajor,moveSuggestions,moves,onNavigate,onStageChange,openProposals,opps,pgForm,pgOpen,pgSaving,pipelineAdded,plannedGifts,pledgeEdit,pledgeForm,pledgeResendBusyId,pledgeResentIds,pledgeSaving,pledges,propData,proposalsKnown,receiptBusyId,receiptForGift,receiptsEnabled,recurResendBusy,recurResendSent,recurringSub,refundRows,reloadProps,resendPledgeReminder,resendRecurringLink,saveGiftEdit,savePledgeEdit,sc,scores,sendReceipt,sendYearEndStatement,seqId,seqLoading,seqOpen,seqToast,sequences,setAddGiftForm,setAddGiftOpen,setAddPgOpen,setAddPledgeOpen,setAskAmt,setAskName,setAskOpen,setDpTab,setGiftEditForm,setGiftEditId,setGiftLoading,setGiftMoreOpen,setHhModalOpen,setPgForm,setPgOpen,setPledgeEdit,setPledgeForm,setPledgeStatus,setRelatedOpen,setSeqId,setSeqLoading,setSeqOpen,setSeqToast,setShowYearEnd,setYearDrill,setYearEndYear,showYearEnd,softCredit,status,toggleDesignation,yearDrill,yearEndBusy,yearEndErr,yearEndYear}}/>
 
+          {mergeOpen&&<MergeWithModal donor={donor} onMerged={id=>{mergeKeptRef.current=id;}}
+            onClose={()=>{setMergeOpen(false);const k=mergeKeptRef.current;mergeKeptRef.current=null;if(k&&onSelectRelatedDonor)onSelectRelatedDonor(k);}}/>}
           <RelatedModal {...{donor,household,isReadOnly,linkDonor,onSelectRelatedDonor,refreshSoftCredit,relErr,relLoading,relPickerOpen,relPickerResults,relSaving,relSearch,relType,relatedOpen,relationships,removeFromHousehold,retypeRelationship,setHhModalOpen,setRelErr,setRelPickerOpen,setRelSearch,setRelType,setRelatedOpen,softCredit,unlinkDonor}}/>
 
           <ListTabs {...{deleteMaterial,donor,dpTab,giftsFull,inboxConnected,intActions,isReadOnly,loadDpThread,loadGiftsFull,loadRel,localInts,matLoading,matUploading,materials,onInteractionAdded,onLogTouchpoint,onNavigate,rel,saveStewardship,setLogMeeting,setStwForm,setStwOpen,stwForm,stwOpen,stwSaving,tlExtras,tlSearch,uploadMaterial,viewMaterial}}/>
@@ -1474,7 +1481,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {railErr&&<div data-testid="dp-rail-error" style={{fontSize:12.5,color:RAIL.dim,padding:"8px 0"}}>Some of this person's facts could not be loaded just now.</div>}
         {!isPhone&&railPledgeNode}
               <RailSection title="Journeys" testid="dp-rail-journeys">{rhythmNode}</RailSection>
-              <RailAboutSections {...{R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit,noGifts,nothingLogged}}/>
+              <RailAboutSections {...{setRelPickerOpen,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit,noGifts,nothingLogged}}/>
           <RailPersonCards {...{R,donor,donorEvents,inboxConnected,isReadOnly,loadRel,onNavigate,rel,nothingLogged}}/>
 
 

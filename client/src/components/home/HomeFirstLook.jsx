@@ -90,7 +90,7 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
       {surface==="home"&&!editMode&&(
         <div style={{padding:"0 2px",marginTop:6}}>
           {setupFirst&&<div style={{marginBottom:18}}>{setupFirst}</div>}
-          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet}
+          <Suspense fallback={MOVES_WAIT}><HomeMoves onNavigate={onNavigate} isReadOnly={isReadOnly} noDonors={noDonorsYet} importAbove={!!setupFirst}
             sample={sampleStatus&&!sampleStatus.hasSampleData&&!isReadOnly} drift={()=>onNavigate&&onNavigate("donors",{view:"drift"})}/></Suspense>
         </div>
       )}

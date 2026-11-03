@@ -191,6 +191,10 @@ async function run() {
     const money = n => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
     ok("§fix60 a zero variance reads \"on budget\"", !W.err && W.budgetVarianceText(0, money) === "on budget" && W.budgetVarianceText(0.004, money) === "on budget", W.err);
     ok("§fix60 a real variance keeps its sign", !W.err && W.budgetVarianceText(12.5, money) === "+$12.50" && W.budgetVarianceText(-3, money) === "-$3.00");
+    // POLISH-4: revenue ahead of a $0 budget read "-$1,750" in red; with its section it reads the right way round
+    ok("§polish4 a budget line reads in words, the right way round", !W.err && W.budgetVarianceText(-1750, money, "revenue") === "$1750.00 ahead"
+       && W.budgetVarianceText(39250, money, "revenue") === "$39250.00 short" && W.budgetVarianceText(-300, money, "expense") === "$300.00 over"
+       && W.budgetVarianceText(300, money, "expense") === "$300.00 under", !W.err && [W.budgetVarianceText(-1750, money, "revenue"), W.budgetVarianceText(-300, money, "expense")]);
     ok("§fix60 months gone by are the budget year's own", !W.err && W.budgetMonthsElapsed("2026-07-01", "2027-06-30", "2026-10-30") === 4
        && W.budgetMonthsElapsed("2026-01-01", "2026-12-31", "2026-10-30") === 10 && W.budgetMonthsElapsed("2027-07-01", "2028-06-30", "2026-10-30") === 0);
   }

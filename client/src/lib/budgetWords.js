@@ -3,9 +3,15 @@
 // A variance of nothing read "+$0", a sign on no difference at all. Zero (to
 // the cent) reads "on budget"; anything else keeps its sign and its dollars.
 // Pure: the caller passes the money formatter it draws with.
-export function budgetVarianceText(variance, money) {
+// POLISH-4: with the line's section it reads in words, the right way round.
+// The variance is budget − actual for both sections, so revenue ahead of its
+// budget is negative: "$1,750 ahead", never "-$1,750" in red. Expense: "$300
+// under" or "$300 over".
+export function budgetVarianceText(variance, money, section = null) {
   const cents = Math.round(Number(variance || 0) * 100);
   if (cents === 0) return "on budget";
+  if (section === "revenue") return `${money(Math.abs(cents) / 100)} ${cents < 0 ? "ahead" : "short"}`;
+  if (section === "expense") return `${money(Math.abs(cents) / 100)} ${cents < 0 ? "over" : "under"}`;
   return `${cents > 0 ? "+" : ""}${money(cents / 100)}`;
 }
 

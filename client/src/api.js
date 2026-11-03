@@ -351,6 +351,8 @@ export function adaptDonor(d) {
     lastGift:       d.last_gift_date || null,
     // FIX-60 — a pledge keeps them off Lapsed (lapseRule.js pledgeHold).
     pledgeHold:     !!d.pledge_hold,
+    // POLISH-4 — on Re-engage, by the one rule (shared/numbers/lapse.js reengageSql).
+    reengage:       !!d.reengage,
     lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,

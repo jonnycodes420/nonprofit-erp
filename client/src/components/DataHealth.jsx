@@ -38,6 +38,9 @@ const TABLE_WORDS = {
   volunteer_shifts: ["volunteer shift", "volunteer shifts"], event_attendees: ["event registration", "event registrations"],
   survey_responses: ["survey answer", "survey answers"], interaction_attachments: ["file", "files"],
   sequence_enrollments: ["journey", "journeys"], auction_bidders: ["auction bidder record", "auction bidder records"],
+  // POLISH-4: the rest of what a hand merge moves, named.
+  donor_relationships: ["link to someone", "links to people"], email_messages: ["email", "emails"], email_sends: ["email sent", "emails sent"],
+  campaign_recipients: ["campaign email", "campaign emails"], planned_gifts: ["planned gift", "planned gifts"], donor_materials: ["file", "files"],
 };
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const PAGE = 50;   // SWEEP-2: review lists come a page at a time
@@ -123,6 +126,10 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
     ...(c.families ? [{ id: "families", label: "Possible families", count: c.families,
       sentence: `${plural(c.families, "pair")} with one surname and two different first names share an address, phone or email: likely spouses or a parent and child, not duplicates.`,
       action: "Review" }] : []),
+    // POLISH-4: only when there is something to link
+    ...(c.businesses ? [{ id: "businesses", label: "People and their businesses", count: c.businesses,
+      sentence: `${c.businesses === 1 ? "1 person looks" : `${c.businesses.toLocaleString("en-US")} people look`} linked to an organization on file. Linked, a gift from either keeps both off Lapsed.`,
+      action: "Review" }] : []),
     { id: "unreachable", label: "No way to reach", count: c.unreachable,
       sentence: `${plural(c.unreachable, "person", "people")} with no email, no phone and no mailable address.`,
       action: c.unreachable ? "Open the list" : null },
@@ -156,6 +163,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       {open === "pledgeDates" && <PledgeDatesPanel onDone={done} isReadOnly={isReadOnly} />}
       {open === "names" && <NamesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "families" && <FamiliesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
+      {open === "businesses" && <BusinessesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open && open.startsWith("event:") && <EventPairsPanel key={open} eventId={open.slice(6)} onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       <MergesPanel key={tick} onDone={done} isReadOnly={isReadOnly} />
     </div>
@@ -242,7 +250,8 @@ function DuplicatesPanel({ onDone, onOpenDonor, isReadOnly, tick }) {
   );
 }
 
-function CompareModal({ pair, onClose, onMerged }) {
+// POLISH-4: the profile's More → Merge with… opens this too, on a pair she chose.
+export function CompareModal({ pair, onClose, onMerged, undoWhere = "below" }) {
   const [d, setD] = useState(null);
   const [keptId, setKeptId] = useState(null);
   const [choices, setChoices] = useState({});
@@ -273,7 +282,7 @@ function CompareModal({ pair, onClose, onMerged }) {
     try {
       const r = await apiFetch("/data-health/merge", { method: "POST", body: JSON.stringify({ keptId, mergedId: otherId, choices }) });
       const kept = d.records[keptId];
-      onMerged(`Merged into ${kept.name}. Lifetime giving is now ${fmtMoney(r.lifetime.keptAfterCents)}, the two records' ${fmtMoney(r.lifetime.keptBeforeCents)} and ${fmtMoney(r.lifetime.mergedBeforeCents)}. You can undo this below for 30 days.`);
+      onMerged(`Merged into ${kept.name}. Lifetime giving is now ${fmtMoney(r.lifetime.keptAfterCents)}, the two records' ${fmtMoney(r.lifetime.keptBeforeCents)} and ${fmtMoney(r.lifetime.mergedBeforeCents)}. You can undo this ${undoWhere} for 30 days.`, { ...r, keptId, keptName: kept.name });
     } catch (e) { setErr(e.sentence || e.message); setBusy(false); }
   };
   if (!d) return <Modal onClose={onClose} title="Compare">{err || "Loading both records…"}</Modal>;
@@ -292,7 +301,7 @@ function CompareModal({ pair, onClose, onMerged }) {
   };
   return (
     <Modal onClose={onClose} title="Compare and merge" width={760}
-      subtitle={`${cap(d.reasons.join("; "))}${d.confidence ? `. ${CONF_WORD[d.confidence]} confidence.` : ""}`}
+      subtitle={d.reasons.length ? `${cap(d.reasons.join("; "))}${d.confidence ? `. ${CONF_WORD[d.confidence]} confidence.` : ""}` : "You chose these two records. Pick the one to keep and, where they differ, which value stays."}
       footer={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <button style={btn(false)} onClick={onClose}>Cancel</button>
         <button type="button" data-commit style={btn(true, busy)} disabled={busy} onClick={merge} data-testid="dh-merge-confirm">{busy ? "Merging…" : `Merge into ${K.name}`}</button>
@@ -539,6 +548,55 @@ function NamesPanel({ onDone, onOpenDonor, isReadOnly }) {
           <button style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} onClick={() => call("/data-health/names/apply", { donorIds: [r.donorId] }, x => setBatch(x.batchId))}>Clean</button>
         </div>
       ))}
+    </Card>
+  );
+}
+
+// ── POLISH-4 · people and their businesses ─────────────────────────────────
+function BusinessesPanel({ onDone, onOpenDonor, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [made, setMade] = useState(null);
+  const [shown, setShown] = useState(PAGE);
+  const load = (limit = shown) => apiFetch(`/data-health/businesses?limit=${limit}`).then(setData).catch(e => setErr(e.message));
+  useEffect(() => { load(); }, []);
+  const link = async f => {
+    try { const r = await apiFetch("/data-health/businesses/link", { method: "POST", body: JSON.stringify({ a: f.a, b: f.b }) }); setMade(r.id); load(); onDone(r.sentence); }
+    catch (e) { setErr(e.sentence || e.error || e.message); }
+  };
+  const undoLink = async () => {
+    try { await apiFetch(`/donor-relationships/${encodeURIComponent(made)}`, { method: "DELETE" }); setMade(null); load(); onDone("Undone. The link is gone and both are as they were."); }
+    catch (e) { setErr(e.sentence || e.error || e.message); }
+  };
+  const notLinked = async f => {
+    try { await apiFetch("/data-health/businesses/dismiss", { method: "POST", body: JSON.stringify({ a: f.a, b: f.b }) }); load(); onDone(`${f.person.name} and ${f.business.name} won't be suggested again.`); }
+    catch (e) { setErr(e.sentence || e.message); }
+  };
+  if (!data) return <Card>{err ? `Couldn't load the suggestions. ${err}` : "Reading people and organizations…"}</Card>;
+  return (
+    <Card data-testid="dh-businesses">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{data.sentence}</div>
+        {made && <button data-testid="dh-business-undo" style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={undoLink}>Undo</button>}
+      </div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginTop: 6 }}>{err}</div>}
+      {data.rows.map(f => (
+        <div key={f.key} style={rowStyle} data-testid="dh-business">
+          <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 14, color: T.ink }}>
+            <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(f.a)}>{f.person.name}</button>
+            <span style={{ color: T.ink3 }}> and </span>
+            <button style={linkBtn} onClick={() => onOpenDonor && onOpenDonor(f.b)}>{f.business.name}</button>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>{cap(f.reasons.join("; "))}.</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button data-testid="dh-business-link" style={btn(true, isReadOnly)} disabled={isReadOnly} onClick={() => link(f)}>Link: gives through</button>
+            <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={() => notLinked(f)}>Not linked</button>
+          </div>
+        </div>
+      ))}
+      {data.rows.length < (data.total ?? data.rows.length) && <button style={{ ...btn(false), marginTop: 12 }}
+        onClick={() => { const n = shown + PAGE; setShown(n); load(n); }}>
+        Show {Math.min(PAGE, data.total - data.rows.length)} more of {data.total.toLocaleString("en-US")}</button>}
     </Card>
   );
 }
