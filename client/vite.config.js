@@ -98,7 +98,7 @@ export default defineConfig({
         if (!/'DM (Sans|Serif Display)'/.test(code)) return null;
         return {
           code: code.replace(/'DM Sans'(?=\s*,)/g, "'DM Sans','DM Sans Fallback','DM Sans Fallback Roboto'")
-            .replace(/'DM Serif Display'(?=\s*,)/g, "'DM Serif Display','DM Serif Fallback','DM Serif Fallback Noto'"),
+            .replace(/'DM Serif Display'(?=\s*,)/g, "'DM Serif Display','DM Serif Fallback','DM Serif Fallback Noto','DM Serif Fallback Times'"),
           map: null,
         };
       },
