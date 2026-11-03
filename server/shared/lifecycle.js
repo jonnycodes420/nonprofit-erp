@@ -64,8 +64,9 @@ function install(server, { jobs = null, log = console } = {}) {
 function bootNeeds({ testMode }) {
   const db = require("../../db");
   const n = Math.min(4, Math.max(2, Number(process.env.DB_POOL_MAX) || 10));
-  bootGate.need("pool", bootGate.READY.then(() => Promise.all(Array.from({ length: n }, () => db.query("SELECT 1"))))
-    .then(() => db.querySetwise("SELECT 1")));
+  // The main pool only: its connections close after 10 s idle if unused, while
+  // the set-wise pool keeps its own for good, so it is left to open on use.
+  bootGate.need("pool", bootGate.READY.then(() => Promise.all(Array.from({ length: n }, () => db.query("SELECT 1")))));
   bootGate.need("ai", require("../../aiClient").warm());
   const slow = Number(process.env.STEWARD_TEST_SLOW_BOOT_MS);
   if (testMode() && slow > 0) bootGate.need("test-slow-step", new Promise(r => setTimeout(r, slow)));
