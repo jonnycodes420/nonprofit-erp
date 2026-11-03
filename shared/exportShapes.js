@@ -35,6 +35,9 @@ export const EXPORT_SHAPES = [
     key: "sf-contacts", system: "Salesforce", part: "Contacts", pairWith: "sf-donations",
     signals: ["contact id", "mailing street", "mailing city", "mailing state/province", "mailing zip/postal code", "account name", "contact owner"],
     idSignal: { header: "contact id", re: /^003/ },
+    // NUMBERS-5: "Mailing Street" and "Mailing City" are on any list of people;
+    // only Salesforce's own columns make it Salesforce
+    signature: ["contact id", "account name", "contact owner"],
     columns: {
       "contact id": "externalId", "account name": { role: "ignore", skipWhen: /\bhousehold$/i, else: "keep",
         reason: "the household account Salesforce makes for each person; Steward makes households from the people" },
@@ -45,6 +48,7 @@ export const EXPORT_SHAPES = [
     key: "sf-donations", system: "Salesforce", part: "Donations",
     signals: ["opportunity id", "opportunity name", "close date", "stage", "primary contact", "primary campaign source", "general accounting unit", "contact id"],
     idSignal: { header: "opportunity id", re: /^006/ },
+    signature: ["opportunity id", "opportunity name", "contact id"],
     columns: {
       "opportunity id": "giftId", "contact id": "externalId", "primary contact": "name", "close date": "date", "stage": "status",
       "general accounting unit": "fund", "primary campaign source": "campaign", "payment method": "method",
@@ -152,11 +156,13 @@ export const EXPORT_SHAPES = [
 
 // Which shape is this table? header: its header row; rows: its data rows'
 // cells. Two of a shape's own signals (an id that reads as the system's own
-// record id counts as one), and a tie is null.
+// record id counts as one), and a tie is null. A shape with a `signature`
+// claims a table only when one of those headers is there (NUMBERS-5).
 export function shapeOfTable(header = [], rows = []) {
   const hs = new Set(header.map(hnorm).filter(Boolean));
   const scored = [];
   for (const sh of EXPORT_SHAPES) {
+    if (sh.signature && !sh.signature.some(x => hs.has(x))) continue;
     let score = sh.signals.filter(x => hs.has(x)).length;
     if (sh.idSignal && hs.has(sh.idSignal.header)) {
       const i = header.findIndex(h => hnorm(h) === sh.idSignal.header);
