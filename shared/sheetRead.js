@@ -1547,9 +1547,12 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const evName = s(answers.eventName) || suggestedEventName || "";
   const fileHasDates = usable.some(t => t.cols.some(c => c.role === "date"));
   // a title row or a file name names the event only for a file with no dates:
-  // a dated gift export called "Gala gifts" is gifts, not an event to create
+  // a dated gift export called "Gala gifts" is gifts, not an event to create.
+  // NUMBERS-5: a file name alone never makes an event ("walk-people.csv" was an
+  // event called Walk People); it speaks only beside money with no dates (the dinner's).
+  const undatedMoney = gifts.length + pledges.length > 0;   // with no date column, none of it is dated by the file
   const eventNamed = !answers.notEvent && (hasEngagement || !!(answers.linkEvent && answers.eventName)
-    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || EVENT_WORD_RE.test(suggestedEventName)))));
+    || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || (EVENT_WORD_RE.test(suggestedEventName) && undatedMoney)))));
   const eventWanted = eventNamed || (answers.linkEvent && answers.eventName);
   // the gifts that would take the event's date: no date of their own
   const eventGiftCount = gifts.filter(g => !g.date || g.datedBy === "event").length;
@@ -1934,4 +1937,17 @@ export function wantsAdaptiveReading(sheets, roled = null) {
   const hasEmail = u.tables.some(tb => tb.columns.some(c => c.role === "email"));
   if ((u.counts.households > 0 && !hasEmail) || u.totals.filter(x => x.role === "amount").length > 1) return true;
   return u.tables.some(tb => tb.columns.some(c => c.role === "date" && (c.sample || []).some(v => /^[A-Za-z]{3,9}\.?\s+\d{1,2}$/.test(String(v).trim()))));
+}
+
+// NUMBERS-5 · A WORKBOOK OF PEOPLE AND THEIR GIFTS IS READ BY THE WORKBOOK
+// SCREEN (WorkbookImport.jsx, BUILD-82), which reads every sheet; this reader
+// read messy-25k as 1,101 people and no gifts. `roled`: classifyWorkbookSheets'
+// answer. wantsAdaptiveReading's question is about shape, so it is asked of
+// each sheet's first rows: the same answer under that size, seconds for a big file.
+const SHAPE_ROWS = 2000;
+export function readsAsWorkbook(sheets, roled) {
+  const live = (roled || []).filter(s => s.rowCount > 0);
+  if (!live.some(s => s.role === "donors") || !live.some(s => s.role === "gifts")) return false;
+  const head = (sheets || []).map(sh => ({ ...sh, grid: (sh.grid || []).slice(0, SHAPE_ROWS) }));
+  return !wantsAdaptiveReading(head, roled);
 }

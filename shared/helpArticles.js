@@ -98,7 +98,7 @@ export const HELP_ARTICLES = [
     summary: `Donors is everyone who ever believed in your work, one record each, where you search, filter and open a person's whole story.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
+        `The screen is titled "Your donors." ("Everyone." and "Your contacts." when the Directory shows those people). Along the top are the search box, the views (Directory, Team for admins, Re-engage, Map and Data health), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
         `The Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open "⊞ Filters" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live. Data health lists records that need tidying, such as possible duplicates.`,
       ]},
       { h: `Add a donor`, steps: [

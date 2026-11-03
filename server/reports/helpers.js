@@ -803,10 +803,10 @@ async function fundraisingCampaignRows(orgId) {
     // FUNDRAISING-2: gifts given to a goal before it starts. They are outside
     // its window, so not in raised; a goal that has not started says them.
     query(
-      `SELECT g.campaign_id AS cid, COALESCE(SUM(g.amount), 0) AS early, COUNT(*)::int AS n
+      `SELECT g.campaign_id AS cid, ${require("../../shared/numbers/money").MONEY_SUM("g")} AS early, COUNT(*) FILTER (WHERE g.amount > 0)::int AS n
          FROM gifts g JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
          JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id = ? AND d.deleted_at IS NULL AND c.start_date IS NOT NULL AND g.date < to_char(c.start_date, 'YYYY-MM-DD')
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND ${require("../../shared/numbers/money").MONEY("g")} AND c.start_date IS NOT NULL AND g.date < to_char(c.start_date, 'YYYY-MM-DD')
         GROUP BY g.campaign_id`,
       [orgId]
     ),
