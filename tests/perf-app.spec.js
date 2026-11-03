@@ -11,6 +11,10 @@
 //     for them and the app takes its answers, PERF-2); and the preloader is
 //     allowed by vercel.json's CSP (a wrong hash is not an error anyone sees:
 //     the browser skips the preloader and Home is a second slower)
+//   · PERF-3: Home on a phone a second time (the cache primed, most of her
+//     mornings) under WARM_MS; Home's first look downloads no more than
+//     FIRST_KB in all (scripts, fonts, styles and its reads); and nothing on
+//     it moves as it loads or as a font swaps (CLS under 0.02, cold and warm)
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
@@ -47,8 +51,11 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright");
 // PERF-2: Home on a phone, and the JavaScript its first look downloads (bytes,
 // so strict everywhere; the milliseconds warn in CI, tests/lib/budget.js).
-const PHONE_MS = 3640;   // PERF-2 measured 3,537 ms + 0.1 s, so it cannot regress (4.5 s at SWEEP-6); the bar is 3 s, docs/defects.md
-const JS_FIRST_KB = 225;   // PERF-2 measured 214 KB
+const PHONE_MS = 3640;   // PERF-3 measured 3,540 ms + 0.1 s, so it cannot regress (PERF-2 3,537; main 3,840 at PERF-3's start); the bar is 3 s, docs/defects.md
+const JS_FIRST_KB = 240;   // PERF-3 measured 228 KB + 5%: the moves deck's code (15 KB) is on the first look now, preloaded (PERF-2: 214)
+const WARM_MS = 1460;   // PERF-3: Home on a phone a second time, measured 1,324 ms + 10% (main: 1,540)
+const FIRST_KB = 310;   // PERF-3: every byte of Home's first look, measured 295 KB + 5% (main: 314)
+const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in)
 const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
 const BUDGET = { homeDesktop: 1000, homePhone: PHONE_MS, listServer: 1000, listDraw: 2000, profile: 2000 };
@@ -76,11 +83,11 @@ async function seed() {
 
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
-async function measure(browser, machine, auth, url, ready, rows = 1) {
+async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false } = {}) {
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block" });
   await ctx.addInitScript(([t, u, o, sel, n]) => {
     localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
-    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0 };
+    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0, cls: 0 };
     const look = () => { if (!window.__perf.readyAt && document.querySelectorAll(sel).length >= n) window.__perf.readyAt = performance.now(); };
     new MutationObserver(look).observe(document, { childList: true, subtree: true });
     try {
@@ -88,12 +95,20 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
         .observe({ type: "largest-contentful-paint", buffered: true });
       new PerformanceObserver(l => { for (const e of l.getEntries()) window.__perf.longEnd = Math.max(window.__perf.longEnd, e.startTime + e.duration); })
         .observe({ type: "longtask", buffered: true });
+      new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__perf.cls += e.value; })
+        .observe({ type: "layout-shift", buffered: true });
     } catch { /* nothing to observe */ }
   }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org), ready, rows]);
   const page = await ctx.newPage();
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Network.enable");
-  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+  // PERF-3: warm is the second visit: the first, unthrottled, fills the cache.
+  if (warm) {
+    await page.goto(APP + url, { waitUntil: "load", timeout: 60000 });
+    await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length >= n, [ready, rows], { timeout: 45000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 45000 }).catch(() => {});
+    await page.goto("about:blank");
+  } else await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
   await cdp.send("Network.emulateNetworkConditions", machine.net);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: machine.cpu });
   let js = 0, bytes = 0, requests = 0;
@@ -135,9 +150,11 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
-    fcp: Math.round(r.fcp || 0), sent,
+    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000,
     // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
     jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
+    // PERF-3: every byte in by then: the document, scripts, styles, fonts and reads
+    firstKB: Math.round(done.filter(([, , at]) => r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
     twice: sent.filter(x => x.method === "GET" && /\/home\/bundle\?/.test(x.url)).flatMap(x => new URL(x.url).searchParams.getAll("p")).filter((p, i, a) => a.indexOf(p) !== i),
   };
   out.usable = r.readyAt ? Math.max(out.readyAt, out.longEnd, out.lcp, Math.round(r.netQuiet || 0)) : 0;
@@ -145,12 +162,13 @@ async function measure(browser, machine, auth, url, ready, rows = 1) {
   return out;
 }
 
-async function measureN(browser, machine, auth, url, ready, rows) {
+async function measureN(browser, machine, auth, url, ready, rows, opts) {
   const runs = [];
-  for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows));
+  for (let i = 0; i < RUNS; i++) runs.push(await measure(browser, machine, auth, url, ready, rows, opts));
   const m = { ...runs[0], ready: runs.every(r => r.ready), errors: runs.flatMap(r => r.errors), fail5xx: runs.flatMap(r => r.fail5xx),
     lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice) };
-  for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
+  for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "firstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
+  m.cls = Math.max(...runs.map(r => r.cls));   // PERF-3: the worst run, not the median
   return m;
 }
 
@@ -220,6 +238,7 @@ function preloaderAllowed() {
   const HOME_READY = process.env.PERF_HOME_READY || '[data-testid="home-rail"][data-ready="1"]';
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);
   const homeP = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY);
+  const homeW = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { warm: true });   // PERF-3
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
   const prof = await measureN(browser, DESKTOP, auth, `/donors/${top.id}`, '[data-testid="dp-right-rail"]');
   await browser.close();
@@ -237,16 +256,20 @@ function preloaderAllowed() {
 
   {
     console.log("\n  screen            usable ms  ready ms  LCP ms  long ms  net ms  JS KB  JS first  total KB  requests");
-    for (const [name, r] of [["Home, desktop", homeD], ["Home, phone", homeP], ["Donors, desktop", list], ["Profile, desktop", prof]])
-      console.log(`  ${name.padEnd(17)} ${String(r.usable).padStart(9)} ${String(r.readyAt).padStart(9)} ${String(r.lcp).padStart(7)} ${String(r.longEnd).padStart(8)} ${String(r.net).padStart(7)} ${String(r.jsKB).padStart(6)} ${String(r.jsFirstKB).padStart(9)} ${String(r.totalKB).padStart(9)} ${String(r.requests).padStart(9)}`);
+    for (const [name, r] of [["Home, desktop", homeD], ["Home, phone", homeP], ["Home, phone warm", homeW], ["Donors, desktop", list], ["Profile, desktop", prof]])
+      console.log(`  ${name.padEnd(17)} ${String(r.usable).padStart(9)} ${String(r.readyAt).padStart(9)} ${String(r.lcp).padStart(7)} ${String(r.longEnd).padStart(8)} ${String(r.net).padStart(7)} ${String(r.jsKB).padStart(6)} ${String(r.jsFirstKB).padStart(9)} ${String(r.totalKB).padStart(9)} ${String(r.requests).padStart(9)}  first ${r.firstKB} KB, CLS ${r.cls}`);
     console.log(`  Donors list, 100 rows, server: ${listServer} ms (median of 5)\n`);
   }
-  for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Donors list", list], ["donor profile", prof]])
+  for (const [name, r] of [["Home (desktop)", homeD], ["Home (phone)", homeP], ["Home (phone, warm)", homeW], ["Donors list", list], ["donor profile", prof]])
     ok(`${name}: draws with no error and no 5xx`, r.ready && !r.errors.length && !r.fail5xx.length, { ready: r.ready, errors: r.errors.slice(0, 3), fail5xx: r.fail5xx.slice(0, 3) });
   timed(`Home, its rail included, usable under 1 s on a desktop (${homeD.usable} ms)`, { ms: homeD.usable, budget: BUDGET.homeDesktop });
   timed(`Home, its rail included, usable under ${BUDGET.homePhone / 1000} s on a phone (${homeP.usable} ms)`, { ms: homeP.usable, budget: BUDGET.homePhone });
   ok(`Home's first look downloads at most ${JS_FIRST_KB} KB of JavaScript on a phone (${homeP.jsFirstKB} KB)`, homeP.jsFirstKB > 0 && homeP.jsFirstKB <= JS_FIRST_KB, homeP.jsFirstKB);
-  ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length, [...homeD.twice, ...homeP.twice].slice(0, 3));
+  // PERF-3: the second visit, every byte of the first look, and nothing moving.
+  timed(`Home, a second time, usable under ${WARM_MS / 1000} s on a phone (${homeW.usable} ms)`, { ms: homeW.usable, budget: WARM_MS });
+  ok(`Home's first look downloads at most ${FIRST_KB} KB in all on a phone (${homeP.firstKB} KB)`, homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB, homeP.firstKB);
+  ok(`nothing on Home moves as it loads on a phone (CLS ${homeP.cls} cold, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS})`, homeP.cls < CLS_MAX && homeW.cls < CLS_MAX, { cold: homeP.cls, warm: homeW.cls });
+  ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
   timed(`the Donors list's 100 rows in under 1 s on the server (${listServer} ms)`, { ms: listServer, budget: BUDGET.listServer, extra: { listServer, listUrl } });

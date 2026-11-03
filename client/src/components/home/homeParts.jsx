@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from "react";
 import { retryImport } from "../../lib/lazyRetry";
+import { homeCode, startHomeCode } from "../../lib/bootReads";
 import { T, interactive, fmt } from "../shared";
 import { apiFetch } from "../../api";
 import { plural, countLabel } from "../../../../shared/countWords";
@@ -13,7 +14,17 @@ export const PinnedAnswers = lazy(() => retryImport(() => import("../AskPanel"))
 // PERF-2: the moves deck (INSIGHTS-1, HOME-3) is below the fold on a phone, so
 // its code loads beside its read instead of holding Home's first look. Until it
 // is in, the deck's own "Reading your donors…" card holds its place.
-export const HomeMoves = lazy(() => retryImport(() => import("../Insights")).then(m => ({ default: m.HomeMoves })));
+// PERF-3: when Home is the first screen its code is asked for with Home's
+// reads and App waits for it (lib/bootReads.js homeCode), so the deck draws at
+// once instead of after this card, which was shorter and pushed the Thread down.
+let movesIn = null;
+if (homeCode()) homeCode().then(m => { movesIn = m; });
+const HomeMovesLater = lazy(() => startHomeCode().then(m => ({ default: m.HomeMoves })));
+// Chosen once per mount, so the deck is never swapped for itself mid-visit.
+export function HomeMoves(p) {
+  const [Now] = useState(() => movesIn && movesIn.HomeMoves);
+  return Now ? <Now {...p}/> : <HomeMovesLater {...p}/>;
+}
 export const MOVES_WAIT = <section aria-label="Your moves" data-testid="home-moves" style={{background:T.white,border:"1px solid "+T.bg2,borderRadius:14,padding:"16px 18px",marginBottom:12,color:T.ink3,fontSize:14}}>Reading your donors…</section>;
 export const LogConversationModal = lazy(() => retryImport(() => import("../LogConversation")).then(m => ({ default: m.LogConversationModal })));   // PERF-2
 export const Breakdown = p => p.open ? <Suspense fallback={null}><MetricBreakdownPanel {...p}/></Suspense> : null;

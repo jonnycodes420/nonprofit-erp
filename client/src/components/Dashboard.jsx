@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { HomeMailLine } from "./MailTypes";   // SEND-GATE-2
-import { apiFetch, adaptDonor, prefetch } from "../api";
+import { apiFetch, adaptDonor, prefetch, takeParked } from "../api";
 import { usePeopleById, peopleCounts } from "../lib/people";
 import { useAuth } from "../main";
-import { T, fmtFull, daysUntil, daysDiff, askClaude, buildContext, loadContextPeople, GoldMoment } from "./shared";
+import { T, fmtFull, daysUntil, daysDiff, GoldMoment } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
 import { HOME_FIRST_READS, RAIL_READS, HOME_SCOPED_FIRST, homeScopeReads, initialScope } from "../lib/homeReads";   // HARDEN-2, PERF-2
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
@@ -14,7 +14,6 @@ import { rowFigure } from "../../../shared/threadFigures";
 import { paceOf } from "../../../shared/pace";
 import { makeT } from "../../../shared/vocabulary";
 import { greetingForHour } from "../lib/greeting";
-import { nextStepSuggestion } from "../../../shared/threadShape";
 
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { useStewardTold } from "../lib/stewardTold";
@@ -24,11 +23,11 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { CallsToMake } from "./CallsToMake";
 import * as FL from "./home/HomeFirstLook";   // SCREENS-1: Home's first look
 import * as HL from "./home/HomeLater";   // SCREENS-1: the rest of Home, imported with it
-import { PORTFOLIO_BREAKDOWNS, todayCivil, ImpactLine } from "./home/homeParts";
+import { PORTFOLIO_BREAKDOWNS, ImpactLine } from "./home/homeParts";
 import { openTellSteward } from "./TellStewardOpen";   // AGENT-5: one input, Atlas over the page
 import { SetupFirstCard, SetupRailCard, setupStage } from "./HomeSetup";   // HOME-4
 import { HomeRailSkeleton, TodayCard, ToConfirmLine, useRailReads, HomeRailColumn, OwnersCard } from "./HomeRail";   // HOME-4, PROFILE-2
-import { countLabel, plural } from "../../../shared/countWords";
+import { plural } from "../../../shared/countWords";
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
@@ -111,9 +110,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // silence: a readout that will not load must never break the morning screen.
   const [latestReadout,setLatestReadout]=useState(null);
   useEffect(()=>{apiFetch("/readouts/latest").then(d=>setLatestReadout(d?.readout||null)).catch(()=>{});},[]);
-  const [briefing,setBriefing]=useState("");
-  const [briefLoading,setBriefLoading]=useState(false);
-  const [briefOpen,setBriefOpen]=useState(false);
   const [myStats,setMyStats]=useState(null);
   // My Portfolio is the daily driver — it leads the Home and opens expanded by
   // default (BUILD-19 Home tweak). The collapse toggle is kept for anyone who
@@ -130,7 +126,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   const [queueItems,setQueueItems]=useState([]);
   const [queueLoading,setQueueLoading]=useState(true);
-  const [busyDonorId,setBusyDonorId]=useState(null);
 
   const [goal,setGoal]=useState(undefined); // undefined = loading, null = none set
   // BUILD-21 Part 1 — the typed/roll-up goal model (BUILD-16) now leads the Home
@@ -175,7 +170,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     catch(e){ setTyErr(errorMessage(e,"Those could not be marked sent.")); }
   };
   const [impact,setImpact]=useState(null);
-  const [resentIds,setResentIds]=useState(()=>new Set());
   // BUILD-16 Part 1 — the Home command center's four headers (Portfolio/Tasks/
   // Need-to-do/Pipeline), plan-graceful (Core hides the Team headers).
   const [homeData,setHomeData]=useState(null);
@@ -187,9 +181,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the list, the badge counts and the headline can never be stale together.
   const [driftData,setDriftData]=useState(null);      // capped list (the day view)
   const [driftAllData,setDriftAllData]=useState(null); // see-all expansion, fetched on demand
-  const [driftLineFor,setDriftLineFor]=useState(null); // donorId with the one-line input open
-  const [driftLine,setDriftLine]=useState("");
-  const [driftBusy,setDriftBusy]=useState(false);
   // FIX-10 Part A — the way IN to the medium ones. "See all" used to send
   // ?all=1, which only lifts the cap on the high-confidence list: on a file
   // with five medium drifters and no high ones there was no UI path to them
@@ -205,12 +196,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // FIX (2026-09-09) item 3 — the step this row is about to open is EDITABLE
   // FROM THE ROW, before it is saved. It used to be derived server-side and
   // never shown: a proposal nobody can see is a proposal nobody can correct.
-  const [driftStep,setDriftStep]=useState(null);      // {label,due,source}
-  const [driftStepDirty,setDriftStepDirty]=useState(false);
   // ENGAGE-1 — the Drift list can be put in engagement order (closest first).
   const [driftSort,setDriftSort]=useState("");
   // HOME-TIDY: Home shows the first five drifting donors; the rest open in place.
-  const [driftExpanded,setDriftExpanded]=useState(false);
   // HOME-COLLAPSE: the Thread shows five rows, the rest open in place; the
   // Thread and Drift lists each fold away, remembered in this browser only.
   const [threadExpanded,setThreadExpanded]=useState(false);
@@ -271,9 +259,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // HOME-2 · what leads Home today for the person signed in (GET /home/lead):
   // the lead cards, the rail's order, and whether Why and What have anything
   // to say. Failures are silent: Home keeps its frame without it.
-  const [homeDay,setHomeDay]=useState(null);
+  // PERF-3: the boot has parked it, so Home draws with it from the first frame
+  // (Ask's suggestions under the box came a frame later and pushed Home down).
+  const [homeDay,setHomeDay]=useState(()=>surface==="home"?takeParked("/home/lead"):null);
+  const homeDayIn=useRef(homeDay!=null);
   const loadHomeDay=()=>apiFetch("/home/lead").then(setHomeDay).catch(()=>setHomeDay(null));
-  useEffect(()=>{if(surface==="home")loadHomeDay();},[surface]);
+  useEffect(()=>{if(surface!=="home")return;if(homeDayIn.current){homeDayIn.current=false;return;}loadHomeDay();},[surface]);
   const homeRail=(homeDay&&Array.isArray(homeDay.rail))?homeDay.rail:["thankClock","mailbox","meetings","firstThing","tiles"];
   const railAt=k=>{const i=homeRail.indexOf(k);return i<0?99:i;};
   const thankClockLow=railAt("thankClock")>railAt("tiles");
@@ -542,10 +533,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const queueMarked=queueItems.every(i=>typeof i.onFile==="boolean");
   const [queuePeople,queuePeopleReady]=usePeopleById(queueMarked?[]:queueItems.map(i=>i.donorId));
   const queueLive=item=>queueMarked?item.onFile:(!!item.donorId&&(queuePeople===null||!!queuePeople[item.donorId]));
-  const visibleQueue=!queuePeopleReady?[]:queueItems
-    .filter(item=>queueLive(item))
-    .slice(0,6);
-  const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
   // D-1 (BUILD-45): an attention item with no resolvable donor (an orphaned
   // task) is never rendered as a dead link — its row main falls back to a
   // <span>. Surface the count in dev only so orphans don't hide silently.
@@ -559,75 +546,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     .filter(g=>g.status!=="closed"&&g.deadline&&daysUntil(g.deadline)>=-7)
     .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline))[0]||null;
 
-  const generateBriefing=async()=>{
-    setBriefLoading(true);setBriefing("");setBriefOpen(true);
-    const milestoneLine=milestoneCount>0
-      ?`\nMilestone emails pending review: ${milestoneCount} AI-drafted thank-you email(s) awaiting staff approval (donors who just crossed a giving milestone or anniversary).`
-      :"";
-    const people=await loadContextPeople().catch(()=>undefined);
-    await askClaude(
-      `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data,people)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them, omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
-      chunk=>setBriefing(chunk)
-    );
-    setBriefLoading(false);
-  };
-
-  const completeTask=async(item)=>{
-    setBusyDonorId(item.donorId);
-    try{
-      await apiFetch(`/tasks/${item.taskId}`,{method:"PUT",body:JSON.stringify({
-        title:item.taskTitle,due:item.taskDue,priority:item.taskPriority,type:item.taskType,done:1,
-      })});
-      setQueueItems(prev=>prev.filter(i=>i.taskId!==item.taskId));
-    }catch(e){alert(errorMessage(e, "Could not mark task done"));}
-    setBusyDonorId(null);
-  };
-
-  const markNoteSent=async(item)=>{
-    setBusyDonorId(item.donorId);
-    try{
-      await apiFetch(`/note-reminders/${item.reminderId}/send`,{method:"POST"});
-      setQueueItems(prev=>prev.filter(i=>i.reminderId!==item.reminderId));
-    }catch(e){alert(errorMessage(e, "Could not mark note sent"));}
-    setBusyDonorId(null);
-  };
-
   // Resending doesn't resolve the failure (only the donor updating their
   // card, or Stripe's own retry, does that) — so unlike the other queue
   // actions, the row stays put; we just confirm the send.
-  const resendCardLink=async(item)=>{
-    setBusyDonorId(item.donorId);
-    try{
-      await apiFetch(`/recurring/${item.donorId}/resend`,{method:"POST"});
-      setResentIds(prev=>new Set(prev).add(item.donorId));
-    }catch(e){alert(errorMessage(e, "Could not resend the update link"));}
-    setBusyDonorId(null);
-  };
 
-  const handleQueueAction=(item)=>{
-    if(item.action==="note")return markNoteSent(item);
-    if(item.action==="milestone")return onNavigate("communications",{subtab:"milestones",highlightDraftId:item.draftId});
-    if(item.action==="lapsed")return onNavigate("donors",{view:"reengage"});
-    if(item.action==="recurring")return resendCardLink(item);
-    if(item.action==="matching_gift")return onNavigate("donors",{selectDonorId:item.donorId});
-    if(item.taskId)return completeTask(item);
-    return onNavigate("donors",{logDonorId:item.donorId});
-  };
-
-  const actionLabel=(item)=>{
-    if(item.action==="note")return busyDonorId===item.donorId?"Saving…":"Mark sent ✓";
-    if(item.action==="milestone")return "Review draft →";
-    if(item.action==="lapsed")return "Re-engage →";
-    if(item.action==="recurring")return resentIds.has(item.donorId)?"Sent ✓":(busyDonorId===item.donorId?"Sending…":"Resend update link");
-    if(item.action==="matching_gift")return "View donor →";
-    if(item.action==="thank")return "Log thank-you →";
-    if(item.action==="email")return "Log email →";
-    return "Log a call →";
-  };
-
-  const ROW_COLOR={note:T.greenMid,milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:T.greenDk,recurring:T.terracotta,matching_gift:T.green};
-  const rowColor=(item)=>item.taskId?T.ink:(ROW_COLOR[item.action]||T.greenMid);
 
   const openSetGoal=()=>{
     const today=new Date();
@@ -661,9 +583,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     setSavingGoal(false);
   };
 
-  const bLines=briefing.split("\n").filter(l=>l.trim()&&!l.startsWith("**")&&l.trim().length>15);
-  const pullQuote=bLines.length?bLines[0].replace(/^[•\-\*\s]+/,"").slice(0,160):"";
-  const briefRest=pullQuote?briefing.slice(briefing.indexOf(pullQuote)+pullQuote.length).trim():"";
 
   // BUILD-89 — declared HERE, above every style that reads it. It sat twenty
   // lines below sHdrPad and the whole screen rendered its error boundary:
@@ -707,10 +626,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // left a two-column card 24px narrower than it needed to be on each side.
   const cPad=onPanel?{padding:0}:{padding:24};
   // A row is 64px tall: 10px of air above and below two lines of type.
-  const rowPad=onPanel?"9px 0":"9px 24px";
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
-  const MiniEmpty=HL.MiniEmpty({ cPad, sLink });
 
   const Sparkline=HL.Sparkline();
 
@@ -750,7 +667,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // BUILD-83 Part 3.5 — the funnel shows PLACED donors; with nobody placed it
   // shows the suggestion and says so.
-  const stagesArePlaced=stageCounts.anyPlaced!==false;
   const countsByStage=Object.fromEntries((stageCounts.counts||[]).map(s=>[s.stage,s]));
 
   // Above sector average reads positive (green); below reads as needing
@@ -818,19 +734,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Trivially small vs. the goal (under 1%) reads as discouraging stated
   // baldly ("$1 raised") — lead with the human count instead in that case,
   // never fabricate a rounder/better number.
-  const goalDriverHint=(()=>{
-    if(!goal||!(goal.recentAmount>0))return null;
-    const donorWord=`${countLabel(goal.recentDonorCount, "donor")}`;
-    const isTrivial=goal.goalAmount>0&&(goal.recentAmount/goal.goalAmount)<0.01;
-    if(isTrivial){
-      return goal.goalType==="lapsed_recovery"?`${donorWord} came back this week`:`${donorWord} gave this week`;
-    }
-    // B3, tightened by BUILD-73 Part 3 — this figure is incoming giving toward
-    // the win-back goal, NOT money any Steward workflow brought in, so it reads
-    // "came in". The outcome-claim family is banned outright now, not merely
-    // reserved; see tests/reserved-recovered.test.js.
-    return `${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
-  })();
 
   // ── BUILD-21 Part 1 — typed/roll-up goal hero (reuses BUILD-16's model) ──
   // Active TOP-LEVEL goals only (a child's raised is already inside its parent's
@@ -842,8 +745,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const hasCampaignGoals=!!(fgRollup&&fgRollup.activeGoalCount>=1&&activeTop.length);
   // Category colors are LOCKED (task/BUILD-12): Annual=gold, Capital=green,
   // Project=terracotta — all T tokens, no raw hex.
-  const CAT_META={annual:{label:"Annual",color:T.gold},capital:{label:"Capital",color:T.greenMid},project:{label:"Project",color:T.terracotta}};
-  const catMeta=c=>CAT_META[c]||CAT_META.project;
   // FIX-7 Part 5 — the four states shared/pace.js actually returns, in its
   // words. "Ahead" is no longer invented here; it is one of the three.
   const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Behind":"In progress";
@@ -921,7 +822,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
      Card count matches the header's top-level count; children live inside
      their umbrella, not as flat peers (display-consistency FIX). BUILD-34:
      its own orderable/hideable section, split from the hero banner. */
-  const goalCardsSection=HL.goalCardsSection({ activeTop, catMeta, catPaceColor, fgGoals, heroCtx, onNavigate, paceText });
 
       /* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card
@@ -947,7 +847,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // BUILD-83 Part 3.4 — an unassigned org reads "no one assigned to you yet",
   // never "0 donors · $0 lifetime giving" the screen after importing 25,034.
-  const portfolioEmpty=!!myStats&&!(myStats.portfolioCount>0);
   const myPortfolioSection=HL.myPortfolioSection({ StatIcon, hoveredStat, myStats, onNavigate, openPortfolioBreakdown, portfolioOpen, setHoveredStat, setPortfolioOpen });
 
       /* Donor Retention Rate — the Home dashboard's primary hero metric.
@@ -962,43 +861,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // hero — an honest zero is not a headline.
   const heroIsDrift=!!(driftData&&driftData.atRiskAmount>0&&driftData.counts.driftingHigh>0);
   const retentionSection=HL.retentionSection({ DonorChip, MoreChip, Sparkline, driftData, firstTouchOpen, heroIsDrift, myStats, onNavigate, openDebtBreakdown, openRetentionBreakdown, retentionBreakdown, retentionBreakdownLoading, retentionColor, retentionCurrent, retentionThin, retentionTooEarly, setFirstTouchOpen, stewardMetrics });
-
-  // ── BUILD-76 Part 2 — the Drifting section, first in the work column ──────
-  // The one thing the product is named for, above Needs Your Attention (not
-  // beside it). Renders only when someone is actually drifting — a featured
-  // section proudly reading zero is the mistake the old lapsed row made.
-  // Each row: name · the reason in the donor's own pattern · the money.
-  // "Done" opens ONE inline line (Part 4 — the log is a byproduct of clearing
-  // the item, never a form); Skip is one keypress and is recorded as skipped.
-  const driftRows0=driftAllData?driftAllData.list:(driftData?.list||[]);
-  // FIX-10 Part A — high confidence still leads. The medium rows follow,
-  // under one "Early signs" heading, labelled with the SAME words the
-  // directory badge uses (shared/driftWords.js) so a donor reads the same on
-  // the list and on their own profile.
-  const driftHighRows=driftRows0.filter(r=>r.confidence!=="medium");
-  const driftMediumRows=driftRows0.filter(r=>r.confidence==="medium");
-  const driftRowsAll=[...driftHighRows,...driftMediumRows];
-  const driftRows=surface==="home"&&!driftExpanded&&!driftAllData?driftRowsAll.slice(0,5):driftRowsAll;
-  const driftEarlyStart=driftMediumRows.length>0?driftHighRows.length:-1;
-  const openDriftLine=donorId=>{
-    setDriftLineFor(donorId);setDriftLine("");setDriftStepDirty(false);
-    setDriftStep(null);
-  };
-  // The proposal follows the line as it is written (the note outranks the
-  // touch default, item 1), and stops following the moment the user edits it.
-  const proposeDriftStep=line=>{
-    if(driftStepDirty)return;
-    const s=nextStepSuggestion("call_reached",todayCivil(),line);
-    setDriftStep(s?{label:s.label,due:s.due,source:s.source}:null);
-  };
-  const submitDriftDone=HL.submitDriftDone({ driftBusy, driftStep, loadDrift, setDriftBusy, setDriftLine, setDriftLineFor, setDriftStep, setDriftStepDirty });
-  // BUILD-76 follow-up: the section RENDERS EVEN AT ZERO, with an empty
-  // state that shows its work — how many patterns were checked and who was
-  // excluded and why. An absent section reads as a broken feature; a bare
-  // zero is indistinguishable from a silently failed import. Both defects,
-  // regardless of the data.
-  const driftEmptyState=HL.driftEmptyState({ driftData, driftHighRows, driftRows });
-  const driftSection=HL.driftSection({ cPad, cardWrap, driftAllData, driftBusy, driftData, driftEarlyStart, driftEmptyState, driftExpanded, driftHighRows, driftLine, driftLineFor, driftQs, driftRows, driftRowsAll, driftSort, driftStep, driftStepDirty, foldBtn, homeFold, isReadOnly, loadDrift, onNavigate, onPanel, openDriftLine, openEarlySigns, proposeDriftStep, sHdr, sHdrPad, sLink, sSerif, setDriftAllData, setDriftExpanded, setDriftLine, setDriftLineFor, setDriftSort, setDriftStep, setDriftStepDirty, submitDriftDone, surface });
 
   // The two-column queue/briefing + funnel/grant/recurring grid — one section.
   // ── BUILD-81 — THE THREAD, first. A thread is a donor plus an open next
@@ -1123,7 +985,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // So it borrows the row's SHAPE and none of its controls, and the one
   // action opens Recurring where that link is sent.
   if(homeCalm&&failedCardList.length){
-    const today=new Date();
     failedCardList.forEach(f=>{
       // The day it stopped: the last failure if there was more than one,
       // otherwise the first. If the row carries neither, the age is UNKNOWN
@@ -1155,8 +1016,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // The thank queue items fold into the thread rows themselves once a gift
   // opens its thread — a donor with an open thread never shows a second
   // "thank" line below.
-  const threadDonorIds=new Set(threadList.map(t=>t.donorId));
-  const foldedQueue=visibleQueue.filter(item=>!(item.action==="thank"&&threadDonorIds.has(item.donorId)));
 
   // BUILD-83 Part 3.1 — THE THREAD, with Needs Your Attention folded in, is
   // the first thing on Home after the greeting and the setup card.
@@ -1203,7 +1062,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const thankYouSection=HL.thankYouSection({ TY_WORDS, cPad, cardWrap, onNavigate, onPanel, sHdr, sHdrPad, sLink, sSerif, setTyOpen, setTyShowAll, thankYous, tyAct, tyCopied, tyCopy, tyErr, tyFooter, tyMarkAll, tyOpen, tyOpenDraft, tyShowAll });
 
   // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
-  const driftHomeSection=driftSection;
 
   // BUILD-94 Part 3 — one line per sequence, and nothing more. A sequence is
   // supposed to run without her; Home's whole job here is to prove it is
@@ -1216,7 +1074,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // one emerald Go button. The button is always there and disabled until there
   // is text; Enter submits; the words are carried into Agent and asked on
   // arrival (agentAsk → onNavigate("agent",{agentText,autoAsk:true})).
-  const agentWaiting=(agentDaily&&agentDaily.waiting)||0;
   const agentEmpty=!agentText.trim();
   const agentSection=(
     HL.agentSection({ agentAsk, agentDaily, agentEmpty, agentText, cardWrap, sLink, setAgentText })

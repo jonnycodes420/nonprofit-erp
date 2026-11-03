@@ -95,7 +95,10 @@ function loadHeaders() {
   try { rules = (JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "vercel.json"), "utf8")).headers) || []; }
   catch (e) { console.error("[local-preview] could not read vercel.json headers:", e.message); return []; }
   return rules.map(r => [new RegExp("^" + r.source + "$"),
-    (r.headers || []).map(h => [h.key, String(h.value).split(PROD_API).join(API)])]);
+    (r.headers || []).map(h => [h.key, String(h.value).split(PROD_API).join(API)]),
+    // PERF-3: a rule's `has` request headers (HTML's no-cache asks for an
+    // Accept of text/html), matched as Vercel matches them, as a regex.
+    (r.has || []).filter(c => c.type === "header").map(c => [c.key.toLowerCase(), new RegExp("^" + (c.value || ".*") + "$")])]);
 }
 const HEADERS = loadHeaders();
 if (!PROXY.length) console.error("[local-preview] WARNING: no backend rewrites loaded — same-origin API paths will 404.");
@@ -161,7 +164,7 @@ const srv = http.createServer(async (req, res) => {
   if (fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(page)) file = page;
   else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
 
-  for (const [re, hs] of HEADERS) if (re.test(url)) for (const [k, v] of hs) res.setHeader(k, v);
+  for (const [re, hs, has] of HEADERS) if (re.test(url) && has.every(([k, v]) => req.headers[k] != null && v.test(String(req.headers[k])))) for (const [k, v] of hs) res.setHeader(k, v);
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
   if (url.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   // HARDEN-2: Vercel compresses text, so the preview does too, or a page's

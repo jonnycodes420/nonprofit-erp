@@ -38,7 +38,23 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'sha256-khEnlDpj29uQUiOzbjVX0lTaYKitJ3FzyRxQphR3/Y0=' 'sha256-marYwgvcKDdpnhGWt0LUwy8E4hnXp2Cc9fHPNN6sHKw='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app; media-src 'self' blob: https: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app; connect-src 'self' https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app https://*.sentry.io; frame-src 'self' blob: data: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
+          "value": "default-src 'self'; script-src 'self' 'sha256-khEnlDpj29uQUiOzbjVX0lTaYKitJ3FzyRxQphR3/Y0=' 'sha256-fIgq5rbOI/9DOMSgXBZG6TeaZMPm+cEdS+ZDvmzEbEU='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app; media-src 'self' blob: https: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app; connect-src 'self' https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app https://*.sentry.io; frame-src 'self' blob: data: https://api.stewardapp.dev https://nonprofit-erp-production.up.railway.app https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'"
+        }
+      ]
+    },
+    {
+      "source": "/((?!portal-api/|account-api/|network-api/|portal-assets/|person-photos/|grant-documents/|interaction-files/|unsubscribe$|v/|watch/|survey/|e/|auction/|ticket/|you/|volunteer/|volunteer-with/|billing/cancel/|recurring/).*)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/html.*"
+        }
+      ],
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
         }
       ]
     }
