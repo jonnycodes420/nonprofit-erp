@@ -9,8 +9,51 @@ import { ClosenessLine, ImportRefusalsLine, statusTagItems } from "../ProfileSta
 import { ScoreCard } from "../ScoreWhy";
 import { ProfileGroups } from "../Groups";
 import { PublicFilingBlock, RoomToGiveBlock } from "../RoomToGive";
+import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "../../api";
+import { errorMessage } from "../../lib/domainError";
 
+const ABOUT_MAX=500;
 const QUIET={background:"none",border:"none",padding:0,font:"inherit",color:RAIL.dim,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer"};
+
+
+// DATES-1 · ABOUT THEM: the short note read first (spouse's name, how they know
+// the founder's family). Click to edit; Enter or clicking away saves, Esc
+// cancels. Empty, it is a quiet invitation; read-only and empty, nothing.
+function AboutThemNote({donorId,initial,isReadOnly}){
+  const[text,setText]=useState(initial||"");
+  const[draft,setDraft]=useState(null);
+  const[err,setErr]=useState("");
+  const[busy,setBusy]=useState(false);
+  const ref=useRef(null);
+  const cancelled=useRef(false);
+  useEffect(()=>{setText(initial||"");setDraft(null);setErr("");},[donorId,initial]);
+  useEffect(()=>{if(draft!==null){cancelled.current=false;if(ref.current)ref.current.focus();}},[draft!==null]);
+  const save=async()=>{
+    if(cancelled.current){cancelled.current=false;return;}
+    if(draft===null||busy)return;
+    const next=draft.trim();
+    if(next===text){setDraft(null);setErr("");return;}
+    if(next.length>ABOUT_MAX){setErr(`That note is ${next.length} characters. Keep it to ${ABOUT_MAX} or fewer.`);return;}
+    setBusy(true);
+    try{const r=await apiFetch(`/donors/${encodeURIComponent(donorId)}/about-them`,{method:"PATCH",body:JSON.stringify({aboutThem:next})});setText(r&&typeof r.aboutThem==="string"?r.aboutThem:next);setDraft(null);setErr("");}
+    catch(e){setErr((e&&e.sentence)||errorMessage(e,"The note did not save."));}
+    setBusy(false);
+  };
+  if(draft!==null)return<div data-testid="dp-about-them-edit" style={{display:"flex",flexDirection:"column",gap:4}}>
+    <textarea ref={ref} data-testid="dp-about-them-input" aria-label="About them" value={draft} rows={3} maxLength={ABOUT_MAX+50}
+      onChange={e=>setDraft(e.target.value)} onBlur={save}
+      onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();cancelled.current=true;setDraft(null);setErr("");}else if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();save();}}}
+      placeholder="Spouse's name, how they know you, anything worth knowing first."
+      style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,lineHeight:1.45,fontFamily:"inherit",resize:"vertical",outline:"none"}}/>
+    <div style={{fontSize:11.5,color:err?T.ink:RAIL.dim}} role={err?"alert":undefined} data-testid={err?"dp-about-them-error":undefined}>{err||`${draft.trim().length} of ${ABOUT_MAX}. Enter saves, Esc cancels.`}</div>
+  </div>;
+  if(!text)return isReadOnly?null:<button type="button" data-testid="dp-about-them-add" onClick={()=>setDraft("")} style={{...QUIET,textAlign:"left",fontSize:12.5}}>Add a note about them</button>;
+  return isReadOnly
+    ?<div data-testid="dp-about-them" style={{fontSize:13,color:RAIL.text,lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{text}</div>
+    :<button type="button" data-testid="dp-about-them" title="Click to edit" onClick={()=>setDraft(text)}
+      style={{background:"none",border:"none",padding:0,margin:0,textAlign:"left",font:"inherit",fontSize:13,color:RAIL.text,lineHeight:1.45,whiteSpace:"pre-wrap",overflowWrap:"anywhere",cursor:"text"}}>{text}</button>;
+}
 
 function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatusTags,canMajorGifts,contactPerson,donor,handleReassign,household,isAdmin,isReadOnly,isTeam,onSelectRelatedDonor,orgTeam,publicFiling,railData,reassignId,reassignLoading,relationships,scores,setConvoOpen,setReassignId,setRelatedOpen,setShowReassign,showReassign,status,onEdit}){
   const cx=(railData&&railData.contact)||{};
@@ -30,6 +73,7 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                   pattern, how to reach them, and the tags the header did not show. */}
               <RailSection title="About" testid="dp-rail-about">
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <AboutThemNote donorId={donor.id} initial={donor.aboutThem||""} isReadOnly={isReadOnly}/>
                   <RoleLine donor={donor} isReadOnly={isReadOnly} noGifts={noGifts} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
                   {donor.sourceRecurring&&(
                 <div data-testid="donor-source-recurring"

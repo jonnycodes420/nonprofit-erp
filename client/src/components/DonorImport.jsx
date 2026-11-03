@@ -1409,7 +1409,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     "tributeName","tributeType","tributeNotify",
     "matchEmployer",
     "wealthRating","wealthCapacity","wealthDate",
-    "birthday",
+    "birthday", "aboutThem",
     // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, so the mapper has
     // to be able to say which one a column is. Team only, because the whole
     // major-gifts layer is (the 2026-07-19 split); a Core org importing a file

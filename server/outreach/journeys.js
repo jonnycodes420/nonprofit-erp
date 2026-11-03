@@ -76,7 +76,11 @@ let app = routers.r1;
 // It starts only what the hourly sweep would start anyway (every plan holds
 // its event key, so running it twice starts nothing twice).
 app.post("/journeys/run-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const fired = await runJourneySweep(req.user.orgId);
+  // DATES-1 — TEST_MODE only: `now` (an instant) pins the clock, so a suite can
+  // run the morning look on Nov 30 and Dec 1 in the org's own zone.
+  const at = process.env.TEST_MODE === "1" && req.body && req.body.now && !isNaN(Date.parse(String(req.body.now)))
+    ? new Date(String(req.body.now)) : undefined;
+  const fired = await runJourneySweep(req.user.orgId, { at });
   res.json({ fired });
 }));
 
@@ -136,6 +140,11 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
   const campaignOpts = await query(`SELECT id, name FROM campaigns WHERE org_id=? ORDER BY created_at DESC LIMIT 200`, [req.user.orgId]).catch(() => []);
   res.json({
     triggers: J.TRIGGERS,
+    // DATES-1 — the triggers grouped as people think of them, the yearly-date
+    // audiences, and the org's today for "First runs Dec 1, 2026".
+    triggerGroups: J.TRIGGER_GROUPS,
+    yearlyAudiences: J.YEARLY_AUDIENCES,
+    today: orgToday(await orgTz(req.user.orgId)),                 // ORG_TZ_SEAM_OK
     states: J.STATES,
     // JOURNEYS-3 — Journey settings: the touch gap, and the milestones.
     touchGapDays: await journeyTouchGap(req.user.orgId),
@@ -633,6 +642,18 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
     const r = await newestGift(0);
     if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${DD.displayDate(from)}`; }
   }
+  // DATES-1 — a date every year counts from the next time that date comes
+  // round, in the org's own calendar, not from anybody's gift.
+  if (t.trigger_key === "yearly_date") {
+    const tf = t.trigger_filters || {};
+    const TS = await import("../../shared/taskShape.js");
+    const today0 = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    if (J.validMonthDay(Number(tf.month), Number(tf.day))) {
+      from = TS.nextYearlyOn(Number(tf.month), Number(tf.day), today0);
+      if (!donor) { const [any] = await query(`SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]); donor = any || null; }
+      basis = `${J.firstRunSentence(Number(tf.month), Number(tf.day), today0).replace(/\.$/, "")}`;
+    }
+  }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
   // ── FIX-5 · THE CHAIN'S STATES COME FROM A REAL PLAN WHEN THERE IS ONE ──
@@ -811,6 +832,12 @@ const JOURNEY_ROW_SQL = {
               JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
              WHERE p.org_id=? AND p.template_id=? AND st.status='skipped'
              ORDER BY d.name`,
+  // DATES-1 · somebody in a yearly-date journey's audience who did not start
+  // on its day, with the reason on the row.
+  skippedOnDate: `SELECT d.id, d.name, s.sentence AS reason, s.on_day AS entered
+                    FROM journey_start_skips s JOIN donors d ON d.id=s.donor_id AND d.org_id=s.org_id
+                   WHERE s.org_id=? AND s.template_id=? AND d.deleted_at IS NULL
+                   ORDER BY s.on_day DESC, d.name`,
   // A SECOND GIFT WITHIN TWELVE MONTHS OF ENTERING. Not "because of" — after.
   secondGift: `SELECT DISTINCT d.id, d.name, p.applied_on AS entered
                  FROM cultivation_plans p
@@ -853,13 +880,28 @@ async function journeyStats(orgId, t) {
         sentence: "People where somebody decided not to do a step and said why. The reason is on each row." },
       { key: "secondGift", label: "Gave again within a year", value: secondGift, rows: "secondGift",
         sentence: "People who gave another gift within twelve months of entering this journey." },
-    ],
+    ].concat(t.trigger_key === "yearly_date" ? [(await yearlySkipFigure(orgId, t)).skippedOnDate] : []),
     everIn: Number(everRow && everRow.c) || 0,
     // SAID BY THE ROUTE, not by a caption a redesign could drop.
     caveat: "These are counts of what happened, not a measure of what the journey caused. "
           + "Steward is not running an experiment: there is no comparison group, so none of "
           + "these numbers can tell you what would have happened without the journey.",
   };
+}
+
+// DATES-1 · how many in a yearly-date journey's audience it skipped, and why,
+// counted from the same rows the figure opens.
+async function yearlySkipFigure(orgId, t) {
+  if (t.trigger_key !== "yearly_date") return {};
+  const J = await journeyMod();
+  const rows = await query(`SELECT s.reason FROM journey_start_skips s JOIN donors d ON d.id=s.donor_id AND d.org_id=s.org_id
+                             WHERE s.org_id=? AND s.template_id=? AND d.deleted_at IS NULL`, [orgId, t.id]);
+  const by = {};
+  for (const r of rows) by[r.reason] = (by[r.reason] || 0) + 1;
+  const why = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, count: n, sentence: J.skipLine(reason, n) + "." }));
+  return { skippedOnDate: { key: "skippedOnDate", label: "Skipped on the date", value: rows.length, rows: "skippedOnDate",
+    sentence: "People in this journey's audience who did not start on its date, each with the reason: a journey that comes first, do not contact, and the like.",
+    why } };
 }
 
 // Who qualifies for a journey's trigger inside a window, narrowed by the
@@ -1033,6 +1075,261 @@ app.post("/journeys/:id/apply/undo", requireAuth, checkWriteAccess, wrap(async (
   if (req.audit) req.audit.entity("journey", t.id, t.name);
   res.json({ journeyId: t.id, undone: plans.length,
     sentence: `${plans.length} ${plans.length === 1 ? "person was" : "people were"} taken back out of ${t.name}.` });
+}));
+
+// ── DATES-1 · MANY PEOPLE INTO ONE JOURNEY, FROM THE DONORS LIST ───────────
+// The bulk bar's "Add to a journey". It is the profile's "Add to a journey"
+// for each person, through the one start path (maybeStartJourney, by hand),
+// and nothing else: the same rules, the same reasons. A preview first, which
+// writes nothing; then the start, inline up to BATCH_INLINE_MAX people and on
+// the queue above it, with progress; then one Undo for the whole batch, for
+// BATCH_UNDO_DAYS days, that stops every journey it started.
+const BATCH_INLINE_MAX = 2000;
+const BATCH_MAX = 50000;
+const BATCH_UNDO_DAYS = 30;
+const BATCH_CHUNK = 25;
+const JQ = require("../../jobQueue");
+
+// Who the batch would start and who it would not, by the start path's own
+// rules, in one read of the people and one of the journeys they are in.
+async function batchSplit(orgId, t, ids, joinOthers = true) {
+  const J = await journeyMod();
+  const asks = J.journeyAsks(t.steps);
+  const out = { asked: ids.length, willStart: [], skips: {} };
+  const skip = (reason, id) => (out.skips[reason] = out.skips[reason] || []).push(id);
+  if (!ids.length) return out;
+  const [people, plans] = await Promise.all([
+    query(`SELECT id, deceased, do_not_contact, do_not_solicit FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL`, [orgId, ids]),
+    query(`SELECT p.donor_id, p.template_id, p.priority, COALESCE(ct.exclusive, false) AS exclusive
+             FROM cultivation_plans p LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
+            WHERE p.org_id=? AND p.status='active' AND p.donor_id = ANY(?::text[])`, [orgId, ids]),
+  ]);
+  const flags = new Map(people.map(d => [d.id, d]));
+  const byDonor = new Map();
+  for (const p of plans) (byDonor.get(p.donor_id) || byDonor.set(p.donor_id, []).get(p.donor_id)).push(p);
+  for (const id of ids) {
+    const f = flags.get(id);
+    if (!f) { skip("donor_not_found", id); continue; }
+    if (f.deceased === true) { skip("deceased", id); continue; }
+    if (f.do_not_contact === true) { skip("do_not_contact", id); continue; }
+    if (asks && f.do_not_solicit === true) { skip("do_not_solicit", id); continue; }
+    const mine = byDonor.get(id) || [];
+    if (mine.some(p => p.template_id === t.id)) { skip("already_in_this_journey", id); continue; }
+    if (t.exclusive && mine.some(p => p.exclusive && Number(p.priority) >= Number(t.priority))) { skip("already_in_a_journey", id); continue; }
+    if (!joinOthers && mine.length) { skip("in_another_journey", id); continue; }
+    out.willStart.push(id);
+  }
+  return out;
+}
+// The lines under the count, largest first, in the shared words.
+async function batchLines(skipCounts) {
+  const J = await journeyMod();
+  // Largest first; a tie keeps the one order SKIP_REASONS lists, so the
+  // preview and the result read the same way round.
+  const rank = k => { const i = Object.keys(J.SKIP_REASONS).indexOf(k); return i < 0 ? 99 : i; };
+  return Object.entries(skipCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || rank(a[0]) - rank(b[0]))
+    .map(([reason, n]) => ({ reason, count: n, sentence: J.skipLine(reason, n) + "." }));
+}
+const countsOf = skips => Object.fromEntries(Object.entries(skips).map(([k, v]) => [k, Array.isArray(v) ? v.length : Number(v) || 0]));
+const batchIdsFrom = body => {
+  const raw = Array.isArray(body && body.donorIds) ? body.donorIds : [];
+  return [...new Set(raw.map(x => String(x || "").trim()).filter(x => /^[A-Za-z0-9_-]{1,64}$/.test(x)))];
+};
+async function batchJourney(orgId, id) {
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL", [id, orgId]);
+  return t || null;
+}
+
+// THE PREVIEW. A POST because the list can be thousands of ids long; it
+// writes nothing.
+app.post("/journeys/:id/batch/preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const t = await batchJourney(orgId, req.params.id);
+  if (!t) return res.status(404).json({ error: "Not found", message: "That journey no longer exists." });
+  const ids = batchIdsFrom(req.body);
+  if (!ids.length) return res.status(400).json({ error: "no_donors", sentence: "Check at least one person first." });
+  if (ids.length > BATCH_MAX) return res.status(400).json({ error: "too_many", sentence: `That is more than ${BATCH_MAX.toLocaleString("en-US")} people at once. Narrow the list first.` });
+  const joinOthers = !(req.body && req.body.joinOthers === false);
+  const PL = await planMod();
+  const J = await journeyMod();
+  const DDj = await import("../../shared/displayDate.js");
+  const split = await batchSplit(orgId, t, ids, joinOthers);
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  const v = PL.validateTemplate({ name: t.name, steps: t.steps });
+  const first = v.ok ? PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays)[0] || null : null;
+  const n = split.willStart.length;
+  const lines = await batchLines(countsOf(split.skips));
+  res.json({
+    journeyId: t.id, name: t.name, asked: ids.length, willStart: n, joinOthers,
+    firstStep: first ? { label: first.label, dueDate: first.dueDate, dueLabel: DDj.displayDate(first.dueDate) } : null,
+    lines, runsAsJob: n > BATCH_INLINE_MAX,
+    touches: J.touchesSentence(t.steps || []),
+    sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} will start ${t.name}.`
+      + (first ? ` The first step is "${first.label}", due ${DDj.displayDate(first.dueDate)}.` : "")
+      + " Nothing is sent. Every step waits for you.",
+  });
+}));
+
+// Run a batch from where it got to: each person through the one start path,
+// the batch row updated every few people so the screen can show progress. A
+// retried job picks up at `done`, and a person already in it is skipped by
+// the start path itself, so nobody starts twice.
+async function runBatch(orgId, batchId) {
+  const [b] = await query("SELECT * FROM journey_batches WHERE id=? AND org_id=?", [batchId, orgId]);
+  if (!b || b.status !== "running") return { skipped: true };
+  const ids = Array.isArray(b.donor_ids) ? b.donor_ids : [];
+  const skipCounts = { ...(b.skip_counts || {}) };
+  let done = Number(b.done) || 0, started = Number(b.started) || 0, skipped = Number(b.skipped) || 0;
+  for (let i = done; i < ids.length; i += BATCH_CHUNK) {
+    const chunk = ids.slice(i, i + BATCH_CHUNK);
+    const planIds = [];
+    for (const id of chunk) {
+      const r = await maybeStartJourney(orgId, id, "by_hand", { forceJourneyId: b.template_id, joinOthers: b.join_others !== false });
+      if (r && r.started) { started++; planIds.push(r.planId); }
+      else { skipped++; const k = (r && r.reason) || "could_not_start"; skipCounts[k] = (skipCounts[k] || 0) + 1; }
+    }
+    done = Math.min(ids.length, i + chunk.length);
+    if (planIds.length) await run(`UPDATE cultivation_plans SET batch_id=? WHERE org_id=? AND id = ANY(?::text[])`, [batchId, orgId, planIds]);
+    await run(`UPDATE journey_batches SET done=?, started=?, skipped=?, skip_counts=?::jsonb, plan_ids = plan_ids || ?::jsonb WHERE id=? AND org_id=?`,
+      [done, started, skipped, JSON.stringify(skipCounts), JSON.stringify(planIds), batchId, orgId]);
+  }
+  await run(`UPDATE journey_batches SET status='done', finished_at=NOW(), donor_ids=NULL WHERE id=? AND org_id=? AND status='running'`, [batchId, orgId]);
+  return { started, skipped };
+}
+JQ.handle("journeyBatch", async (payload) => {
+  if (!payload || !payload.orgId || !payload.batchId) return { skipped: true };
+  try { return await runBatch(payload.orgId, payload.batchId); }
+  catch (e) {
+    await run(`UPDATE journey_batches SET error=? WHERE id=? AND org_id=?`, [String(e.message || e).slice(0, 300), payload.batchId, payload.orgId]).catch(() => null);
+    throw e;
+  }
+});
+
+async function batchOut(orgId, b) {
+  const lines = await batchLines(b.skip_counts || {});
+  const undoUntil = b.created_at ? new Date(new Date(b.created_at).getTime() + BATCH_UNDO_DAYS * 86400000) : null;
+  const canUndo = b.status === "done" && !b.undone_at && undoUntil && undoUntil > new Date();
+  const n = Number(b.started) || 0;
+  return {
+    batchId: b.id, journeyId: b.template_id, name: b.template_name, status: b.undone_at ? "undone" : b.status,
+    asked: Number(b.asked) || 0, done: Number(b.done) || 0, started: n, skipped: Number(b.skipped) || 0, lines,
+    canUndo: !!canUndo, undoUntil: undoUntil ? undoUntil.toISOString() : null, error: b.error || null,
+    sentence: b.undone_at ? `Undone. ${n.toLocaleString("en-US")} ${n === 1 ? "person was" : "people were"} taken out of ${b.template_name}.`
+      : b.status === "running" ? `Starting ${b.template_name}: ${Number(b.done).toLocaleString("en-US")} of ${Number(b.asked).toLocaleString("en-US")} people so far.`
+      : `${n.toLocaleString("en-US")} ${n === 1 ? "person" : "people"} started ${b.template_name}.`,
+  };
+}
+
+// THE START. Up to BATCH_INLINE_MAX people answer in this request with the
+// counts; more go to the queue and the screen follows the batch.
+app.post("/journeys/:id/batch", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const t = await batchJourney(orgId, req.params.id);
+  if (!t) return res.status(404).json({ error: "Not found", message: "That journey no longer exists." });
+  const ids = batchIdsFrom(req.body);
+  if (!ids.length) return res.status(400).json({ error: "no_donors", sentence: "Check at least one person first." });
+  if (ids.length > BATCH_MAX) return res.status(400).json({ error: "too_many", sentence: `That is more than ${BATCH_MAX.toLocaleString("en-US")} people at once. Narrow the list first.` });
+  const joinOthers = !(req.body && req.body.joinOthers === false);
+  const batchId = "jb_" + uuid().replace(/-/g, "").slice(0, 16);
+  await run(`INSERT INTO journey_batches (id, org_id, template_id, template_name, status, asked, donor_ids, join_others, created_by, created_by_name)
+             VALUES (?,?,?,?, 'running', ?, ?::jsonb, ?, ?, ?)`,
+    [batchId, orgId, t.id, t.name, ids.length, JSON.stringify(ids), joinOthers, actor(req).id, actor(req).name]);
+  if (req.audit) { req.audit.entity("journey", t.id, t.name); req.audit.summary(`Started ${t.name} for ${ids.length} ${ids.length === 1 ? "person" : "people"} from the Donors list.`, { count: ids.length, batchId }); }
+  if (ids.length > BATCH_INLINE_MAX) {
+    const jobId = await JQ.enqueue({ name: "journeyBatch", orgId, key: `journeyBatch:${batchId}`, payload: { orgId, batchId } });
+    await run(`UPDATE journey_batches SET job_id=? WHERE id=? AND org_id=?`, [jobId, batchId, orgId]);
+    const [b] = await query("SELECT * FROM journey_batches WHERE id=? AND org_id=?", [batchId, orgId]);
+    return res.status(202).json({ ...(await batchOut(orgId, b)), job: true });
+  }
+  await runBatch(orgId, batchId);
+  const [b] = await query("SELECT * FROM journey_batches WHERE id=? AND org_id=?", [batchId, orgId]);
+  res.json({ ...(await batchOut(orgId, b)), job: false });
+}));
+
+// A batch's progress and counts. A GET, and it writes nothing.
+app.get("/journeys/batches/:batchId", requireAuth, wrap(async (req, res) => {
+  const [b] = await query("SELECT * FROM journey_batches WHERE id=? AND org_id=?", [req.params.batchId, req.user.orgId]);
+  if (!b) return res.status(404).json({ error: "Not found" });
+  res.json(await batchOut(req.user.orgId, b));
+}));
+// The batches this org can still undo, newest first (the 30 days).
+app.get("/journeys/batches", requireAuth, wrap(async (req, res) => {
+  const rows = await query(`SELECT * FROM journey_batches WHERE org_id=? AND created_at > NOW() - (?::int * INTERVAL '1 day')
+                             ORDER BY created_at DESC LIMIT 50`, [req.user.orgId, BATCH_UNDO_DAYS]);
+  res.json({ batches: await Promise.all(rows.map(b => batchOut(req.user.orgId, b))) });
+}));
+
+// ONE UNDO FOR THE BATCH. Every journey it started is stopped: the steps not
+// yet done are removed, with their open thread and any draft waiting for
+// review, and steps already done stay done. A journey nobody has done a step
+// of is taken back out entirely, as if it had not started. Anything the start
+// moved or replaced is put back, and each person's soonest remaining step
+// takes their thread again.
+app.post("/journeys/batches/:batchId/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [b] = await query("SELECT * FROM journey_batches WHERE id=? AND org_id=?", [req.params.batchId, orgId]);
+  if (!b) return res.status(404).json({ error: "Not found" });
+  const out0 = await batchOut(orgId, b);
+  if (b.undone_at) return res.status(409).json({ error: "already_undone", sentence: "This batch has already been undone." });
+  if (b.status === "running") return res.status(409).json({ error: "still_running", sentence: "It is still starting people. Undo it when it finishes." });
+  if (!out0.canUndo) return res.status(409).json({ error: "too_late", sentence: `A batch can be undone for ${BATCH_UNDO_DAYS} days. This one is older than that.` });
+  const planIds = Array.isArray(b.plan_ids) ? b.plan_ids.map(String) : [];
+  const plans = planIds.length ? await query(
+    `SELECT * FROM cultivation_plans WHERE org_id=? AND id = ANY(?::text[]) AND batch_id=?`, [orgId, planIds, b.id]) : [];
+  const live = plans.filter(p => p.status === "active");
+  const liveIds = live.map(p => p.id);
+  let stopped = 0, removed = 0;
+  if (liveIds.length) {
+    const steps = await query(`SELECT id, plan_id, thread_id, status FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?::text[])`, [orgId, liveIds]);
+    const notDone = steps.filter(s => s.status === "pending" || s.status === "open");
+    const notDoneIds = notDone.map(s => s.id);
+    // Steps of other journeys moved to make room go back to their dates.
+    const movedIds = (await query(`SELECT id FROM cultivation_plan_steps WHERE org_id=? AND moved_by_plan_id = ANY(?::text[])`, [orgId, liveIds])).map(r => r.id);
+    if (movedIds.length) await run(`DELETE FROM interactions WHERE org_id=? AND created_by=? AND metadata->>'via'='journey_spacing'
+                                      AND metadata->>'step_id' = ANY(?::text[])`, [orgId, JOURNEY_ACTOR.id, movedIds]);
+    await run(`UPDATE cultivation_plan_steps SET due_date=moved_from, moved_from=NULL, moved_reason=NULL, moved_by_plan_id=NULL
+                WHERE org_id=? AND moved_by_plan_id = ANY(?::text[]) AND status='pending' AND moved_from IS NOT NULL`, [orgId, liveIds]);
+    const threadIds = notDone.filter(s => s.status === "open" && s.thread_id).map(s => s.thread_id);
+    if (threadIds.length) await run(`DELETE FROM threads WHERE org_id=? AND id = ANY(?::text[]) AND closed_at IS NULL`, [orgId, threadIds]);
+    if (notDoneIds.length) {
+      await run(`DELETE FROM milestone_drafts WHERE org_id=? AND milestone_key = ANY(?::text[]) AND status='pending_review'`,
+        [orgId, notDoneIds.map(id => `journey-step:${id}`)]);
+      await run(`DELETE FROM interactions WHERE org_id=? AND created_by=? AND metadata->>'step_id' = ANY(?::text[])`, [orgId, JOURNEY_ACTOR.id, notDoneIds]);
+      await run(`DELETE FROM cultivation_plan_steps WHERE org_id=? AND id = ANY(?::text[])`, [orgId, notDoneIds]);
+    }
+    // An exclusive journey these replaced runs again.
+    for (const p of live.filter(x => x.replaced_plan_id)) {
+      await run(`UPDATE cultivation_plans SET status='active', closed_at=NULL, replaced_reason=NULL
+                  WHERE id=? AND org_id=? AND status='abandoned'`, [p.replaced_plan_id, orgId]).catch(() => null);
+      await run(`UPDATE cultivation_plan_steps SET status='pending', closed_at=NULL, closed_by=NULL, closed_by_name=NULL, skip_reason=NULL, thread_id=NULL
+                  WHERE plan_id=? AND org_id=? AND status='skipped' AND closed_by=?`, [p.replaced_plan_id, orgId, JOURNEY_ACTOR.id]);
+    }
+    const keptStep = new Set(steps.filter(s => s.status === "done" || s.status === "skipped").map(s => s.plan_id));
+    const untouched = live.filter(p => !keptStep.has(p.id));
+    const worked = live.filter(p => keptStep.has(p.id));
+    if (untouched.length) {
+      const lineIds = untouched.map(p => p.start_interaction_id).filter(Boolean);
+      if (lineIds.length) await run(`DELETE FROM interactions WHERE org_id=? AND id = ANY(?::text[]) AND created_by=?`, [orgId, lineIds, JOURNEY_ACTOR.id]);
+      await run(`DELETE FROM cultivation_plans WHERE org_id=? AND id = ANY(?::text[])`, [orgId, untouched.map(p => p.id)]);
+      removed = untouched.length;
+    }
+    if (worked.length) {
+      await run(`UPDATE cultivation_plans SET status='abandoned', closed_at=NOW(), replaced_reason=?
+                  WHERE org_id=? AND id = ANY(?::text[]) AND status='active'`,
+        [`Stopped when the batch that started it was undone by ${actor(req).name || "a person"}. Steps already done stay done.`, orgId, worked.map(p => p.id)]);
+      stopped = worked.length;
+    }
+    for (const donorId of [...new Set(live.map(p => p.donor_id))]) {
+      await advanceCultivationPlan(orgId, donorId, { actorId: actor(req).id, actorName: actor(req).name });
+    }
+  }
+  await run(`UPDATE journey_batches SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?`,
+    [actor(req).id, actor(req).name, b.id, orgId]);
+  if (req.audit) { req.audit.entity("journey", b.template_id, b.template_name); req.audit.summary(`Undid adding ${live.length} ${live.length === 1 ? "person" : "people"} to ${b.template_name}.`, { batchId: b.id, count: live.length }); }
+  const n = live.length;
+  res.json({ batchId: b.id, undone: n, removed, stopped,
+    sentence: `${n.toLocaleString("en-US")} ${n === 1 ? "person was" : "people were"} taken out of ${b.template_name}.`
+      + (stopped ? ` ${stopped} had a step done already; that step stays done.` : "") });
 }));
 
 // JOURNEYS-3 · JOURNEY SETTINGS: the touch gap. No two steps from different

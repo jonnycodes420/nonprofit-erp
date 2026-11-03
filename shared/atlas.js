@@ -99,8 +99,11 @@ export const DRAFT_TOOL = {
     properties: { subject: { type: "string" }, body: { type: "string", description: "Starts \"Dear <first name>,\", 40 to 90 words, warm and plain, ends \"With gratitude,\" and no name." } } },
 };
 export const DRAFT_SYSTEM = "You write a short email for a nonprofit fundraiser to send one person. Use only what she said: no amount, date, event or fact she did not say, and no em dashes. If she asked to meet, ask for the meeting in the month given.";
-export function buildDraftPrompt({ firstName, words, month }) {
-  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}` }] };
+// DATES-1 · the team's "About them" note rides along as background for the
+// tone, never as something to quote or state as a fact in the email.
+export function buildDraftPrompt({ firstName, words, month, aboutThem = "" }) {
+  const about = String(aboutThem || "").trim().slice(0, 500);
+  return { system: DRAFT_SYSTEM, messages: [{ role: "user", content: `To: ${firstName}\nWhat she asked for: ${words}${month ? `\nThe meeting would be in ${month}.` : ""}${about ? `\nBackground the team keeps about them (for tone only; do not quote it or state any of it in the email): ${about}` : ""}` }] };
 }
 export function buildAtlasPrompt(text, { today, onPage = null } = {}) {
   const lines = [`Today is ${today}.`];

@@ -29,18 +29,20 @@ const {
 // hour; an anniversary fires on the day, within the hour after midnight in
 // the org's own timezone. PARITY-3 6a: a birthday fires the same way, on the
 // org's own date, for people with a birthday on file (shared/birthday.js).
-async function runJourneySweep(onlyOrgId = null) {
+// `at` is an instant, passed only by a TEST_MODE run of /journeys/run-sweep;
+// production's sweep passes none and reads the clock.
+async function runJourneySweep(onlyOrgId = null, { at } = {}) {
   const orgs = await query(
     `SELECT DISTINCT org_id FROM cultivation_templates
       WHERE journey_enabled=true AND archived_at IS NULL
         AND trigger_key = ANY(?::text[])
         ${onlyOrgId ? "AND org_id = ?" : ""}`,
-    [["joined_group", "giving_anniversary", "birthday", ...(await journeyMod()).SWEEP_TRIGGER_KEYS], ...(onlyOrgId ? [onlyOrgId] : [])]);
+    [["joined_group", "giving_anniversary", "birthday", "yearly_date", ...(await journeyMod()).SWEEP_TRIGGER_KEYS], ...(onlyOrgId ? [onlyOrgId] : [])]);
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
     try {
       const org = await orgTz(orgId);
-      const today = orgToday(org);   // ORG_TZ_SEAM_OK
+      const today = at ? orgToday(org, at) : orgToday(org);   // ORG_TZ_SEAM_OK
       fired += await GR.dynamicJoins(orgId, { today,
         fire: (did, gid) => maybeStartJourney(orgId, did, "joined_group", { groupId: gid, today }) });
       const [armed] = await query(
@@ -65,17 +67,32 @@ async function runJourneySweep(onlyOrgId = null) {
             AND journey_enabled=true AND archived_at IS NULL LIMIT 1`, [orgId]);
       if (bdArmed) {
         const B = await birthdayMod();
-        const mm = Number(today.slice(5, 7));
-        const born = await query(
-          `SELECT id, birth_month, birth_day FROM donors
-            WHERE org_id=? AND deleted_at IS NULL AND birth_month=? AND birth_day IN (?, 29)`,
-          [orgId, mm, Number(today.slice(8, 10))]);
-        for (const r of born) {
-          if (!B.isBirthdayOn(Number(r.birth_month), Number(r.birth_day), today)) continue;
-          const out = await maybeStartJourney(orgId, r.id, "birthday", { today });
-          if (out && out.started) fired++;
+        // DATES-1 · a birthday journey may start some days before (a card in
+        // the post a week ahead). Each lead looks at the birthdays that many
+        // days from today; the journey's steps count from today.
+        const leads = [...new Set((await query(
+          `SELECT trigger_filters FROM cultivation_templates WHERE org_id=? AND trigger_key='birthday'
+              AND journey_enabled=true AND archived_at IS NULL`, [orgId]))
+          .map(t => Number((t.trigger_filters || {}).daysBefore) || 0))];
+        for (const lead of leads) {
+          const on = lead ? addDaysCivil(today, lead) : today;
+          const born = await query(
+            `SELECT id, birth_month, birth_day FROM donors
+              WHERE org_id=? AND deleted_at IS NULL AND birth_month=? AND birth_day IN (?, 29)`,
+            [orgId, Number(on.slice(5, 7)), Number(on.slice(8, 10))]);
+          for (const r of born) {
+            if (!B.isBirthdayOn(Number(r.birth_month), Number(r.birth_day), on)) continue;
+            const out = await maybeStartJourney(orgId, r.id, "birthday", { today, leadDays: lead });
+            if (out && out.started) fired++;
+          }
         }
       }
+      // DATES-1 · A DATE EVERY YEAR. On the journey's month and day, in the
+      // org's own date (Feb 29 on the 28th in other years), everyone in its
+      // audience goes through the one start path. The year is the event key,
+      // so a second run that day, or any later day, starts nobody twice. Who
+      // did not start, and why, is written down for the journey's stats.
+      fired += await runYearlyDates(orgId, today);
       // JOURNEYS-3 — memberships, monthly gifts, cards, hours, grants, pages.
       fired += await runLifecycleTriggers(orgId, today);
     } catch (e) { console.error(`[journey] sweep ${orgId}:`, e.message); }
@@ -305,6 +322,62 @@ function EVENT_NO_SHOW_SQL(ea, e, todayExpr) {
                AND ${e}.date IS NOT NULL AND ${e}.date::date < ${todayExpr}
                AND EXISTS (SELECT 1 FROM event_attendees x WHERE x.event_id=${ea}.event_id AND x.org_id=${ea}.org_id
                              AND (lower(coalesce(x.status,'')) = 'attended' OR x.checked_in_at IS NOT NULL))))`;
+}
+function addDaysCivil(day, n) {
+  const [y, m, d] = String(day).slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+// The people a yearly-date journey is for, on its day. Live records only: the
+// start path refuses the deceased and do-not-contact itself, with the reason.
+async function yearlyAudienceIds(orgId, tf = {}) {
+  const who = tf.who || "everyone";
+  if (who === "group") {
+    const g = tf.groupId ? await GR.groupById(orgId, tf.groupId) : null;
+    if (!g) return [];
+    const ids = await GR.memberIds(orgId, g);
+    if (!ids.length) return [];
+    return (await query(`SELECT id FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL AND is_sample IS NOT TRUE ORDER BY id`,
+      [orgId, ids])).map(r => r.id);
+  }
+  if (who === "stage") {
+    if (!tf.stage) return [];
+    return (await query(`SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND is_sample IS NOT TRUE AND lower(stage)=lower(?) ORDER BY id`,
+      [orgId, String(tf.stage)])).map(r => r.id);
+  }
+  if (who === "open_pledge") {
+    return (await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+        AND EXISTS (SELECT 1 FROM pledges p WHERE p.org_id=d.org_id AND p.donor_id=d.id AND p.status='open' AND p.is_shell IS NOT TRUE)
+      ORDER BY d.id`, [orgId])).map(r => r.id);
+  }
+  return (await query(`SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND is_sample IS NOT TRUE ORDER BY id`, [orgId])).map(r => r.id);
+}
+// The reasons worth counting on the journey: somebody in its audience who did
+// not start. A rerun ("already started it for this date") is not a skip.
+const YEARLY_SKIP_KEEP = new Set(["already_in_a_journey", "already_in_this_journey", "in_another_journey", "do_not_contact", "deceased", "do_not_solicit"]);
+async function runYearlyDates(orgId, today) {
+  const J = await journeyMod();
+  const due = (await query(
+    `SELECT id, trigger_filters FROM cultivation_templates WHERE org_id=? AND trigger_key='yearly_date'
+        AND journey_enabled=true AND archived_at IS NULL ORDER BY priority DESC, id`, [orgId]))
+    .filter(t => { const tf = t.trigger_filters || {}; return J.yearlyRunsOn(tf.month, tf.day, today); });
+  let fired = 0;
+  for (const t of due) {
+    const eventKey = `yearly:${today.slice(0, 4)}`;
+    for (const id of await yearlyAudienceIds(orgId, t.trigger_filters || {})) {
+      const out = await maybeStartJourney(orgId, id, "yearly_date", { today, eventKey, journeyId: t.id })
+        .catch(e => { console.error("[journey] yearly_date:", e.message); return null; });
+      if (out && out.started) { fired++; continue; }
+      if (out && YEARLY_SKIP_KEEP.has(out.reason)) {
+        await query(
+          `INSERT INTO journey_start_skips (id, org_id, template_id, donor_id, event_key, reason, sentence, on_day, created_by, created_by_name)
+           VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (org_id, template_id, donor_id, event_key) DO NOTHING`,
+          ["jss_" + require("crypto").randomUUID().replace(/-/g, "").slice(0, 16), orgId, t.id, id, eventKey, out.reason,
+           J.skipSentence(out.reason, out.currentName || ""), today, "system:journey", "Steward (journey)"])
+          .catch(e => console.error("[journey] skip record:", e.message));
+      }
+    }
+  }
+  return fired;
 }
 async function runLifecycleTriggers(orgId, today) {
   const J = await journeyMod();

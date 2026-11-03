@@ -83,10 +83,11 @@ async function reset() {
   const steps = J.allPresetSteps();
   // JOURNEYS-3 added nine ready-made journeys after the brief's five, and
   // JOURNEYS-4 five more on its new triggers.
-  ok("the brief's five presets come first, then JOURNEYS-3's nine, then JOURNEYS-4's five",
+  // DATES-1 added two: the year-end impact report and the birthday card.
+  ok("the brief's five presets come first, then JOURNEYS-3's nine, then JOURNEYS-4's five, then DATES-1's two",
      J.PRESET_KEYS.join(",") === "new_donor_first_year,major_donor,welcome_back,monthly_giver,new_volunteer,"
        + "membership_ending,membership_lapsed,recurring_failed,recurring_cancelled,card_expiring,volunteer_hours,first_event,grant_awarded,p2p_goal,"
-       + "auction_winner_thanks,event_no_show,pledge_thanks,pledge_late,bigger_gift",
+       + "auction_winner_thanks,event_no_show,pledge_thanks,pledge_late,bigger_gift,year_end_impact,birthday_card",
      J.PRESET_KEYS);
   // FIX-4 1a — SEVEN TOUCHES OVER TWELVE MONTHS. This pinned seven months,
   // which was THREAD-2a's timing: all seven touches inside the first seven

@@ -360,7 +360,13 @@ async function taskExtras(orgId, b) {
   }
   if (b.recur !== undefined) {
     f.recur = b.recur ? ts.normalizeRecur(b.recur) : null;
-    if (b.recur && !f.recur) return { refused: { error: "bad_recur", sentence: "A repeat is weekly, monthly or quarterly." } };
+    if (b.recur && !f.recur) return { refused: { error: "bad_recur", sentence: "A repeat is weekly, monthly, quarterly or yearly." } };
+    // DATES-1 — a yearly repeat keeps the date it was set on, so a Feb 29
+    // task comes back on the 29th in a leap year and on the 28th otherwise.
+    const due = /^\d{4}-\d{2}-\d{2}/.exec(String(b.due || ""));
+    if (f.recur && f.recur.every === "year" && !f.recur.month && due) {
+      f.recur = { every: "year", month: Number(due[0].slice(5, 7)), day: Number(due[0].slice(8, 10)) };
+    }
   }
   for (const [key, table, col] of [["householdId", "households", "household_id"], ["grantId", "grants", "grant_id"],
                                    ["eventId", "events", "event_id"], ["campaignId", "campaigns", "campaign_id"]]) {

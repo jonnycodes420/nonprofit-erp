@@ -621,6 +621,27 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// DATES-1 · ABOUT THEM: the short note somebody reads first when the profile
+// opens (spouse's name, how they know the founder's family). One column on the
+// person, not a timeline Note. Only this field changes; the audit middleware
+// keeps the before and after like any other edit.
+const ABOUT_THEM_MAX = 500;
+app.patch("/donors/:id/about-them", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const raw = req.body && req.body.aboutThem;
+  if (raw !== null && raw !== undefined && typeof raw !== "string") return res.status(400).json({ error: "bad_about", sentence: "The note about them is text." });
+  const text = String(raw || "").replace(/\r\n?/g, "\n").trim();
+  if (text.length > ABOUT_THEM_MAX) {
+    return res.status(400).json({ error: "about_too_long", max: ABOUT_THEM_MAX, length: text.length,
+      sentence: `That note is ${text.length.toLocaleString("en-US")} characters. Keep it to ${ABOUT_THEM_MAX} or fewer: it is the short note people read first. Longer notes go in the Notes tab.` });
+  }
+  const [d] = await query("SELECT id, name, about_them FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  if ((d.about_them || "") === text) return res.json({ id: d.id, aboutThem: text, unchanged: true });
+  await run("UPDATE donors SET about_them=?, updated_at=NOW() WHERE id=? AND org_id=?", [text || null, d.id, orgId]);
+  res.json({ id: d.id, aboutThem: text, sentence: text ? `The note about ${d.name} is saved.` : `The note about ${d.name} is cleared.` });
+}));
+
 // AGENT-2: CHANGE HOW TO REACH SOMEBODY, AND ONLY THAT. PUT /donors/:id
 // replaces the whole record (a missing stage there becomes "cultivate"), so a
 // new email, phone or address arrives here instead: only the fields given

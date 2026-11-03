@@ -7,6 +7,8 @@ import { tabHref, urlParam, editTemplateHref } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 import { AutoSendSteps, SendingTomorrow, PauseAllSending } from "./AutoSend";   // AUTO-1
 import { plural } from "../../../shared/countWords.js";
+import { JourneyDateFields } from "./JourneyDateFields";   // DATES-1
+import { JourneyBatches } from "./BulkJourney";   // DATES-1: undo a batch from the Donors list
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -293,7 +295,14 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
           <select data-testid={tid + "-trigger"} value={value.trigger || ""} style={INP}
             onChange={e => onChange({ trigger: e.target.value })}>
             <option value="">Pick a trigger</option>
-            {(data.triggers || []).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+            {/* DATES-1 — a date on the calendar first, then what happens. */}
+            {(data.triggerGroups && data.triggerGroups.length)
+              ? data.triggerGroups.map(g => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.keys.map(k => (data.triggers || []).find(t => t.key === k)).filter(Boolean)
+                      .map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </optgroup>))
+              : (data.triggers || []).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
         </label>
         {trigger && trigger.needsAmount && (
@@ -410,6 +419,8 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
         </div>
       )}
 
+      {/* DATES-1 · a date every year (its day, who, when it first runs), and a birthday's lead days. */}
+      <JourneyDateFields trigger={trigger} tf={tf} setTf={setTf} data={data} tid={tid} LBL={LBL} INP={INP} />
       {trigger && (
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, marginTop: 10 }}>{trigger.sentence}</div>
       )}
@@ -1130,6 +1141,12 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                         </button>
                       ))}
                     </div>
+                    {/* DATES-1 — why people in a yearly journey's audience did not start on its date. */}
+                    {(() => { const sk = stats.figures.find(f => f.key === "skippedOnDate"); return sk && sk.why && sk.why.length ? (
+                      <div data-testid="jb-skipped-why" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, marginTop: 10 }}>
+                        Skipped on the date: {sk.why.map(w => w.sentence).join(" ")}
+                      </div>) : null; })()}
+                    <JourneyBatches journeyId={current.id} />
                     <p data-testid="jb-caveat" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "11px 0 0", maxWidth: 640 }}>
                       {stats.caveat}
                     </p>

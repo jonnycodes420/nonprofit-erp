@@ -1556,6 +1556,8 @@ export function autoDetectTxMapping(headers, rows) {
                 wealthRating:"",wealthCapacity:"",wealthDate:"",
                 // PARITY-3 6a — the person's birthday (month and day; year optional).
                 birthday:"",
+                // DATES-1 — the short "About them" note read first on the profile.
+                aboutThem:"",
                 // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, and
                 // the mapper has to be able to say so. A row carrying an ask
                 // amount and an open stage is money that has NOT arrived; without
@@ -1603,6 +1605,7 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.wealthCapacity && WEALTH_HDR.capacity.test(hl)) map.wealthCapacity = h;
     if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
     if (!map.birthday       && BIRTHDAY_HDR.test(hl))        map.birthday = h;
+    if (!map.aboutThem      && /^about(.?them)?$/.test(hl))   map.aboutThem = h;   // DATES-1
     if (!map.notes    && /^(notes?|memo|comments?|background)$/.test(hl))              map.notes    = h;
     if (!map.phone    && T(/^(phone|phone.?number|telephone|mobile|cell)$/))     map.phone    = h;
     if (!map.address  && T(/^(address|street(.?address)?|address.?1|address line 1|mailing.?address)$/)) map.address = h;
@@ -2379,6 +2382,8 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       const _bd = parseBirthday(row[txMap.birthday]);
       if (_bd) donor.birthday = _bd;
     }
+    // DATES-1 — "About them", 500 characters at most (the profile's own limit).
+    if (txMap.aboutThem && row[txMap.aboutThem] && !donor.aboutThem) donor.aboutThem = String(row[txMap.aboutThem]).trim().slice(0, 500) || undefined;
 
     const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
     const markers = detectNoteMarkers(noteText);
@@ -3540,6 +3545,7 @@ export const STANDARD_DONOR_FIELDS = [
   { key: "wealthCapacity", label: "Wealth screen capacity", aliases: ["ds capacity", "donorsearch capacity", "iwave capacity", "wealth capacity", "estimated capacity", "gift capacity", "capacity range"] },
   { key: "wealthDate",     label: "Wealth screen date",     aliases: ["ds date", "donorsearch date", "iwave date", "wealth screen date", "screening date"] },
   { key: "birthday",   label: "Birthday",     aliases: ["birthday", "birth date", "birthdate", "date of birth", "dob", "bday"] },
+  { key: "aboutThem",  label: "About them",   aliases: ["about them", "about"] },   // DATES-1
   // The flag family (BUILD-58/BUILD-80) — detectExclusionColumn routes these;
   // they are here so the DROPDOWN shows them as standard targets too.
   { key: "doNotMail",    label: "Do not mail",    aliases: ["do not mail", "dnm", "no mail"], flag: true },
@@ -4150,6 +4156,7 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     { const _bc = cellOf("birthday");
       const _bd = _bc == null || _bc === "" ? null : parseBirthday(_bc);
       if (_bd) d.birthday = _bd; }
+    { const _ab = get("aboutThem"); if (_ab) d.aboutThem = String(_ab).trim().slice(0, 500); }   // DATES-1
     const xid = get("donorId");
     if (xid) d.externalDonorId = xid;
     if (d.email) { const { value } = normalizeEmail(d.email); d.email = value || d.email; }

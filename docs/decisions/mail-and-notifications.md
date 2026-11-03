@@ -309,6 +309,12 @@ the morning email unless the person turned on its own reminder, so no step goes 
   channel is made again at most once an hour. Renewal: Gmail watch daily (lasts 7 days), Calendar channel with
   2 of 7 days left, Graph subscriptions asked for 10,070 minutes and extended with 3 days left.
 
+- **A journey on a date every year, and many people at once (DATES-1, 3 Nov 2026).** `yearly_date` starts on its
+  month and day in the org's own date (Feb 29 on the 28th), for its audience, once a year (`yearly:<year>`), through
+  `maybeStartJourney`; skips are kept in `journey_start_skips`. The Donors list's "Add to a journey" uses the same
+  path per person (by hand), inline to 2,000 and a `journeyBatch` job above; one Undo per batch for 30 days stops
+  what it started and keeps steps already done. Neither sends anything.
+
 ## Gotchas
 - **The Resend SDK silently drops `reply_to`.** Pass `replyTo`. (BUILD-88c)
 - **Wrapping the Resend client in an object literal deleted `resend.domains`.** Use a Proxy that overrides

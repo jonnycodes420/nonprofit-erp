@@ -104,6 +104,10 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
     if (triggerKey === "volunteer_hours" && tf.hours && !(opts.crossed || []).includes(Number(tf.hours))) return false;
     // JOURNEYS-4 — a task-outcome journey fires on the outcome it watches.
     if (triggerKey === "task_outcome" && String(tf.outcome || "") !== String(opts.outcome || "")) return false;
+    // DATES-1 — a yearly-date journey is started for its own date by the
+    // sweep, which names it; a birthday journey fires for its own lead days.
+    if (triggerKey === "yearly_date" && String(t.id) !== String(opts.journeyId || "")) return false;
+    if (triggerKey === "birthday" && (Number(tf.daysBefore) || 0) !== (Number(opts.leadDays) || 0)) return false;
     return true;
   });
   if (!filtered.length) return { started: false, reason: "below_threshold" };

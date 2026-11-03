@@ -144,6 +144,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   let matchedByExternalId = 0, matchedByEmail = 0;
   const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   const matchedBirthdayFills = []; // PARITY-3 6a: matched people with no birthday on file yet
+  const matchedAboutFills = [];    // DATES-1: matched people with no "About them" yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   // IMPORT-2 item 4: every Notes / Comments / Background cell becomes a dated
   // note on the person, once per person per wording, tagged with this run so
@@ -348,6 +349,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
     // PARITY-3 6a — and a birthday, fill-missing the same way.
     if (d.birthday && typeof d.birthday === "object") matchedBirthdayFills.push({ donorId: priorId, b: d.birthday });
+    // DATES-1 — and "About them", fill-missing the same way.
+    if (d.aboutThem) matchedAboutFills.push({ donorId: priorId, text: d.aboutThem });
     // A person matched by email who ALSO carries a source id teaches Steward
     // that id, so the NEXT export matches on the stable key even if she
     // corrects the address in the old system first. Fill-missing only, and
@@ -491,6 +494,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         await runTx(txc, `UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=?`,
           [Number(b.month), Number(b.day), y, d._id, orgId]);
       }
+      // DATES-1 — "About them", held to the profile's 500 characters.
+      for (const d of batch) {
+        const a = String(d.aboutThem || "").trim().slice(0, 500);
+        if (a) await runTx(txc, `UPDATE donors SET about_them=? WHERE id=? AND org_id=?`, [a, d._id, orgId]);
+      }
     } else {
       console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
@@ -522,6 +530,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         WHERE id=? AND org_id=? AND external_donor_id IS NOT NULL AND external_donor_id <> ?
           AND NOT (COALESCE(external_donor_ids, '[]'::jsonb) @> jsonb_build_array(?::text))`,
       [f.externalDonorId, f.donorId, orgId, f.externalDonorId, f.externalDonorId]);
+  }
+  for (const f of matchedAboutFills) {
+    const a = String(f.text || "").trim().slice(0, 500);
+    if (a) await runTx(txc, `UPDATE donors SET about_them=? WHERE id=? AND org_id=? AND (about_them IS NULL OR about_them='')`, [a, f.donorId, orgId]);
   }
   if (matchedBirthdayFills.length) {
     const _B = await birthdayMod();

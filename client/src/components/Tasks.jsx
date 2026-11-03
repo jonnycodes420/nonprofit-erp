@@ -446,7 +446,8 @@ function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly 
               <option value={JSON.stringify({ every: "month" })}>Every month, same day</option>
               <option value={JSON.stringify({ every: "month", nth: 1, weekday: 1 })}>Every month, first Monday</option>
               <option value={JSON.stringify({ every: "quarter" })}>Every quarter</option>
-              {f.recur && ![`{"every":"week"}`, `{"every":"month"}`, `{"every":"month","nth":1,"weekday":1}`, `{"every":"quarter"}`].includes(JSON.stringify(f.recur)) && <option value={JSON.stringify(f.recur)}>{recurPhrase(f.recur)}</option>}
+              <option value={JSON.stringify({ every: "year" })}>Every year, same date</option>
+              {f.recur && ![`{"every":"week"}`, `{"every":"month"}`, `{"every":"month","nth":1,"weekday":1}`, `{"every":"quarter"}`, `{"every":"year"}`].includes(JSON.stringify(f.recur)) && <option value={JSON.stringify(f.recur)}>{recurPhrase(f.recur)}</option>}
             </select>
           </label>}
         </div>
