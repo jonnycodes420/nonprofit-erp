@@ -15,6 +15,15 @@
 //     mornings) under WARM_MS; Home's first look downloads no more than
 //     FIRST_KB in all (scripts, fonts, styles and its reads); and nothing on
 //     it moves as it loads or as a font swaps (CLS under 0.02, cold and warm)
+//   · SHIFT-1: the browser's clock is the test's, never the runner's. Every
+//     screen opens on Wednesday, September 30 at a pinned UTC hour, and Home on a phone
+//     opens at 08:00, 14:00 and 20:00: the greeting's words change with the
+//     hour, and CI's morning once wrapped the greeting line and moved everything
+//     under it 27 px (CLS 0.139). The worst hour counts. The fixture org's name
+//     is the length that wrapped it. The day is the longest real date, which
+//     takes two lines on a phone in the serif and in its fallback alike: on a
+//     shorter date the two can wrap differently, and a cold phone moves when
+//     the serif arrives (docs/history/SHIFT-1.md, left for the next brief).
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
@@ -56,8 +65,15 @@ const JS_FIRST_KB = 239;   // PERF-3 measured 227 KB + 5%: the moves deck's code
 const WARM_MS = 1446;   // PERF-3: Home on a phone a second time, measured 1,314 ms + 10% (main: 1,528)
 const FIRST_KB = 309;   // PERF-3: every byte of Home's first look, measured 294 KB + 5% (main: 314)
 const CLS_MAX = 0.02;   // PERF-3: main moved 0.49 of the phone's screen (the deck after its stand-in); now 0
-const ORG = { id: "org_perfapp", slug: "perfapp", name: "Perf App Harbor Trust", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
+// SHIFT-1: a made-up name that, with "Good morning, Load", fits Home's greeting
+// line on a 412 px phone at first paint (312 of 326 px) but not once the Edit
+// button narrows the column (292 px): on main that wrapped the line, 27 px.
+const ORG = { id: "org_perfapp", slug: "perfapp", name: "Riverbend Food Collective", tier: "medium", n: 1, donors: 2000, gifts: 10000, interactions: 4000, tasks: 60, subs: 20, users: 2 };
 const RUNS = Number(process.env.PERF_RUNS || 3);
+// SHIFT-1: the clock every screen opens at (UTC), and the hours Home's phone
+// leg is held to: morning, afternoon, evening, each its own greeting.
+const DAY = "2026-09-30", HOURS = [8, 14, 20];
+const at = h => new Date(`${DAY}T${String(h).padStart(2, "0")}:00:00Z`);
 const BUDGET = { homeDesktop: 1000, homePhone: PHONE_MS, listServer: 1000, listDraw: 2000, profile: 2000 };
 const DESKTOP = {
   ctx: { viewport: { width: 1350, height: 940 }, deviceScaleFactor: 1 },
@@ -83,11 +99,20 @@ async function seed() {
 
 // One screen in one fresh browser. `ready` is the element that means this
 // screen is on the page; `rows` (optional) how many of it must be there.
-async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false } = {}) {
-  const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block" });
+async function measure(browser, machine, auth, url, ready, rows = 1, { warm = false, hour = 14 } = {}) {
+  const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block", timezoneId: "UTC" });
+  // SHIFT-1: the page's clock starts at the pinned hour and keeps ticking. Not
+  // Playwright's clock.setFixedTime: a Date that never moves slowed the warm
+  // visit by 0.8 s and hid the network going quiet. Only Date moves; timers
+  // and performance.now() are the browser's own.
+  await ctx.addInitScript(t => {
+    const R = Date, off = t - R.now(), now = () => R.now() + off;
+    window.Date = new Proxy(R, { construct: (c, a, nt) => Reflect.construct(c, a.length ? a : [now()], nt),
+      apply: () => new R(now()).toString(), get: (c, k) => (k === "now" ? now : Reflect.get(c, k)) });
+  }, at(hour).getTime());
   await ctx.addInitScript(([t, u, o, sel, n]) => {
     localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
-    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0, cls: 0 };
+    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0, cls: 0, shifts: [] };
     const look = () => { if (!window.__perf.readyAt && document.querySelectorAll(sel).length >= n) window.__perf.readyAt = performance.now(); };
     new MutationObserver(look).observe(document, { childList: true, subtree: true });
     try {
@@ -95,7 +120,17 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
         .observe({ type: "largest-contentful-paint", buffered: true });
       new PerformanceObserver(l => { for (const e of l.getEntries()) window.__perf.longEnd = Math.max(window.__perf.longEnd, e.startTime + e.duration); })
         .observe({ type: "longtask", buffered: true });
-      new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__perf.cls += e.value; })
+      // NUMBERS-5, SHIFT-1: each shift that counts keeps what moved and by how
+      // much, so a red CLS names the element instead of just a number.
+      const what = el => !el ? "?" : el.getAttribute("data-testid") || el.getAttribute("aria-label")
+        || `${el.tagName.toLowerCase()}${el.className && typeof el.className === "string" ? "." + el.className.split(" ")[0] : ""} "${(el.innerText || el.textContent || "").trim().slice(0, 40)}"`;
+      new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) {
+        window.__perf.cls += e.value;
+        if (e.value >= 0.005) window.__perf.shifts.push(`${Math.round(e.startTime)} ms, ${e.value.toFixed(3)}: ` + (e.sources || []).slice(0, 3).map(x => {
+          const el = x.node && (x.node.nodeType === 1 ? x.node : x.node.parentElement), p = x.previousRect, c = x.currentRect;
+          return `${what(el)} y ${Math.round(p.y)}→${Math.round(c.y)}, h ${Math.round(p.height)}→${Math.round(c.height)}`;
+        }).join("; "));
+      } })
         .observe({ type: "layout-shift", buffered: true });
     } catch { /* nothing to observe */ }
   }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org), ready, rows]);
@@ -150,7 +185,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
-    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000,
+    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000, shifts: r.shifts || [],
     // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
     jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
     // PERF-3: every byte in by then: the document, scripts, styles, fonts and reads
@@ -169,6 +204,7 @@ async function measureN(browser, machine, auth, url, ready, rows, opts) {
     lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice) };
   for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "firstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
   m.cls = Math.max(...runs.map(r => r.cls));   // PERF-3: the worst run, not the median
+  m.shifts = runs.reduce((w, r) => (r.cls > w.cls ? r : w), runs[0]).shifts;   // what moved in that run
   return m;
 }
 
@@ -237,8 +273,14 @@ function preloaderAllowed() {
   // HOME-4: Home is usable when the rail is drawn whole, not before.
   const HOME_READY = process.env.PERF_HOME_READY || '[data-testid="home-rail"][data-ready="1"]';
   const homeD = await measureN(browser, DESKTOP, auth, "/dashboard", HOME_READY);
-  const homeP = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY);
-  const homeW = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { warm: true });   // PERF-3
+  // SHIFT-1: the phone at each pinned hour; its times are the morning's, its CLS the worst hour's.
+  const byHour = [];
+  for (const hour of HOURS) byHour.push({ hour, ...(await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { hour: hour })) });
+  const worst = byHour.reduce((w, r) => (r.cls > w.cls ? r : w));
+  const homeP = { ...byHour[0], cls: worst.cls, shifts: worst.shifts, clsHour: worst.hour,
+    errors: byHour.flatMap(r => r.errors), fail5xx: byHour.flatMap(r => r.fail5xx), ready: byHour.every(r => r.ready) };
+  console.log(`  Home, phone, CLS by hour: ${byHour.map(r => `${String(r.hour).padStart(2, "0")}:00 ${r.cls}`).join(", ")}`);
+  const homeW = await measureN(browser, PHONE, auth, "/dashboard", HOME_READY, 1, { warm: true, hour: HOURS[0] });   // PERF-3
   const list = await measureN(browser, DESKTOP, auth, "/donors", '[data-testid="dir-table"] [data-testid="person-mark"]', 100);
   const prof = await measureN(browser, DESKTOP, auth, `/donors/${top.id}`, '[data-testid="dp-right-rail"]');
   await browser.close();
@@ -268,7 +310,8 @@ function preloaderAllowed() {
   // PERF-3: the second visit, every byte of the first look, and nothing moving.
   timed(`Home, a second time, usable under ${WARM_MS / 1000} s on a phone (${homeW.usable} ms)`, { ms: homeW.usable, budget: WARM_MS });
   ok(`Home's first look downloads at most ${FIRST_KB} KB in all on a phone (${homeP.firstKB} KB)`, homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB, homeP.firstKB);
-  ok(`nothing on Home moves as it loads on a phone (CLS ${homeP.cls} cold, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS})`, homeP.cls < CLS_MAX && homeW.cls < CLS_MAX, { cold: homeP.cls, warm: homeW.cls });
+  ok(`nothing on Home moves as it loads on a phone, at ${HOURS.map(h => `${h}:00`).join(", ")} UTC (CLS ${homeP.cls} cold at ${homeP.clsHour}:00, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS} each)`,
+     homeP.cls < CLS_MAX && homeW.cls < CLS_MAX, { cold: homeP.cls, coldHour: homeP.clsHour, warm: homeW.cls, coldMoved: homeP.shifts, warmMoved: homeW.shifts });
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
