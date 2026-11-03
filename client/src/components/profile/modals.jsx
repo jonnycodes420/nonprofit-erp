@@ -288,12 +288,18 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
 }
 
 // ── Edit Donor Modal ───────────────────────────────────────────────────────
+// ADDRESS-1: a field's label is a real <label> above it, never only a placeholder.
+function EditField({label,children,style}){
+  return <label style={{display:"flex",flexDirection:"column",gap:5,minWidth:0,...style}}>
+    <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>{label}</span>{children}</label>;
+}
 function EditDonorModal({donor,onSave,onClose}){
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   const[form,setForm]=useState({
     name:donor.name||"",email:donor.email||"",phone:donor.phone||"",
     notes:donor.notes||"",tags:(donor.tags||[]).join(", "),
     stage:donor.stage||"cultivate",status:donor.status||"new",
+    address:donor.address||"",address2:donor.address2||"",
     city:donor.city||"",state:donor.state||"",zip:donor.zip||"",
     employer:donor.employer||"",
     bMonth:donor.birthday?String(donor.birthday.month):"",bDay:donor.birthday?String(donor.birthday.day):"",bYear:donor.birthday&&donor.birthday.year?String(donor.birthday.year):"",
@@ -327,13 +333,17 @@ function EditDonorModal({donor,onSave,onClose}){
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
         {!ready?<div data-testid="edit-donor-loading" style={{display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.ink3,padding:"8px 0 4px"}}><Spin/>Loading their record…</div>:
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"],["employer","Employer","text"]].map(([k,pl,t])=>(
-            <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
+          {/* ADDRESS-1: every field has a visible label, and the street and
+              apartment lines sit above City (donors.address, donors.address2). */}
+          {[["name","Full name","text"],["email","Email","email"],["phone","Phone","tel"],["employer","Employer","text"]].map(([k,lb,t])=>(
+            <EditField key={k} label={lb}><input type={t} autoComplete="off" value={form[k]} onChange={set(k)} style={inp} data-testid={"edit-"+k}/></EditField>
           ))}
-          <div style={{display:"flex",gap:8}}>
-            <input value={form.city} onChange={set("city")} placeholder="City" style={{...inp,flex:2}}/>
-            <input value={form.state} onChange={set("state")} placeholder="State" style={{...inp,flex:1}}/>
-            <input value={form.zip} onChange={set("zip")} placeholder="ZIP" style={{...inp,flex:1}}/>
+          <EditField label="Street address"><input autoComplete="off" value={form.address} onChange={set("address")} style={inp} data-testid="edit-address"/></EditField>
+          <EditField label="Apt, suite (optional)"><input autoComplete="off" value={form.address2} onChange={set("address2")} style={inp} data-testid="edit-address2"/></EditField>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <EditField label="City" style={{flex:"2 1 150px"}}><input autoComplete="off" value={form.city} onChange={set("city")} style={inp} data-testid="edit-city"/></EditField>
+            <EditField label="State" style={{flex:"1 1 70px"}}><input autoComplete="off" value={form.state} onChange={set("state")} style={inp} data-testid="edit-state"/></EditField>
+            <EditField label="ZIP" style={{flex:"1 1 80px"}}><input autoComplete="off" inputMode="numeric" value={form.zip} onChange={set("zip")} style={inp} data-testid="edit-zip"/></EditField>
           </div>
           {/* PARITY-3 6a — month and day; the year is optional. */}
           <div>
@@ -358,14 +368,12 @@ function EditDonorModal({donor,onSave,onClose}){
               ))}
             </div>
           </div>
-          <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
+          <EditField label={<>Tags <span style={{fontSize:10,fontWeight:400}}>(comma-separated)</span></>}>
             <input value={form.tags} onChange={set("tags")} placeholder="e.g. board-adjacent, recurring, arts" style={inp}/>
-          </div>
-          <div>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,marginBottom:6}}>Notes</div>
+          </EditField>
+          <EditField label="Notes">
             <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
-          </div>
+          </EditField>
           {err&&<div style={{color:T.terracotta,fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button onClick={save} disabled={loading||!ready} style={{flex:1,background:loading||!ready?T.bg2:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:loading||!ready?"not-allowed":"pointer"}}>

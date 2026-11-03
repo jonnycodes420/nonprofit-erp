@@ -245,7 +245,7 @@ const MERGE_FIELDS = [
   ["name", "Name"], ["kind", "Kind"], ["salutation", "Salutation"], ["middle_name", "Middle name"], ["suffix", "Suffix"],
   ["contact_name", "Contact at the organisation"], ["spouse_name", "Spouse"],
   ["email", "Email"], ["email2", "Second email"], ["phone", "Phone"], ["mobile", "Mobile"],
-  ["address", "Street"], ["address2", "Street, line 2"], ["city", "City"], ["state", "State"], ["zip", "ZIP"], ["country", "Country"],
+  ["address", "Street address"], ["address2", "Apt, suite"], ["city", "City"], ["state", "State"], ["zip", "ZIP"], ["country", "Country"],
   ["employer", "Employer"], ["household_id", "Household"], ["stage", "Stage"],
   ["assigned_to", "Assigned to"], ["birth_month", "Birthday month"], ["birth_day", "Birthday day"], ["birth_year", "Birth year"],
   ["external_donor_id", "Id in the old system"], ["notes", "Notes"],
@@ -266,6 +266,23 @@ function defaultChoices(kept, other) {
   }
   const hasAddr = d => !empty(d.address) || !empty(d.city) || !empty(d.zip);
   const addrSide = !hasAddr(kept) && hasAddr(other) ? "other" : !hasAddr(other) ? "kept" : newer;
+  for (const f of ADDRESS_GROUP) out[f] = addrSide;
+  return out;
+}
+
+// ADDRESS-1: the Compare and merge screen starts every field on the KEPT
+// record's value. A field the kept record leaves blank starts on the other
+// record's value, so starting the screen never throws a value away; the
+// address still moves as one piece (the kept record's, if it has one).
+// The bulk merge, where nobody looks, keeps defaultChoices above.
+function keptFirstChoices(kept, other) {
+  const out = {};
+  for (const [f] of MERGE_FIELDS) {
+    if (ADDRESS_GROUP.includes(f)) continue;
+    out[f] = empty(kept[f]) && !empty(other[f]) ? "other" : "kept";
+  }
+  const hasAddr = d => ADDRESS_GROUP.some(k => k !== "country" && !empty(d[k]));
+  const addrSide = !hasAddr(kept) && hasAddr(other) ? "other" : "kept";
   for (const f of ADDRESS_GROUP) out[f] = addrSide;
   return out;
 }
@@ -579,7 +596,7 @@ function businessLinks(rows, { linked = new Set(), dismissed = new Set() } = {})
 module.exports = {
   businessLinks, isOrgPerson, FREE_MAIL,
   NICKNAMES, normName, nameRelation, judgePair, findDuplicatePairs, findPairs, pairKey, phoneKey, addressKey,
-  MERGE_FIELDS, ADDRESS_GROUP, defaultChoices, resolveMergedValues,
+  MERGE_FIELDS, ADDRESS_GROUP, defaultChoices, keptFirstChoices, resolveMergedValues,
   tidyAddress, oneLine, titleCase,
   TYPO_DOMAINS, ROLE_LOCALS, isValidEmail, emailIssues,
   NCOA_EXPORT_COLUMNS, mailable, ncoaExportCsv, parseCsv, readNcoaReturn, MOVE_NO_FORWARD,
