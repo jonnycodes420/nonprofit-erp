@@ -73,8 +73,10 @@ const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
 // seconds after the page has loaded. Drawn with the app, their two requests
 // queued with Home's own on a phone and held its network busy until 3.5 s.
 // Speed Insights reads the page's timings from the browser's buffer, so a late
-// start misses none of them.
-const VercelBeacons      = React.lazy(() => import("./lib/vercelBeacons"));
+// start misses none of them. A chunk that will not load (offline, a deploy
+// since) draws nothing: drawn outside the error boundary, its failure would
+// otherwise take the whole screen with it.
+const VercelBeacons      = React.lazy(() => import("./lib/vercelBeacons").catch(() => ({ default: () => null })));
 const BEACONS_AFTER_LOAD_MS = 3000;
 function LaterBeacons() {
   const [on, setOn] = React.useState(false);
