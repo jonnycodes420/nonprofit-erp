@@ -13,11 +13,11 @@ const btn = { background: T.greenDk, border: "none", borderRadius: 8, padding: "
 const quiet = { background: "none", border: "none", padding: "9px 6px", color: T.ink3, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", textUnderlineOffset: 3 };
 const fmt = n => Number(n || 0).toLocaleString("en-US");
 
-function Lines({ lines, testid }) {
+function Lines({ lines, testid, title = "Who won't start, and why" }) {
   if (!lines || !lines.length) return null;
   return (
     <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Who won't start, and why</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>{title}</div>
       {lines.map(l => <div key={l.reason} data-testid={testid + "-line"} data-reason={l.reason} style={{ fontSize: 13, color: T.ink, lineHeight: 1.45 }}>{l.sentence}</div>)}
     </div>
   );
@@ -130,7 +130,7 @@ function BulkJourneyModal({ ids: idsAtOpen, onClose, onDone }) {
         </div>}
         {batch && !running && !undone && <div data-testid="bulk-journey-result">
           <div data-testid="bulk-journey-result-sentence" style={{ fontSize: 14, color: T.ink, fontWeight: 600, lineHeight: 1.5 }}>{batch.sentence}</div>
-          <Lines lines={batch.lines} testid="bulk-journey-result-skips" />
+          <Lines lines={batch.lines} testid="bulk-journey-result-skips" title="Who didn't start, and why" />
           {batch.canUndo && batch.started > 0 && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>Nothing was sent. You can undo this for 30 days, here or from the journey in Journeys.</div>}
         </div>}
         {undone && <div data-testid="bulk-journey-undone" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>{undone.sentence}</div>}

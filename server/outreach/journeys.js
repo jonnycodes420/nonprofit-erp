@@ -642,6 +642,18 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
     const r = await newestGift(0);
     if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${DD.displayDate(from)}`; }
   }
+  // DATES-1 — a date every year counts from the next time that date comes
+  // round, in the org's own calendar, not from anybody's gift.
+  if (t.trigger_key === "yearly_date") {
+    const tf = t.trigger_filters || {};
+    const TS = await import("../../shared/taskShape.js");
+    const today0 = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    if (J.validMonthDay(Number(tf.month), Number(tf.day))) {
+      from = TS.nextYearlyOn(Number(tf.month), Number(tf.day), today0);
+      if (!donor) { const [any] = await query(`SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]); donor = any || null; }
+      basis = `${J.firstRunSentence(Number(tf.month), Number(tf.day), today0).replace(/\.$/, "")}`;
+    }
+  }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
   // ── FIX-5 · THE CHAIN'S STATES COME FROM A REAL PLAN WHEN THERE IS ONE ──
@@ -1112,7 +1124,10 @@ async function batchSplit(orgId, t, ids, joinOthers = true) {
 // The lines under the count, largest first, in the shared words.
 async function batchLines(skipCounts) {
   const J = await journeyMod();
-  return Object.entries(skipCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+  // Largest first; a tie keeps the one order SKIP_REASONS lists, so the
+  // preview and the result read the same way round.
+  const rank = k => { const i = Object.keys(J.SKIP_REASONS).indexOf(k); return i < 0 ? 99 : i; };
+  return Object.entries(skipCounts).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || rank(a[0]) - rank(b[0]))
     .map(([reason, n]) => ({ reason, count: n, sentence: J.skipLine(reason, n) + "." }));
 }
 const countsOf = skips => Object.fromEntries(Object.entries(skips).map(([k, v]) => [k, Array.isArray(v) ? v.length : Number(v) || 0]));
