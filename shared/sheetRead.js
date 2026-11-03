@@ -1548,10 +1548,8 @@ export function understand({ sheets = [], fileName = "", today, overrides = {}, 
   const fileHasDates = usable.some(t => t.cols.some(c => c.role === "date"));
   // a title row or a file name names the event only for a file with no dates:
   // a dated gift export called "Gala gifts" is gifts, not an event to create.
-  // NUMBERS-5: a file name alone never makes an event. A list of people called
-  // "walk-people.csv" is people (it read as an event called "Walk People"); the
-  // name speaks for an event only beside money the file gives no date for
-  // ("jp-dinner-gifts-106": the dinner's gifts and pledges, no dates).
+  // NUMBERS-5: a file name alone never makes an event ("walk-people.csv" was an
+  // event called Walk People); it speaks only beside money with no dates (the dinner's).
   const undatedMoney = gifts.length + pledges.length > 0;   // with no date column, none of it is dated by the file
   const eventNamed = !answers.notEvent && (hasEngagement || !!(answers.linkEvent && answers.eventName)
     || (!fileHasDates && !!(suggestedEventName && (eventNameFromTitles(tables) || (EVENT_WORD_RE.test(suggestedEventName) && undatedMoney)))));
@@ -1942,15 +1940,10 @@ export function wantsAdaptiveReading(sheets, roled = null) {
 }
 
 // NUMBERS-5 · A WORKBOOK OF PEOPLE AND THEIR GIFTS IS READ BY THE WORKBOOK
-// SCREEN. "Import a spreadsheet" is the one door, but a workbook with a sheet
-// of people and a sheet of their gifts (messy-25k: 25,300 people, 92,000 gift
-// rows on two sheets, a superseded copy, pledges, recurring) is what the
-// workbook screen (WorkbookImport.jsx, BUILD-82) reads whole; this reader read
-// it as 1,101 people and no gifts. `roled` is classifyWorkbookSheets' answer.
-// The question is the one wantsAdaptiveReading asks, about the file's shape
-// (its columns, its layers, its tables), so it is asked of the first rows of
-// each sheet: the same answer for any file under that size, and seconds
-// instead of minutes for a big one.
+// SCREEN (WorkbookImport.jsx, BUILD-82), which reads every sheet; this reader
+// read messy-25k as 1,101 people and no gifts. `roled`: classifyWorkbookSheets'
+// answer. wantsAdaptiveReading's question is about shape, so it is asked of
+// each sheet's first rows: the same answer under that size, seconds for a big file.
 const SHAPE_ROWS = 2000;
 export function readsAsWorkbook(sheets, roled) {
   const live = (roled || []).filter(s => s.rowCount > 0);
