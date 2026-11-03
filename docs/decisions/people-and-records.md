@@ -147,6 +147,15 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   A name with markup or a bracketed note is cleaned on her click, the note moved to Notes (`name_fixes`
   kind `name_notes`, Undo restores name and Notes). Data health re-runs in the background after an import, its
   undo, a merge, a merge's undo and a bulk delete (`recheckSoon`), and says when and why.
+- **Compare and merge starts on the kept record (ADDRESS-1).** Every field, the street and apartment among
+  them, starts on the KEPT record's value (`dataHealth.js keptFirstChoices`); a field the kept record leaves
+  blank starts on the other's, so nothing is thrown away by default, and the address moves as one piece.
+  "Keep the other record instead" starts every field on that one's (`choicesFor`). The button names the record
+  the merge makes ("Merge into <the picked name>"). The bulk merge, where nobody looks, keeps `defaultChoices`
+  (the newer non-empty value).
+- **A mailing address is edited where the person is edited.** The Edit form and + Add carry Street address and
+  Apt, suite above City; `PUT /donors/:id` touches `address`/`address2` only when the request carries them, and
+  a change is kept in `donor_address_history`. Every field in those forms has a visible label. (ADDRESS-1)
 - **OR the mail-blocking flags on merge** (`deceased`, `do_not_contact`). A survivor never loses a restriction
   that the other record carried. (BUILD-58)
 - **Check every client-supplied donor, member or household id with an org-scoped ownership check**

@@ -589,7 +589,10 @@ app.get("/data-health/pair", requireAuth, wrap(async (req, res) => {
     keptId: kept.id, otherId: other.id,
     records: { [A.id]: A, [B.id]: B },
     fields: DH.MERGE_FIELDS.map(([key, label]) => ({ key, label })),
-    choices: DH.defaultChoices(kept, other),
+    // ADDRESS-1: every field starts on the kept record's value, and on the
+    // other record's if she keeps that one instead (choicesFor, by kept id).
+    choices: DH.keptFirstChoices(kept, other),
+    choicesFor: { [kept.id]: DH.keptFirstChoices(kept, other), [other.id]: DH.keptFirstChoices(other, kept) },
     households: Object.fromEntries(households.map(h => [h.id, h.name])),
     reasons: judged ? judged.reasons : [], confidence: judged ? judged.confidence : null,
     crossHousehold: !!A.household_id && !!B.household_id && A.household_id !== B.household_id,

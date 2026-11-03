@@ -569,6 +569,9 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     if (cv.error) return res.status(400).json({ error: cv.error, message: cv.error, field: cv.field });
     if (req.body) Object.assign(req.body, cv.values); }
   const { email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
+  // ADDRESS-1: the + Add form carries the mailing address too.
+  const addr = Object.fromEntries(["address", "address2", "city", "state", "zip"].map(f =>
+    [f, req.body[f] == null ? null : (String(req.body[f]).trim().slice(0, f === "address" || f === "address2" ? 200 : 120) || null)]));
   // THREAD-2 · A NAME IS A NAME. "   " and the word "null" (a form that joined
   // two empty fields) were saved as names, and printed on the Thread and in
   // the morning email as a blank or as "null". Refused here, at the source.
@@ -600,15 +603,18 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const finalAssignedTo = assignedTo || req.user.userId;
   const finalAssignedToName = assignedTo ? (named.user.name || assignedToName || "") : selfName;
   await run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types,address,address2,city,state,zip)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     // BUILD-80 Part 10 — the quick form's typed amount carries NO date: a
     // last_gift_date of "today" was a fiction that un-drifted the donor.
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
      lastAmount || 0, lastAmount || 0, null, lastAmount ? 1 : 0,
      JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name,
-     JSON.stringify(types)]
+     JSON.stringify(types), addr.address, addr.address2, addr.city, addr.state, addr.zip]
   );
+  if (addr.address || addr.city || addr.zip) {
+    try { await markDonorsForGeocoding(req.user.orgId, { donorIds: [id] }); } catch (e) { console.error("[geocode] mark after add failed:", e.message); }
+  }
   // NUMBERS-2: a typed amount with no gift behind it is kept as its own figure.
   if (lastAmount) await keepImportedTotals(query, req.user.orgId, [id], "an amount typed in when they were added");
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
@@ -709,6 +715,14 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // list it sends back is kept with the row's own flags, never erasing them.
   const [tagRow] = await query("SELECT tags FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   const keptTags = DTAGS.keepInternal(tagRow ? tagRow.tags : "[]", tags || []);
+  // ADDRESS-1: the street and the apartment line, saved from the Edit form.
+  // Only touched when the request carries them, so an older caller never
+  // clears a street the import wrote. A change to the mailing address is kept
+  // in donor_address_history, as PATCH /donors/:id/contact keeps its own.
+  const ADDR = ["address", "address2", "city", "state", "zip"];
+  const street = {};
+  for (const f of ["address", "address2"]) if (req.body[f] !== undefined) street[f] = req.body[f] == null ? "" : String(req.body[f]).trim().slice(0, 200);
+  const [was] = await query(`SELECT ${ADDR.join(", ")} FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.params.id, req.user.orgId]);
   const affected = await run(
     `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
@@ -717,6 +731,17 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+  if (Object.keys(street).length) {
+    await run(`UPDATE donors SET ${Object.keys(street).map(k => `${k}=?`).join(", ")} WHERE id=? AND org_id=?`,
+      [...Object.values(street).map(v => v || null), req.params.id, req.user.orgId]);
+  }
+  if (was) {
+    const now = { ...was, city: city || null, state: state || null, zip: zip || null, ...Object.fromEntries(Object.entries(street).map(([k, v]) => [k, v || null])) };
+    if (ADDR.some(k => String(was[k] || "") !== String(now[k] || ""))) {
+      await run(`INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
+        ["dah_" + uuid().slice(0, 12), req.user.orgId, req.params.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
+    }
+  }
   if (birthday !== undefined) {
     await run(`UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=?`,
       [birthday ? birthday.month : null, birthday ? birthday.day : null, birthday ? birthday.year : null,

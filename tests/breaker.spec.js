@@ -307,7 +307,8 @@ async function caseClicks() {
   await page.getByRole("menuitem", { name: /Edit record/ }).first().click({ timeout: 10000 }).catch(() => page.getByText("Edit record").first().click());
   // The form fills itself from the record after it opens; on a slow runner (CI,
   // 27 Oct) a value typed before that was overwritten. Type once it holds still.
-  const phone = page.locator('input[placeholder="Phone"]').first();
+  // ADDRESS-1: the form's fields are found by their visible label (no placeholders now).
+  const phone = page.getByRole("dialog", { name: "Edit donor profile" }).getByLabel("Phone", { exact: true });
   await phone.waitFor({ state: "visible", timeout: 10000 });
   await wait(600);
   for (let i = 0; i < 5 && (await phone.inputValue().catch(() => "")) !== "555-0101"; i++) { await phone.fill("555-0101"); await wait(300); }
