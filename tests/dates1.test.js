@@ -260,6 +260,16 @@ const plansOf = (org, tpl) => q(`SELECT id, donor_id, status, trigger_key, batch
   ok("§4 it is in the person's data export", JSON.stringify(exp.body).includes(note), exp.status);
   const br = await api("GET", "/donors/d1_ben/brief-rows", tok);
   ok("§4 it is in what Brief me hands the model", JSON.stringify(br.body).includes(note), br.status);
+  // Importable: "About them" mapped from a spreadsheet, for a new person and,
+  // fill-missing, for somebody already on file (matched by email).
+  const imp = await api("POST", "/donors/import-combined", tok, { donors: [
+    { name: "Ivo Quarry", email: "ivo.quarry@dates1.local", aboutThem: "Sister of the board chair." },
+    { name: "Cy Cedar", email: "d1_cy@dates1.local", aboutThem: "Met at the spring open house." }], gifts: [] });
+  const [ivo] = await q(`SELECT about_them FROM donors WHERE org_id=$1 AND email='ivo.quarry@dates1.local'`, [NY]);
+  const [cy] = await q(`SELECT about_them FROM donors WHERE org_id=$1 AND id='d1_cy'`, [NY]);
+  ok("§4 it is importable: a new person and a matched one both carry it", imp.status === 200
+     && ivo && ivo.about_them === "Sister of the board chair." && cy && cy.about_them === "Met at the spring open house.",
+     JSON.stringify({ status: imp.status, ivo, cy }));
   const tl = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1 AND donor_id='d1_ben' AND note LIKE '%lake%'`, [NY]);
   ok("§4 it is not a timeline Note", tl[0].n === 0);
   const long = await api("PATCH", "/donors/d1_ben/about-them", tok, { aboutThem: "x".repeat(501) });

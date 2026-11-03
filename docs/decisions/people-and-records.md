@@ -374,6 +374,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   figure is Fundraising's `pledges-open` source for that person; `assertSurfacesAgree` checks profile = Fundraising =
   Home ("pledges"). The Donors list column is "Open pledge" (`pledge_balance`) with the "Has an open pledge" filter.
 
+- **"About them" is a column, not a Note (DATES-1).** `donors.about_them`, 500 characters at most, read first at the
+  top of the profile's About box, edited in place (`PATCH /donors/:id/about-them`). It is in the export and erased with
+  the person, in Brief me and Atlas's drafting context, and importable; it never appears in the Notes tab or timeline.
+
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy
   `/person-photos` and every bare backend path before the SPA catch-all. `scripts/ci/local-preview.js`
