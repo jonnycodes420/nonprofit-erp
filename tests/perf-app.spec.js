@@ -87,7 +87,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const ctx = await browser.newContext({ ...machine.ctx, serviceWorkers: "block" });
   await ctx.addInitScript(([t, u, o, sel, n]) => {
     localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
-    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0, cls: 0 };
+    window.__perf = { lcp: 0, longEnd: 0, readyAt: 0, cls: 0, shifts: [] };
     const look = () => { if (!window.__perf.readyAt && document.querySelectorAll(sel).length >= n) window.__perf.readyAt = performance.now(); };
     new MutationObserver(look).observe(document, { childList: true, subtree: true });
     try {
@@ -95,7 +95,14 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
         .observe({ type: "largest-contentful-paint", buffered: true });
       new PerformanceObserver(l => { for (const e of l.getEntries()) window.__perf.longEnd = Math.max(window.__perf.longEnd, e.startTime + e.duration); })
         .observe({ type: "longtask", buffered: true });
-      new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__perf.cls += e.value; })
+      // NUMBERS-5: each shift keeps what moved, so a red CLS says which element and when.
+      new PerformanceObserver(l => { for (const e of l.getEntries()) if (!e.hadRecentInput) {
+        window.__perf.cls += e.value;
+        if (e.value >= 0.005) window.__perf.shifts.push(`${Math.round(e.startTime)}ms ${e.value.toFixed(3)}: ` + (e.sources || []).slice(0, 3).map(x => {
+          const el = x.node && (x.node.nodeType === 1 ? x.node : x.node.parentElement);
+          return `${el ? (el.getAttribute("data-testid") || el.getAttribute("aria-label") || el.tagName + " " + (el.textContent || "").trim().slice(0, 40)) : "?"} y${Math.round(x.previousRect.y)}→${Math.round(x.currentRect.y)} h${Math.round(x.previousRect.height)}→${Math.round(x.currentRect.height)}`;
+        }).join("; "));
+      } })
         .observe({ type: "layout-shift", buffered: true });
     } catch { /* nothing to observe */ }
   }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org), ready, rows]);
@@ -150,7 +157,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
-    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000,
+    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000, shifts: r.shifts || [],
     // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
     jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
     // PERF-3: every byte in by then: the document, scripts, styles, fonts and reads
@@ -169,6 +176,7 @@ async function measureN(browser, machine, auth, url, ready, rows, opts) {
     lateRail: runs.flatMap(r => lateRailReads(r)), twice: runs.flatMap(r => r.twice) };
   for (const k of ["usable", "readyAt", "lcp", "longEnd", "net", "jsKB", "jsFirstKB", "firstKB", "totalKB", "requests"]) m[k] = median(runs.map(r => r[k]));
   m.cls = Math.max(...runs.map(r => r.cls));   // PERF-3: the worst run, not the median
+  m.shifts = runs.reduce((w, r) => (r.cls >= w.cls ? r : w), runs[0]).shifts;
   return m;
 }
 
@@ -268,7 +276,7 @@ function preloaderAllowed() {
   // PERF-3: the second visit, every byte of the first look, and nothing moving.
   timed(`Home, a second time, usable under ${WARM_MS / 1000} s on a phone (${homeW.usable} ms)`, { ms: homeW.usable, budget: WARM_MS });
   ok(`Home's first look downloads at most ${FIRST_KB} KB in all on a phone (${homeP.firstKB} KB)`, homeP.firstKB > 0 && homeP.firstKB <= FIRST_KB, homeP.firstKB);
-  ok(`nothing on Home moves as it loads on a phone (CLS ${homeP.cls} cold, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS})`, homeP.cls < CLS_MAX && homeW.cls < CLS_MAX, { cold: homeP.cls, warm: homeW.cls });
+  ok(`nothing on Home moves as it loads on a phone (CLS ${homeP.cls} cold, ${homeW.cls} warm, under ${CLS_MAX}; worst of ${RUNS})`, homeP.cls < CLS_MAX && homeW.cls < CLS_MAX, { cold: homeP.cls, warm: homeW.cls, coldShifts: homeP.shifts, warmShifts: homeW.shifts });
   ok("Home asks for none of its bundled reads twice (desktop and phone)", !homeD.twice.length && !homeP.twice.length && !homeW.twice.length, [...homeD.twice, ...homeP.twice, ...homeW.twice].slice(0, 3));
   ok(`Home: no read the rail needs starts after the first paint (${RAIL_READS.length} reads, desktop and phone)`,
      RAIL_READS.length > 5 && !homeD.lateRail.length && !homeP.lateRail.length, [...homeD.lateRail, ...homeP.lateRail].slice(0, 6));
