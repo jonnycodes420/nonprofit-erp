@@ -19,7 +19,7 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
               {/* PROFILE-2 · 4 HOUSEHOLD AND RELATED: the household and the people and
                   organisations linked to them, each opening its profile. Manage
                   opens the full Related editor (link, retype, unlink with Undo). */}
-              {/* PROFILE-3: drawn only when someone is linked; "Link someone" is in About. */}
+              {/* PROFILE-3: drawn only when someone is linked; "Link someone" / "+ Link another" is in About. */}
               {(household||relationships.length>0)&&<RailSection title="Household and related" testid="dp-rail-related"
                 actionNode={<button type="button" data-testid="dp-rail-related-manage" onClick={()=>setRelatedOpen(true)} style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{household||relationships.length?"Manage":"Add"}</button>}>
                 {household&&<div style={{fontSize:13,marginBottom:6}}><RecordLink to={householdHref(household.id)} data-record-link="household" style={{color:RAIL.text,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink></div>}
@@ -47,9 +47,11 @@ function RailAboutSections({setRelPickerOpen,nothingLogged,noGifts,R,aboutStatus
                   <ImportRefusalsLine status={status}/>
                   {/* PROFILE-3 · the quiet ways to fill an empty record: the sections they
                       would fill are not drawn while there is nothing in them. */}
-                  {!isReadOnly&&(!hasContact||!(household||relationships.length))&&<div data-testid="dp-about-add" style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:4,fontSize:12.5}}>
+                  {/* MENU-1: the link button is always drawn (not only on a record with
+                      no links), so a second link, a business they give through, is findable. */}
+                  {!isReadOnly&&<div data-testid="dp-about-add" style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:4,fontSize:12.5}}>
                     {!hasContact&&onEdit&&<button type="button" data-testid="dp-about-add-contact" onClick={onEdit} style={QUIET}>Add email or phone</button>}
-                    {!(household||relationships.length)&&<button type="button" data-testid="dp-about-link" onClick={()=>{setRelatedOpen(true);setRelPickerOpen&&setRelPickerOpen(true);}} style={QUIET}>Link someone</button>}
+                    <button type="button" data-testid="dp-about-link" onClick={()=>{setRelatedOpen(true);setRelPickerOpen&&setRelPickerOpen(true);}} style={QUIET}>{household||relationships.length?"+ Link another":"Link someone"}</button>
                   </div>}
                   {!isReadOnly&&<ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}>{(chips,addCtl)=>!chips.length&&addCtl?<div data-testid="dp-about-group" style={{fontSize:12.5}}>{addCtl}</div>:null}</ProfileGroups>}
                 </div>
