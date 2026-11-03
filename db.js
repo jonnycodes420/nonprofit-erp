@@ -7505,6 +7505,9 @@ async function runSchemaInit(pool) {
       next_run_at TIMESTAMPTZ NOT NULL,
       last_enqueued_at TIMESTAMPTZ
     )`);
+  // DEPLOY-1 · one row per process that runs jobs (jobQueue.beatProcess); the web's /health reads the worker's here.
+  await pool.query(`CREATE TABLE IF NOT EXISTS process_heartbeats (id TEXT PRIMARY KEY, role TEXT NOT NULL, build_sha TEXT,
+    handlers TEXT[] NOT NULL DEFAULT '{}', started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), stopped_at TIMESTAMPTZ)`);
   // SCALE-1 · rate-limit counters every web replica shares (rateLimitStore.js),
   // and the once-an-hour mark for an ops alert, so two replicas send it once.
   await pool.query(`

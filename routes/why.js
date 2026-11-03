@@ -377,6 +377,8 @@ let ACm = null;
 const askCat = async () => (ACm = ACm || await import("../shared/askCatalog.js"));
 const AE = require("../askEngine");
 const AQ = require("../askQuery");
+// DEPLOY-1: the Ask modules are loaded before the process says it is ready.
+require("../bootGate").need("ask", Promise.all([askCat(), shape(), showMod(), guide()]));
 
 // ── ASK-4 · ANY QUESTION ABOUT THE ORG'S OWN RECORDS ───────────────────────
 // When the catalog of ASK-2 and the eight why questions cannot take a

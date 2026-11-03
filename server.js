@@ -880,7 +880,8 @@ const bootGate = require("./bootGate");
 const markDbReady = bootGate.markReady;
 const DB_READY = bootGate.READY;
 let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
-getDb()
+// DEPLOY-1: the whole chain, the custom-field step included, is the "database" need.
+bootGate.need("database", getDb()
   .then(async () => {
     dbReady = true;
     markDbReady();
@@ -899,7 +900,8 @@ getDb()
       }
     } catch (e) { console.error("[custom-fields] CRITICAL: legacy migration failed — legacy custom-field values are not visible until this succeeds:", e); }
   })
-  .catch(err => { console.error("Database init failed:", err); process.exit(1); });
+  .catch(err => { console.error("Database init failed:", err); process.exit(1); }));
+require("./server/shared/lifecycle").bootNeeds({ testMode });   // DEPLOY-1: a warm pool, the AI client
 
 // FIX-20 Part 10: THE READINESS CHECK Railway's healthcheck points at
 // (a service setting; see docs/decisions/tests-and-ci.md). It answers 200 only
@@ -907,14 +909,18 @@ getDb()
 // serving until this one is ready, and nobody sees "Database initializing".
 // It sits above the gate on purpose: it is the one route that must answer
 // while the gate is shut.
+// DEPLOY-1: 200 only when every boot need has resolved (bootGate.js), 503
+// again from SIGTERM on; it names the needs it waits for.
 app.get("/ready", async (req, res) => {
-  if (!dbReady) return res.status(503).json({ ready: false });
+  if (bootGate.isDraining()) return res.status(503).json({ ready: false, draining: true });
+  if (!bootGate.servable()) return res.status(503).json({ ready: false, waitingFor: bootGate.waitingFor() });
   try { await query("SELECT 1"); res.json({ ready: true }); }
-  catch { res.status(503).json({ ready: false }); }
+  catch { res.status(503).json({ ready: false, waitingFor: ["database"] }); }
 });
 
+// The gate (DEPLOY-1): until every need resolves, a 503 to retry, never a half-booted 500.
 app.use((req, res, next) => {
-  if (!dbReady) return res.status(503).json({ error: "Database initializing" });
+  if (!bootGate.servable()) return res.status(503).json({ error: "Steward is starting up", retry: true });
   next();
 });
 
@@ -3097,8 +3103,10 @@ app.get("/health", (req, res) => {
     // SCALE-1: the background queue (jobQueue.js) and the last five-minute
     // round of per-org syncs: how long it took and its slowest org, by id only.
     // Cached (refreshed every 15s), so /health stays a synchronous read.
+    // DEPLOY-1: queue.oldestWaiting and queue.level; `worker` is the newest worker's heartbeat.
     queue: require("./jobQueue").healthNow().queue,
     tick: require("./jobQueue").healthNow().tick,
+    worker: require("./jobQueue").healthNow().worker || null,
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -12198,7 +12206,10 @@ app.use((err, req, res, next) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || "3001", 10);
-app.listen(PORT, () => {
+// DEPLOY-1: the shared modules routes bind on import are a boot need too.
+bootGate.need("modules", Promise.all([PT_READY, GC_READY, GREET_READY, ACK_READY, FISCAL_READY, VH_READY, VOL_DAYS_READY,
+  CAL_READY, RB_READY, SEQ_READY, EV_READY, MB_READY]));
+const httpServer = app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
   // FIX-49 Part 5 · the Workflows recipes still running become journeys, once,
   // on the first boot that has this code (idempotent; one replica does it).
@@ -12229,6 +12240,8 @@ app.listen(PORT, () => {
   // Self-diagnose a billing key/price Stripe-mode mismatch on boot (non-blocking).
   scheduleBillingModeCheck();
 });
+// DEPLOY-1: SIGTERM drains (server/shared/lifecycle.js).
+require("./server/shared/lifecycle").install(httpServer, { jobs: require("./jobQueue") });
 
 // ── "Name the vague anxiety as a number" metrics ────────────────────────────
 // Design pattern (see CLAUDE.md): a fuzzy staff worry gets computed into one
@@ -12852,7 +12865,7 @@ if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
 }
 DB_READY.then(() => {
   const JQ = require("./jobQueue");
-  JQ.start({ scheduler: !backgroundTicksDisabled() });
+  JQ.start({ scheduler: !backgroundTicksDisabled(), build: BUILD_SHA });
   const refresh = () => JQ.refreshHealth().catch(() => {});
   setTimeout(refresh, 5000).unref();
   setInterval(refresh, 15000).unref();
