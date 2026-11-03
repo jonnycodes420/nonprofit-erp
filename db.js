@@ -4,6 +4,29 @@ const { randomUUID: uuid } = require("crypto");
 const bcrypt = require("bcryptjs");
 const orgTime = require("./orgTime"); // BUILD-75 A.5 — seed dates are CIVIL dates in the default org timezone, never UTC slices of the process clock
 
+// POOL-1 · ONE CONNECTION BUDGET PER PROCESS. Prod reaches its database
+// through Supabase's pooler in session mode, which holds a fixed number of
+// clients across every process (docs/architecture/ARCHITECTURE.md, "The
+// connection budget"). A process may open the main pool's DB_POOL_MAX plus
+// the set-wise pool's share of it, and during a deploy two webs and the worker
+// run at once. On 3 Nov the new web found the pooler full and its boot gave
+// up. Every connection says whose it is (application_name), so the pooler's
+// own list names the process and the build that holds it.
+const POOL_MAX = Math.max(2, Number(process.env.DB_POOL_MAX) || 10);
+const SET_POOL_MAX = Math.min(3, Math.max(1, Math.floor(POOL_MAX / 3)));
+const PROCESS_NAME = process.env.STEWARD_PROCESS === "worker" ? "steward-worker" : "steward-web";
+const SHORT_SHA = (() => {
+  let sha = null;
+  try { sha = require("fs").readFileSync(__dirname + "/.build-sha", "utf8").trim(); } catch { /* no stamp file */ }
+  sha = sha || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_SHA || "";
+  return /^[0-9a-f]{7,40}$/i.test(sha) ? sha.slice(0, 7) : "local";
+})();
+const APP_NAME = `${PROCESS_NAME}@${SHORT_SHA}`;
+// The pooler's answer when it is full (Supavisor's code in the message), and
+// Postgres's own. A try that meets one is worth repeating: a deploy's overlap
+// ends within a minute and gives its connections back.
+const isPoolFull = (e) => !!e && (e.code === "53300" || /EMAXCONNSESSION|max clients reached|too many clients/i.test(String(e.message || "")));
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   // Default keeps prod behavior (Supabase requires SSL). DB_SSL=disable turns it
@@ -14,11 +37,11 @@ const pool = new Pool({
   // finishing the handshake on that client, which pg rightly warns about and
   // which would leave the odd connection unmarked. A startup option is applied
   // by the server before the connection is handed over, every time.
-  options: "-c steward.app_connection=on",
+  options: `-c steward.app_connection=on -c application_name=${APP_NAME}`,
   // SCALE-1: pg's default of 10 connections was busy 10 of 10 for the whole
   // 20-user load run. Raise it per process with DB_POOL_MAX only as far as the
   // database's own connection limit allows across every replica and the worker.
-  max: Math.max(2, Number(process.env.DB_POOL_MAX) || 10),
+  max: POOL_MAX,
 });
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
@@ -128,15 +151,23 @@ function setPool() {
   return _setPool || (_setPool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
-    options: "-c steward.app_connection=on -c enable_nestloop=off",
-    max: 3,
-    // Kept open: these reads are rare, so a pool that let its connections go
-    // after a minute idle paid a fresh TLS connect to prod's database (1 to 2
-    // seconds) on most first clicks. A connection the server drops is
-    // reported here and replaced on the next read.
-    idleTimeoutMillis: 0,
+    options: `-c steward.app_connection=on -c enable_nestloop=off -c application_name=${APP_NAME}`,
+    // POOL-1: out of the same per-process budget (a third of DB_POOL_MAX, one
+    // to three), and let go after five minutes idle. Kept open for good, its
+    // three were the part of every process's thirteen that never came back.
+    // Five minutes still spares most first clicks the fresh TLS connect (1 to
+    // 2 seconds on prod) that a one-minute timeout paid. A connection the
+    // server drops is reported here and replaced on the next read.
+    max: SET_POOL_MAX,
+    idleTimeoutMillis: 5 * 60 * 1000,
     allowExitOnIdle: true,
   }));
+}
+// POOL-1: what /health says about this process's connections, from pg's own
+// counters (no query). `set` is null until the set-wise pool's first read.
+function poolStats() {
+  return { max: POOL_MAX, total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount,
+    set: { max: SET_POOL_MAX, total: _setPool ? _setPool.totalCount : 0 }, name: PROCESS_NAME };
 }
 function setPoolReady() {
   const p = setPool();
@@ -7508,6 +7539,8 @@ async function runSchemaInit(pool) {
   // DEPLOY-1 · one row per process that runs jobs (jobQueue.beatProcess); the web's /health reads the worker's here.
   await pool.query(`CREATE TABLE IF NOT EXISTS process_heartbeats (id TEXT PRIMARY KEY, role TEXT NOT NULL, build_sha TEXT,
     handlers TEXT[] NOT NULL DEFAULT '{}', started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), stopped_at TIMESTAMPTZ)`);
+  // POOL-1: the process's connection budget ({ max, setMax }), for npm run status.
+  await pool.query(`ALTER TABLE process_heartbeats ADD COLUMN IF NOT EXISTS pool JSONB`);
   // SCALE-1 · rate-limit counters every web replica shares (rateLimitStore.js),
   // and the once-an-hour mark for an ops alert, so two replicas send it once.
   await pool.query(`
@@ -9772,5 +9805,5 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
+module.exports = { poolStats, isPoolFull, POOL_MAX, SET_POOL_MAX, APP_NAME, setPool, countRoundTrips, withClient, getDb, query, querySetwise, run, withAmbientTransaction, queryOutside, runOutside, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks,
   householdsFromLinks: (orgId = null) => householdsFromLinks(pool, orgId) };
