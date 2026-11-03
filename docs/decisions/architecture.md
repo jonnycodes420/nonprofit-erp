@@ -114,6 +114,13 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
   (`queue.stopped`), `npm run status` and the Admin console's failed jobs. A screen whose figure
   waits on a handler asks `OUTBOX.pending()` and says "Updating…". Tests wait with
   `tests/lib/drainQueue.js`, never a fixed time. (JOBS-1)
+- **Nothing on the queue waits forever (DEPLOY-1).** A row going back to waiting goes through
+  `jobQueue.giveBack`, which closes it into a waiting row of the same key instead of breaking the
+  one-waiting-per-key index (that broke the reaper for 15 days on prod). A run has a lease (an hour;
+  `handle(name, fn, { timeoutMs })` for longer). A waiting type no live worker handles is stopped
+  with its reason after a 15-minute deploy grace. `/health.queue.level` is yellow past an hour of
+  waiting, red past a day. `scripts/sql/queue-status.sql` and `scripts/ops/queue-requeue.js` are
+  Jonathan's.
 - **`worker.js` is the worker service's start command; `WORKER=off` on the web says the same as
   `STEWARD_PROCESS=web`.** (JOBS-1)
 - **`STEWARD_PROCESS` decides the role:** unset runs the web and the jobs in one process (how prod

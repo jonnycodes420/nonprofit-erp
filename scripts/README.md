@@ -36,6 +36,7 @@ Read-only SQL (paste into a console or `psql "$DATABASE_URL" -f <file>`):
 | `ops/import5-pledges-from-import-day-readonly.sql` | Pledges that were due from the day of their import (IMPORT-5) |
 | `ops/list-vs-home-readonly.sql` | The Donors list and Home count the same people |
 | `ops/stale-deletions-readonly.sql` | People live again but still named by an open deletion record |
+| `sql/queue-status.sql` | DEPLOY-1: the queue's waiting and running jobs by type, org and age; running jobs past their heartbeat or lease; waiting jobs by type |
 | `sql/big-orgs.sql` | The largest orgs by rows, for scale planning |
 | `sql/rls-status.sql` | SECURE-3: every public table has row-level security on (not forced) and the deny policy, and nothing is granted to anon, authenticated or service_role. Every section should be empty. psql only (`\echo`); Jonathan runs it, never a builder |
 
@@ -44,6 +45,7 @@ Node scripts:
 | Script | What it does | Command |
 |---|---|---|
 | `ops/restore-drill.js` | SECURE-3: the restore drill (docs/security/restore-steps.md). Read-only SQL on a restored copy, then a scratch backend against it, the smoke and the truth check, counts only. Dry run by default; refuses prod. Jonathan only, against a `steward-restore-` project | `node scripts/ops/restore-drill.js` (dry run), then `RESTORE_DATABASE_URL=… node scripts/ops/restore-drill.js --run --project steward-restore-… --i-am-jonathan` |
+| `ops/queue-requeue.js` | DEPLOY-1: gives back running jobs whose lease ran out and stops jobs no worker can run ("No handler for job X"). Dry run by default; `--org=<id>` for one org. Never at deploy | `DATABASE_URL=… node scripts/ops/queue-requeue.js`, then the same with `--apply --i-know-this-is-prod` |
 | `ops/check-webhook-subscriptions.js` | READ-ONLY. Compares the Stripe webhook subscriptions with the events the code handles | `node scripts/ops/check-webhook-subscriptions.js` |
 | `ops/verify-paypal.js` | READ-ONLY. One PayPal token, then a transaction search; counts only | `railway run node scripts/ops/verify-paypal.js --i-know-this-is-prod` |
 | `ops/consistency-audit.js` | READ-ONLY cross-surface consistency audit (also `npm run test:audit`) | `node scripts/ops/consistency-audit.js` |
