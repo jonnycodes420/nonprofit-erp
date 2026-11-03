@@ -55,21 +55,51 @@ function install(server, { jobs = null, log = console } = {}) {
   return { shutdown, inFlight: () => inFlight };
 }
 
-// The boot needs that live outside server.js's own chain (bootGate.js): a pool
-// with its connections already open, so the first requests after a deploy (Ask
-// asks four questions at once) do not each pay a new TLS connection; the AI
-// client; and, in TEST_MODE only, a slow step on demand, with which
+// POOL-1 · BOOT NEVER GIVES UP ON THE POOL. On 3 Nov the new web's "pool"
+// need (four SELECT 1 at once) met a full pooler during the deploy overlap
+// (EMAXCONNSESSION), rejected once and never tried again: /ready said 503 for
+// 9.5 minutes and Railway failed the deploy, though the old web had given its
+// connections back long before. Now the need opens ONE connection, and on any
+// error tries again after 1 s, 2 s, 4 s ... (at most 10 s apart) until it
+// gets one, logging each try once and saying on /ready what it waits for. The
+// database need waits on it, so a boot that meets a full pooler waits instead
+// of exiting. It is never given up: a process that cannot reach its database
+// is not sent traffic either way, and one that waits turns ready the moment a
+// connection frees.
+const RETRY_WORD = (e) => (require("../../db").isPoolFull(e) ? "max clients reached"
+  : e && e.code === "ECONNREFUSED" ? "connection refused" : "connection error");
+const backoff = (tryNo) => Math.min(10000, 1000 * 2 ** (tryNo - 1));
+let firstConnection = null;
+function poolReady({ log = console, sleep = (ms) => new Promise(r => setTimeout(r, ms)) } = {}) {
+  if (firstConnection) return firstConnection;
+  const db = require("../../db");
+  bootGate.need("pool", firstConnection = (async () => {
+    for (let tryNo = 1; ; tryNo++) {
+      try {
+        await db.query("SELECT 1");
+        if (tryNo > 1) log.log(`[boot] pool: connected on try ${tryNo}`);
+        return;
+      } catch (e) {
+        const why = RETRY_WORD(e);
+        bootGate.retrying("pool", why);
+        log.error(`[boot] pool: try ${tryNo} failed (${why}); next in ${backoff(tryNo) / 1000} s`);
+        await sleep(backoff(tryNo));
+      }
+    }
+  })());
+  return firstConnection;
+}
+
+// The boot needs that live outside server.js's own chain (bootGate.js): the
+// pool (above, started by the database need); the AI client; and, in
+// TEST_MODE only, a slow step on demand, with which
 // tests/deploy1-ready.test.js proves the gate holds every route behind every
 // need, not the database alone.
 function bootNeeds({ testMode }) {
-  const db = require("../../db");
-  const n = Math.min(4, Math.max(2, Number(process.env.DB_POOL_MAX) || 10));
-  // The main pool only: its connections close after 10 s idle if unused, while
-  // the set-wise pool keeps its own for good, so it is left to open on use.
-  bootGate.need("pool", bootGate.READY.then(() => Promise.all(Array.from({ length: n }, () => db.query("SELECT 1")))));
+  poolReady();
   bootGate.need("ai", require("../../aiClient").warm());
   const slow = Number(process.env.STEWARD_TEST_SLOW_BOOT_MS);
   if (testMode() && slow > 0) bootGate.need("test-slow-step", new Promise(r => setTimeout(r, slow)));
 }
 
-module.exports = { install, bootNeeds, GRACE_MS };
+module.exports = { install, bootNeeds, poolReady, backoff, GRACE_MS };

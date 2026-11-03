@@ -88,7 +88,39 @@ function workerReport(worker, mainSha) {
     detail: `build ${worker.buildSha ? String(worker.buildSha).slice(0, 7) : "none"}${okSha ? "" : mainSha ? ` (main is ${String(mainSha).slice(0, 7)})` : ""}`
       + ` · role ${worker.role}${okRole ? "" : " (should read worker)"} · seen ${worker.seenSecondsAgo}s ago` };
 }
-module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport };
+// POOL-1 · THE CONNECTION BUDGET. During a deploy two webs and the worker
+// hold connections at once; each process can open its DB_POOL_MAX plus the
+// set-wise pool's share. 2 × web + worker must fit the pooler's size
+// (POOLER_SIZE: Supabase → Database → Settings → Connection pooling → Pool
+// Size, default 40). Yellow above 80% of it, red above 100%, and the sentence
+// names the number to lower. The web's numbers are its /health.pool; the
+// worker's come through its heartbeat (/health.worker.pool).
+const POOLER_SIZE = () => Math.max(1, Number(process.env.POOLER_SIZE) || 40);
+const setMaxFor = (m) => Math.min(3, Math.max(1, Math.floor(m / 3)));
+function poolReport(webPool, workerPool, poolerSize = POOLER_SIZE()) {
+  if (!webPool || webPool.max == null) return { level: null, detail: "no pool on /health (older deploy)" };
+  if (!workerPool || workerPool.max == null) return { level: null, detail: "the worker's pool is not on /health yet (no heartbeat with it); re-run in a minute" };
+  const web = webPool.max + (webPool.set ? webPool.set.max : 0), worker = workerPool.max + (workerPool.setMax || 0);
+  const worst = 2 * web + worker, pct = Math.round((worst / poolerSize) * 100);
+  const level = worst > poolerSize ? "red" : worst > 0.8 * poolerSize ? "yellow" : "ok";
+  let detail = `web ${webPool.max}+${webPool.set ? webPool.set.max : 0}, worker ${workerPool.max}+${workerPool.setMax || 0}`
+    + ` · deploy worst case 2 × ${web} + ${worker} = ${worst} of ${poolerSize} (${pct}%)`;
+  if (level !== "ok") {
+    // The largest web DB_POOL_MAX that brings the worst case to 80% with the
+    // worker as it is; if none does, the worker's.
+    const fit = Math.floor(0.8 * poolerSize);
+    let m = null;
+    for (let x = webPool.max - 1; x >= 2; x--) if (2 * (x + setMaxFor(x)) + worker <= fit) { m = x; break; }
+    let k = null;
+    if (m == null) for (let x = workerPool.max - 1; x >= 2; x--) if (2 * web + x + setMaxFor(x) <= fit) { k = x; break; }
+    detail += m != null ? ` · lower DB_POOL_MAX on the web to ${m}, or raise the pooler's Pool Size`
+      : k != null ? ` · lower DB_POOL_MAX on the worker to ${k}, or raise the pooler's Pool Size`
+      : ` · raise the pooler's Pool Size, or lower DB_POOL_MAX on the web and the worker`;
+    detail += level === "red" ? " (a deploy can run out of connections)" : "";
+  }
+  return { level, detail, worst, poolerSize };
+}
+module.exports = { mailboxReport, smokeVerdict, queueReport, workerReport, poolReport };
 
 if (require.main === module) (async () => {
   // ── local + origin ─────────────────────────────────────────────────────────
@@ -109,8 +141,8 @@ if (require.main === module) (async () => {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null, worker = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; worker = h.worker || null; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null, queue = null, worker = null, webPool = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; queue = h.queue || null; worker = h.worker || null; webPool = h.pool || null; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -203,6 +235,8 @@ if (require.main === module) (async () => {
   row("queue", qr.level === "ok" ? `${GREEN}ok${RESET}` : qr.level === "yellow" ? `${YELLOW}waiting over an hour${RESET}` : qr.level === "red" ? `${RED}WAITING OVER A DAY${RESET}` : `${YELLOW}unverified${RESET}`, qr.detail);
   const wr = backendSha ? workerReport(worker, originMain) : { ok: null, detail: "backend unreachable" };
   row("worker", wr.ok === true ? `${GREEN}ok${RESET}` : wr.ok === false ? `${RED}NOT ALIGNED${RESET}` : `${YELLOW}unverified${RESET}`, wr.detail);
+  const pr = backendSha ? poolReport(webPool, worker && worker.pool) : { level: null, detail: "backend unreachable" };
+  row("db pool", pr.level === "ok" ? `${GREEN}ok${RESET}` : pr.level === "yellow" ? `${YELLOW}over 80% of the pooler${RESET}` : pr.level === "red" ? `${RED}OVER THE POOLER${RESET}` : `${YELLOW}unverified${RESET}`, pr.detail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
   const flags = [];
@@ -216,6 +250,7 @@ if (require.main === module) (async () => {
     flags.push(`SPLIT-BRAIN: prod backend (${short(backendSha)}) and frontend (${short(frontendSha)}) are on DIFFERENT commits.`);
   }
   if (wr.ok === false) flags.push(`WORKER NOT ALIGNED: ${wr.detail}. Jobs run on the worker; check its Railway deployment.`);
+  if (pr.level === "red") flags.push(`DB POOL: a deploy can open more connections than the pooler holds (${pr.detail}).`);
   if (qr.level === "red") flags.push(`QUEUE: a job has waited over a day (${qr.detail}).`);
   if (smokeOk === false) {
     flags.push(`PROD SMOKE FAILING: the deployed commit does not WORK — ${smokeDetail}. Aligned means nothing while this is red.`);

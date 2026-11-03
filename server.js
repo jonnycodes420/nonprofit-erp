@@ -884,8 +884,8 @@ const bootGate = require("./bootGate");
 const markDbReady = bootGate.markReady;
 const DB_READY = bootGate.READY;
 let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
-// DEPLOY-1: the whole chain, the custom-field step included, is the "database" need.
-bootGate.need("database", getDb()
+// DEPLOY-1: the whole chain, the custom-field step included, is the "database" need. POOL-1: after the pool's first connection (retried).
+bootGate.need("database", require("./server/shared/lifecycle").poolReady().then(() => getDb())
   .then(async () => {
     dbReady = true;
     markDbReady();
@@ -3111,6 +3111,8 @@ app.get("/health", (req, res) => {
     queue: require("./jobQueue").healthNow().queue,
     tick: require("./jobQueue").healthNow().tick,
     worker: require("./jobQueue").healthNow().worker || null,
+    // POOL-1: this process's connections, from pg's own counters (server/shared/pools.js).
+    pool: require("./db").poolStats(),
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -12864,6 +12866,7 @@ if (testMode() && process.env.STEWARD_TEST_PROBE === "1") {
       ["tick_" + uuid().slice(0, 12), "testProbe", t0.toISOString(), !p.fail,
        JSON.stringify({ key: job.key, org: job.org_id, pid: process.pid, attempt: job.attempts })]);
     if (p.fail) throw new Error("probe told to fail");
+    if (p.failPoolFull) throw Object.assign(new Error("(EMAXCONNSESSION) max clients reached in session mode, pool_size: 15"), { code: "XX000" });
   });
 }
 DB_READY.then(() => {

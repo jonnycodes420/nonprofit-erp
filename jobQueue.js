@@ -43,7 +43,7 @@
 // orgs and keys. On SIGTERM a worker stops claiming and hands back what it
 // still holds (stop()).
 const os = require("os");
-const { query, run, uuid, withTransaction } = require("./db");
+const { query, run, uuid, withTransaction, isPoolFull } = require("./db");
 
 const MAX_ATTEMPTS = 5;
 const ORG_CAP = () => Math.max(1, Number(process.env.JOB_ORG_CAP) || 2);
@@ -220,6 +220,20 @@ async function finish(job, err) {
     return;
   }
   const msg = String(err && err.message || err).slice(0, 500);
+  // POOL-1: a run that found the database's pooler full (EMAXCONNSESSION, or
+  // Postgres's 53300) did not fail; it never started. It goes back after a
+  // backoff with its try not counted, so it is never stopped as dead for it
+  // (on 3 Nov reconcileStripeVsGifts met one during a deploy's overlap). The
+  // write that gives it back may meet the same full pooler, so it is tried a
+  // few times before the reaper is left to do it.
+  if (isPoolFull(err) || isPoolFull(err && err.cause)) {
+    for (let i = 0; ; i++) {
+      try { await giveBack(job.id, job.locked_by, { error: msg, runAfterMs: backoffMs(1, job.backoff_ms), tryBack: true }); break; }
+      catch (e) { if (!isPoolFull(e) || i >= 3) throw e; await new Promise(r => setTimeout(r, 1000 * 2 ** i)); }
+    }
+    console.error(`[jobs] ${job.name}${job.org_id ? " " + job.org_id : ""} found the database pool full (try ${job.attempts}, not counted): back in ${Math.round(backoffMs(1, job.backoff_ms) / 1000)} s`);
+    return;
+  }
   const dead = job.attempts >= (job.max_attempts || MAX_ATTEMPTS);
   if (dead) {
     await run(
@@ -333,17 +347,20 @@ const timers = [];
 let lanesDone = Promise.resolve();
 let buildSha = null;
 
+// POOL-1: the heartbeat carries this process's connection budget (the
+// numbers only), so `npm run status` can add up the deploy's worst case.
+const poolBudget = () => { const { POOL_MAX, SET_POOL_MAX } = require("./db"); return { max: POOL_MAX, setMax: SET_POOL_MAX }; };
 // DEPLOY-1 · THE WORKER SAYS IT IS THERE. One row per process that runs jobs,
 // written every 30 s: its role, its build and the job types it can run. The
 // web's /health reads the newest (the worker has no public address), and
 // failUnhandled and scripts/ops/queue-requeue.js read the job types.
 async function beatProcess() {
   await run(
-    `INSERT INTO process_heartbeats (id, role, build_sha, handlers, started_at, seen_at)
-     VALUES (?, ?, ?, ?::text[], NOW(), NOW())
+    `INSERT INTO process_heartbeats (id, role, build_sha, handlers, pool, started_at, seen_at)
+     VALUES (?, ?, ?, ?::text[], ?::jsonb, NOW(), NOW())
      ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role, build_sha = EXCLUDED.build_sha, handlers = EXCLUDED.handlers,
-                                    seen_at = NOW(), stopped_at = NULL`,
-    [WORKER_ID, role(), buildSha, [...handlers.keys()]]);
+                                    pool = EXCLUDED.pool, seen_at = NOW(), stopped_at = NULL`,
+    [WORKER_ID, role(), buildSha, [...handlers.keys()], JSON.stringify(poolBudget())]);
   await run(`DELETE FROM process_heartbeats WHERE seen_at < NOW() - INTERVAL '7 days'`);
 }
 
@@ -425,10 +442,10 @@ async function refreshHealth() {
   let worker = null;
   try {
     const [w] = await query(
-      `SELECT role, build_sha, EXTRACT(EPOCH FROM NOW() - seen_at)::int AS secs FROM process_heartbeats
+      `SELECT role, build_sha, pool, EXTRACT(EPOCH FROM NOW() - seen_at)::int AS secs FROM process_heartbeats
         WHERE role IN ('worker','both') AND stopped_at IS NULL AND seen_at > NOW() - INTERVAL '2 minutes'
         ORDER BY started_at DESC LIMIT 1`);
-    if (w) worker = { role: w.role, buildSha: w.build_sha || null, seenSecondsAgo: w.secs };
+    if (w) worker = { role: w.role, buildSha: w.build_sha || null, seenSecondsAgo: w.secs, pool: w.pool || null };
   } catch (_) { /* table not there yet */ }
   // The tick: the latest five-minute round of per-org syncs that has finished,
   // how long it took from first start to last finish, and its slowest org.
