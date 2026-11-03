@@ -12,6 +12,16 @@
 // the background work the import queued. A database that has ANALYZEd its
 // other orgs (as every real one has) is the condition, so it ANALYZEs first.
 // API only, so perf-app runs it before the browser skip.
+//
+// NUMBERS-5: through the door the Donors page recommends. "Import a
+// spreadsheet" (SpreadsheetImport.jsx) refused this file (413: its routes sat
+// under the 5 MB default) and, given room, read it as 1,101 people and no
+// gifts. Now its cells fit (/sheet-import/*, 50 MB), and the screen reads the
+// workbook's roles and hands it to the workbook screen (sheetRead
+// readsAsWorkbook), which reads every sheet. And every row is accounted for
+// (IMPORT-6): each person row on the Donors sheet is a person written or one
+// folded into another, each gift row is written, set aside or routed with its
+// reason, and the database holds exactly the gifts the receipt says it wrote.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -35,7 +45,13 @@ async function buildSubmission() {
   const roled = IS.classifyWorkbookSheets(sheets);
   const legend = IS.extractWorkbookLegend(roled);
   const signals = IS.buildWorkbookSignals(roled, legend);
-  return IS.buildWorkbookSubmission(roled, { signals, signalAnswers: {}, legend, currentYear: 2026, anchorDate: "2026-09-06" });
+  const sub = IS.buildWorkbookSubmission(roled, { signals, signalAnswers: {}, legend, currentYear: 2026, anchorDate: "2026-09-06" });
+  // The door's own reading of the same file (SpreadsheetImport.readSheetFile)
+  const SR = await import(path.join(ROOT, "shared", "sheetRead.js"));
+  const grids = SR.gridsFromWorkbook(XLSX.read(fs.readFileSync(FIXTURE), { type: "buffer", cellDates: true }), XLSX);
+  const door = { grids, toWorkbook: typeof SR.readsAsWorkbook === "function" && SR.readsAsWorkbook(grids, roled),
+                 personRows: (roled.find(s => s.role === "donors") || {}).rowCount || 0 };
+  return { sub, door };
 }
 
 // This leg's own org, emptied without its triggers (25,000 audited deletes
@@ -61,7 +77,7 @@ async function post(base, token, route, body, signal) {
 
 async function workbookImportLeg({ ok, timed, q, login, base, importWorkSettled }) {
   const t0 = performance.now();
-  const sub = await buildSubmission();
+  const { sub, door } = await buildSubmission();
   console.log(`  messy-25k: ${sub.donors.length} people, ${sub.gifts.length} gifts (built in ${Math.round((performance.now() - t0) / 1000)} s)`);
   await wipe();
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Perf Workbook Trust','perf-25k',1,'active','impact','America/New_York')`, [ORG]);
@@ -69,8 +85,16 @@ async function workbookImportLeg({ ok, timed, q, login, base, importWorkSettled 
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Allie Test','admin')`, ["u_" + ORG, ORG, email, bcrypt.hashSync("loadtest1234", 4)]);
   const token = await login(email, "loadtest1234");
 
+  // NUMBERS-5: "Import a spreadsheet" takes the file and hands it to the workbook screen
+  const u0 = performance.now();
+  const und = await post(base, token, "/sheet-import/understand", { fileName: "steward-messy-25k-v3.xlsx", sheets: door.grids, answers: {}, overrides: {}, useModel: false });
+  ok(`"Import a spreadsheet" takes the 25,000-person workbook's cells (${Math.round(JSON.stringify(door.grids).length / 1e6)} MB; main: 413, too large)`,
+    und.status === 200, { status: und.status, error: und.body && und.body.error, ms: Math.round(performance.now() - u0) });
+  ok("...and reads it as a workbook of people and their gifts, every sheet, the workbook screen's way (main: 1,101 people and no gifts)",
+    door.toWorkbook === true && sub.donors.length > 25000 && sub.gifts.length > 90000, { toWorkbook: door.toWorkbook, people: sub.donors.length, gifts: sub.gifts.length });
+
   // The screen's own two writes (WorkbookImport.jsx doImport), one run id.
-  const runId = "run_" + require("crypto").randomBytes(8).toString("hex");
+  const runId = "imp_" + require("crypto").randomBytes(12).toString("hex");   // movePlan.newRunId's shape
   const donors = sub.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
   // Locally the budget is also the timeout (main's code never answered); on a
   // shared CI runner the time is a warning (tests/lib/budget.js), so it waits
@@ -92,9 +116,30 @@ async function workbookImportLeg({ ok, timed, q, login, base, importWorkSettled 
   const ms = Math.round(performance.now() - s0);
   console.log(`  messy-25k imported in ${ms} ms (${err || `import ${res.status}, pledges and merges ${sem.status}, background work ${settled ? "done" : "not done"}`})`);
   const [{ d, g }] = await q(`SELECT (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND deleted_at IS NULL)::int d, (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int g`, [ORG]);
+  // IMPORT-6's every row, on this file
+  const [{ runGifts }] = await q(`SELECT COUNT(*)::int "runGifts" FROM gifts WHERE org_id=$1 AND import_id=$2`, [ORG, runId]);
+  const wrec = sub.reconciliation.workbook, rrows = ((res && res.body.reconciliation) || {}).rows || {};
+  const every = {
+    personRows: door.personRows, people: sub.donors.length, folded: sub.totals.folded, written: res && res.body.created,
+    giftRows: wrec.rowsInFile, built: wrec.imported, refused: wrec.refused, routed: wrec.routed,
+    sent: sub.gifts.length, created: rrows.created, skipped: rrows.skipped, errored: rrows.errored, inDb: runGifts,
+  };
+  ok("every row is accounted for: each person row is a person written or one folded into another; each gift row is written, set aside or routed with its reason; the database holds exactly the gifts the receipt wrote",
+    !err && every.personRows === every.people + every.folded && every.written === every.people
+      && every.giftRows === every.built + every.refused + every.routed && sub.reconciliation.perSheet.every(x => x.balanced)
+      && every.sent === every.built && Number(rrows.inFile) === every.sent
+      && Number(rrows.created) + Number(rrows.skipped || 0) + Number(rrows.errored || 0) === every.sent && every.inDb === Number(rrows.created),
+    every);
   ok("the 25,000-person workbook (messy-25k) imports whole: every person, every gift, its pledges, merges and background work",
     !err && res.status === 200 && sem.status === 200 && settled && res.body.created === sub.donors.length && g >= res.body.giftsInserted,
     { err, status: res && res.status, created: res && res.body.created, semantics: sem && sem.status, settled, people: d, gifts: g });
+  // NUMBERS-5: the one Undo on the receipt (WorkbookImport records the run, ImportUndo reverses it)
+  const rec = await post(base, token, "/imports", { id: runId, name: "steward-messy-25k-v3", sourceFilename: "steward-messy-25k-v3.xlsx", shape: "workbook",
+    startedAt: new Date(0).toISOString(), rowsIn: every.giftRows, giftsCreated: Number(rrows.created) || 0, donorsCreated: every.written || 0 });
+  const back = rec.status < 300 ? await post(base, token, `/imports/${runId}/reverse`, {}) : rec;
+  const [left] = await q(`SELECT (SELECT COUNT(*) FROM donors WHERE org_id=$1 AND deleted_at IS NULL)::int d, (SELECT COUNT(*) FROM gifts WHERE org_id=$1)::int g, (SELECT COUNT(*) FROM pledges WHERE org_id=$1)::int p`, [ORG]);
+  ok("...and its one Undo takes the whole workbook back: no person, gift or pledge left", rec.status < 300 && back.status === 200 && left.d === 0 && left.g === 0 && left.p === 0,
+    { record: rec.status, undo: back.status, sentence: back.body && (back.body.sentence || back.body.message), left });
   timed(`...and in under ${BUDGET_MS / 1000} s (${ms} ms; PERF-2: over 15 minutes)`, { drew: !err, ms, budget: BUDGET_MS });
   await wipe();
 }

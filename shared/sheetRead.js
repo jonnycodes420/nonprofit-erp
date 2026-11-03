@@ -1935,3 +1935,21 @@ export function wantsAdaptiveReading(sheets, roled = null) {
   if ((u.counts.households > 0 && !hasEmail) || u.totals.filter(x => x.role === "amount").length > 1) return true;
   return u.tables.some(tb => tb.columns.some(c => c.role === "date" && (c.sample || []).some(v => /^[A-Za-z]{3,9}\.?\s+\d{1,2}$/.test(String(v).trim()))));
 }
+
+// NUMBERS-5 · A WORKBOOK OF PEOPLE AND THEIR GIFTS IS READ BY THE WORKBOOK
+// SCREEN. "Import a spreadsheet" is the one door, but a workbook with a sheet
+// of people and a sheet of their gifts (messy-25k: 25,300 people, 92,000 gift
+// rows on two sheets, a superseded copy, pledges, recurring) is what the
+// workbook screen (WorkbookImport.jsx, BUILD-82) reads whole; this reader read
+// it as 1,101 people and no gifts. `roled` is classifyWorkbookSheets' answer.
+// The question is the one wantsAdaptiveReading asks, about the file's shape
+// (its columns, its layers, its tables), so it is asked of the first rows of
+// each sheet: the same answer for any file under that size, and seconds
+// instead of minutes for a big one.
+const SHAPE_ROWS = 2000;
+export function readsAsWorkbook(sheets, roled) {
+  const live = (roled || []).filter(s => s.rowCount > 0);
+  if (!live.some(s => s.role === "donors") || !live.some(s => s.role === "gifts")) return false;
+  const head = (sheets || []).map(sh => ({ ...sh, grid: (sh.grid || []).slice(0, SHAPE_ROWS) }));
+  return !wantsAdaptiveReading(head, roled);
+}

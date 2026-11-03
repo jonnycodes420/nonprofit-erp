@@ -730,6 +730,10 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 app.use(["/history-import/preview", "/history-import/commit"], bigJson("64mb"));
 // ONBOARD-1: setup carries every donor file at once, as text.
 app.use(["/setup/runs", "/admin/orgs/:id/setup"], bigJson("64mb"));
+// NUMBERS-5: "Import a spreadsheet" sends a workbook's cells as JSON; the
+// 25,000-person workbook (messy-25k, 7.6 MB as xlsx) is 15 MB of cells, and a
+// larger file of the same shape fits with room.
+app.use(["/sheet-import/understand", "/sheet-import/commit"], bigJson("50mb"));
 // BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
 // image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
 // other route. Without this a phone photo is rejected by the body parser
