@@ -206,6 +206,7 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
 // always set after the first paint, has words (this org has no drafts, so on
 // its own it says nothing). On main the suggestions then arrived as a 68 px
 // row on a phone and pushed Your moves down (CLS 0.045, CI's own number).
+// The rail's checklist is a new org's, so the setup card is tested too.
 const LATE_MS = 1500;
 const LATE_LINE = "Steward did 3 things for you yesterday, and 2 drafts are waiting for you.";
 async function lateHeader(page) {
@@ -217,6 +218,18 @@ async function lateHeader(page) {
     await r.fulfill({ response: res, body: JSON.stringify(b) });
   });
   await page.route(u => u.href.startsWith(BASE + "/home/lead"), async r => { await new Promise(z => setTimeout(z, LATE_MS)); await r.continue(); });
+  // And the rail's checklist is a new org's (fewer than three steps done):
+  // on main its card, read after the first paint, came in above Your moves.
+  await page.route(u => u.href.startsWith(BASE + "/home/bundle") && u.searchParams.getAll("p").includes("/org/setup-status"), async r => {
+    const res = await r.fetch();
+    const b = await res.json();
+    const st = b["/org/setup-status"] && b["/org/setup-status"].body;
+    if (st && Array.isArray(st.items)) {
+      for (const it of st.items) if (it.key !== "donors") it.done = false;
+      Object.assign(st, { complete: false, cardState: null, doneCount: st.items.filter(i => i.done).length });
+    }
+    await r.fulfill({ response: res, body: JSON.stringify(b) });
+  });
 }
 
 async function measureN(browser, machine, auth, url, ready, rows, opts) {
