@@ -8,7 +8,7 @@
 // read with its row number. It asks only what it truly cannot tell (when, a
 // blank "paid?" cell, a column it cannot name, which of two people). One
 // Import button; Undo removes the whole file.
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { donorsListHref } from "../lib/appUrls";
@@ -22,6 +22,7 @@ import { errorMessage, isNetworkFailure } from "../lib/domainError";
 import { pageOrgName } from "../lib/orgBinding";
 import { decodeSpreadsheetBytesDetailed, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { gridsFromWorkbook, gridFromText, SHEET_ROLES, pledgeMoneyWords, readsAsWorkbook } from "../../../shared/sheetRead";
+import { WorkbookImport } from "./WorkbookImport";
 import { told } from "../lib/stewardTold";   // HOME-3: the pages behind the window re-read
 
 const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px" };
@@ -40,7 +41,6 @@ const longDate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-").
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const SHEET_FILE_RE = /\.(csv|tsv|txt|xlsx|xlsm|xls|ods)$/i;
 // NUMBERS-5: a workbook of people and their gifts is read by the workbook screen
-const WorkbookImport = lazy(() => import("./WorkbookImport"));
 
 // FIX-55: a spreadsheet dropped on a page (Donors, Settings, Imports) opens
 // this same reader with that file. Anything else dropped is not ours.
@@ -393,11 +393,9 @@ export default function SpreadsheetImport({ file: fileProp, onClose, onImported 
     return (
       <Modal className="commit-screen" onClose={closeWorkbook} title="Import a spreadsheet" width={900} ariaLabel="Import a spreadsheet">
         <div data-testid="sheet-import-workbook" style={{ color: T.ink }}>
-          <Suspense fallback={<div style={small}>Opening the workbook…</div>}>
-            <WorkbookImport workbook={workbook} fileName={file && file.name}
-              onClose={() => { setWorkbook(null); setFile(null); }}
-              onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); }} />
-          </Suspense>
+          <WorkbookImport workbook={workbook} fileName={file && file.name}
+            onClose={() => { setWorkbook(null); setFile(null); }}
+            onImported={() => { told({ import: "workbook" }); if (onImported) onImported(); else if (onClose) onClose(); }} />
         </div>
       </Modal>
     );
