@@ -46,8 +46,12 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
               summary of the list under it rather than a verdict on the person
               reading it. You get to the pressure when you go looking for it.
               The header is the greeting and the day. */}
+          {/* SHIFT-2 — THE DAY NEVER RE-WRAPS. The serif is font-display
+              optional (public/fonts/app-fonts.css), so a cold first load keeps
+              the sized Georgia fallback and nothing swaps under her. Balanced,
+              so "2" is never alone on the second line. */}
           {surface==="home"&&!editMode&&(
-            <h1 className="home-day" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:44,fontWeight:400,lineHeight:1.08,letterSpacing:"-0.02em",color:T.ink,margin:"6px 0 0"}}>
+            <h1 className="home-day" style={{fontFamily:"'DM Serif Display',Georgia,serif",textWrap:"balance",fontSize:44,fontWeight:400,lineHeight:1.08,letterSpacing:"-0.02em",color:T.ink,margin:"6px 0 0"}}>
               {todayLongStr}
             </h1>
           )}
