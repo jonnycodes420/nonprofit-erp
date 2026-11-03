@@ -152,12 +152,16 @@ async function measure(browser, machine, auth, url, ready, rows = 1, { warm = fa
     let quiet = 0;
     for (const [, end] of rs) if (rs.filter(([s, e]) => s < end && e >= end).length >= 3) quiet = Math.max(quiet, end);
     const fcp = (performance.getEntriesByName("first-contentful-paint")[0] || {}).startTime || 0;
-    return { ...window.__perf, netQuiet: quiet, fcp };
+    // NUMBERS-5: what sits above the page's heading at the end (a late banner pushes it down)
+    const h1 = document.querySelector("h1"), top = h1 ? h1.getBoundingClientRect().top : 0;
+    const above = [...document.querySelectorAll("body *")].filter(e => !e.children.length && (e.textContent || "").trim()
+      && e.getBoundingClientRect().bottom <= top && e.getBoundingClientRect().height > 0).map(e => (e.getAttribute("data-testid") || "") + ":" + e.textContent.trim().slice(0, 60)).slice(0, 12);
+    return { ...window.__perf, netQuiet: quiet, fcp, above };
   });
   const out = {
     ready: !!r.readyAt, readyAt: Math.round(r.readyAt), lcp: Math.round(r.lcp), longEnd: Math.round(r.longEnd), net: Math.round(r.netQuiet || 0),
     jsKB: Math.round(js / 1024), totalKB: Math.round(bytes / 1024), requests, errors, fail5xx, apiUrls,
-    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000, shifts: r.shifts || [],
+    fcp: Math.round(r.fcp || 0), sent, cls: Math.round((r.cls || 0) * 1000) / 1000, shifts: [...(r.shifts || []), ...(r.shifts && r.shifts.length ? ["above the heading: " + (r.above || []).join(" | ")] : [])],
     // PERF-2: the JavaScript in by the time the screen was there, and any bundle asked for twice
     jsFirstKB: Math.round(done.filter(([t, , at]) => t === "Script" && r.readyAt && at <= r.readyAt + 50).reduce((n, [, b]) => n + b, 0) / 1024),
     // PERF-3: every byte in by then: the document, scripts, styles, fonts and reads
