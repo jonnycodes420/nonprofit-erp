@@ -26,9 +26,16 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
               keeps its place and loses its accent: on this line the brand
               colour was a third colour competing with the headline under it,
               and the org mark beside it already says whose system this is. */}
-          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",fontSize:14,lineHeight:1.35,color:T.ink3}}>
-            {data.org?.name&&<span style={{fontWeight:600,letterSpacing:"-0.01em"}}>{data.org.name}</span>}
-            <span style={{fontWeight:400}}>{greeting}{firstName?`, ${firstName}`:""}</span>
+          {/* SHIFT-1 — ONE LINE, ALWAYS. This row wrapped (flexWrap) when the
+              org's name and the greeting outgrew the column, and on a phone the
+              column narrows when the Edit button arrives a beat after first
+              paint: the row went 19 → 46 px and the date and everything under it
+              dropped 27 px. "Good morning" is wider than "Good evening", so it
+              happened only in the morning. Now the row never wraps: the org's
+              name gives way with an ellipsis, the greeting and her name never do. */}
+          <div data-testid="home-greeting" style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"nowrap",minWidth:0,whiteSpace:"nowrap",fontSize:14,lineHeight:1.35,minHeight:"1.35em",color:T.ink3}}>
+            {data.org?.name&&<span title={data.org.name} style={{fontWeight:600,letterSpacing:"-0.01em",minWidth:0,flex:"0 1 auto",overflow:"hidden",textOverflow:"ellipsis"}}>{data.org.name}</span>}
+            <span style={{fontWeight:400,flexShrink:0}}>{greeting}{firstName?`, ${firstName}`:""}</span>
           </div>
           {/* ── BUILD-89 — THE HEADER IS WARM ─────────────────────────────
               The morning sentence used to be a 34px serif headline, so the
@@ -58,8 +65,11 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
         {/* BUILD-34 edit affordance — a quiet on-palette text button by the
             greeting, not a floating pencil. Done saves optimistically
             (rollback on error); Esc cancels; Reset restores the default. */}
-        {layout!==undefined&&(
-          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1}}>
+        {/* SHIFT-1 — the Edit slot is there from the first paint, hidden until
+            her layout has loaded, so its arrival never narrows the column
+            beside it (that narrowing is what wrapped the greeting and the date). */}
+        {(
+          <div aria-hidden={layout===undefined||undefined} style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1,visibility:layout===undefined?"hidden":undefined}}>
             {editMode?(
               <>
                 <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
@@ -68,6 +78,7 @@ export function homeHead({ agentDaily, cancelEdit, data, editMode, enterEdit, fi
               </>
             ):(
               <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
+                disabled={layout===undefined}
                 style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
             )}
           </div>
