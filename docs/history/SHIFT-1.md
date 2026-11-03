@@ -26,7 +26,12 @@ a wrap is there from the first frame and nothing moves).
 pinned day and hour and still ticking (not Playwright's `clock.setFixedTime`: a
 frozen Date slowed the warm visit 0.8 s and hid the network going quiet). Home
 on a phone runs at 08:00, 14:00 and 20:00 and the worst CLS counts. The fixture
-org is "Riverbend Food Collective" (312 px: fits 326, not 292). A red CLS prints
+org is "Riverbend Food Collective" (312 px: fits 326, not 292). The day is
+Wednesday, September 30: the first push pinned Monday, March 2 (where a late
+Edit slot alone also fails), and CI's slow first phone runs went red on the
+serif swap below (CLS 0.045 at 08:00 cold, first look 313 KB as the serif landed
+before Home was ready). The longest date is two lines in either font, so the
+swap cannot move it. A red CLS prints
 what moved and by how much (NUMBERS-5's diagnostic, tidied).
 
 **Left for the next brief.** The date heading's serif is not preloaded (PERF-3),

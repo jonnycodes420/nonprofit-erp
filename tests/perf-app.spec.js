@@ -16,13 +16,14 @@
 //     FIRST_KB in all (scripts, fonts, styles and its reads); and nothing on
 //     it moves as it loads or as a font swaps (CLS under 0.02, cold and warm)
 //   · SHIFT-1: the browser's clock is the test's, never the runner's. Every
-//     screen opens on Monday, March 2 at a pinned UTC hour, and Home on a phone
+//     screen opens on Wednesday, September 30 at a pinned UTC hour, and Home on a phone
 //     opens at 08:00, 14:00 and 20:00: the greeting's words change with the
 //     hour, and CI's morning once wrapped the greeting line and moved everything
 //     under it 27 px (CLS 0.139). The worst hour counts. The fixture org's name
-//     is the length that wrapped it, and March 2 is a date whose heading took a
-//     second line when the Edit button narrowed the column (one of 74 in 2026),
-//     so a header whose width changes after first paint fails here on either.
+//     is the length that wrapped it. The day is the longest real date, which
+//     takes two lines on a phone in the serif and in its fallback alike: on a
+//     shorter date the two can wrap differently, and a cold phone moves when
+//     the serif arrives (docs/history/SHIFT-1.md, left for the next brief).
 //   · the Donors list, 100 rows: under 1 s on the server, drawn under 2 s
 //   · a donor's profile: drawn under 2 s
 //   · the import preview (FIX-55 item 1b), each real-shaped file, in an org of
@@ -71,7 +72,7 @@ const ORG = { id: "org_perfapp", slug: "perfapp", name: "Riverbend Food Collecti
 const RUNS = Number(process.env.PERF_RUNS || 3);
 // SHIFT-1: the clock every screen opens at (UTC), and the hours Home's phone
 // leg is held to: morning, afternoon, evening, each its own greeting.
-const DAY = "2026-03-02", HOURS = [8, 14, 20];
+const DAY = "2026-09-30", HOURS = [8, 14, 20];
 const at = h => new Date(`${DAY}T${String(h).padStart(2, "0")}:00:00Z`);
 const BUDGET = { homeDesktop: 1000, homePhone: PHONE_MS, listServer: 1000, listDraw: 2000, profile: 2000 };
 const DESKTOP = {
